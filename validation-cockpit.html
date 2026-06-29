@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lexicon · Validation Cockpit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --teal:#0f6e64; --tealDeep:#0a544c; --tealSoft:#e3efec;
+    --amber:#b07908; --amberSoft:#fbf1d9; --amberLine:#ecd9a8;
+    --red:#b3261e; --redSoft:#fbe6e4; --redLine:#eec1bc;
+    --green:#2e7d52; --greenSoft:#e8f3ec; --greenLine:#c2e0cd;
+    --ink:#2b2b28; --ink2:#4a4a44; --muted:#8a8a80;
+    --line:#ddd6c8; --lineSoft:#ece7da; --panel:#fbfaf6; --paper:#f3f1ea;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:"Hanken Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  ::-webkit-scrollbar{height:10px;width:10px;}
+  ::-webkit-scrollbar-thumb{background:#cfc8b8;border-radius:8px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  button{font-family:inherit;}
+  table{border-collapse:collapse;width:100%;}
+  th,td{text-align:left;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useRef, useEffect } = React;
+
+/* ---------------------------------------------------------------- tokens */
+const C = {
+  teal:"#0f6e64", tealDeep:"#0a544c", tealSoft:"#e3efec",
+  amber:"#b07908", amberSoft:"#fbf1d9", amberLine:"#ecd9a8",
+  red:"#b3261e", redSoft:"#fbe6e4", redLine:"#eec1bc",
+  green:"#2e7d52", greenSoft:"#e8f3ec", greenLine:"#c2e0cd",
+  ink:"#2b2b28", ink2:"#4a4a44", muted:"#8a8a80",
+  line:"#ddd6c8", lineSoft:"#ece7da", panel:"#fbfaf6", paper:"#f3f1ea",
+};
+const FONT_DISP = '"Fraunces",Georgia,serif';
+const FONT_UI = '"Hanken Grotesk",system-ui,sans-serif';
+const FONT_MONO = '"JetBrains Mono",ui-monospace,monospace';
+const APP_VERSION = "1.19";
+const APP_BUILD = "2026-06-17";
+
+/* ---------------------------------------------------------------- icons */
+const I = {
+  Upload: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+  Check: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+  Warn: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+  Quar: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>,
+  Search: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+  Layers: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>,
+  Sheet: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>,
+  Refresh: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>,
+  Trash: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>,
+  Clipboard: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>,
+  Download: (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 24 24" fill="none" stroke={p.color||"currentColor"} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+};
+
+/* ---------------------------------------------------------------- status */
+function statusKind(v){
+  const s = String(v==null?"":v).trim().toUpperCase();
+  if(!s || s==="\u2014" || s==="-" || s==="N/A" || s==="NA") return "na";
+  if(s==="PASS") return "pass";
+  if(s==="QUARANTINE" || s==="QUAR" || s==="FAIL") return "quar";
+  if(s.indexOf("WARN")>=0 || s==="PASS+WARN") return "warn";
+  if(s.indexOf("QUAR")>=0) return "quar";
+  if(s.indexOf("PASS")>=0) return "pass";
+  return "warn";
+}
+const KIND = {
+  pass:{c:C.green, bg:C.greenSoft, ln:C.greenLine, label:"PASS"},
+  warn:{c:C.amber, bg:C.amberSoft, ln:C.amberLine, label:"WARN"},
+  quar:{c:C.red,   bg:C.redSoft,   ln:C.redLine,   label:"QUAR"},
+  na:  {c:C.muted, bg:"#f0ece2",   ln:C.lineSoft,  label:"\u2014"},
+};
+const pctNum = (v) => { const n = parseFloat(String(v==null?"":v).replace(/[^0-9.\-]/g,"")); return isNaN(n)?null:n; };
+
+/* ---- cross-link to the Glossary Workbench ---- */
+const WB_KEY = "ig_cockpit_workbench_url";
+// Link to the Workbench as a sibling file, resolved by the browser relative to wherever this
+// page is running. That navigates the same way the Cockpit itself was opened (no forced download,
+// never the Cockpit's own address). A user-set URL (Settings) overrides it for other hosting.
+function workbenchUrl(){
+  try { const v = localStorage.getItem(WB_KEY); if(v && v.trim()) return v.trim(); } catch(e){}
+  try { const base = location.href.split("#")[0]; if(/validation-cockpit\.html/i.test(base)) return base.replace(/validation-cockpit\.html/i, "glossary-workbench.html"); } catch(e){}
+  return "glossary-workbench.html";
+}
+function setWorkbenchUrl(u){ try { if(u && u.trim()) localStorage.setItem(WB_KEY,u.trim()); else localStorage.removeItem(WB_KEY); } catch(e){} }
+
+/* ---- session persistence: keep the loaded workbook + level across reloads ---- */
+const DATA_KEY = "ig_cockpit_data";
+const LEVEL_KEY = "ig_cockpit_level";
+function saveSession(parsed, fileName){
+  try { localStorage.setItem(DATA_KEY, JSON.stringify({ fileName, terms:parsed.terms, spo:parsed.spo, summaries:parsed.summaries, sheetNames:parsed.sheetNames, remediation:parsed.remediation||null, ts:Date.now() })); return true; }
+  catch(e){ return false; }
+}
+function loadSession(){
+  try {
+    const raw = localStorage.getItem(DATA_KEY); if(!raw) return null;
+    const o = JSON.parse(raw); if(!o || (!o.terms && !o.spo && !o.remediation && !o.l0)) return null;
+    let level=""; try { level = localStorage.getItem(LEVEL_KEY) || ""; } catch(e){}
+    return { data:{ terms:o.terms||[], spo:o.spo||[], summaries:o.summaries||{}, sheetNames:o.sheetNames||[], remediation:o.remediation||{rewrites:[],additions:[]}, l0:o.l0||null }, fileName:o.fileName||"", level, ts:o.ts };
+  } catch(e){ return null; }
+}
+const REM_STATUS_KEY = "ig_cockpit_rem_status";
+function loadRemStatus(){ try { return JSON.parse(localStorage.getItem(REM_STATUS_KEY)||"{}")||{}; } catch(e){ return {}; } }
+function saveRemStatus(map){ try { localStorage.setItem(REM_STATUS_KEY, JSON.stringify(map||{})); } catch(e){} }
+function clearSession(){ try { localStorage.removeItem(DATA_KEY); localStorage.removeItem(LEVEL_KEY); } catch(e){} idbDel(L0_IDB_KEY).catch(function(){}); }
+/* ---- IndexedDB: the Level-0 inventory is large (thousands of rows); keep it here, not in localStorage ---- */
+const L0_IDB_KEY = "l0";
+function idbOpen(){ return new Promise(function(res,rej){ var r=indexedDB.open("ig_cockpit",1); r.onupgradeneeded=function(){ r.result.createObjectStore("kv"); }; r.onsuccess=function(){ res(r.result); }; r.onerror=function(){ rej(r.error); }; }); }
+function idbGet(k){ return idbOpen().then(function(db){ return new Promise(function(res,rej){ var t=db.transaction("kv","readonly").objectStore("kv").get(k); t.onsuccess=function(){ res(t.result); }; t.onerror=function(){ rej(t.error); }; }); }); }
+function idbSet(k,v){ return idbOpen().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("kv","readwrite"); tx.objectStore("kv").put(v,k); tx.oncomplete=function(){ res(true); }; tx.onerror=function(){ rej(tx.error); }; }); }); }
+function idbDel(k){ return idbOpen().then(function(db){ return new Promise(function(res,rej){ var tx=db.transaction("kv","readwrite"); tx.objectStore("kv").delete(k); tx.oncomplete=function(){ res(true); }; tx.onerror=function(){ rej(tx.error); }; }); }); }
+function firstPresentLevel(d){ return hasL0(d)?"L0": hasLevel(d,"L1")?"L1": hasLevel(d,"L2")?"L2": hasLevel(d,"L3")?"L3": hasLevel(d,"L4")?"L4": hasRemediation(d)?"REM":"L1"; }
+function appendHash(base, params){ if(!base) return "#"+params; const h=base.indexOf("#"); if(h>=0){ const head=base.slice(0,h), ex=base.slice(h+1); return head+"#"+(ex?ex+"&":"")+params; } return base+"#"+params; }
+function wbTermLink(name){ return appendHash(workbenchUrl(), "term="+encodeURIComponent(name)); }
+function wbLexLink(string, lexId){ return appendHash(workbenchUrl(), "lex="+encodeURIComponent(string||"") + (lexId?"&lexid="+encodeURIComponent(lexId):"")); }
+/* incoming focus from the workbench: #term=…&level=Lx */
+function readIncoming(){
+  try { const h=(location.hash||"").replace(/^#/,""); if(h.indexOf("=")<0) return {}; const p=new URLSearchParams(h); return { term:p.get("term")||"", level:(p.get("level")||"").toUpperCase() }; } catch(e){ return {}; }
+}
+
+/* ---------------------------------------------------------------- bits */
+function TermLink({name, bold}){
+  if(!name) return null;
+  return <a href={wbTermLink(name)} target="_blank" rel="noreferrer" title={"Open \u201C"+name+"\u201D in the Glossary Workbench"}
+    style={{fontWeight: bold===false?400:600, color:C.ink, textDecoration:"none", borderBottom:"1px dotted "+C.teal}}>{name}</a>;
+}
+function LexLink({string, lexId, bold}){
+  if(!string) return null;
+  return <a href={wbLexLink(string, lexId)} target="_blank" rel="noreferrer" title={"Open \u201C"+string+"\u201D in the Glossary Workbench Lexicon"}
+    style={{fontWeight: bold===false?400:600, color:C.ink, textDecoration:"none", borderBottom:"1px dotted "+C.teal}}>{string}</a>;
+}
+function Chip({kind, children, mono, small}){
+  const k = KIND[kind] || KIND.na;
+  return <span style={{display:"inline-flex",alignItems:"center",gap:5,background:k.bg,color:k.c,border:"1px solid "+k.ln,borderRadius:999,
+    padding: small?"1px 7px":"2px 9px", fontSize: small?10.5:11.5, fontWeight:800, letterSpacing:0.3,
+    fontFamily: mono?FONT_MONO:FONT_UI, whiteSpace:"nowrap"}}>{children||k.label}</span>;
+}
+function StatCard({label, value, sub, tone, onClick, selected}){
+  const k = tone ? (KIND[tone]||null) : null;
+  const accent = k?k.c:C.teal;
+  return <div onClick={onClick} title={onClick?"Filter the statements by "+label:undefined} style={{background: selected?(k?k.bg:C.tealSoft):"#fff", borderTop:"3px solid "+accent, borderRight:"1px solid "+(selected?accent:C.line), borderBottom:"1px solid "+(selected?accent:C.line), borderLeft:"1px solid "+(selected?accent:C.line), borderRadius:12, padding:"13px 16px", minWidth:128, flex:"1 1 128px", cursor:onClick?"pointer":"default", boxShadow: selected?"0 1px 0 "+accent:"none"}}>
+    <div style={{fontFamily:FONT_DISP,fontSize:27,fontWeight:600,lineHeight:1,color:k?k.c:C.ink}}>{value}</div>
+    <div style={{fontSize:11.5,color:C.ink2,marginTop:5,fontWeight:600}}>{label}{selected && <span style={{color:accent}}> {"\u2713"}</span>}</div>
+    {sub!=null && <div style={{fontSize:10.5,color:C.muted,marginTop:2}}>{sub}</div>}
+  </div>;
+}
+/* stacked pass/warn/quar bar for one dimension */
+function DimBar({name, counts, onPick, pickedStatus}){
+  const total = counts.pass + counts.warn + counts.quar + counts.na;
+  const seg = (n,col) => total>0 && n>0 ? <div style={{width:(100*n/total)+"%",background:col,height:"100%"}} title={n+""}></div> : null;
+  const num = (n,col,status) => {
+    const can = onPick && n>0; const on = pickedStatus===status;
+    return <span onClick={can?(()=>onPick(status)):undefined}
+      title={can?("Show rows where "+name+" = "+status.toUpperCase()):undefined}
+      style={{color:col, cursor:can?"pointer":"default", fontWeight:on?800:400, textDecoration:on?"underline":"none", padding:"0 1px"}}>{n}</span>;
+  };
+  return <div style={{display:"grid",gridTemplateColumns:"250px 1fr 120px",alignItems:"center",gap:12,padding:"5px 0"}}>
+    <div style={{fontSize:12.5,color:C.ink2,fontWeight:600,lineHeight:1.3}} title={name}>{name}</div>
+    <div style={{display:"flex",height:14,borderRadius:7,overflow:"hidden",background:"#f0ece2",border:"1px solid "+C.lineSoft}}>
+      {seg(counts.pass,C.green)}{seg(counts.warn,C.amber)}{seg(counts.quar,C.red)}{seg(counts.na,"#d9d3c5")}
+    </div>
+    <div style={{fontFamily:FONT_MONO,fontSize:11,color:C.muted,whiteSpace:"nowrap"}}>
+      {num(counts.pass,C.green,"pass")} / {num(counts.warn,C.amber,"warn")} / {num(counts.quar,C.red,"quar")}{counts.na?<span style={{color:C.muted}}> / {counts.na}{"\u2014"}</span>:null}
+    </div>
+  </div>;
+}
+/* compact per-row dimension squares */
+function DimChips({row, dims}){
+  return <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+    {dims.map((d) => { const k = KIND[statusKind(row[d.col])]; return (
+      <span key={d.col} title={d.col+": "+(String(row[d.col]||"\u2014"))} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
+        width:30,height:18,borderRadius:5,background:k.bg,color:k.c,border:"1px solid "+k.ln,fontSize:9,fontWeight:800,fontFamily:FONT_MONO}}>{d.ab}</span>);
+    })}
+  </div>;
+}
+function SectionTitle({icon:Icn, children, right}){
+  return <div style={{display:"flex",alignItems:"center",gap:9,margin:"22px 0 12px"}}>
+    {Icn && <Icn size={16} color={C.teal} />}
+    <span style={{fontFamily:FONT_UI,fontWeight:800,fontSize:12.5,letterSpacing:1.2,textTransform:"uppercase",color:C.tealDeep}}>{children}</span>
+    <div style={{flex:1,height:1,background:C.line}}></div>
+    {right}
+  </div>;
+}
+
+/* ---------------------------------------------------------------- generic level scaffold */
+const TONE_OF = (v) => { const k = statusKind(v); return k==="pass"?"pass":k==="warn"?"warn":k==="quar"?"quar":null; };
+
+function Filters({stats, active, setActive, q, setQ}){
+  const chip = (key, label, n, kind) => {
+    const on = active===key; const k = KIND[kind]||{c:C.ink2,bg:"#fff",ln:C.line};
+    return <button onClick={()=>setActive(on?"":key)} style={{display:"inline-flex",alignItems:"center",gap:6,border:"1px solid "+(on?k.c:C.line),
+      background:on?k.bg:"#fff",color:on?k.c:C.ink2,borderRadius:999,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:FONT_UI}}>
+      {label}<span style={{fontFamily:FONT_MONO,fontSize:11,opacity:0.8}}>{n}</span></button>;
+  };
+  return <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:12}}>
+    {chip("","All",stats.total,"")}
+    {chip("pass","Pass",stats.pass,"pass")}
+    {chip("warn","Warn",stats.warn,"warn")}
+    {chip("quar","Quarantine",stats.quar,"quar")}
+    <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:7,border:"1px solid "+C.line,background:"#fff",borderRadius:999,padding:"5px 12px"}}>
+      <I.Search size={14} color={C.muted}/>
+      <input value={q} onChange={(e)=>setQ(e.target.value)} placeholder={"Search\u2026"} style={{border:"none",outline:"none",background:"transparent",fontSize:13,fontFamily:FONT_UI,width:180,color:C.ink}}/>
+    </div>
+  </div>;
+}
+
+function DataTable({columns, rows}){
+  if(!rows.length) return <div style={{padding:"28px 0",textAlign:"center",color:C.muted,fontStyle:"italic"}}>No rows match.</div>;
+  return <div style={{overflowX:"auto",border:"1px solid "+C.line,borderRadius:12,background:"#fff"}}>
+    <table>
+      <thead><tr style={{background:C.panel}}>
+        {columns.map((c,i)=><th key={i} style={{padding:"10px 13px",borderBottom:"1px solid "+C.line,fontFamily:FONT_UI,fontWeight:800,fontSize:10.5,letterSpacing:0.6,textTransform:"uppercase",color:C.muted,whiteSpace:"nowrap"}}>{c.h}</th>)}
+      </tr></thead>
+      <tbody>
+        {rows.map((r,ri)=><tr key={ri} style={{borderTop: ri?"1px solid "+C.lineSoft:"none"}}>
+          {columns.map((c,ci)=><td key={ci} style={{padding:"9px 13px",fontSize:12.5,color:C.ink2,verticalAlign:"top",...(c.cell?{}:{})}}>{c.render(r)}</td>)}
+        </tr>)}
+      </tbody>
+    </table>
+  </div>;
+}
+
+/* ---------------------------------------------------------------- metric helpers */
+function overallCounts(rows, col){
+  const o = {total:0, pass:0, warn:0, quar:0};
+  rows.forEach((r)=>{ const v=String(r[col]==null?"":r[col]).trim(); if(!v) return; o.total++; const k=statusKind(v); o[k==="na"?"warn":k]++; });
+  return o;
+}
+function dimCounts(rows, col){
+  const o={pass:0,warn:0,quar:0,na:0};
+  rows.forEach((r)=>{ const v=r[col]; if(v==null||String(v).trim()==="") return; o[statusKind(v)]++; });
+  return o;
+}
+function avgPct(rows, col){
+  let s=0,n=0; rows.forEach((r)=>{ const p=pctNum(r[col]); if(p!=null){s+=p;n++;} });
+  return n? Math.round(s/n*10)/10 : null;
+}
+const pc = (n,d) => d? Math.round(1000*n/d)/10 : 0;
+
+/* dimension definitions per level */
+const L1_CHECKS = ["Atomic Construction","Predicate: No 'Must'","Predicate: Not Compound","Predicate: No Modifier","Predicate: Active Voice","Predicate: Governed Vocabulary","Object: Not Compound","Object: No Article","Noun Rule (No X-of-Y)","No Pronouns","Subject Grounding","Lexical (WordNet)","Entity Definition: Subject","Entity Definition: Object"];
+const L2_DIMS = [["L2 Completeness","Cmp"],["L2 Consistency","Cns"],["L2 Uniqueness","Unq"],["L2 Conformity","Cnf"],["L2 Validity","Val"],["L2 Integrity","Int"]].map(([col,ab])=>({col,ab,name:col.replace(/^L2 /,"")}));
+const L3_DIMS = [["L3 Accuracy","Acc"],["L3 Clarity","Clr"],["L3 Conciseness","Cnc"],["L3 Conformity","Cnf"],["L3 Completeness","Cmp"],["L3 Precision","Prc"],["L3 Understandability","Und"]].map(([col,ab])=>({col,ab,name:col.replace(/^L3 /,"")}));
+const L4_DIMS = [["L4 Completeness","Cmp"],["L4 Conformity","Cnf"],["L4 Consistency","Cns"],["L4 Integrity","Int"],["L4 Uniqueness","Unq"],["L4 Validity","Val"]].map(([col,ab])=>({col,ab,name:col.replace(/^L4 /,"")}));
+
+/* find a headline value in a parsed summary sheet by label regex */
+function sumVal(pairs, re){ const hit = (pairs||[]).find(p=>re.test(p.label)); return hit? hit.value : null; }
+
+/* ---------------------------------------------------------------- level views */
+function useFiltered(rows, valCol, textCols, q, setQ){
+  const [active,setActive]=useState("");
+  const filtered = useMemo(()=>{
+    const ql=q.trim().toLowerCase();
+    return rows.filter((r)=>{
+      if(active){ if(statusKind(r[valCol])!==active) return false; }
+      if(ql){ return textCols.some((c)=>String(r[c]||"").toLowerCase().indexOf(ql)>=0); }
+      return true;
+    });
+  },[rows,active,q,valCol]);
+  return {active,setActive,q,setQ,filtered};
+}
+
+function L1View({spo, summary, q, setQ}){
+  const counts = useMemo(()=>overallCounts(spo,"Validation"),[spo]);
+  const checkRollup = useMemo(()=>L1_CHECKS.map((c)=>({name:c, col:c, counts:dimCounts(spo,c)})),[spo]);
+  const [active,setActive]=useState("");      // overall Validation filter: pass/warn/quar
+  const [check,setCheck]=useState(null);        // per-check filter: {col,status}
+  const failing = (r)=> L1_CHECKS.filter((c)=>{const k=statusKind(r[c]); return k==="warn"||k==="quar";});
+  const ql=(q||"").trim().toLowerCase();
+  const filtered = useMemo(()=> spo.filter((r)=>{
+    if(active && statusKind(r.Validation)!==active) return false;
+    if(check && statusKind(r[check.col])!==check.status) return false;
+    if(ql && !["Term","Subject","Predicate","Object"].some((c)=>String(r[c]||"").toLowerCase().indexOf(ql)>=0)) return false;
+    return true;
+  }), [spo,active,check,ql]);
+  const setOverall = (v)=>{ setActive(v); setCheck(null); };
+  const cols = [
+    {h:"Term", render:(r)=><TermLink name={r.Term}/>},
+    {h:"Triple", render:(r)=><span style={{fontFamily:FONT_MONO,fontSize:11.5}}><TermLink name={r.Subject}/> <span style={{color:C.muted,fontStyle:"italic"}}>{r.Predicate}</span> <TermLink name={r.Object} bold={false}/></span>},
+    {h:"Result", render:(r)=><Chip kind={statusKind(r.Validation)}>{r.Validation}</Chip>},
+    {h:"Flags", render:(r)=>{const fl=failing(r); return fl.length? <div style={{display:"flex",gap:4,flexWrap:"wrap",maxWidth:360}}>{fl.map((c,i)=><span key={i} title={c} style={{fontSize:10.5,fontWeight:700,color:KIND[statusKind(r[c])].c,background:KIND[statusKind(r[c])].bg,border:"1px solid "+KIND[statusKind(r[c])].ln,borderRadius:5,padding:"1px 7px"}}>{c}</span>)}</div> : <span style={{color:C.muted}}>{"\u2014"}</span>;}},
+    {h:"Suggested fix", render:(r)=><span style={{maxWidth:320,display:"inline-block",color:C.ink2}}>{r["Suggested Fix"]||""}</span>},
+  ];
+  return <div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+      <StatCard label="Statements" value={counts.total} onClick={()=>{setActive("");setCheck(null);}} selected={!active && !check}/>
+      <StatCard label="Pass" value={counts.pass} sub={pc(counts.pass,counts.total)+"%"} tone="pass" onClick={()=>setOverall(active==="pass"?"":"pass")} selected={active==="pass"}/>
+      <StatCard label="Pass + warn" value={counts.warn} sub={pc(counts.warn,counts.total)+"%"} tone="warn" onClick={()=>setOverall(active==="warn"?"":"warn")} selected={active==="warn"}/>
+      <StatCard label="Quarantine" value={counts.quar} sub={pc(counts.quar,counts.total)+"%"} tone="quar" onClick={()=>setOverall(active==="quar"?"":"quar")} selected={active==="quar"}/>
+      <StatCard label="Clean pass rate" value={pc(counts.pass,counts.total)+"%"} sub="PASS only"/>
+    </div>
+    <SectionTitle icon={I.Layers}>Rates by quality check</SectionTitle>
+    <div style={{background:"#fff",border:"1px solid "+C.line,borderRadius:12,padding:"10px 16px"}}>
+      {checkRollup.map((d,i)=><DimBar key={i} name={d.name} counts={d.counts} pickedStatus={check && check.col===d.col ? check.status : null}
+        onPick={(status)=>{ setActive(""); setCheck((cur)=> (cur && cur.col===d.col && cur.status===status) ? null : { col:d.col, status }); }}/>)}
+    </div>
+    <SectionTitle icon={I.Sheet}>Statements</SectionTitle>
+    {check && <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,background:KIND[check.status].bg,border:"1px solid "+KIND[check.status].ln,borderRadius:9,padding:"7px 13px"}}>
+      <span style={{fontSize:12.5,color:KIND[check.status].c,fontWeight:600}}>Filtered: <b>{check.col}</b> = <b>{check.status.toUpperCase()}</b> <span style={{color:C.muted,fontWeight:400}}>({filtered.length} of {counts.total})</span></span>
+      <button onClick={()=>setCheck(null)} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:KIND[check.status].c,fontWeight:700,fontSize:12.5}}>{"\u2715"} clear</button>
+    </div>}
+    <Filters stats={counts} active={active} setActive={setOverall} q={q} setQ={setQ}/>
+    <DataTable columns={cols} rows={filtered}/>
+  </div>;
+}
+
+function TermLevelView({terms, valCol, pctCol, pctLabel, dims, issueCol, actionCol, headline, q, setQ}){
+  const audited = useMemo(()=>terms.filter((t)=>String(t[valCol]||"").trim()),[terms,valCol]);
+  const counts = useMemo(()=>overallCounts(terms,valCol),[terms,valCol]);
+  const rollup = useMemo(()=>dims.map((d)=>({name:d.name, col:d.col, counts:dimCounts(terms,d.col)})),[terms,valCol]);
+  const avg = useMemo(()=>avgPct(terms,pctCol),[terms,pctCol]);
+  const [active,setActive]=useState("");      // overall validation filter
+  const [check,setCheck]=useState(null);        // per-dimension filter {col,status}
+  const ql=(q||"").trim().toLowerCase();
+  const textCols=["Term","Subject Area","Sub-Category",issueCol];
+  const filtered = useMemo(()=> audited.filter((r)=>{
+    if(active && statusKind(r[valCol])!==active) return false;
+    if(check && statusKind(r[check.col])!==check.status) return false;
+    if(ql && !textCols.some((c)=>String(r[c]||"").toLowerCase().indexOf(ql)>=0)) return false;
+    return true;
+  }), [audited,active,check,ql,valCol]);
+  const setOverall = (v)=>{ setActive(v); setCheck(null); };
+  const cols = [
+    {h:"Term", render:(r)=><TermLink name={r.Term}/>},
+    {h:"Type", render:(r)=><span style={{color:C.muted}}>{r["Term Type"]}</span>},
+    {h:"Result", render:(r)=><Chip kind={statusKind(r[valCol])}>{r[valCol]}</Chip>},
+    {h:pctLabel, render:(r)=>{const p=pctNum(r[pctCol]); return p==null?<span style={{color:C.muted}}>{"\u2014"}</span>:<span style={{fontFamily:FONT_MONO,fontSize:12}}>{p}%</span>;}},
+    {h:"Dimensions", render:(r)=><DimChips row={r} dims={dims}/>},
+    {h: issueCol.replace(/^L\d /,""), render:(r)=><span style={{maxWidth:360,display:"inline-block",color:C.ink2,fontSize:12}}>{r[issueCol]||""}</span>},
+  ];
+  if(actionCol) cols.push({h: actionCol.replace(/^L\d /,""), render:(r)=>{const v=r[actionCol]||""; const tone= /block/i.test(v)?"quar": /release/i.test(v)?"warn": /promote/i.test(v)?"pass":null; return v? <Chip kind={tone||"na"}>{v}</Chip> : <span style={{color:C.muted}}>{"\u2014"}</span>;}});
+  const dimLabel = check ? (dims.find((d)=>d.col===check.col)||{}).name || check.col.replace(/^L\d /,"") : "";
+  return <div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+      <StatCard label="Terms" value={counts.total} sub={terms.length>counts.total ? "of "+terms.length+" \u00b7 "+(terms.length-counts.total)+" not audited" : null} onClick={()=>{setActive("");setCheck(null);}} selected={!active && !check}/>
+      <StatCard label="Pass" value={counts.pass} sub={pc(counts.pass,counts.total)+"%"} tone="pass" onClick={()=>setOverall(active==="pass"?"":"pass")} selected={active==="pass"}/>
+      <StatCard label="Pass + warn" value={counts.warn} sub={pc(counts.warn,counts.total)+"%"} tone="warn" onClick={()=>setOverall(active==="warn"?"":"warn")} selected={active==="warn"}/>
+      <StatCard label="Quarantine" value={counts.quar} sub={pc(counts.quar,counts.total)+"%"} tone="quar" onClick={()=>setOverall(active==="quar"?"":"quar")} selected={active==="quar"}/>
+      {avg!=null && <StatCard label={"Avg "+pctLabel.toLowerCase()} value={avg+"%"} />}
+      {headline.map((h,i)=><StatCard key={i} label={h.label} value={h.value} tone={h.tone}/>)}
+    </div>
+    <SectionTitle icon={I.Layers}>Dimensions</SectionTitle>
+    <div style={{background:"#fff",border:"1px solid "+C.line,borderRadius:12,padding:"10px 16px"}}>
+      {rollup.map((d,i)=><DimBar key={i} name={d.name} counts={d.counts} pickedStatus={check && check.col===d.col ? check.status : null}
+        onPick={(status)=>{ setActive(""); setCheck((cur)=> (cur && cur.col===d.col && cur.status===status) ? null : { col:d.col, status }); }}/>)}
+    </div>
+    <SectionTitle icon={I.Sheet}>Terms</SectionTitle>
+    {check && <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,background:KIND[check.status].bg,border:"1px solid "+KIND[check.status].ln,borderRadius:9,padding:"7px 13px"}}>
+      <span style={{fontSize:12.5,color:KIND[check.status].c,fontWeight:600}}>Filtered: <b>{dimLabel}</b> = <b>{check.status.toUpperCase()}</b> <span style={{color:C.muted,fontWeight:400}}>({filtered.length} of {counts.total})</span></span>
+      <button onClick={()=>setCheck(null)} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:KIND[check.status].c,fontWeight:700,fontSize:12.5}}>{"\u2715"} clear</button>
+    </div>}
+    <Filters stats={counts} active={active} setActive={setOverall} q={q} setQ={setQ}/>
+    <DataTable columns={cols} rows={filtered}/>
+  </div>;
+}
+
+/* ---------------------------------------------------------------- import + app */
+function parseRemediationFromWB(wb){
+  const names = wb.SheetNames || [];
+  const find = (re) => names.find((n)=>re.test(n));
+  const rowsOf = (name) => { const ws = name && wb.Sheets[name]; return ws ? XLSX.utils.sheet_to_json(ws,{defval:""}) : []; };
+  const rewrites = rowsOf(find(/remediation.*rewrite/i)).filter((r)=>String(r.Target||r.Original||r.Proposed||"").trim());
+  const additions = rowsOf(find(/remediation.*addition/i)).filter((r)=>String(r["New Term"]||"").trim());
+  return { rewrites, additions };
+}
+function parseWorkbook(ab){
+  const wb = XLSX.read(ab,{type:"array"});
+  const rows = (name) => { const ws=wb.Sheets[name]; return ws? XLSX.utils.sheet_to_json(ws,{defval:""}) : []; };
+  const pairs = (name) => { const ws=wb.Sheets[name]; if(!ws) return []; return XLSX.utils.sheet_to_json(ws,{header:1,defval:""}).map((r)=>({label:String(r[0]||"").trim(),value:r[1],pct:r[2]})); };
+  const terms = rows("Glossary").filter((r)=>String(r.Term||"").trim());
+  const spo = rows("SPO").filter((r)=>String(r.Term||r.Subject||"").trim());
+  return {
+    terms, spo, sheetNames: wb.SheetNames,
+    summaries:{ L1:pairs("Level 1 Validation Summary"), L2:pairs("Level 2 Validation Summary"), L3:pairs("Level 3 Validation Summary"), L4:pairs("Level 4 Validation Summary") },
+    remediation: parseRemediationFromWB(wb),
+    l0: parseL0FromWB(wb),
+  };
+}
+function hasRemediation(d){ return !!(d && d.remediation && ((d.remediation.rewrites||[]).length || (d.remediation.additions||[]).length)); }
+const L0_DIMS = [
+  {key:"Audit Q6 Facet", label:"Q6 Facet Resolution", ab:"Q6"},
+  {key:"Audit Class/Type/Level", label:"Class/Type/Level Conformity", ab:"CTL"},
+  {key:"Audit Abstraction", label:"Abstraction Level", ab:"AB"},
+  {key:"Audit Sense", label:"Sense Disambiguation", ab:"SN"},
+  {key:"Audit Edge/Node", label:"Edge-vs-Node Isolation", ab:"ED"},
+  {key:"Audit Acronym/N-Gram", label:"Acronym / N-Gram Mapping", ab:"AN"},
+];
+const L0_VERDICT = "Audit Verdict";
+// Per-dimension severity, matching the skill's own code→severity rules.
+// QUAR codes are always quarantine; the three "missing field" codes are status-aware
+// (Active = QUARANTINE, otherwise WARN); everything else flagged is WARN.
+const L0_QUAR_CODES = ["Q6-BAD-CLASS","TYPE-INVALID","LEVEL-INVALID","ACRONYM-ORPHAN"];
+const L0_MISS_CODES = ["Q6-NO-CLASS","TYPE-BLANK","LEVEL-BLANK"];
+function l0DimKind(cell, status){
+  const v = String(cell==null?"":cell).trim();
+  if(!v || v==="\u2014") return "na";
+  if(v==="\u2713") return "pass";
+  const active = String(status||"").trim().toLowerCase()==="active";
+  let sev = "warn";
+  v.split(/;\s*/).forEach((c)=>{ const code=c.trim(); if(L0_QUAR_CODES.indexOf(code)>=0 || (L0_MISS_CODES.indexOf(code)>=0 && active)) sev="quar"; });
+  return sev;
+}
+function l0DimCounts(rows, col){ const o={pass:0,warn:0,quar:0,na:0}; (rows||[]).forEach((r)=>{ o[l0DimKind(r[col], r.st)]++; }); return o; }
+/* Read the Level-0 audit that the semantium-inventory-auditor skill writes back into the inventory workbook. */
+function parseL0FromWB(wb){
+  const names = wb.SheetNames||[];
+  // locate the inventory sheet by its canonical header
+  let invName=null;
+  for(const n of names){ const ws=wb.Sheets[n]; if(!ws) continue; const h=(XLSX.utils.sheet_to_json(ws,{header:1,defval:""})[0]||[]).map((x)=>String(x).trim()); if(h.indexOf("String / Label")>=0){ invName=n; break; } }
+  const sumName = names.find((n)=>/^audit summary$/i.test(n));
+  if(!invName && !sumName) return null;
+  let rows = invName ? XLSX.utils.sheet_to_json(wb.Sheets[invName],{defval:""}).filter((r)=>String(r["String / Label"]||"").trim()) : [];
+  const audited = rows.filter((r)=>String(r[L0_VERDICT]||"").trim());
+  if(!sumName && !audited.length) return null;   // an inventory that hasn't been audited yet
+  // keep only the fields the dashboard needs (small session footprint)
+  const slim = audited.map((r)=>{ const o={ s:r["String / Label"], id:r["Lexical Object ID"]||"", v:String(r[L0_VERDICT]||""), st:r["Status"]||"", notes:r["Audit Notes"]||"" }; L0_DIMS.forEach((d)=>{ o[d.key]=String(r[d.key]==null?"":r[d.key]); }); return o; });
+  let score=null, band="", runTs="", nAssessed=null, checks=[], verdicts={PASS:0,WARN:0,QUARANTINE:0}, queue=null;
+  if(sumName){
+    const A = XLSX.utils.sheet_to_json(wb.Sheets[sumName],{header:1,defval:""});
+    const at=(r,c)=>{ const row=A[r]||[]; return row[c]; };
+    runTs = String(at(1,0)||"");
+    const m = runTs.match(/(\d+)\s*rows assessed/i); if(m) nAssessed=Number(m[1]);
+    for(let i=0;i<A.length;i++){ const a=String((A[i]||[])[0]||""); if(/inventory health score/i.test(a)){ score=parseFloat(String((A[i]||[])[1]).replace(/[^0-9.\-]/g,"")); band=String((A[i]||[])[2]||"").trim(); break; } }
+    let h=-1; for(let i=0;i<A.length;i++){ if(/^check$/i.test(String((A[i]||[])[0]||""))){ h=i; break; } }
+    if(h>=0){ for(let i=h+1;i<A.length;i++){ const r=A[i]||[]; const nm=String(r[0]||"").trim(); if(!nm) break; checks.push({name:nm, rate:parseFloat(String(r[1]).replace(/[^0-9.\-]/g,"")), flagged:Number(r[2])||0, weight:String(r[3]||"")}); } }
+    for(let i=0;i<A.length;i++){ if(/^row verdicts$/i.test(String((A[i]||[])[0]||""))){ for(let j=i+1;j<Math.min(i+6,A.length);j++){ const r=A[j]||[]; const k=String(r[0]||"").trim().toUpperCase(); if(k==="PASS"||k==="WARN"||k==="QUARANTINE") verdicts[k]=Number(r[1])||0; } break; } }
+    for(let i=0;i<A.length;i++){ if(/judgment queue/i.test(String((A[i]||[])[0]||""))){ queue=Number((A[i]||[])[1])||0; break; } }
+  }
+  if((verdicts.PASS+verdicts.WARN+verdicts.QUARANTINE)===0){ slim.forEach((r)=>{ const k=String(r.v).trim().toUpperCase(); if(k in verdicts) verdicts[k]++; }); }
+  if(queue==null){ queue = slim.filter((r)=>{ const s=String(r["Audit Sense"]||""), e=String(r["Audit Edge/Node"]||""); const flagged=(x)=>x && x!=="\u2713" && x!=="\u2014"; return flagged(s)||flagged(e); }).length; }
+  if(nAssessed==null) nAssessed = slim.length;
+  const logName = names.find((n)=>/^audit log$/i.test(n));
+  const log = logName ? XLSX.utils.sheet_to_json(wb.Sheets[logName],{defval:""}) : [];
+  return { score, band, runTs, nAssessed, checks, verdicts, queue, rows:slim, log };
+}
+function hasL0(d){ return !!(d && d.l0 && ((d.l0.rows&&d.l0.rows.length) || (d.l0.checks&&d.l0.checks.length))); }
+function hasLevel(data, level){
+  if(!data) return false;
+  if(level==="L1") return data.spo.some((r)=>String(r.Validation||"").trim());
+  const col = level+" Validation";
+  return data.terms.some((r)=>String(r[col]||"").trim());
+}
+
+function ImportPanel({onLoad, error}){
+  const ref = useRef(null);
+  return <div style={{maxWidth:640,margin:"60px auto",textAlign:"center"}}>
+    <div style={{display:"inline-flex",width:54,height:54,borderRadius:13,background:C.teal,alignItems:"center",justifyContent:"center",boxShadow:"0 2px 0 "+C.tealDeep}}>
+      <I.Layers size={28} color="#fff"/>
+    </div>
+    <h1 style={{fontFamily:FONT_DISP,fontWeight:600,fontSize:30,margin:"18px 0 6px"}}>Validation Cockpit</h1>
+    <p style={{color:C.ink2,fontSize:15,lineHeight:1.55,maxWidth:520,margin:"0 auto 22px"}}>
+      Load a <b>validated glossary workbook</b> &mdash; the one your Level&nbsp;1&ndash;4 skills extended with quality columns
+      (L1 on the SPO sheet, L2&ndash;L4 on the Glossary sheet). The cockpit reads it and shows where the glossary passes,
+      warns, and quarantines, level by level.
+    </p>
+    <p style={{color:C.muted,fontSize:13,lineHeight:1.5,maxWidth:520,margin:"-10px auto 22px"}}>
+      The Level&nbsp;0 <b>Lexical Inventory</b> is a <i>separate</i> workbook (all the lexical objects, audited by semantium-inventory-auditor). Load it with <b>Load Level 0</b> to overlay it on the glossary &mdash; or drop either workbook (or a Remediation Instructions workbook) here directly.
+    </p>
+    <button onClick={()=>ref.current&&ref.current.click()} style={{display:"inline-flex",alignItems:"center",gap:9,background:C.teal,color:"#fff",border:"none",borderRadius:11,padding:"12px 22px",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:FONT_UI,boxShadow:"0 2px 0 "+C.tealDeep}}>
+      <I.Upload size={18} color="#fff"/> Load validated workbook (.xlsx)
+    </button>
+    <input ref={ref} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={(e)=>{const f=e.target.files&&e.target.files[0]; if(f) onLoad(f); e.target.value="";}}/>
+    {error && <div style={{marginTop:18,color:C.red,background:C.redSoft,border:"1px solid "+C.redLine,borderRadius:10,padding:"10px 14px",fontSize:13,maxWidth:520,marginLeft:"auto",marginRight:"auto"}}>{error}</div>}
+    <div style={{marginTop:26,fontSize:11.5,color:C.muted}}>L5 (Enterprise Health Report) lands in a later build. v{APP_VERSION}</div>
+  </div>;
+}
+
+function renderTriple(s){
+  if(!s) return null;
+  return String(s).split(/(\[[^\]]+\])/g).filter((x)=>x!=="").map((p,i)=>{ const m=p.match(/^\[(.+)\]$/); return m ? <TermLink key={i} name={m[1]} bold={false}/> : <span key={i} style={{color:C.muted}}>{p}</span>; });
+}
+function StatusPicker({value, onChange}){
+  const opts=[["pending","Pending",C.muted],["resolved","Resolved",C.green],["dismissed","Dismissed",C.red]];
+  return <div style={{display:"inline-flex",border:"1px solid "+C.line,borderRadius:8,overflow:"hidden"}}>
+    {opts.map(([k,lab,col],i)=>{ const on=(value||"pending")===k; return <button key={k} onClick={()=>onChange(k)} style={{border:"none",borderLeft:i?"1px solid "+C.line:"none",background:on?col:"#fff",color:on?"#fff":C.ink2,padding:"4px 11px",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:FONT_UI}}>{lab}</button>; })}
+  </div>;
+}
+function RemediationView({rem, q, setQ}){
+  const [tab,setTab]=useState((rem.rewrites||[]).length ? "rewrites" : "additions");
+  const [sfilter,setSfilter]=useState("");        // status filter: ""|pending|resolved|dismissed
+  const [lfilter,setLfilter]=useState("");        // level filter: ""|"Level 1"|...
+  const [status,setStatus]=useState(()=>loadRemStatus());
+  const keyOf = (type,r)=> type+"|"+[r.Level,r["Quality Check"],r.Target||r["New Term"],r.Original||r["Genus SPO"]].join("|");
+  const setOne = (type,r,v)=>{ const k=keyOf(type,r); setStatus((m)=>{ const n={...m}; if(v==="pending") delete n[k]; else n[k]=v; saveRemStatus(n); return n; }); };
+  const st = (type,r)=> status[keyOf(type,r)] || "pending";
+  const exportDecisions = (acceptedOnly) => {
+    try {
+      const wb = XLSX.utils.book_new();
+      const stamp = (type, arr) => (arr||[]).map((r)=>({ ...r, "Steward Status": st(type,r) })).filter((r)=> acceptedOnly ? r["Steward Status"]==="resolved" : true);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stamp("rewrites", rem.rewrites)), "Remediation \u2014 Rewrites");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stamp("additions", rem.additions)), "Remediation \u2014 Additions");
+      XLSX.writeFile(wb, acceptedOnly ? "Remediation_Accepted.xlsx" : "Remediation_Decisions.xlsx");
+    } catch(e){}
+  };
+
+  const rows = tab==="rewrites" ? (rem.rewrites||[]) : (rem.additions||[]);
+  const ql=(q||"").trim().toLowerCase();
+  const textOf = (type,r)=> type==="rewrites"
+    ? [r.Target,r.Original,r.Proposed,r.Note,r["Quality Check"]].join(" ")
+    : [r["New Term"],r["Genus SPO"],r["Purpose SPO"],r.Note,r["Quality Check"]].join(" ");
+  const levelsPresent = useMemo(()=>{
+    const s=new Set();
+    [...(rem.rewrites||[]),...(rem.additions||[])].forEach((r)=>{ const L=String(r.Level||"").trim(); if(L) s.add(L); });
+    return [...s].sort((a,b)=>{ const na=parseInt(a.replace(/\D+/g,""),10), nb=parseInt(b.replace(/\D+/g,""),10); if(!isNaN(na)&&!isNaN(nb)&&na!==nb) return na-nb; return a.localeCompare(b); });
+  },[rem]);
+  const inLevel = (r)=> !lfilter || String(r.Level||"").trim()===lfilter;
+  const filtered = rows.filter((r)=>{
+    if(!inLevel(r)) return false;
+    if(sfilter && st(tab,r)!==sfilter) return false;
+    if(ql && textOf(tab,r).toLowerCase().indexOf(ql)<0) return false;
+    return true;
+  });
+  // summary scoped to the active level filter
+  const rwLvl=(rem.rewrites||[]).filter(inLevel), adLvl=(rem.additions||[]).filter(inLevel);
+  let total=0,resolved=0,dismissed=0,pending=0;
+  [["rewrites",rwLvl],["additions",adLvl]].forEach(([t,arr])=>arr.forEach((r)=>{ total++; const s=st(t,r); if(s==="resolved")resolved++; else if(s==="dismissed")dismissed++; else pending++; }));
+  const tabCount = (t)=> (t==="rewrites"?(rem.rewrites||[]):(rem.additions||[])).filter(inLevel).length;
+  const statusCount = (s)=> rows.filter((r)=> inLevel(r) && (s===""?true:st(tab,r)===s)).length;
+  const levelCount = (L)=> rows.filter((r)=> L===""?true:String(r.Level||"").trim()===L).length;
+
+  const verdictChip = (v)=> v ? <Chip kind={statusKind(v)}>{v}</Chip> : null;
+  const checkChip = (c)=> c ? <span style={{fontSize:10.5,fontWeight:700,color:C.tealDeep,background:C.tealSoft,border:"1px solid #cfe3de",borderRadius:6,padding:"2px 8px"}}>{c}</span> : null;
+  const statusTab = (k,lab)=>{ const on=sfilter===k; return <button onClick={()=>setSfilter(on?"":k)} style={{border:"1px solid "+(on?C.teal:C.line),background:on?C.tealSoft:"#fff",color:on?C.tealDeep:C.ink2,borderRadius:999,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:FONT_UI}}>{lab} <span style={{fontFamily:FONT_MONO,opacity:.8}}>{statusCount(k)}</span></button>; };
+  const levelChip = (k,lab)=>{ const on=lfilter===k; return <button key={lab} onClick={()=>setLfilter(on?"":k)} style={{border:"1px solid "+(on?C.amber:C.line),background:on?C.amberSoft:"#fff",color:on?C.amber:C.ink2,borderRadius:999,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:FONT_UI}}>{lab} <span style={{fontFamily:FONT_MONO,opacity:.8}}>{levelCount(k)}</span></button>; };
+
+  return <div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+      <StatCard label="Rewrites" value={rwLvl.length}/>
+      <StatCard label="Additions" value={adLvl.length}/>
+      <StatCard label="Resolved" value={resolved} sub={pc(resolved,total)+"% of "+total} tone="pass"/>
+      <StatCard label="Dismissed" value={dismissed} tone="quar"/>
+      <StatCard label="Pending" value={pending} tone="warn"/>
+    </div>
+
+    <SectionTitle icon={I.Clipboard} right={<span style={{display:"inline-flex",gap:8,alignItems:"center"}}>
+      <button onClick={()=>exportDecisions(true)} title="Download only the suggestions you marked Resolved \u2014 ready to apply to the glossary" style={{display:"inline-flex",alignItems:"center",gap:6,background:C.teal,color:"#fff",border:"none",borderRadius:8,padding:"5px 11px",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:FONT_UI}}><I.Download size={13} color="#fff"/> Export accepted</button>
+      <button onClick={()=>exportDecisions(false)} title="Download all suggestions with your Pending / Resolved / Dismissed decisions" style={{display:"inline-flex",alignItems:"center",gap:6,background:"#fff",color:C.ink2,border:"1px solid "+C.line,borderRadius:8,padding:"5px 11px",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:FONT_UI}}><I.Download size={13} color={C.ink2}/> Export all</button>
+    </span>}>Steward worklist</SectionTitle>
+
+    <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+      {["rewrites","additions"].map((t)=>{ const on=tab===t; return <button key={t} onClick={()=>setTab(t)} style={{border:"1px solid "+(on?C.teal:C.line),background:on?C.tealSoft:"#fff",color:on?C.tealDeep:C.ink,borderRadius:9,padding:"7px 14px",cursor:"pointer",fontSize:13,fontWeight:800,fontFamily:FONT_UI}}>{t==="rewrites"?"Rewrites":"Additions"} <span style={{fontFamily:FONT_MONO,fontWeight:600,opacity:.8}}>{tabCount(t)}</span></button>; })}
+      <span style={{width:1,height:22,background:C.line,margin:"0 4px"}}></span>
+      {statusTab("","All")}{statusTab("pending","Pending")}{statusTab("resolved","Resolved")}{statusTab("dismissed","Dismissed")}
+      {levelsPresent.length>1 && <span style={{width:1,height:22,background:C.line,margin:"0 4px"}}></span>}
+      {levelsPresent.length>1 && <span style={{fontSize:11.5,color:C.muted,fontWeight:700}}>Level:</span>}
+      {levelsPresent.length>1 && levelChip("","All")}
+      {levelsPresent.length>1 && levelsPresent.map((L)=>levelChip(L,L))}
+      <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:7,border:"1px solid "+C.line,background:"#fff",borderRadius:999,padding:"5px 12px"}}>
+        <I.Search size={14} color={C.muted}/><input value={q} onChange={(e)=>setQ(e.target.value)} placeholder={"Search\u2026"} style={{border:"none",outline:"none",background:"transparent",fontSize:13,fontFamily:FONT_UI,width:180,color:C.ink}}/>
+      </div>
+    </div>
+
+    {filtered.length===0 && <div style={{padding:"26px 0",textAlign:"center",color:C.muted,fontStyle:"italic"}}>No suggestions match.</div>}
+
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {filtered.map((r,i)=>{ const cur=st(tab,r); const done=cur!=="pending";
+        return <div key={i} style={{border:"1px solid "+C.line,borderLeft:"3px solid "+(cur==="resolved"?C.green:cur==="dismissed"?C.red:C.amber),borderRadius:12,background:"#fff",padding:"13px 16px",opacity:cur==="dismissed"?0.65:1}}>
+          {tab==="rewrites" ? <div>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:8}}>
+              <span style={{fontWeight:700,fontFamily:FONT_DISP,fontSize:16}}><TermLink name={r.Target}/></span>
+              {checkChip(r["Quality Check"])}
+              <span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:6,fontSize:11.5,color:C.muted}}>becomes {verdictChip(r["New Verdict"])}</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr",gap:6,fontFamily:FONT_MONO,fontSize:12.5}}>
+              <div style={{background:C.redSoft,border:"1px solid "+C.redLine,borderRadius:8,padding:"7px 11px"}}><span style={{fontSize:10,fontWeight:800,color:C.red,marginRight:8}}>NOW</span>{renderTriple(r.Original)}</div>
+              <div style={{background:C.greenSoft,border:"1px solid "+C.greenLine,borderRadius:8,padding:"7px 11px"}}><span style={{fontSize:10,fontWeight:800,color:C.green,marginRight:8}}>REWRITE</span>{renderTriple(r.Proposed)}</div>
+            </div>
+            {String(r.Residual||"").trim() && r.Residual!=="\u2014" && <div style={{marginTop:7,fontSize:11.5}}><span style={{color:C.amber,fontWeight:700}}>Residual:</span> <span style={{color:C.ink2}}>{r.Residual}</span></div>}
+            {String(r.Note||"").trim() && r.Note!=="\u2014" && <div style={{marginTop:5,fontSize:12,color:C.muted,fontStyle:"italic"}}>{r.Note}</div>}
+          </div> : <div>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:8}}>
+              <span style={{fontSize:10.5,fontWeight:800,color:C.muted,textTransform:"uppercase",letterSpacing:.5}}>Add term</span>
+              <span style={{fontWeight:700,fontFamily:FONT_DISP,fontSize:16}}>{r["New Term"]}</span>
+              {checkChip(r["Quality Check"])}
+              {r.Trigger && <span style={{fontSize:11,color:C.muted}}>trigger: {r.Trigger}</span>}
+              <span style={{marginLeft:"auto"}}>{verdictChip(r.Verdict)}</span>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:5,fontFamily:FONT_MONO,fontSize:12.5,color:C.ink2}}>
+              <div>{renderTriple(r["Genus SPO"])}</div>
+              <div>{renderTriple(r["Purpose SPO"])}</div>
+            </div>
+            {String(r.Note||"").trim() && r.Note!=="\u2014" && <div style={{marginTop:6,fontSize:12,color:C.muted,fontStyle:"italic"}}>{r.Note}</div>}
+          </div>}
+          <div style={{display:"flex",alignItems:"center",gap:12,marginTop:11,paddingTop:10,borderTop:"1px solid "+C.lineSoft}}>
+            <a href={wbTermLink(tab==="rewrites" ? r.Target : (r["Genus (is a)"]||r["New Term"]))} target="_blank" rel="noreferrer" style={{fontSize:12,fontWeight:700,color:C.teal,textDecoration:"none",borderBottom:"1px solid "+C.teal}}>{tab==="rewrites"?"Open in Workbench":"Open genus in Workbench"}</a>
+            <span style={{marginLeft:"auto"}}><StatusPicker value={cur} onChange={(v)=>setOne(tab,r,v)}/></span>
+          </div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+function L0View({l0, q, setQ}){
+  const [pickV,setPickV]=useState("");          // overall verdict filter: PASS/WARN/QUARANTINE
+  const [check,setCheck]=useState(null);         // per-check filter: {col,status}
+  const checkRollup = (L0_DIMS||[]).map((d)=>({ name:d.label, col:d.key, counts: l0DimCounts(l0.rows||[], d.key) }));
+  const rows = (l0.rows||[]).filter((r)=>{
+    if(pickV && String(r.v).trim().toUpperCase()!==pickV) return false;
+    if(check && l0DimKind(r[check.col], r.st)!==check.status) return false;
+    const needle=(q||"").trim().toLowerCase();
+    if(needle && !(String(r.s||"").toLowerCase().indexOf(needle)>=0 || String(r.id||"").toLowerCase().indexOf(needle)>=0)) return false;
+    return true;
+  });
+  const bandTone = l0.band==="PASS"?"pass": l0.band==="QUARANTINE"?"quar":"warn";
+  const rateColor = (rate)=> rate==null?C.muted: rate>=90?C.green: rate>=70?C.amber: C.red;
+  const setVerdict = (v)=>{ setCheck(null); setPickV(v); };
+  const sq=(v,st)=>{ const kind=l0DimKind(v,st); const k=KIND[kind]||KIND.na; const glyph= kind==="na"?"\u2014": kind==="pass"?"\u2713":"!";
+    return <span title={kind==="na"?"\u2014":(kind==="pass"?"clean":String(v))} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:26,height:18,borderRadius:5,background:k.bg,color:k.c,border:"1px solid "+k.ln,fontSize:10,fontWeight:800,fontFamily:FONT_MONO}}>{glyph}</span>; };
+  const filtered = pickV||check;
+  return <div>
+    {/* headline */}
+    <div style={{display:"flex",alignItems:"center",gap:18,flexWrap:"wrap",margin:"6px 0 4px"}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:10}}>
+        <span style={{fontFamily:FONT_DISP,fontSize:44,fontWeight:600,lineHeight:1,color:rateColor(l0.score)}}>{l0.score==null?"\u2014":l0.score}</span>
+        <span style={{fontSize:13,color:C.muted}}>Inventory Health Score</span>
+        {l0.band && <Chip kind={bandTone}>{l0.band}</Chip>}
+      </div>
+      <div style={{fontSize:12,color:C.muted,fontFamily:FONT_MONO}}>{l0.nAssessed!=null?l0.nAssessed+" assessed":""}{l0.runTs?"  \u00b7  "+l0.runTs.replace(/^Run\s*/,""):""}</div>
+    </div>
+    <div style={{fontSize:11.5,color:C.muted,margin:"0 0 14px"}}>Read from the <b>semantium-inventory-auditor</b> output (Audit Summary + per-row audit columns). Deprecated rows are excluded by the skill.</div>
+
+    {/* verdict stat cards */}
+    <div style={{display:"flex",gap:11,flexWrap:"wrap",marginBottom:6}}>
+      <StatCard label="Health" value={(l0.score==null?"\u2014":l0.score)} sub={l0.band||""} tone={bandTone}/>
+      <StatCard label="PASS rows" value={l0.verdicts.PASS} tone="pass" onClick={()=>setVerdict(pickV==="PASS"?"":"PASS")} selected={pickV==="PASS"}/>
+      <StatCard label="WARN rows" value={l0.verdicts.WARN} tone="warn" onClick={()=>setVerdict(pickV==="WARN"?"":"WARN")} selected={pickV==="WARN"}/>
+      <StatCard label="QUARANTINE rows" value={l0.verdicts.QUARANTINE} tone="quar" onClick={()=>setVerdict(pickV==="QUARANTINE"?"":"QUARANTINE")} selected={pickV==="QUARANTINE"}/>
+      <StatCard label="Judgment queue" value={l0.queue==null?"\u2014":l0.queue} sub="Sense / Edge to adjudicate"/>
+    </div>
+
+    {/* six checks — identical DimBar pattern to L1 (stacked bar + clickable pass/warn/quar) */}
+    <SectionTitle icon={I.Layers}>Six Semantium checks</SectionTitle>
+    <div style={{background:"#fff",border:"1px solid "+C.line,borderRadius:12,padding:"10px 16px"}}>
+      {checkRollup.map((d,i)=><DimBar key={i} name={d.name} counts={d.counts} pickedStatus={check && check.col===d.col ? check.status : null}
+        onPick={(status)=>{ setPickV(""); setCheck((cur)=> (cur && cur.col===d.col && cur.status===status) ? null : { col:d.col, status }); }}/>)}
+    </div>
+
+    {/* rows */}
+    <SectionTitle icon={I.Layers} right={
+      <div style={{display:"inline-flex",alignItems:"center",gap:8,border:"1px solid "+C.line,borderRadius:9,padding:"5px 11px",background:"#fff"}}>
+        <I.Search size={14} color={C.muted}/>
+        <input value={q} onChange={(e)=>setQ(e.target.value)} placeholder={"Search string or LEX ID\u2026"} style={{border:"none",outline:"none",background:"transparent",fontSize:13,fontFamily:FONT_UI,width:200,color:C.ink}}/>
+      </div>
+    }>Lexical objects</SectionTitle>
+    {filtered && <div style={{display:"flex",alignItems:"center",gap:10,margin:"0 0 10px",background:C.tealSoft,border:"1px solid #cfe3de",borderRadius:9,padding:"7px 13px",fontSize:12.5,color:C.tealDeep}}>
+      Filtered{pickV?" · verdict "+pickV:""}{check?" · "+(L0_DIMS.find((d)=>d.key===check.col)||{}).label+" = "+check.status.toUpperCase():""} <span style={{color:C.muted}}>({rows.length})</span>
+      <button onClick={()=>{setPickV("");setCheck(null);}} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:C.tealDeep,fontWeight:700,fontSize:12.5}}>Clear</button>
+    </div>}
+    <div style={{border:"1px solid "+C.line,borderRadius:12,overflow:"auto",background:"#fff",maxHeight:"58vh"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontFamily:FONT_UI}}>
+        <thead><tr>{["String","LEX ID","Verdict",...L0_DIMS.map((d)=>d.ab),"Notes"].map((h,i)=>
+          <th key={i} title={L0_DIMS[i-3]?L0_DIMS[i-3].label:""} style={{position:"sticky",top:0,background:"#f1ece0",padding:"9px 11px",textAlign:"left",borderBottom:"1px solid "+C.line,fontWeight:800,fontSize:10.5,letterSpacing:0.5,textTransform:"uppercase",color:C.muted,whiteSpace:"nowrap"}}>{h}</th>)}
+        </tr></thead>
+        <tbody>
+          {rows.slice(0,400).map((r,i)=>(
+            <tr key={i} style={{borderTop:"1px solid "+C.lineSoft}}>
+              <td style={{padding:"6px 11px",fontWeight:600,color:C.ink,minWidth:170}}><LexLink string={r.s} lexId={r.id}/></td>
+              <td style={{padding:"6px 11px",fontFamily:FONT_MONO,fontSize:10.5,color:C.muted}}>{r.id}</td>
+              <td style={{padding:"6px 11px"}}><Chip kind={statusKind(r.v)} small>{String(r.v||"\u2014").toUpperCase()}</Chip></td>
+              {L0_DIMS.map((d)=><td key={d.key} style={{padding:"6px 4px",textAlign:"center"}}>{sq(r[d.key], r.st)}</td>)}
+              <td style={{padding:"6px 11px",fontSize:11.5,color:C.ink2,maxWidth:280}}>{r.notes}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    {rows.length>400 && <div style={{fontSize:11.5,color:C.muted,marginTop:8}}>Showing first 400 of {rows.length} \u2014 narrow with a verdict, a check, or search.</div>}
+
+    {/* trend */}
+    {l0.log && l0.log.length>0 && <>
+      <SectionTitle icon={I.Layers}>Audit trend</SectionTitle>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {l0.log.slice(-8).map((e,i)=>{ const sc=parseFloat(String(e.Score!=null?e.Score:e["Inventory Health Score"]).replace(/[^0-9.\-]/g,"")); const bd=String(e.Band||e.band||"").trim(); const tone= bd==="PASS"?"pass": bd==="QUARANTINE"?"quar":"warn";
+          return <div key={i} style={{border:"1px solid "+C.line,borderRadius:9,padding:"7px 11px",background:"#fff",minWidth:90}}>
+            <div style={{fontFamily:FONT_DISP,fontSize:18,fontWeight:600,color:rateColor(sc)}}>{isNaN(sc)?"\u2014":sc}</div>
+            <div style={{fontSize:10,color:C.muted,fontFamily:FONT_MONO}}>{String(e["Run Date"]||e.Date||e.Timestamp||e.Run||"").slice(0,16)}</div>
+            {bd&&<div style={{marginTop:3}}><Chip kind={tone} small>{bd}</Chip></div>}
+          </div>; })}
+      </div>
+    </>}
+  </div>;
+}
+function App(){
+  const incoming = useMemo(()=>readIncoming(),[]);
+  const saved = useMemo(()=>loadSession(),[]);
+  const [data,setData]=useState(saved? saved.data : null);
+  const [fileName,setFileName]=useState(saved? saved.fileName : "");
+  const [error,setError]=useState("");
+  const [level,setLevel]=useState(()=>{
+    if(saved){ if(incoming.level && hasLevel(saved.data,incoming.level)) return incoming.level; if(saved.level==="L0") return "L0"; if(saved.level && (hasLevel(saved.data,saved.level) || (saved.level==="REM" && hasRemediation(saved.data)))) return saved.level; return firstPresentLevel(saved.data); }
+    return "L1";
+  });
+  const [q,setQ]=useState(incoming.term||"");
+  const [focus,setFocus]=useState(incoming.term||"");
+  const [restored]=useState(!!(saved && !incoming.term));
+
+  // keep the active level (small write) in sync across reloads
+  useEffect(()=>{ if(data){ try { localStorage.setItem(LEVEL_KEY, level); } catch(e){} } },[level,data]);
+
+  // restore the Level-0 inventory from IndexedDB on boot (durable, no localStorage quota limit)
+  useEffect(()=>{
+    let alive=true;
+    idbGet(L0_IDB_KEY).then(function(l0){
+      if(!alive || !l0) return;
+      setData(function(d){ var base = d || { terms:[], spo:[], summaries:{}, sheetNames:[], remediation:{rewrites:[],additions:[]} }; return base.l0 ? base : Object.assign({}, base, { l0:l0 }); });
+      var hadGlossary = !!(saved && saved.data && (saved.data.terms.length || saved.data.spo.length || hasRemediation(saved.data)));
+      if(!hadGlossary) setLevel(function(lv){ return lv==="L1" ? "L0" : lv; });
+    }).catch(function(){});
+    return function(){ alive=false; };
+  }, []);
+  // persist the Level-0 inventory to IndexedDB whenever it changes (migrates any legacy localStorage copy too)
+  useEffect(()=>{ if(data && data.l0){ idbSet(L0_IDB_KEY, data.l0).catch(function(){}); } }, [data && data.l0]);
+
+  const reloadRef = useRef(null);
+  const remRef = useRef(null);
+  const invRef = useRef(null);
+  const load = (file) => {
+    setError("");
+    const rd = new FileReader();
+    rd.onload = () => { try {
+      const parsed = parseWorkbook(rd.result);
+      if(!parsed.terms.length && !parsed.spo.length && !hasRemediation(parsed) && !hasL0(parsed)){ setError("No Glossary, SPO, Remediation, or audited Lexical Inventory sheet found in that workbook."); return; }
+      if(!hasRemediation(parsed) && hasRemediation(data)) parsed.remediation = data.remediation; // keep an imported remediation overlay across a glossary reload
+      if(!hasL0(parsed) && hasL0(data)) parsed.l0 = data.l0;                                     // keep the Level-0 inventory overlay across a glossary reload
+      setData(parsed); setFileName(file.name);
+      if(!saveSession(parsed, file.name)) setError("Loaded, but the session is too large to remember on reload \u2014 you may need to re-import next time.");
+      const wanted = (incoming.level && hasLevel(parsed,incoming.level)) ? incoming.level
+                   : (level && (hasLevel(parsed, level) || (level==="REM" && hasRemediation(parsed)))) ? level
+                   : firstPresentLevel(parsed);
+      setLevel(wanted);
+    } catch(err){ setError("Could not read that file: "+(err&&err.message||err)); } };
+    rd.onerror = () => setError("Could not read that file.");
+    rd.readAsArrayBuffer(file);
+  };
+  const loadInventory = (file) => {
+    setError("");
+    const rd = new FileReader();
+    rd.onload = () => { try {
+      const wb = XLSX.read(rd.result,{type:"array"});
+      const l0 = parseL0FromWB(wb);
+      if(!l0){ setError("No audited Lexical Inventory found (expected an 'Inventory' sheet with an 'Audit Verdict' column, or an 'Audit Summary' sheet \u2014 run semantium-inventory-auditor first)."); return; }
+      const base = data || { terms:[], spo:[], summaries:{}, sheetNames:[], remediation:{rewrites:[],additions:[]} };
+      const next = { ...base, l0 };
+      setData(next); if(!fileName) setFileName(file.name);
+      if(!saveSession(next, fileName || file.name)) setError("Level 0 loaded, but the combined session is too large to remember on reload \u2014 you may need to re-import next time.");
+      setLevel("L0");
+    } catch(err){ setError("Could not read that file: "+(err&&err.message||err)); } };
+    rd.onerror = () => setError("Could not read that file.");
+    rd.readAsArrayBuffer(file);
+  };
+  const loadRemediation = (file) => {
+    setError("");
+    const rd = new FileReader();
+    rd.onload = () => { try {
+      const wb = XLSX.read(rd.result,{type:"array"});
+      const rem = parseRemediationFromWB(wb);
+      if(!rem.rewrites.length && !rem.additions.length){ setError("No remediation sheets found (expected 'Remediation \u2014 Rewrites' / 'Remediation \u2014 Additions')."); return; }
+      const base = data || { terms:[], spo:[], summaries:{}, sheetNames:[] };
+      const next = { ...base, remediation: rem };
+      setData(next); if(!fileName) setFileName(file.name);
+      saveSession(next, fileName || file.name);
+      setLevel("REM");
+    } catch(err){ setError("Could not read that file: "+(err&&err.message||err)); } };
+    rd.onerror = () => setError("Could not read that file.");
+    rd.readAsArrayBuffer(file);
+  };
+  const removeWorkbook = () => {
+    if(window.confirm("Remove the loaded workbook from the cockpit? Your Excel file is untouched \u2014 you can re-import it anytime.")){
+      clearSession(); setData(null); setFileName(""); setFocus(""); setQ(""); setError("");
+    }
+  };
+  const editWb = () => { const cur=workbenchUrl(); const v=window.prompt("Glossary Workbench URL (used by the term links):", cur); if(v!=null){ setWorkbenchUrl(v); } };
+
+  if(!data) return <ImportPanel onLoad={load} error={error}/>;
+
+  const levels = [
+    {id:"L0", name:"Level 0", sub:"Lexical inventory"},
+    {id:"L1", name:"Level 1", sub:"SPO statements"},
+    {id:"L2", name:"Level 2", sub:"Term SPO collection"},
+    {id:"L3", name:"Level 3", sub:"Prose audit"},
+    {id:"L4", name:"Level 4", sub:"Domain audit"},
+    {id:"REM", name:"Remediation", sub:"Steward worklist"},
+  ];
+  const l4Health = sumVal(data.summaries.L4,/domain health/i);
+  const l4Fed = sumVal(data.summaries.L4,/federation ready/i);
+
+  return <div style={{maxWidth:1180,margin:"0 auto",padding:"0 24px 80px"}}>
+    {/* header */}
+    <div style={{display:"flex",alignItems:"center",gap:13,padding:"20px 0 14px",borderBottom:"1px solid "+C.line,position:"sticky",top:0,background:C.paper,zIndex:5}}>
+      <div style={{width:34,height:34,borderRadius:9,background:C.teal,display:"grid",placeItems:"center",boxShadow:"0 2px 0 "+C.tealDeep}}><I.Layers size={19} color="#fff"/></div>
+      <div>
+        <div style={{fontFamily:FONT_DISP,fontSize:19,fontWeight:600,lineHeight:1}}>Validation Cockpit</div>
+        <div style={{fontSize:11,color:C.muted,fontFamily:FONT_MONO,marginTop:2}}>{fileName}{restored && <span style={{color:C.teal}}> {"\u00b7"} restored</span>}</div>
+      </div>
+      <span style={{marginLeft:12,fontSize:11,fontWeight:800,fontFamily:FONT_MONO,color:"#fff",background:C.teal,border:"1px solid "+C.tealDeep,borderRadius:999,padding:"2px 9px"}}>v{APP_VERSION}</span>
+      <a href={workbenchUrl()} target="_blank" rel="noreferrer" style={{marginLeft:"auto",textDecoration:"none",background:"#fff",border:"1px solid "+C.line,borderRadius:9,padding:"7px 14px",fontSize:12.5,fontWeight:700,color:C.teal,fontFamily:FONT_UI,display:"inline-flex",gap:7,alignItems:"center"}}><I.Layers size={14} color={C.teal}/> Open Workbench</a>
+      <button onClick={editWb} title="Set the Workbench URL the term links point to" style={{background:"#fff",border:"1px solid "+C.line,borderRadius:9,padding:"7px 10px",cursor:"pointer",fontSize:13,color:C.muted}}>{"\u2699"}</button>
+      <input ref={reloadRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={(e)=>{const f=e.target.files&&e.target.files[0]; if(f) load(f); e.target.value="";}}/>
+      <input ref={remRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={(e)=>{const f=e.target.files&&e.target.files[0]; if(f) loadRemediation(f); e.target.value="";}}/>
+      <input ref={invRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={(e)=>{const f=e.target.files&&e.target.files[0]; if(f) loadInventory(f); e.target.value="";}}/>
+      <button onClick={()=>invRef.current&&invRef.current.click()} title="Import an audited Lexical Inventory (Level 0) \u2014 overlays onto the loaded glossary without replacing it" style={{background:"#fff",border:"1px solid "+C.line,borderRadius:9,padding:"7px 14px",cursor:"pointer",fontSize:12.5,fontWeight:700,color:C.tealDeep,fontFamily:FONT_UI,display:"inline-flex",gap:7,alignItems:"center"}}><I.Sheet size={14} color={C.tealDeep}/> Load Level 0</button>
+      <button onClick={()=>remRef.current&&remRef.current.click()} title="Import a Remediation Instructions workbook (Rewrites / Additions) exported by your skills" style={{background:"#fff",border:"1px solid "+C.line,borderRadius:9,padding:"7px 14px",cursor:"pointer",fontSize:12.5,fontWeight:700,color:C.tealDeep,fontFamily:FONT_UI,display:"inline-flex",gap:7,alignItems:"center"}}><I.Clipboard size={14} color={C.tealDeep}/> Load remediation</button>
+      <button onClick={()=>reloadRef.current&&reloadRef.current.click()} title="Re-import this glossary from an updated Excel file (keeps your current level)" style={{background:"#fff",border:"1px solid "+C.line,borderRadius:9,padding:"7px 14px",cursor:"pointer",fontSize:12.5,fontWeight:700,color:C.ink2,fontFamily:FONT_UI,display:"inline-flex",gap:7,alignItems:"center"}}><I.Refresh size={14} color={C.ink2}/> Reload</button>
+      <button onClick={removeWorkbook} title="Remove the loaded workbook from the cockpit" style={{background:"#fff",border:"1px solid "+C.redLine,borderRadius:9,padding:"7px 14px",cursor:"pointer",fontSize:12.5,fontWeight:700,color:C.red,fontFamily:FONT_UI,display:"inline-flex",gap:7,alignItems:"center"}}><I.Trash size={14} color={C.red}/> Remove</button>
+    </div>
+
+    {focus && <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0 0",background:C.tealSoft,border:"1px solid #cfe3de",borderRadius:10,padding:"9px 14px"}}>
+      <span style={{fontSize:13,color:C.tealDeep}}>Focused on <b style={{fontFamily:FONT_MONO}}>{focus}</b> from the Workbench &mdash; search is pre-filled.</span>
+      <button onClick={()=>{setFocus("");setQ("");}} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:C.tealDeep,fontWeight:700,fontSize:12.5}}>Clear</button>
+    </div>}
+
+    {/* level tabs */}
+    <div style={{display:"flex",gap:8,margin:"16px 0 4px",flexWrap:"wrap"}}>
+      {levels.map((lv)=>{ const on=level===lv.id; const present= lv.id==="REM" ? hasRemediation(data) : lv.id==="L0" ? hasL0(data) : hasLevel(data,lv.id); return (
+        <button key={lv.id} onClick={()=>present&&setLevel(lv.id)} disabled={!present}
+          style={{textAlign:"left",border:"1px solid "+(on?C.teal:C.line),background:on?C.tealSoft:(present?"#fff":"#f4f1ea"),
+            borderRadius:11,padding:"9px 16px",cursor:present?"pointer":"not-allowed",opacity:present?1:0.5,minWidth:150}}>
+          <div style={{fontFamily:FONT_UI,fontWeight:800,fontSize:13,color:on?C.tealDeep:C.ink}}>{lv.name}{!present&&<span style={{fontWeight:600,fontSize:10.5,color:C.muted}}> · n/a</span>}</div>
+          <div style={{fontSize:11,color:C.muted,marginTop:1}}>{lv.sub}</div>
+        </button>);
+      })}
+    </div>
+
+    <div style={{marginTop:8}}>
+      {level==="L0" && (data.l0 ? <L0View l0={data.l0} q={q} setQ={setQ}/> : <div style={{padding:"40px 0",textAlign:"center",color:C.muted,fontFamily:FONT_UI,fontSize:14}}>Restoring the lexical inventory\u2026</div>)}
+      {level==="L1" && <L1View spo={data.spo} summary={data.summaries.L1} q={q} setQ={setQ}/>}
+      {level==="L2" && <TermLevelView terms={data.terms} valCol="L2 Validation" pctCol="L2 Completeness %" pctLabel="Completeness" dims={L2_DIMS} issueCol="L2 Missing Structural Elements" actionCol="L2 Promote To" headline={[]} q={q} setQ={setQ}/>}
+      {level==="L3" && <TermLevelView terms={data.terms} valCol="L3 Validation" pctCol="L3 Fidelity %" pctLabel="Fidelity" dims={L3_DIMS} issueCol="L3 Prose Issues" actionCol="L3 Promote To" headline={[]} q={q} setQ={setQ}/>}
+      {level==="L4" && <TermLevelView terms={data.terms} valCol="L4 Validation" pctCol="L4 Health %" pctLabel="Health" dims={L4_DIMS} issueCol="L4 Issues" actionCol="L4 Action"
+        q={q} setQ={setQ} headline={[ l4Health?{label:"Domain health",value:String(l4Health).replace(/%$/,"")+"%"}:null, l4Fed?{label:"Federation ready",value:String(l4Fed),tone:/no/i.test(String(l4Fed))?"quar":"pass"}:null ].filter(Boolean)}/>}
+      {level==="REM" && <RemediationView rem={data.remediation||{rewrites:[],additions:[]}} q={q} setQ={setQ}/>}
+    </div>
+  </div>;
+}
+
+window.__APP = App; window.__parseWorkbook = parseWorkbook; window.__overallCounts = overallCounts; window.__statusKind = statusKind;
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

@@ -47,7 +47,7 @@ const C = {
 const FONT_DISP = '"Fraunces",Georgia,serif';
 const FONT_UI = '"Hanken Grotesk",system-ui,sans-serif';
 const FONT_MONO = '"JetBrains Mono",ui-monospace,monospace';
-const APP_VERSION = "1.19";
+const APP_VERSION = "1.20";
 const APP_BUILD = "2026-06-17";
 
 /* ---------------------------------------------------------------- icons */
@@ -97,11 +97,15 @@ function workbenchUrl(){
 function setWorkbenchUrl(u){ try { if(u && u.trim()) localStorage.setItem(WB_KEY,u.trim()); else localStorage.removeItem(WB_KEY); } catch(e){} }
 
 /* ---- session persistence: keep the loaded workbook + level across reloads ---- */
-const DATA_KEY = "ig_cockpit_data";
+const DATA_KEY = "ig_cockpit_data";        // legacy localStorage key (migrated to IndexedDB)
 const LEVEL_KEY = "ig_cockpit_level";
+const DATA_IDB_KEY = "data";               // main session now lives in IndexedDB — no ~5MB localStorage cap
 function saveSession(parsed, fileName){
-  try { localStorage.setItem(DATA_KEY, JSON.stringify({ fileName, terms:parsed.terms, spo:parsed.spo, summaries:parsed.summaries, sheetNames:parsed.sheetNames, remediation:parsed.remediation||null, ts:Date.now() })); return true; }
-  catch(e){ return false; }
+  try {
+    idbSet(DATA_IDB_KEY, { fileName:fileName, terms:parsed.terms, spo:parsed.spo, summaries:parsed.summaries, sheetNames:parsed.sheetNames, remediation:parsed.remediation||null, ts:Date.now() }).catch(function(){});
+    try { localStorage.removeItem(DATA_KEY); } catch(e){}
+    return true;
+  } catch(e){ return false; }
 }
 function loadSession(){
   try {
@@ -114,7 +118,7 @@ function loadSession(){
 const REM_STATUS_KEY = "ig_cockpit_rem_status";
 function loadRemStatus(){ try { return JSON.parse(localStorage.getItem(REM_STATUS_KEY)||"{}")||{}; } catch(e){ return {}; } }
 function saveRemStatus(map){ try { localStorage.setItem(REM_STATUS_KEY, JSON.stringify(map||{})); } catch(e){} }
-function clearSession(){ try { localStorage.removeItem(DATA_KEY); localStorage.removeItem(LEVEL_KEY); } catch(e){} idbDel(L0_IDB_KEY).catch(function(){}); }
+function clearSession(){ try { localStorage.removeItem(DATA_KEY); localStorage.removeItem(LEVEL_KEY); } catch(e){} idbDel(DATA_IDB_KEY).catch(function(){}); idbDel(L0_IDB_KEY).catch(function(){}); }
 /* ---- IndexedDB: the Level-0 inventory is large (thousands of rows); keep it here, not in localStorage ---- */
 const L0_IDB_KEY = "l0";
 function idbOpen(){ return new Promise(function(res,rej){ var r=indexedDB.open("ig_cockpit",1); r.onupgradeneeded=function(){ r.result.createObjectStore("kv"); }; r.onsuccess=function(){ res(r.result); }; r.onerror=function(){ rej(r.error); }; }); }
@@ -705,22 +709,50 @@ function App(){
   const [q,setQ]=useState(incoming.term||"");
   const [focus,setFocus]=useState(incoming.term||"");
   const [restored]=useState(!!(saved && !incoming.term));
+  const [booting,setBooting]=useState(!saved);   // true until the IndexedDB restore settles (avoids flashing the empty import screen)
 
   // keep the active level (small write) in sync across reloads
   useEffect(()=>{ if(data){ try { localStorage.setItem(LEVEL_KEY, level); } catch(e){} } },[level,data]);
 
-  // restore the Level-0 inventory from IndexedDB on boot (durable, no localStorage quota limit)
+  // restore the whole session (main validation data + Level-0 inventory) from IndexedDB on boot —
+  // durable and free of the ~5MB localStorage quota that was dropping large validated workbooks.
   useEffect(()=>{
     let alive=true;
-    idbGet(L0_IDB_KEY).then(function(l0){
-      if(!alive || !l0) return;
-      setData(function(d){ var base = d || { terms:[], spo:[], summaries:{}, sheetNames:[], remediation:{rewrites:[],additions:[]} }; return base.l0 ? base : Object.assign({}, base, { l0:l0 }); });
+    Promise.all([
+      idbGet(DATA_IDB_KEY).catch(function(){return null;}),
+      idbGet(L0_IDB_KEY).catch(function(){return null;})
+    ]).then(function(arr){
+      if(!alive) return;
+      var main=arr[0], l0=arr[1];
+      var mainHas = main && (((main.terms||[]).length) || ((main.spo||[]).length) || hasRemediation({remediation:main.remediation}));
+      setData(function(d){
+        var loaded = d && (((d.terms||[]).length) || ((d.spo||[]).length) || hasRemediation(d));
+        var base = loaded ? d : (mainHas ? { terms:main.terms||[], spo:main.spo||[], summaries:main.summaries||{}, sheetNames:main.sheetNames||[], remediation:main.remediation||{rewrites:[],additions:[]} } : d);
+        if(l0){ if(!base) base={ terms:[], spo:[], summaries:{}, sheetNames:[], remediation:{rewrites:[],additions:[]} }; if(!base.l0) base=Object.assign({}, base, { l0:l0 }); }
+        return base;
+      });
+      if(mainHas && main.fileName) setFileName(function(fn){ return fn || main.fileName; });
       var hadGlossary = !!(saved && saved.data && (saved.data.terms.length || saved.data.spo.length || hasRemediation(saved.data)));
-      if(!hadGlossary) setLevel(function(lv){ return lv==="L1" ? "L0" : lv; });
-    }).catch(function(){});
+      if(!hadGlossary){
+        var probe = mainHas ? { terms:main.terms||[], spo:main.spo||[], summaries:main.summaries||{}, remediation:main.remediation||{rewrites:[],additions:[]}, l0:l0||null }
+                            : { terms:[], spo:[], summaries:{}, remediation:{rewrites:[],additions:[]}, l0:l0||null };
+        var savedLevel=""; try { savedLevel = localStorage.getItem(LEVEL_KEY) || ""; } catch(e){}
+        setLevel(function(lv){
+          if(savedLevel && (savedLevel==="L0" ? !!probe.l0 : savedLevel==="REM" ? hasRemediation(probe) : hasLevel(probe,savedLevel))) return savedLevel;
+          if(lv && lv!=="L1") return lv;
+          return firstPresentLevel(probe);
+        });
+      }
+      // one-time migration of any legacy localStorage payload into IndexedDB
+      if(saved && !main){
+        idbSet(DATA_IDB_KEY, { fileName:saved.fileName, terms:saved.data.terms, spo:saved.data.spo, summaries:saved.data.summaries, sheetNames:saved.data.sheetNames, remediation:saved.data.remediation, ts:saved.ts||Date.now() }).catch(function(){});
+        try { localStorage.removeItem(DATA_KEY); } catch(e){}
+      }
+      setBooting(false);
+    });
     return function(){ alive=false; };
   }, []);
-  // persist the Level-0 inventory to IndexedDB whenever it changes (migrates any legacy localStorage copy too)
+  // persist the Level-0 inventory to IndexedDB whenever it changes
   useEffect(()=>{ if(data && data.l0){ idbSet(L0_IDB_KEY, data.l0).catch(function(){}); } }, [data && data.l0]);
 
   const reloadRef = useRef(null);
@@ -735,7 +767,7 @@ function App(){
       if(!hasRemediation(parsed) && hasRemediation(data)) parsed.remediation = data.remediation; // keep an imported remediation overlay across a glossary reload
       if(!hasL0(parsed) && hasL0(data)) parsed.l0 = data.l0;                                     // keep the Level-0 inventory overlay across a glossary reload
       setData(parsed); setFileName(file.name);
-      if(!saveSession(parsed, file.name)) setError("Loaded, but the session is too large to remember on reload \u2014 you may need to re-import next time.");
+      saveSession(parsed, file.name);
       const wanted = (incoming.level && hasLevel(parsed,incoming.level)) ? incoming.level
                    : (level && (hasLevel(parsed, level) || (level==="REM" && hasRemediation(parsed)))) ? level
                    : firstPresentLevel(parsed);
@@ -754,7 +786,7 @@ function App(){
       const base = data || { terms:[], spo:[], summaries:{}, sheetNames:[], remediation:{rewrites:[],additions:[]} };
       const next = { ...base, l0 };
       setData(next); if(!fileName) setFileName(file.name);
-      if(!saveSession(next, fileName || file.name)) setError("Level 0 loaded, but the combined session is too large to remember on reload \u2014 you may need to re-import next time.");
+      saveSession(next, fileName || file.name);
       setLevel("L0");
     } catch(err){ setError("Could not read that file: "+(err&&err.message||err)); } };
     rd.onerror = () => setError("Could not read that file.");
@@ -783,7 +815,9 @@ function App(){
   };
   const editWb = () => { const cur=workbenchUrl(); const v=window.prompt("Glossary Workbench URL (used by the term links):", cur); if(v!=null){ setWorkbenchUrl(v); } };
 
-  if(!data) return <ImportPanel onLoad={load} error={error}/>;
+  if(!data) return booting
+    ? <div style={{minHeight:"60vh",display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,fontFamily:FONT_UI,fontSize:14}}>Restoring your session&hellip;</div>
+    : <ImportPanel onLoad={load} error={error}/>;
 
   const levels = [
     {id:"L0", name:"Level 0", sub:"Lexical inventory"},

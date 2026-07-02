@@ -52,6 +52,8 @@ a{color:var(--accent);text-decoration:none}
 .side-btn.primary{background:var(--gold);color:#3a2806}.side-btn.primary:hover{background:#f6b13e}
 .side-btn.ghost{background:rgba(255,255,255,.07);color:#cfd6d2}.side-btn.ghost:hover{background:rgba(255,255,255,.13)}
 .saved{font-size:10.5px;color:#74948a;text-align:center;padding-top:2px}
+.side-foot .ver{font-size:10px;color:rgba(255,255,255,.32);text-align:center;letter-spacing:.02em}
+.side-foot .ver b{color:rgba(255,255,255,.55);font-weight:700}
 
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .topbar{padding:20px 40px 16px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;background:var(--card);border-bottom:1px solid var(--line)}
@@ -1095,6 +1097,7 @@ const KVS={
   async set(k,v){ let okFlag=false; if(typeof window!=="undefined"&&window.storage&&window.storage.set){ try{ await window.storage.set(k,v); okFlag=true; }catch(e){} }
     try{ localStorage.setItem(k,v); okFlag=true; }catch(e){} return okFlag?{key:k,value:v}:null; }
 };
+const APP_VERSION="1.0.0", APP_BUILD="2026-07-02";
 let MGR=null, CURRENT="overview";
 function defaultState(){
   const asks=REAL_THEMES.map(t=>({theme:t.theme,objective:t.objective,metric:t.metric,companyPriority:""}));
@@ -1863,7 +1866,7 @@ function exportReference(){
   const bWs=XLSX.utils.aoa_to_sheet(bizAoa); bWs["!cols"]=[{wch:36},{wch:36},{wch:36}];
   XLSX.utils.book_append_sheet(wb,bWs,"Business Objectives");
   // Digital Objectives (CIO)
-  const bById={}; (MGR.business||[]).forEach(b=>bById[b.id]=b.objective||"");
+  const bById={}; (MGR.business||[]).forEach(b=>bById[b.id]=(b.objective||b.goal||b.metric||""));
   const digAoa=[["Objective","Note","Aligns To (Business)"]].concat((MGR.digital||[]).map(o=>[o.objective||"",o.note||"",bById[o.businessId]||""]));
   const dWs=XLSX.utils.aoa_to_sheet(digAoa); dWs["!cols"]=[{wch:34},{wch:36},{wch:34}];
   XLSX.utils.book_append_sheet(wb,dWs,"Digital Objectives");
@@ -1876,7 +1879,7 @@ function exportReference(){
   const sWs=XLSX.utils.aoa_to_sheet(stratAoa); sWs["!cols"]=[{wch:26},{wch:40},{wch:40},{wch:34}];
   XLSX.utils.book_append_sheet(wb,sWs,"Data & AI Strategy");
   // Strategic Initiatives (now with leading metric, alignment, DM areas)
-  const digById={}; (MGR.digital||[]).forEach(d=>digById[d.id]=d.objective||"");
+  const digById={}; (MGR.digital||[]).forEach(d=>digById[d.id]=(d.objective||d.note||""));
   const alignText=i=>{ if(i.alignType==="business") return "Business: "+(bById[i.alignId]||""); if(i.alignType==="digital") return "Digital: "+(digById[i.alignId]||""); return ""; };
   const initAoa=[["Theme ID","Strategic Theme","Initiative ID","Initiative","Leading Metric","Aligns To","DM Knowledge Areas"]].concat((STRATEGY.initiatives||[]).map(i=>[i.themeId,i.theme,i.initiativeId,i.initiative,i.leadingMetric||"",alignText(i),(Array.isArray(i.dmAreas)?i.dmAreas.join(", "):"")]));
   const iWs=XLSX.utils.aoa_to_sheet(initAoa); iWs["!cols"]=[{wch:9},{wch:26},{wch:9},{wch:46},{wch:30},{wch:34},{wch:24}];
@@ -1895,19 +1898,21 @@ window.exportReference=exportReference; window.exportRoles=exportReference;
 const DM_AREAS=[{code:"OD",name:"Open Data"},{code:"BIA",name:"Business Intelligence & Analytics"},{code:"MCM",name:"Data Catalogue & Metadata"},{code:"DQ",name:"Data Quality"},{code:"DC",name:"Data Classification"},{code:"PDP",name:"Personal Data Protection"},{code:"DAM",name:"Data Architecture & Modelling"},{code:"DSI",name:"Data Sharing & Interoperability"},{code:"RMD",name:"Reference & Master Data Mgmt"},{code:"DCM",name:"Document & Content Mgmt"},{code:"DO",name:"Data Operations"},{code:"FOI",name:"Freedom of Information"}];
 function bizObjs(){ if(!Array.isArray(MGR.business)) MGR.business=[]; return MGR.business; }
 function digObjs(){ if(!Array.isArray(MGR.digital)) MGR.digital=[]; return MGR.digital; }
+function bizLabel(b){ return (b&&(b.objective||b.goal||b.metric))||"(untitled objective)"; }
+function digLabel(d){ return (d&&(d.objective||d.note))||"(untitled priority)"; }
 function tierWrap(key,owner,title,desc,body){ return `<section class="tier tier-${key}"><div class="tier-head"><span class="tier-owner">${owner}</span><div><h2>${esc(title)}</h2><p>${esc(desc)}</p></div></div>${body}</section>`; }
 function renderBusinessTier(){
-  const rows=bizObjs().map(o=>`<div class="tier-card"><div class="tier-card-h"><input class="tc-name" value="${esc(o.objective)}" onchange="bizEdit('${o.id}','objective',this.value)" placeholder="Business objective / goal\u2026"><button class="se-del" onclick="bizDel('${o.id}')">Remove</button></div><label class="se-lbl">Goal / target</label><textarea class="se-area" onchange="bizEdit('${o.id}','goal',this.value)" placeholder="The outcome the business is aiming for\u2026">${esc(o.goal||"")}</textarea><label class="se-lbl">Lagging metric (business outcome)</label><textarea class="se-area" onchange="bizEdit('${o.id}','metric',this.value)" placeholder="How the business measures success\u2026">${esc(o.metric||"")}</textarea></div>`).join("");
+  const rows=bizObjs().map(o=>`<div class="tier-card"><div class="tier-card-h"><input class="tc-name" value="${esc(o.objective)}" onchange="bizEdit('${o.id}','objective',this.value)" placeholder="Name this objective (used in links)\u2026"><button class="se-del" onclick="bizDel('${o.id}')">Remove</button></div><label class="se-lbl">Goal / target</label><textarea class="se-area" onchange="bizEdit('${o.id}','goal',this.value)" placeholder="The outcome the business is aiming for\u2026">${esc(o.goal||"")}</textarea><label class="se-lbl">Lagging metric (business outcome)</label><textarea class="se-area" onchange="bizEdit('${o.id}','metric',this.value)" placeholder="How the business measures success\u2026">${esc(o.metric||"")}</textarea></div>`).join("");
   return tierWrap("business","CEO","Business Strategy","Business Objectives & Goals \u2014 the lagging metrics the organisation is judged on.",`<div class="tier-cards">${rows||'<div class="se-empty">No business objectives yet.</div>'}</div><button class="se-add" onclick="bizAdd()">+ Add business objective</button>`);
 }
 function renderDigitalTier(){
   const b=bizObjs();
-  const rows=digObjs().map(o=>`<div class="tier-card"><div class="tier-card-h"><input class="tc-name" value="${esc(o.objective)}" onchange="digEdit('${o.id}','objective',this.value)" placeholder="Digital priority / objective\u2026"><button class="se-del" onclick="digDel('${o.id}')">Remove</button></div><label class="se-lbl">Note (Digital = Data + Technology)</label><textarea class="se-area" onchange="digEdit('${o.id}','note',this.value)" placeholder="What this covers\u2026">${esc(o.note||"")}</textarea><label class="se-lbl">Aligns up to (business objective)</label><select class="tc-link" onchange="digEdit('${o.id}','businessId',this.value)"><option value="">\u2014 not linked \u2014</option>${b.map(x=>`<option value="${x.id}"${o.businessId===x.id?" selected":""}>${esc(x.objective||"(untitled)")}</option>`).join("")}</select></div>`).join("");
+  const rows=digObjs().map(o=>`<div class="tier-card"><div class="tier-card-h"><input class="tc-name" value="${esc(o.objective)}" onchange="digEdit('${o.id}','objective',this.value)" placeholder="Name this priority (used in links)\u2026"><button class="se-del" onclick="digDel('${o.id}')">Remove</button></div><label class="se-lbl">Note (Digital = Data + Technology)</label><textarea class="se-area" onchange="digEdit('${o.id}','note',this.value)" placeholder="What this covers\u2026">${esc(o.note||"")}</textarea><label class="se-lbl">Aligns up to (business objective)</label><select class="tc-link" onchange="digEdit('${o.id}','businessId',this.value)"><option value="">\u2014 not linked \u2014</option>${b.map(x=>`<option value="${x.id}"${o.businessId===x.id?" selected":""}>${esc(bizLabel(x))}</option>`).join("")}</select></div>`).join("");
   return tierWrap("digital","CIO","Digital Strategy","Digital priorities (Data + Technology) \u2014 the bridge between business and data.",`<div class="tier-cards">${rows||'<div class="se-empty">No digital objectives yet.</div>'}</div><button class="se-add" onclick="digAdd()">+ Add digital objective</button>`);
 }
 function alignOptions(selType,selId){
-  const biz=bizObjs().map(b=>`<option value="business:${b.id}"${selType==="business"&&selId===b.id?" selected":""}>Business: ${esc((b.objective||"(untitled)").slice(0,60))}</option>`).join("");
-  const dig=digObjs().map(d=>`<option value="digital:${d.id}"${selType==="digital"&&selId===d.id?" selected":""}>Digital: ${esc((d.objective||"(untitled)").slice(0,60))}</option>`).join("");
+  const biz=bizObjs().map(b=>`<option value="business:${b.id}"${selType==="business"&&selId===b.id?" selected":""}>Business: ${esc(bizLabel(b).slice(0,60))}</option>`).join("");
+  const dig=digObjs().map(d=>`<option value="digital:${d.id}"${selType==="digital"&&selId===d.id?" selected":""}>Digital: ${esc(digLabel(d).slice(0,60))}</option>`).join("");
   return `<option value="">\u2014 aligns up to\u2026 \u2014</option>${biz}${dig}`;
 }
 function renderDataTier(){
@@ -2327,14 +2332,57 @@ function shell(){ return `<div class="app">
       <button class="side-btn primary" style="background:var(--accent);color:#fff" onclick="triggerImport()">\u2911 Import &amp; assign workbook</button>
       <button class="side-btn ghost" onclick="openSettings()">\u2302 Department &amp; profile</button>
       <button class="side-btn ghost" onclick="exportFeedback()">\u2913 Export feedback</button>
+      <button class="side-btn ghost" onclick="exportConsole()">\u2913 Export everything (backup)</button>
+      <button class="side-btn ghost" onclick="triggerImportConsole()">\u2912 Import a backup</button>
       <button class="side-btn ghost" onclick="resetAll()">\u21BA Reset console</button>
       <div class="saved" id="savedLabel">Ready</div>
+      <div class="ver" title="Growth Architect Console build">Growth Console <b>v${APP_VERSION}</b> \u00B7 ${APP_BUILD}</div>
     </div>
   </aside>
   <main class="main"><div class="topbar" id="topbar"></div><div class="content" id="contentScroll"><div id="content"></div></div></main>
   </div><div id="toast" class="toast"></div><div id="modalRoot"></div>`; }
 function resetAll(){ showModal("Reset the console?","This clears all imported workbooks, your understanding assessment and feedback ledger. This can't be undone.","Reset","danger",async()=>{ MGR=defaultState(); await saveState(true); go("overview"); toast("Console reset","ok"); }); }
 window.resetAll=resetAll;
+/* ===== Full console backup: export everything as JSON, import to replace ===== */
+function consoleSnapshot(){ return {app:"KYV-Growth-Console",version:APP_VERSION,build:APP_BUILD,exported:new Date().toISOString(),state:MGR}; }
+function exportConsole(){
+  try{
+    const blob=new Blob([JSON.stringify(consoleSnapshot(),null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=`KYV_Console_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1200);
+    toast("Everything exported \u2014 share the .json file; others import it here","ok");
+  }catch(err){ toast("Export failed"); }
+}
+function triggerImportConsole(){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=".json,application/json";
+  inp.onchange=()=>{ if(inp.files[0]) importConsole(inp.files[0]); };
+  inp.click();
+}
+function importConsole(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    let snap;
+    try{ snap=JSON.parse(e.target.result); }catch(err){ toast("That isn't a valid backup file"); return; }
+    const state=(snap&&snap.state&&typeof snap.state==="object")?snap.state:snap;
+    if(!state||typeof state!=="object"||(!Array.isArray(state.staff)&&!state.strategy&&!state.asks)){ toast("That file doesn't look like a KYV console backup"); return; }
+    const who=snap&&snap.exported?new Date(snap.exported).toLocaleString():"unknown date";
+    const vtxt=snap&&snap.version?` (v${esc(snap.version)}, exported ${esc(who)})`:"";
+    const n=Array.isArray(state.staff)?state.staff.length:0;
+    showModal("Import this console?",
+      `This replaces <b>everything</b> in your console \u2014 people, imported workbooks, the strategy, maturity assessments and feedback \u2014 with the backup${vtxt}. It contains <b>${n}</b> ${n===1?"person":"people"}. This can't be undone, so export your own backup first if you want to keep it.`,
+      "Replace &amp; import","danger", async()=>{
+        try{
+          await KVS.set(STORE_KEY, JSON.stringify(state));
+          await loadState();
+          go("overview");
+          toast("Console imported \u2014 "+((MGR.staff||[]).length)+" people loaded","ok");
+        }catch(err){ toast("Import failed"); }
+      });
+  };
+  reader.readAsText(file);
+}
+window.consoleSnapshot=consoleSnapshot; window.exportConsole=exportConsole; window.triggerImportConsole=triggerImportConsole; window.importConsole=importConsole;
 async function boot(){ document.getElementById("root").innerHTML=shell(); await loadState(); render(); const el=$("savedLabel"); if(el)el.textContent="All changes saved"; }
 boot();
 </script>

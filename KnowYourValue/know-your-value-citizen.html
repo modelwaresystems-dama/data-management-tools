@@ -73,6 +73,15 @@ select,input.cell{width:100%;border:1px solid var(--line);border-radius:6px;padd
 .help-body ol,.help-body ul{margin:4px 0 10px;padding-left:20px}
 .help-body li{margin-bottom:7px;font-size:14px;line-height:1.5}
 .helpbtn{margin-left:8px;background:var(--gold);color:var(--deep);border:none;border-radius:8px;padding:8px 13px;font-weight:700;cursor:pointer;font-size:12.5px}
+.rbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:8px 22px;background:#fff;border-bottom:1px solid var(--line)}
+.rbar-label{font-family:"IBM Plex Sans";font-weight:700;color:var(--deep);font-size:11.5px;letter-spacing:.04em;text-transform:uppercase}
+.rphase{padding:3px 11px;border-radius:13px;border:1px solid var(--line);color:var(--mut);background:#fff;font-size:12.5px}
+.rphase.done{color:var(--green);border-color:var(--green);background:#eef7f0;font-weight:600}
+.rphase.now{color:#fff;background:var(--green);border-color:var(--green);font-weight:700}
+.rsep{color:#b8c4bc;font-size:12px}
+.rbar-next{margin-left:4px;color:var(--ink);font-size:13px}
+.rbar-go{margin-left:auto;background:var(--gold);color:var(--deep);border:none;border-radius:8px;padding:5px 12px;font-weight:700;cursor:pointer;font-size:12px}
+.rbar-week{color:var(--mut);font-size:11.5px}
 </style>
 </head>
 <body>
@@ -88,6 +97,8 @@ select,input.cell{width:100%;border:1px solid var(--line);border-radius:6px;padd
   <span class="ver" style="margin-left:14px">v<span id="ver"></span></span>
 </header>
 
+<div id="rhythmBar" class="rbar" style="display:none"></div>
+
 <div class="shell">
   <nav class="side" id="side"></nav>
   <main class="main" id="view">
@@ -102,7 +113,7 @@ select,input.cell{width:100%;border:1px solid var(--line);border-radius:6px;padd
 </aside>
 
 <script>
-const APP_VERSION="2.0.3";
+const APP_VERSION="2.1.0";
 const PB_HERO=`<svg style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1632" font-family="Libre Franklin, Arial, sans-serif">
 <defs><style>@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@600;700;800&amp;family=Libre+Franklin:wght@400;500;600&amp;display=swap");</style><filter id="sh" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#16202b" flood-opacity="0.10"/></filter><linearGradient id="hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#106030"/><stop offset="1" stop-color="#0b4422"/></linearGradient></defs>
 <rect width="1200" height="1632" fill="#f6f8f6"/>
@@ -434,6 +445,7 @@ function render(){
     const v=$("view"); if(v) v.insertAdjacentHTML("afterbegin",`<div class="redir" style="border-left-color:var(--gold)">The Fabric channels weren't cached across this refresh (large workbook). <b>Re-load your Work Audit workbook</b> (top-left) to browse them — your Work Audit and decisions are already restored.</div>`);
   }
   if(helpOpen)fillHelp();
+  updateRhythmBar();
 }
 function head(title,sub){return `<h2 class="view">${title}</h2><div class="viewsub">${sub}</div>`;}
 
@@ -790,6 +802,37 @@ function eveningPhase(){
   if(rhythm.shutdown)h+=`<div class="redir" style="border-left-color:var(--green)"><b>✓ Shutdown complete for ${esc(rhythm.date)}.</b> ${logged} h of deep work logged. Rest — you're done for the day.</div>`;
   else h+=`<button class="btn primary" id="shutdownBtn">🌙 Shutdown complete</button> <span class="why">— logs the day and closes it out.</span>`;
   return h+`</div></div>`;
+}
+function rhythmState(){
+  ensureToday();
+  const c=rhythm.checks||{}, bl=rhythm.blocks||[];
+  const blocksSent=bl.some(b=>newTasks.some(n=>n.fromBid==="dw:"+b.id));
+  const blocksDone=bl.some(b=>b.done);
+  const prepareDone=!!rhythm.intention && !!c.m1 && !!c.m2 && !!c.m3 && !!c.m4;
+  const protectDone=blocksDone || (!!c.l1&&!!c.l2&&!!c.l3&&!!c.l4);
+  const reviewDone=!!rhythm.shutdown;
+  let phase,next;
+  if(!prepareDone){ phase="prepare";
+    next = !rhythm.intention ? "Set today's one deep-work outcome"
+         : !blocksSent ? "Send your deep-work blocks to your task list"
+         : "Finish your morning checklist"; }
+  else if(!protectDone){ phase="protect"; next="Tick off the deep-work blocks you've completed"; }
+  else if(!reviewDone){ phase="review"; next="Log your hours and run the evening shutdown"; }
+  else { phase="done"; next="Today's rhythm is complete — rest. Tomorrow, prepare again."; }
+  const wk=(rhythmLog||[]).slice(-7).reduce((s,x)=>s+(Number(x.deep)||0),0);
+  return {phase,prepareDone,protectDone,reviewDone,complete:phase==="done",next,wk};
+}
+function updateRhythmBar(){
+  const bar=$("rhythmBar"); if(!bar)return;
+  if(!data){bar.style.display="none";return;}
+  bar.style.display="flex";
+  const st=rhythmState();
+  const doneMap={prepare:st.prepareDone,protect:st.protectDone,review:st.reviewDone};
+  const cls=p=>doneMap[p]?"done":(st.phase===p?"now":"todo");
+  const lab={prepare:"Prepare",protect:"Protect",review:"Review"};
+  const mk=p=>`<span class="rphase ${cls(p)}">${lab[p]}${cls(p)==="done"?" ✓":cls(p)==="now"?" · now":""}</span>`;
+  bar.innerHTML=`<span class="rbar-label">Operating Rhythm</span>${mk("prepare")}<span class="rsep">→</span>${mk("protect")}<span class="rsep">→</span>${mk("review")}<span class="rbar-next">Next: <b>${esc(st.next)}</b></span><button class="rbar-go" id="rbarGo">Open Daily Rhythm →</button><span class="rbar-week">this week · ${r1(st.wk)} h deep work · weekly: re-audit the trend</span>`;
+  const g=$("rbarGo"); if(g)g.onclick=()=>{rhythmPhase={prepare:"morning",protect:"lunch",review:"evening",done:"evening"}[st.phase];active="rhythm";render();};
 }
 function renderRhythm(){
   ensureToday();
@@ -1158,7 +1201,7 @@ function renderGuide(){
      <li><b>8 · Semantic Analytics</b> — the analytics model: Person 360, the collaboration network, and the scorecards.</li>
     </ul></div>`;
   h+=`<div class="card"><h3>Finding your way — the sidebar</h3>
-    <div class="why" style="margin-bottom:8px">The sidebar is grouped so you move from doing the work, to seeing the channels that affect it, to the value it creates.</div>
+    <div class="why" style="margin-bottom:8px">The sidebar is grouped so you move from doing the work, to seeing the channels that affect it, to the value it creates. The <b>Operating Rhythm</b> bar at the very top always shows where you are in your day (Prepare → Protect → Review) and the one next action to keep the rhythm going — click it to jump to the Daily Rhythm.</div>
     <ul class="pill-list">
      <li><b>My work</b> — the daily action tools: Work Audit, Daily Rhythm, Meeting Compressor, Email, Focus Protector, NVA Buster, Priority Triage, Productivity Plan.</li>
      <li><b>My channels</b> — <b>Collaboration</b> (Teams &amp; Loop), <b>Decisions &amp; Commitments</b> (what was decided and who owes what), and <b>Attention</b> (signals, risks and recommendations that need you).</li>

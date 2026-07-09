@@ -158,6 +158,8 @@
   .cred-body{padding:0 16px 16px; border-top:1px solid var(--line)}
   .cred-warn{font-size:12.5px; color:var(--muted); background:var(--panel2); border-radius:8px; padding:10px 12px; margin:14px 0}
   .cred-warn b{color:var(--text)}
+  .credhint{margin:-6px 0 14px}
+  .credhint a{color:var(--accent2); font-weight:600}
   .cred-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px}
   .cred-grid label{display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--muted); font-weight:600}
   .cred-grid label small{font-weight:500; text-transform:none}
@@ -270,9 +272,10 @@
       <summary><span class="ck" id="ckdot"></span> YouTube connection <small id="credsub">sign in with Google to load live stats</small></summary>
       <div class="cred-body">
         <p class="cred-warn">Click <b>Sign in with Google</b> and approve read-only access to your channel's analytics — the page gets a temporary access token straight from Google. <b>No client secret or refresh token needed.</b> The token lives only in this browser tab and is used solely for Google's own API. For sign-in to work, the page must be opened from a web address you've added to your Google OAuth client's <b>Authorized JavaScript origins</b> (e.g. your own site or <code>http://localhost</code>) — a bare downloaded file or the in-app preview won't be accepted by Google.</p>
+        <p class="note credhint">First-time setup: open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud → APIs &amp; Services → Credentials ↗</a>, click your OAuth 2.0 Client ID, and add your page's web address under <b>Authorized JavaScript origins</b> (then Save and wait a minute for it to take effect).</p>
         <div class="cred-grid">
           <label>Google OAuth Client ID<input id="c_clientID" type="text" autocomplete="off" spellcheck="false" placeholder="…apps.googleusercontent.com"></label>
-          <label>Channel ID <small>(blank = your own)</small><input id="c_channelID" type="text" autocomplete="off" spellcheck="false" placeholder="UC…"></label>
+          <label>Channel ID <small>(optional — analytics uses your signed-in channel)</small><input id="c_channelID" type="text" autocomplete="off" spellcheck="false" placeholder="UC…"></label>
           <label>Start date<input id="c_startDate" type="date"></label>
         </div>
         <div class="cred-actions">
@@ -709,7 +712,8 @@ async function fetchFromYouTube(){
   try{
     cstatus('Authorizing with Google…');
     const token=await getAccessToken(c);
-    const ids = c.channelID ? 'channel=='+c.channelID : 'channel==MINE';
+    // Owner OAuth tokens must query channel==MINE; channel==<id> is only for content-owner accounts and returns "query not supported".
+    const ids = (c.channelID && /^content_owner==/i.test(c.channelID)) ? c.channelID : 'channel==MINE';
     const endDate=new Date().toISOString().slice(0,10);
     const startDate=c.startDate||'2020-01-01';
     const base={ids, startDate, endDate};
@@ -770,8 +774,10 @@ async function checkNewVideos(){
     cstatus('Authorizing with Google…');
     const token=await getAccessToken(c);
     cstatus('Locating your uploads playlist…');
+    // signed-in owner → the signed-in channel; only fall back to an explicit id if one is set
     const chParams = c.channelID ? {part:'contentDetails', id:c.channelID} : {part:'contentDetails', mine:'true'};
-    const ch=await ytData('channels', token, chParams);
+    let ch=await ytData('channels', token, chParams);
+    if(!(ch.items && ch.items.length) && c.channelID) ch=await ytData('channels', token, {part:'contentDetails', mine:'true'});
     const uploads=ch.items && ch.items[0] && ch.items[0].contentDetails && ch.items[0].contentDetails.relatedPlaylists && ch.items[0].contentDetails.relatedPlaylists.uploads;
     if(!uploads) throw new Error('Could not find the uploads playlist for this channel.');
     let items=[], pageToken='';

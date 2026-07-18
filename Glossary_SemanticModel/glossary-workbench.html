@@ -121,10 +121,17 @@ const SIGNOFF_COLS = ["Glossary ID","Term","Subject Area","Version","Lifecycle",
    The generic sGet/sSet/sDel helpers (from the head) are reused.
 ============================================================ */
 let ACTIVE_WS = "default";
+let ACTIVE_LEX_SCOPE = "own";           // "own" (this customer's inventory) | "shared" (the common inventory)
 const WS_LIST_KEY = "ig_workspaces";    // [{id,name,created}] — the customer roster (global, not namespaced)
 const ACTIVE_WS_KEY = "ig_active_ws";   // id of the customer currently in view (global)
 const wsIndexKey = () => "ig_" + ACTIVE_WS + "_index";
 const wsGKey = (id) => "ig_" + ACTIVE_WS + "_g_" + id;
+// The Level-0 lexical inventory is per-customer by default, but a customer may instead SHARE a common
+// inventory across customers. ACTIVE_LEX_SCOPE ("own" | "shared") picks which store the active customer uses.
+const SHARED_LEX_KEY = "ig_shared_lexicon";
+const SHARED_LEX_SHEETS_KEY = "ig_shared_lexicon_sheets";
+const wsLexKey = () => ACTIVE_LEX_SCOPE === "shared" ? SHARED_LEX_KEY : "ig_" + ACTIVE_WS + "_lexicon";
+const wsLexSheetsKey = () => ACTIVE_LEX_SCOPE === "shared" ? SHARED_LEX_SHEETS_KEY : "ig_" + ACTIVE_WS + "_lexicon_sheets";
 // All glossary blobs are read/written through these two helpers so code-list
 // compaction (see packGlossaryForStore) happens at exactly one boundary.
 async function loadGlossaryBlob(id) { return unpackStoredGlossary(await sGet(wsGKey(id))); }
@@ -134,7 +141,7 @@ const isUpperOntologyName = (name, areas) =>
   /foundational|upper ontology|core ontology/i.test(String(name || "") + " " + (Array.isArray(areas) ? areas.join(" ") : String(areas || "")));
 
 /* Build identity — shown in the sidebar so the latest build can be confirmed at a glance. */
-const APP_VERSION = "4.33";
+const APP_VERSION = "4.69";
 const APP_BUILD = "2026-06-15";
 
 /* ============================================================
@@ -2064,25 +2071,23 @@ function App() {
   const lexIndex = useMemo(() => lexBuildIndex(lexObjects || []), [lexObjects]);
   useEffect(() => { lexSetStore(lexObjects.length ? lexIndex : null); }, [lexIndex, lexObjects.length]);
   const lexLoaded = useRef(false);
-  useEffect(() => { (async () => {
+  // Load the current customer's Level-0 inventory (empty for a brand-new customer).
+  const loadLexiconForWs = async () => {
     let saved = null, carry = null;
-    try { saved = await idbGet(LEX_STORE_KEY); } catch {}
-    try { carry = await idbGet(LEX_SHEETS_KEY); } catch {}
-    if (!(Array.isArray(saved) && saved.length)) {
-      // one-time migration from the old localStorage location
-      try { const ls = await sGet(LEX_STORE_KEY); if (Array.isArray(ls) && ls.length) { saved = ls; await idbSet(LEX_STORE_KEY, ls); sDel(LEX_STORE_KEY); } } catch {}
-    }
-    if (Array.isArray(saved) && saved.length) setLexObjects(saved);
-    if (carry) setLexCarry(carry);
+    try { saved = await idbGet(wsLexKey()); } catch {}
+    try { carry = await idbGet(wsLexSheetsKey()); } catch {}
+    lexLoaded.current = false;
+    setLexObjects(Array.isArray(saved) ? saved : []);
+    setLexCarry(carry || null);
+    setLexReport(null);
     lexLoaded.current = true;
-  })(); }, []);
+  };
   useEffect(() => {
     if (!lexLoaded.current) return;
     (async () => {
       try {
-        if (lexObjects.length) await idbSet(LEX_STORE_KEY, lexObjects); else await idbDel(LEX_STORE_KEY);
-        if (lexCarry) await idbSet(LEX_SHEETS_KEY, lexCarry); else await idbDel(LEX_SHEETS_KEY);
-        sDel(LEX_STORE_KEY); // ensure no stale (quota-hungry) localStorage copy lingers
+        if (lexObjects.length) await idbSet(wsLexKey(), lexObjects); else await idbDel(wsLexKey());
+        if (lexCarry) await idbSet(wsLexSheetsKey(), lexCarry); else await idbDel(wsLexSheetsKey());
       } catch (e) { flash("Couldn't save the lexicon locally: " + (e.message || e), "err"); }
     })();
   }, [lexObjects, lexCarry]);
@@ -2128,6 +2133,25 @@ function App() {
     }
     setWorkspaces(wsList);
     setWsId(ACTIVE_WS);
+    ACTIVE_LEX_SCOPE = ((wsList.find((w) => w.id === ACTIVE_WS) || {}).lexScope === "shared") ? "shared" : "own";
+
+    // One-time migration: the Level-0 lexicon used to be a single GLOBAL store shared by every
+    // customer. Fold it into the primary ("default") customer so other customers start with their
+    // own empty inventory instead of inheriting it.
+    try {
+      const defLexKey = "ig_default_lexicon";
+      const alreadyScoped = await idbGet(defLexKey);
+      if (!(Array.isArray(alreadyScoped) && alreadyScoped.length)) {
+        let g = await idbGet(LEX_STORE_KEY);
+        if (!(Array.isArray(g) && g.length)) { const ls = await sGet(LEX_STORE_KEY); if (Array.isArray(ls) && ls.length) g = ls; }
+        if (Array.isArray(g) && g.length) {
+          await idbSet(defLexKey, g);
+          const gc = await idbGet(LEX_SHEETS_KEY); if (gc) await idbSet("ig_default_lexicon_sheets", gc);
+          await idbDel(LEX_STORE_KEY); await idbDel(LEX_SHEETS_KEY); try { sDel(LEX_STORE_KEY); } catch {}
+        }
+      }
+    } catch {}
+    await loadLexiconForWs();
 
     // Reclaim storage: the one-time migration kept the old un-namespaced keys as a
     // backup. Once the namespaced "default" copy exists, those duplicates are dead
@@ -2419,29 +2443,32 @@ function App() {
     if (id === ACTIVE_WS) return;
     ACTIVE_WS = id;
     await sSet(ACTIVE_WS_KEY, id);
+    ACTIVE_LEX_SCOPE = (((workspaces || []).find((w) => w.id === id) || {}).lexScope === "shared") ? "shared" : "own";
     setWsId(id);
     setCurrent(null); setActiveTerm(null); setFocusTerm(null); setView("home");
     const idx = (await sGet(wsIndexKey())) || [];
     setIndex(idx);
+    await loadLexiconForWs();
     const w = (workspaces || []).find((x) => x.id === id);
     flash("Switched to " + (w ? w.name : "customer"));
   };
 
   // Create a new customer. Optionally seed a *copy* of the current customer's
   // Upper Ontology (Foundational) glossary — reference data travels inside the blob.
-  const createCustomer = async (name, seedUpper) => {
+  const createCustomer = async (name, seedUpper, lexScope) => {
     const nm = String(name || "").trim() || "New Customer";
+    const scope = lexScope === "shared" ? "shared" : "own";
     // read the seed from the CURRENT customer first (wsGKey resolves against the current ACTIVE_WS)
     let seedBlob = null;
     if (seedUpper) {
       const upperEntry = (index || []).find((e) => isUpperOntologyName(e.name, e.areas));
       if (upperEntry) seedBlob = await loadGlossaryBlob(upperEntry.id);
     }
-    const w = { id: uid(), name: nm, created: Date.now() };
+    const w = { id: uid(), name: nm, created: Date.now(), lexScope: scope };
     const nextList = [...(workspaces || []), w];
     setWorkspaces(nextList); await sSet(WS_LIST_KEY, nextList);
     // switch namespace to the new customer, then write its starter content
-    ACTIVE_WS = w.id; await sSet(ACTIVE_WS_KEY, w.id); setWsId(w.id);
+    ACTIVE_WS = w.id; await sSet(ACTIVE_WS_KEY, w.id); ACTIVE_LEX_SCOPE = scope; setWsId(w.id);
     let newIdx = [];
     if (seedBlob) {
       const copy = JSON.parse(JSON.stringify(seedBlob));   // keep id, name, terms, spo, codeLists, crosswalks…
@@ -2453,7 +2480,32 @@ function App() {
     await sSet(wsIndexKey(), newIdx);
     setCurrent(null); setActiveTerm(null); setFocusTerm(null); setView("home");
     setIndex(newIdx);
-    flash("Customer \u201C" + nm + "\u201D created" + (seedBlob ? " with a copy of the Upper Ontology" : ""));
+    await loadLexiconForWs();
+    flash("Customer \u201C" + nm + "\u201D created" + (scope === "shared" ? " \u00b7 sharing the common Lexicon" : "") + (seedBlob ? " with a copy of the Upper Ontology" : ""));
+  };
+
+  // Change the active customer's Level-0 scope between its own inventory and the shared one.
+  // opts.publish: copy the current inventory into the shared store; opts.fork: copy the shared into this customer.
+  const setActiveLexScope = async (scope, opts = {}) => {
+    scope = scope === "shared" ? "shared" : "own";
+    try {
+      if (scope === "shared" && opts.publish) {
+        if (lexObjects.length) await idbSet(SHARED_LEX_KEY, lexObjects); else await idbDel(SHARED_LEX_KEY);
+        if (lexCarry) await idbSet(SHARED_LEX_SHEETS_KEY, lexCarry); else await idbDel(SHARED_LEX_SHEETS_KEY);
+      }
+      if (scope === "own" && opts.fork) {
+        const sh = await idbGet(SHARED_LEX_KEY); const shc = await idbGet(SHARED_LEX_SHEETS_KEY);
+        if (Array.isArray(sh)) await idbSet("ig_" + ACTIVE_WS + "_lexicon", sh);
+        if (shc) await idbSet("ig_" + ACTIVE_WS + "_lexicon_sheets", shc);
+      }
+    } catch {}
+    ACTIVE_LEX_SCOPE = scope;
+    const nextList = (workspaces || []).map((w) => (w.id === ACTIVE_WS ? { ...w, lexScope: scope } : w));
+    setWorkspaces(nextList); await sSet(WS_LIST_KEY, nextList);
+    await loadLexiconForWs();
+    flash(scope === "shared"
+      ? (opts.publish ? "Published this inventory as the shared Lexicon" : "Now sharing the common Lexicon")
+      : (opts.fork ? "Forked the shared Lexicon into this customer" : "Now using this customer\u2019s own Lexicon"));
   };
 
   const renameCustomer = async (id, newName) => {
@@ -2470,6 +2522,7 @@ function App() {
     const idx = (await sGet(wsIndexKey())) || [];
     for (const e of idx) await sDel(wsGKey(e.id));
     await sDel(wsIndexKey()); await sDel(wsSnapKey());
+    try { await idbDel(wsLexKey()); await idbDel(wsLexSheetsKey()); } catch {}
     ACTIVE_WS = savedWs;
     const nextList = (workspaces || []).filter((w) => w.id !== id);
     setWorkspaces(nextList); await sSet(WS_LIST_KEY, nextList);
@@ -2483,9 +2536,11 @@ function App() {
     const idx = (await sGet(wsIndexKey())) || [];
     const glossaries = [];
     for (const e of idx) { const g = await loadGlossaryBlob(e.id); if (g) glossaries.push(g); }
+    let lexicon = null, lexiconSheets = null;
+    try { lexicon = await idbGet(wsLexKey()); lexiconSheets = await idbGet(wsLexSheetsKey()); } catch {}
     const w = (workspaces || []).find((x) => x.id === ACTIVE_WS);
     const bundle = { type: "modelware-customer-bundle", v: 1, exported: new Date().toISOString(),
-      customer: { name: w ? w.name : "Customer" }, index: idx, glossaries };
+      customer: { name: w ? w.name : "Customer" }, index: idx, glossaries, lexicon: lexicon || [], lexiconSheets: lexiconSheets || null };
     const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -2517,9 +2572,14 @@ function App() {
       ? bundle.index
       : bundle.glossaries.map((g) => ({ id: g.id, name: g.name, areas: [], termCount: (g.terms || []).length, updated: Date.now() }));
     await sSet(wsIndexKey(), idx);
+    try {
+      if (Array.isArray(bundle.lexicon) && bundle.lexicon.length) await idbSet(wsLexKey(), bundle.lexicon);
+      if (bundle.lexiconSheets) await idbSet(wsLexSheetsKey(), bundle.lexiconSheets);
+    } catch {}
     setCurrent(null); setActiveTerm(null); setFocusTerm(null); setView("home");
     setIndex(idx);
-    flash("Imported customer \u201C" + nm + "\u201D \u2014 " + bundle.glossaries.length + " glossaries");
+    await loadLexiconForWs();
+    flash("Imported customer \u201C" + nm + "\u201D \u2014 " + bundle.glossaries.length + " glossaries" + (Array.isArray(bundle.lexicon) && bundle.lexicon.length ? " + " + bundle.lexicon.length + " lexical objects" : ""));
   };
 
   const deleteGlossary = async (id) => {
@@ -2761,7 +2821,7 @@ function App() {
               const ib = { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 4px", borderRadius: 7, background: "#23292f", border: "1px solid #2c333a", color: "#c7ccd1", cursor: "pointer", fontFamily: FONT_UI, fontWeight: 600, fontSize: 11 };
               return (
                 <>
-                  <button onClick={() => setNewCust({ name: "", seedUpper: (index || []).some((e) => isUpperOntologyName(e.name, e.areas)) })} title="Add a new customer" style={ib}><Plus size={13} strokeWidth={2.4} /> New</button>
+                  <button onClick={() => setNewCust({ name: "", seedUpper: (index || []).some((e) => isUpperOntologyName(e.name, e.areas)), lexScope: "own" })} title="Add a new customer" style={ib}><Plus size={13} strokeWidth={2.4} /> New</button>
                   <button onClick={exportCustomer} title="Export this customer as a portable bundle file" style={ib}><Download size={13} strokeWidth={2.4} /> Export</button>
                   <button onClick={() => custFileRef.current && custFileRef.current.click()} title="Import a customer bundle file" style={ib}><Upload size={13} strokeWidth={2.4} /> Import</button>
                 </>
@@ -2812,9 +2872,18 @@ function App() {
           {newCust && (
             <div style={{ marginTop: 8, background: "#23292f", border: "1px solid #2c333a", borderRadius: 9, padding: 11 }}>
               <input autoFocus value={newCust.name} onChange={(e) => setNewCust((c) => ({ ...c, name: e.target.value }))}
-                onKeyDown={(e) => { if (e.key === "Enter" && newCust.name.trim()) { createCustomer(newCust.name, newCust.seedUpper); setNewCust(null); } if (e.key === "Escape") setNewCust(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && newCust.name.trim()) { createCustomer(newCust.name, newCust.seedUpper, newCust.lexScope); setNewCust(null); } if (e.key === "Escape") setNewCust(null); }}
                 placeholder="Customer name"
                 style={{ width: "100%", boxSizing: "border-box", padding: "7px 9px", borderRadius: 7, background: "#1b2025", color: C.paper, border: "1px solid #343b42", fontFamily: FONT_UI, fontSize: 12.5, outline: "none" }} />
+              <div style={{ marginTop: 9, fontSize: 10, fontWeight: 700, color: "#8b9298", textTransform: "uppercase", letterSpacing: 0.5 }}>Level-0 Lexicon</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 5 }}>
+                {[["own", "Fresh Lexicon", "its own inventory, built from scratch"], ["shared", "Shared Lexicon", "the common inventory shared across customers"]].map(([val, label, hint]) => (
+                  <label key={val} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: "#c7ccd1", cursor: "pointer" }}>
+                    <input type="radio" name="lexScope" checked={newCust.lexScope === val} onChange={() => setNewCust((c) => ({ ...c, lexScope: val }))} style={{ accentColor: C.teal, width: 14, height: 14, marginTop: 1 }} />
+                    <span><b style={{ color: C.paper }}>{label}</b> <span style={{ color: "#8b9298" }}>— {hint}</span></span>
+                  </label>
+                ))}
+              </div>
               {(index || []).some((e) => isUpperOntologyName(e.name, e.areas)) && (
                 <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 8, fontSize: 11.5, color: "#c7ccd1", cursor: "pointer" }}>
                   <input type="checkbox" checked={newCust.seedUpper} onChange={(e) => setNewCust((c) => ({ ...c, seedUpper: e.target.checked }))} style={{ accentColor: C.teal, width: 14, height: 14 }} />
@@ -2822,7 +2891,7 @@ function App() {
                 </label>
               )}
               <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
-                <button onClick={() => { if (newCust.name.trim()) { createCustomer(newCust.name, newCust.seedUpper); setNewCust(null); } }}
+                <button onClick={() => { if (newCust.name.trim()) { createCustomer(newCust.name, newCust.seedUpper, newCust.lexScope); setNewCust(null); } }}
                   style={{ flex: 1, padding: "7px", borderRadius: 7, background: C.teal, color: "#fff", border: "none", cursor: "pointer", fontFamily: FONT_UI, fontWeight: 700, fontSize: 12 }}>Create</button>
                 <button onClick={() => setNewCust(null)}
                   style={{ padding: "7px 12px", borderRadius: 7, background: "transparent", color: "#9aa0a6", border: "1px solid #343b42", cursor: "pointer", fontFamily: FONT_UI, fontWeight: 600, fontSize: 12 }}>Cancel</button>
@@ -2969,6 +3038,9 @@ function App() {
         ) : view === "lexicon" ? (
           <LexiconView objects={lexObjects} onChange={setLexObjects} carry={lexCarry} report={lexReport} corpus={corpus}
             focus={lexFocus} onJumpTerm={jumpToTerm}
+            lexScope={(((workspaces || []).find((w) => w.id === wsId) || {}).lexScope === "shared") ? "shared" : "own"}
+            onSetScope={setActiveLexScope}
+            custName={((workspaces || []).find((w) => w.id === wsId) || {}).name || ""}
             onImport={() => lexRef.current?.click()}
             onClose={() => setView(current ? "terms" : "home")}
             flash={flash} />
@@ -6251,7 +6323,7 @@ function ModelGraph({ an, ghex, short, glossaries, onOpen }) {
 const QUANT_CLASS_FACET = {
   "Organization": "Who", "Person": "Who",
   "Abstract Thing": "What", "Digital Thing": "What", "Physical Thing": "What",
-  "Cycle": "When", "Point": "When", "Span": "When", "Status": "When", "Coordinates": "When",
+  "Cycle": "When", "Point": "When", "Span": "When", "Status": "When", "Coordinates": "Where",
   "Place": "Where", "Position": "Where",
   "Discipline": "Why", "Role": "Why", "Use": "Why",
   "Activity": "How", "Event": "How", "Process": "How", "Task": "How",
@@ -6274,10 +6346,93 @@ const QUANT_EDGES = [
 const QE_ORDER = QUANT_EDGES.map((e) => e[0]);
 const QE_SHORT = { "IS-HAS": "HAS", "IS-MEMBER-HAS": "MEMBER", "IS-PART-HAS": "PART", "IS-PRECEDENT-HAS": "PRECEDENT", "IS-PROPERTY-HAS": "PROPERTY", "IS-EQUIVALENT-HAS": "EQUIV" };
 const QE_MEANING = Object.fromEntries(QUANT_EDGES);
+// Definitions for the interactive Atomic-Architecture help view. Property defs come from LEX_FIELD_HELP;
+// class/type/facet glosses are concise drafts a steward can refine here.
+const ATOM_PROPS = ["Lexical Object ID", "Quant Type", "Language", "Status", "Contributor", "Source", "Create Date", "Last Change Date", "Is Plural", "Sense", "Primary Equivalent"];
+const ATOM_DEFS = {
+  core: "The atomic unit of the Semantium model \u2014 a governed Lexical Object (a String) carrying its identity, classification and lifecycle, before it becomes a Thing in the SPO layer.",
+  facets: {
+    Who: "The parties \u2014 agents that can act.",
+    What: "The things \u2014 entities that exist, distinguished by carrier.",
+    When: "The temporal frame \u2014 points, spans, cycles and states.",
+    Where: "The spatial frame \u2014 places and positions.",
+    Why: "The purpose \u2014 roles, uses and disciplines.",
+    How: "The activity \u2014 processes, tasks, events and activities.",
+  },
+  classes: {
+    "Organization": "A formally constituted group of persons that acts as a single agent.",
+    "Person": "An individual human being.",
+    "Abstract Thing": "A conceptual entity with no physical or digital carrier \u2014 a pure business concept.",
+    "Digital Thing": "An entity realised as digital data or a digital artifact.",
+    "Physical Thing": "A tangible, physical entity.",
+    "Cycle": "A recurring temporal pattern.",
+    "Point": "A specific instant in time.",
+    "Span": "A bounded interval or duration of time.",
+    "Status": "A time-bound state or condition.",
+    "Coordinates": "A position fixed by a coordinate reference.",
+    "Place": "A named or bounded location.",
+    "Position": "A relative or absolute spatial position.",
+    "Discipline": "A field of knowledge or practice.",
+    "Role": "The part a party plays in a context \u2014 the purpose it serves.",
+    "Use": "A purpose or application something is employed for.",
+    "Activity": "A unit of work performed.",
+    "Event": "Something that happens at a point or over a span.",
+    "Process": "A structured sequence of activities producing an outcome.",
+    "Task": "A discrete, assignable piece of work.",
+  },
+  types: {
+    "Abbreviation": "A shortened written form of a longer string (e.g. \u2018Dept.\u2019).",
+    "Acronym": "A string built from the initial letters of a phrase (e.g. DAMA).",
+    "Code": "A short symbolic string standing for a value in a controlled scheme.",
+    "Definition": "A string whose content is the meaning of a term.",
+    "Description": "A free-text characterising string, less formal than a definition.",
+    "Flag": "A boolean-style indicator (yes/no, true/false).",
+    "Identifier": "A string that uniquely designates an instance (a key or reference).",
+    "Instruction": "A string that directs an action or procedure.",
+    "Name": "A proper name designating a specific entity.",
+    "Phrase": "A multi-word string that is not a single governed Term.",
+    "Term": "A governed vocabulary word or compound naming a concept \u2014 the default form.",
+    "Value": "A literal data value \u2014 a measurement, amount or enumerated value.",
+  },
+};
+// Reference-only (not governed columns): the business-friendly Facet name, class synonyms, and real-world examples.
+const Q6_SUPERSET = { Who: "Agent", What: "Asset", When: "Time", Where: "Location", Why: "Function", How: "Action" };
+const ATOM_SYNONYM = { "Abstract Thing": "Concept", "Point": "Point-in-Time", "Position": "Relative Position" };
+const ATOM_EXAMPLES = {
+  "Organization": "IBM; Red Cross; NATO; Government of Canada",
+  "Person": "Albert Einstein; Rich Little; Bon Jovi; Elizabeth May",
+  "Abstract Thing": "Species; Plant; Animal; Existence; Identity; Heaven; Building",
+  "Digital Thing": "Joresume2018.doc; 12252003.log; ms360.exe",
+  "Physical Thing": "Iron; Mount Fuji; Stick; Butter; Oil",
+  "Cycle": "Krebs; Lunar; Season",
+  "Point": "October 12, 2011; 02.02.1956 23:01:44",
+  "Span": "July; 42; One Week; Seven Days",
+  "Status": "Dry; Overdue; Active; Preferred; Dormant",
+  "Coordinates": "150.83885, -47.9932; C:/home/docs/April",
+  "Place": "Calgary; Alberta; Canada; Paris; Nebraska; Beijing",
+  "Position": "Above; Below; North; Adjacent; Before",
+  "Discipline": "Biology; Engineering; Accounting; Music; Law",
+  "Role": "Analyst; Physician; Customer; Developer; CIO; Waitress",
+  "Use": "Server; Table; Log; Pump; Vessel; Calendar; Monitor",
+  "Activity": "Skiing; Swimming; Auditing; Developing; Coding; Monitoring",
+  "Event": "Started; Birth; Circus; Election; Added; Deleted; Ramadan",
+  "Process": "Assessment; Debridement; Application",
+  "Task": "Add; Update; Delete; Move; Click; Insert; Arrange; Monitor",
+};
 function qeParse(v) { return String(v == null ? "" : v).split(/;\s*/).map((s) => s.trim()).filter(Boolean); }
 function qeJoin(set) { return QE_ORDER.filter((x) => set.has(x)).join("; "); }
 // Functional Group controlled vocabulary (DAMA lifecycle groups).
 const FUNCTIONAL_GROUPS = ["Oversight (Data Governance)", "Plan & Design", "Enable & Maintain", "Use & Enhance", "Foundational Activities"];
+// Provenance taxonomy for a locked Level-0 sense (WSD skill).
+const LEX_PROVENANCE = ["WordNet-direct", "Anchor+Annotation", "Local/Manual"];
+// Class↔Level coherence — advisory WARN on the four carrier/grounding mismatches (never blocks).
+const COHERENCE_WARN = {
+  "Business Concept|Digital Thing": "carrier smuggling — keep the concept carrier-independent; push the digital realization to Instance Data",
+  "Business Concept|Physical Thing": "carrier smuggling — keep the concept carrier-independent; push the physical realization to Instance Data",
+  "Metadata|Physical Thing": "logical mapping — Metadata as a Physical Thing is unusual",
+  "Instance Data|Abstract Thing": "empirical grounding — Instance Data as an Abstract Thing is unusual",
+};
+function coherenceWarn(level, klass) { return (level && klass) ? (COHERENCE_WARN[level + "|" + klass] || "") : ""; }
 // Intralign cross-reference → expected SPO role. Fact excluded by design (no role asserted).
 const TERM_TYPE_ROLE = { Entity: ["Subject", "Object"], Attribute: ["Object"], Relationship: ["Predicate"] };
 
@@ -6285,7 +6440,7 @@ const TERM_TYPE_ROLE = { Entity: ["Subject", "Object"], Attribute: ["Object"], R
 const lexX = (o, c) => (o && o._extra && o._extra[c] != null ? String(o._extra[c]) : "");
 const LEX_GROUP_DIMS = ["Q6 Facet", "Quant Class", "Quant Level", "Quant Type", "Subject Area", "Sub-Category", "Functional Group", "Quality"];
 const LEX_DIM_GET = {
-  "Q6 Facet": (o) => o.q6, "Quant Class": (o) => o.quantClass, "Quant Level": (o) => o.quantLevel, "Quant Type": (o) => o.quantType,
+  "Q6 Facet": (o) => o.q6 || (o.termType === "Relationship" ? "(n/a)" : ""), "Quant Class": (o) => o.quantClass || (o.termType === "Relationship" ? "(n/a)" : ""), "Quant Level": (o) => o.quantLevel, "Quant Type": (o) => o.quantType,
   "Subject Area": (o) => lexX(o, "Subject Area"), "Sub-Category": (o) => lexX(o, "Sub-Category"), "Functional Group": (o) => lexX(o, "Functional Group"),
   "Quality": (o) => (lexX(o, "Audit Verdict") || "").toUpperCase(),
 };
@@ -6317,6 +6472,8 @@ function lexBuildTree(rows, dims) {
 }
 
 const LEX_INV_COLS = ["Lexical Object ID", "String / Label", "Quant Type", "Primary Equivalent", "Quant Class", "Q6 Facet", "Quant Level", "Term Type", "Sense", "Is Plural", "Language", "Status", "Disambiguation Notes", "Contributor", "Source", "Create Date", "Last Change Date"];
+// The full 34-column inventory layout, in DAMA order — used so an export always carries every field even when built from scratch.
+const LEX_CANON_HEADER = [...LEX_INV_COLS, "Subject Area", "Sub-Category", "Provenance", "Confidence", "Quant Edge", "Classifier Comment", "WordNet Anchor", "Sense Gloss", "Functional Group", "Audit Verdict", "Audit Q6 Facet", "Audit Class/Type/Level", "Audit Abstraction", "Audit Sense", "Audit Edge/Node", "Audit Acronym/N-Gram", "Audit Notes"];
 const LEX_STORE_KEY = "intralign:lexicon:v1";
 const LEX_SHEETS_KEY = "intralign:lexicon:sheets:v1";
 const ANTHROPIC_KEY_LS = "intralign:anthropic_key";
@@ -6417,6 +6574,10 @@ function lexDefaultRefSheets() {
       ["Relationship", "Predicate", "The relating verb itself"],
       ["Fact", "Predicate = 'is an example of'", "Attachment unresolved — excluded from auto role-check"]],
     "Quant Edges": [["Quant Edge (6 — fixed)", "Meaning"], ...QUANT_EDGES],
+    "Sub-Categories": [["Subject Area", "Sub-Category", "Description", "Anchor", "Status", "Terms"]],
+    "Functional Groups": [["Subject Area", "Functional Group", "Description", "Anchor", "Status", "Terms"]],
+    "Audit Summary": [["Semantium Inventory Audit"]],
+    "Audit Log": [["Run", "Health Score", "Band", "Rows", "PASS", "WARN", "QUARANTINE", "Queue"]],
     "Gate Log": [["Run Date", "Checked File", "String", "Used As", "Verdict", "Reason"]],
   };
 }
@@ -6484,26 +6645,29 @@ function useLexGate() {
 }
 
 // ---- export 7-sheet inventory workbook ----
-function lexExportWorkbook(objects, carry) {
+function lexExportWorkbook(objects, carry, baseName) {
   const wb = XLSX.utils.book_new();
   const aoa = (rows) => XLSX.utils.aoa_to_sheet(rows);
-  // Inventory: preserve original header order + any extra columns; overwrite only app-owned cells
-  let header = (carry && carry.invHeader && carry.invHeader.length) ? carry.invHeader.slice() : LEX_INV_COLS.slice();
-  for (const c of LEX_INV_COLS) if (!header.includes(c)) header.push(c); // ensure all known cols present
+  // Inventory header: full 34-column DAMA layout, then any custom columns from the source header,
+  // then any column an object actually carries data for — so NOTHING is ever dropped on export.
+  let header = LEX_CANON_HEADER.slice();
+  if (carry && carry.invHeader && carry.invHeader.length) for (const c of carry.invHeader) if (!header.includes(c)) header.push(c);
+  const extraKeys = new Set();
+  for (const o of objects) for (const k of Object.keys(o._extra || {})) extraKeys.add(k);
+  for (const k of extraKeys) if (!header.includes(k)) header.push(k);
   const rows = objects.map((o) => {
     const full = Object.assign({}, o._extra || {}, lexObjToRow(o));
     return header.map((h) => (full[h] != null ? full[h] : ""));
   });
   XLSX.utils.book_append_sheet(wb, aoa([header, ...rows]), "Inventory");
-  // other sheets: re-emit preserved sheets verbatim (incl. the skill's Gate Log); fill gaps from defaults
+  // other sheets: DAMA order, preserving anything carried and filling the rest from defaults
   const carried = (carry && carry.sheets) || {};
   const defaults = lexDefaultRefSheets();
-  const seen = new Set();
-  for (const name of Object.keys(carried)) { XLSX.utils.book_append_sheet(wb, aoa(carried[name]), name); seen.add(name); }
-  for (const name of ["Quant Classes", "Quant Levels", "Quant Types", "Term Types", "Quant Edges", "Gate Log"]) {
-    if (!seen.has(name)) XLSX.utils.book_append_sheet(wb, aoa(defaults[name]), name);
-  }
-  const fn = "DAMA_lexical_inventory_" + today() + ".xlsx";
+  const DAMA_SHEET_ORDER = ["Audit Summary", "Quant Classes", "Quant Levels", "Quant Types", "Term Types", "Quant Edges", "Sub-Categories", "Functional Groups", "Gate Log", "Audit Log"];
+  const seen = new Set(["Inventory"]);
+  for (const name of DAMA_SHEET_ORDER) { const data = carried[name] || defaults[name]; if (data) { XLSX.utils.book_append_sheet(wb, aoa(data), name); seen.add(name); } }
+  for (const name of Object.keys(carried)) { if (!seen.has(name)) { XLSX.utils.book_append_sheet(wb, aoa(carried[name]), name); seen.add(name); } }
+  const fn = (String(baseName || "").trim() || "Lexical_Inventory") + "_" + today() + ".xlsx";
   XLSX.writeFile(wb, fn);
   return fn;
 }
@@ -6585,6 +6749,28 @@ function LexTextCell({ value, onCommit, placeholder, title, style }) {
     onChange={(e) => setV(e.target.value)} onBlur={commit}
     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }} />;
 }
+function LexTextArea({ value, onCommit, placeholder, title, style }) {
+  const [v, setV] = useState(value || "");
+  useEffect(() => { setV(value || ""); }, [value]);
+  const commit = () => { const t = (v || "").trim(); if (t !== (value || "")) onCommit(t); };
+  return <textarea value={v} title={title} placeholder={placeholder} rows={3}
+    style={{ ...style, resize: "vertical", minHeight: 58, lineHeight: 1.45, fontFamily: FONT_UI }}
+    onChange={(e) => setV(e.target.value)} onBlur={commit} />;
+}
+// A dropdown that also allows a new value — suggests known options, commits on blur.
+let __dlSeq = 0;
+function LexDatalistCell({ value, onCommit, options, placeholder, style }) {
+  const [v, setV] = useState(value || "");
+  useEffect(() => { setV(value || ""); }, [value]);
+  const id = useMemo(() => "dl" + (++__dlSeq), []);
+  const commit = () => { const t = (v || "").trim(); if (t !== (value || "")) onCommit(t); };
+  return <span style={{ display: "block" }}>
+    <input value={v} list={id} placeholder={placeholder} style={style}
+      onChange={(e) => setV(e.target.value)} onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }} />
+    <datalist id={id}>{(options || []).map((op) => <option key={op} value={op} />)}</datalist>
+  </span>;
+}
 // Reference: every Lexical Inventory column and whether a steward can edit it (assignment order first, then the rest).
 const LEX_COL_EDIT = [
   ["Lexical Object ID", "lock", "Locked — assigned once, never changed. Term links and RDF IRIs depend on it."],
@@ -6617,29 +6803,68 @@ const LEX_COL_EDIT = [
 ];
 
 // All inventory fields for the per-row editor. k = structured field, x = _extra column, t = control type.
+// Short help shown under each field label in the editor so a steward knows what the field is for.
+// Master L0 terminology & definitions dictionary (downloadable from the app).
+const L0_DICTIONARY_MD = "# Semantium Level 0 — Lexical String Metadata Dictionary\n\n**The superset of all metadata attached to a governed string, with the authoritative definition of each element.**\n\nSource of truth: the *Field Glossary* of the Business Glossary Training Lexical Inventory Report (the HTML page's own glossary), reconciled with the Semantium Protocols and the Coordinating Data Steward's terminology rulings of 2026-07-06.\n\nScope: Level 0 (Lexical Gate). These are the elements attached to a **String** before it becomes a **Thing** in the Level 1 SPO layer.\n\n---\n\n## Terminology rulings applied (2026-07-06)\n\nThese five rulings resolve the naming confusion. Primary term is canonical; the synonym is retained only as an equivalent label, never as a second governed field.\n\n| # | Primary (canonical) | Synonym (equivalent) | Ruling |\n|---|---|---|---|\n| 1 | **Q6 Facet** (5W1H: Who/What/When/Where/Why/How) | Interrogative | Q6 Facet is primary; \"Interrogative\" is a synonym for the same field. |\n| 2 | **Quant Class** (the 19 MECE Semantium classes) | — | Quant Class is primary; it is the 19-value MECE set and fixes the Q6 Facet. |\n| 3 | **Subject Area** | Scope | Subject Area is primary; \"Scope\" (the Protocol's property #6) is a synonym for the same field. |\n| 4 | **Status** | — | Lifecycle is **Draft → Proposed → Active**, with **Quarantined** and **Deprecated** as off-path states. |\n| 5 | **Quant Edge** | Relationships (anatomy) | Bi-directional, multi-temporal, object-free relational tag. Definition confirmed correct. |\n\n**Status lifecycle (ruling #4), explicit:**\n\n```\nDraft ──▶ Proposed ──▶ Active\n  │           │           │\n  └───────────┴───────────┴──▶ Quarantined  (failed a gate; blocks federation)\n              └───────────┴──▶ Deprecated   (retired from active use)\n```\n\nA string needs a Quant Class before it can reach Active. Promotion between states is an explicit steward act, never inferred.\n\n---\n\n## Band 1 — Core Lexical Metadata\n\n| Field | Definition |\n|---|---|\n| **Lexical Object ID** | Stable identity for this string (e.g. LEX-10001). Assigned once, never changed — Term links and RDF IRIs depend on it. |\n| **String / Label** | The human-readable lexical string being governed. Cased by Term Type: Entities PascalCase, Relationships lowerCamelCase. |\n| **Sense** | Polysemy tag that tells same-spelled rows apart — a short qualifier like \"Party (agent)\" vs \"Party (social-event)\", **not** a definition. String + Sense must be unique. Blank when the string appears only once. |\n| **Q6 Facet** *(syn: Interrogative)* | Which question the string answers — Who / What / When / Where / Why / How. Auto-fills from Quant Class. |\n| **Quant Class** | One of the 19 MECE Semantium classes; it fixes the Q6 Facet. |\n| **Quant Level** | Abstraction level: Business Concept, Metadata, or Instance Data. |\n| **Quant Type** | Lexical form of the string — one of the 12 fixed types (Abbreviation, Acronym, Code, Definition, Description, Flag, Identifier, Instruction, Name, Phrase, Term, Value). |\n| **Term Type** | Intralign role for the SPO layer: Entity, Attribute, Relationship, or Fact. |\n| **Primary Equivalent** | If this string is an alias, the primary it resolves to (same Q6 / Class / Type). Blank on a primary row. |\n| **Status** | Lifecycle: **Draft → Proposed → Active; Quarantined / Deprecated.** Needs a Quant Class before Active. |\n| **Is Plural** | Whether this is a plural form of the string. |\n| **Language** | Language code of the string (e.g. EN). |\n\n## Band 2 — Supplementary Metadata\n\n| Field | Definition |\n|---|---|\n| **Subject Area** *(syn: Scope)* | The Business Subject Area this string belongs to, as defined in the Subject Area Model (MECE). |\n| **Sub-Category** | The Essential Concept within the Subject Area. |\n| **Functional Group** | The DAMA lifecycle group this string supports. *(In report superset; not yet a workbook column.)* |\n| **Quant Edge** | Characteristic relational hints, **object-free** — toggle any of the 6 fixed bi-directional edges (IS-HAS, IS-EQUIVALENT-HAS, IS-MEMBER-HAS, IS-PART-HAS, IS-PRECEDENT-HAS, IS-PROPERTY-HAS). The target is supplied later as the Object of the L1 SPO triple, not here. |\n| **WordNet Anchor** | The formal, machine-facing grounding of the sense — a real WordNet synset ID (e.g. organization.n.01), or LOCAL-SENSE. Human-readable counterpart is the Sense Gloss. |\n| **Sense Gloss** | The committed, human-readable **meaning** of this locked sense — a full sentence saying what the string means (e.g. Person = \"a human being\"). Pairs with the WordNet Anchor. Every Active row should carry one; blank on an Active row is a defect. |\n| **Provenance** | How the Anchor and Gloss were reconciled: **WordNet-direct** (the synset's own definition IS the gloss), **Anchor+Annotation** (you authored a gloss the nearest synset only approximates), or **Local/Manual**. |\n| **Confidence** | Confidence in the classification, 0–1. |\n| **Classifier Comment** | A plain-English example / reality check for the classification. *(In report superset; not yet a workbook column.)* |\n| **Disambiguation Notes** | The steward's rationale for the chosen sense (written by the WSD step). |\n| **Contributor** | Who added or last worked this string. |\n| **Source** | Where the string came from — document, glossary, or standard. |\n| **Create Date** | When the string was first added (system-set). |\n| **Last Change Date** | When the string was last edited (set automatically). |\n\n## Band 3 — Quality Metadata (Audit, auditor-written)\n\n| Field | Definition |\n|---|---|\n| **Audit Verdict** | Level-0 auditor's overall verdict for this string (PASS / PASS+WARN / QUARANTINE). |\n| **Audit Q6 Facet** | Auditor's result for the Q6 Facet resolution check. |\n| **Audit Class/Type/Level** | Auditor's result for the Class / Type / Level conformity check. |\n| **Audit Abstraction** | Auditor's result for the abstraction-promotion check. |\n| **Audit Sense** | Auditor's result for the sense-disambiguation check. |\n| **Audit Edge/Node** | Auditor's result for the edge-vs-node isolation check. |\n| **Audit Acronym/N-Gram** | Auditor's result for the acronym / N-Gram mapping check. |\n| **Audit Notes** | The auditor's free-text notes. |\n\n---\n\n## Superset roster (26 governed + 8 audit = 34 elements)\n\n**Governed (steward-owned), 26:** Lexical Object ID · String / Label · Sense · Q6 Facet · Quant Class · Quant Level · Quant Type · Term Type · Primary Equivalent · Status · Is Plural · Language · Subject Area · Sub-Category · Functional Group · Quant Edge · WordNet Anchor · Sense Gloss · Provenance · Confidence · Classifier Comment · Disambiguation Notes · Contributor · Source · Create Date · Last Change Date\n\n**Quality (auditor-written), 8:** Audit Verdict · Audit Q6 Facet · Audit Class/Type/Level · Audit Abstraction · Audit Sense · Audit Edge/Node · Audit Acronym/N-Gram · Audit Notes\n\n**Missing from the current workbook (2):** `Functional Group`, `Classifier Comment` — present in the report superset, not yet columns in `BusinessGlossaryTraining_lexical_inventory_2026-07-05.xlsx`.\n";
+const LEX_FIELD_HELP = {
+  "Lexical Object ID": "Stable identity for this string (e.g. LEX-10001). Assigned once, never changed \u2014 Term links and RDF IRIs depend on it.",
+  "String / Label": "The human-readable lexical string being governed. Cased by Term Type: Entities PascalCase, Relationships lowerCamelCase.",
+  "Sense": "Polysemy tag that tells same-spelled rows apart \u2014 a short qualifier like \u201CParty (agent)\u201D vs \u201CParty (social-event)\u201D, NOT a definition. String + Sense must be unique. Blank when the string appears only once.",
+  "Q6 Facet": "Which question the string answers \u2014 Who / What / When / Where / Why / How (also called the Interrogative). Auto-fills from Quant Class.",
+  "Quant Class": "One of the 19 MECE Semantium classes; it fixes the Q6 Facet.",
+  "Quant Level": "Abstraction level: Business Concept, Metadata, or Instance Data.",
+  "Quant Type": "Lexical form of the string \u2014 one of the 12 fixed types (Abbreviation, Acronym, Code, Definition, Description, Flag, Identifier, Instruction, Name, Phrase, Term, Value).",
+  "Term Type": "Intralign role for the SPO layer: Entity, Attribute, Relationship, or Fact.",
+  "Quant Edge": "Characteristic relational hints, object-free \u2014 toggle any of the 6 fixed bi-directional edges (IS-HAS, IS-EQUIVALENT-HAS, IS-MEMBER-HAS, IS-PART-HAS, IS-PRECEDENT-HAS, IS-PROPERTY-HAS). The target is supplied later as the Object of the L1 SPO triple, not here.",
+  "Primary Equivalent": "If this string is an alias, the primary it resolves to (same Q6 / Class / Type). Blank on a primary row.",
+  "Is Plural": "Whether this is a plural form of the string.",
+  "Language": "Language code of the string (e.g. EN).",
+  "Status": "Lifecycle: Draft \u2192 Proposed \u2192 Active; Quarantined / Deprecated. Needs a Quant Class before Active.",
+  "Contributor": "Who added or last worked this string.",
+  "Source": "Where the string came from \u2014 document, glossary, or standard.",
+  "Subject Area": "The Business Subject Area this string belongs to, as defined in the Subject Area Model (MECE). Also called Scope.",
+  "Sub-Category": "The Essential Concept within the Subject Area.",
+  "Provenance": "How the Anchor and Gloss were reconciled: WordNet-direct (the synset's own definition IS the gloss), Anchor+Annotation (you authored a gloss the nearest synset only approximates), or Local/Manual.",
+  "Confidence": "Confidence in the classification, 0\u20131.",
+  "Classifier Comment": "A plain-English example / reality check for the classification.",
+  "WordNet Anchor": "The formal, machine-facing grounding of the sense \u2014 a real WordNet synset ID (e.g. organization.n.01), or LOCAL-SENSE. Human-readable counterpart is the Sense Gloss.",
+  "Sense Gloss": "The committed, human-readable MEANING of this locked sense \u2014 a full sentence saying what the string means (e.g. Person = \u201Ca human being\u201D). Pairs with the WordNet Anchor. Every Active row should carry one; blank on an Active row is a defect.",
+  "Functional Group": "The DAMA lifecycle group this string supports.",
+  "Disambiguation Notes": "The steward's rationale for the chosen sense (written by the WSD step).",
+  "Create Date": "When the string was first added (system-set).",
+  "Last Change Date": "When the string was last edited (set automatically).",
+  "Audit Verdict": "Level-0 auditor's overall verdict for this string (PASS / PASS+WARN / QUARANTINE).",
+  "Audit Q6 Facet": "Auditor's result for the Q6 Facet resolution check.",
+  "Audit Class/Type/Level": "Auditor's result for the Class / Type / Level conformity check.",
+  "Audit Abstraction": "Auditor's result for the abstraction-promotion check.",
+  "Audit Sense": "Auditor's result for the sense-disambiguation check.",
+  "Audit Edge/Node": "Auditor's result for the edge-vs-node isolation check.",
+  "Audit Acronym/N-Gram": "Auditor's result for the acronym / N-Gram mapping check.",
+  "Audit Notes": "The auditor's free-text notes.",
+};
 const LEX_FORM_FIELDS = [
   { col: "Lexical Object ID", k: "id", t: "lock" },
   { col: "String / Label", k: "string", t: "text" },
   { col: "Quant Level", k: "quantLevel", t: "select", o: QUANT_LEVELS },
-  { col: "Q6 Facet", k: "q6", t: "select", o: Q6_ORDER },
-  { col: "Quant Class", k: "quantClass", t: "class" },
+  { col: "Q6 Facet", k: "q6", t: "select", o: Q6_ORDER, note: "Auto-fills from the Quant Class." },
+  { col: "Quant Class", k: "quantClass", t: "class", note: "19 Classes sit inside 6 Facets \u2014 pick the Class; the Facet follows." },
   { col: "Quant Type", k: "quantType", t: "select", o: QUANT_TYPES },
   { col: "Term Type", k: "termType", t: "select", o: LEX_TERM_TYPES },
   { col: "Quant Edge", x: "Quant Edge", t: "edges" },
-  { col: "Primary Equivalent", k: "primaryEquivalent", t: "text" },
+  { col: "Primary Equivalent", k: "primaryEquivalent", t: "primeq" },
   { col: "Sense", k: "sense", t: "text" },
   { col: "Is Plural", k: "isPlural", t: "bool" },
   { col: "Language", k: "language", t: "text" },
   { col: "Status", k: "status", t: "select", o: LEX_STATUSES },
   { col: "Contributor", k: "contributor", t: "text" },
   { col: "Source", k: "source", t: "text" },
-  { col: "Subject Area", x: "Subject Area", t: "text" },
-  { col: "Sub-Category", x: "Sub-Category", t: "text" },
-  { col: "Provenance", x: "Provenance", t: "text" },
+  { col: "Subject Area", x: "Subject Area", t: "subject" },
+  { col: "Sub-Category", x: "Sub-Category", t: "subcat" },
+  { col: "Provenance", x: "Provenance", t: "prov" },
   { col: "Confidence", x: "Confidence", t: "text" },
-  { col: "Classifier Comment", x: "Classifier Comment", t: "text" },
+  { col: "Classifier Comment", x: "Classifier Comment", t: "textarea" },
   { col: "WordNet Anchor", x: "WordNet Anchor", t: "text" },
-  { col: "Sense Gloss", x: "Sense Gloss", t: "text" },
+  { col: "Sense Gloss", x: "Sense Gloss", t: "textarea" },
   { col: "Functional Group", x: "Functional Group", t: "select", o: FUNCTIONAL_GROUPS },
   { col: "Disambiguation Notes", k: "notes", t: "lock" },
   { col: "Create Date", k: "createDate", t: "lock" },
@@ -6653,7 +6878,21 @@ const LEX_FORM_FIELDS = [
   { col: "Audit Acronym/N-Gram", x: "Audit Acronym/N-Gram", t: "lock" },
   { col: "Audit Notes", x: "Audit Notes", t: "lock" },
 ];
-function LexEditForm({ o, patch, setClass }) {
+// A tiny "?" affordance: hover shows the help popup; click pins it open. Native title is a fallback.
+function HelpIcon({ text }) {
+  const [hover, setHover] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  if (!text) return null;
+  const open = hover || pinned;
+  return (
+    <span style={{ position: "relative", display: "inline-block" }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <span onClick={(e) => { e.stopPropagation(); setPinned((p) => !p); }}
+        style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", width: 13, height: 13, borderRadius: 999, border: "1px solid " + C.line, color: open ? C.tealDeep : C.muted, background: open ? C.tealSoft : "transparent", fontSize: 9, fontWeight: 800, lineHeight: 1 }}>?</span>
+      {open ? <span onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "150%", left: 0, zIndex: 50, width: 210, maxWidth: "60vw", background: C.ink, color: "#fff", fontFamily: FONT_UI, fontSize: 10.5, fontWeight: 400, lineHeight: 1.45, letterSpacing: 0, textTransform: "none", padding: "7px 9px", borderRadius: 7, boxShadow: "0 8px 22px rgba(0,0,0,0.28)" }}>{text}</span> : null}
+    </span>
+  );
+}
+function LexEditForm({ o, patch, setClass, objects, subjectAreaOpts, subCatsByArea }) {
   const inp = { fontFamily: FONT_UI, fontSize: 12.5, padding: "5px 7px", border: "1px solid " + C.line, borderRadius: 6, background: "#fff", width: "100%", boxSizing: "border-box" };
   const xget = (col) => (o._extra && o._extra[col] != null ? String(o._extra[col]) : "");
   const setX = (col, v) => patch(o.id, { _extra: Object.assign({}, o._extra || {}, { [col]: v }) });
@@ -6668,16 +6907,37 @@ function LexEditForm({ o, patch, setClass }) {
       return <select value={val} onChange={onCh} style={inp}><option value=""></option>{allOpts.map((op) => <option key={op} value={op}>{op}</option>)}</select>;
     }
     if (f.t === "class") return <select value={o.quantClass} onChange={(e) => setClass(o.id, e.target.value)} style={inp}><option value=""></option>{Q6_ORDER.map((fc) => <optgroup key={fc} label={fc}>{QUANT_CLASSES.filter((c) => QUANT_CLASS_FACET[c] === fc).map((c) => <option key={c} value={c}>{c}</option>)}</optgroup>)}</select>;
+    if (f.t === "primeq") {
+      const val = o.primaryEquivalent || "";
+      const need = !!(o.q6 && o.quantClass && o.quantType);
+      const cands = need ? (objects || []).filter((x) => x.id !== o.id && x.q6 === o.q6 && x.quantClass === o.quantClass && x.quantType === o.quantType && !x.primaryEquivalent) : [];
+      cands.sort((a, b) => String(a.string || "").localeCompare(String(b.string || "")));
+      const byId = {}; (objects || []).forEach((x) => { byId[x.id] = x; });
+      const missing = val && !cands.some((x) => x.id === val) ? (byId[val] ? (byId[val].string + " \u00b7 " + val) : val) : null;
+      return <div>
+        <select value={val} onChange={(e) => patch(o.id, { primaryEquivalent: e.target.value })} style={inp} title="An alias points to a primary of the same Q6 Facet / Quant Class / Quant Type">
+          <option value="">{"\u2014 none (this string is a primary) \u2014"}</option>
+          {cands.map((x) => <option key={x.id} value={x.id}>{x.string + " \u00b7 " + x.id}</option>)}
+          {missing ? <option value={val}>{missing}</option> : null}
+        </select>
+        {!need ? <div style={{ fontSize: 9.5, color: C.amber, marginTop: 2 }}>Set Q6 / Class / Type to list candidates</div> : (cands.length === 0 ? <div style={{ fontSize: 9.5, color: C.muted, marginTop: 2 }}>No other primary shares this Q6 / Class / Type</div> : null)}
+      </div>;
+    }
+    if (f.t === "textarea") { const tv = f.k ? (o[f.k] || "") : xget(f.x); return <LexTextArea value={tv} onCommit={(t) => f.k ? patch(o.id, { [f.k]: t }) : setX(f.x, t)} style={inp} />; }
+    if (f.t === "prov") { const val = xget(f.x); const opts = val && !LEX_PROVENANCE.includes(val) ? [...LEX_PROVENANCE, val] : LEX_PROVENANCE; return <select value={val} onChange={(e) => setX(f.x, e.target.value)} style={inp}><option value=""></option>{opts.map((op) => <option key={op} value={op}>{op}</option>)}</select>; }
+    if (f.t === "subject") return <LexDatalistCell value={xget(f.x)} onCommit={(t) => setX(f.x, t)} options={subjectAreaOpts || []} placeholder="pick or type a Subject Area" style={inp} />;
+    if (f.t === "subcat") { const area = xget("Subject Area"); const byArea = subCatsByArea || {}; const opts = (area && byArea[area] && byArea[area].length) ? byArea[area] : (byArea["*"] || []); return <LexDatalistCell value={xget(f.x)} onCommit={(t) => setX(f.x, t)} options={opts} placeholder="pick or type a Sub-Category" style={inp} />; }
     const val = f.k ? (o[f.k] || "") : xget(f.x);
     return <LexTextCell value={val} onCommit={(t) => f.k ? patch(o.id, { [f.k]: t }) : setX(f.x, t)} style={inp} />;
   };
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: "10px 14px" }}>
       {LEX_FORM_FIELDS.map((f) => (
-        <div key={f.col}>
-          <div style={{ fontFamily: FONT_UI, fontSize: 9.5, fontWeight: 700, color: f.t === "lock" ? "#b9a78a" : C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>{f.col}{f.t === "lock" ? " · locked" : ""}</div>
+        <div key={f.col} style={{ gridColumn: f.t === "textarea" ? "1 / -1" : undefined }}>
+          <div style={{ fontFamily: FONT_UI, fontSize: 9.5, fontWeight: 700, color: f.t === "lock" ? "#b9a78a" : C.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3, display: "flex", alignItems: "center", gap: 5 }}><span>{f.col}{f.t === "lock" ? " · locked" : ""}</span><HelpIcon text={LEX_FIELD_HELP[f.col]} /></div>
           {cell(f)}
           {f.warn ? <div style={{ fontSize: 9.5, color: C.amber, marginTop: 2 }}>Renaming breaks Term links & IRIs</div> : null}
+          {f.note ? <div style={{ fontSize: 9.5, color: C.muted, marginTop: 2, fontStyle: "italic" }}>{f.note}</div> : null}
         </div>
       ))}
     </div>
@@ -6699,9 +6959,472 @@ function QuantEdgeCell({ value, onChange, compact }) {
     </div>
   );
 }
-function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClose, flash, focus, onJumpTerm }) {
+// ---- Level-0 "Add a string" wizard: the 8-step steward walkthrough (authoring surface; WordNet lookups stay in the skill) ----
+const WIZ_STEPS = [
+  ["Sense", "Disambiguate the string and lock its sense (WordNet-grounded)."],
+  ["Subject Area", "Map the sense to a Business Subject Area (MECE model) + an Essential Concept."],
+  ["Q6 Facet", "Who / What / When / Where / Why / How — this narrows the class."],
+  ["Quant Class", "Exactly one of the 19 classes within the facet."],
+  ["Level & Type", "Abstraction level, lexical form, and Intralign term type."],
+  ["Quant Edge", "Characteristic relational hints — object-free, multi-valued."],
+  ["Example", "A plain-English reality check before commit."],
+  ["Commit", "Assign the Lexical Object ID and set the status."],
+];
+function LexAddWizard({ objects, onCommit, onClose, subjectAreaOpts, subCatsByArea }) {
+  const [step, setStep] = useState(1);
+  const [d, setD] = useState({ string: "", wordnetAnchor: "", senseGloss: "", provenance: "", sense: "", notes: "",
+    subjectArea: "", subCategory: "", q6: "", quantClass: "", quantLevel: "", quantType: "Term", termType: "Entity",
+    quantEdges: "", example: "", status: "Draft", id: lexNextId(objects) });
+  const set = (k, v) => setD((s) => ({ ...s, [k]: v }));
+  const pickClass = (c) => setD((s) => ({ ...s, quantClass: c, q6: QUANT_CLASS_FACET[c] || s.q6 }));
+  const warn = coherenceWarn(d.quantLevel, d.quantClass);
+  const canCommit = !!(d.string.trim() && d.quantClass && d.quantLevel && d.quantType && d.id.trim());
+  const dupId = (objects || []).some((o) => o.id === d.id.trim());
+  const commit = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    onCommit({ id: d.id.trim(), string: d.string.trim(), quantType: d.quantType, primaryEquivalent: "",
+      quantClass: d.quantClass, q6: d.q6, quantLevel: d.quantLevel, termType: d.termType, sense: (d.sense || "").trim() || (d.wordnetAnchor || "").trim(),
+      isPlural: false, language: "EN", status: d.status, notes: d.notes, contributor: "", source: "",
+      createDate: today, lastChangeDate: today,
+      _extra: { "Subject Area": d.subjectArea, "Sub-Category": d.subCategory, "Provenance": d.provenance, "Confidence": "",
+        "Quant Edge": d.quantEdges, "Classifier Comment": d.example, "WordNet Anchor": d.wordnetAnchor, "Sense Gloss": d.senseGloss, "Functional Group": "" } });
+  };
+  const inp = { fontFamily: FONT_UI, fontSize: 13, padding: "7px 9px", border: "1px solid " + C.line, borderRadius: 7, background: "#fff", width: "100%", boxSizing: "border-box" };
+  const Lab = ({ children }) => <div style={{ fontFamily: FONT_UI, fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 4px" }}>{children}</div>;
+  const row = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px" };
+  const classOpts = d.q6 ? QUANT_CLASSES.filter((c) => QUANT_CLASS_FACET[c] === d.q6) : QUANT_CLASSES;
+  const body = () => {
+    if (step === 1) return <div>
+      <div><Lab>String / Label <span style={{ color: C.red }}>*</span></Lab><input autoFocus value={d.string} onChange={(e) => set("string", e.target.value)} placeholder="e.g. Master Data" style={inp} /></div>
+      <div style={{ ...row, marginTop: 12 }}>
+        <div><Lab>WordNet Anchor</Lab><input value={d.wordnetAnchor} onChange={(e) => { const av = e.target.value; setD((s) => ({ ...s, wordnetAnchor: av, sense: (!s.sense || s.sense === s.wordnetAnchor) ? av : s.sense })); }} placeholder="e.g. data.n.01  ·  LOCAL-SENSE" style={{ ...inp, fontFamily: FONT_MONO }} /></div>
+        <div><Lab>Provenance</Lab><select value={d.provenance} onChange={(e) => set("provenance", e.target.value)} style={inp}><option value=""></option>{LEX_PROVENANCE.map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+      </div>
+      <div style={{ marginTop: 12 }}><Lab>Sense Gloss</Lab><textarea value={d.senseGloss} onChange={(e) => set("senseGloss", e.target.value)} rows={2} placeholder="short gloss for the locked sense" style={{ ...inp, resize: "vertical", minHeight: 46, lineHeight: 1.45 }} /></div>
+      <div style={{ ...row, marginTop: 12 }}>
+        <div><Lab>Sense (label)</Lab><input value={d.sense} onChange={(e) => set("sense", e.target.value)} placeholder="defaults to the WordNet Anchor" style={inp} /></div>
+        <div><Lab>Disambiguation Notes</Lab><textarea value={d.notes} onChange={(e) => set("notes", e.target.value)} rows={2} placeholder="the 'found N senses… proposing X' rationale" style={{ ...inp, resize: "vertical", minHeight: 46, lineHeight: 1.45 }} /></div>
+      </div>
+      <div style={{ fontSize: 11.5, color: C.muted, marginTop: 10 }}>The skill retrieves real WordNet senses; record the steward-locked result here. An empty synset set is valid — use <b>LOCAL-SENSE</b> + Local/Manual.</div>
+    </div>;
+    if (step === 2) return <div style={row}>
+      <div><Lab>Subject Area</Lab><input value={d.subjectArea} list="wizSubjArea" onChange={(e) => set("subjectArea", e.target.value)} placeholder="pick or type a Subject Area" style={inp} /><datalist id="wizSubjArea">{(subjectAreaOpts || []).map((s) => <option key={s} value={s} />)}</datalist></div>
+      <div><Lab>Sub-Category (Essential Concept)</Lab>{(() => { const byArea = subCatsByArea || {}; const opts = (d.subjectArea && byArea[d.subjectArea] && byArea[d.subjectArea].length) ? byArea[d.subjectArea] : (byArea["*"] || []); return <span><input value={d.subCategory} list="wizSubCat" onChange={(e) => set("subCategory", e.target.value)} placeholder="pick or type a Sub-Category" style={inp} /><datalist id="wizSubCat">{opts.map((s) => <option key={s} value={s} />)}</datalist></span>; })()}</div>
+    </div>;
+    if (step === 3) return <div>
+      <Lab>Q6 Facet</Lab>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{Q6_ORDER.map((fac) => { const on = d.q6 === fac; return <button key={fac} onClick={() => set("q6", fac)} style={{ padding: "8px 16px", borderRadius: 9, cursor: "pointer", fontFamily: FONT_UI, fontSize: 13, fontWeight: 700, border: "1px solid " + (on ? C.teal : C.line), background: on ? C.tealSoft : "#fff", color: on ? C.tealDeep : C.ink }}>{fac}</button>; })}</div>
+      <div style={{ fontSize: 11.5, color: C.muted, marginTop: 10 }}>The facet is derived from the Quant Class; choosing it here just narrows the class list in the next step.</div>
+    </div>;
+    if (step === 4) return <div>
+      <Lab>Quant Class{d.q6 ? " · within " + d.q6 : ""}</Lab>
+      <select value={d.quantClass} onChange={(e) => pickClass(e.target.value)} style={inp}><option value=""></option>{classOpts.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+      {d.q6 && <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Showing classes in the <b>{d.q6}</b> facet. Clear the facet in Step 3 to see all 19.</div>}
+      {warn ? <div style={{ marginTop: 12, background: C.amberSoft, border: "1px solid " + C.amber, borderRadius: 9, padding: "9px 12px", fontSize: 12, color: C.amber }}><b>Advisory:</b> {warn}. This never blocks — override with a justification if intended.</div> : null}
+    </div>;
+    if (step === 5) return <div><div style={row}>
+      <div><Lab>Quant Level</Lab><select value={d.quantLevel} onChange={(e) => set("quantLevel", e.target.value)} style={inp}><option value=""></option>{QUANT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}</select></div>
+      <div><Lab>Quant Type</Lab><select value={d.quantType} onChange={(e) => set("quantType", e.target.value)} style={inp}>{QUANT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+      <div><Lab>Term Type (Intralign)</Lab><select value={d.termType} onChange={(e) => set("termType", e.target.value)} style={inp}>{LEX_TERM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+    </div>
+      {warn ? <div style={{ marginTop: 12, background: C.amberSoft, border: "1px solid " + C.amber, borderRadius: 9, padding: "9px 12px", fontSize: 12, color: C.amber }}><b>Advisory:</b> {d.quantLevel} @ {d.quantClass} — {warn}.</div> : null}
+    </div>;
+    if (step === 6) return <div>
+      <Lab>Quant Edge (characteristic hints)</Lab>
+      <QuantEdgeCell value={d.quantEdges} onChange={(v) => set("quantEdges", v)} />
+      <div style={{ fontSize: 11.5, color: C.muted, marginTop: 10 }}>These are lexical hints about likely relational behaviour, not asserted triples — they name no target term. Naming a target is Level 1 (SPO).</div>
+    </div>;
+    if (step === 7) return <div>
+      <Lab>Contextual Example</Lab>
+      <textarea value={d.example} onChange={(e) => set("example", e.target.value)} rows={4} placeholder="How this classification behaves in the architecture — a contradiction here means a wrong classification above." style={{ ...inp, resize: "vertical" }} />
+    </div>;
+    // step 8 — review + commit
+    const line = (k, v) => <div style={{ display: "flex", gap: 8, padding: "3px 0", fontSize: 12.5 }}><span style={{ width: 130, color: C.muted, flexShrink: 0 }}>{k}</span><span style={{ color: C.ink, fontWeight: 600 }}>{v || <i style={{ color: C.muted, fontWeight: 400 }}>—</i>}</span></div>;
+    return <div>
+      <div style={row}>
+        <div><Lab>Lexical Object ID</Lab><input value={d.id} onChange={(e) => set("id", e.target.value)} style={{ ...inp, fontFamily: FONT_MONO }} />
+          {dupId ? <div style={{ fontSize: 11, color: C.red, marginTop: 3 }}>This ID already exists — identity must be unique.</div> : <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>Auto-assigned; assigned once, then locked.</div>}</div>
+        <div><Lab>Status</Lab><select value={d.status} onChange={(e) => set("status", e.target.value)} style={inp}>{LEX_STATUSES.map((s) => <option key={s} value={s} disabled={s === "Active" && d.termType !== "Relationship" && !d.quantClass}>{s}</option>)}</select></div>
+      </div>
+      <div style={{ marginTop: 14, background: C.panel, border: "1px solid " + C.lineSoft, borderRadius: 10, padding: "10px 14px" }}>
+        {line("String", d.string)}{line("Sense", d.sense || d.wordnetAnchor)}{line("Subject Area", d.subjectArea)}{line("Sub-Category", d.subCategory)}
+        {line("Q6 · Class", (d.q6 || "?") + " · " + (d.quantClass || "?"))}{line("Level · Type", (d.quantLevel || "?") + " · " + d.quantType + " · " + d.termType)}{line("Quant Edge", d.quantEdges)}
+      </div>
+      {!canCommit ? <div style={{ fontSize: 12, color: C.amber, marginTop: 10 }}>String, Quant Class, Quant Level and a unique ID are required to commit.</div> : null}
+    </div>;
+  };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,22,20,0.45)", zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: "min(760px, 100%)", boxShadow: "0 24px 60px rgba(0,0,0,0.28)", overflow: "hidden" }}>
+        <div style={{ padding: "16px 22px", borderBottom: "1px solid " + C.lineSoft, display: "flex", alignItems: "center", gap: 10 }}>
+          <div><div style={{ fontFamily: FONT_UI, fontSize: 10.5, fontWeight: 700, color: C.teal, textTransform: "uppercase", letterSpacing: 0.6 }}>Level 0 · Step {step} of 8</div>
+            <div style={{ fontFamily: FONT_DISP, fontSize: 19, color: C.ink }}>{WIZ_STEPS[step - 1][0]}</div></div>
+          <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 20, lineHeight: 1 }}>{"\u00d7"}</button>
+        </div>
+        <div style={{ display: "flex", gap: 4, padding: "10px 22px 0" }}>{WIZ_STEPS.map(([nm], i) => { const n = i + 1; const done = n < step, cur = n === step; return <div key={n} onClick={() => (n < step || d.string.trim()) && setStep(n)} title={nm} style={{ flex: 1, height: 5, borderRadius: 3, cursor: "pointer", background: cur ? C.teal : done ? C.tealDeep : C.line }} />; })}</div>
+        <div style={{ padding: "16px 22px 20px", fontFamily: FONT_UI }}>
+          <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 14 }}>{WIZ_STEPS[step - 1][1]}</div>
+          {body()}
+        </div>
+        <div style={{ padding: "12px 22px", borderTop: "1px solid " + C.lineSoft, display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={() => step > 1 ? setStep(step - 1) : onClose()} style={{ background: "#fff", border: "1px solid " + C.line, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontFamily: FONT_UI, fontSize: 13, fontWeight: 600, color: C.ink }}>{step > 1 ? "Back" : "Cancel"}</button>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            {step < 8
+              ? <button onClick={() => setStep(step + 1)} disabled={step === 1 && !d.string.trim()} style={{ background: (step === 1 && !d.string.trim()) ? C.line : C.teal, border: "none", borderRadius: 8, padding: "8px 20px", cursor: (step === 1 && !d.string.trim()) ? "not-allowed" : "pointer", fontFamily: FONT_UI, fontSize: 13, fontWeight: 700, color: "#fff" }}>Next</button>
+              : <button onClick={() => { if (canCommit && !dupId) commit(); }} disabled={!canCommit || dupId} style={{ background: (canCommit && !dupId) ? C.green : C.line, border: "none", borderRadius: 8, padding: "8px 20px", cursor: (canCommit && !dupId) ? "pointer" : "not-allowed", fontFamily: FONT_UI, fontSize: 13, fontWeight: 700, color: "#fff" }}>Commit to Lexicon</button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+// Interactive Level-0 help: concentric rings (Lexical Object record / Quant Types / Quant Classes)
+// around the quant core, with the 6 Quant Edges as spokes. Hover or tap any element to see its definition.
+function AtomicArchitecture({ onClose }) {
+  const [active, setActive] = useState(null);
+  const cx = 410, cy = 410;
+  const C1 = "#5ab0ff", C2 = "#ffd23d", C3 = "#ff4d4d", DIM = "#c3ccd6";
+  const pol = (r, deg) => { const a = (deg - 90) * Math.PI / 180; return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }; };
+  const set = (group, name, def, color) => setActive({ group, name, def, color });
+  const HALO = { paintOrder: "stroke", stroke: "#0e1216", strokeWidth: 3, strokeLinejoin: "round" }; // dark outline so white text reads over the glow
+  const ring = (items, rNode, rLabel, color, group) => items.map((it, i) => {
+    const deg = (i / items.length) * 360;
+    const p = pol(rNode, deg), lp = pol(rLabel, deg);
+    const anchor = Math.abs(lp.x - cx) < 10 ? "middle" : (lp.x > cx ? "start" : "end");
+    const on = active && active.name === it.name && active.group === group;
+    return <g key={group + it.name} style={{ cursor: "pointer" }} onMouseEnter={() => set(group, it.name, it.def, color)} onClick={(e) => { e.stopPropagation(); set(group, it.name, it.def, color); }}>
+      <circle cx={p.x} cy={p.y} r={on ? 8.5 : 5.5} fill={on ? "#fff" : color} filter="url(#atomGlow)" />
+      <text x={lp.x} y={lp.y} fontSize={on ? 14 : 12.5} fill="#ffffff" textAnchor={anchor} dominantBaseline="middle" style={{ fontFamily: FONT_UI, fontWeight: on ? 800 : 600, ...HALO }}>{it.name}</text>
+    </g>;
+  });
+  // faint node-to-node web within a ring — the constellation look
+  const mesh = (rNode, n, color) => { const segs = []; for (let i = 0; i < n; i++) for (const step of [2, 3]) { const a = pol(rNode, (i / n) * 360), b = pol(rNode, ((i + step) % n / n) * 360); segs.push(<line key={color + i + "-" + step} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={0.6} opacity={0.16} />); } return segs; };
+  const propItems = ATOM_PROPS.map((n) => ({ name: n, def: LEX_FIELD_HELP[n] || "" }));
+  const typeItems = QUANT_TYPES.map((n) => ({ name: n, def: ATOM_DEFS.types[n] || "" }));
+  const classItems = QUANT_CLASSES.map((n) => ({ name: n, def: ATOM_DEFS.classes[n] || "" }));
+  const edgeItems = QUANT_EDGES.map(([n, m]) => ({ name: n, def: m }));
+  const edgeSpokes = edgeItems.map((e, i) => {
+    const deg = (i / edgeItems.length) * 360 + 30;
+    const p = pol(340, deg), lp = pol(384, deg);
+    const anchor = Math.abs(lp.x - cx) < 10 ? "middle" : (lp.x > cx ? "start" : "end");
+    const on = active && active.group === "Quant Edge" && active.name === e.name;
+    return <g key={e.name} style={{ cursor: "pointer" }} onMouseEnter={() => set("Quant Edge", e.name, e.def, DIM)} onClick={(ev) => { ev.stopPropagation(); set("Quant Edge", e.name, e.def, DIM); }}>
+      <line x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#ffffff" strokeWidth={on ? 2.4 : 0.9} opacity={on ? 0.95 : 0.24} />
+      <text x={lp.x} y={lp.y} fontSize={11.5} fill="#ffffff" textAnchor={anchor} dominantBaseline="middle" opacity={on ? 1 : 0.9} style={{ fontFamily: FONT_MONO, letterSpacing: 0.5, fontWeight: on ? 800 : 600, ...HALO }}>{QE_SHORT[e.name]}</text>
+    </g>;
+  });
+  // Q6 facet sector labels at each group's mid-angle
+  const facetLabels = Q6_ORDER.map((fac) => {
+    const idxs = QUANT_CLASSES.map((c, i) => QUANT_CLASS_FACET[c] === fac ? i : -1).filter((x) => x >= 0);
+    if (!idxs.length) return null;
+    const mid = (idxs.reduce((a, b) => a + b, 0) / idxs.length / QUANT_CLASSES.length) * 360;
+    const lp = pol(360, mid);
+    const anchor = Math.abs(lp.x - cx) < 10 ? "middle" : (lp.x > cx ? "start" : "end");
+    const on = active && active.group === "Q6 Facet" && active.name === fac;
+    return <g key={fac} style={{ cursor: "pointer" }} onMouseEnter={() => set("Q6 Facet", fac, ATOM_DEFS.facets[fac], C3)} onClick={(e) => { e.stopPropagation(); set("Q6 Facet", fac, ATOM_DEFS.facets[fac], C3); }}>
+      <text x={lp.x} y={lp.y - 7} fontSize={14.5} fill={on ? "#fff" : C3} textAnchor={anchor} dominantBaseline="middle" style={{ fontFamily: FONT_UI, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", ...HALO }}>{fac}</text>
+      <text x={lp.x} y={lp.y + 8} fontSize={10.5} fill={on ? "#ffd9d9" : "#e39b9b"} textAnchor={anchor} dominantBaseline="middle" style={{ fontFamily: FONT_UI, fontWeight: 700, letterSpacing: 0.4, ...HALO }}>{Q6_SUPERSET[fac]}</text>
+    </g>;
+  });
+  const legend = [["quant", "#cfd6dd", "the atomic core"], ["Lexical Object record", C1, "identity & lifecycle"], ["Quant Type", C2, "12 lexical forms"], ["Quant Class", C3, "19 classes, by Q6 facet"], ["Quant Edge", DIM, "6 relationship kinds"]];
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(8,10,12,0.78)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#111417", borderRadius: 16, width: "min(1400px, 97vw)", maxHeight: "95vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(0,0,0,0.5)" }}>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid #232a30", display: "flex", alignItems: "center", gap: 10 }}>
+          <div><div style={{ fontFamily: FONT_UI, fontSize: 10.5, fontWeight: 700, color: C2, textTransform: "uppercase", letterSpacing: 0.8 }}>{"Level 0 \u00b7 Semantium"}</div>
+            <div style={{ fontFamily: FONT_DISP, fontSize: 20, color: "#fff" }}>The Atomic Architecture of Language</div></div>
+          <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: "#8b9298", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>{"\u00d7"}</button>
+        </div>
+        <div style={{ display: "flex", flex: 1, minHeight: 0, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 660px", padding: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(circle at center, #151a20, #090b0e)" }}>
+            <svg viewBox="-90 -90 1000 1000" style={{ width: "100%", maxWidth: 940, height: "auto", maxHeight: "86vh" }}>
+              <defs>
+                <filter id="atomGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+              </defs>
+              {mesh(110, propItems.length, C1)}
+              {mesh(215, typeItems.length, C2)}
+              {mesh(310, classItems.length, C3)}
+              {edgeSpokes}
+              <circle cx={cx} cy={cy} r={110} fill="none" stroke={C1} strokeOpacity={0.95} strokeWidth={2.4} filter="url(#atomGlow)" />
+              <circle cx={cx} cy={cy} r={215} fill="none" stroke={C2} strokeOpacity={0.95} strokeWidth={2.4} filter="url(#atomGlow)" />
+              <circle cx={cx} cy={cy} r={310} fill="none" stroke={C3} strokeOpacity={0.95} strokeWidth={2.4} filter="url(#atomGlow)" />
+              {facetLabels}
+              {ring(classItems, 310, 332, C3, "Quant Class")}
+              {ring(typeItems, 215, 233, C2, "Quant Type")}
+              {ring(propItems, 110, 86, C1, "Lexical Object")}
+              <circle cx={cx} cy={cy} r={46} fill="#141a1f" stroke="#8b98a6" strokeWidth={2} filter="url(#atomGlow)" style={{ cursor: "pointer" }} onMouseEnter={() => set("Core", "quant", ATOM_DEFS.core, "#cfd6dd")} onClick={(e) => { e.stopPropagation(); set("Core", "quant", ATOM_DEFS.core, "#cfd6dd"); }} />
+              <text x={cx} y={cy} fontSize={22} fill="#ffffff" textAnchor="middle" dominantBaseline="middle" style={{ fontFamily: FONT_DISP, pointerEvents: "none", fontWeight: 800 }}>quant</text>
+            </svg>
+          </div>
+          <div style={{ flex: "1 1 300px", borderLeft: "1px solid #232a30", padding: "16px 20px", minWidth: 260, overflowY: "auto", fontFamily: FONT_UI }}>
+            {active ? (
+              <div>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: active.color, textTransform: "uppercase", letterSpacing: 0.6 }}>{active.group}{active.group === "Quant Class" ? " \u00b7 " + (QUANT_CLASS_FACET[active.name] || "") + " (" + (Q6_SUPERSET[QUANT_CLASS_FACET[active.name]] || "") + ")" : ""}</div>
+                <div style={{ fontFamily: FONT_DISP, fontSize: 22, color: "#fff", margin: "3px 0 8px" }}>{active.name}{active.group === "Q6 Facet" && Q6_SUPERSET[active.name] ? <span style={{ fontSize: 14, color: active.color, marginLeft: 8 }}>{"\u00b7 " + Q6_SUPERSET[active.name]}</span> : null}</div>
+                <div style={{ fontSize: 13, color: "#c7ccd1", lineHeight: 1.55 }}>{active.def || <span style={{ color: "#8b9298" }}>No definition recorded.</span>}</div>
+                {active.group === "Q6 Facet" && Q6_SUPERSET[active.name] ? <div style={{ marginTop: 8, fontSize: 12, color: "#9aa0a6" }}>Business name: <b style={{ color: "#dfe3e7" }}>{Q6_SUPERSET[active.name]}</b></div> : null}
+                {active.group === "Quant Class" && ATOM_SYNONYM[active.name] ? <div style={{ marginTop: 8, fontSize: 12, color: "#9aa0a6" }}>Also called: <b style={{ color: "#dfe3e7" }}>{ATOM_SYNONYM[active.name]}</b></div> : null}
+                {active.group === "Quant Class" && ATOM_EXAMPLES[active.name] ? <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #232a30" }}><div style={{ fontSize: 10, fontWeight: 700, color: "#7d858c", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Examples</div><div style={{ fontSize: 12.5, color: "#c7ccd1", lineHeight: 1.5 }}>{ATOM_EXAMPLES[active.name].split("; ").join(" \u00b7 ")}</div></div> : null}
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: "#9aa0a6", lineHeight: 1.55 }}>Hover or tap any element to see its definition. The rings read from the inside out: the <b style={{ color: "#c7ccd1" }}>quant</b> core, the <b style={{ color: C1 }}>Lexical Object record</b>, the <b style={{ color: C2 }}>Quant Types</b>, and the <b style={{ color: C3 }}>Quant Classes</b> grouped into the six Q6 facets; the spokes are the <b style={{ color: "#c7ccd1" }}>Quant Edges</b>.</div>
+            )}
+            <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid #232a30", display: "flex", flexDirection: "column", gap: 7 }}>
+              {legend.map(([nm, col, note]) => (
+                <div key={nm} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "#aeb4ba" }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 999, background: col, flexShrink: 0 }} />
+                  <span style={{ color: "#dfe3e7", fontWeight: 600 }}>{nm}</span><span style={{ color: "#7d858c" }}>{" \u2014 " + note}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+// The six Semantium inventory checks and the per-row Audit column each writes into.
+const AUDIT_CHECKS = [
+  ["Q6 Facet Resolution", "Audit Q6 Facet"],
+  ["Class/Type/Level Conformity", "Audit Class/Type/Level"],
+  ["Abstraction Level", "Audit Abstraction"],
+  ["Sense Disambiguation", "Audit Sense"],
+  ["Edge-vs-Node Isolation", "Audit Edge/Node"],
+  ["Acronym / N-Gram Mapping", "Audit Acronym/N-Gram"],
+];
+const AUDIT_PASS_MARKS = new Set(["\u2713", "\u2714", "PASS", "OK", "\u2014", "-", ""]);
+function auditIsFlag(v) { if (v == null) return false; const s = String(v).trim(); return s !== "" && !AUDIT_PASS_MARKS.has(s.toUpperCase()) && !AUDIT_PASS_MARKS.has(s); }
+// Read-only view of the auditor's results (the skill writes them; the app displays + navigates).
+function AuditSummary({ objects, carry, onJump, onClose }) {
+  const [open, setOpen] = useState(null); // which flagged section is expanded
+  const rows = objects || [];
+  const lx = (o, c) => (o && o._extra && o._extra[c] != null) ? o._extra[c] : "";
+  const verdictOf = (o) => String(lx(o, "Audit Verdict") || "").toUpperCase();
+  const hasAudit = rows.some((o) => lx(o, "Audit Verdict") || AUDIT_CHECKS.some(([, c]) => lx(o, c)));
+  // score / band / run / queue from the carried Audit Summary sheet (skill-authored)
+  let score = null, band = "", run = "", queue = null;
+  const sheet = carry && carry.sheets && carry.sheets["Audit Summary"];
+  if (Array.isArray(sheet)) for (const r of sheet) { if (!Array.isArray(r)) continue; const a = String(r[0] || ""); if (a === "Inventory Health Score") { score = r[1]; band = String(r[2] || ""); } else if (/^Run /.test(a)) run = a; else if (/^Judgment queue/.test(a)) queue = r[1]; }
+  const byVerdict = { PASS: [], WARN: [], QUARANTINE: [] };
+  for (const o of rows) { const v = verdictOf(o); if (byVerdict[v]) byVerdict[v].push(o); }
+  const checks = AUDIT_CHECKS.map(([name, col]) => { const flagged = rows.filter((o) => auditIsFlag(lx(o, col))); const total = rows.length || 1; return { name, col, flagged, pct: Math.round(((total - flagged.length) / total) * 100) }; });
+  const bandColor = /QUAR/i.test(band) ? C.red : (/WARN/i.test(band) ? C.amber : C.green);
+  const jump = (o) => { onJump(o.string); onClose(); };
+  const flaggedList = (items, note) => (
+    <div style={{ marginTop: 6, marginLeft: 4, borderLeft: "2px solid " + C.lineSoft, paddingLeft: 10 }}>
+      {items.length === 0 ? <div style={{ fontSize: 11.5, color: C.muted }}>No rows flagged.</div> : items.map((o) => (
+        <div key={o.id} onClick={() => jump(o)} style={{ cursor: "pointer", padding: "5px 0", display: "flex", gap: 8, alignItems: "baseline", fontSize: 12.5 }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: C.muted, flexShrink: 0 }}>{o.id}</span>
+          <span style={{ fontWeight: 700, color: C.tealDeep }}>{o.string}</span>
+          {note && lx(o, note) ? <span style={{ color: C.sub, fontSize: 11.5 }}>{"\u2014 " + lx(o, note)}</span> : null}
+          <span style={{ marginLeft: "auto", color: C.teal, fontSize: 11, flexShrink: 0 }}>open {"\u2192"}</span>
+        </div>
+      ))}
+    </div>
+  );
+  const row = (key, label, count, color, items, note) => {
+    const isOpen = open === key; const clickable = count > 0;
+    return <div style={{ borderBottom: "1px solid " + C.lineSoft, padding: "9px 0" }}>
+      <div onClick={() => clickable && setOpen(isOpen ? null : key)} style={{ display: "flex", alignItems: "center", gap: 10, cursor: clickable ? "pointer" : "default" }}>
+        <span style={{ flex: 1, fontSize: 13, color: C.ink, fontWeight: 600 }}>{label}</span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.muted, minWidth: 54, textAlign: "right" }}>{typeof count === "string" ? count : count + " flagged"}</span>
+        <span style={{ width: 58, textAlign: "right", fontSize: 12.5, fontWeight: 800, color: clickable ? color : C.muted }}>{clickable ? (isOpen ? "hide" : "view \u2192") : "\u2014"}</span>
+      </div>
+      {isOpen ? flaggedList(items, note) : null}
+    </div>;
+  };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,22,20,0.5)", zIndex: 65, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "36px 16px", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: "min(720px, 100%)", boxShadow: "0 24px 60px rgba(0,0,0,0.28)", overflow: "hidden" }}>
+        <div style={{ padding: "16px 22px", borderBottom: "1px solid " + C.lineSoft, display: "flex", alignItems: "center", gap: 10 }}>
+          <div><div style={{ fontFamily: FONT_UI, fontSize: 10.5, fontWeight: 700, color: C.teal, textTransform: "uppercase", letterSpacing: 0.6 }}>Level 0 \u00b7 Semantium Inventory Audit</div>
+            <div style={{ fontFamily: FONT_DISP, fontSize: 20, color: C.ink }}>Audit Summary</div></div>
+          <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: C.muted, fontSize: 22, lineHeight: 1 }}>{"\u00d7"}</button>
+        </div>
+        <div style={{ padding: "18px 22px", fontFamily: FONT_UI, maxHeight: "74vh", overflowY: "auto" }}>
+          {!hasAudit ? (
+            <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.6 }}>This inventory hasn't been audited yet. Run the <code>semantium-inventory-auditor</code> skill to score it, then re-import to see the summary and jump to any flagged strings.</div>
+          ) : (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 6 }}>
+                <div style={{ fontFamily: FONT_DISP, fontSize: 40, color: bandColor, lineHeight: 1 }}>{score != null ? score : "\u2014"}</div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: bandColor, textTransform: "uppercase", letterSpacing: 0.6 }}>{band || "Health Score"}</div>
+                  <div style={{ fontSize: 11.5, color: C.muted }}>{run || (rows.length + " rows")}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, margin: "12px 0 4px", flexWrap: "wrap" }}>
+                {[["PASS", C.green], ["WARN", C.amber], ["QUARANTINE", C.red]].map(([v, col]) => (
+                  <div key={v} onClick={() => byVerdict[v].length && setOpen(open === "v" + v ? null : "v" + v)} style={{ cursor: byVerdict[v].length ? "pointer" : "default", border: "1px solid " + (open === "v" + v ? col : C.line), borderRadius: 9, padding: "6px 12px", background: open === "v" + v ? C.panel : "#fff" }}>
+                    <div style={{ fontFamily: FONT_DISP, fontSize: 18, color: col }}>{byVerdict[v].length}</div>
+                    <div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>{v}{byVerdict[v].length ? " \u2193" : ""}</div>
+                  </div>
+                ))}
+                {queue != null ? <div style={{ border: "1px solid " + C.line, borderRadius: 9, padding: "6px 12px" }}><div style={{ fontFamily: FONT_DISP, fontSize: 18, color: C.ink }}>{queue}</div><div style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>Judgment queue</div></div> : null}
+              </div>
+              {open === "vWARN" ? flaggedList(byVerdict.WARN, "Audit Notes") : null}
+              {open === "vQUARANTINE" ? flaggedList(byVerdict.QUARANTINE, "Audit Notes") : null}
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5, margin: "16px 0 2px" }}>Checks</div>
+              {checks.map((c) => row(c.col, c.name, c.flagged.length, c.flagged.length ? C.amber : C.green, c.flagged, "Audit Notes"))}
+              <div style={{ fontSize: 11.5, color: C.muted, marginTop: 12 }}>Click any flagged count to list the strings, then click a string to open it in the Lexicon. Scores are set by the auditor skill; re-run it after edits.</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+// Build a self-contained, print-ready HTML report of the lexical inventory (Download HTML or Print → PDF).
+function lexReportHTML(objects, carry, meta) {
+  const rows = objects || [];
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const lx = (o, c) => (o && o._extra && o._extra[c] != null) ? o._extra[c] : "";
+  const byId = {}; rows.forEach((o) => { byId[o.id] = o; });
+  const total = rows.length, cnt = (fn) => rows.filter(fn).length;
+  const aliasRows = rows.filter((o) => o.primaryEquivalent);
+  const statCards = [["Total", total], ["Active", cnt((o) => o.status === "Active")], ["Proposed", cnt((o) => o.status === "Proposed")], ["Draft", cnt((o) => o.status === "Draft")], ["Classified", cnt((o) => o.quantClass)], ["Gate-ready", cnt((o) => o.status === "Active" && o.quantClass && !o.primaryEquivalent)], ["Aliases", aliasRows.length]];
+  const dist = (fn) => { const m = {}; for (const o of rows) { const k = String(fn(o) || "").trim() || "(unassigned)"; m[k] = (m[k] || 0) + 1; } return Object.entries(m).sort((a, b) => b[1] - a[1]); };
+  const distTable = (title, pairs) => `<h3>${esc(title)}</h3><table class="dist"><thead><tr><th>${esc(title)}</th><th>Count</th><th>%</th></tr></thead><tbody>` + pairs.map(([k, n]) => `<tr><td>${esc(k)}</td><td>${n}</td><td>${total ? Math.round(n / total * 100) : 0}%</td></tr>`).join("") + `</tbody></table>`;
+  // audit
+  let auditHTML = "";
+  const hasAudit = rows.some((o) => lx(o, "Audit Verdict") || AUDIT_CHECKS.some(([, c]) => lx(o, c)));
+  if (hasAudit) {
+    let score = null, band = "", run = "", queue = null;
+    const sheet = carry && carry.sheets && carry.sheets["Audit Summary"];
+    if (Array.isArray(sheet)) for (const r of sheet) { if (!Array.isArray(r)) continue; const a = String(r[0] || ""); if (a === "Inventory Health Score") { score = r[1]; band = String(r[2] || ""); } else if (/^Run /.test(a)) run = a; else if (/^Judgment queue/.test(a)) queue = r[1]; }
+    const bandCls = /QUAR/i.test(band) ? "band-quar" : (/WARN/i.test(band) ? "band-warn" : "band-pass");
+    const verd = { PASS: 0, WARN: 0, QUARANTINE: 0 };
+    rows.forEach((o) => { const v = String(lx(o, "Audit Verdict") || "").toUpperCase(); if (verd[v] != null) verd[v]++; });
+    const checkRows = AUDIT_CHECKS.map(([name, col]) => { const flagged = rows.filter((o) => auditIsFlag(lx(o, col))); return `<tr><td>${esc(name)}</td><td>${total ? Math.round((total - flagged.length) / total * 100) : 0}%</td><td>${flagged.length}</td></tr>`; }).join("");
+    const flaggedRows = rows.filter((o) => { const v = String(lx(o, "Audit Verdict") || "").toUpperCase(); return v === "WARN" || v === "QUARANTINE"; });
+    const flaggedList = flaggedRows.length ? `<h3>Flagged rows</h3><table><thead><tr><th>LEX ID</th><th>String</th><th>Verdict</th><th>Notes</th></tr></thead><tbody>` + flaggedRows.map((o) => `<tr><td>${esc(o.id)}</td><td>${esc(o.string)}</td><td>${esc(lx(o, "Audit Verdict"))}</td><td>${esc(lx(o, "Audit Notes"))}</td></tr>`).join("") + `</tbody></table>` : "";
+    auditHTML = `<h2>Audit Summary</h2><p><span class="score ${bandCls}">${score != null ? esc(score) : "\u2014"}</span> &nbsp;<b class="${bandCls}">${esc(band || "Health Score")}</b> &nbsp; <span class="muted">${esc(run)}</span></p><p>Verdicts: <b class="band-pass">${verd.PASS} PASS</b> \u00b7 <b class="band-warn">${verd.WARN} WARN</b> \u00b7 <b class="band-quar">${verd.QUARANTINE} QUARANTINE</b>${queue != null ? " \u00b7 " + esc(queue) + " in judgment queue" : ""}</p><table class="dist"><thead><tr><th>Check</th><th>Pass rate</th><th>Rows flagged</th></tr></thead><tbody>${checkRows}</tbody></table>${flaggedList}`;
+  } else {
+    auditHTML = `<h2>Audit Summary</h2><p class="muted">This inventory has not been audited. Run the semantium-inventory-auditor skill to score it.</p>`;
+  }
+  const aliasHTML = aliasRows.length ? `<h2>Aliases</h2><table class="dist"><thead><tr><th>Alias</th><th>Primary equivalent</th><th>Q6 \u00b7 Class</th></tr></thead><tbody>` + aliasRows.map((o) => { const pr = byId[o.primaryEquivalent]; return `<tr><td>${esc(o.string)}</td><td>${esc(pr ? pr.string + " (" + o.primaryEquivalent + ")" : o.primaryEquivalent)}</td><td>${esc((o.q6 || "") + " \u00b7 " + (o.quantClass || ""))}</td></tr>`; }).join("") + `</tbody></table>` : "";
+  // The full record is split into three page-friendly tables, each keyed by ID + String.
+  const CORE_COLS = ["Lexical Object ID", "String / Label", "Sense", "Q6 Facet", "Quant Class", "Quant Level", "Quant Type", "Term Type", "Primary Equivalent", "Status", "Is Plural", "Language"];
+  const SUPP_COLS = ["Lexical Object ID", "String / Label", "Subject Area", "Sub-Category", "Functional Group", "Quant Edge", "WordNet Anchor", "Sense Gloss", "Provenance", "Confidence", "Classifier Comment", "Disambiguation Notes", "Contributor", "Source", "Create Date", "Last Change Date"];
+  const QUAL_COLS = ["Lexical Object ID", "String / Label", "Audit Verdict", "Audit Q6 Facet", "Audit Class/Type/Level", "Audit Abstraction", "Audit Sense", "Audit Edge/Node", "Audit Acronym/N-Gram", "Audit Notes"];
+  const grouped = new Set([...CORE_COLS, ...SUPP_COLS, ...QUAL_COLS]);
+  const custom = []; rows.forEach((o) => Object.keys(o._extra || {}).forEach((k) => { if (!grouped.has(k) && !custom.includes(k)) custom.push(k); }));
+  const suppCols = SUPP_COLS.concat(custom); // any non-standard columns ride along with Supplementary so nothing is dropped
+  const fullOf = (o) => Object.assign({}, o._extra || {}, lexObjToRow(o));
+  const subTable = (cols, cls) => `<table class="inv ${cls || ""}"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` + rows.map((o) => { const full = fullOf(o); return "<tr>" + cols.map((c) => `<td>${esc(full[c] != null ? full[c] : "")}</td>`).join("") + "</tr>"; }).join("") + `</tbody></table>`;
+  const invHTML = `<h2>Inventory <span class="muted">(${total} strings)</span></h2>
+<h3>Core Lexical Metadata</h3><div class="invwrap">${subTable(CORE_COLS)}</div>
+<h3 class="pb">Supplementary Metadata</h3><div class="invwrap">${subTable(suppCols, "wrap")}</div>
+<h3 class="pb">Quality Metadata</h3><div class="invwrap">${subTable(QUAL_COLS)}</div>`;
+  // Field Glossary — define every field that appears on the report (deduped, in report order).
+  const seenFld = new Set();
+  const glossaryHTML = `<h2 class="pb">Field Glossary</h2>` + [["Core Lexical Metadata", CORE_COLS], ["Supplementary Metadata", suppCols], ["Quality Metadata", QUAL_COLS]].map(([title, fields]) => {
+    const body = fields.filter((fld) => !seenFld.has(fld) && (seenFld.add(fld), true)).map((fld) => `<tr><td class="fld">${esc(fld)}</td><td>${esc(LEX_FIELD_HELP[fld] || "(no definition recorded)")}</td></tr>`).join("");
+    return body ? `<h3>${esc(title)}</h3><table class="gloss"><thead><tr><th>Field</th><th>Definition</th></tr></thead><tbody>${body}</tbody></table>` : "";
+  }).join("");
+  const scopeLabel = meta && meta.scope === "shared" ? "Shared Lexicon" : "Own Lexicon";
+  const saLabel = meta && meta.subjectArea ? "Subject Area: " + meta.subjectArea : "All Subject Areas";
+  const scLabel = meta && meta.subCategory ? " \u00b7 Sub-Category: " + meta.subCategory : "";
+  const cust = (meta && meta.customer) || "";
+  const date = new Date().toISOString().slice(0, 10);
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Lexical Inventory Report \u2014 ${esc(cust)}</title><style>
+@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}
+body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#16241d;margin:0;padding:34px;background:#fff;line-height:1.45}
+.brand{color:#1f7a4d;font-weight:800;font-size:11px;letter-spacing:1.5px;text-transform:uppercase}
+h1{font-size:26px;margin:4px 0 2px}.meta{color:#5a6b62;font-size:13px;margin-bottom:8px}
+h2{font-size:16px;margin:26px 0 8px;padding-bottom:5px;border-bottom:2px solid #1f7a4d}
+h3{font-size:12.5px;margin:14px 0 5px;color:#33453b}.muted{color:#7a8880;font-weight:400}
+.stats{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.stat{border:1px solid #d8e0dc;border-radius:9px;padding:9px 16px;min-width:96px}
+.stat .n{font-size:24px;font-weight:800;color:#1f7a4d}.stat .l{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#7a8880}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:6px 0 4px}
+th,td{border:1px solid #dbe3df;padding:4px 8px;text-align:left;vertical-align:top}
+th{background:#eef4f1;font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:#33453b}
+table.dist{max-width:520px}.score{font-size:30px;font-weight:800;vertical-align:middle}
+.invwrap{overflow-x:auto;max-width:100%}
+table.inv{font-size:8px;table-layout:fixed;width:100%}
+table.inv th,table.inv td{padding:2px 4px;white-space:normal;word-break:break-word;overflow-wrap:anywhere;vertical-align:top}
+h3.pb{page-break-before:always}
+table.gloss{max-width:960px;font-size:11px}table.gloss td.fld{font-weight:700;white-space:nowrap;color:#1f7a4d;width:190px;vertical-align:top}table.gloss td{vertical-align:top}
+.band-pass{color:#1f7a4d}.band-warn{color:#b07908}.band-quar{color:#a93b2c}
+.grid2{display:flex;flex-wrap:wrap;gap:26px}.grid2>div{flex:1 1 300px}
+.noprint button{background:#1f7a4d;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer}
+@media print{.noprint{display:none}.invwrap{overflow:visible}h2,h3{page-break-after:avoid}tr{page-break-inside:avoid}thead{display:table-header-group}}
+</style></head><body>
+<div class="noprint" style="text-align:right;margin-bottom:10px"><button onclick="window.print()">Print / Save as PDF</button></div>
+<div class="brand">Modelware \u00b7 Semantium \u00b7 Level 0 Lexical Gate</div>
+<h1>Lexical Inventory Report</h1>
+<div class="meta">${esc(cust ? cust + " \u00b7 " : "")}${scopeLabel} \u00b7 ${esc(saLabel)}${esc(scLabel)} \u00b7 ${date}</div>
+<h2>Overview</h2><div class="stats">${statCards.map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${esc(l)}</div></div>`).join("")}</div>
+${auditHTML}
+<h2>Distribution</h2><div class="grid2"><div>${distTable("Q6 Facet", dist((o) => o.q6 || (o.termType === "Relationship" ? "(n/a)" : "")))}${distTable("Quant Level", dist((o) => o.quantLevel))}${distTable("Status", dist((o) => o.status))}</div><div>${distTable("Quant Class", dist((o) => o.quantClass || (o.termType === "Relationship" ? "(n/a)" : "")))}${distTable("Quant Type", dist((o) => o.quantType))}${distTable("Subject Area", dist((o) => lx(o, "Subject Area")))}</div></div>
+${aliasHTML}
+${invHTML}
+${glossaryHTML}
+</body></html>`;
+}
+function LexReport({ objects, carry, meta, onClose }) {
+  const [sa, setSa] = useState("");
+  const [sc, setSc] = useState("");
+  const saOf = (o) => String((o._extra && o._extra["Subject Area"]) || "").trim();
+  const scOf = (o) => String((o._extra && o._extra["Sub-Category"]) || "").trim();
+  const subjectAreas = useMemo(() => { const s = new Set(); (objects || []).forEach((o) => { if (saOf(o)) s.add(saOf(o)); }); return [...s].sort((a, b) => a.localeCompare(b)); }, [objects]);
+  const bySa = useMemo(() => sa ? (objects || []).filter((o) => saOf(o) === sa) : (objects || []), [objects, sa]);
+  const subCategories = useMemo(() => { const s = new Set(); bySa.forEach((o) => { if (scOf(o)) s.add(scOf(o)); }); return [...s].sort((a, b) => a.localeCompare(b)); }, [bySa]);
+  useEffect(() => { if (sc && !subCategories.includes(sc)) setSc(""); }, [subCategories]); // drop a stale sub-category when the area changes
+  const rows = useMemo(() => sc ? bySa.filter((o) => scOf(o) === sc) : bySa, [bySa, sc]);
+  const html = useMemo(() => lexReportHTML(rows, carry, Object.assign({}, meta, { subjectArea: sa, subCategory: sc })), [rows, carry, meta, sa, sc]);
+  const tag = (v) => v ? "_" + v.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") : "";
+  const fname = ((meta && meta.scope === "shared") ? "Shared" : (((meta && meta.customer) || "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "Lexical")) + "_Lexical_Inventory_Report" + tag(sa) + tag(sc) + "_" + new Date().toISOString().slice(0, 10) + ".html";
+  const download = () => { try { const blob = new Blob([html], { type: "text/html" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); } catch (e) {} };
+  const printIt = () => { try { const f = document.getElementById("lexReportFrame"); f.contentWindow.focus(); f.contentWindow.print(); } catch (e) {} };
+  const selStyle = { fontFamily: FONT_UI, fontSize: 12.5, padding: "6px 9px", border: "1px solid " + C.line, borderRadius: 7, background: "#fff" };
+  const capLabel = { fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.4, fontSize: 10 };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,22,20,0.5)", zIndex: 66, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: "min(1000px, 97vw)", height: "92vh", boxShadow: "0 24px 60px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid " + C.lineSoft, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div><div style={{ fontFamily: FONT_UI, fontSize: 10.5, fontWeight: 700, color: C.teal, textTransform: "uppercase", letterSpacing: 0.6 }}>{"Level 0 \u00b7 Lexical Inventory"}</div>
+            <div style={{ fontFamily: FONT_DISP, fontSize: 19, color: C.ink }}>Report</div></div>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, marginLeft: 14, fontFamily: FONT_UI }}>
+            <span style={capLabel}>Subject Area</span>
+            <select value={sa} onChange={(e) => { setSa(e.target.value); setSc(""); }} style={selStyle}>
+              <option value="">All Subject Areas ({(objects || []).length})</option>
+              {subjectAreas.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: FONT_UI }}>
+            <span style={capLabel}>Sub-Category</span>
+            <select value={sc} onChange={(e) => setSc(e.target.value)} disabled={!subCategories.length} style={Object.assign({}, selStyle, subCategories.length ? {} : { color: C.muted, background: C.panel })}>
+              <option value="">{subCategories.length ? "All Sub-Categories (" + bySa.length + ")" : "\u2014"}</option>
+              {subCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <span style={{ color: C.muted, fontSize: 11.5, fontFamily: FONT_UI }}>{rows.length} string{rows.length === 1 ? "" : "s"}</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+            <Btn small kind="ghost" icon={Download} onClick={download}>Download HTML</Btn>
+            <Btn small kind="primary" onClick={printIt}>Print / Save as PDF</Btn>
+            <button onClick={onClose} style={{ background: "none", border: "none", color: C.muted, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>{"\u00d7"}</button>
+          </div>
+        </div>
+        <iframe id="lexReportFrame" title="Lexical Inventory Report" srcDoc={html} style={{ flex: 1, border: "none", width: "100%", background: "#fff" }} />
+      </div>
+    </div>
+  );
+}
+function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClose, flash, focus, onJumpTerm, lexScope, onSetScope, custName }) {
   const [q, setQ] = useState(focus || "");
   const [showCols, setShowCols] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showAtom, setShowAtom] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  // land on a specific string in the grid (used by the Audit Summary's "open →")
+  const jumpToString = (s) => { setQ(s); setFStatus(""); setFFacet(""); setFType(""); setOnlyUnclassified(false); setFLink(""); setFSubject(""); setFSubCat(""); setFFunc(""); setFQual(""); };
+  const [scopePop, setScopePop] = useState(false);
+  const [scopeSel, setScopeSel] = useState(lexScope === "shared" ? "shared" : "own");
+  const [scopeCopy, setScopeCopy] = useState(false);
+  const addString = (obj) => { onChange([...(objects || []), obj]); setShowAdd(false); if (flash) flash("Added \u201C" + obj.string + "\u201D \u00b7 " + obj.id + (obj.status === "Active" ? " (Active)" : " (" + obj.status + ")")); };
   // a deep link / a term's badge lands here: focus the search on that string and clear any
   // other filter (e.g. an Active-only status filter would otherwise hide an In-Review string)
   useEffect(() => { if (focus) { setQ(focus); setFStatus(""); setFFacet(""); setFType(""); setOnlyUnclassified(false); setFLink(""); setFSubject(""); setFSubCat(""); setFFunc(""); setFQual(""); } }, [focus]);
@@ -6723,7 +7446,11 @@ function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClo
   const [reportSeen, setReportSeen] = useState(false);
   useEffect(() => { setReportSeen(false); }, [report]);
   const [limit, setLimit] = useState(PAGE);
-  const [groupBy, setGroupBy] = useState(["Q6 Facet", "Quant Class", "Quant Level", "Quant Type"]);
+  const [groupBy, setGroupBy] = useState(() => {
+    try { const v = JSON.parse(localStorage.getItem("ig_lex_groupby")); if (Array.isArray(v) && v.every((d) => LEX_GROUP_DIMS.includes(d))) return v; } catch (e) {}
+    return ["Q6 Facet", "Quant Class", "Quant Level", "Quant Type"];
+  });
+  useEffect(() => { try { localStorage.setItem("ig_lex_groupby", JSON.stringify(groupBy)); } catch (e) {} }, [groupBy]);
   const [expanded, setExpanded] = useState({});
   const [caps, setCaps] = useState({});
   const LEAF_CAP = 50;
@@ -6733,6 +7460,27 @@ function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClo
   const distinctOf = (col) => { const s = new Set(); for (const o of (objects || [])) { const v = lexX(o, col); if (v) s.add(v); } return [...s].sort((a, b) => a.localeCompare(b)); };
   const subjAreas = useMemo(() => distinctOf("Subject Area"), [objects]);
   const subCats = useMemo(() => distinctOf("Sub-Category"), [objects]);
+  // Subject-area + sub-category vocabularies drawn from what the loaded inventory actually defines
+  // (the Sub-Categories / Functional Groups reference sheets + values in use). Empty is fine — free entry is allowed.
+  const editSubjectAreas = useMemo(() => {
+    const s = new Set();
+    const grab = (sheetName) => { const sh = carry && carry.sheets && carry.sheets[sheetName]; if (Array.isArray(sh) && sh.length > 1) { const hdr = (sh[0] || []).map((x) => String(x)); const ai = hdr.indexOf("Subject Area"); if (ai >= 0) for (let i = 1; i < sh.length; i++) { const v = String((sh[i] || [])[ai] || "").trim(); if (v) s.add(v); } } };
+    grab("Sub-Categories"); grab("Functional Groups");
+    for (const o of (objects || [])) { const v = lexX(o, "Subject Area"); if (v) s.add(v); }
+    return [...s].sort((a, b) => a.localeCompare(b));
+  }, [objects, carry]);
+  const subCatsByArea = useMemo(() => {
+    const m = { "*": new Set() };
+    const add = (area, sc) => { if (!sc) return; const a = area || ""; (m[a] = m[a] || new Set()).add(sc); m["*"].add(sc); };
+    const sheet = carry && carry.sheets && carry.sheets["Sub-Categories"];
+    if (Array.isArray(sheet) && sheet.length > 1) {
+      const hdr = (sheet[0] || []).map((x) => String(x)); const ai = hdr.indexOf("Subject Area"), ci = hdr.indexOf("Sub-Category");
+      for (let i = 1; i < sheet.length; i++) { const row = sheet[i] || []; add(ai >= 0 ? String(row[ai] || "") : "", ci >= 0 ? String(row[ci] || "") : ""); }
+    }
+    for (const o of (objects || [])) add(lexX(o, "Subject Area"), lexX(o, "Sub-Category"));
+    const out = {}; for (const k of Object.keys(m)) out[k] = [...m[k]].sort((a, b) => a.localeCompare(b));
+    return out;
+  }, [objects, carry]);
   const funcGroups = useMemo(() => distinctOf("Functional Group"), [objects]);
   const hasQuality = useMemo(() => (objects || []).some((o) => lexX(o, "Audit Verdict")), [objects]);
 
@@ -6752,14 +7500,26 @@ function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClo
     return { defined, used };
   }, [objects, linkIndex]);
   const summary = useMemo(() => {
-    const s = { total: objects.length, active: 0, draft: 0, deprecated: 0, classified: 0, aliases: 0, byFacet: {} };
+    const s = { total: objects.length, active: 0, proposed: 0, draft: 0, deprecated: 0, quarantined: 0, classified: 0, gateReady: 0, aliases: 0, byFacet: {} };
     for (const o of objects) {
-      if (o.status === "Active") s.active++; else if (o.status === "Deprecated") s.deprecated++; else s.draft++;
+      if (o.status === "Active") s.active++;
+      else if (o.status === "Proposed") s.proposed++;
+      else if (o.status === "Draft") s.draft++;
+      else if (o.status === "Deprecated") s.deprecated++;
+      else if (o.status === "Quarantined") s.quarantined++;
       if (o.quantClass) { s.classified++; s.byFacet[o.q6] = (s.byFacet[o.q6] || 0) + 1; }
+      if (o.status === "Active" && o.quantClass && !o.primaryEquivalent) s.gateReady++;
       if (o.primaryEquivalent) s.aliases++;
     }
     return s;
   }, [objects]);
+  const auditHealth = useMemo(() => {
+    let score = null, band = "";
+    const sheet = carry && carry.sheets && carry.sheets["Audit Summary"];
+    if (Array.isArray(sheet)) for (const r of sheet) { if (Array.isArray(r) && String(r[0]) === "Inventory Health Score") { score = r[1]; band = String(r[2] || ""); } }
+    const audited = objects.some((o) => lexX(o, "Audit Verdict"));
+    return { score, band, audited };
+  }, [carry, objects]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -6874,10 +7634,10 @@ function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClo
         <td style={td}><QuantEdgeCell compact value={(o._extra && o._extra["Quant Edge"]) || ""} onChange={(v) => patch(o.id, { _extra: Object.assign({}, o._extra || {}, { "Quant Edge": v }) })} /></td>
         <td style={td}>
           <select value={o.status} onChange={(e) => patch(o.id, { status: e.target.value })}
-            disabled={!o.quantClass}
-            title={!o.quantClass ? "Assign a Quant Class before activating" : ""}
+            disabled={o.termType !== "Relationship" && !o.quantClass}
+            title={(o.termType !== "Relationship" && !o.quantClass) ? "Assign a Quant Class before activating" : ""}
             style={{ ...sel, fontWeight: 700, color: o.status === "Active" ? C.green : (o.status === "Deprecated" || o.status === "Quarantined") ? C.red : C.amber }}>
-            {(o.status && !LEX_STATUSES.includes(o.status) ? [...LEX_STATUSES, o.status] : LEX_STATUSES).map((s) => <option key={s} value={s} disabled={s === "Active" && !o.quantClass}>{s}</option>)}
+            {(o.status && !LEX_STATUSES.includes(o.status) ? [...LEX_STATUSES, o.status] : LEX_STATUSES).map((s) => <option key={s} value={s} disabled={s === "Active" && o.termType !== "Relationship" && !o.quantClass}>{s}</option>)}
           </select>
         </td>
         <td style={td}>
@@ -6903,7 +7663,7 @@ function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClo
       <tr key={o.id + "#edit"}>
         <td colSpan={9} style={{ padding: "10px 16px 14px", paddingLeft: 26 + depth * 18, background: "#f7f5ef", borderTop: "1px solid " + C.lineSoft }}>
           <div style={{ fontFamily: FONT_UI, fontSize: 10.5, fontWeight: 700, color: C.tealDeep, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>Edit all fields · {o.string}</div>
-          <LexEditForm o={o} patch={patch} setClass={setClass} />
+          <LexEditForm o={o} patch={patch} setClass={setClass} objects={objects} subjectAreaOpts={editSubjectAreas} subCatsByArea={subCatsByArea} />
         </td>
       </tr>
     );
@@ -6970,6 +7730,40 @@ function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClo
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "26px 30px", background: C.paper }}>
+      {showAdd && <LexAddWizard objects={objects} onCommit={addString} onClose={() => setShowAdd(false)} subjectAreaOpts={editSubjectAreas} subCatsByArea={subCatsByArea} />}
+      {showAtom && <AtomicArchitecture onClose={() => setShowAtom(false)} />}
+      {showAudit && <AuditSummary objects={objects} carry={carry} onJump={jumpToString} onClose={() => setShowAudit(false)} />}
+      {showReport && <LexReport objects={objects} carry={carry} meta={{ customer: custName, scope: lexScope }} onClose={() => setShowReport(false)} />}
+      {scopePop && (
+        <div onClick={() => setScopePop(false)} style={{ position: "fixed", inset: 0, background: "rgba(20,22,20,0.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, width: "min(500px, 100%)", boxShadow: "0 20px 50px rgba(0,0,0,0.25)", padding: "20px 22px", fontFamily: FONT_UI }}>
+            <div style={{ fontFamily: FONT_DISP, fontSize: 18, color: C.ink }}>Lexicon scope{custName ? " \u00b7 " + custName : ""}</div>
+            <div style={{ fontSize: 12.5, color: C.sub, margin: "4px 0 14px" }}>Choose whether this customer builds its own Level-0 inventory or shares the common one.</div>
+            {[["own", "This customer\u2019s own Lexicon", "isolated \u2014 changes stay with this customer"], ["shared", "The shared Lexicon", "one common inventory used across customers"]].map(([val, label, hint]) => (
+              <label key={val} style={{ display: "flex", gap: 9, alignItems: "flex-start", padding: "9px 11px", borderRadius: 9, border: "1px solid " + (scopeSel === val ? C.teal : C.line), background: scopeSel === val ? C.tealSoft : "#fff", cursor: "pointer", marginBottom: 8 }}>
+                <input type="radio" checked={scopeSel === val} onChange={() => { setScopeSel(val); setScopeCopy(false); }} style={{ accentColor: C.teal, marginTop: 2 }} />
+                <span><b style={{ color: C.ink }}>{label}</b><div style={{ fontSize: 11.5, color: C.muted }}>{hint}</div></span>
+              </label>
+            ))}
+            {scopeSel === "shared" && lexScope !== "shared" && objects.length > 0 && (
+              <label style={{ display: "flex", gap: 7, alignItems: "flex-start", fontSize: 12, color: C.ink2, margin: "2px 2px 4px", cursor: "pointer" }}>
+                <input type="checkbox" checked={scopeCopy} onChange={(e) => setScopeCopy(e.target.checked)} style={{ accentColor: C.teal, marginTop: 2 }} />
+                <span>Publish this customer\u2019s {objects.length} objects as the shared inventory <span style={{ color: C.muted }}>(replaces the current shared one)</span></span>
+              </label>
+            )}
+            {scopeSel === "own" && lexScope === "shared" && (
+              <label style={{ display: "flex", gap: 7, alignItems: "flex-start", fontSize: 12, color: C.ink2, margin: "2px 2px 4px", cursor: "pointer" }}>
+                <input type="checkbox" checked={scopeCopy} onChange={(e) => setScopeCopy(e.target.checked)} style={{ accentColor: C.teal, marginTop: 2 }} />
+                <span>Start from a copy of the shared inventory <span style={{ color: C.muted }}>(otherwise this customer starts empty)</span></span>
+              </label>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
+              <button onClick={() => setScopePop(false)} style={{ background: "#fff", border: "1px solid " + C.line, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontFamily: FONT_UI, fontSize: 13, fontWeight: 600, color: C.ink }}>Cancel</button>
+              <button onClick={() => { if (onSetScope) onSetScope(scopeSel, { publish: scopeSel === "shared" && scopeCopy, fork: scopeSel === "own" && scopeCopy }); setScopePop(false); }} style={{ background: C.teal, border: "none", borderRadius: 8, padding: "8px 20px", cursor: "pointer", fontFamily: FONT_UI, fontSize: 13, fontWeight: 700, color: "#fff" }}>Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
         <div>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: FONT_UI, fontSize: 11, fontWeight: 700, color: C.teal, textTransform: "uppercase", letterSpacing: 0.8 }}>
@@ -6981,9 +7775,19 @@ function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClo
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <div onClick={() => { setScopeSel(lexScope === "shared" ? "shared" : "own"); setScopeCopy(false); setScopePop(true); }}
+            title="Is this customer's Level-0 inventory its own, or the shared common inventory?"
+            style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, padding: "0 11px", height: 30, borderRadius: 8, fontFamily: FONT_UI, fontSize: 12, fontWeight: 700, border: "1px solid " + (lexScope === "shared" ? C.teal : C.line), background: lexScope === "shared" ? C.tealSoft : "#fff", color: lexScope === "shared" ? C.tealDeep : C.ink }}>
+            {lexScope === "shared" ? "Shared Lexicon" : "Own Lexicon"} <span style={{ color: C.muted }}>{"\u25be"}</span>
+          </div>
           <Btn small kind="ghost" icon={PencilLine} onClick={() => setShowCols((s) => !s)}>Editable columns</Btn>
+          <Btn small kind="ghost" onClick={() => setShowAtom(true)}>Atomic Architecture</Btn>
+          <Btn small kind="ghost" onClick={() => { try { const blob = new Blob([L0_DICTIONARY_MD], { type: "text/markdown" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "Semantium_L0_String_Metadata_Dictionary.md"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); if (flash) flash("Downloaded the L0 Metadata Dictionary"); } catch (e) {} }}>Dictionary</Btn>
+          <Btn small kind="ghost" onClick={() => setShowAudit(true)}>Audit Summary</Btn>
+          <Btn small kind="ghost" onClick={() => setShowReport(true)} disabled={!objects.length}>Report</Btn>
+          <Btn small kind="primary" icon={Plus} onClick={() => setShowAdd(true)}>Add string</Btn>
           <Btn small kind="ghost" icon={Upload} onClick={onImport}>Load inventory</Btn>
-          <Btn small kind="ghost" icon={Download} onClick={() => { const fn = lexExportWorkbook(objects, carry); flash("Saved " + fn + (carry && carry.sheets ? " · preserved " + Object.keys(carry.sheets).length + " other sheets" : "")); }} disabled={!objects.length}>Export</Btn>
+          <Btn small kind="ghost" icon={Download} onClick={() => { const san = (custName || "").trim().replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); const base = lexScope === "shared" ? "Shared_Lexical_Inventory" : (san ? san + "_Lexical_Inventory" : "Lexical_Inventory"); const fn = lexExportWorkbook(objects, carry, base); flash("Saved " + fn + (carry && carry.sheets ? " · preserved " + Object.keys(carry.sheets).length + " other sheets" : "")); }} disabled={!objects.length}>Export</Btn>
           <Btn small kind="ghost" icon={X} onClick={onClose}>Close</Btn>
         </div>
       </div>
@@ -7012,18 +7816,28 @@ function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClo
         <div style={{ border: "1px dashed " + C.line, borderRadius: 14, padding: "44px 20px", textAlign: "center", background: C.panel }}>
           <Tag size={26} color={C.muted} strokeWidth={1.8} />
           <div style={{ fontFamily: FONT_DISP, fontSize: 19, color: C.ink, marginTop: 10 }}>No inventory loaded</div>
-          <div style={{ fontFamily: FONT_UI, fontSize: 13, color: C.muted, margin: "6px 0 16px" }}>Load <code>DAMA_lexical_inventory.xlsx</code> (or any workbook with an Inventory sheet).</div>
-          <Btn kind="primary" icon={Upload} onClick={onImport}>Load inventory</Btn>
+          <div style={{ fontFamily: FONT_UI, fontSize: 13, color: C.muted, margin: "6px 0 16px" }}>Load a lexical inventory workbook (any file with an Inventory sheet), or start a fresh inventory by adding your first string.</div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <Btn kind="primary" icon={Plus} onClick={() => setShowAdd(true)}>Add the first string</Btn>
+            <Btn kind="ghost" icon={Upload} onClick={onImport}>Load inventory</Btn>
+          </div>
         </div>
       ) : (
         <>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
             {chip("Total", summary.total)}
             {chip("Active", summary.active, C.green)}
-            {chip("Draft", summary.draft, C.amber)}
+            {chip("Proposed", summary.proposed, C.amber)}
+            {chip("Draft", summary.draft, C.muted)}
             {chip("Classified", summary.classified, summary.classified === summary.total ? C.green : C.ink)}
-            {chip("Gate-ready", summary.active, summary.active ? C.green : C.red)}
+            {chip("Gate-ready", summary.gateReady, summary.gateReady ? C.green : C.red)}
             {chip("Aliases", summary.aliases)}
+            {auditHealth.audited ? (() => { const bc = /QUAR/i.test(auditHealth.band) ? C.red : /WARN/i.test(auditHealth.band) ? C.amber : C.green; return (
+              <div onClick={() => setShowAudit(true)} title="Open the Audit Summary" style={{ cursor: "pointer", background: C.panel, border: "1px solid " + bc, borderRadius: 10, padding: "9px 13px", minWidth: 96 }}>
+                <div style={{ fontFamily: FONT_DISP, fontSize: 22, fontWeight: 600, color: bc }}>{auditHealth.score != null ? auditHealth.score : "\u2014"}</div>
+                <div style={{ fontFamily: FONT_UI, fontSize: 11, color: C.muted, fontWeight: 600 }}>Health{auditHealth.band ? " \u00b7 " + auditHealth.band : ""} {"\u2197"}</div>
+              </div>
+            ); })() : null}
             {linkIndex.ready && chip("Defined as Term", linkStats.defined, linkStats.defined ? C.teal : C.muted)}
           </div>
 

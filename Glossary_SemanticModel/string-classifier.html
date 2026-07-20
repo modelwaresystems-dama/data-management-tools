@@ -220,7 +220,7 @@ const COHERENCE_WARN = [
 const BAND_AUTO = 0.85, BAND_JUSTIFY = 0.70;
 /* Canonical lexgate.py columns — exact names, exact order */
 const CANON_COLS = ["Lexical Object ID","String / Label","Quant Type","Primary Equivalent","Quant Class","Q6 Facet","Quant Level","Term Type","Sense","Is Plural","Language","Status","Disambiguation Notes","Contributor","Source","Create Date","Last Change Date"];
-const EXT_COLS = ["WordNet Anchor","Provenance","Sense Gloss","Subject Area","Sub-Category","Quant Edge","Classifier Comment","Confidence","Edge Direction","Inverse Primary"];
+const EXT_COLS = ["WordNet Anchor","Provenance","Sense Gloss","Subject Area","Sub-Category","Quant Edge","Classifier Comment","Confidence","Edge Direction","Inverse Primary","Sense Decision","Confidence Band"];
 const ID_PREFIX="LEX-", NODE_START=10001, LINE_START=10101;
 const IRREGULAR_PARTICIPLES = ["bound","held","done","made","given","taken","kept","found","paid","sold","bought","brought","built","sent","set","put","laid","led","won","begun"];
 
@@ -634,15 +634,25 @@ Object.assign(App,{
   bandFor(c){ if(c==null||isNaN(c))return null; if(c>=BAND_AUTO)return{n:"auto-propose",cls:"okbox",t:"At or above "+BAND_AUTO.toFixed(2)+" — the sense auto-proposes; simply confirm."}; if(c>=BAND_JUSTIFY)return{n:"justify",cls:"advisory",t:"In the justify band — a steward rationale in Disambiguation Notes is required to lock this anchor."}; return{n:"refuse",cls:"errorbox",t:"Below "+BAND_JUSTIFY.toFixed(2)+" — WordNet-direct is refused. Author the sense (Anchor+Annotation) or go Local-Manual."};},
   wizStep1(){
     const w=this.wiz, r=w.row;
-    const senseCards=w.senses.map((s,i)=>`<div class="sense ${w.senseSel===i?"sel":""}" onclick="App.wizPickSense(${i})">
-        <span class="sid">${esc(s.id)}</span>
-        <div><div class="gl">${esc(s.gloss)}</div><div class="lms">lemmas: ${s.lemmas.map(esc).join(", ")}</div></div></div>`).join("");
+    const senseCards=w.senses.map((s,i)=>{
+      const hint=this.fitHint(s,r.classifierComment);
+      const sub=this.substitution(r.label,r.classifierComment,s.gloss);
+      return `<div class="sense ${w.senseSel===i?"sel":""}" onclick="App.wizPickSense(${i})">
+        <span class="sid">${esc(s.id)}${hint!=null?`<br><span class="chip" title="Deterministic word-overlap of your usage sentences vs this sense (gloss + lemmas + broader terms). EVIDENCE, not your score — low, flat hints are normal for short glosses; the substitution test decides.">fit hint ${hint.toFixed(2)}</span>`:""}</span>
+        <div><div class="gl">${esc(s.gloss)}</div>
+        ${sub?`<div class="gl" style="margin-top:.25rem;color:var(--muted)"><em>Substitution test:</em> ${sub}</div>`:""}
+        <div class="lms">lemmas: ${s.lemmas.map(esc).join(", ")}</div></div></div>`;}).join("");
     const c=r.confidence===""?null:parseFloat(r.confidence);
     const band=this.bandFor(c);
     const alias=w.aliasOffer?(w.aliasOffer.kind==="dup"
       ?`<div class="advisory"><strong>Already governed.</strong> “${esc(w.aliasOffer.row.label)}” exists as ${esc(w.aliasOffer.row.id)}${w.aliasOffer.row.primaryEquivalent?" (an alias of "+esc(w.aliasOffer.row.primaryEquivalent)+")":""}. Do not mint a second identity — edit the existing row in the Inventory instead.</div>`
       :`<div class="advisory"><strong>Thesaurus guard.</strong> “${esc(r.label)}” is a WordNet lemma of ${esc(w.aliasOffer.synset.id)}, the locked sense of <strong>${esc(w.aliasOffer.row.label)}</strong> (${esc(w.aliasOffer.row.id)}) — equivalence corroborated. Govern it as an alias? <button class="primary" onclick="App.applyAliasOffer()">Pre-fill as alias of ${esc(w.aliasOffer.row.id)}</button></div>`):"";
     return `
+    <div class="grid g2" style="margin-bottom:.8rem"><div>
+      <label class="f">How does the business use this term? (FCO-IM) ${this.q("1–3 real usage sentences, e.g. “The Party signs the Agreement.” They drive the substitution test and fit hints below, become the Contextual Example at Step 7, and — for predicates — seed the verbalizations. Meaning is evidenced by sentences in use.")}</label>
+      <textarea placeholder='“The Party signs the Agreement.” “A customer or supplier is bound by contract.”' oninput="App.wiz.row.classifierComment=this.value" onchange="App.renderWizard()">${esc(r.classifierComment)}</textarea>
+      <p class="hint">Swap the term for each gloss below — the sense that keeps your sentence true is the sense. If it reads only half-true, that is what the justify band feels like.</p>
+    </div></div>
     <div class="grid g3">
       <div><label class="f">String / Label ${this.q("The exact string being governed. Spelling locks at commit — Term links and RDF IRIs depend on it.")}</label>
         <input type="text" value="${esc(r.label)}" oninput="App.wiz.row.label=this.value" onchange="App.wizSearchSenses()"></div>
@@ -760,7 +770,7 @@ Object.assign(App,{
     const r=this.wiz.row;
     return `<label class="f">Contextual Example — a plain-English reality check ${this.q("Test the sentence against your classification. A contradiction here means a wrong classification above — go back now, not at Level 3.")}</label>
     <textarea oninput="App.wiz.row.classifierComment=this.value" placeholder='e.g. “a customer or supplier bound by a contract — an abstract umbrella over Person and Organisation, so Abstract Thing @ What.”'>${esc(r.classifierComment)}</textarea>
-    <p class="hint">If the sentence fights the classification, Back is available.</p>
+    <p class="hint">Carried over from Step 1's usage sentences — now the reality check: if the sentence fights the classification above, Back is available.</p>
     ${this.wizNav(true)}`;
   },
 
@@ -770,7 +780,7 @@ Object.assign(App,{
     if(!r.id) r.id=Ids.next(this.lex, r.termType==="Relationship");
     const {errors,warnings}=Validate.row(r,this.lex);
     const canActive = r.termType==="Relationship" || !!r.quantClass;
-    const review=[["String",r.label],["Sense",r.sense||r.wordnetAnchor],["Subject Area",r.subjectArea],["Q6",r.q6||"(n/a)"],["Class",r.quantClass||"(n/a)"],["Level",r.quantLevel],["Type",r.quantType+" · "+r.termType],["Edge",r.quantEdges.join(" + ")||"—"],["Provenance",r.provenance||"—"]]
+    const review=[["String",r.label],["Sense",r.sense||r.wordnetAnchor],["Subject Area",r.subjectArea],["Q6",r.q6||"(n/a)"],["Class",r.quantClass||"(n/a)"],["Level",r.quantLevel],["Type",r.quantType+" · "+r.termType],["Edge",r.quantEdges.join(" + ")||"—"],["Provenance",r.provenance||"—"],["Sense decision",(r.provenance==="WordNet-direct"?"Accepted":r.provenance==="Anchor+Annotation"?"Enhanced (steward gloss)":r.provenance==="Local-Manual"?"Authored (no synset)":"—")+(r.confidence!==""&&r.confidence!=null?" · anchor-fit "+parseFloat(r.confidence).toFixed(2):"")]]
       .map(([k,v])=>`<tr><td class="small" style="width:120px">${k}</td><td><strong>${esc(v)}</strong></td></tr>`).join("");
     return `<div class="grid g3">
       <div><label class="f">Lexical Object ID ${this.q("Auto-assigned, assigned once, then locked. Nodes live at LEX-100xx; governed Lines start at LEX-10101 — overriding here is the one time you touch the ID field.")}</label>
@@ -800,7 +810,9 @@ Object.assign(App,{
   wizCommitted(){
     const r=this.wiz.committed;
     const sibs=this.aliasCandidates(r);
+    const usable=r.termType==="Relationship"&&r.classifierComment?String(r.classifierComment).split(/(?<=[.!?])\s+/).map(x=>x.trim()).filter(x=>x&&new RegExp("\\b"+r.label.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b","i").test(x)):[];
     return `<div class="okbox"><strong>${esc(r.label)} · ${esc(r.id)}</strong> committed to the lexicon as ${esc(r.status)}.</div>
+    ${usable.length?`<div class="advisory"><strong>FCO-IM:</strong> ${usable.length} usage sentence(s) mention this predicate. <button class="primary" onclick="App.seedVerbs('${esc(r.id)}')">Seed as Type-level verbalizations</button></div>`:""}
     ${sibs.length?`<div class="advisory"><strong>Thesaurus — candidate equivalents from ${esc(r.wordnetAnchor)}:</strong> ${sibs.map(l=>`<button class="chip click" onclick="App.startAliasFor('${esc(r.id)}','${esc(l)}')">${esc(l)} +</button>`).join(" ")}<br><span class="small">Each becomes its own Lexical Object through the wizard — one meaning, one primary, any number of strings.</span></div>`:""}
     <div class="row-flex" style="margin-top:1rem">
       <button class="primary" onclick="App.resetWizard();App.renderWizard()"><i class="fa-solid fa-plus"></i> Add another string</button>
@@ -825,13 +837,69 @@ Object.assign(App,{
     this.wizSearchSenses();
     this.show("wizard");
   },
-  q(text){ return `<span class="q" title="${esc(text)}">?</span>`; }
+  seedVerbs(id){
+    const r=this.lex.rows.find(x=>x.id===id); if(!r) return;
+    const re=new RegExp("\\b"+r.label.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b","i");
+    const sents=String(r.classifierComment||"").split(/(?<=[.!?])\s+/).map(x=>x.trim()).filter(x=>x&&re.test(x));
+    r.verbalizations=r.verbalizations||[];
+    for(const t of sents) if(!r.verbalizations.some(v=>v.text===t)) r.verbalizations.push({level:"Type",text:t});
+    r.lastChangeDate=nowStamp(); this.save();
+    this.wiz.committed=r; this.show("predicates");
+  },
+  q(text){ return `<span class="q" title="${esc(text)}">?</span>`; },
+  _tok(t){
+    const STOP=new Set("a an and are as at be been being by for from has have in is it its of on or that the this to was were with".split(" "));
+    return String(t).toLowerCase().replace(/[^a-z\s-]/g," ").split(/[\s-]+/)
+      .filter(w=>w.length>2&&!STOP.has(w)).map(w=>w.replace(/(ings?|ies|es|ed|s)$/,""));
+  },
+  fitHint(sense,text){
+    /* Deterministic lexical overlap: usage sentences vs gloss+lemmas+broader glosses.
+       EVIDENCE, never the governed score. Flat/low hints are normal for short glosses. */
+    if(!text||!text.trim()) return null;
+    const ctx=new Set(this._tok(text)); if(!ctx.size) return null;
+    let bag=[...this._tok(sense.gloss),...sense.lemmas.flatMap(l=>this._tok(l))];
+    for(const i of (sense.rel.y||[]).slice(0,4)){ const h=WN.byIndex(i); if(h) bag.push(...this._tok(h.gloss),...h.lemmas.flatMap(l=>this._tok(l))); }
+    const b=new Set(bag); if(!b.size) return 0;
+    let ov=0; for(const w of ctx) if(b.has(w)) ov++;
+    return Math.min(1,ov/Math.sqrt(ctx.size*b.size)*2);
+  },
+  substitution(label,text,gloss){
+    /* The FCO-IM substitution test: the student's own sentence, term swapped for the gloss. */
+    if(!text||!label||!label.trim()) return "";
+    const escRe=x=>x.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    const re=new RegExp("\\b"+escRe(label.trim())+"\\b","i");
+    const sent=text.split(/(?<=[.!?])\s+/).find(x=>re.test(x));
+    if(!sent) return "";
+    const parts=sent.split(re);
+    return parts.map(esc).join('<strong>['+esc(gloss)+']</strong>');
+  }
 });
 
 /* ============================================================
    Inventory manager + Edit All Fields
    ============================================================ */
 Object.assign(App,{
+  senseDecisionText(r){
+    const label=r.provenance==="WordNet-direct"?"Accepted":r.provenance==="Anchor+Annotation"?"Enhanced (steward gloss)":r.provenance==="Local-Manual"?"Authored (no synset)":"";
+    return label;
+  },
+  confidenceBand(r){
+    const c=r.confidence===""||r.confidence==null?null:parseFloat(r.confidence);
+    if(c==null||isNaN(c)) return "";
+    return c>=BAND_AUTO?"auto-propose":c>=BAND_JUSTIFY?"justify":"refuse";
+  },
+  senseDecision(r){
+    /* Derived display only — never exported (derived data is not source). */
+    const c=r.confidence===""||r.confidence==null?null:parseFloat(r.confidence);
+    const label=r.provenance==="WordNet-direct"?"Accepted":r.provenance==="Anchor+Annotation"?"Enhanced":r.provenance==="Local-Manual"?"Authored":"";
+    if(!label) return "";
+    const band=c==null||isNaN(c)?"":c>=BAND_AUTO?"v-PASS":c>=BAND_JUSTIFY?"v-WARN":"v-QUARANTINE";
+    const why=(r.disambiguationNotes||"").trim();
+    const tip=r.provenance+(c!=null&&!isNaN(c)?" · anchor-fit "+c.toFixed(2):" · no anchor-fit recorded")
+      +(label==="Enhanced"?" — steward-authored gloss over anchor "+(r.wordnetAnchor||"?"):label==="Accepted"?" — synset gloss taken verbatim":" — no synset; gloss authored from scratch")
+      +(why?"\nWhy: "+why:"\nWhy: (no Disambiguation Notes — record the rationale)");
+    return `<span class="chip ${band}" title="${esc(tip)}">${label}${c!=null&&!isNaN(c)?" · "+c.toFixed(2):""}</span>`;
+  },
   renderInventory(){
     const rows=this.lex.rows;
     let html=`<div class="card"><div class="row-flex"><h2 style="margin:0">Inventory <span class="small">— ${rows.length} objects</span></h2><span class="spacer"></span>
@@ -840,7 +908,7 @@ Object.assign(App,{
     const groups={};
     rows.forEach((r,i)=>{ const g=this.groupByClass?(r.termType==="Relationship"?"(n/a)":(r.quantClass||"(unclassified)")):"All strings"; (groups[g]=groups[g]||[]).push(i); });
     const order=Object.keys(groups).sort((a,b)=>a==="(n/a)"?1:b==="(n/a)"?-1:a.localeCompare(b));
-    html+=`<table class="inv"><thead><tr><th>String</th><th>Quant Level</th><th>Q6 Facet</th><th>Quant Class</th><th>Quant Type</th><th>Term Type</th><th>Quant Edge</th><th>Status</th><th>Provenance</th><th>Audit</th></tr></thead><tbody>`;
+    html+=`<table class="inv"><thead><tr><th>String</th><th>Quant Level</th><th>Q6 Facet</th><th>Quant Class</th><th>Quant Type</th><th>Term Type</th><th>Quant Edge</th><th>Status</th><th>Sense Decision</th><th>Audit</th></tr></thead><tbody>`;
     for(const g of order){
       if(this.groupByClass) html+=`<tr class="grouphead"><td colspan="10">${esc(g)} · ${groups[g].length}</td></tr>`;
       for(const i of groups[g]){
@@ -851,7 +919,7 @@ Object.assign(App,{
         <td>${esc(r.quantType)}</td><td>${esc(r.termType)}</td>
         <td>${r.quantEdges.map(e=>`<span class="chip on">${e}</span>`).join(" ")}</td>
         <td><span class="chip status-${esc(r.status)}">${esc(r.status)}</span></td>
-        <td class="small">${esc(r.provenance||"")}</td>
+        <td>${this.senseDecision(r)}</td>
         <td>${verdict?`<span class="chip v-${esc(String(verdict).toUpperCase().includes("QUAR")?"QUARANTINE":String(verdict).toUpperCase().includes("WARN")?"WARN":"PASS")}">${esc(verdict)}</span>`:""}</td></tr>`;
         if(this.expanded[i]) html+=`<tr><td colspan="10">${this.editorHtml(i)}</td></tr>`;
       }
@@ -964,7 +1032,7 @@ Object.assign(App,{
         <button class="ghost danger" onclick="App.delVerb(${i},${vi})"><i class="fa-solid fa-xmark"></i></button></div></div>`).join("");
       html+=`<div class="thes-primary">
         <div class="row-flex"><h3 style="margin:0">${esc(r.label)} <span class="lex">${esc(r.id)}</span></h3>
-          <span class="chip status-${esc(r.status)}">${esc(r.status)}</span>
+          <span class="chip status-${esc(r.status)}">${esc(r.status)}</span> ${this.senseDecision(r)}
           ${r.edgeDirection?`<span class="chip on">${esc(r.edgeDirection)}</span>`:""}
           ${inv?`<span class="chip">inverse: ${esc(inv.label)}</span>`:""}
           ${r.primaryEquivalent?`<span class="chip status-Deprecated">→ use ${esc((this.lex.rows.find(x=>x.id===r.primaryEquivalent)||{}).label||r.primaryEquivalent)}</span>`:""}
@@ -1031,7 +1099,8 @@ Object.assign(App,{
         <div class="row-flex"><h3 style="margin:0">${esc(p.label)} <span class="lex">${esc(p.id)}</span></h3>
         <span class="chip status-${esc(p.status)}">${esc(p.status)}</span>
         ${p.quantClass?`<span class="chip">${esc(p.quantClass)} @ ${esc(p.q6)}</span>`:'<span class="chip">(n/a) line</span>'}
-        ${p.sense?`<span class="chip">${esc(p.sense)}</span>`:""}</div>
+        ${p.sense?`<span class="chip">${esc(p.sense)}</span>`:""}
+        ${this.senseDecision(p)}</div>
         <div class="small" style="margin:.25rem 0 .4rem;font-family:'Source Serif 4',Georgia,serif">${esc(p.senseGloss||"")}</div>
         ${aliases.length?`<div><label class="f">Governed equivalents (prefLabel → altLabel)</label>
           ${aliases.map(a=>`<span class="chip ${a.status==="Deprecated"?"status-Deprecated":"on"}" title="${esc(a.id)}">${esc(a.label)}${a.status==="Deprecated"?" · use "+esc(p.label)+" instead":""}</span>`).join(" ")}</div>`:""}
@@ -1062,6 +1131,7 @@ Object.assign(App,{
     rec["Subject Area"]=r.subjectArea; rec["Sub-Category"]=r.subCategory;
     rec["Quant Edge"]=r.quantEdges.join("; "); rec["Classifier Comment"]=r.classifierComment;
     rec["Confidence"]=r.confidence; rec["Edge Direction"]=r.edgeDirection; rec["Inverse Primary"]=r.inversePrimary;
+    rec["Sense Decision"]=App.senseDecisionText(r); rec["Confidence Band"]=App.confidenceBand(r);   /* derived: recomputed on import, never read as source */
     for(const [k,v] of Object.entries(r.audit||{})) rec[k]=v;   /* pass-through, never authored here */
     return rec;
   },
@@ -1137,7 +1207,7 @@ Object.assign(App,{
     r.quantEdges=g("Quant Edge").split(/[;,+]/).map(x=>x.trim().toUpperCase().replace(/^IS-|-HAS$/g,"")).map(x=>x.replace(/^IS$/,"HAS")).filter(x=>EDGE_BY_CODE[x]);
     r.classifierComment=g("Classifier Comment")||g("Contextual Example");
     r.confidence=g("Confidence"); r.edgeDirection=g("Edge Direction"); r.inversePrimary=g("Inverse Primary");
-    const known=new Set([...CANON_COLS,...EXT_COLS,"Contextual Example"]);
+    const known=new Set([...CANON_COLS,...EXT_COLS,"Contextual Example"]);   /* Sense Decision + Confidence Band are in EXT_COLS: recognised, ignored, re-derived */
     for(const k of Object.keys(rec)) if(!known.has(k) && rec[k]!=null && String(rec[k]).trim()!=="") r.audit[k]=rec[k];
     return r;
   },
@@ -1257,6 +1327,8 @@ Object.assign(App,{
     <tr><td>Steward picks a retrieved synset</td><td>that synset</td><td>WordNet-direct</td></tr>
     <tr><td>Steward authors a gloss and a synset set exists</td><td>nearest real synset</td><td>Anchor+Annotation (gloss is authoritative)</td></tr>
     <tr><td>No synset retrieved</td><td>LOCAL-SENSE</td><td>Local-Manual</td></tr></table>
+    <p><strong>Sense-choice aids (Step 1):</strong> the <em>substitution test</em> re-renders your own FCO-IM usage sentence with the term swapped for each candidate gloss — the sense that keeps the sentence true is the sense; a half-true reading is what the justify band feels like. The <em>fit hint</em> is a deterministic word-overlap of your sentences against each sense (gloss + lemmas + broader terms) — lexical evidence only, never the governed score: short glosses make hints low and flat by nature (party.n.05 scores near zero against real business sentences, and is still the right anchor). Neither aid ever fills the Confidence field.</p>
+    <p><strong>Sense Decision badge</strong> (derived, display-only — exported as report columns “Sense Decision” + “Confidence Band”, re-derived on import — the workbook reader sees the story; the source stays Provenance + Confidence + Notes): <span class="chip v-PASS">Accepted</span> WordNet-direct, gloss verbatim · <span class="chip v-WARN">Enhanced</span> Anchor+Annotation, steward-authored (zero-shot) gloss over the nearest anchor · <span class="chip">Authored</span> Local-Manual, no synset. Badge colour = the confidence band; hover shows the anchor-fit and the WHY from Disambiguation Notes.</p>
     <p>Bands (steward thresholds): <span class="kbd">≥ 0.85</span> auto-propose · <span class="kbd">0.70–0.85</span> justify (rationale required) · <span class="kbd">&lt; 0.70</span> refuse WordNet-direct. <strong>Cardinal rule:</strong> a synset ID is never invented — an empty result is a valid answer, not an error.</p>
 
     <h3>19 Quant Classes inside the Q6</h3>

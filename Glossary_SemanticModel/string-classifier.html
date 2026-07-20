@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Semantium String Classifier — Level 0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#f4f7ef; --bg-accent:#e8f5d8; --text:#1f2a2e; --muted:#5f6d72; --card:#ffffff;
+  --line:#d7e2da; --primary:#2d6a4f; --primary-soft:#dcf3df; --secondary:#1d4e89;
+  --amber:#a05e03; --amber-soft:#fdf1dc; --red:#a12d2d; --red-soft:#fbe4e4;
+  --teal:#0d7a8a; --teal-soft:#def4f7; --shadow:0 12px 36px rgba(25,42,56,.12);
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;min-height:100%;
+  background:radial-gradient(circle at 10% 10%,#f2ffd8 0%,var(--bg) 48%),
+             radial-gradient(circle at 90% 5%,#d7e7ff 0%,transparent 40%),var(--bg);
+  color:var(--text);font-family:"Space Grotesk","Segoe UI",sans-serif;font-size:15px}
+.shell{max-width:1280px;margin:0 auto;padding:1.2rem 1rem 3rem}
+a{color:var(--primary)}
+button{font-family:inherit;font-size:.92rem;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text);padding:.5rem .85rem}
+button:hover{border-color:var(--primary)}
+button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+button.primary:disabled{background:#9db8ab;border-color:#9db8ab;cursor:not-allowed}
+button.ghost{background:transparent}
+button.danger{color:var(--red);border-color:#e3b8b8}
+select,input[type=text],input[type=number],textarea{font-family:inherit;font-size:.92rem;padding:.45rem .6rem;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--text);width:100%}
+textarea{resize:vertical;min-height:64px}
+label.f{display:block;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 .25rem;font-weight:500}
+label.f .q{display:inline-flex;width:15px;height:15px;border:1px solid var(--line);border-radius:50%;align-items:center;justify-content:center;font-size:.6rem;color:var(--muted);cursor:help;margin-left:.3rem;text-transform:none}
+.hint{font-size:.78rem;color:var(--muted);font-family:"Source Serif 4",Georgia,serif;font-style:italic;margin:.25rem 0 0}
+.hero{position:relative;background:linear-gradient(130deg,#eef7ea,#e3efdb 62%,#e8f5d8);border:1px solid var(--line);border-radius:24px;padding:1.1rem 1.4rem;box-shadow:var(--shadow);display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:space-between}
+.hero h1{margin:0;font-size:clamp(1.25rem,2.6vw,1.7rem);letter-spacing:-.02em}
+.hero .tag{display:inline-block;font-size:.66rem;letter-spacing:.14em;font-weight:700;color:var(--primary);background:var(--primary-soft);border-radius:6px;padding:.18rem .5rem;margin-bottom:.3rem}
+.hero p.tagline{margin:.3rem 0 0;color:var(--muted);font-family:"Source Serif 4",Georgia,serif;max-width:64ch}
+.hero .meta{font-size:.72rem;color:var(--muted);font-family:var(--mono);text-align:right}
+.lexbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.lexbar select{width:auto;min-width:160px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:.55rem;margin:1rem 0}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:.55rem .7rem;box-shadow:0 6px 16px rgba(15,26,28,.06)}
+.tile strong{display:block;font-size:1.35rem;line-height:1.1}
+.tile span{font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.tile.health strong{color:var(--primary)}
+.tile.health.warn strong{color:var(--amber)}
+.tile.health.fail strong{color:var(--red)}
+.tabs{display:flex;gap:.35rem;flex-wrap:wrap;margin:0 0 1rem}
+.tabs button{border-radius:999px;padding:.45rem 1rem}
+.tabs button.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:1.1rem;box-shadow:0 8px 20px rgba(15,26,28,.08);margin-bottom:1rem}
+.card h2{margin:.1rem 0 .6rem;font-size:1.05rem}
+.card h3{margin:1rem 0 .4rem;font-size:.92rem}
+.grid{display:grid;gap:.8rem}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g6{grid-template-columns:repeat(6,minmax(0,1fr))}
+@media (max-width:900px){.g3,.g4,.g6{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.chip{display:inline-block;font-size:.68rem;font-weight:600;letter-spacing:.05em;border-radius:6px;padding:.14rem .45rem;border:1px solid var(--line);background:#f6f8f4;color:var(--muted);font-family:var(--mono)}
+.chip.on{background:var(--primary-soft);border-color:var(--primary);color:var(--primary)}
+.chip.status-Draft{background:#eef1f4;color:#4a5a63}
+.chip.status-Proposed{background:var(--teal-soft);color:var(--teal);border-color:var(--teal)}
+.chip.status-Active{background:var(--primary-soft);color:var(--primary);border-color:var(--primary)}
+.chip.status-Deprecated{background:var(--red-soft);color:var(--red);border-color:#e3b8b8}
+.chip.status-Quarantined{background:var(--amber-soft);color:var(--amber);border-color:#e8c99a}
+.chip.v-PASS{background:var(--primary-soft);color:var(--primary);border-color:var(--primary)}
+.chip.v-WARN{background:var(--amber-soft);color:var(--amber);border-color:#e8c99a}
+.chip.v-QUARANTINE{background:var(--red-soft);color:var(--red);border-color:#e3b8b8}
+.chip.click{cursor:pointer}
+.edgechips{display:flex;gap:.3rem;flex-wrap:wrap}
+.advisory{border-left:3px solid var(--amber);background:var(--amber-soft);padding:.5rem .7rem;border-radius:0 10px 10px 0;font-size:.85rem;margin:.5rem 0}
+.errorbox{border-left:3px solid var(--red);background:var(--red-soft);padding:.5rem .7rem;border-radius:0 10px 10px 0;font-size:.85rem;margin:.5rem 0}
+.okbox{border-left:3px solid var(--primary);background:var(--primary-soft);padding:.5rem .7rem;border-radius:0 10px 10px 0;font-size:.85rem;margin:.5rem 0}
+.stepbar{display:flex;gap:.3rem;margin:.6rem 0 1rem}
+.stepbar .seg{flex:1;height:7px;border-radius:5px;background:#e3e9e1;position:relative}
+.stepbar .seg.done{background:#bcd9c8}.stepbar .seg.cur{background:var(--teal)}
+.steplabel{font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);font-weight:700}
+.senselist{display:grid;gap:.45rem;margin:.6rem 0}
+.sense{border:1px solid var(--line);border-radius:12px;padding:.55rem .7rem;cursor:pointer;display:flex;gap:.6rem;align-items:flex-start}
+.sense:hover{border-color:var(--teal)}
+.sense.sel{border-color:var(--teal);background:var(--teal-soft)}
+.sense .sid{font-family:var(--mono);font-size:.78rem;color:var(--teal);white-space:nowrap;font-weight:600}
+.sense .gl{font-family:"Source Serif 4",Georgia,serif;font-size:.9rem}
+.sense .lms{font-size:.72rem;color:var(--muted);margin-top:.15rem}
+.facets{display:grid;grid-template-columns:repeat(6,1fr);gap:.45rem}
+@media (max-width:800px){.facets{grid-template-columns:repeat(3,1fr)}}
+.facet{border:1.5px solid var(--line);border-radius:12px;padding:.6rem .3rem;text-align:center;cursor:pointer;font-weight:600}
+.facet:hover{border-color:var(--teal)}
+.facet.sel{border-color:var(--teal);background:var(--teal-soft);color:var(--teal)}
+.facet small{display:block;font-weight:400;font-size:.66rem;color:var(--muted)}
+table.inv{width:100%;border-collapse:collapse;font-size:.85rem}
+table.inv th{font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;padding:.45rem .5rem;border-bottom:2px solid var(--line);background:#f2f0e9;position:sticky;top:0}
+table.inv td{padding:.42rem .5rem;border-bottom:1px solid #eceee8;vertical-align:top}
+table.inv tr.rowmain:hover td{background:#f7faf4;cursor:pointer}
+table.inv td .lex{font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+.grouphead td{background:var(--bg-accent)!important;font-weight:700;font-size:.78rem;letter-spacing:.06em}
+.editor{background:#faf8f2;border:1px solid var(--line);border-radius:14px;padding:1rem;margin:.4rem 0 .8rem}
+.editor .locked input{background:#efece3;color:var(--muted)}
+.modal-back{position:fixed;inset:0;background:rgba(20,30,26,.45);display:flex;align-items:flex-start;justify-content:center;padding:4vh 1rem;z-index:50;overflow:auto}
+.modal{background:var(--card);border-radius:18px;max-width:860px;width:100%;padding:1.2rem 1.4rem;box-shadow:var(--shadow);max-height:88vh;overflow:auto}
+.modal h2{margin-top:0}
+.row-flex{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+.spacer{flex:1}
+.banner{border-radius:12px;padding:.6rem .9rem;margin:.6rem 0;font-size:.88rem}
+.banner.warn{background:var(--amber-soft);border:1px solid #e8c99a;color:var(--amber)}
+.banner.err{background:var(--red-soft);border:1px solid #e3b8b8;color:var(--red)}
+.kbd{font-family:var(--mono);font-size:.78rem;background:#eef1ea;border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+.helpsec h3{color:var(--primary)}
+.helpsec table{width:100%;border-collapse:collapse;font-size:.83rem;margin:.4rem 0 .8rem}
+.helpsec th,.helpsec td{border:1px solid var(--line);padding:.35rem .5rem;text-align:left}
+.helpsec th{background:#f2f0e9;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase}
+.thes-primary{border:1px solid var(--line);border-radius:14px;padding:.8rem 1rem;margin-bottom:.7rem;background:#fff}
+.thes-primary h3{margin:.1rem 0 .2rem}
+.wnrel{font-size:.8rem;color:var(--muted);margin:.2rem 0}
+.wnrel .chip{margin:.1rem .15rem .1rem 0}
+.verb{border:1px dashed var(--line);border-radius:10px;padding:.5rem .7rem;margin:.3rem 0;font-family:"Source Serif 4",Georgia,serif}
+.tok{padding:.05rem .2rem;border-radius:4px}
+.tok.gov{background:var(--primary-soft)}
+.tok.ungov{background:var(--amber-soft);border-bottom:1.5px dashed var(--amber);cursor:pointer}
+.small{font-size:.78rem;color:var(--muted)}
+.right{text-align:right}
+footer{margin-top:2rem;font-size:.72rem;color:var(--muted);font-family:"Source Serif 4",Georgia,serif}
+.hiddenfile{display:none}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="hero">
+    <div>
+      <span class="tag">LEVEL 0 · LEXICAL GATE</span>
+      <h1><i class="fa-solid fa-spell-check"></i> Semantium String Classifier</h1>
+      <p class="tagline">A string clears the gate only when it is Active, carries a Quant Class, and is a primary (not an alias) — lines are the governed exception.</p>
+    </div>
+    <div>
+      <div class="lexbar">
+        <label class="f" style="margin:0">Lexicon</label>
+        <select id="lexSelect" onchange="App.switchLexicon(this.value)"></select>
+        <button class="ghost" title="Manage lexicons" onclick="App.openLexiconManager()"><i class="fa-solid fa-layer-group"></i></button>
+      </div>
+      <div class="meta" id="versionMeta"></div>
+    </div>
+  </div>
+
+  <div id="datasetBanner"></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="tabs" id="tabs">
+    <button data-view="wizard" class="active" onclick="App.show('wizard')"><i class="fa-solid fa-wand-magic-sparkles"></i> Add string</button>
+    <button data-view="inventory" onclick="App.show('inventory')"><i class="fa-solid fa-table-list"></i> Inventory</button>
+    <button data-view="predicates" onclick="App.show('predicates')"><i class="fa-solid fa-arrows-left-right"></i> Predicate Registry</button>
+    <button data-view="thesaurus" onclick="App.show('thesaurus')"><i class="fa-solid fa-book-open"></i> Thesaurus</button>
+    <button data-view="help" onclick="App.show('help')"><i class="fa-solid fa-circle-question"></i> Reference</button>
+    <span class="spacer"></span>
+    <button onclick="App.openAuditSummary()"><i class="fa-solid fa-clipboard-check"></i> Audit Summary</button>
+    <button onclick="App.loadClick()"><i class="fa-solid fa-upload"></i> Load inventory</button>
+    <button class="primary" onclick="App.exportWorkbook()"><i class="fa-solid fa-download"></i> Export</button>
+  </div>
+
+  <div id="view-wizard"></div>
+  <div id="view-inventory" style="display:none"></div>
+  <div id="view-predicates" style="display:none"></div>
+  <div id="view-thesaurus" style="display:none"></div>
+  <div id="view-help" style="display:none"></div>
+
+  <footer id="footer"></footer>
+</div>
+<input type="file" id="fileInput" class="hiddenfile" accept=".xlsx,.xlsm" onchange="App.fileChosen(this.files)">
+<input type="file" id="wnInput" class="hiddenfile" accept=".js,.json" onchange="App.wnFileChosen(this.files)">
+<div id="modalRoot"></div>
+<script>
+"use strict";
+/* ============================================================
+   Semantium String Classifier — Level 0 Lexical Gate (standalone)
+   Modelware Systems International · Glossary_SemanticModel suite
+   ============================================================ */
+const APP_VERSION = "1.0.0";
+const APP_BUILT = "2026-07-20 07:05 SAST";
+const APP_NAME = "Semantium String Classifier";
+
+/* ---------------- Closed vocabularies (single source of truth) -------- */
+const Q6_FACETS = ["Who","What","When","Where","Why","How"];
+const QUANT_CLASSES = {
+  Organization:"Who", Person:"Who",
+  "Abstract Thing":"What","Digital Thing":"What","Physical Thing":"What",
+  Cycle:"When", Point:"When", Span:"When", Status:"When", Coordinates:"When",
+  Place:"Where", Position:"Where",
+  Discipline:"Why", Role:"Why", Use:"Why",
+  Activity:"How", Event:"How", Process:"How", Task:"How"
+};
+const CLASSES_BY_FACET = Q6_FACETS.reduce((m,f)=>{m[f]=Object.keys(QUANT_CLASSES).filter(c=>QUANT_CLASSES[c]===f);return m;},{});
+const QUANT_TYPES = ["Abbreviation","Acronym","Code","Definition","Description","Flag","Identifier","Instruction","Name","Phrase","Term","Value"];
+const QUANT_LEVELS = ["Business Concept","Metadata","Instance Data"];
+const TERM_TYPES = ["Entity","Attribute","Relationship","Fact"];
+const STATUSES = ["Draft","Proposed","Active","Deprecated","Quarantined"];
+const EDGES = [
+  {code:"HAS", name:"IS-HAS", desc:"unspecified / transient association"},
+  {code:"MEMBER", name:"IS-MEMBER-HAS", desc:"set / category membership"},
+  {code:"PART", name:"IS-PART-HAS", desc:"component / assembly"},
+  {code:"PRECEDENT", name:"IS-PRECEDENT-HAS", desc:"temporal / sequential"},
+  {code:"PROPERTY", name:"IS-PROPERTY-HAS", desc:"characteristic / attribute"},
+  {code:"EQUIV", name:"IS-EQUIVALENT-HAS", desc:"semantically the same, structurally different (alias→primary)"}
+];
+const EDGE_BY_CODE = Object.fromEntries(EDGES.map(e=>[e.code,e]));
+const SUBJECT_AREAS = ["Data Management","Data Governance","Data Architecture","Data Modeling & Design","Data Storage & Operations","Data Security","Data Integration & Interoperability","Document & Content Management","Reference & Master Data","Data Warehousing & BI","Metadata","Data Quality"];
+const PROVENANCES = ["WordNet-direct","Anchor+Annotation","Local-Manual"];
+const EDGE_DIRECTIONS = ["","IS-side","HAS-side"];
+const LANG_DEFAULT = "EN";
+/* Class↔Level coherence WARN pairs (advisory, never blocking) */
+const COHERENCE_WARN = [
+  ["Business Concept","Digital Thing","carrier smuggling — keep concepts carrier-independent"],
+  ["Business Concept","Physical Thing","carrier smuggling — keep concepts carrier-independent"],
+  ["Metadata","Physical Thing","logical mapping — metadata describes, it is not physical"],
+  ["Instance Data","Abstract Thing","empirical grounding — instances should be concrete"]
+];
+/* Confidence bands (steward thresholds) */
+const BAND_AUTO = 0.85, BAND_JUSTIFY = 0.70;
+/* Canonical lexgate.py columns — exact names, exact order */
+const CANON_COLS = ["Lexical Object ID","String / Label","Quant Type","Primary Equivalent","Quant Class","Q6 Facet","Quant Level","Term Type","Sense","Is Plural","Language","Status","Disambiguation Notes","Contributor","Source","Create Date","Last Change Date"];
+const EXT_COLS = ["WordNet Anchor","Provenance","Sense Gloss","Subject Area","Sub-Category","Quant Edge","Classifier Comment","Confidence","Edge Direction","Inverse Primary"];
+const ID_PREFIX="LEX-", NODE_START=10001, LINE_START=10101;
+const IRREGULAR_PARTICIPLES = ["bound","held","done","made","given","taken","kept","found","paid","sold","bought","brought","built","sent","set","put","laid","led","won","begun"];
+
+/* ---------------- tiny DOM helpers ---------------- */
+const $=(s,el=document)=>el.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const nowStamp=()=>{const d=new Date(),p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;};
+const uid=()=>Math.random().toString(36).slice(2,9);
+
+/* ---------------- Row model ---------------- */
+function newRow(){ return {
+  id:"", label:"", quantType:"Term", primaryEquivalent:"", quantClass:"", q6:"",
+  quantLevel:"Business Concept", termType:"Entity", sense:"", isPlural:"FALSE",
+  language:LANG_DEFAULT, status:"Draft", disambiguationNotes:"", contributor:"",
+  source:APP_NAME+" v"+APP_VERSION, createDate:"", lastChangeDate:"",
+  wordnetAnchor:"", provenance:"", senseGloss:"", subjectArea:"", subCategory:"",
+  quantEdges:[], classifierComment:"", confidence:"", edgeDirection:"", inversePrimary:"",
+  audit:{}, verbalizations:[]
+};}
+
+/* ---------------- Store: multi-lexicon over localStorage ---------------- */
+const Store = {
+  NS:"semantium.sc.",
+  meta(){ try{return JSON.parse(localStorage.getItem(this.NS+"meta"))||null;}catch(e){return null;} },
+  saveMeta(m){ localStorage.setItem(this.NS+"meta",JSON.stringify(m)); },
+  init(){
+    let m=this.meta();
+    if(!m){ const id=uid(); m={active:id,lexicons:[{id,name:"Own Lexicon",created:nowStamp()}]};
+      this.saveMeta(m); this.saveLex(id,this.blankLex("Own Lexicon")); }
+    return m;
+  },
+  blankLex(name){ return {name, rows:[], nextNode:NODE_START, nextLine:LINE_START, contributor:"", auditSummary:null, auditHealth:null, auditVerdict:null, lastLoaded:null}; },
+  lex(id){ try{return JSON.parse(localStorage.getItem(this.NS+"lex."+id))||this.blankLex("Lexicon");}catch(e){return this.blankLex("Lexicon");} },
+  saveLex(id,l){ localStorage.setItem(this.NS+"lex."+id,JSON.stringify(l)); },
+  removeLex(id){ localStorage.removeItem(this.NS+"lex."+id); }
+};
+
+/* ---------------- ID service ---------------- */
+const Ids = {
+  parse(id){ const m=/^LEX-(\d{4,})$/.exec(String(id).trim()); return m?parseInt(m[1],10):null; },
+  format(n){ return ID_PREFIX+n; },
+  resync(lex){
+    let maxNode=NODE_START-1, maxLine=LINE_START-1;
+    for(const r of lex.rows){ const n=this.parse(r.id); if(n==null) continue;
+      if(n>=LINE_START){ if(n>maxLine) maxLine=n; } else { if(n>maxNode) maxNode=n; } }
+    lex.nextNode=Math.max(lex.nextNode||NODE_START,maxNode+1);
+    lex.nextLine=Math.max(lex.nextLine||LINE_START,maxLine+1);
+  },
+  next(lex,isLine){
+    this.resync(lex);
+    /* The line range (LEX-10101+) opens only once a steward has minted into it
+       (walkthrough Part F: naive stems continue the node counter; the first
+       governed Line is an explicit ID override, then auto-numbering follows). */
+    const lineStarted=lex.rows.some(r=>{const n=this.parse(r.id);return n!=null&&n>=LINE_START;});
+    return this.format(isLine&&lineStarted?lex.nextLine:lex.nextNode);
+  },
+  unique(lex,id,exceptIdx=-1){ return !lex.rows.some((r,i)=>i!==exceptIdx && r.id===id); }
+};
+
+/* ---------------- Validation engine (shared: wizard + editor) ---------------- */
+const Validate = {
+  deriveFacet(row){ row.q6 = row.termType==="Relationship" ? "" : (QUANT_CLASSES[row.quantClass]||""); },
+  row(row, lex, exceptIdx=-1){
+    const errors=[], warnings=[];
+    const isRel = row.termType==="Relationship";
+    if(!row.label.trim()) errors.push("String / Label is required.");
+    if(row.id){
+      if(Ids.parse(row.id)==null) errors.push("Lexical Object ID must match LEX-nnnnn.");
+      else if(!Ids.unique(lex,row.id,exceptIdx)) errors.push("Lexical Object ID "+row.id+" is already in use.");
+    }
+    if(row.quantType && !QUANT_TYPES.includes(row.quantType)) warnings.push("Quant Type '"+row.quantType+"' is outside the 12-type vocabulary.");
+    if(row.quantClass && !QUANT_CLASSES[row.quantClass]) warnings.push("Quant Class '"+row.quantClass+"' is outside the 19-class vocabulary.");
+    if(row.quantLevel && !QUANT_LEVELS.includes(row.quantLevel)) warnings.push("Quant Level '"+row.quantLevel+"' is outside the 3-level vocabulary.");
+    if(row.status && !STATUSES.includes(row.status)) warnings.push("Status '"+row.status+"' is outside the lifecycle vocabulary.");
+    if(isRel){
+      if(row.quantClass) errors.push("A Relationship (Line) carries no Quant Class — its Edge is its classification.");
+      if(row.q6) row.q6="";
+    } else {
+      this.deriveFacet(row);
+    }
+    if(row.status==="Active"){
+      if(!isRel && !row.quantClass) errors.push("Active requires a Quant Class (or Term Type = Relationship).");
+      if(row.primaryEquivalent) warnings.push("An alias is Active but aliases are never gate-ready; consider whether the primary should carry the meaning.");
+    }
+    if(row.primaryEquivalent){
+      const p=lex.rows.find(r=>r.id===row.primaryEquivalent);
+      if(!p) errors.push("Primary Equivalent "+row.primaryEquivalent+" does not exist in this lexicon.");
+      else {
+        if(p.primaryEquivalent) warnings.push("Primary Equivalent points at "+p.id+" which is itself an alias — point at the primary.");
+        if(!this.eligiblePrimary(row,p)) warnings.push("Primary "+p.id+" ("+p.label+") does not share this row's Q6 / Class / Type — equivalence is doubtful.");
+        if(!row.quantEdges.includes("EQUIV")) warnings.push("A row with a Primary Equivalent should carry the EQUIV edge.");
+      }
+    }
+    if(row.inversePrimary){
+      const inv=lex.rows.find(r=>r.id===row.inversePrimary);
+      if(!inv) errors.push("Inverse Primary "+row.inversePrimary+" does not exist in this lexicon.");
+      else if(inv.termType!=="Relationship") warnings.push("Inverse Primary "+inv.id+" is not a Relationship term.");
+    }
+    /* casing conventions — advisory */
+    const l=row.label.trim();
+    if(l){
+      if(isRel && !/^[a-z][a-zA-Z0-9]*$/.test(l)) warnings.push("Casing: Relationships are lowerCamelCase (e.g. participatesIn). '"+l+"' breaks the convention.");
+      if(!isRel && row.termType==="Entity" && /^[a-z]/.test(l) && !l.includes(" ")) warnings.push("Casing: Entities are PascalCase. '"+l+"' starts lowercase.");
+    }
+    /* passive trap — advisory */
+    if(isRel && /^is[A-Z]/.test(l)){
+      const stem=l.slice(2).replace(/By$/,"").toLowerCase();
+      if(/ed$/.test(stem)) warnings.push("Passive trap: '"+l+"' is a passive participle form. Passive promotion is blocked at Level 0 — author the active HAS-side form and register the inverse (never swap Subject and Object).");
+      else if(IRREGULAR_PARTICIPLES.includes(stem)) warnings.push("Passive trap: '"+l+"' hides the irregular participle '"+stem+"'. Passive promotion is blocked at Level 0 — author the active HAS-side form and register the inverse.");
+    }
+    /* coherence WARN pairs */
+    for(const [lev,cls,why] of COHERENCE_WARN)
+      if(row.quantLevel===lev && row.quantClass===cls) warnings.push("Coherence: "+cls+" @ "+lev+" — "+why+". Override with a justification in Disambiguation Notes if deliberate.");
+    /* provenance / anchor consistency */
+    if(row.provenance==="WordNet-direct" && !row.wordnetAnchor) warnings.push("WordNet-direct provenance but no WordNet Anchor recorded.");
+    if(row.provenance==="Local-Manual" && row.wordnetAnchor && row.wordnetAnchor!=="LOCAL-SENSE") warnings.push("Local-Manual provenance should carry anchor LOCAL-SENSE, not a synset.");
+    if(row.confidence!=="" && row.confidence!=null){
+      const c=parseFloat(row.confidence);
+      if(isNaN(c)||c<0||c>1) warnings.push("Confidence should be a number between 0.00 and 1.00.");
+      else if(c<BAND_JUSTIFY && row.provenance==="WordNet-direct") warnings.push("Confidence "+c.toFixed(2)+" is below "+BAND_JUSTIFY.toFixed(2)+" — WordNet-direct is refused in this band; use Anchor+Annotation or Local-Manual.");
+      else if(c<BAND_AUTO && !row.disambiguationNotes.trim()) warnings.push("Confidence in the justify band ("+BAND_JUSTIFY.toFixed(2)+"–"+BAND_AUTO.toFixed(2)+") requires a steward rationale in Disambiguation Notes.");
+    }
+    return {errors,warnings};
+  },
+  eligiblePrimary(row,p){
+    if(row.termType==="Relationship") return p.termType==="Relationship";
+    return p.quantClass===row.quantClass && p.termType===row.termType && !p.primaryEquivalent;
+  },
+  predicateChecklist(row,lex){
+    /* the five-defect DQ checklist — advisory panel per predicate */
+    const l=row.label.trim(); const out=[];
+    out.push({ok:/[A-Z]/.test(l)&&/^[a-z]/.test(l), text:"Usable surface form (inflected, reads inside a triple — not a bare stem)"});
+    out.push({ok:!!row.edgeDirection, text:"Edge Direction declared (IS-side / HAS-side)"});
+    const inv=row.inversePrimary && lex.rows.find(r=>r.id===row.inversePrimary);
+    out.push({ok:!!inv, text:"Registered inverse ("+(inv?esc(inv.label):"none")+")"});
+    out.push({ok:/^[a-z][a-zA-Z0-9]*$/.test(l), text:"lowerCamelCase casing"});
+    const stem=/^is[A-Z]/.test(l)?l.slice(2).replace(/By$/,"").toLowerCase():"";
+    const passive=!!stem&&(/ed$/.test(stem)||IRREGULAR_PARTICIPLES.includes(stem));
+    out.push({ok:!passive, text:"No passive participle trap"});
+    return out;
+  }
+};
+
+/* ---------------- WordNet service ---------------- */
+const WN = {
+  data:null, status:"loading",
+  async init(){
+    if(window.WORDNET_DATA){ this.data=window.WORDNET_DATA; this.status="ready"; return; }
+    try{
+      const r=await fetch("wordnet-data.json");
+      if(!r.ok) throw new Error(r.status);
+      this.data=await r.json(); this.status="ready";
+    }catch(e){ this.status="missing"; }
+  },
+  loadFromText(txt){
+    try{
+      const t=txt.trim();
+      const j=t.startsWith("{")?t:t.slice(t.indexOf("{"), t.lastIndexOf("}")+1);
+      this.data=JSON.parse(j); this.status="ready"; return true;
+    }catch(e){ return false; }
+  },
+  senses(lemma,pos){
+    if(!this.data) return [];
+    const idxs=this.data.l[String(lemma).trim().toLowerCase().replace(/\s+/g," ")]||[];
+    return idxs.map(i=>this.byIndex(i)).filter(s=>!pos||s.pos===pos);
+  },
+  byIndex(i){ const r=this.data.s[i]; return r?{idx:i,id:r[0],pos:r[1],gloss:r[2],lemmas:r[3],rel:r[4]||{}}:null; },
+  byId(id){
+    if(!this.data) return null;
+    const lemma=id.split(".")[0].replace(/_/g," ");
+    const s=this.senses(lemma).find(x=>x.id===id);
+    if(s) return s;
+    const i=this.data.s.findIndex(r=>r[0]===id);
+    return i>=0?this.byIndex(i):null;
+  },
+  relations(sense){
+    const map={y:"Broader (hypernym)",o:"Narrower (hyponym)",a:"Antonym",m:"Has-part (meronym)",l:"Part-of (holonym)"};
+    const out=[];
+    for(const k of Object.keys(map)){
+      const arr=(sense.rel[k]||[]).slice(0,8).map(i=>this.byIndex(i)).filter(Boolean);
+      if(arr.length) out.push({kind:map[k],key:k,senses:arr});
+    }
+    return out;
+  }
+};
+
+/* ============================================================
+   App controller
+   ============================================================ */
+const App = {
+  metaCfg:null, lexId:null, lex:null, view:"wizard",
+  wiz:null, expanded:{}, groupByClass:true,
+
+  async boot(){
+    this.metaCfg=Store.init();
+    this.lexId=this.metaCfg.active;
+    this.lex=Store.lex(this.lexId);
+    Ids.resync(this.lex);
+    $("#versionMeta").innerHTML = esc(APP_NAME)+" v"+APP_VERSION+"<br>built "+esc(APP_BUILT);
+    $("#footer").innerHTML = "Semantium Level 0 · Modelware Systems International · "+esc(APP_NAME)+" v"+APP_VERSION+" (built "+esc(APP_BUILT)+"). WordNet® data: Princeton University — used under the WordNet 3.0 License.";
+    this.renderLexBar(); this.resetWizard(); this.renderAll();
+    await WN.init(); this.renderDatasetBanner(); this.renderView();
+  },
+  save(){ this.lex.rows.forEach(r=>Validate.deriveFacet(r)); Store.saveLex(this.lexId,this.lex); this.renderTiles(); },
+  renderAll(){ this.renderTiles(); this.renderView(); },
+
+  /* ---------- dataset banner ---------- */
+  renderDatasetBanner(){
+    const el=$("#datasetBanner");
+    if(WN.status==="ready"){ el.innerHTML=""; return; }
+    if(WN.status==="loading"){ el.innerHTML='<div class="banner warn">Loading WordNet dataset…</div>'; return; }
+    el.innerHTML='<div class="banner err"><strong>WordNet dataset not loaded.</strong> Keep <span class="kbd">wordnet-data.json</span> next to this file (GitHub Pages), or load it manually: <button onclick="document.getElementById(\'wnInput\').click()">Load dataset…</button> Senses cannot be proposed until it is loaded — the cardinal rule forbids invented synsets.</div>';
+  },
+  wnFileChosen(files){
+    if(!files||!files[0]) return;
+    const fr=new FileReader();
+    fr.onload=()=>{ if(WN.loadFromText(fr.result)){ this.renderDatasetBanner(); this.renderView(); } else alert("Could not parse that file as the WordNet dataset."); };
+    fr.readAsText(files[0]);
+  },
+
+  /* ---------- lexicon switcher ---------- */
+  renderLexBar(){
+    const sel=$("#lexSelect");
+    sel.innerHTML=this.metaCfg.lexicons.map(l=>`<option value="${l.id}" ${l.id===this.lexId?"selected":""}>${esc(l.name)}</option>`).join("");
+  },
+  switchLexicon(id){
+    this.save(); this.lexId=id; this.metaCfg.active=id; Store.saveMeta(this.metaCfg);
+    this.lex=Store.lex(id); Ids.resync(this.lex); this.resetWizard(); this.renderLexBar(); this.renderAll();
+  },
+  openLexiconManager(){
+    const rows=this.metaCfg.lexicons.map(l=>`<tr><td>${esc(l.name)}</td><td class="small">${esc(l.created)}</td><td class="right">
+      <button onclick="App.renameLexicon('${l.id}')">Rename</button>
+      <button onclick="App.duplicateLexicon('${l.id}')">Duplicate</button>
+      <button class="danger" onclick="App.deleteLexicon('${l.id}')">Delete</button></td></tr>`).join("");
+    this.modal(`<h2><i class="fa-solid fa-layer-group"></i> Lexicons</h2>
+      <table class="inv"><thead><tr><th>Name</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="row-flex" style="margin-top:1rem"><input type="text" id="newLexName" placeholder="New lexicon name" style="max-width:280px">
+      <button class="primary" onclick="App.newLexicon()">New lexicon</button><span class="spacer"></span><button onclick="App.closeModal()">Close</button></div>`);
+  },
+  newLexicon(){
+    const name=($("#newLexName").value||"").trim()||"Lexicon "+(this.metaCfg.lexicons.length+1);
+    const id=uid(); this.metaCfg.lexicons.push({id,name,created:nowStamp()});
+    Store.saveLex(id,Store.blankLex(name)); Store.saveMeta(this.metaCfg);
+    this.closeModal(); this.switchLexicon(id);
+  },
+  renameLexicon(id){
+    const l=this.metaCfg.lexicons.find(x=>x.id===id); const name=prompt("Rename lexicon",l.name);
+    if(!name) return; l.name=name.trim(); const lx=Store.lex(id); lx.name=l.name; Store.saveLex(id,lx);
+    Store.saveMeta(this.metaCfg); this.renderLexBar(); this.openLexiconManager();
+  },
+  duplicateLexicon(id){
+    const src=Store.lex(id); const l=this.metaCfg.lexicons.find(x=>x.id===id);
+    const nid=uid(); const copy=JSON.parse(JSON.stringify(src)); copy.name=l.name+" (copy)";
+    this.metaCfg.lexicons.push({id:nid,name:copy.name,created:nowStamp()});
+    Store.saveLex(nid,copy); Store.saveMeta(this.metaCfg); this.openLexiconManager(); this.renderLexBar();
+  },
+  deleteLexicon(id){
+    const l=this.metaCfg.lexicons.find(x=>x.id===id);
+    if(!confirm(`Delete lexicon “${l.name}” and ALL its strings? This is the reset action and cannot be undone.`)) return;
+    this.metaCfg.lexicons=this.metaCfg.lexicons.filter(x=>x.id!==id); Store.removeLex(id);
+    if(!this.metaCfg.lexicons.length){ const nid=uid(); this.metaCfg.lexicons=[{id:nid,name:"Own Lexicon",created:nowStamp()}]; Store.saveLex(nid,Store.blankLex("Own Lexicon")); }
+    this.metaCfg.active=this.metaCfg.lexicons[0].id; Store.saveMeta(this.metaCfg);
+    this.closeModal(); this.switchLexicon(this.metaCfg.active);
+  },
+
+  /* ---------- tiles ---------- */
+  tileValues(){
+    const rows=this.lex.rows;
+    const n=s=>rows.filter(r=>r.status===s).length;
+    return {
+      Total:rows.length, Active:n("Active"), Proposed:n("Proposed"), Draft:n("Draft"),
+      Classified:rows.filter(r=>r.quantClass).length,
+      "Gate-ready":rows.filter(r=>r.status==="Active"&&r.quantClass&&!r.primaryEquivalent).length,
+      Aliases:rows.filter(r=>r.primaryEquivalent).length
+    };
+  },
+  renderTiles(){
+    const v=this.tileValues();
+    let html=Object.entries(v).map(([k,x])=>`<div class="tile"><strong>${x}</strong><span>${k}</span></div>`).join("");
+    const h=this.lex.auditHealth, verdict=this.lex.auditVerdict;
+    const cls=verdict==="PASS"?"":"warn"; 
+    html+=`<div class="tile health ${verdict==="QUARANTINE"?"fail":verdict==="PASS+WARN"?"warn":""}"><strong>${h==null?"—":esc(h)}</strong><span>Health${verdict?" · "+esc(verdict):""}</span></div>`;
+    $("#tiles").innerHTML=html;
+  },
+
+  /* ---------- views ---------- */
+  show(v){
+    this.view=v;
+    document.querySelectorAll("#tabs button[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
+    ["wizard","inventory","predicates","thesaurus","help"].forEach(x=>$("#view-"+x).style.display=x===v?"":"none");
+    this.renderView();
+  },
+  renderView(){
+    if(this.view==="wizard") this.renderWizard();
+    else if(this.view==="inventory") this.renderInventory();
+    else if(this.view==="predicates") this.renderPredicates();
+    else if(this.view==="thesaurus") this.renderThesaurus();
+    else if(this.view==="help") this.renderHelp();
+  },
+
+  /* ---------- modal ---------- */
+  modal(html){ $("#modalRoot").innerHTML=`<div class="modal-back" onclick="if(event.target===this)App.closeModal()"><div class="modal">${html}</div></div>`; },
+  closeModal(){ $("#modalRoot").innerHTML=""; }
+};
+
+/* ============================================================
+   The 8-step wizard
+   ============================================================ */
+const STEP_NAMES=["Sense","Subject Area","Q6 Facet","Quant Class","Level & Type","Quant Edge","Example","Commit"];
+Object.assign(App,{
+  resetWizard(){
+    this.wiz={ step:1, row:newRow(), senses:[], senseSel:null, localSense:false, aliasOffer:null, committed:null, pos:"n" };
+    this.wiz.row.contributor=this.lex.contributor||"";
+  },
+  renderWizard(){
+    const w=this.wiz, r=w.row;
+    const segs=STEP_NAMES.map((n,i)=>`<div class="seg ${i+1<w.step?"done":i+1===w.step?"cur":""}" title="${n}"></div>`).join("");
+    let body="";
+    if(w.committed) body=this.wizCommitted();
+    else body=this["wizStep"+w.step]();
+    $("#view-wizard").innerHTML=`<div class="card">
+      <div class="row-flex"><span class="steplabel">Level 0 · Step ${w.step} of 8 · ${STEP_NAMES[w.step-1]}</span><span class="spacer"></span>
+      <button class="ghost" onclick="App.resetWizard();App.renderWizard()" title="Start over"><i class="fa-solid fa-rotate-left"></i> Start over</button></div>
+      <div class="stepbar">${segs}</div>${body}</div>`;
+  },
+  wizNav(canNext,commit=false){
+    const w=this.wiz;
+    return `<div class="row-flex" style="margin-top:1rem">
+      ${w.step>1?'<button onclick="App.wizBack()"><i class="fa-solid fa-arrow-left"></i> Back</button>':""}
+      <span class="spacer"></span>
+      ${commit
+        ? `<button class="primary" ${canNext?"":"disabled"} onclick="App.wizCommit()"><i class="fa-solid fa-check"></i> Commit to Lexicon</button>`
+        : `<button class="primary" ${canNext?"":"disabled"} onclick="App.wizNext()">Next <i class="fa-solid fa-arrow-right"></i></button>`}
+    </div>`;
+  },
+  wizBack(){ this.wiz.step=Math.max(1,this.wiz.step-1); this.renderWizard(); },
+  wizNext(){
+    const w=this.wiz, r=w.row;
+    if(w.step===1){
+      const gate=this.senseGate();
+      if(gate.block){ alert(gate.block); return; }
+    }
+    if(w.step===2 && r.subjectArea && !SUBJECT_AREAS.includes(r.subjectArea)){
+      if(!confirm("Subject Area '"+r.subjectArea+"' is outside the 11 DMBOK Knowledge Areas + Data Management umbrella. Keep it anyway?")) return;
+    }
+    w.step=Math.min(8,w.step+1);
+    /* lines skip facet+class */
+    if(r.termType==="Relationship" && (w.step===3||w.step===4)) { /* allow visiting; steps show the skip notice */ }
+    this.renderWizard();
+  },
+
+  /* ----- Step 1: Sense ----- */
+  senseGate(){
+    const w=this.wiz, r=this.wiz.row;
+    if(!r.label.trim()) return {block:"Type the String / Label first."};
+    if(!w.localSense && r.wordnetAnchor && r.wordnetAnchor!=="LOCAL-SENSE"){
+      const s=WN.byId(r.wordnetAnchor);
+      if(!s) return {block:"Anchor '"+r.wordnetAnchor+"' is not a real synset in the bundled WordNet. The cardinal rule: never invent a sense. Pick a retrieved sense or choose LOCAL-SENSE."};
+    }
+    const c=r.confidence===""?null:parseFloat(r.confidence);
+    if(c!=null && !isNaN(c)){
+      if(c<BAND_JUSTIFY && r.provenance==="WordNet-direct")
+        return {block:"Anchor-fit "+c.toFixed(2)+" is below "+BAND_JUSTIFY.toFixed(2)+" — WordNet-direct is refused. Author a gloss (Anchor+Annotation) or go Local-Manual."};
+      if(c<BAND_AUTO && c>=BAND_JUSTIFY && !r.disambiguationNotes.trim())
+        return {block:"Anchor-fit "+c.toFixed(2)+" sits in the justify band ("+BAND_JUSTIFY.toFixed(2)+"–"+BAND_AUTO.toFixed(2)+"). Write the steward rationale in Disambiguation Notes before continuing."};
+    }
+    return {};
+  },
+  wizSearchSenses(){
+    const w=this.wiz;
+    w.senses=WN.senses(w.row.label,w.pos==="any"?null:w.pos);
+    w.senseSel=null;
+    this.checkCollision();
+    this.renderWizard();
+  },
+  checkCollision(){
+    const w=this.wiz, label=w.row.label.trim().toLowerCase();
+    w.aliasOffer=null;
+    if(!label) return;
+    const dup=this.lex.rows.find(r=>r.label.trim().toLowerCase()===label);
+    if(dup){ w.aliasOffer={kind:"dup",row:dup}; return; }
+    for(const r of this.lex.rows){
+      if(!r.wordnetAnchor||r.wordnetAnchor==="LOCAL-SENSE"||r.primaryEquivalent) continue;
+      const s=WN.byId(r.wordnetAnchor);
+      if(s && s.lemmas.some(l=>l.toLowerCase()===label)){ w.aliasOffer={kind:"lemma",row:r,synset:s}; return; }
+    }
+  },
+  applyAliasOffer(){
+    const w=this.wiz, p=w.aliasOffer.row, r=w.row;
+    r.quantType=p.quantType; r.quantClass=p.quantClass; r.quantLevel=p.quantLevel; r.termType=p.termType;
+    r.wordnetAnchor=p.wordnetAnchor; r.provenance=p.provenance; r.senseGloss=p.senseGloss; r.sense=p.sense;
+    r.subjectArea=p.subjectArea; r.subCategory=p.subCategory;
+    r.quantEdges=["EQUIV"]; r.primaryEquivalent=p.id;
+    r.disambiguationNotes=(r.disambiguationNotes?r.disambiguationNotes+" ":"")+"Equivalent of "+p.label+" ("+p.id+"); classification inherited, not re-decided.";
+    Validate.deriveFacet(r);
+    w.aliasOffer=null; this.renderWizard();
+  },
+  wizPickSense(i){
+    const w=this.wiz, s=w.senses[i]; w.senseSel=i; w.localSense=false;
+    w.row.wordnetAnchor=s.id;
+    if(!w.row.senseGloss || w.row.provenance!=="Anchor+Annotation") w.row.senseGloss=s.gloss;
+    if(!w.row.sense) w.row.sense=s.id;
+    if(!w.row.provenance) w.row.provenance="WordNet-direct";
+    this.renderWizard();
+  },
+  wizLocalSense(){
+    const w=this.wiz; w.localSense=true; w.senseSel=null;
+    w.row.wordnetAnchor="LOCAL-SENSE"; w.row.provenance="Local-Manual";
+    this.renderWizard();
+  },
+  bandFor(c){ if(c==null||isNaN(c))return null; if(c>=BAND_AUTO)return{n:"auto-propose",cls:"okbox",t:"At or above "+BAND_AUTO.toFixed(2)+" — the sense auto-proposes; simply confirm."}; if(c>=BAND_JUSTIFY)return{n:"justify",cls:"advisory",t:"In the justify band — a steward rationale in Disambiguation Notes is required to lock this anchor."}; return{n:"refuse",cls:"errorbox",t:"Below "+BAND_JUSTIFY.toFixed(2)+" — WordNet-direct is refused. Author the sense (Anchor+Annotation) or go Local-Manual."};},
+  wizStep1(){
+    const w=this.wiz, r=w.row;
+    const senseCards=w.senses.map((s,i)=>`<div class="sense ${w.senseSel===i?"sel":""}" onclick="App.wizPickSense(${i})">
+        <span class="sid">${esc(s.id)}</span>
+        <div><div class="gl">${esc(s.gloss)}</div><div class="lms">lemmas: ${s.lemmas.map(esc).join(", ")}</div></div></div>`).join("");
+    const c=r.confidence===""?null:parseFloat(r.confidence);
+    const band=this.bandFor(c);
+    const alias=w.aliasOffer?(w.aliasOffer.kind==="dup"
+      ?`<div class="advisory"><strong>Already governed.</strong> “${esc(w.aliasOffer.row.label)}” exists as ${esc(w.aliasOffer.row.id)}${w.aliasOffer.row.primaryEquivalent?" (an alias of "+esc(w.aliasOffer.row.primaryEquivalent)+")":""}. Do not mint a second identity — edit the existing row in the Inventory instead.</div>`
+      :`<div class="advisory"><strong>Thesaurus guard.</strong> “${esc(r.label)}” is a WordNet lemma of ${esc(w.aliasOffer.synset.id)}, the locked sense of <strong>${esc(w.aliasOffer.row.label)}</strong> (${esc(w.aliasOffer.row.id)}) — equivalence corroborated. Govern it as an alias? <button class="primary" onclick="App.applyAliasOffer()">Pre-fill as alias of ${esc(w.aliasOffer.row.id)}</button></div>`):"";
+    return `
+    <div class="grid g3">
+      <div><label class="f">String / Label ${this.q("The exact string being governed. Spelling locks at commit — Term links and RDF IRIs depend on it.")}</label>
+        <input type="text" value="${esc(r.label)}" oninput="App.wiz.row.label=this.value" onchange="App.wizSearchSenses()"></div>
+      <div><label class="f">Part of speech ${this.q("Filters the retrieved WordNet senses. Nouns for nodes; verbs when hunting predicate stems.")}</label>
+        <select onchange="App.wiz.pos=this.value;App.wizSearchSenses()">
+          <option value="n" ${w.pos==="n"?"selected":""}>Noun</option><option value="v" ${w.pos==="v"?"selected":""}>Verb</option><option value="any" ${w.pos==="any"?"selected":""}>Any</option></select></div>
+      <div style="align-self:end"><button onclick="App.wizSearchSenses()"><i class="fa-solid fa-magnifying-glass"></i> Retrieve real senses</button></div>
+    </div>
+    ${alias}
+    ${WN.status!=="ready"?'<div class="errorbox">WordNet dataset not loaded — senses cannot be retrieved.</div>':""}
+    ${w.senses.length?`<div class="senselist">${senseCards}</div>`:'<p class="hint">Type the string and retrieve senses. The WSD skill retrieves REAL WordNet senses — a synset ID is never invented. If no synset fits at all, LOCAL-SENSE is a valid result, not an error.</p>'}
+    <div class="row-flex"><button class="${w.localSense?"primary":""}" onclick="App.wizLocalSense()"><i class="fa-solid fa-pen-nib"></i> No synset fits — LOCAL-SENSE (Local-Manual)</button></div>
+    <div class="grid g3" style="margin-top:.8rem">
+      <div><label class="f">WordNet Anchor ${this.q("The locked synset (e.g. party.n.05), or LOCAL-SENSE when no synset fits. Must be a real retrieved synset — free-typed IDs are rejected.")}</label>
+        <input type="text" value="${esc(r.wordnetAnchor)}" oninput="App.wiz.row.wordnetAnchor=this.value"></div>
+      <div><label class="f">Provenance ${this.q("WordNet-direct: the synset fits. Anchor+Annotation: nearest synset + steward-authored gloss. Local-Manual: no synset at all.")}</label>
+        <select onchange="App.wiz.row.provenance=this.value;App.renderWizard()"><option value=""></option>${PROVENANCES.map(p=>`<option ${r.provenance===p?"selected":""}>${p}</option>`).join("")}</select></div>
+      <div><label class="f">Anchor-fit Confidence ${this.q("Your 0.00–1.00 score of how well the anchor's gloss mirrors the business meaning. Bands: ≥0.85 auto-propose · 0.70–0.85 justify · <0.70 refuse WordNet-direct.")}</label>
+        <input type="number" min="0" max="1" step="0.01" value="${esc(r.confidence)}" oninput="App.wiz.row.confidence=this.value" onchange="App.renderWizard()"></div>
+    </div>
+    ${band?`<div class="${band.cls}"><strong>${band.n} band.</strong> ${band.t}</div>`:""}
+    <div class="grid g2" style="margin-top:.8rem">
+      <div><label class="f">Sense Gloss ${this.q("The governed meaning text. WordNet-direct: the synset gloss. Anchor+Annotation: the steward-authored gloss (authoritative), verbatim.")}</label>
+        <textarea oninput="App.wiz.row.senseGloss=this.value">${esc(r.senseGloss)}</textarea></div>
+      <div><label class="f">Disambiguation Notes ${this.q("The steward's WSD record: how many senses, which locked, which excluded, and the rationale (mandatory in the justify band).")}</label>
+        <textarea oninput="App.wiz.row.disambiguationNotes=this.value">${esc(r.disambiguationNotes)}</textarea></div>
+    </div>
+    <div class="grid g2" style="margin-top:.8rem">
+      <div><label class="f">Sense (short label) ${this.q("A short handle for this sense — defaults to the synset ID; for polysemy splits use e.g. 'bank (financial)'.")}</label>
+        <input type="text" value="${esc(r.sense)}" oninput="App.wiz.row.sense=this.value"></div>
+      <div></div>
+    </div>
+    ${this.wizNav(!!r.label.trim())}`;
+  },
+
+  /* ----- Step 2 ----- */
+  wizStep2(){
+    const r=this.wiz.row;
+    return `<div class="grid g2">
+      <div><label class="f">Subject Area ${this.q("Locked to the eleven DMBOK v2 Knowledge Areas plus the Data Management umbrella tier.")}</label>
+        <input list="saList" type="text" value="${esc(r.subjectArea)}" oninput="App.wiz.row.subjectArea=this.value">
+        <datalist id="saList">${SUBJECT_AREAS.map(s=>`<option value="${esc(s)}">`).join("")}</datalist></div>
+      <div><label class="f">Sub-Category (Essential Concept) ${this.q("A precise, dynamically-authored essential-concept label — e.g. Party-Actor Anchor — not a generic tag.")}</label>
+        <input type="text" value="${esc(r.subCategory)}" oninput="App.wiz.row.subCategory=this.value"></div>
+    </div>${this.wizNav(true)}`;
+  },
+
+  /* ----- Step 3: facet (filter) ----- */
+  wizStep3(){
+    const w=this.wiz,r=w.row;
+    if(r.termType==="Relationship") return `<div class="okbox"><strong>SKIP — this string is a Line.</strong> A Relationship carries no Q6 Facet and no Quant Class; its Edge is its classification. Lines group under (n/a) by design.</div>${this.wizNav(true)}`;
+    const btns=Q6_FACETS.map(f=>`<div class="facet ${r.q6===f?"sel":""}" onclick="App.wizPickFacet('${f}')">${f}<small>${CLASSES_BY_FACET[f].length} classes</small></div>`).join("");
+    return `<div class="facets">${btns}</div>
+    <p class="hint">The facet is derived from the Quant Class; choosing it here just narrows the class list. The class fixes the facet — never the reverse. This click is a filter, not a decision.</p>
+    <div class="row-flex" style="margin-top:.6rem"><button onclick="App.wizMarkLine()"><i class="fa-solid fa-arrows-left-right"></i> This string is a Line (Relationship) — skip facet &amp; class</button></div>
+    ${this.wizNav(true)}`;
+  },
+  wizPickFacet(f){ this.wiz.row.q6=f; this.renderWizard(); },
+  wizMarkLine(){ const r=this.wiz.row; r.termType="Relationship"; r.q6=""; r.quantClass=""; this.renderWizard(); },
+
+  /* ----- Step 4: class ----- */
+  wizStep4(){
+    const r=this.wiz.row;
+    if(r.termType==="Relationship") return `<div class="okbox"><strong>SKIP — a line carries no facet, no class.</strong></div>${this.wizNav(true)}`;
+    const list=r.q6?CLASSES_BY_FACET[r.q6]:Object.keys(QUANT_CLASSES);
+    return `<div class="grid g2"><div>
+      <label class="f">Quant Class${r.q6?" · within "+esc(r.q6):""} ${this.q("Exactly one of the 19 classes. The Q6 Facet snaps to the class — the derivation in action. RULE #1: classify what the string names, not its anticipated use.")}</label>
+      <select onchange="App.wizPickClass(this.value)"><option value=""></option>${list.map(c=>`<option ${r.quantClass===c?"selected":""}>${c}</option>`).join("")}</select>
+      ${r.quantClass?`<p class="hint">Q6 Facet derived: <strong>${esc(QUANT_CLASSES[r.quantClass])}</strong></p>`:""}
+    </div></div>${this.wizNav(true)}`;
+  },
+  wizPickClass(c){ const r=this.wiz.row; r.quantClass=c; Validate.deriveFacet(r); this.renderWizard(); },
+
+  /* ----- Step 5 ----- */
+  wizStep5(){
+    const r=this.wiz.row;
+    return `<div class="grid g3">
+      <div><label class="f">Quant Level ${this.q("Business Concept · Metadata · Instance Data — the lexical analogue of T-Box/A-Box.")}</label>
+        <select onchange="App.wiz.row.quantLevel=this.value;App.renderWizard()">${QUANT_LEVELS.map(x=>`<option ${r.quantLevel===x?"selected":""}>${x}</option>`).join("")}</select></div>
+      <div><label class="f">Quant Type ${this.q("The lexical form — one of the 12 fixed Quant Types (Term for a single word, Phrase for multi-word, Acronym…).")}</label>
+        <select onchange="App.wiz.row.quantType=this.value">${QUANT_TYPES.map(x=>`<option ${r.quantType===x?"selected":""}>${x}</option>`).join("")}</select></div>
+      <div><label class="f">Term Type (Intralign) ${this.q("The cross-reference the SPO levels will read: Entity = node that can be a Subject; Relationship = a line (predicate); Attribute; Fact.")}</label>
+        <select onchange="App.wizTermType(this.value)">${TERM_TYPES.map(x=>`<option ${r.termType===x?"selected":""}>${x}</option>`).join("")}</select></div>
+    </div>
+    ${this.coherenceNote(r)}
+    ${r.termType==="Relationship"?'<div class="okbox">Term Type = Relationship: facet and class stay blank; the (n/a) group is not an error, it is the design. Casing convention: lowerCamelCase.</div>':""}
+    ${this.wizNav(true)}`;
+  },
+  wizTermType(t){ const r=this.wiz.row; r.termType=t; if(t==="Relationship"){r.q6="";r.quantClass="";} else Validate.deriveFacet(r); this.renderWizard(); },
+  coherenceNote(r){
+    for(const [lev,cls,why] of COHERENCE_WARN)
+      if(r.quantLevel===lev&&r.quantClass===cls) return `<div class="advisory"><strong>Coherence advisory:</strong> ${esc(cls)} @ ${esc(lev)} — ${esc(why)}. A WARN never blocks; override with a justification in Disambiguation Notes.</div>`;
+    return "";
+  },
+
+  /* ----- Step 6: edges ----- */
+  wizStep6(){
+    const r=this.wiz.row;
+    const chips=EDGES.map(e=>`<button class="chip click ${r.quantEdges.includes(e.code)?"on":""}" title="${esc(e.name)} — ${esc(e.desc)}" onclick="App.wizToggleEdge('${e.code}')">${e.code}</button>`).join(" ");
+    return `<label class="f">Quant Edge — object-free, multi-valued ${this.q("How this string tends to relate — hints that name no target term. Naming a target is Level 1. BOUNDARY ATTESTATION: no relationships are asserted at Level 0.")}</label>
+    <div class="edgechips">${chips}</div>
+    <p class="hint">These hints name no target term. Naming a target is Level&nbsp;1.</p>
+    ${r.termType==="Relationship"?`<div class="grid g2" style="margin-top:.8rem">
+      <div><label class="f">Edge Direction ${this.q("IS-side or HAS-side — declares which way every triple using this predicate reads.")}</label>
+      <select onchange="App.wiz.row.edgeDirection=this.value">${EDGE_DIRECTIONS.map(d=>`<option value="${d}" ${r.edgeDirection===d?"selected":""}>${d||"—"}</option>`).join("")}</select></div>
+      <div><label class="f">Registered Inverse ${this.q("Every Line ships as a pair. Pick the governed inverse predicate; set it after both rows exist if the pair is new.")}</label>
+      <select onchange="App.wiz.row.inversePrimary=this.value">${this.relOptions(r.inversePrimary)}</select></div></div>`:""}
+    ${this.wizNav(true)}`;
+  },
+  wizToggleEdge(c){ const a=this.wiz.row.quantEdges; const i=a.indexOf(c); if(i>=0)a.splice(i,1); else a.push(c); this.renderWizard(); },
+  relOptions(sel){ return '<option value=""></option>'+this.lex.rows.filter(r=>r.termType==="Relationship").map(r=>`<option value="${esc(r.id)}" ${sel===r.id?"selected":""}>${esc(r.label)} (${esc(r.id)})</option>`).join(""); },
+
+  /* ----- Step 7 ----- */
+  wizStep7(){
+    const r=this.wiz.row;
+    return `<label class="f">Contextual Example — a plain-English reality check ${this.q("Test the sentence against your classification. A contradiction here means a wrong classification above — go back now, not at Level 3.")}</label>
+    <textarea oninput="App.wiz.row.classifierComment=this.value" placeholder='e.g. “a customer or supplier bound by a contract — an abstract umbrella over Person and Organisation, so Abstract Thing @ What.”'>${esc(r.classifierComment)}</textarea>
+    <p class="hint">If the sentence fights the classification, Back is available.</p>
+    ${this.wizNav(true)}`;
+  },
+
+  /* ----- Step 8: commit ----- */
+  wizStep8(){
+    const w=this.wiz, r=w.row;
+    if(!r.id) r.id=Ids.next(this.lex, r.termType==="Relationship");
+    const {errors,warnings}=Validate.row(r,this.lex);
+    const canActive = r.termType==="Relationship" || !!r.quantClass;
+    const review=[["String",r.label],["Sense",r.sense||r.wordnetAnchor],["Subject Area",r.subjectArea],["Q6",r.q6||"(n/a)"],["Class",r.quantClass||"(n/a)"],["Level",r.quantLevel],["Type",r.quantType+" · "+r.termType],["Edge",r.quantEdges.join(" + ")||"—"],["Provenance",r.provenance||"—"]]
+      .map(([k,v])=>`<tr><td class="small" style="width:120px">${k}</td><td><strong>${esc(v)}</strong></td></tr>`).join("");
+    return `<div class="grid g3">
+      <div><label class="f">Lexical Object ID ${this.q("Auto-assigned, assigned once, then locked. Nodes live at LEX-100xx; governed Lines start at LEX-10101 — overriding here is the one time you touch the ID field.")}</label>
+        <input type="text" value="${esc(r.id)}" oninput="App.wiz.row.id=this.value" onchange="App.renderWizard()"></div>
+      <div><label class="f">Status ${this.q("Draft → Proposed → Active (→ Deprecated). Active is enabled only when a Quant Class is present — or the string is a Relationship. Promotion is an explicit steward act.")}</label>
+        <select onchange="App.wiz.row.status=this.value;App.renderWizard()">
+          ${STATUSES.filter(s=>s!=="Quarantined").map(s=>`<option ${r.status===s?"selected":""} ${s==="Active"&&!canActive?"disabled":""}>${s}</option>`).join("")}</select>
+        ${!canActive?'<p class="hint">Active needs a Quant Class — remember the tagline’s gate rule.</p>':""}</div>
+      <div><label class="f">Contributor ${this.q("The steward’s name — remembered for this lexicon.")}</label>
+        <input type="text" value="${esc(r.contributor)}" oninput="App.wiz.row.contributor=this.value"></div>
+    </div>
+    <h3>Review card</h3><table class="inv"><tbody>${review}</tbody></table>
+    ${errors.length?`<div class="errorbox"><strong>Blocked:</strong><br>${errors.map(esc).join("<br>")}</div>`:""}
+    ${warnings.length?`<div class="advisory"><strong>Advisories (never blocking):</strong><br>${warnings.map(esc).join("<br>")}</div>`:""}
+    ${this.wizNav(!errors.length,true)}`;
+  },
+  wizCommit(){
+    const w=this.wiz, r=w.row;
+    const {errors}=Validate.row(r,this.lex);
+    if(errors.length){ this.renderWizard(); return; }
+    r.createDate=nowStamp(); r.lastChangeDate=r.createDate;
+    this.lex.contributor=r.contributor;
+    this.lex.rows.push(JSON.parse(JSON.stringify(r)));
+    Ids.resync(this.lex); this.save();
+    w.committed=r; this.renderWizard();
+  },
+  wizCommitted(){
+    const r=this.wiz.committed;
+    const sibs=this.aliasCandidates(r);
+    return `<div class="okbox"><strong>${esc(r.label)} · ${esc(r.id)}</strong> committed to the lexicon as ${esc(r.status)}.</div>
+    ${sibs.length?`<div class="advisory"><strong>Thesaurus — candidate equivalents from ${esc(r.wordnetAnchor)}:</strong> ${sibs.map(l=>`<button class="chip click" onclick="App.startAliasFor('${esc(r.id)}','${esc(l)}')">${esc(l)} +</button>`).join(" ")}<br><span class="small">Each becomes its own Lexical Object through the wizard — one meaning, one primary, any number of strings.</span></div>`:""}
+    <div class="row-flex" style="margin-top:1rem">
+      <button class="primary" onclick="App.resetWizard();App.renderWizard()"><i class="fa-solid fa-plus"></i> Add another string</button>
+      <button onclick="App.show('inventory')">Open the Inventory</button></div>`;
+  },
+  aliasCandidates(r){
+    if(!r.wordnetAnchor||r.wordnetAnchor==="LOCAL-SENSE") return [];
+    const s=WN.byId(r.wordnetAnchor); if(!s) return [];
+    const gov=new Set(this.lex.rows.map(x=>x.label.toLowerCase()));
+    return s.lemmas.filter(l=>l.toLowerCase()!==r.label.toLowerCase()&&!gov.has(l.toLowerCase()));
+  },
+  startAliasFor(pid,label){
+    const p=this.lex.rows.find(x=>x.id===pid); if(!p) return;
+    this.resetWizard();
+    const r=this.wiz.row;
+    r.label=label; r.quantType=label.includes(" ")?"Phrase":"Term";
+    r.quantClass=p.quantClass; r.quantLevel=p.quantLevel; r.termType=p.termType;
+    r.wordnetAnchor=p.wordnetAnchor; r.provenance=p.provenance; r.senseGloss=p.senseGloss; r.sense=p.sense;
+    r.subjectArea=p.subjectArea; r.subCategory=p.subCategory; r.quantEdges=["EQUIV"]; r.primaryEquivalent=p.id;
+    r.disambiguationNotes="Synonym of "+p.label+" ("+p.id+"); WordNet lemma of "+p.wordnetAnchor+" — equivalence corroborated.";
+    Validate.deriveFacet(r);
+    this.wizSearchSenses();
+    this.show("wizard");
+  },
+  q(text){ return `<span class="q" title="${esc(text)}">?</span>`; }
+});
+
+/* ============================================================
+   Inventory manager + Edit All Fields
+   ============================================================ */
+Object.assign(App,{
+  renderInventory(){
+    const rows=this.lex.rows;
+    let html=`<div class="card"><div class="row-flex"><h2 style="margin:0">Inventory <span class="small">— ${rows.length} objects</span></h2><span class="spacer"></span>
+      <label class="small"><input type="checkbox" ${this.groupByClass?"checked":""} onchange="App.groupByClass=this.checked;App.renderInventory()"> Group by Quant Class</label></div>`;
+    if(!rows.length){ html+='<p class="hint">An empty inventory — “0 objects”. Add your first string through the wizard.</p></div>'; $("#view-inventory").innerHTML=html; return; }
+    const groups={};
+    rows.forEach((r,i)=>{ const g=this.groupByClass?(r.termType==="Relationship"?"(n/a)":(r.quantClass||"(unclassified)")):"All strings"; (groups[g]=groups[g]||[]).push(i); });
+    const order=Object.keys(groups).sort((a,b)=>a==="(n/a)"?1:b==="(n/a)"?-1:a.localeCompare(b));
+    html+=`<table class="inv"><thead><tr><th>String</th><th>Quant Level</th><th>Q6 Facet</th><th>Quant Class</th><th>Quant Type</th><th>Term Type</th><th>Quant Edge</th><th>Status</th><th>Provenance</th><th>Audit</th></tr></thead><tbody>`;
+    for(const g of order){
+      if(this.groupByClass) html+=`<tr class="grouphead"><td colspan="10">${esc(g)} · ${groups[g].length}</td></tr>`;
+      for(const i of groups[g]){
+        const r=rows[i];
+        const verdict=r.audit&&r.audit["Audit Verdict"];
+        html+=`<tr class="rowmain" onclick="App.toggleEdit(${i})"><td><strong>${esc(r.label)}</strong><br><span class="lex">${esc(r.id)}${r.primaryEquivalent?" → "+esc(r.primaryEquivalent):""}</span></td>
+        <td>${esc(r.quantLevel)}</td><td>${esc(r.q6||(r.termType==="Relationship"?"(n/a)":""))}</td><td>${esc(r.quantClass||(r.termType==="Relationship"?"(n/a)":""))}</td>
+        <td>${esc(r.quantType)}</td><td>${esc(r.termType)}</td>
+        <td>${r.quantEdges.map(e=>`<span class="chip on">${e}</span>`).join(" ")}</td>
+        <td><span class="chip status-${esc(r.status)}">${esc(r.status)}</span></td>
+        <td class="small">${esc(r.provenance||"")}</td>
+        <td>${verdict?`<span class="chip v-${esc(String(verdict).toUpperCase().includes("QUAR")?"QUARANTINE":String(verdict).toUpperCase().includes("WARN")?"WARN":"PASS")}">${esc(verdict)}</span>`:""}</td></tr>`;
+        if(this.expanded[i]) html+=`<tr><td colspan="10">${this.editorHtml(i)}</td></tr>`;
+      }
+    }
+    html+="</tbody></table></div>";
+    $("#view-inventory").innerHTML=html;
+  },
+  toggleEdit(i){ this.expanded[i]=!this.expanded[i]; this.renderInventory(); },
+  fld(i,key,label,help,type="text",options=null,locked=false){
+    const r=this.lex.rows[i]; const v=r[key];
+    let input;
+    if(options) input=`<select onchange="App.setField(${i},'${key}',this.value)"><option value=""></option>${options.map(o=>`<option value="${esc(o)}" ${v===o?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+    else if(type==="area") input=`<textarea onchange="App.setField(${i},'${key}',this.value)">${esc(v)}</textarea>`;
+    else input=`<input type="text" ${locked?"readonly":""} value="${esc(v)}" onchange="App.setField(${i},'${key}',this.value)">`;
+    return `<div class="${locked?"locked":""}"><label class="f">${label} ${this.q(help)}</label>${input}</div>`;
+  },
+  editorHtml(i){
+    const r=this.lex.rows[i]; const lex=this.lex;
+    const {errors,warnings}=Validate.row(r,lex,i);
+    const peOpts=lex.rows.filter((p,j)=>j!==i&&Validate.eligiblePrimary(r,p)).map(p=>`<option value="${esc(p.id)}" ${r.primaryEquivalent===p.id?"selected":""}>${esc(p.label)} (${esc(p.id)})</option>`).join("");
+    const edgechips=EDGES.map(e=>`<button class="chip click ${r.quantEdges.includes(e.code)?"on":""}" title="${esc(e.name)}" onclick="App.toggleRowEdge(${i},'${e.code}')">${e.code}</button>`).join(" ");
+    const classList=r.q6?CLASSES_BY_FACET[r.q6].concat(Object.keys(QUANT_CLASSES).filter(c=>QUANT_CLASSES[c]!==r.q6)):Object.keys(QUANT_CLASSES);
+    const auditRows=Object.entries(r.audit||{}).map(([k,v])=>`<tr><td class="small">${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
+    return `<div class="editor"><div class="row-flex"><strong>EDIT ALL FIELDS · ${esc(r.label).toUpperCase()}</strong><span class="spacer"></span>
+      <button class="danger" onclick="App.deleteRow(${i})"><i class="fa-solid fa-trash"></i> Delete</button>
+      <button onclick="App.toggleEdit(${i})">Close ▴</button></div>
+    <div class="grid g4" style="margin-top:.7rem">
+      ${this.fld(i,"id","Lexical Object ID · locked","Assigned once at commit, then locked — Term links and RDF IRIs depend on it.","text",null,true)}
+      ${this.fld(i,"label","String / Label","The governed string. Changing spelling after commit is a steward ruling — the ID never changes.")}
+      ${this.fld(i,"quantLevel","Quant Level","Business Concept · Metadata · Instance Data.","text",QUANT_LEVELS)}
+      <div><label class="f">Q6 Facet ${this.q("Auto-fills from the Quant Class. 19 Classes sit inside 6 Facets — pick the Class; the Facet follows.")}</label>
+        <input type="text" readonly value="${esc(r.q6||(r.termType==="Relationship"?"(n/a)":""))}"><p class="hint">Auto-fills from the Quant Class.</p></div>
+      <div><label class="f">Quant Class ${this.q("19 Classes sit inside 6 Facets — pick the Class; the Facet follows. Blank for Relationships.")}</label>
+        <select onchange="App.setField(${i},'quantClass',this.value)" ${r.termType==="Relationship"?"disabled":""}><option value=""></option>${classList.map(c=>`<option ${r.quantClass===c?"selected":""}>${c}</option>`).join("")}</select></div>
+      ${this.fld(i,"quantType","Quant Type","One of the 12 fixed lexical forms.","text",QUANT_TYPES)}
+      ${this.fld(i,"termType","Term Type","Entity · Attribute · Relationship · Fact — the Intralign cross-reference.","text",TERM_TYPES)}
+      <div><label class="f">Quant Edge ${this.q("Object-free relation hints; EQUIV is the alias edge. Multi-valued.")}</label><div class="edgechips">${edgechips}</div></div>
+      <div><label class="f">Primary Equivalent ${this.q("The alias points at the primary; the primary’s own cell stays blank. Candidates must share this row’s Q6 / Class / Type.")}</label>
+        <select onchange="App.setField(${i},'primaryEquivalent',this.value)"><option value="">— none (this string is a primary) —</option>${peOpts}</select>
+        ${!peOpts?'<p class="hint">No other primary shares this Q6 / Class / Type</p>':""}</div>
+      ${this.fld(i,"sense","Sense","Short sense label (defaults to the synset ID).")}
+      ${this.fld(i,"isPlural","Is Plural","Morphology flag — flag-and-ask, never auto-collapse (Datum vs Data can be a real granularity split).","text",["FALSE","TRUE"])}
+      ${this.fld(i,"language","Language","ISO language of the string (default EN).")}
+      <div><label class="f">Status ${this.q("Draft → Proposed → Active → Deprecated; Quarantined is set on a failed audit. Promotion is an explicit steward act.")}</label>
+        <select onchange="App.setField(${i},'status',this.value)">${STATUSES.map(s=>`<option ${r.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
+      ${this.fld(i,"contributor","Contributor","Governance accountability — who ruled.")}
+      ${this.fld(i,"source","Source","Provenance of the row (app, workbook, migration…).")}
+      ${this.fld(i,"subjectArea","Subject Area","11 DMBOK Knowledge Areas + Data Management umbrella.","text",SUBJECT_AREAS)}
+      ${this.fld(i,"subCategory","Sub-Category","Essential-concept label, e.g. Party-Actor Anchor.")}
+      ${this.fld(i,"provenance","Provenance","WordNet-direct · Anchor+Annotation · Local-Manual.","text",PROVENANCES)}
+      ${this.fld(i,"confidence","Confidence","Anchor-fit 0.00–1.00. Bands: ≥0.85 auto · 0.70–0.85 justify · <0.70 refuse.")}
+      ${r.termType==="Relationship"?this.fld(i,"edgeDirection","Edge Direction","IS-side or HAS-side — which way every triple using this predicate reads.","text",["IS-side","HAS-side"]):""}
+      ${r.termType==="Relationship"?`<div><label class="f">Inverse Primary ${this.q("Every Line ships as a pair — the registered governed inverse.")}</label><select onchange="App.setInverse(${i},this.value)">${this.relOptionsExcept(r.inversePrimary,i)}</select></div>`:""}
+      ${this.fld(i,"wordnetAnchor","WordNet Anchor","Locked synset or LOCAL-SENSE.")}
+    </div>
+    <div class="grid g2" style="margin-top:.7rem">
+      ${this.fld(i,"classifierComment","Classifier Comment","The plain-English reality check / contextual example.","area")}
+      ${this.fld(i,"senseGloss","Sense Gloss","The governed meaning text, verbatim.","area")}
+    </div>
+    <div class="grid g2" style="margin-top:.7rem">
+      ${this.fld(i,"disambiguationNotes","Disambiguation Notes","The WSD record and any override justifications.","area")}
+      <div>${auditRows?`<label class="f">Audit (read-only — scores are set by the auditor, never by hand)</label><table class="inv"><tbody>${auditRows}</tbody></table>`:""}</div>
+    </div>
+    ${errors.length?`<div class="errorbox"><strong>Errors:</strong><br>${errors.map(esc).join("<br>")}</div>`:""}
+    ${warnings.length?`<div class="advisory"><strong>Advisories:</strong><br>${warnings.map(esc).join("<br>")}</div>`:""}
+    </div>`;
+  },
+  relOptionsExcept(sel,except){ return '<option value=""></option>'+this.lex.rows.filter((r,j)=>r.termType==="Relationship"&&j!==except).map(r=>`<option value="${esc(r.id)}" ${sel===r.id?"selected":""}>${esc(r.label)} (${esc(r.id)})</option>`).join(""); },
+  setField(i,key,val){
+    const r=this.lex.rows[i];
+    if(key==="quantClass"){ r.quantClass=val; Validate.deriveFacet(r); }
+    else if(key==="termType"){ r.termType=val; if(val==="Relationship"){r.quantClass="";r.q6="";} else Validate.deriveFacet(r); }
+    else r[key]=val;
+    r.lastChangeDate=nowStamp(); this.save(); this.renderView();
+  },
+  toggleRowEdge(i,c){ const a=this.lex.rows[i].quantEdges; const j=a.indexOf(c); if(j>=0)a.splice(j,1); else a.push(c); this.lex.rows[i].lastChangeDate=nowStamp(); this.save(); this.renderView(); },
+  setInverse(i,val){
+    const r=this.lex.rows[i]; r.inversePrimary=val; r.lastChangeDate=nowStamp();
+    const inv=this.lex.rows.find(x=>x.id===val);
+    if(inv && !inv.inversePrimary && confirm(`Register the reciprocal too — set ${inv.label}'s Inverse Primary to ${r.label} (${r.id})?`)){
+      inv.inversePrimary=r.id; inv.lastChangeDate=nowStamp();
+    }
+    this.save(); this.renderView();
+  },
+  deleteRow(i){
+    const r=this.lex.rows[i];
+    const refs=this.lex.rows.filter(x=>x.primaryEquivalent===r.id||x.inversePrimary===r.id);
+    let msg=`Delete ${r.label} (${r.id})? Deprecated ≠ deleted — retiring keeps the redirect. Delete only removes true mistakes.`;
+    if(refs.length) msg+=`\nWARNING: ${refs.length} row(s) reference it (${refs.map(x=>x.id).join(", ")}) and will be left dangling.`;
+    if(!confirm(msg)) return;
+    this.lex.rows.splice(i,1); this.expanded={}; this.save(); this.renderView();
+  }
+});
+
+/* ============================================================
+   Predicate Registry + FCO-IM verbalizations
+   ============================================================ */
+Object.assign(App,{
+  renderPredicates(){
+    const rels=this.lex.rows.map((r,i)=>({r,i})).filter(x=>x.r.termType==="Relationship");
+    let html=`<div class="card"><h2>Predicate Registry <span class="small">— the (n/a) group: ${rels.length} Relationship strings</span></h2>
+    <p class="hint">Every Line is fully governed — ID, sense, level, lifecycle — but carries no Q6 Facet and no Quant Class. Its Edge is its classification. Agreed predicates ship as active-voice pairs with a declared direction and a registered inverse.</p>`;
+    if(!rels.length){ html+='<p class="hint">No Relationship strings yet. Add a predicate through the wizard (Term Type = Relationship).</p></div>'; $("#view-predicates").innerHTML=html; return; }
+    for(const {r,i} of rels){
+      const checklist=Validate.predicateChecklist(r,this.lex);
+      const okAll=checklist.every(c=>c.ok);
+      const inv=this.lex.rows.find(x=>x.id===r.inversePrimary);
+      const verbs=(r.verbalizations||[]).map((v,vi)=>`<div class="verb">${this.verbHtml(v.text)}
+        <div class="row-flex small"><span class="chip">${esc(v.level)}</span><span class="spacer"></span>
+        <button class="ghost danger" onclick="App.delVerb(${i},${vi})"><i class="fa-solid fa-xmark"></i></button></div></div>`).join("");
+      html+=`<div class="thes-primary">
+        <div class="row-flex"><h3 style="margin:0">${esc(r.label)} <span class="lex">${esc(r.id)}</span></h3>
+          <span class="chip status-${esc(r.status)}">${esc(r.status)}</span>
+          ${r.edgeDirection?`<span class="chip on">${esc(r.edgeDirection)}</span>`:""}
+          ${inv?`<span class="chip">inverse: ${esc(inv.label)}</span>`:""}
+          ${r.primaryEquivalent?`<span class="chip status-Deprecated">→ use ${esc((this.lex.rows.find(x=>x.id===r.primaryEquivalent)||{}).label||r.primaryEquivalent)}</span>`:""}
+          <span class="spacer"></span>
+          ${okAll?'<span class="chip v-PASS">5/5 governed</span>':'<span class="chip v-WARN">'+checklist.filter(c=>c.ok).length+'/5</span>'}
+          <button onclick="App.toggleEdit(${i});App.show('inventory')">Edit</button></div>
+        <div class="small" style="margin:.3rem 0">${esc(r.senseGloss||"")}</div>
+        <div class="grid g2" style="margin-top:.4rem"><div>
+          <label class="f">Five-defect checklist (advisory)</label>
+          ${checklist.map(c=>`<div class="small">${c.ok?'<i class="fa-solid fa-circle-check" style="color:var(--primary)"></i>':'<i class="fa-solid fa-circle-exclamation" style="color:var(--amber)"></i>'} ${c.text}</div>`).join("")}
+        </div><div>
+          <label class="f">FCO-IM verbalizations ${this.q("Business examples of the predicate in use — governed text, not asserted triples. Type level: Party participatesIn Agreement. Instance level: “Acme Ltd” participatesIn “SC-01”.")}</label>
+          ${verbs||'<p class="hint">No verbalizations yet.</p>'}
+          <div class="row-flex" style="margin-top:.4rem">
+            <select id="vlevel-${i}" style="width:auto"><option>Type</option><option>Instance</option></select>
+            <input type="text" id="vtext-${i}" placeholder="Subject ${esc(r.label)} Object" style="flex:1">
+            <button onclick="App.addVerb(${i})">Add</button></div>
+        </div></div></div>`;
+    }
+    html+="</div>";
+    $("#view-predicates").innerHTML=html;
+  },
+  verbHtml(text){
+    /* highlight governed vs ungoverned tokens */
+    const gov=new Map(this.lex.rows.map(r=>[r.label.toLowerCase(),r]));
+    return String(text).split(/(\s+)/).map(tok=>{
+      const clean=tok.replace(/[“”"',.;:()]/g,""); if(!clean.trim()) return esc(tok);
+      const hit=gov.get(clean.toLowerCase());
+      if(hit) return `<span class="tok gov" title="governed: ${esc(hit.id)}">${esc(tok)}</span>`;
+      if(/^[A-Za-z][A-Za-z-]*$/.test(clean)) return `<span class="tok ungov" title="ungoverned — govern this too" onclick="App.governToken('${esc(clean)}')">${esc(tok)}</span>`;
+      return esc(tok);
+    }).join("");
+  },
+  governToken(t){ if(!confirm(`“${t}” is not governed. Open the wizard to govern it now?`)) return; this.resetWizard(); this.wiz.row.label=t; this.show("wizard"); this.wizSearchSenses(); },
+  addVerb(i){
+    const lvl=$("#vlevel-"+i).value, txt=$("#vtext-"+i).value.trim();
+    if(!txt) return;
+    const r=this.lex.rows[i]; (r.verbalizations=r.verbalizations||[]).push({level:lvl,text:txt});
+    r.lastChangeDate=nowStamp(); this.save(); this.renderPredicates();
+  },
+  delVerb(i,vi){ this.lex.rows[i].verbalizations.splice(vi,1); this.save(); this.renderPredicates(); }
+});
+
+/* ============================================================
+   Thesaurus view (derived — never a second source of truth)
+   ============================================================ */
+Object.assign(App,{
+  renderThesaurus(){
+    const rows=this.lex.rows;
+    const primaries=rows.filter(r=>!r.primaryEquivalent);
+    let html=`<div class="card"><h2>Thesaurus <span class="small">— derived from governed rows; WordNet neighbours shown as lexical evidence</span></h2>
+    <p class="hint">One meaning, one primary, any number of strings. Deprecated aliases stay as redirects — the gate sends authors to the governed form instead of letting a second meaning be born.</p>`;
+    if(!primaries.length) html+='<p class="hint">Nothing governed yet.</p>';
+    for(const p of primaries){
+      const aliases=rows.filter(r=>r.primaryEquivalent===p.id);
+      const cands=this.aliasCandidates(p);
+      const s=(p.wordnetAnchor&&p.wordnetAnchor!=="LOCAL-SENSE")?WN.byId(p.wordnetAnchor):null;
+      const rels=s?WN.relations(s):[];
+      const relHtml=rels.map(g=>{
+        const corr=g.key==="y"||g.key==="o"?" · corroborates MEMBER":g.key==="m"||g.key==="l"?" · corroborates PART":"";
+        return `<div class="wnrel"><strong>${esc(g.kind)}</strong>${esc(corr)}: ${g.senses.map(x=>`<span class="chip" title="${esc(x.gloss)}">${esc(x.lemmas[0])}</span>`).join(" ")}</div>`;
+      }).join("");
+      html+=`<div class="thes-primary">
+        <div class="row-flex"><h3 style="margin:0">${esc(p.label)} <span class="lex">${esc(p.id)}</span></h3>
+        <span class="chip status-${esc(p.status)}">${esc(p.status)}</span>
+        ${p.quantClass?`<span class="chip">${esc(p.quantClass)} @ ${esc(p.q6)}</span>`:'<span class="chip">(n/a) line</span>'}
+        ${p.sense?`<span class="chip">${esc(p.sense)}</span>`:""}</div>
+        <div class="small" style="margin:.25rem 0 .4rem;font-family:'Source Serif 4',Georgia,serif">${esc(p.senseGloss||"")}</div>
+        ${aliases.length?`<div><label class="f">Governed equivalents (prefLabel → altLabel)</label>
+          ${aliases.map(a=>`<span class="chip ${a.status==="Deprecated"?"status-Deprecated":"on"}" title="${esc(a.id)}">${esc(a.label)}${a.status==="Deprecated"?" · use "+esc(p.label)+" instead":""}</span>`).join(" ")}</div>`:""}
+        ${cands.length?`<div style="margin-top:.35rem"><label class="f">WordNet candidates — not yet governed</label>
+          ${cands.map(l=>`<span class="chip click" style="opacity:.75" onclick="App.startAliasFor('${esc(p.id)}','${esc(l)}')">${esc(l)} +</span>`).join(" ")}
+          <span class="small"> · each becomes its own Lexical Object through the wizard</span></div>`:""}
+        ${relHtml?`<div style="margin-top:.35rem"><label class="f">WordNet neighbourhood — lexical evidence, not governed rulings</label>${relHtml}</div>`:""}
+      </div>`;
+    }
+    html+="</div>";
+    $("#view-thesaurus").innerHTML=html;
+  }
+});
+
+/* ============================================================
+   Excel export / import (canonical-first, SheetJS)
+   ============================================================ */
+Object.assign(App,{
+  rowToRecord(r){
+    const rec={};
+    rec["Lexical Object ID"]=r.id; rec["String / Label"]=r.label; rec["Quant Type"]=r.quantType;
+    rec["Primary Equivalent"]=r.primaryEquivalent; rec["Quant Class"]=r.quantClass; rec["Q6 Facet"]=r.q6;
+    rec["Quant Level"]=r.quantLevel; rec["Term Type"]=r.termType; rec["Sense"]=r.sense;
+    rec["Is Plural"]=r.isPlural; rec["Language"]=r.language; rec["Status"]=r.status;
+    rec["Disambiguation Notes"]=r.disambiguationNotes; rec["Contributor"]=r.contributor; rec["Source"]=r.source;
+    rec["Create Date"]=r.createDate; rec["Last Change Date"]=r.lastChangeDate;
+    rec["WordNet Anchor"]=r.wordnetAnchor; rec["Provenance"]=r.provenance; rec["Sense Gloss"]=r.senseGloss;
+    rec["Subject Area"]=r.subjectArea; rec["Sub-Category"]=r.subCategory;
+    rec["Quant Edge"]=r.quantEdges.join("; "); rec["Classifier Comment"]=r.classifierComment;
+    rec["Confidence"]=r.confidence; rec["Edge Direction"]=r.edgeDirection; rec["Inverse Primary"]=r.inversePrimary;
+    for(const [k,v] of Object.entries(r.audit||{})) rec[k]=v;   /* pass-through, never authored here */
+    return rec;
+  },
+  exportWorkbook(){
+    this.save();
+    const lex=this.lex;
+    const auditCols=[...new Set(lex.rows.flatMap(r=>Object.keys(r.audit||{})))];
+    const cols=[...CANON_COLS,...EXT_COLS,...auditCols];
+    const wb=XLSX.utils.book_new();
+    const inv=XLSX.utils.json_to_sheet(lex.rows.map(r=>this.rowToRecord(r)),{header:cols});
+    XLSX.utils.book_append_sheet(wb,inv,"Inventory");
+    const ref=(name,rowsArr)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rowsArr),name);
+    ref("Quant Classes",[["Quant Class","Q6 Facet"],...Object.entries(QUANT_CLASSES)]);
+    ref("Quant Levels",[["Quant Level"],...QUANT_LEVELS.map(x=>[x])]);
+    ref("Quant Types",[["Quant Type"],...QUANT_TYPES.map(x=>[x])]);
+    ref("Quant Edges",[["Code","Name","Meaning"],...EDGES.map(e=>[e.code,e.name,e.desc])]);
+    ref("Statuses",[["Status"],...STATUSES.map(x=>[x])]);
+    /* Thesaurus sheet — SKOS-friendly naming */
+    const th=[["Primary (prefLabel)","Primary LEX ID","Label","Label LEX ID","Label Role","Label Status","Relation","Corroboration","Sense","Sense Gloss"]];
+    for(const p of lex.rows.filter(r=>!r.primaryEquivalent)){
+      th.push([p.label,p.id,p.label,p.id,"prefLabel",p.status,"","",p.sense,p.senseGloss]);
+      for(const a of lex.rows.filter(r=>r.primaryEquivalent===p.id)){
+        const s=(p.wordnetAnchor&&p.wordnetAnchor!=="LOCAL-SENSE")?WN.byId(p.wordnetAnchor):null;
+        const corr=s&&s.lemmas.some(l=>l.toLowerCase()===a.label.toLowerCase())?"WordNet lemma of "+p.wordnetAnchor:"steward ruling";
+        th.push([p.label,p.id,a.label,a.id,"altLabel",a.status,"IS-EQUIVALENT-HAS",corr,a.sense,a.senseGloss]);
+      }
+    }
+    ref("Thesaurus",th);
+    /* Verbalizations sheet */
+    const vb=[["Predicate","LEX ID","Level","Example Sentence","Ungoverned words"]];
+    for(const r of lex.rows.filter(x=>x.termType==="Relationship"))
+      for(const v of (r.verbalizations||[])){
+        const gov=new Set(lex.rows.map(x=>x.label.toLowerCase()));
+        const ungov=v.text.split(/\s+/).map(t=>t.replace(/[“”"',.;:()]/g,"")).filter(t=>/^[A-Za-z][A-Za-z-]*$/.test(t)&&!gov.has(t.toLowerCase()));
+        vb.push([r.label,r.id,v.level,v.text,[...new Set(ungov)].join(", ")]);
+      }
+    ref("Verbalizations",vb);
+    ref("Meta",[["Key","Value"],["App",APP_NAME],["App Version",APP_VERSION],["App Built",APP_BUILT],["Lexicon",lex.name],["Exported",nowStamp()],["Rows",lex.rows.length],["WordNet",WN.data?WN.data.source+" (dataset built "+WN.data.built+")":"not loaded"]]);
+    const fname=(lex.name.replace(/[^A-Za-z0-9_-]+/g,"_")||"lexicon")+"_lexical_inventory_"+nowStamp().slice(0,10)+".xlsx";
+    XLSX.writeFile(wb,fname);
+  },
+
+  /* ---------- import ---------- */
+  loadClick(){
+    this.modal(`<h2><i class="fa-solid fa-upload"></i> Load inventory</h2>
+    <p>Pick a <span class="kbd">…lexical_inventory….xlsx</span> workbook — your own export, a facilitator master, or the <strong>audited</strong> copy the Claude auditor returned.</p>
+    <div class="grid g2">
+      <div class="card" style="margin:0"><h3>Open</h3><p class="small">Replace the current working set with the workbook. The normal continue / audited-round-trip path.</p>
+        <button class="primary" onclick="App.pickFile('open')">Open workbook…</button></div>
+      <div class="card" style="margin:0"><h3>Merge</h3><p class="small">Append the workbook into the current set. ID collisions and dangling equivalents are flagged, never silently fixed.</p>
+        <button onclick="App.pickFile('merge')">Merge workbook…</button></div>
+    </div>
+    <div class="row-flex" style="margin-top:.8rem"><span class="spacer"></span><button onclick="App.closeModal()">Cancel</button></div>`);
+  },
+  pickFile(mode){ this.loadMode=mode; this.closeModal(); $("#fileInput").value=""; $("#fileInput").click(); },
+  fileChosen(files){
+    if(!files||!files[0]) return;
+    const fr=new FileReader();
+    fr.onload=()=>{ try{ this.importWorkbook(new Uint8Array(fr.result)); }catch(e){ alert("Could not read workbook: "+e.message); } };
+    fr.readAsArrayBuffer(files[0]);
+  },
+  recordToRow(rec){
+    const g=k=>{ const v=rec[k]; return v==null?"":String(v).trim(); };
+    const r=newRow();
+    r.id=g("Lexical Object ID"); r.label=g("String / Label"); r.quantType=g("Quant Type")||"Term";
+    r.primaryEquivalent=g("Primary Equivalent"); r.quantClass=g("Quant Class"); r.q6=g("Q6 Facet");
+    r.quantLevel=g("Quant Level")||"Business Concept"; r.termType=g("Term Type")||"Entity"; r.sense=g("Sense");
+    r.isPlural=g("Is Plural")||"FALSE"; r.language=g("Language")||LANG_DEFAULT; r.status=g("Status")||"Draft";
+    r.disambiguationNotes=g("Disambiguation Notes"); r.contributor=g("Contributor"); r.source=g("Source")||"Imported workbook";
+    r.createDate=g("Create Date"); r.lastChangeDate=g("Last Change Date");
+    r.wordnetAnchor=g("WordNet Anchor"); r.provenance=g("Provenance"); r.senseGloss=g("Sense Gloss");
+    r.subjectArea=g("Subject Area"); r.subCategory=g("Sub-Category");
+    r.quantEdges=g("Quant Edge").split(/[;,+]/).map(x=>x.trim().toUpperCase().replace(/^IS-|-HAS$/g,"")).map(x=>x.replace(/^IS$/,"HAS")).filter(x=>EDGE_BY_CODE[x]);
+    r.classifierComment=g("Classifier Comment")||g("Contextual Example");
+    r.confidence=g("Confidence"); r.edgeDirection=g("Edge Direction"); r.inversePrimary=g("Inverse Primary");
+    const known=new Set([...CANON_COLS,...EXT_COLS,"Contextual Example"]);
+    for(const k of Object.keys(rec)) if(!known.has(k) && rec[k]!=null && String(rec[k]).trim()!=="") r.audit[k]=rec[k];
+    return r;
+  },
+  importWorkbook(bytes){
+    const wb=XLSX.read(bytes,{type:"array"});
+    const invName=wb.SheetNames.find(n=>n.toLowerCase()==="inventory")||wb.SheetNames[0];
+    const recs=XLSX.utils.sheet_to_json(wb.Sheets[invName],{defval:""});
+    const report={loaded:0,updated:0,collisions:[],dangling:[],vocab:[],mode:this.loadMode,sheet:invName};
+    const incoming=recs.filter(x=>String(x["String / Label"]||"").trim()||String(x["Lexical Object ID"]||"").trim()).map(x=>this.recordToRow(x));
+    /* verbalizations sheet */
+    const vbName=wb.SheetNames.find(n=>n.toLowerCase()==="verbalizations");
+    if(vbName){
+      const vrecs=XLSX.utils.sheet_to_json(wb.Sheets[vbName],{defval:""});
+      for(const v of vrecs){
+        const row=incoming.find(r=>r.id===String(v["LEX ID"]).trim());
+        if(row&&v["Example Sentence"]) row.verbalizations.push({level:String(v["Level"]||"Type"),text:String(v["Example Sentence"])});
+      }
+    }
+    let target;
+    if(this.loadMode==="merge"){
+      target=this.lex.rows;
+      for(const inc of incoming){
+        const byId=inc.id?target.findIndex(r=>r.id===inc.id):-1;
+        if(byId>=0){
+          if(target[byId].label.trim().toLowerCase()===inc.label.trim().toLowerCase()){ target[byId]=inc; report.updated++; }
+          else report.collisions.push(inc.id+" — incoming “"+inc.label+"” vs existing “"+target[byId].label+"” (held out; renumbering is a steward decision)");
+        } else { target.push(inc); report.loaded++; }
+      }
+    } else {
+      this.lex.rows=incoming; target=this.lex.rows; report.loaded=incoming.length;
+      this.lex.auditSummary=null; this.lex.auditHealth=null; this.lex.auditVerdict=null;
+    }
+    /* integrity: dangling PE / inverse, vocab flags */
+    const idset=new Set(target.map(r=>r.id));
+    for(const r of target){
+      if(r.primaryEquivalent&&!idset.has(r.primaryEquivalent)) report.dangling.push(r.id+" "+r.label+" → Primary Equivalent "+r.primaryEquivalent+" not present");
+      if(r.inversePrimary&&!idset.has(r.inversePrimary)) report.dangling.push(r.id+" "+r.label+" → Inverse Primary "+r.inversePrimary+" not present");
+      if(r.quantClass&&!QUANT_CLASSES[r.quantClass]) report.vocab.push(r.id+": Quant Class “"+r.quantClass+"”");
+      if(r.status&&!STATUSES.includes(r.status)) report.vocab.push(r.id+": Status “"+r.status+"”");
+      if(r.quantType&&!QUANT_TYPES.includes(r.quantType)) report.vocab.push(r.id+": Quant Type “"+r.quantType+"”");
+      if(!r.q6&&r.quantClass) Validate.deriveFacet(r);
+    }
+    /* audit summary: any sheet whose name contains 'audit' read as key/value; health from rows or summary */
+    const asName=wb.SheetNames.find(n=>/audit/i.test(n)&&n.toLowerCase()!=="inventory");
+    if(asName){
+      const aoa=XLSX.utils.sheet_to_json(wb.Sheets[asName],{header:1,defval:""});
+      this.lex.auditSummary={sheet:asName,rows:aoa.filter(r=>r.some(c=>String(c).trim()!==""))};
+    }
+    const healthKey=Object.keys(target[0]?.audit||{}).find(k=>/health/i.test(k));
+    if(healthKey){ this.lex.auditHealth=target.find(r=>r.audit[healthKey]!=null)?.audit[healthKey]??null; }
+    if(this.lex.auditSummary){
+      for(const row of this.lex.auditSummary.rows){
+        const j=row.findIndex(c=>/health/i.test(String(c)));
+        if(j>=0&&row[j+1]!=null&&String(row[j+1]).trim()!==""){ this.lex.auditHealth=row[j+1]; break; }
+      }
+    }
+    const verdicts=target.map(r=>String(r.audit["Audit Verdict"]||"").toUpperCase()).filter(Boolean);
+    if(verdicts.length) this.lex.auditVerdict=verdicts.some(v=>v.includes("QUAR"))?"QUARANTINE":verdicts.some(v=>v.includes("WARN"))?"PASS+WARN":"PASS";
+    this.lex.lastLoaded=nowStamp();
+    Ids.resync(this.lex); this.save(); this.expanded={}; this.renderAll();
+    this.modal(`<h2><i class="fa-solid fa-clipboard-list"></i> Import report</h2>
+      <p><strong>${report.mode==="merge"?"Merged":"Opened"}</strong> sheet “${esc(report.sheet)}”: ${report.loaded} row(s) loaded${report.updated?", "+report.updated+" updated":""}.</p>
+      ${report.collisions.length?`<div class="errorbox"><strong>ID collisions (held out):</strong><br>${report.collisions.map(esc).join("<br>")}</div>`:""}
+      ${report.dangling.length?`<div class="advisory"><strong>Dangling references:</strong><br>${report.dangling.map(esc).join("<br>")}<br><span class="small">Re-point them in the row editor — the Primary Equivalent dropdown offers eligible primaries.</span></div>`:""}
+      ${report.vocab.length?`<div class="advisory"><strong>Outside closed vocabularies (loaded, flagged):</strong><br>${report.vocab.map(esc).join("<br>")}</div>`:""}
+      ${!report.collisions.length&&!report.dangling.length&&!report.vocab.length?'<div class="okbox">No collisions, no dangling references, no vocabulary flags.</div>':""}
+      ${this.lex.auditHealth!=null?`<div class="okbox">Audit detected — Health <strong>${esc(this.lex.auditHealth)}</strong>. PASS/WARN/QUARANTINE chips now show per row; scores are read-only.</div>`:""}
+      <div class="row-flex" style="margin-top:.8rem"><span class="spacer"></span><button class="primary" onclick="App.closeModal();App.show('inventory')">Open the Inventory</button></div>`);
+  },
+
+  /* ---------- audit summary panel ---------- */
+  openAuditSummary(){
+    const lex=this.lex;
+    const hasRowAudit=lex.rows.some(r=>Object.keys(r.audit||{}).length);
+    if(!lex.auditSummary&&!hasRowAudit){
+      this.modal(`<h2><i class="fa-solid fa-clipboard-check"></i> Audit Summary</h2>
+      <p class="hint">Empty — the steward never marks their own homework. Export the inventory, let the Claude auditor skill assess it (“Audit the inventory”, with <span class="kbd">semantium-inventory-auditor</span>), then Load the audited workbook back.</p>
+      <div class="row-flex"><span class="spacer"></span><button onclick="App.closeModal()">Close</button></div>`);
+      return;
+    }
+    const counts={PASS:0,WARN:0,QUARANTINE:0};
+    let assessed=0;
+    for(const r of lex.rows){
+      const v=String((r.audit||{})["Audit Verdict"]||"").toUpperCase();
+      if(!v) continue; assessed++;
+      if(v.includes("QUAR"))counts.QUARANTINE++; else if(v.includes("WARN"))counts.WARN++; else counts.PASS++;
+    }
+    const sumRows=(lex.auditSummary?lex.auditSummary.rows:[]).map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join("")}</tr>`).join("");
+    this.modal(`<h2><i class="fa-solid fa-clipboard-check"></i> Audit Summary <span class="small">— read-only; scores are set by the auditor, never by hand</span></h2>
+      ${assessed?`<p>${assessed} row(s) carry verdicts · <span class="chip v-PASS">PASS ${counts.PASS}</span> <span class="chip v-WARN">WARN ${counts.WARN}</span> <span class="chip v-QUARANTINE">QUARANTINE ${counts.QUARANTINE}</span>${lex.auditHealth!=null?` · Health <strong>${esc(lex.auditHealth)}</strong>`:""}</p>`:""}
+      ${sumRows?`<h3>${esc(lex.auditSummary.sheet)}</h3><table class="inv"><tbody>${sumRows}</tbody></table>`:""}
+      <p class="hint">If a check flags: the WARN or QUARANTINE names its rows and reason in Audit Notes. Fix the row here, re-export, re-audit.</p>
+      <div class="row-flex"><span class="spacer"></span><button onclick="App.closeModal()">Close</button></div>`);
+  }
+});
+
+/* ============================================================
+   Reference / Help
+   ============================================================ */
+Object.assign(App,{
+  renderHelp(){
+    const classes=Q6_FACETS.map(f=>`<tr><td><strong>${f}</strong></td><td>${CLASSES_BY_FACET[f].join(" · ")}</td></tr>`).join("");
+    const edges=EDGES.map(e=>`<tr><td class="kbd">${e.code}</td><td>${e.name}</td><td>${e.desc}</td></tr>`).join("");
+    $("#view-help").innerHTML=`<div class="card helpsec">
+    <h2>Reference — the Level 0 method</h2>
+    <p style="font-family:'Source Serif 4',Georgia,serif">“All strings must be governed, so that when we do Level 1 to Level 5, nothing gets added to a definition without the string being classified.” Level 0 locks the string's <strong>lexical identity</strong> (ID, spelling, sense, primary-vs-alias standing, Quant Type) forever; the <strong>ontological reading</strong> (Q6 Facet, Quant Class, Quant Edges) is the steward's best classification today and can be refined as the definition completes across Levels 1–3. <em>Classifications can change as definitions mature; strings cannot.</em></p>
+
+    <h3>The 8 steps — one pass = one governed string</h3>
+    <p>1 <strong>Sense</strong> (retrieve real WordNet senses, lock one or LOCAL-SENSE) · 2 <strong>Subject Area</strong> (DMBOK) · 3 <strong>Q6 Facet</strong> (a filter, not a decision) · 4 <strong>Quant Class</strong> (fixes the facet) · 5 <strong>Level &amp; Type</strong> · 6 <strong>Quant Edge</strong> (object-free hints) · 7 <strong>Example</strong> (reality check) · 8 <strong>Commit</strong> (identity, status, ruling).</p>
+    <p><strong>Rule #1 — Render unto Caesar:</strong> classify what the string <em>names</em>, not its anticipated use.</p>
+
+    <h3>The gate rule</h3>
+    <p>A string clears the gate only when it is <strong>Active</strong>, carries a <strong>Quant Class</strong>, and is a <strong>primary</strong> (not an alias). Lines (Term Type = Relationship) are the governed exception: no facet, no class — their Edge is their classification; they group under (n/a) by design.</p>
+
+    <h3>Sense provenance &amp; confidence bands</h3>
+    <table><tr><th>Situation</th><th>WordNet Anchor</th><th>Provenance</th></tr>
+    <tr><td>Steward picks a retrieved synset</td><td>that synset</td><td>WordNet-direct</td></tr>
+    <tr><td>Steward authors a gloss and a synset set exists</td><td>nearest real synset</td><td>Anchor+Annotation (gloss is authoritative)</td></tr>
+    <tr><td>No synset retrieved</td><td>LOCAL-SENSE</td><td>Local-Manual</td></tr></table>
+    <p>Bands (steward thresholds): <span class="kbd">≥ 0.85</span> auto-propose · <span class="kbd">0.70–0.85</span> justify (rationale required) · <span class="kbd">&lt; 0.70</span> refuse WordNet-direct. <strong>Cardinal rule:</strong> a synset ID is never invented — an empty result is a valid answer, not an error.</p>
+
+    <h3>19 Quant Classes inside the Q6</h3>
+    <table><tr><th>Facet</th><th>Classes</th></tr>${classes}</table>
+    <p>Assign the <strong>class</strong>; the facet is derived. 12 Quant Types: ${QUANT_TYPES.join(" · ")}. 3 Quant Levels: ${QUANT_LEVELS.join(" · ")}. Lifecycle: ${STATUSES.join(" → ")}.</p>
+
+    <h3>6 Quant Edges</h3>
+    <table><tr><th>Chip</th><th>Edge</th><th>Meaning</th></tr>${edges}</table>
+    <p><strong>Boundary attestation:</strong> no relationships are asserted at Level 0 — every Quant Edge is an object-free hint. Naming a target is Level 1.</p>
+
+    <h3>Aliases — one meaning, one primary</h3>
+    <p>A synonym never lives inside another row's cell: it gets its own Lexical Object and ID, the EQUIV edge, and a Primary Equivalent pointing at the primary (whose own cell stays blank). Aliases inherit the primary's classification, anchor and gloss — copied, not re-decided. Aliases are Classified but never Gate-ready. <strong>Deprecated ≠ deleted:</strong> retired stems stay as redirects.</p>
+
+    <h3>Predicates — the five-defect checklist</h3>
+    <p>1 usable surface form (inflected, reads inside a triple — bare stems never appear in real SPO statements) · 2 declared Edge Direction (IS-side / HAS-side) · 3 registered inverse (every Line ships as a pair) · 4 lowerCamelCase casing (Entities are PascalCase — casing is governance, not style) · 5 no passive trap (passive promotion is blocked at Level 0: the fix changes the predicate, never swaps Subject and Object). Nodes number LEX-100xx; governed Lines start at LEX-10101.</p>
+
+    <h3>FCO-IM verbalizations</h3>
+    <p>Business examples of a predicate in use, at Type level (<em>Party participatesIn Agreement</em>) and Instance level (<em>“Acme Ltd” participatesIn “SC-01”</em>). They are governed examples, not asserted triples. Ungoverned words in an example are flagged — every string a definition needs must be governed, or on the worklist.</p>
+
+    <h3>Thesaurus positioning (SKOS)</h3>
+    <table><tr><th>Capability</th><th>Here</th><th>SKOS construct</th></tr>
+    <tr><td>Preferred term</td><td>the primary string</td><td>skos:prefLabel</td></tr>
+    <tr><td>Synonym / alias</td><td>governed EQUIV alias rows</td><td>skos:altLabel</td></tr>
+    <tr><td>Acronym / abbreviation</td><td>alias rows typed Acronym/Abbreviation</td><td>skos:altLabel</td></tr>
+    <tr><td>Broader / narrower / related</td><td>WordNet evidence only (governed relations live in the Glossary Workbench thesaurus layer)</td><td>skos:broader / narrower / related</td></tr>
+    <tr><td>Definition / scope note</td><td>Sense Gloss</td><td>skos:definition</td></tr></table>
+
+    <h3>Separation of duties</h3>
+    <p>The steward writes governed data here. The <span class="kbd">semantium-inventory-auditor</span> skill writes only Audit columns into the exported workbook — it assesses, never edits. Nothing auto-promotes: a string reaches Active only because a steward, holding a passing audit, says so.</p>
+
+    <h3>About</h3>
+    <p>${esc(APP_NAME)} v${APP_VERSION} · built ${esc(APP_BUILT)} · Modelware Systems International.<br>
+    WordNet® — Princeton University; dataset: <span id="wnAbout">${WN.data?esc(WN.data.source)+" (built "+esc(WN.data.built)+", "+WN.data.s.length+" synsets)":"not loaded"}</span>. Used under the WordNet 3.0 License.<br>
+    Storage: this browser's localStorage (autosaved on every change). The exported workbook is the portable truth — export before switching machines.</p>
+    </div>`;
+  }
+});
+
+window.addEventListener("DOMContentLoaded",()=>App.boot());
+
+</script>
+</body>
+</html>

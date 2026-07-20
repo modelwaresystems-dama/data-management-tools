@@ -1080,6 +1080,58 @@ Object.assign(App,{
    Thesaurus view (derived — never a second source of truth)
    ============================================================ */
 Object.assign(App,{
+  _roleish(r){
+    if(r.quantClass==="Role") return true;
+    return /\b(works? for|employed|is hired|buys?|purchas\w*|suppl(?:y|ies|ier)\w*|acts? (?:as|on behalf)|on behalf of|in the capacity|capacity of|\brole\b|contracted to)\b/i.test(String(r.senseGloss||""));
+  },
+  governedSuggestions(p){
+    /* Suggestions from GOVERNED data, genus-differentia over the Sense Gloss:
+       - disjunctive genus ("a person or organisation that…") = umbrella → mentions are NARROWER members
+       - single genus mention = that term is BROADER
+       - mentions after the genus clause = differentia → RELATED
+       - other primaries whose gloss uses THIS label as genus = NARROWER children  */
+    const out={narrower:[],broader:[],related:[],children:[],umbrella:false};
+    const gloss=String(p.senseGloss||"");
+    if(!gloss.trim()) return out;
+    const escRe=x=>x.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    const primaries=this.lex.rows.filter(r=>!r.primaryEquivalent&&r.id!==p.id&&r.termType!=="Relationship");
+    /* alias-aware: a primary matches by its own label OR any governed alias label (Primary Equivalent) */
+    const surfaces=r=>[{t:r.label,via:null},
+      ...this.lex.rows.filter(a=>a.primaryEquivalent===r.id&&a.label.trim()).map(a=>({t:a.label,via:a.label}))];
+    const findIn=(r,text)=>{ for(const sf of surfaces(r)) if(new RegExp("\\b"+escRe(sf.t)+"s?\\b","i").test(text)) return sf; return null; };
+    const cut=gloss.search(/\b(that|which|who|whereby|used to|characterised by|characterized by)\b/i);
+    const genusPhrase=cut>=0?gloss.slice(0,cut):gloss.split(/[,;]/)[0];
+    const rest=cut>=0?gloss.slice(cut):gloss.slice(genusPhrase.length);
+    const inGenus=[],inRest=[];
+    for(const r of primaries){
+      const g=findIn(r,genusPhrase);
+      if(g){ r._via=g.via; inGenus.push(r); continue; }
+      const x=findIn(r,rest);
+      if(x){ r._via=x.via; inRest.push(r); }
+    }
+    if(inGenus.length>=2||(inGenus.length>=1&&/\b(or|and)\b/i.test(genusPhrase))){
+      out.umbrella=true; out.narrower=inGenus;         /* disjunctive genus = union type = umbrella */
+    } else if(inGenus.length===1){ out.broader=inGenus; }
+    out.related=inRest;
+    const mySurfaces=surfaces(p);
+    for(const r of primaries){
+      const g=String(r.senseGloss||""); if(!g) continue;
+      const c=g.search(/\b(that|which|who)\b/i);
+      const gp=c>=0?g.slice(0,c):g.split(/[,;]/)[0];
+      const hit=mySurfaces.find(sf=>new RegExp("\\b"+escRe(sf.t)+"s?\\b","i").test(gp));
+      if(hit){ r._via=hit.via; r._roleTrap=this._roleish(r); out.children.push(r); }
+    }
+    /* Role-as-subtype trap: the term names a Role but its genus is the PLAYER (a Who).
+       Employee is-not-a Person — the Person plays the Employee role (Party Role);
+       the same Person can simultaneously be Customer, Data Subject, Supplier. */
+    const whoLike=r=>QUANT_CLASSES[r.quantClass]==="Who"||(r.quantClass==="Abstract Thing"&&(()=>{const g2=String(r.senseGloss||"");const c2=g2.search(/\b(that|which|who)\b/i);const gp2=c2>=0?g2.slice(0,c2):g2;return primaries.concat([p]).some(x=>x.id!==r.id&&QUANT_CLASSES[x.quantClass]==="Who"&&surfaces(x).some(sf=>new RegExp("\\b"+escRe(sf.t)+"s?\\b","i").test(gp2)));})());
+    const genusParents=[...out.broader,...(out.umbrella?out.narrower:[])];
+    if(genusParents.some(whoLike)&&this._roleish(p)){
+      const pr=this.lex.rows.find(r=>!r.primaryEquivalent&&/^party ?role$/i.test(r.label.trim()));
+      out.roleTrap={player:genusParents.find(whoLike),partyRole:pr||null,certain:p.quantClass==="Role"};
+    }
+    return out;
+  },
   renderThesaurus(){
     const rows=this.lex.rows;
     const primaries=rows.filter(r=>!r.primaryEquivalent);
@@ -1092,7 +1144,7 @@ Object.assign(App,{
       const s=(p.wordnetAnchor&&p.wordnetAnchor!=="LOCAL-SENSE")?WN.byId(p.wordnetAnchor):null;
       const rels=s?WN.relations(s):[];
       const relHtml=rels.map(g=>{
-        const corr=g.key==="y"||g.key==="o"?" · corroborates MEMBER":g.key==="m"||g.key==="l"?" · corroborates PART":"";
+        const corr=g.key==="y"||g.key==="o"?" · corroborates MEMBER (both ways)":g.key==="m"||g.key==="l"?" · corroborates PART (both ways)":"";
         return `<div class="wnrel"><strong>${esc(g.kind)}</strong>${esc(corr)}: ${g.senses.map(x=>`<span class="chip" title="${esc(x.gloss)}">${esc(x.lemmas[0])}</span>`).join(" ")}</div>`;
       }).join("");
       html+=`<div class="thes-primary">
@@ -1104,10 +1156,22 @@ Object.assign(App,{
         <div class="small" style="margin:.25rem 0 .4rem;font-family:'Source Serif 4',Georgia,serif">${esc(p.senseGloss||"")}</div>
         ${aliases.length?`<div><label class="f">Governed equivalents (prefLabel → altLabel)</label>
           ${aliases.map(a=>`<span class="chip ${a.status==="Deprecated"?"status-Deprecated":"on"}" title="${esc(a.id)}">${esc(a.label)}${a.status==="Deprecated"?" · use "+esc(p.label)+" instead":""}</span>`).join(" ")}</div>`:""}
+        ${(()=>{const sg=this.governedSuggestions(p);
+          if(!sg.narrower.length&&!sg.broader.length&&!sg.related.length&&!sg.children.length) return "";
+          const chip=r=>`<span class="chip on" title="${esc(r.id)}${r._via?" · matched via governed alias “"+esc(r._via)+"”":""} · ${esc(r.senseGloss||"")}">${esc(r.label)}${r._via?` <span style="opacity:.65">(via ${esc(r._via)})</span>`:""}</span>`;
+          return `<div style="margin-top:.35rem"><label class="f">Governed suggestions — genus-differentia over YOUR gloss</label>
+          ${sg.umbrella?`<div class="wnrel"><strong>Narrower (members)</strong> · disjunctive genus = umbrella; MEMBER works both ways: ${sg.narrower.map(chip).join(" ")}</div>`:""}
+          ${sg.broader.length?`<div class="wnrel"><strong>Broader (genus)</strong>: ${sg.broader.map(chip).join(" ")}</div>`:""}
+          ${sg.children.length?`<div class="wnrel"><strong>Narrower (children)</strong> · this term is their genus: ${sg.children.map(c=>chip(c)+(c._roleTrap?` <span class="chip v-WARN" title="Role-as-subtype trap: ${esc(c.label)} looks like a Role played by a ${esc(p.label)}, not a kind of ${esc(p.label)} — the player binds via a predicate (playsRole / isPlayedBy), not is-a.">role?</span>`:"")).join(" ")}</div>`:""}
+          ${sg.related.length?`<div class="wnrel"><strong>Related (via differentia)</strong>: ${sg.related.map(chip).join(" ")}</div>`:""}
+          ${sg.roleTrap?`<div class="advisory" style="margin:.35rem 0 0"><strong>Role-as-subtype trap${sg.roleTrap.certain?"":" (possible)"}.</strong> ${esc(p.label)} ${sg.roleTrap.certain?"is classified Role @ Why, yet":"reads like a Role, yet"} its genus is <strong>${esc(sg.roleTrap.player.label)}</strong> — the player, not the parent. The same ${esc(sg.roleTrap.player.label)} can simultaneously be Employee, Customer, Data Subject, Supplier. Broader should be ${sg.roleTrap.partyRole?`<strong>${esc(sg.roleTrap.partyRole.label)}</strong> (${esc(sg.roleTrap.partyRole.id)})`:"<strong>Party Role</strong> — not yet governed"}; the player binds via a predicate (playsRole / isPlayedBy), never is-a.${sg.roleTrap.certain&&p.quantClass!=="Role"?"":""} ${sg.roleTrap.partyRole?"":`<button onclick="App.resetWizard();App.wiz.row.label='Party Role';App.wiz.row.quantType='Phrase';App.wiz.row.subjectArea='${esc(p.subjectArea)}';App.show('wizard');App.wizSearchSenses()">Govern “Party Role”…</button>`}</div>`:""}
+          ${sg.umbrella&&!sg.broader.length?`<div class="advisory" style="margin:.35rem 0 0">Umbrella with <strong>no governed broader term</strong>. WordNet cannot supply it (shared ancestor of the members is “entity”) — govern the more generic term yourself, e.g. an upper anchor such as <em>Actor</em>. <button onclick="App.resetWizard();App.wiz.row.subjectArea='${esc(p.subjectArea)}';App.wiz.row.subCategory='${esc(p.subCategory)}';App.show('wizard')">Govern a broader term…</button></div>`:""}
+          </div>`;})()}
         ${cands.length?`<div style="margin-top:.35rem"><label class="f">WordNet candidates — not yet governed</label>
           ${cands.map(l=>`<span class="chip click" style="opacity:.75" onclick="App.startAliasFor('${esc(p.id)}','${esc(l)}')">${esc(l)} +</span>`).join(" ")}
           <span class="small"> · each becomes its own Lexical Object through the wizard</span></div>`:""}
-        ${relHtml?`<div style="margin-top:.35rem"><label class="f">WordNet neighbourhood — lexical evidence, not governed rulings</label>${relHtml}</div>`:""}
+        ${relHtml?`<div style="margin-top:.35rem"><label class="f">WordNet neighbourhood of the ANCHOR — lexical evidence, not governed rulings</label>
+          ${(p.provenance==="Anchor+Annotation"||p.provenance==="Local-Manual")?`<div class="advisory" style="margin:.2rem 0">The Sense Decision is <strong>${p.provenance==="Local-Manual"?"Authored":"Enhanced"}</strong> — this tree tracks the anchor (${esc(p.wordnetAnchor)}), <em>not</em> the governed meaning. Prefer the governed suggestions above.</div>`:""}${relHtml}</div>`:""}
       </div>`;
     }
     html+="</div>";
@@ -1356,6 +1420,8 @@ Object.assign(App,{
     <tr><td>Broader / narrower / related</td><td>WordNet evidence only (governed relations live in the Glossary Workbench thesaurus layer)</td><td>skos:broader / narrower / related</td></tr>
     <tr><td>Definition / scope note</td><td>Sense Gloss</td><td>skos:definition</td></tr></table>
 
+    <h3>Thesaurus suggestions</h3>
+    <p><strong>Governed suggestions</strong> are read genus-differentia off YOUR Sense Gloss: a disjunctive genus (“a person or organisation that…”) is the umbrella pattern — the mentions are narrower members (MEMBER works both ways); a single genus mention is the broader term; mentions inside the differentia are related; and any primary that uses this term as its own genus is a narrower child. Matching is <strong>alias-aware</strong>: a governed alias’s label in a gloss resolves to its primary (“an individual or organization…” suggests Person and Organisation, via the Individual and Organization alias rows) — but only governed aliases resolve; an ungoverned synonym in a gloss stays invisible, which is the worklist telling you to govern it. The <strong>WordNet neighbourhood</strong> is evidence for the anchor only — when the Sense Decision is Enhanced or Authored, the anchor’s tree diverges from the governed meaning by definition (party.n.05’s tree lists litigants, not business parties). The <strong>role-as-subtype trap</strong> is flagged: when a term names a Role (classified Role @ Why, or its differentia reads like a contextual capacity — “works for”, “buys”, “on behalf of”) yet its genus is a Who (Person, Organisation, or a Who-umbrella like Party), the genus is the PLAYER, not the parent. Employee is-not-a Person: the Person plays the Employee role, and the same Person is simultaneously Customer, Data Subject, Supplier. Broader belongs to <em>Party Role</em>; the player binds via a predicate (playsRole / isPlayedBy), never is-a. An umbrella with no governed broader term is a worklist item — govern the upper term (e.g. Actor) yourself; WordNet’s shared ancestor is “entity”, which is no answer.</p>
     <h3>Separation of duties</h3>
     <p>The steward writes governed data here. The <span class="kbd">semantium-inventory-auditor</span> skill writes only Audit columns into the exported workbook — it assesses, never edits. Nothing auto-promotes: a string reaches Active only because a steward, holding a passing audit, says so.</p>
 

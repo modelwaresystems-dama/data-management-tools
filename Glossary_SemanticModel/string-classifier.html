@@ -291,6 +291,19 @@ const Validate = {
       if(Ids.parse(row.id)==null) errors.push("Lexical Object ID must match LEX-nnnnn.");
       else if(!Ids.unique(lex,row.id,exceptIdx)) errors.push("Lexical Object ID "+row.id+" is already in use.");
     }
+    /* Duplicate string governance: one string, one meaning, one row.
+       Same label + same sense = duplicate (ERROR). Same label + different sense = polysemy split (WARN). */
+    const normL=row.label.trim().toLowerCase();
+    const senseKey=x=>String((x.wordnetAnchor&&x.wordnetAnchor!=="LOCAL-SENSE"?x.wordnetAnchor:x.sense)||"").trim().toLowerCase();
+    if(normL){
+      const twins=lex.rows.filter((r,i)=>i!==exceptIdx&&r!==row&&r.label.trim().toLowerCase()===normL);
+      for(const t of twins){
+        if(senseKey(t)===senseKey(row))
+          errors.push("Duplicate Lexical Object: “"+row.label+"” is already governed as "+t.id+" with the same sense. One string, one meaning, one row — edit "+t.id+", or make this a distinct sense (polysemy split) with its own Sense value.");
+        else
+          warnings.push("Polysemy split: “"+row.label+"” also exists as "+t.id+" with a different sense ("+(senseKey(t)||"blank")+" vs "+(senseKey(row)||"blank")+"). Legitimate — but ensure both Sense labels disambiguate (e.g. “party (celebration)”); the auditor’s sense-split check will ask.");
+      }
+    }
     if(row.quantType && !QUANT_TYPES.includes(row.quantType)) warnings.push("Quant Type '"+row.quantType+"' is outside the 12-type vocabulary.");
     if(row.quantClass && !QUANT_CLASSES[row.quantClass]) warnings.push("Quant Class '"+row.quantClass+"' is outside the 19-class vocabulary.");
     if(row.quantLevel && !QUANT_LEVELS.includes(row.quantLevel)) warnings.push("Quant Level '"+row.quantLevel+"' is outside the 3-level vocabulary.");
@@ -914,7 +927,9 @@ Object.assign(App,{
       for(const i of groups[g]){
         const r=rows[i];
         const verdict=r.audit&&r.audit["Audit Verdict"];
-        html+=`<tr class="rowmain" onclick="App.toggleEdit(${i})"><td><strong>${esc(r.label)}</strong><br><span class="lex">${esc(r.id)}${r.primaryEquivalent?" → "+esc(r.primaryEquivalent):""}</span></td>
+        const vr=Validate.row(r,rows===this.lex.rows?this.lex:{rows},i);
+        const dupErr=vr.errors.find(e=>e.startsWith("Duplicate Lexical Object"));
+        html+=`<tr class="rowmain" onclick="App.toggleEdit(${i})"><td><strong>${esc(r.label)}</strong>${dupErr?` <span class="chip v-QUARANTINE" title="${esc(dupErr)}">duplicate</span>`:""}<br><span class="lex">${esc(r.id)}${r.primaryEquivalent?" → "+esc(r.primaryEquivalent):""}</span></td>
         <td>${esc(r.quantLevel)}</td><td>${esc(r.q6||(r.termType==="Relationship"?"(n/a)":""))}</td><td>${esc(r.quantClass||(r.termType==="Relationship"?"(n/a)":""))}</td>
         <td>${esc(r.quantType)}</td><td>${esc(r.termType)}</td>
         <td>${r.quantEdges.map(e=>`<span class="chip on">${e}</span>`).join(" ")}</td>
@@ -1066,7 +1081,12 @@ Object.assign(App,{
       return esc(tok);
     }).join("");
   },
-  governToken(t){ if(!confirm(`“${t}” is not governed. Open the wizard to govern it now?`)) return; this.resetWizard(); this.wiz.row.label=t; this.show("wizard"); this.wizSearchSenses(); },
+  governFromWorklist(label){
+    this.resetWizard(); this.wiz.row.label=label;
+    if(/\s/.test(label)) this.wiz.row.quantType="Phrase";
+    this.show("wizard"); this.wizSearchSenses();
+  },
+  governToken(t){ if(!confirm(`“${t}” is not governed. Open the wizard to govern it now?`)) return; this.governFromWorklist(t); },
   addVerb(i){
     const lvl=$("#vlevel-"+i).value, txt=$("#vtext-"+i).value.trim();
     if(!txt) return;
@@ -1130,6 +1150,34 @@ Object.assign(App,{
       const pr=this.lex.rows.find(r=>!r.primaryEquivalent&&/^party ?role$/i.test(r.label.trim()));
       out.roleTrap={player:genusParents.find(whoLike),partyRole:pr||null,certain:p.quantClass==="Role"};
     }
+    /* Ungoverned gloss mentions = the worklist: real nouns in the gloss that no governed
+       string (primary or alias) covers. Genus-phrase words first. */
+    const allSurfaces=new Set(this.lex.rows.map(r=>r.label.trim().toLowerCase()).filter(Boolean));
+    const ownLemmas=new Set([p.label.toLowerCase()]);
+    if(p.wordnetAnchor&&p.wordnetAnchor!=="LOCAL-SENSE"){const a=WN.byId(p.wordnetAnchor); if(a) a.lemmas.forEach(l=>ownLemmas.add(l.toLowerCase()));}
+    const STOPX=new Set("the a an and or of in on to by for with that which who whose is are was were has have been being it its this these those any all not no other such interest".split(" "));
+    const keep=w=>!STOPX.has(w.toLowerCase())&&!allSurfaces.has(w.toLowerCase())&&!ownLemmas.has(w.toLowerCase());
+    const pick=text=>{
+      const t=String(text); const found=[];
+      /* (a) Capitalised phrases — business terms WordNet will never know ("Data Product") */
+      for(const m of t.matchAll(/\b([A-Z][A-Za-z-]+(?:\s+[A-Z][A-Za-z-]+)+)\b/g)) if(keep(m[1])) found.push(m[1]);
+      /* (b) Single capitalised words not at the start of the gloss/sentence */
+      for(const m of t.matchAll(/(?<=[a-z,;] )([A-Z][A-Za-z-]{2,})\b/g)) if(keep(m[1])&&!found.some(f=>f.toLowerCase().includes(m[1].toLowerCase()))) found.push(m[1]);
+      /* (c) lowercase bigrams that are WordNet noun collocations ("social group") */
+      const toks=(t.match(/[A-Za-z][A-Za-z-]{1,}/g)||[]);
+      for(let i=0;i<toks.length-1;i++){ const bg=(toks[i]+" "+toks[i+1]).toLowerCase();
+        if(keep(bg)&&!found.some(f=>f.toLowerCase()===bg)&&WN.senses(bg,"n").length>0) found.push(bg); }
+      /* (d) single lowercase words that are WordNet nouns — keeps adjectives/verbs out */
+      for(const w of toks.map(x=>x.toLowerCase())) if(w.length>2&&keep(w)&&!found.some(f=>f.toLowerCase().split(/\s+/).includes(w))&&WN.senses(w,"n").length>0) found.push(w);
+      /* (e) coined terms: unknown to WordNet in ANY part of speech ("dataset", "datastore") —
+         admitted unless shaped like a verb/adjective/adverb (-ed/-ing/-ly) */
+      for(const w of toks.map(x=>x.toLowerCase()))
+        if(w.length>3&&keep(w)&&!/(?:ed|ing|ly)$/.test(w)&&!found.some(f=>f.toLowerCase().split(/\s+/).includes(w))&&WN.senses(w).length===0) found.push(w);
+      return found;
+    };
+    const seenU=new Set(); const ug=[];
+    for(const w of [...pick(genusPhrase),...pick(rest)]){ const k=w.toLowerCase(); if(!seenU.has(k)){seenU.add(k); ug.push(w);} }
+    out.ungoverned=ug.slice(0,10);
     return out;
   },
   renderThesaurus(){
@@ -1157,7 +1205,10 @@ Object.assign(App,{
         ${aliases.length?`<div><label class="f">Governed equivalents (prefLabel → altLabel)</label>
           ${aliases.map(a=>`<span class="chip ${a.status==="Deprecated"?"status-Deprecated":"on"}" title="${esc(a.id)}">${esc(a.label)}${a.status==="Deprecated"?" · use "+esc(p.label)+" instead":""}</span>`).join(" ")}</div>`:""}
         ${(()=>{const sg=this.governedSuggestions(p);
-          if(!sg.narrower.length&&!sg.broader.length&&!sg.related.length&&!sg.children.length) return "";
+          const any=sg.narrower.length||sg.broader.length||sg.related.length||sg.children.length;
+          if(!any&&!(sg.ungoverned||[]).length) return "";
+          if(!any) return `<div style="margin-top:.35rem"><label class="f">Governed suggestions — none yet; your gloss names ungoverned strings</label>
+            <div class="advisory" style="margin:.2rem 0 0"><strong>Worklist:</strong> the governed gloss mentions ${sg.ungoverned.map(w=>`<button class="chip click" style="background:var(--amber-soft);border-color:#e8c99a;color:var(--amber)" title="Not governed — every string a definition needs must be governed, or on the worklist. Click to govern." onclick="App.governFromWorklist('${esc(w)}')">${esc(w)} +</button>`).join(" ")} — none are governed. The thesaurus can only suggest from governed strings; govern these and the umbrella, members and related terms will assemble themselves.</div></div>`;
           const chip=r=>`<span class="chip on" title="${esc(r.id)}${r._via?" · matched via governed alias “"+esc(r._via)+"”":""} · ${esc(r.senseGloss||"")}">${esc(r.label)}${r._via?` <span style="opacity:.65">(via ${esc(r._via)})</span>`:""}</span>`;
           return `<div style="margin-top:.35rem"><label class="f">Governed suggestions — genus-differentia over YOUR gloss</label>
           ${sg.umbrella?`<div class="wnrel"><strong>Narrower (members)</strong> · disjunctive genus = umbrella; MEMBER works both ways: ${sg.narrower.map(chip).join(" ")}</div>`:""}
@@ -1165,13 +1216,15 @@ Object.assign(App,{
           ${sg.children.length?`<div class="wnrel"><strong>Narrower (children)</strong> · this term is their genus: ${sg.children.map(c=>chip(c)+(c._roleTrap?` <span class="chip v-WARN" title="Role-as-subtype trap: ${esc(c.label)} looks like a Role played by a ${esc(p.label)}, not a kind of ${esc(p.label)} — the player binds via a predicate (playsRole / isPlayedBy), not is-a.">role?</span>`:"")).join(" ")}</div>`:""}
           ${sg.related.length?`<div class="wnrel"><strong>Related (via differentia)</strong>: ${sg.related.map(chip).join(" ")}</div>`:""}
           ${sg.roleTrap?`<div class="advisory" style="margin:.35rem 0 0"><strong>Role-as-subtype trap${sg.roleTrap.certain?"":" (possible)"}.</strong> ${esc(p.label)} ${sg.roleTrap.certain?"is classified Role @ Why, yet":"reads like a Role, yet"} its genus is <strong>${esc(sg.roleTrap.player.label)}</strong> — the player, not the parent. The same ${esc(sg.roleTrap.player.label)} can simultaneously be Employee, Customer, Data Subject, Supplier. Broader should be ${sg.roleTrap.partyRole?`<strong>${esc(sg.roleTrap.partyRole.label)}</strong> (${esc(sg.roleTrap.partyRole.id)})`:"<strong>Party Role</strong> — not yet governed"}; the player binds via a predicate (playsRole / isPlayedBy), never is-a.${sg.roleTrap.certain&&p.quantClass!=="Role"?"":""} ${sg.roleTrap.partyRole?"":`<button onclick="App.resetWizard();App.wiz.row.label='Party Role';App.wiz.row.quantType='Phrase';App.wiz.row.subjectArea='${esc(p.subjectArea)}';App.show('wizard');App.wizSearchSenses()">Govern “Party Role”…</button>`}</div>`:""}
+          ${(sg.ungoverned||[]).length?`<div class="wnrel"><strong>Ungoverned mentions — worklist</strong>: ${sg.ungoverned.map(w=>`<button class="chip click" style="background:var(--amber-soft);border-color:#e8c99a;color:var(--amber)" title="Not governed — click to govern." onclick="App.governFromWorklist('${esc(w)}')">${esc(w)} +</button>`).join(" ")}</div>`:""}
           ${sg.umbrella&&!sg.broader.length?`<div class="advisory" style="margin:.35rem 0 0">Umbrella with <strong>no governed broader term</strong>. WordNet cannot supply it (shared ancestor of the members is “entity”) — govern the more generic term yourself, e.g. an upper anchor such as <em>Actor</em>. <button onclick="App.resetWizard();App.wiz.row.subjectArea='${esc(p.subjectArea)}';App.wiz.row.subCategory='${esc(p.subCategory)}';App.show('wizard')">Govern a broader term…</button></div>`:""}
           </div>`;})()}
         ${cands.length?`<div style="margin-top:.35rem"><label class="f">WordNet candidates — not yet governed</label>
           ${cands.map(l=>`<span class="chip click" style="opacity:.75" onclick="App.startAliasFor('${esc(p.id)}','${esc(l)}')">${esc(l)} +</span>`).join(" ")}
           <span class="small"> · each becomes its own Lexical Object through the wizard</span></div>`:""}
-        ${relHtml?`<div style="margin-top:.35rem"><label class="f">WordNet neighbourhood of the ANCHOR — lexical evidence, not governed rulings</label>
-          ${(p.provenance==="Anchor+Annotation"||p.provenance==="Local-Manual")?`<div class="advisory" style="margin:.2rem 0">The Sense Decision is <strong>${p.provenance==="Local-Manual"?"Authored":"Enhanced"}</strong> — this tree tracks the anchor (${esc(p.wordnetAnchor)}), <em>not</em> the governed meaning. Prefer the governed suggestions above.</div>`:""}${relHtml}</div>`:""}
+        ${relHtml?(p.provenance==="Anchor+Annotation"
+          ?`<details style="margin-top:.35rem"><summary class="small" style="cursor:pointer;color:var(--amber)"><strong>Anchor tree (${esc(p.wordnetAnchor)}) — weak evidence, collapsed</strong>: the meaning was Enhanced beyond the anchor${p.confidence?` (anchor-fit ${esc(parseFloat(p.confidence).toFixed(2))})`:""}; this tree describes the anchor's sense, not yours.</summary>${relHtml}</details>`
+          :`<div style="margin-top:.35rem"><label class="f">WordNet neighbourhood of the anchor — lexical evidence, not governed rulings</label>${relHtml}</div>`):""}
       </div>`;
     }
     html+="</div>";
@@ -1306,6 +1359,14 @@ Object.assign(App,{
     }
     /* integrity: dangling PE / inverse, vocab flags */
     const idset=new Set(target.map(r=>r.id));
+    const seen={};
+    for(const r of target){
+      const k=r.label.trim().toLowerCase(); if(!k) continue;
+      const sk=String((r.wordnetAnchor&&r.wordnetAnchor!=="LOCAL-SENSE"?r.wordnetAnchor:r.sense)||"").trim().toLowerCase();
+      const kk=k+"\u0001"+sk;
+      if(seen[kk]) report.duplicates=(report.duplicates||[]).concat(r.id+" “"+r.label+"” duplicates "+seen[kk]+" (same string, same sense)");
+      else seen[kk]=r.id;
+    }
     for(const r of target){
       if(r.primaryEquivalent&&!idset.has(r.primaryEquivalent)) report.dangling.push(r.id+" "+r.label+" → Primary Equivalent "+r.primaryEquivalent+" not present");
       if(r.inversePrimary&&!idset.has(r.inversePrimary)) report.dangling.push(r.id+" "+r.label+" → Inverse Primary "+r.inversePrimary+" not present");
@@ -1337,7 +1398,8 @@ Object.assign(App,{
       ${report.collisions.length?`<div class="errorbox"><strong>ID collisions (held out):</strong><br>${report.collisions.map(esc).join("<br>")}</div>`:""}
       ${report.dangling.length?`<div class="advisory"><strong>Dangling references:</strong><br>${report.dangling.map(esc).join("<br>")}<br><span class="small">Re-point them in the row editor — the Primary Equivalent dropdown offers eligible primaries.</span></div>`:""}
       ${report.vocab.length?`<div class="advisory"><strong>Outside closed vocabularies (loaded, flagged):</strong><br>${report.vocab.map(esc).join("<br>")}</div>`:""}
-      ${!report.collisions.length&&!report.dangling.length&&!report.vocab.length?'<div class="okbox">No collisions, no dangling references, no vocabulary flags.</div>':""}
+      ${(report.duplicates||[]).length?`<div class="errorbox"><strong>Duplicate strings (same sense):</strong><br>${report.duplicates.map(esc).join("<br>")}<br><span class="small">One string, one meaning, one row — resolve in the editor (delete the mistake, or split the senses).</span></div>`:""}
+      ${!report.collisions.length&&!report.dangling.length&&!report.vocab.length&&!(report.duplicates||[]).length?'<div class="okbox">No collisions, no dangling references, no vocabulary flags.</div>':""}
       ${this.lex.auditHealth!=null?`<div class="okbox">Audit detected — Health <strong>${esc(this.lex.auditHealth)}</strong>. PASS/WARN/QUARANTINE chips now show per row; scores are read-only.</div>`:""}
       <div class="row-flex" style="margin-top:.8rem"><span class="spacer"></span><button class="primary" onclick="App.closeModal();App.show('inventory')">Open the Inventory</button></div>`);
   },
@@ -1403,6 +1465,8 @@ Object.assign(App,{
     <table><tr><th>Chip</th><th>Edge</th><th>Meaning</th></tr>${edges}</table>
     <p><strong>Boundary attestation:</strong> no relationships are asserted at Level 0 — every Quant Edge is an object-free hint. Naming a target is Level 1.</p>
 
+    <h3>Duplicates — one string, one meaning, one row</h3>
+    <p>Committing a string that already exists with the same sense is <strong>blocked</strong> (edit the existing object instead); the same string with a <em>different</em> sense is a legitimate polysemy split and commits with a WARN — make both Sense labels disambiguate. Existing duplicates are flagged red in the Inventory and listed in the import report.</p>
     <h3>Aliases — one meaning, one primary</h3>
     <p>A synonym never lives inside another row's cell: it gets its own Lexical Object and ID, the EQUIV edge, and a Primary Equivalent pointing at the primary (whose own cell stays blank). Aliases inherit the primary's classification, anchor and gloss — copied, not re-decided. Aliases are Classified but never Gate-ready. <strong>Deprecated ≠ deleted:</strong> retired stems stay as redirects.</p>
 
@@ -1421,7 +1485,7 @@ Object.assign(App,{
     <tr><td>Definition / scope note</td><td>Sense Gloss</td><td>skos:definition</td></tr></table>
 
     <h3>Thesaurus suggestions</h3>
-    <p><strong>Governed suggestions</strong> are read genus-differentia off YOUR Sense Gloss: a disjunctive genus (“a person or organisation that…”) is the umbrella pattern — the mentions are narrower members (MEMBER works both ways); a single genus mention is the broader term; mentions inside the differentia are related; and any primary that uses this term as its own genus is a narrower child. Matching is <strong>alias-aware</strong>: a governed alias’s label in a gloss resolves to its primary (“an individual or organization…” suggests Person and Organisation, via the Individual and Organization alias rows) — but only governed aliases resolve; an ungoverned synonym in a gloss stays invisible, which is the worklist telling you to govern it. The <strong>WordNet neighbourhood</strong> is evidence for the anchor only — when the Sense Decision is Enhanced or Authored, the anchor’s tree diverges from the governed meaning by definition (party.n.05’s tree lists litigants, not business parties). The <strong>role-as-subtype trap</strong> is flagged: when a term names a Role (classified Role @ Why, or its differentia reads like a contextual capacity — “works for”, “buys”, “on behalf of”) yet its genus is a Who (Person, Organisation, or a Who-umbrella like Party), the genus is the PLAYER, not the parent. Employee is-not-a Person: the Person plays the Employee role, and the same Person is simultaneously Customer, Data Subject, Supplier. Broader belongs to <em>Party Role</em>; the player binds via a predicate (playsRole / isPlayedBy), never is-a. An umbrella with no governed broader term is a worklist item — govern the upper term (e.g. Actor) yourself; WordNet’s shared ancestor is “entity”, which is no answer.</p>
+    <p><strong>Governed suggestions</strong> are read genus-differentia off YOUR Sense Gloss: a disjunctive genus (“a person or organisation that…”) is the umbrella pattern — the mentions are narrower members (MEMBER works both ways); a single genus mention is the broader term; mentions inside the differentia are related; and any primary that uses this term as its own genus is a narrower child. Matching is <strong>alias-aware</strong>: a governed alias’s label in a gloss resolves to its primary (“an individual or organization…” suggests Person and Organisation, via the Individual and Organization alias rows) — but only governed aliases resolve; an ungoverned synonym in a gloss stays invisible, which is the worklist telling you to govern it. Evidence is <strong>weighted by the Sense Decision</strong>: Accepted (WordNet-direct) shows the anchor tree openly; Enhanced (Anchor+Annotation) collapses it behind a weak-evidence summary — Anchor+Annotation means WordNet was not good enough, and the anchor-fit confidence quantifies exactly how much; Authored (Local-Manual) shows no tree at all. When nothing governed matches the gloss, the card shows the <strong>worklist</strong> instead: the ungoverned nouns your gloss depends on, one click from the wizard. The WordNet neighbourhood is evidence for the anchor only — when the Sense Decision is Enhanced or Authored, the anchor’s tree diverges from the governed meaning by definition (party.n.05’s tree lists litigants, not business parties). The <strong>role-as-subtype trap</strong> is flagged: when a term names a Role (classified Role @ Why, or its differentia reads like a contextual capacity — “works for”, “buys”, “on behalf of”) yet its genus is a Who (Person, Organisation, or a Who-umbrella like Party), the genus is the PLAYER, not the parent. Employee is-not-a Person: the Person plays the Employee role, and the same Person is simultaneously Customer, Data Subject, Supplier. Broader belongs to <em>Party Role</em>; the player binds via a predicate (playsRole / isPlayedBy), never is-a. An umbrella with no governed broader term is a worklist item — govern the upper term (e.g. Actor) yourself; WordNet’s shared ancestor is “entity”, which is no answer.</p>
     <h3>Separation of duties</h3>
     <p>The steward writes governed data here. The <span class="kbd">semantium-inventory-auditor</span> skill writes only Audit columns into the exported workbook — it assesses, never edits. Nothing auto-promotes: a string reaches Active only because a steward, holding a passing audit, says so.</p>
 

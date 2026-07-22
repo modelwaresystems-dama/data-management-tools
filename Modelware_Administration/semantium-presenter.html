@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modelware — Presenter Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#EEF1F6; --surface:#FFFFFF; --surface-2:#F1F4F8; --surface-3:#E5EAF1;
+    --line:#D8DFE8; --line-soft:#E6EBF1;
+    --text:#1B2430; --muted:#5C6675; --faint:#98A2B0;
+    --accent:#0E9384; --accent-dim:#8CD2C7; --accent-ink:#0B7568; --live:#C77A12; --danger:#C6415A;
+    --radius:10px; --radius-sm:7px; --shadow:0 16px 40px -22px rgba(27,40,60,.28);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow:hidden}
+  .mono{font-family:"IBM Plex Mono",monospace}
+  button{font-family:inherit;cursor:pointer;color:inherit;border:none;background:none}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+  .app{display:flex;flex-direction:column;height:100vh}
+
+  header{display:flex;align-items:center;gap:16px;padding:11px 18px;background:var(--surface);border-bottom:1px solid var(--line);flex:0 0 auto;z-index:20}
+  .brand{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .brand .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.32em;color:var(--accent);text-transform:uppercase}
+  .ver{display:inline-block;margin-left:6px;padding:1px 6px;border:1px solid var(--line);border-radius:100px;color:var(--muted);letter-spacing:.08em}
+  .brand h1{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:17px;margin:0;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22vw}
+  .status{display:flex;align-items:center;gap:9px;padding:6px 12px;background:var(--surface-2);border:1px solid var(--line);border-radius:100px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--live);position:relative;flex:0 0 auto}
+  .dot::after{content:"";position:absolute;inset:-4px;border-radius:50%;background:var(--live);opacity:.35;animation:pulse 2s ease-out infinite}
+  .status.offline .dot{background:var(--faint)}.status.offline .dot::after{animation:none;opacity:0}
+  @keyframes pulse{0%{transform:scale(.6);opacity:.5}100%{transform:scale(2.4);opacity:0}}
+  @media (prefers-reduced-motion:reduce){.dot::after{animation:none}}
+  .spacer{flex:1 1 auto}
+  .controls{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);font-size:13px;font-weight:500;color:var(--text);transition:background .15s,border-color .15s}
+  .btn:hover{background:var(--surface-3);border-color:#c3ccd7}
+  .btn.primary{background:var(--accent);color:#fff;border-color:transparent;font-weight:600}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .btn.icon{padding:8px;width:38px;justify-content:center}
+  .btn svg{width:16px;height:16px;display:block}
+  .seg{display:flex;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:2px;gap:2px}
+  .seg button{padding:7px 13px;font-size:12.5px;font-weight:500;color:var(--muted);border-radius:5px;white-space:nowrap}
+  .seg button:hover{color:var(--text)}
+  .seg button.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(27,40,60,.12)}
+
+  /* launcher */
+  .launcher{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--line);flex:0 0 auto;flex-wrap:wrap}
+  .eyebrow-lbl{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.22em;color:var(--faint);text-transform:uppercase}
+  .deckpick{display:flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:3px}
+  .deckpick button{width:32px;height:38px;border-radius:5px;color:var(--muted);display:grid;place-items:center;font-size:18px}
+  .deckpick button:hover:not(:disabled){background:var(--surface-3);color:var(--text)}
+  .deckpick button:disabled{opacity:.3;cursor:default}
+  .deckpick .sel{position:relative;display:flex;align-items:center}
+  .deckpick select{appearance:none;background:transparent;border:none;color:var(--text);font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:16px;padding:8px 34px 8px 12px;max-width:40vw;text-overflow:ellipsis;cursor:pointer}
+  .deckpick select:focus{outline:none}
+  .deckpick .sel::after{content:"";position:absolute;right:12px;top:50%;width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:translateY(-70%) rotate(45deg);pointer-events:none}
+  .count{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--faint);white-space:nowrap}
+  .ameta{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+  .tp{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;padding:3px 7px;border-radius:100px;border:1px solid var(--accent-dim);color:var(--accent-ink);background:rgba(14,147,132,.08)}
+  .tg{font-size:11px;padding:3px 9px;line-height:1.4;white-space:nowrap;border-radius:100px;border:1px solid var(--line);color:var(--muted);background:var(--surface-2)}
+  .launch-open{padding:11px 18px;font-size:14px}
+  .launch-open svg{width:17px;height:17px}
+
+  /* filter bar */
+  .filters{display:flex;align-items:center;gap:8px;padding:9px 16px;background:var(--surface-2);border-bottom:1px solid var(--line);flex:0 0 auto;flex-wrap:wrap}
+  .chipbtn{font-size:12px;padding:5px 11px;border-radius:100px;border:1px solid var(--line);color:var(--muted);background:var(--surface);white-space:nowrap}
+  .chipbtn:hover{border-color:#c3ccd7;color:var(--text)}
+  .chipbtn.on{background:var(--accent);color:#fff;border-color:transparent;font-weight:600}
+  .chipbtn.tag.on{background:var(--accent-ink)}
+  .fdiv{width:1px;height:20px;background:var(--line);margin:0 2px}
+  .clearf{font-size:11.5px;color:var(--muted);text-decoration:underline;padding:4px}
+  .clearf:hover{color:var(--danger)}
+
+  .docs{display:flex;flex:1 1 auto;min-height:0;gap:12px;padding:12px}
+  .doc{flex:1 1 0;min-width:0;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+  .docs[data-view="facilitator"] .doc[data-doc="workbook"]{display:none}
+  .docs[data-view="workbook"] .doc[data-doc="facilitator"]{display:none}
+  .doc-head{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);flex:0 0 auto;background:var(--surface)}
+  .doc-head .dlabel{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14px}
+  .doc-head .dnum{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--faint)}
+  .doc-head .deckchip{font-size:11px;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);border-radius:100px;padding:2px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38%}
+  .doc-head .openw{margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:6px 11px;font-size:12px;font-weight:500;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);color:var(--text)}
+  .doc-head .openw:hover{background:var(--surface-3);border-color:#c3ccd7}
+  .doc-head .openw svg{width:13px;height:13px}
+  .doc-body{position:relative;flex:1 1 auto;min-height:0}
+  .doc-body iframe{width:100%;height:100%;border:0;background:#fff;display:block}
+  .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;padding:32px;background:var(--surface)}
+  .empty .badge{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--surface-2);border:1px solid var(--line);color:var(--accent)}
+  .empty .badge svg{width:24px;height:24px}
+  .empty h3{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:16px;margin:0}
+  .empty p{margin:0;color:var(--muted);font-size:13px;max-width:32ch}
+
+  .scrim{position:fixed;inset:0;background:rgba(23,33,48,.42);backdrop-filter:blur(3px);z-index:60;display:none;align-items:flex-start;justify-content:center;padding:36px 20px;overflow:auto}
+  .scrim.open{display:flex}
+  .modal{width:min(760px,100%);background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+  .modal-head{padding:22px 24px 6px}
+  .modal-head .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.28em;color:var(--accent);text-transform:uppercase}
+  .modal-head h2{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:21px;margin:6px 0 4px}
+  .modal-head p{margin:0;color:var(--muted);font-size:13.5px}
+  .modal-body{padding:16px 24px 8px;display:flex;flex-direction:column;gap:16px}
+  .io{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .io .note{font-size:12px;color:var(--faint);flex:1 1 140px;min-width:120px}
+  .lib{border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden}
+  .lib-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--muted)}
+  .warn-txt{color:var(--live);font-size:11px;font-weight:600;font-family:"IBM Plex Mono",monospace}
+  .lib-list{max-height:260px;overflow:auto}
+  .row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-top:1px solid var(--line-soft)}
+  .row:hover{background:var(--surface-2)}
+  .row.active{background:rgba(14,147,132,.09)}
+  .row .ord{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--faint);width:22px;flex:0 0 auto;text-align:right}
+  .row .meta{flex:1 1 auto;min-width:0}
+  .row .ti{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .sub{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px}
+  .chips{display:flex;gap:5px;flex:0 0 auto}
+  .chip{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.04em;padding:3px 6px;border-radius:4px;border:1px solid var(--line);color:var(--faint)}
+  .chip.on{color:var(--accent-ink);border-color:var(--accent-dim);background:rgba(14,147,132,.09)}
+  .chip.warn{color:var(--live);border-color:#E6C48A;background:rgba(199,122,18,.09)}
+  .row .go button{font-size:11.5px;padding:5px 10px;border-radius:5px;background:var(--surface-3);border:1px solid var(--line);color:var(--text)}
+  .row.active .go button{background:var(--accent);color:#fff;border-color:transparent;font-weight:600}
+  .row .del{flex:0 0 auto;color:var(--faint);width:26px;height:26px;border-radius:5px;display:grid;place-items:center}
+  .row .del:hover{color:var(--danger);background:var(--surface-3)}
+  .lib-empty{padding:22px 14px;text-align:center;color:var(--faint);font-size:12.5px}
+  details.help{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm)}
+  details.help summary{padding:11px 14px;font-size:13px;font-weight:500;cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}
+  details.help summary::-webkit-details-marker{display:none}
+  details.help[open] summary{border-bottom:1px solid var(--line)}
+  .help-inner{padding:14px 16px;font-size:13px;color:var(--muted)}
+  .add{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .add input{padding:9px 11px;font-size:12.5px;font-family:"IBM Plex Mono",monospace;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm)}
+  .add input.full{grid-column:span 2}
+  .add input:focus{outline:none;border-color:var(--accent)}
+  .add .go-add{grid-column:span 2;justify-self:end}
+  .modal-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 24px 22px}
+  .modal-foot .left{font-size:12px;color:var(--faint)}
+  .btn.ghost{background:transparent;border-color:transparent}.btn.ghost:hover{background:var(--surface-2)}
+  .hidden{display:none!important}
+
+  /* search + catalog grid */
+  .search{font-family:"IBM Plex Sans",sans-serif;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:100px;background:var(--surface);color:var(--text);min-width:170px}
+  .search:focus{outline:none;border-color:var(--accent)}
+  .catalog{flex:1 1 auto;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
+  .prow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:11px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);cursor:pointer;transition:border-color .15s,background .15s}
+  .prow:hover{border-color:var(--accent-dim)}
+  .prow.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .pr-main{flex:1 1 300px;min-width:0}
+  .pr-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .pr-title{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14.5px;line-height:1.3}
+  .pr-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .pr-actions{display:flex;gap:8px;flex:0 0 auto;flex-wrap:wrap}
+  .pr-btn{font-size:12.5px;font-weight:600;padding:8px 13px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--surface-2);color:var(--text);white-space:nowrap;transition:background .15s,border-color .15s}
+  .pr-btn:hover:not(:disabled){background:var(--surface-3);border-color:#c3ccd7}
+  .pr-btn.primary{background:var(--accent);color:#fff;border-color:transparent}
+  .pr-btn.primary:hover:not(:disabled){background:var(--accent-ink)}
+  .pr-btn.teams{border-color:#c7b8e6;color:#4b3b8f;background:#f3effb}
+  .pr-btn.teams:hover:not(:disabled){background:#e9e2f7;border-color:#b3a0dd}
+  .pr-btn:disabled{opacity:.32;cursor:default}
+  .cat-empty{text-align:center;color:var(--faint);padding:44px;font-size:13px}
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(16px);width:min(560px,calc(100vw - 36px));background:#1B2430;color:#fff;padding:13px 18px;border-radius:11px;font-size:12.5px;line-height:1.55;box-shadow:0 10px 34px rgba(0,0,0,.28);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:200}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast b{color:var(--live)}
+  @media (max-width:900px){
+    .brand h1{max-width:38vw}.status{display:none}
+    .docs{flex-direction:column}.docs[data-view="both"] .doc{min-height:66vh}
+    .deckpick select{max-width:52vw}.seg button{padding:7px 10px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <span class="eyebrow">Modelware · Presenter Console <span class="ver" id="ver"></span></span>
+      <h1 id="courseTitle">Presentation Catalog</h1>
+    </div>
+    <div class="status" id="status" title="Decks & docs are live from Microsoft 365. Edit, save, re-open — no export."><span class="dot"></span><span id="statusText">Live · Microsoft&nbsp;365</span></div>
+    <div class="spacer"></div>
+    <div class="controls">
+      <div class="seg" id="viewSeg" role="tablist" aria-label="Panel view">
+        <button data-view="catalog" class="active">Catalog</button>
+        <button data-view="both">Both</button>
+        <button data-view="facilitator">Facilitator</button>
+        <button data-view="workbook">Workbook</button>
+      </div>
+      <button class="btn icon" id="reloadBtn" title="Reload the guide & workbook (after an edit)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg></button>
+      <button class="btn icon" id="setupBtn" title="Catalog & setup (G)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="launcher">
+    <span class="eyebrow-lbl">Deck</span>
+    <div class="deckpick">
+      <button id="prevDeck" title="Previous ([)">‹</button>
+      <div class="sel"><select id="deckSelect" aria-label="Choose deck"></select></div>
+      <button id="nextDeck" title="Next (])">›</button>
+    </div>
+    <span class="count" id="deckCount"></span>
+    <div class="ameta" id="activeMeta"></div>
+    <div class="spacer"></div>
+    <button class="btn primary launch-open" id="openPptBtn" title="Open this deck in PowerPoint, then click Present (P)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
+      Open in PowerPoint
+    </button>
+  </div>
+
+  <div class="filters" id="filters">
+    <span class="eyebrow-lbl">Filter</span>
+    <input id="searchInput" class="search" type="text" placeholder="Search presentations…" autocomplete="off">
+    <div class="ftype" id="typeFilter"></div>
+    <div class="fdiv"></div>
+    <div class="ftags" id="tagFilter"></div>
+    <button class="clearf hidden" id="clearFilter">clear</button>
+    <div class="spacer"></div>
+    <span class="count" id="filterCount"></span>
+  </div>
+
+  <div class="docs" id="docs" data-view="both">
+    <section class="doc" data-doc="facilitator">
+      <div class="doc-head">
+        <span class="dlabel"><span class="dnum">01 </span>Facilitator Guide</span>
+        <span class="deckchip" id="facDeck"></span>
+        <button class="openw" id="openFacBtn" title="Open the guide in Word"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>Open</button>
+      </div>
+      <div class="doc-body">
+        <iframe id="facFrame" title="Facilitator Guide"></iframe>
+        <div class="empty" id="facEmpty">
+          <div class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+          <h3>Facilitator Guide</h3>
+          <p>No guide linked for this deck. Add its Word link in the Catalog.</p>
+        </div>
+      </div>
+    </section>
+    <section class="doc" data-doc="workbook">
+      <div class="doc-head">
+        <span class="dlabel"><span class="dnum">02 </span>Student Workbook</span>
+        <span class="deckchip" id="wbDeck"></span>
+        <button class="openw" id="openWbBtn" title="Open the workbook in Word"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>Open</button>
+      </div>
+      <div class="doc-body">
+        <iframe id="wbFrame" title="Student Workbook"></iframe>
+        <div class="empty" id="wbEmpty">
+          <div class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
+          <h3>Student Workbook</h3>
+          <p>Optional — add a workbook Word link in the Catalog if this deck has one.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="catalog" id="catalog" style="display:none"></div>
+</div>
+
+<div class="scrim" id="scrim">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+    <div class="modal-head">
+      <span class="eyebrow">Presentation Catalog</span>
+      <h2 id="setupTitle">Your presentations</h2>
+      <p>Import an Excel sheet to load every presentation at once, export to round-trip edits, or add one by hand. Each row carries a Type, Tags, and its live Microsoft&nbsp;365 links.</p>
+    </div>
+    <div class="modal-body">
+      <div class="io">
+        <button class="btn primary" id="importBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>Import from Excel</button>
+        <button class="btn" id="exportBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 9l5-5 5 5M12 4v12"/></svg>Export to Excel</button>
+        <button class="btn ghost" id="tmplBtn">Download blank template</button>
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="hidden">
+        <span class="note" id="importNote"></span>
+      </div>
+      <div class="lib">
+        <div class="lib-head"><span>Loaded presentations</span><span id="libWarn" class="warn-txt"></span><span id="libCount">0</span></div>
+        <div class="lib-list" id="libList"></div>
+      </div>
+      <details class="help">
+        <summary>▸ Add one by hand</summary>
+        <div class="help-inner">
+          <div class="add">
+            <input class="full" id="addTitle" placeholder="Title">
+            <input id="addType" placeholder="Type — Course / Webinar / Ad-hoc">
+            <input id="addTags" placeholder="Tags — comma separated">
+            <input class="full" id="addDeck" placeholder="PowerPoint link or <iframe> …">
+            <input id="addFac" placeholder="Facilitator Guide link (optional)">
+            <input id="addWb" placeholder="Student Workbook link (optional)">
+            <button class="btn primary go-add" id="addBtn">Add presentation</button>
+          </div>
+          <p style="margin:10px 0 0">Links: in OneDrive/SharePoint use a file's <b>…</b> → <b>Embed</b> or <b>Share → Copy link</b>. Paste the snippet or URL.</p>
+        </div>
+      </details>
+    </div>
+    <div class="modal-foot"><span class="left">Saved in this browser. Nothing leaves your machine.</span><div class="right"><button class="btn primary" onclick="closeSetup()">Done</button></div></div>
+  </div>
+</div>
+
+<script>
+const VERSION="2.4";
+const CONFIG={ catalogTitle:"Presentation Catalog" };
+const SEED_LIBRARY=[
+  { order:1, title:"Governing Business Meaning", type:"Course", tags:["Semantium","Business Definitions","Governance"],
+    deck:"https://mailmodelware-my.sharepoint.com/:p:/g/personal/howard_modelwaresystems_com/IQAoGDlA4mOORLjGjmASBL9xAZwFs7JKYpg_GPGDyc4mmeI?e=YsI3v8",
+    fac:"https://mailmodelware-my.sharepoint.com/:w:/g/personal/howard_modelwaresystems_com/IQCjm1lbYBG5RIH-pwBlEmHYAbx3Oji3eyx5yMpQvEzs0Jc?e=OtNTK7",
+    wb:"https://mailmodelware-my.sharepoint.com/:w:/g/personal/howard_modelwaresystems_com/IQBysewAGk62T7eMai6GVAKEAWKdQqqPrWeoDkKi7jmqPyA?e=RXd4Dy" }
+];
+const COLS=["Order","Title","Type","Tags","PowerPoint Link","Facilitator Guide Link","Student Workbook Link"];
+const KEY="semantium.presenter.v3";
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const store={get(){try{return JSON.parse(localStorage.getItem(KEY)||"null")}catch{return null}},set(v){try{localStorage.setItem(KEY,JSON.stringify(v))}catch{}}};
+
+function normalize(raw){
+  if(!raw) return "";
+  raw=String(raw).trim();
+  const m=raw.match(/src\s*=\s*["']([^"']+)["']/i);
+  let url=(m?m[1]:raw).replace(/&amp;/g,"&").trim();
+  if(!/^https?:\/\//i.test(url)) return "";
+  if(/sharepoint\.com/i.test(url) && !/[?&]action=/i.test(url) && !/embed\.aspx/i.test(url)){ url+=(url.includes("?")?"&":"?")+"action=embedview"; }
+  return url;
+}
+function cleanUrl(url){ return (url||"").replace(/([?&])action=embedview(&wdbipreview=true)?/i,"$1").replace(/[?&]_cb=\d+/g,"").replace(/[?&]$/,""); }
+function webOpen(url){ url=cleanUrl(url); if(/sharepoint\.com/i.test(url) && !/[?&]web=1(&|$)/i.test(url)){ url+=(url.includes("?")?"&":"?")+"web=1"; } return url; }
+let _toastT; function toast(html,ms){ const t=document.getElementById("toast"); if(!t) return; t.innerHTML=html; t.classList.add("show"); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove("show"), ms||8000); }
+function toTags(v){ return Array.isArray(v)?v:String(v||"").split(/[;,]/).map(s=>s.trim()).filter(Boolean); }
+
+let state;
+(function init(){
+  const s=store.get();
+  if(s && Array.isArray(s.library)){
+    state=s;
+    if(!state.view)state.view="catalog";
+    if(!state.filter)state.filter={type:"All",tags:[],q:""};
+    if(state.filter.q===undefined)state.filter.q="";
+    state.library.forEach(d=>d.tags=toTags(d.tags));
+    if(!state.catalogIntro){ state.view="catalog"; state.catalogIntro=true; } /* one-time: show the list */
+  }
+  else{
+    state={catalogTitle:CONFIG.catalogTitle,activeIndex:0,view:"catalog",filter:{type:"All",tags:[],q:""},catalogIntro:true,
+      library:SEED_LIBRARY.map((d,i)=>({order:d.order||i+1,title:d.title,type:d.type||"",tags:toTags(d.tags),deck:normalize(d.deck),fac:normalize(d.fac),wb:normalize(d.wb)}))};
+  }
+})();
+const active=()=>state.library[state.activeIndex]||null;
+function save(){ store.set(state); }
+
+/* filtering */
+function matchesFilter(d){
+  const f=state.filter||{type:"All",tags:[]};
+  if(f.type && f.type!=="All" && (d.type||"")!==f.type) return false;
+  if(f.tags && f.tags.length){ const dt=d.tags||[]; if(!f.tags.some(t=>dt.includes(t))) return false; }
+  if(f.q){ const hay=((d.title||"")+" "+(d.tags||[]).join(" ")+" "+(d.type||"")).toLowerCase(); if(!hay.includes(f.q.toLowerCase())) return false; }
+  return true;
+}
+const filteredIdx=()=>state.library.map((d,i)=>i).filter(i=>matchesFilter(state.library[i]));
+function uniqueTypes(){ return [...new Set(state.library.map(d=>d.type).filter(Boolean))]; }
+function uniqueTags(){ const s=new Set(); state.library.forEach(d=>(d.tags||[]).forEach(t=>s.add(t))); return [...s].sort((a,b)=>a.localeCompare(b)); }
+
+function render(){
+  $("#courseTitle").textContent=state.catalogTitle||"Presentation Catalog";
+  renderFilters(); renderSwitch();
+  const d=active();
+  setFrame("#facFrame","#facEmpty", d&&d.fac);
+  setFrame("#wbFrame","#wbEmpty", d&&d.wb);
+  $("#facDeck").textContent=d?(d.title||""):""; $("#wbDeck").textContent=d?(d.title||""):"";
+  $("#openFacBtn").style.visibility=(d&&d.fac)?"visible":"hidden";
+  $("#openWbBtn").style.visibility=(d&&d.wb)?"visible":"hidden";
+  renderActiveMeta(d);
+  const v=state.view||"catalog";
+  const cat=(v==="catalog");
+  $("#catalog").style.display=cat?"flex":"none";
+  $("#docs").style.display=cat?"none":"flex";
+  if(!cat) $("#docs").dataset.view=v;
+  if(cat) renderCatalog();
+  $$("#viewSeg button").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
+}
+function renderCatalog(){
+  const el=$("#catalog"); el.innerHTML="";
+  if(!state.library.length){ el.innerHTML='<div class="cat-empty">No presentations yet. Open the Catalog (gear, top-right) and Import from Excel.</div>'; return; }
+  const fi=filteredIdx();
+  if(!fi.length){ el.innerHTML='<div class="cat-empty">Nothing matches your search / filters. Hit <b>clear</b>.</div>'; return; }
+  fi.forEach(i=>{
+    const d=state.library[i];
+    const row=document.createElement("div"); row.className="prow"+(i===state.activeIndex?" active":"");
+    const tags=(d.tags||[]).map(t=>'<span class="tg">'+esc(t)+'</span>').join("");
+    row.innerHTML=
+      '<div class="pr-main">'+
+        '<div class="pr-head">'+(d.type?'<span class="tp">'+esc(d.type)+'</span>':'')+'<span class="pr-title">'+esc(d.title||"Untitled")+'</span></div>'+
+        (tags?'<div class="pr-tags">'+tags+'</div>':'')+
+      '</div>'+
+      '<div class="pr-actions">'+
+        '<button class="pr-btn primary" data-open="'+i+'"'+(d.deck?'':' disabled')+' title="Open in PowerPoint for the web — Slide Show supports Zoom/animations">Open ↗</button>'+
+        '<button class="pr-btn teams" data-teams="'+i+'"'+(d.deck?'':' disabled')+' title="Open ready for PowerPoint Live in Teams (Present ▸ Present in Teams). Zoom not supported.">Teams Live ↗</button>'+
+        '<button class="pr-btn" data-fac="'+i+'"'+(d.fac?'':' disabled')+' title="Open the facilitator guide">Facilitator</button>'+
+        '<button class="pr-btn" data-wb="'+i+'"'+(d.wb?'':' disabled')+' title="Open the student workbook">Workbook</button>'+
+      '</div>';
+    row.onclick=()=>setActive(i);
+    el.appendChild(row);
+  });
+  $$("[data-open]",el).forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const d=state.library[+b.dataset.open]; setActive(+b.dataset.open); if(d&&d.deck) window.open(webOpen(d.deck),"_blank","noopener"); });
+  $$("[data-teams]",el).forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const d=state.library[+b.dataset.teams]; setActive(+b.dataset.teams); if(d&&d.deck){ window.open(webOpen(d.deck),"_blank","noopener"); toast('Deck opened in PowerPoint for the web. To go <b>PowerPoint Live</b>: join your Teams meeting, then choose <b>Present ▸ Present in Teams</b>.<br>Note: PowerPoint Live doesn\'t support the <b>Zoom</b> feature — use <b>Open ↗</b> for decks that rely on Zoom.'); } });
+  $$("[data-fac]",el).forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const d=state.library[+b.dataset.fac]; setActive(+b.dataset.fac); if(d&&d.fac) window.open(webOpen(d.fac),"_blank","noopener"); });
+  $$("[data-wb]",el).forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const d=state.library[+b.dataset.wb]; setActive(+b.dataset.wb); if(d&&d.wb) window.open(webOpen(d.wb),"_blank","noopener"); });
+}
+function setFrame(fSel,eSel,url){ const f=$(fSel),e=$(eSel); if(url){ if(f.src!==url)f.src=url; f.style.display="block"; e.style.display="none"; } else { f.removeAttribute("src"); f.style.display="none"; e.style.display="flex"; } }
+function renderActiveMeta(d){
+  const el=$("#activeMeta"); el.innerHTML="";
+  if(!d) return;
+  if(d.type){ const s=document.createElement("span"); s.className="tp"; s.textContent=d.type; el.appendChild(s); }
+  (d.tags||[]).slice(0,4).forEach(t=>{ const s=document.createElement("span"); s.className="tg"; s.textContent=t; el.appendChild(s); });
+}
+function renderFilters(){
+  const f=state.filter||{type:"All",tags:[]};
+  const types=["All",...uniqueTypes()];
+  const tt=$("#typeFilter"); tt.innerHTML="";
+  types.forEach(t=>{ const b=document.createElement("button"); b.className="chipbtn"+((f.type||"All")===t?" on":""); b.textContent=t; b.onclick=()=>{ state.filter.type=t; save(); render(); }; tt.appendChild(b); });
+  const tags=uniqueTags();
+  const tg=$("#tagFilter"); tg.innerHTML="";
+  tags.forEach(t=>{ const on=(f.tags||[]).includes(t); const b=document.createElement("button"); b.className="chipbtn tag"+(on?" on":""); b.textContent=t; b.onclick=()=>{ const set=new Set(state.filter.tags||[]); on?set.delete(t):set.add(t); state.filter.tags=[...set]; save(); render(); }; tg.appendChild(b); });
+  const anyF=(f.type&&f.type!=="All")||(f.tags&&f.tags.length)||(f.q&&f.q.length);
+  $("#clearFilter").classList.toggle("hidden",!anyF);
+  const fi=filteredIdx();
+  $("#filterCount").textContent = state.library.length ? (fi.length+" of "+state.library.length+" shown") : "";
+}
+$("#clearFilter").onclick=()=>{ state.filter={type:"All",tags:[],q:""}; $("#searchInput").value=""; save(); render(); };
+$("#searchInput").addEventListener("input",e=>{ state.filter.q=e.target.value; save(); render(); });
+
+function renderSwitch(){
+  const sel=$("#deckSelect"); sel.innerHTML="";
+  if(!state.library.length){ const o=document.createElement("option"); o.textContent="No decks — open Catalog"; o.disabled=true; sel.appendChild(o); $("#deckCount").textContent=""; $("#prevDeck").disabled=$("#nextDeck").disabled=true; return; }
+  const fi=filteredIdx();
+  if(!fi.length){ const o=document.createElement("option"); o.textContent="No decks match filter"; o.disabled=true; sel.appendChild(o); $("#deckCount").textContent="0"; $("#prevDeck").disabled=$("#nextDeck").disabled=true; return; }
+  if(!fi.includes(state.activeIndex)){ state.activeIndex=fi[0]; }
+  fi.forEach(i=>{ const o=document.createElement("option"); o.value=i; o.textContent=state.library[i].title||("Deck "+(i+1)); sel.appendChild(o); });
+  sel.value=state.activeIndex;
+  const pos=fi.indexOf(state.activeIndex);
+  $("#deckCount").textContent=(pos+1)+" / "+fi.length;
+  $("#prevDeck").disabled=pos<=0; $("#nextDeck").disabled=pos>=fi.length-1;
+}
+function setActive(i){ if(i<0||i>=state.library.length) return; state.activeIndex=i; save(); render(); }
+function step(delta){ const fi=filteredIdx(); if(!fi.length) return; let pos=fi.indexOf(state.activeIndex); if(pos<0)pos=0; pos=Math.max(0,Math.min(fi.length-1,pos+delta)); setActive(fi[pos]); }
+$("#deckSelect").onchange=e=>setActive(+e.target.value);
+$("#prevDeck").onclick=()=>step(-1);
+$("#nextDeck").onclick=()=>step(1);
+
+$$("#viewSeg button").forEach(b=>b.onclick=()=>{ state.view=b.dataset.view; save(); render(); });
+$("#openPptBtn").onclick=openPpt;
+function openPpt(){ const d=active(); if(!d||!d.deck){ openSetup(); return; } window.open(webOpen(d.deck),"_blank","noopener"); }
+$("#openFacBtn").onclick=()=>{ const d=active(); if(d&&d.fac) window.open(webOpen(d.fac),"_blank","noopener"); };
+$("#openWbBtn").onclick=()=>{ const d=active(); if(d&&d.wb) window.open(webOpen(d.wb),"_blank","noopener"); };
+$("#reloadBtn").onclick=reloadDocs;
+function reloadDocs(){ const d=active(); if(!d) return; [["#facFrame",d.fac],["#wbFrame",d.wb]].forEach(([sel,u])=>{ if(!u) return; const f=$(sel); const base=u.replace(/[?&]_cb=\d+/g,""); f.removeAttribute("src"); void f.offsetWidth; f.src=base+(base.includes("?")?"&":"?")+"_cb="+Date.now(); }); }
+
+/* catalog modal */
+function openSetup(){ renderLib(); $("#importNote").textContent=""; $("#scrim").classList.add("open"); }
+function closeSetup(){ $("#scrim").classList.remove("open"); }
+$("#setupBtn").onclick=openSetup;
+$("#scrim").addEventListener("click",e=>{ if(e.target===$("#scrim")) closeSetup(); });
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function renderLib(){
+  $("#libCount").textContent=state.library.length;
+  const noFac=state.library.filter(d=>d.type==="Course" && !d.fac).length;
+  $("#libWarn").textContent=noFac?("⚠ "+noFac+" course"+(noFac>1?"s":"")+" missing a facilitator guide"):"";
+  const list=$("#libList");
+  if(!state.library.length){ list.innerHTML='<div class="lib-empty">No presentations yet. Import an Excel sheet or add one below.</div>'; return; }
+  list.innerHTML="";
+  state.library.forEach((d,i)=>{
+    const row=document.createElement("div"); row.className="row"+(i===state.activeIndex?" active":"");
+    const chip=(val,lbl,req)=>'<span class="chip '+(val?'on':(req?'warn':''))+'">'+lbl+'</span>';
+    const req=d.type==="Course";
+    const tagline=(d.type?'<span class="chip on">'+esc(d.type)+'</span>':'')+(d.tags||[]).map(t=>'<span class="chip">'+esc(t)+'</span>').join('');
+    row.innerHTML=
+      '<span class="ord">'+(d.order||i+1)+'</span>'+
+      '<div class="meta"><div class="ti">'+esc(d.title||"Untitled")+'</div>'+(tagline?'<div class="sub">'+tagline+'</div>':'')+'</div>'+
+      '<div class="chips">'+chip(d.deck,"PPT",true)+chip(d.fac,"FAC",req)+chip(d.wb,"WB",false)+'</div>'+
+      '<span class="go"><button data-i="'+i+'" class="present-row">Select</button></span>'+
+      '<button class="del" data-del="'+i+'" title="Remove">✕</button>';
+    list.appendChild(row);
+  });
+  $$(".present-row",list).forEach(b=>b.onclick=()=>{setActive(+b.dataset.i);closeSetup();});
+  $$(".del",list).forEach(b=>b.onclick=()=>{ const i=+b.dataset.del; state.library.splice(i,1); if(state.activeIndex>=state.library.length) state.activeIndex=Math.max(0,state.library.length-1); save(); render(); renderLib(); });
+}
+$("#addBtn").onclick=()=>{
+  const t=$("#addTitle").value.trim();
+  const dk=normalize($("#addDeck").value), fc=normalize($("#addFac").value), wbk=normalize($("#addWb").value);
+  if(!t && !dk){ $("#importNote").textContent="Add at least a title or a PowerPoint link."; return; }
+  state.library.push({order:state.library.length+1,title:t||("Deck "+(state.library.length+1)),type:$("#addType").value.trim(),tags:toTags($("#addTags").value),deck:dk,fac:fc,wb:wbk});
+  ["addTitle","addType","addTags","addDeck","addFac","addWb"].forEach(id=>$("#"+id).value="");
+  save(); render(); renderLib();
+};
+
+/* Excel import */
+$("#importBtn").onclick=()=>$("#fileInput").click();
+$("#fileInput").onchange=e=>{ const f=e.target.files[0]; if(f) importExcel(f); e.target.value=""; };
+function pick(row,terms){ for(const k of Object.keys(row)){ const kk=k.trim().toLowerCase(); if(terms.some(t=>kk===t||kk.includes(t))){ const v=String(row[k]).trim(); if(v) return v; } } return ""; }
+function importExcel(file){
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"});
+      const name=wb.SheetNames.includes("Course Library")?"Course Library":wb.SheetNames[0];
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{defval:""});
+      const lib=[];
+      rows.forEach(row=>{
+        const title=pick(row,["title","module","deck name","name"]);
+        const deck=normalize(pick(row,["powerpoint","pptx","slides","deck"]));
+        const fac=normalize(pick(row,["facilitator"]));
+        const wbk=normalize(pick(row,["workbook","student"]));
+        const order=pick(row,["order","seq","#"]);
+        const type=pick(row,["type","category","kind"]);
+        const tags=toTags(pick(row,["tags","tag","topics"]));
+        if(/example/i.test(title)&&/EXAMPLE/.test(deck)) return;
+        if(title||deck||fac||wbk) lib.push({order:order||lib.length+1,title:title||("Deck "+(lib.length+1)),type,tags,deck,fac,wb:wbk});
+      });
+      if(!lib.length){ $("#importNote").textContent="No rows found. Check the column headers."; return; }
+      state.library=lib; state.activeIndex=0; state.view="catalog"; state.filter={type:"All",tags:[],q:""}; $("#searchInput").value=""; save(); render(); renderLib();
+      $("#importNote").textContent="Loaded "+lib.length+" presentation"+(lib.length>1?"s":"")+".";
+    }catch(err){ $("#importNote").textContent="Couldn't read that file — is it a valid .xlsx?"; }
+  };
+  r.readAsArrayBuffer(file);
+}
+
+/* Excel export / template */
+function toSheet(rows){ const ws=XLSX.utils.json_to_sheet(rows,{header:COLS}); ws["!cols"]=[{wch:7},{wch:40},{wch:12},{wch:30},{wch:46},{wch:46},{wch:46}]; const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Course Library"); return wb; }
+$("#exportBtn").onclick=()=>{
+  if(!state.library.length){ $("#importNote").textContent="Nothing to export yet."; return; }
+  const rows=state.library.map((d,i)=>({Order:d.order||i+1,Title:d.title||"",Type:d.type||"",Tags:(d.tags||[]).join(", "),"PowerPoint Link":d.deck||"","Facilitator Guide Link":d.fac||"","Student Workbook Link":d.wb||""}));
+  XLSX.writeFile(toSheet(rows),"Semantium_Presentation_Catalog.xlsx");
+};
+$("#tmplBtn").onclick=()=>{
+  const rows=[{Order:1,Title:"EXAMPLE — overwrite",Type:"Course",Tags:"Data Governance, DAMA","PowerPoint Link":"https://…sharepoint.com/:p:/…?e=…","Facilitator Guide Link":"","Student Workbook Link":""}];
+  XLSX.writeFile(toSheet(rows),"Semantium_Presentation_Catalog_template.xlsx");
+};
+
+/* keyboard */
+document.addEventListener("keydown",e=>{
+  const typing=/^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement?.tagName||"");
+  if(typing||$("#scrim").classList.contains("open")) return;
+  const k=e.key.toLowerCase();
+  if(e.key==="/"){e.preventDefault();$("#searchInput").focus();return;}
+  if(k==="p"){e.preventDefault();openPpt();}
+  else if(k==="g"){e.preventDefault();openSetup();}
+  else if(k==="c"){state.view="catalog";save();render();}
+  else if(k==="1"){state.view="facilitator";save();render();}
+  else if(k==="2"){state.view="workbook";save();render();}
+  else if(k==="3"){state.view="both";save();render();}
+  else if(e.key==="["){step(-1);}
+  else if(e.key==="]"){step(1);}
+  else if(k==="r"){reloadDocs();}
+});
+
+function syncOnline(){ const s=$("#status"); if(navigator.onLine){s.classList.remove("offline");$("#statusText").innerHTML="Live · Microsoft&nbsp;365";}else{s.classList.add("offline");$("#statusText").textContent="Offline — reconnect";} }
+window.addEventListener("online",syncOnline); window.addEventListener("offline",syncOnline);
+
+render(); syncOnline();
+$("#searchInput").value=(state.filter&&state.filter.q)||"";
+$("#ver").textContent="v"+VERSION;
+document.title="Modelware — Presenter Console v"+VERSION;
+if(!state.library.length) openSetup();
+</script>
+<div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

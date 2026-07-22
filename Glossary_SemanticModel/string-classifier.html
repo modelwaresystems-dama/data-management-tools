@@ -181,8 +181,8 @@ footer{margin-top:2rem;font-size:.72rem;color:var(--muted);font-family:"Source S
    Semantium String Classifier — Level 0 Lexical Gate (standalone)
    Modelware Systems International · Glossary_SemanticModel suite
    ============================================================ */
-const APP_VERSION = "1.11.2";
-const APP_BUILT = "2026-07-22 17:03 SAST";
+const APP_VERSION = "1.12.0";
+const APP_BUILT = "2026-07-22 17:29 SAST";
 const APP_NAME = "Semantium String Classifier";
 /* Release history — every shipped change bumps the minor and appends here (rendered in Reference › About, exported in Meta). */
 const VERSION_HISTORY = [
@@ -200,7 +200,8 @@ const VERSION_HISTORY = [
   ["1.10.0","Claim assessment: business-usage sentences parsed as genus/has/relational claims and checked against the sense's WordNet structure (broader-chain proof, meronyms, gloss echoes) with band guidance (D29)"],
   ["1.11.0","Review tab: filterable steward pass over existing classifications — full editable record per string with sense decision, claim assessment, relations, validation, and status ruling chips (D30)"],
   ["1.11.1","Claim verdicts clarified: neutral ○ “yours to define (L1–L3)” for property/relational claims outside the dictionary's jurisdiction; red ✗ reserved for an unsupported genus; anchors-vs-definition summary line (D31)"],
-  ["1.11.2","Two-hierarchies signposting: Review card separates “Governed relations (your model)” from “Dictionary broader (WordNet)”; Thesaurus and Reference explain that model rulings and word ancestry answer different questions (D32)"]
+  ["1.11.2","Two-hierarchies signposting: Review card separates “Governed relations (your model)” from “Dictionary broader (WordNet)”; Thesaurus and Reference explain that model rulings and word ancestry answer different questions (D32)"],
+  ["1.12.0","Review card shows Primary Equivalent with visible LEX ID (editable); thesaurus equivalence chips carry IDs; anchor-tree summary in plain words; Predicate Registry gains chip legend, Remaining-governance line and one-click Retire→alias (D33)"]
 ];
 
 /* ---------------- Closed vocabularies (single source of truth) -------- */
@@ -1199,11 +1200,17 @@ Object.assign(App,{
           ${okAll?'<span class="chip v-PASS">5/5 governed</span>':'<span class="chip v-WARN">'+checklist.filter(c=>c.ok).length+'/5</span>'}
           <button onclick="App.toggleEdit(${i});App.show('inventory')">Edit</button></div>
         <div class="small" style="margin:.3rem 0">${esc(r.senseGloss||"")}</div>
+        ${(()=>{ if(okAll||r.primaryEquivalent) return "";
+          const fails=checklist.filter(c=>!c.ok).map(c=>c.text.split("(")[0].trim().toLowerCase());
+          const pairs=this.lex.rows.filter(x=>x.termType==="Relationship"&&x.id!==r.id&&!x.primaryEquivalent);
+          return `<div class="advisory" style="margin:.3rem 0"><strong>Remaining governance (${checklist.filter(c=>c.ok).length}/5):</strong> ${esc(fails.join(" · "))}. The walkthrough's ending: govern the active-voice pair with direction + inverse, then retire this stem as its alias.
+          ${pairs.length?`<span class="row-flex" style="margin-top:.3rem"><select id="ret-${i}" style="width:auto"><option value=""></option>${pairs.map(x=>`<option value="${esc(x.id)}">${esc(x.label)} (${esc(x.id)})</option>`).join("")}</select>
+          <button onclick="(function(){const t=document.getElementById('ret-${i}').value;if(t)App.retireStem(${i},t);})()">Retire → alias of…</button></span>`:""}</div>`;})()}
         <div class="grid g2" style="margin-top:.4rem"><div>
           <label class="f">Five-defect checklist (advisory)</label>
           ${checklist.map(c=>`<div class="small">${c.ok?'<i class="fa-solid fa-circle-check" style="color:var(--primary)"></i>':'<i class="fa-solid fa-circle-exclamation" style="color:var(--amber)"></i>'} ${c.text}</div>`).join("")}
         </div><div>
-          <label class="f">FCO-IM verbalizations ${this.q("Business examples of the predicate in use — governed text, not asserted triples. Type level: Party participatesIn Agreement. Instance level: “Acme Ltd” participatesIn “SC-01”.")}</label>
+          <label class="f">FCO-IM verbalizations <span class="small" style="text-transform:none;letter-spacing:0">· <span class="tok gov">green</span> = governed string · <span class="tok ungov">amber</span> = ungoverned, click to govern</span> ${this.q("Business examples of the predicate in use — governed text, not asserted triples. Type level: Party participatesIn Agreement. Instance level: “Acme Ltd” participatesIn “SC-01”.")}</label>
           ${verbs||'<p class="hint">No verbalizations yet.</p>'}
           <div class="row-flex" style="margin-top:.4rem">
             <select id="vlevel-${i}" style="width:auto"><option>Type</option><option>Instance</option></select>
@@ -1231,6 +1238,13 @@ Object.assign(App,{
     this.show("wizard"); this.wizSearchSenses();
   },
   governToken(t){ if(!confirm(`“${t}” is not governed. Open the wizard to govern it now?`)) return; this.governFromWorklist(t); },
+  retireStem(i,targetId){
+    const r=this.lex.rows[i], t=this.lex.rows.find(x=>x.id===targetId);
+    if(!t) return;
+    if(!confirm(`Retire “${r.label}” as an alias of ${t.label} (${t.id})? Sets EQUIV + Primary Equivalent + Deprecated — the stem stays as a redirect, exactly the walkthrough's Part F move.`)) return;
+    r.primaryEquivalent=targetId; r.quantEdges=["EQUIV"]; r.status="Deprecated"; r.lastChangeDate=nowStamp();
+    this.save(); this.renderPredicates();
+  },
   addVerb(i){
     const lvl=$("#vlevel-"+i).value, txt=$("#vtext-"+i).value.trim();
     if(!txt) return;
@@ -1404,7 +1418,7 @@ Object.assign(App,{
         ${this.senseDecision(p)}<span class="spacer"></span><button onclick="App.graphSel='${esc(p.id)}';App.show('graph')" title="Visualise this term's relations"><i class="fa-solid fa-diagram-project"></i></button></div>
         <div class="small" style="margin:.25rem 0 .4rem;font-family:'Source Serif 4',Georgia,serif">${esc(p.senseGloss||"")}</div>
         ${aliases.length?`<div><label class="f">Governed equivalents (prefLabel → altLabel)</label>
-          ${aliases.map(a=>`<span class="chip ${a.status==="Deprecated"?"status-Deprecated":"on"}" title="${esc(a.id)}">${esc(a.label)}${a.status==="Deprecated"?" · use "+esc(p.label)+" instead":""}</span>`).join(" ")}</div>`:""}
+          ${aliases.map(a=>`<span class="chip ${a.status==="Deprecated"?"status-Deprecated":"on"}">${esc(a.label)} · ${esc(a.id)}${a.status==="Deprecated"?" · use "+esc(p.label)+" instead":""}</span>`).join(" ")}</div>`:""}
         ${(()=>{const rels=(p.thesaurusRelations||[]);
           const relRow=(rel,ri)=>{const t=this.lex.rows.find(r=>r.id===rel.target);
             return `<span class="chip on" title="${esc(rel.origin)}${rel.note?" · "+esc(rel.note):""} · ${esc(rel.date||"")}">${esc(REL_TYPES[rel.type].label)} → ${esc(t?t.label:rel.target)}</span> <button class="ghost danger" style="padding:.05rem .3rem" title="Remove (and its reciprocal)" onclick="App.removeRelation('${esc(p.id)}',${ri})">×</button>`;};
@@ -1434,7 +1448,7 @@ Object.assign(App,{
           ${cands.map(l=>`<span class="chip click" style="opacity:.75" onclick="App.startAliasFor('${esc(p.id)}','${esc(l)}')">${esc(l)} +</span>`).join(" ")}
           <span class="small"> · each becomes its own Lexical Object through the wizard</span></div>`:""}
         ${relHtml?(p.provenance==="Anchor+Annotation"
-          ?`<details style="margin-top:.35rem"><summary class="small" style="cursor:pointer;color:var(--amber)"><strong>Anchor tree (${esc(p.wordnetAnchor)}) — weak evidence, collapsed</strong>: the meaning was Enhanced beyond the anchor${p.confidence?` (anchor-fit ${esc(parseFloat(p.confidence).toFixed(2))})`:""}; this tree describes the anchor's sense, not yours.</summary>${relHtml}</details>`
+          ?`<details style="margin-top:.35rem"><summary class="small" style="cursor:pointer;color:var(--amber)"><strong>Anchor tree (${esc(p.wordnetAnchor)}) — click to expand</strong> · dictionary neighbours of the ANCHOR's sense. Weak here because your Sense Decision is Enhanced${p.confidence?` (anchor-fit ${esc(parseFloat(p.confidence).toFixed(2))})`:""}: you authored the meaning beyond the anchor, so this tree describes the dictionary's sense, not your governed one.</summary>${relHtml}</details>`
           :`<div style="margin-top:.35rem"><label class="f">WordNet neighbourhood of the anchor — lexical evidence, not governed rulings</label>${relHtml}</div>`):""}
       </div>`;
     }
@@ -1492,6 +1506,12 @@ Object.assign(App,{
         ${row("Type",`<div class="row-flex">${sel("quantType",QUANT_TYPES)}${sel("termType",TERM_TYPES)}</div>`)}
         ${row("Edge",EDGES.map(e=>`<button class="chip click ${r.quantEdges.includes(e.code)?"on":""}" onclick="App.toggleRowEdge(${i},'${e.code}')">${e.code}</button>`).join(" "))}
         ${row("Provenance / Confidence",`<div class="row-flex">${sel("provenance",PROVENANCES)}<input type="text" style="max-width:90px" value="${esc(r.confidence)}" onchange="App.setField(${i},'confidence',this.value)" placeholder="0.00–1.00"></div>`)}
+        ${(()=>{ const pe=r.primaryEquivalent?this.lex.rows.find(x=>x.id===r.primaryEquivalent):null;
+          const opts=this.lex.rows.filter((p2,j)=>j!==i&&Validate.eligiblePrimary(r,p2)).map(p2=>`<option value="${esc(p2.id)}" ${r.primaryEquivalent===p2.id?"selected":""}>${esc(p2.label)} (${esc(p2.id)})</option>`).join("");
+          return row("Primary Equivalent<br><span style='font-weight:400;text-transform:none;letter-spacing:0'>(alias of)</span>",
+            `<div class="row-flex"><select style="max-width:320px" onchange="App.setField(${i},'primaryEquivalent',this.value)"><option value="">— none (this string is a primary) —</option>${opts}</select>
+            ${pe?`<span class="chip on">→ ${esc(pe.label)} · ${esc(pe.id)}</span>`:""}</div>`
+            +(r.primaryEquivalent&&!pe?'<div class="errorbox">Dangling — the target no longer exists.</div>':""));})()}
         ${row("Governed relations<br><span style='font-weight:400;text-transform:none;letter-spacing:0'>(your model)</span>",(rels||'<span class="small">none — define in the Thesaurus tab</span>')+' <span class="small">· steward ruling on where the concept sits in YOUR semantic model — independent of the dictionary</span>')}
         ${(()=>{ if(!sense) return "";
           const hyp=(sense.rel.y||[]).slice(0,3).map(ix=>WN.byIndex(ix)).filter(Boolean);

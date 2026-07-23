@@ -411,7 +411,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 <body>
 <header>
   <div class="bar">
-    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.2.1</span></span>
+    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.2.2</span></span>
       <span class="s">Reuel et al. FAccT '25 model · aligned to King V governance & global RAI standards · 13 organisational sub-components, 8 operational dimensions</span></div>
     <div class="tools">
       <input type="file" id="file" accept=".xlsx" hidden>
@@ -502,7 +502,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 
       <div class="mm-wrap">
         <div class="mm">
-          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.2.1 &middot; two pillars</span></div>
+          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.2.2 &middot; two pillars</span></div>
           <div class="mm-split">
             <div class="mm-branch"><div class="mm-node pA">Pillar A &middot; Organisational</div><div class="mm-arrow">↓</div><div class="mm-node">13 Sub-components<br><span>GOV &hellip; PVC &middot; rated L1&ndash;L5 / N/A</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per level<br><span>L2&ndash;L5 &middot; 52 sets</span></div></div>
             <div class="mm-branch"><div class="mm-node pB">Pillar B &middot; Operational</div><div class="mm-arrow">↓</div><div class="mm-node">8 Dimensions &middot; 41 Measures<br><span>PRV &hellip; GAI &middot; binary</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per measure<br><span>41 sets</span></div></div>
@@ -707,7 +707,7 @@ function saveAppFile(){try{
   const ev=Object.keys(EVSCORES).length;
   toast("Saved a copy of the app with your data baked in"+(ev?(" ("+ev+" evidence sets)"):"")+" \u2014 open that .html to continue where you left off.");
 }catch(e){console.error(e);toast("Couldn't build the save file in this browser.",true);}}
-let SAVE_OK=null,SAVE_ERR="",LOAD_SRC="",SAVE_TRIM=0,PW_DISMISSED=false,EV_TRIMMED=0;
+let SAVE_OK=null,SAVE_ERR="",LOAD_SRC="",SAVE_TRIM=0,PW_DISMISSED="",EV_TRIMMED=0,TRIM_ERR="";
 /* Auto-save must never fail quietly: a swallowed error looks identical to a successful save,
    and the assessor only discovers the loss after re-importing evidence for the third time.
 
@@ -727,7 +727,7 @@ function saveState(){let lastErr="";
   for(let i=0;i<SAVE_TIERS.length;i++){const t=SAVE_TIERS[i];let sc;
     try{sc=t.ev();}catch(_){continue;}
     const p={org:S.org,oper:S.oper,sign:S.sign,scores:sc||{},evnames:sc?EVNAMES:{},scoresAt:sc?EVSCORES_AT:null,savedAt:new Date().toISOString(),trim:t.id};
-    try{localStorage.setItem(LSKEY,JSON.stringify(p));SAVE_OK=true;SAVE_ERR="";SAVE_TRIM=t.id;updateSaveChip();return true;}
+    try{localStorage.setItem(LSKEY,JSON.stringify(p));SAVE_OK=true;SAVE_ERR="";SAVE_TRIM=t.id;TRIM_ERR=t.id>0?lastErr:"";updateSaveChip();return true;}
     catch(e){lastErr=(e&&(e.name||e.message))||"blocked";}}
   SAVE_OK=false;SAVE_ERR=lastErr;SAVE_TRIM=-1;updateSaveChip();return false;}
 /* Did the evidence actually survive the round-trip into storage? Read it back rather than assume. */
@@ -737,7 +737,7 @@ function storageUsage(){const out=[];let total=0;
   try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);const v=localStorage.getItem(k)||"";const b=(k.length+v.length)*2;out.push({k:k,b:b});total+=b;}}catch(_){return null;}
   out.sort((a,b)=>b.b-a.b);return{keys:out,total:total};}
 function fmtKB(b){return b>=1048576?(b/1048576).toFixed(2)+" MB":(b/1024).toFixed(1)+" KB";}
-function updateSaveChip(){if((SAVE_OK===false||SAVE_TRIM>0)&&!PW_DISMISSED)showPersistWarn();
+function updateSaveChip(){showPersistWarn();
   const c=document.getElementById("saveChip");if(!c)return;
   const base="font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;padding:6px 9px;border-radius:6px;text-transform:uppercase;white-space:nowrap;cursor:help;";
   const n=Object.keys(EVSCORES).length;
@@ -1354,7 +1354,7 @@ function downloadGuide(){
   try{
     const wb=XLSX.utils.book_new();
     // 1) Metamodel / read-me
-    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.2.1 · generated "+new Date().toISOString().slice(0,10)],[],
+    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.2.2 · generated "+new Date().toISOString().slice(0,10)],[],
       ["This workbook lists every artefact template (the evidence guide), an illustrative sample entry for each, and a worked example."],[],
       ["METAMODEL — entity","Meaning","ID pattern","Count"],
       ["Pillar","The two halves of the model","A / B","2"],
@@ -1393,26 +1393,44 @@ function downloadGuide(){
 }
 
 function storageOK(){try{var k="__wk_probe__";localStorage.setItem(k,"1");var v=localStorage.getItem(k);localStorage.removeItem(k);return v==="1";}catch(_){return false;}}
-function showPersistWarn(){if(document.getElementById("persistWarn"))return;var w=document.querySelector(".wrap");if(!w)return;
-  var quota=/quota|exceed/i.test(SAVE_ERR||"");
+/* Three distinct states, and they must not be conflated: nothing saved (off), a smaller copy
+   saved (reduced), or all good (ok). Telling an assessor "auto-save is off" while a reduced copy
+   is in fact being written is worse than saying nothing -- it invites them to redo work that was
+   never lost. */
+function persistLevel(){if(SAVE_OK===false)return "off";
+  if(SAVE_OK===true&&(SAVE_TRIM>0||EV_TRIMMED>0))return "reduced";return "ok";}
+function showPersistWarn(){
+  var host=document.querySelector(".wrap");if(!host)return;
+  var lvl=persistLevel(),d=document.getElementById("persistWarn");
+  if(lvl==="ok"){if(d)d.remove();return;}
+  if(PW_DISMISSED===lvl)return;
+  var reason=(lvl==="off"?SAVE_ERR:TRIM_ERR)||"";
+  var quota=/quota|exceed/i.test(reason);
   var u=storageUsage();
-  var usedTxt=u?("This site is currently using <b>"+fmtKB(u.total)+"</b> across "+u.keys.length+" stored item(s)."):"";
-  var body=quota
-    ? "<b>Browser storage for this site is full.</b> "+usedTxt+" Most browsers allow about 5 MB per site, and on a <code>*.github.io</code> address <b>every repository under the same account shares that one allowance</b> \u2014 so other pages you host there consume it too. Your assessment needs roughly 200 KB."
-    : "<b>Auto-save is off.</b> This page cannot write to browser storage ("+(SAVE_ERR||"blocked")+"). Opening the file directly from disk (file://), private/incognito windows, and \u2018block site data\u2019 settings all prevent saving.";
-  var fix=quota
-    ? "<b>What to do:</b> click <b>Storage details</b> to see what is using the space and clear anything stale, or open the assessment in a different browser or profile. Meanwhile the app keeps saving a reduced copy \u2014 your <b>ratings are still safe</b>; only cached evidence detail is trimmed, and re-importing the grid restores it."
-    : "<b>What to do:</b> click <b>Save with data</b> for a copy with everything embedded, or serve the file from a local web server. Always keep <b>Export .xlsx</b> as your record.";
-  var d=document.createElement("div");d.id="persistWarn";
-  d.style.cssText="margin:10px 16px 0;padding:11px 14px;border:1px solid #bf7d2c;border-left-width:4px;border-radius:8px;background:#2a2114;color:#f3e7d2;font-size:13px;line-height:1.55;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap";
-  d.innerHTML='<div style="flex:1;min-width:280px">'+body+' '+fix+'<div id="pwDetail" style="display:none;margin-top:9px"></div></div>'
+  var usedTxt=u?("This site is using <b>"+fmtKB(u.total)+"</b> across "+u.keys.length+" stored item(s). "):"";
+  var body,fix,accent;
+  if(lvl==="reduced"){accent="#bf7d2c";
+    var t=SAVE_TIERS[SAVE_TRIM>0?SAVE_TRIM:EV_TRIMMED];
+    body="<b>Auto-save is working, but caching less detail.</b> "+(quota?"Browser storage for this site is full. ":"")+usedTxt
+      +"The copy being saved is <b>"+(t&&t.lbl?t.lbl:"reduced")+"</b>. Your ratings and maturity levels are safe and will reload normally."
+      +(quota?" Most browsers allow about 5 MB per site, and on a <code>*.github.io</code> address every repository under that account shares the one allowance.":"");
+    fix="<b>What to do:</b> nothing urgent. The shared repository holds the full evidence including assessor comments, so <b>Team \u2192 Pull latest</b> restores it after any reload. To recover full local caching, use <b>Storage details</b> to see what is occupying the space.";}
+  else{accent="#a33";
+    body="<b>Auto-save is off.</b> Nothing can be written to browser storage ("+(reason||"blocked")+"). "+usedTxt
+      +"Opening the file directly from disk (file://), private/incognito windows, and \u2018block site data\u2019 settings all prevent saving.";
+    fix="<b>What to do:</b> use <b>Team \u2192 Publish</b> to put your work in the shared repository, or <b>Save with data</b> for a local copy with everything embedded. Keep <b>Export .xlsx</b> as your record either way.";}
+  if(d){var txt=document.getElementById("pwText");if(txt)txt.innerHTML=body+" "+fix;
+    d.style.borderColor=accent;return;}
+  d=document.createElement("div");d.id="persistWarn";
+  d.style.cssText="margin:10px 16px 0;padding:11px 14px;border:1px solid "+accent+";border-left-width:4px;border-radius:8px;background:#2a2114;color:#f3e7d2;font-size:13px;line-height:1.55;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap";
+  d.innerHTML='<div style="flex:1;min-width:280px"><span id="pwText">'+body+' '+fix+'</span><div id="pwDetail" style="display:none;margin-top:9px"></div></div>'
     +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
     +'<button id="pwDetailBtn" style="background:transparent;color:#f4d79a;border:1px solid #bf7d2c;border-radius:6px;padding:7px 10px;font-size:13px;cursor:pointer;white-space:nowrap">Storage details</button>'
     +'<button id="pwSave" style="background:#1f7a5a;color:#fff;border:0;border-radius:6px;padding:7px 12px;font-size:13px;cursor:pointer;white-space:nowrap">Save with data</button>'
     +'<button id="pwX" style="background:transparent;color:#c9b48f;border:1px solid #6b5a3c;border-radius:6px;padding:7px 10px;font-size:13px;cursor:pointer">Dismiss</button></div>';
-  w.parentNode.insertBefore(d,w);
-  var s1=document.getElementById("pwSave");if(s1)s1.addEventListener("click",function(){var b=document.getElementById("saveAppBtn");if(b)b.click();});
-  var x1=document.getElementById("pwX");if(x1)x1.addEventListener("click",function(){PW_DISMISSED=true;d.remove();});
+  host.parentNode.insertBefore(d,host);
+  var s1=document.getElementById("pwSave");if(s1)s1.addEventListener("click",function(){var bb=document.getElementById("saveAppBtn");if(bb)bb.click();});
+  var x1=document.getElementById("pwX");if(x1)x1.addEventListener("click",function(){PW_DISMISSED=persistLevel();d.remove();});
   var db=document.getElementById("pwDetailBtn");
   if(db)db.addEventListener("click",function(){var box=document.getElementById("pwDetail");if(!box)return;
     if(box.style.display!=="none"){box.style.display="none";db.textContent="Storage details";return;}
@@ -1577,7 +1595,7 @@ const _restored=loadState();
 renderAll();updateScores();renderCompare();renderGuide("");renderEvidenceScores();
 initTeamSync();
 checkXlsx();
-if(SAVE_OK===false||SAVE_TRIM>0||!storageOK())showPersistWarn();
+showPersistWarn();
 window.addEventListener("beforeunload",saveState);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")saveState();});
 if(typeof _restored==="string"){const ns=Object.keys(EVSCORES).length;

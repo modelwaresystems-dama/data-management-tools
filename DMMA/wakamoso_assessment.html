@@ -409,7 +409,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 <body>
 <header>
   <div class="bar">
-    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.1.4</span></span>
+    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.1.5</span></span>
       <span class="s">Reuel et al. FAccT '25 model · aligned to King V governance & global RAI standards · 13 organisational sub-components, 8 operational dimensions</span></div>
     <div class="tools">
       <input type="file" id="file" accept=".xlsx" hidden>
@@ -499,7 +499,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 
       <div class="mm-wrap">
         <div class="mm">
-          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.1.4 &middot; two pillars</span></div>
+          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.1.5 &middot; two pillars</span></div>
           <div class="mm-split">
             <div class="mm-branch"><div class="mm-node pA">Pillar A &middot; Organisational</div><div class="mm-arrow">↓</div><div class="mm-node">13 Sub-components<br><span>GOV &hellip; PVC &middot; rated L1&ndash;L5 / N/A</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per level<br><span>L2&ndash;L5 &middot; 52 sets</span></div></div>
             <div class="mm-branch"><div class="mm-node pB">Pillar B &middot; Operational</div><div class="mm-arrow">↓</div><div class="mm-node">8 Dimensions &middot; 41 Measures<br><span>PRV &hellip; GAI &middot; binary</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per measure<br><span>41 sets</span></div></div>
@@ -704,17 +704,45 @@ function saveAppFile(){try{
   const ev=Object.keys(EVSCORES).length;
   toast("Saved a copy of the app with your data baked in"+(ev?(" ("+ev+" evidence sets)"):"")+" \u2014 open that .html to continue where you left off.");
 }catch(e){console.error(e);toast("Couldn't build the save file in this browser.",true);}}
-let SAVE_OK=null,SAVE_ERR="",LOAD_SRC="";
+let SAVE_OK=null,SAVE_ERR="",LOAD_SRC="",SAVE_TRIM=0,PW_DISMISSED=false,EV_TRIMMED=0;
 /* Auto-save must never fail quietly: a swallowed error looks identical to a successful save,
-   and the assessor only discovers the loss after re-importing evidence for the third time. */
-function saveState(){try{localStorage.setItem(LSKEY,JSON.stringify({org:S.org,oper:S.oper,sign:S.sign,scores:EVSCORES,evnames:EVNAMES,scoresAt:EVSCORES_AT,savedAt:new Date().toISOString()}));SAVE_OK=true;SAVE_ERR="";}catch(e){SAVE_OK=false;SAVE_ERR=(e&&(e.name||e.message))||"blocked";}updateSaveChip();return SAVE_OK;}
+   and the assessor only discovers the loss after re-importing evidence for the third time.
+
+   Browser storage is a finite resource shared by the whole origin (on <account>.github.io every
+   repository under that account shares one quota), so a full evidence payload may not fit even
+   though nothing here is large. Persist progressively less rather than nothing -- and always
+   declare what was dropped. The exported .xlsx and the Scoring Grid remain the record of truth;
+   browser storage is only a working cache. */
+function mapEv(f){const o={};for(const k in EVSCORES)o[k]=(EVSCORES[k]||[]).map(f);return o;}
+const SAVE_TIERS=[
+  {id:0,lbl:"",                                              ev:()=>EVSCORES},
+  {id:1,lbl:"assessor comments not cached",                  ev:()=>mapEv(e=>({sec:e.sec,nm:e.nm,score:e.score}))},
+  {id:2,lbl:"scores only \u2014 comments and element names not cached", ev:()=>mapEv(e=>({sec:e.sec,score:e.score}))},
+  {id:3,lbl:"ratings only \u2014 imported evidence not cached",  ev:()=>null}
+];
+function saveState(){let lastErr="";
+  for(let i=0;i<SAVE_TIERS.length;i++){const t=SAVE_TIERS[i];let sc;
+    try{sc=t.ev();}catch(_){continue;}
+    const p={org:S.org,oper:S.oper,sign:S.sign,scores:sc||{},evnames:sc?EVNAMES:{},scoresAt:sc?EVSCORES_AT:null,savedAt:new Date().toISOString(),trim:t.id};
+    try{localStorage.setItem(LSKEY,JSON.stringify(p));SAVE_OK=true;SAVE_ERR="";SAVE_TRIM=t.id;updateSaveChip();return true;}
+    catch(e){lastErr=(e&&(e.name||e.message))||"blocked";}}
+  SAVE_OK=false;SAVE_ERR=lastErr;SAVE_TRIM=-1;updateSaveChip();return false;}
 /* Did the evidence actually survive the round-trip into storage? Read it back rather than assume. */
 function evidencePersisted(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return false;const d=JSON.parse(raw);return !!(d&&d.scores&&Object.keys(d.scores).length);}catch(_){return false;}}
-function updateSaveChip(){const c=document.getElementById("saveChip");if(!c)return;
+/* What is actually occupying this origin? Report it rather than leaving the assessor to guess. */
+function storageUsage(){const out=[];let total=0;
+  try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);const v=localStorage.getItem(k)||"";const b=(k.length+v.length)*2;out.push({k:k,b:b});total+=b;}}catch(_){return null;}
+  out.sort((a,b)=>b.b-a.b);return{keys:out,total:total};}
+function fmtKB(b){return b>=1048576?(b/1048576).toFixed(2)+" MB":(b/1024).toFixed(1)+" KB";}
+function updateSaveChip(){if((SAVE_OK===false||SAVE_TRIM>0)&&!PW_DISMISSED)showPersistWarn();
+  const c=document.getElementById("saveChip");if(!c)return;
   const base="font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;padding:6px 9px;border-radius:6px;text-transform:uppercase;white-space:nowrap;cursor:help;";
+  const n=Object.keys(EVSCORES).length;
   if(SAVE_OK===false){c.textContent="\u26A0 Auto-save off";c.style.cssText=base+"background:#5b1d1d;color:#ffd9d9;border:1px solid #a33";
-    c.title="This page cannot write to browser storage ("+SAVE_ERR+"), so imported evidence and ratings will NOT survive a refresh. Click \u2018Save with data\u2019 to download a copy with everything embedded, or serve the file from a local web server.";}
-  else if(SAVE_OK===true){const n=Object.keys(EVSCORES).length;c.textContent="\u2713 Auto-save on";c.style.cssText=base+"background:#123a2c;color:#8fe3bd;border:1px solid #1f7a5a";
+    c.title="Nothing could be written to browser storage ("+SAVE_ERR+"). Imported evidence and ratings will NOT survive a refresh. Use \u2018Save with data\u2019 for a copy with everything embedded, and \u2018Export .xlsx\u2019 as your record.";}
+  else if(SAVE_OK===true&&(SAVE_TRIM>0||EV_TRIMMED>0)){const t=SAVE_TIERS[SAVE_TRIM>0?SAVE_TRIM:EV_TRIMMED];c.textContent="\u25C6 Auto-save reduced";c.style.cssText=base+"background:#4a3411;color:#f4d79a;border:1px solid #bf7d2c";
+    c.title="Storage on this site is nearly full, so a reduced copy was saved: "+t.lbl+". Your ratings are safe and will reload. The full evidence detail stays in the Scoring Grid and in \u2018Export .xlsx\u2019 \u2014 re-import the grid to restore comments in this session.";}
+  else if(SAVE_OK===true){c.textContent="\u2713 Auto-save on";c.style.cssText=base+"background:#123a2c;color:#8fe3bd;border:1px solid #1f7a5a";
     c.title="Your ratings"+(n?" and "+n+" imported evidence sets":"")+" are saved in this browser and will reload automatically."+(LOAD_SRC==="file"?" (This session opened from a baked file copy.)":"");}
   else{c.textContent="Auto-save \u2014";c.style.cssText=base+"background:#1b2740;color:#9fb3d4;border:1px solid #2f4066";c.title="Persistence status not yet determined.";}}
 function saveSoon(){clearTimeout(saveT);saveT=setTimeout(saveState,250);}
@@ -731,6 +759,7 @@ function loadState(){try{
   else if(stored){d=stored;LOAD_SRC="browser";}
   if(!d)return false;
   if(LOAD_SRC==="file"){try{localStorage.setItem(LSKEY,JSON.stringify(d));}catch(_){}}
+  EV_TRIMMED=d.trim||0;
   if(d.scores){EVSCORES=d.scores;EVNAMES=d.evnames||{};EVSCORES_AT=d.scoresAt||null;}
   if(d.org)Object.keys(d.org).forEach(k=>{if(S.org[k])Object.assign(S.org[k],d.org[k]);});
   if(d.oper)Object.keys(d.oper).forEach(k=>{if(S.oper[k])Object.assign(S.oper[k],d.oper[k]);});
@@ -1089,7 +1118,7 @@ function exportXlsx(){
   DATA.oper.forEach(x=>{const st=S.oper[x.id];d.push(["oper",x.id+".relevant",st.relevant||""]);d.push(["oper",x.id+".evidence",st.evidence]);d.push(["oper",x.id+".notes",st.notes]);x.measures.forEach((m,i)=>d.push(["oper",x.id+".status."+i,st.status[i]||""]));});
   SIGN.forEach(s=>d.push(["sign",s.id,S.sign[s.id]]));
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(d),"_Data");
-  (function(){const eids=Object.keys(EVSCORES);if(eids.length){const rows=[["Evidence set ID","Evidence set","Section","Element","Score","Band","Comment"]];eids.forEach(e=>{(EVSCORES[e]||[]).forEach(x=>{rows.push([e,EVNAMES[e]||"",x.sec,x.nm,x.score,x.band,x.comment]);});});const ws=XLSX.utils.aoa_to_sheet(rows);XLSX.utils.book_append_sheet(wb,ws,"_Scores");}})();
+  (function(){const eids=Object.keys(EVSCORES);if(eids.length){const rows=[["Evidence set ID","Evidence set","Section","Element","Score","Band","Comment"]];eids.forEach(e=>{(EVSCORES[e]||[]).forEach(x=>{rows.push([e,EVNAMES[e]||"",x.sec,x.nm||"",x.score,x.band||bandOf(x.score),x.comment||""]);});});const ws=XLSX.utils.aoa_to_sheet(rows);XLSX.utils.book_append_sheet(wb,ws,"_Scores");}})();
   XLSX.writeFile(wb,"WAKAMOSO_Ethical_Maturity_Assessment_"+new Date().toISOString().slice(0,10)+".xlsx");
   toast("Exported workbook to your downloads.");
 }
@@ -1226,7 +1255,7 @@ function loadScores(sheet){const rows=XLSX.utils.sheet_to_json(sheet,{header:1})
     const band=(r[7]||"").toString().trim()||bandOf(sc),cm=(r[8]||"").toString().trim(),enm=(r[1]||"").toString().trim();
     if(enm&&!nmap[eid])nmap[eid]=enm;
     (out[eid]=out[eid]||[]).push({sec:sec,nm:nm,score:sc,band:band,comment:cm});n++;});
-  EVSCORES=out;EVNAMES=nmap;EVSCORES_AT=new Date().toISOString();return{elements:n,sets:Object.keys(out).length};}
+  EVSCORES=out;EVNAMES=nmap;EVSCORES_AT=new Date().toISOString();EV_TRIMMED=0;return{elements:n,sets:Object.keys(out).length};}
 function clearScores(){EVSCORES={};EVNAMES={};EVSCORES_AT=null;renderOrg();renderOper();updateScores();renderEvidenceScores();toast("Cleared imported evidence scores.");}
 function toggleEvDetail(eid){const tr=document.getElementById("evd-"+eid);if(!tr)return;const cell=tr.firstElementChild;
   if(tr.style.display==="none"){const a=EVSCORES[eid]||[];cell.innerHTML='<div class="evsc-elwrap">'+a.map(x=>`<div class="evsc-el"><span class="evsc-elsc" style="background:${bandColor(bandOf(x.score))}">${x.score}</span><b>${esc(x.sec)}</b> ${esc(x.nm)}${x.comment?' \u2014 <span class="evsc-cm">'+esc(x.comment)+'</span>':''}</div>`).join("")+'</div>';tr.style.display="";}
@@ -1317,7 +1346,7 @@ function downloadGuide(){
   try{
     const wb=XLSX.utils.book_new();
     // 1) Metamodel / read-me
-    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.1.4 · generated "+new Date().toISOString().slice(0,10)],[],
+    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.1.5 · generated "+new Date().toISOString().slice(0,10)],[],
       ["This workbook lists every artefact template (the evidence guide), an illustrative sample entry for each, and a worked example."],[],
       ["METAMODEL — entity","Meaning","ID pattern","Count"],
       ["Pillar","The two halves of the model","A / B","2"],
@@ -1356,10 +1385,39 @@ function downloadGuide(){
 }
 
 function storageOK(){try{var k="__wk_probe__";localStorage.setItem(k,"1");var v=localStorage.getItem(k);localStorage.removeItem(k);return v==="1";}catch(_){return false;}}
-function showPersistWarn(){if(document.getElementById("persistWarn"))return;var w=document.querySelector(".wrap");if(!w)return;var d=document.createElement("div");d.id="persistWarn";d.style.cssText="margin:10px 16px 0;padding:11px 14px;border:1px solid #bf7d2c;border-left-width:4px;border-radius:8px;background:#2a2114;color:#f3e7d2;font-size:13px;line-height:1.5;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap";d.innerHTML='<div style="flex:1;min-width:260px"><b>Auto-save is off.</b> This page is open directly from disk (file://), so your browser blocks local storage \u2014 imported evidence and ratings will not survive a refresh. <b>To keep your work:</b> click <b>Save with data</b> to download a copy with everything baked in, then work from that copy \u2014 it reloads without re-importing. For seamless auto-save, open this file through a local web server (e.g. <code>http://localhost</code>) rather than double-clicking it.</div><div style="display:flex;gap:8px;align-items:center"><button id="pwSave" style="background:#1f7a5a;color:#fff;border:0;border-radius:6px;padding:7px 12px;font-size:13px;cursor:pointer;white-space:nowrap">Save with data</button><button id="pwX" style="background:transparent;color:#c9b48f;border:1px solid #6b5a3c;border-radius:6px;padding:7px 10px;font-size:13px;cursor:pointer">Dismiss</button></div>';w.parentNode.insertBefore(d,w);var s=document.getElementById("pwSave");if(s)s.addEventListener("click",function(){var b=document.getElementById("saveAppBtn");if(b)b.click();});var x=document.getElementById("pwX");if(x)x.addEventListener("click",function(){d.remove();});}
+function showPersistWarn(){if(document.getElementById("persistWarn"))return;var w=document.querySelector(".wrap");if(!w)return;
+  var quota=/quota|exceed/i.test(SAVE_ERR||"");
+  var u=storageUsage();
+  var usedTxt=u?("This site is currently using <b>"+fmtKB(u.total)+"</b> across "+u.keys.length+" stored item(s)."):"";
+  var body=quota
+    ? "<b>Browser storage for this site is full.</b> "+usedTxt+" Most browsers allow about 5 MB per site, and on a <code>*.github.io</code> address <b>every repository under the same account shares that one allowance</b> \u2014 so other pages you host there consume it too. Your assessment needs roughly 200 KB."
+    : "<b>Auto-save is off.</b> This page cannot write to browser storage ("+(SAVE_ERR||"blocked")+"). Opening the file directly from disk (file://), private/incognito windows, and \u2018block site data\u2019 settings all prevent saving.";
+  var fix=quota
+    ? "<b>What to do:</b> click <b>Storage details</b> to see what is using the space and clear anything stale, or open the assessment in a different browser or profile. Meanwhile the app keeps saving a reduced copy \u2014 your <b>ratings are still safe</b>; only cached evidence detail is trimmed, and re-importing the grid restores it."
+    : "<b>What to do:</b> click <b>Save with data</b> for a copy with everything embedded, or serve the file from a local web server. Always keep <b>Export .xlsx</b> as your record.";
+  var d=document.createElement("div");d.id="persistWarn";
+  d.style.cssText="margin:10px 16px 0;padding:11px 14px;border:1px solid #bf7d2c;border-left-width:4px;border-radius:8px;background:#2a2114;color:#f3e7d2;font-size:13px;line-height:1.55;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap";
+  d.innerHTML='<div style="flex:1;min-width:280px">'+body+' '+fix+'<div id="pwDetail" style="display:none;margin-top:9px"></div></div>'
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+    +'<button id="pwDetailBtn" style="background:transparent;color:#f4d79a;border:1px solid #bf7d2c;border-radius:6px;padding:7px 10px;font-size:13px;cursor:pointer;white-space:nowrap">Storage details</button>'
+    +'<button id="pwSave" style="background:#1f7a5a;color:#fff;border:0;border-radius:6px;padding:7px 12px;font-size:13px;cursor:pointer;white-space:nowrap">Save with data</button>'
+    +'<button id="pwX" style="background:transparent;color:#c9b48f;border:1px solid #6b5a3c;border-radius:6px;padding:7px 10px;font-size:13px;cursor:pointer">Dismiss</button></div>';
+  w.parentNode.insertBefore(d,w);
+  var s1=document.getElementById("pwSave");if(s1)s1.addEventListener("click",function(){var b=document.getElementById("saveAppBtn");if(b)b.click();});
+  var x1=document.getElementById("pwX");if(x1)x1.addEventListener("click",function(){PW_DISMISSED=true;d.remove();});
+  var db=document.getElementById("pwDetailBtn");
+  if(db)db.addEventListener("click",function(){var box=document.getElementById("pwDetail");if(!box)return;
+    if(box.style.display!=="none"){box.style.display="none";db.textContent="Storage details";return;}
+    var uu=storageUsage();
+    if(!uu){box.innerHTML="<i>Storage cannot be read in this browser.</i>";}
+    else{var rows=uu.keys.map(function(x){var mine=x.k===LSKEY;
+      return '<tr><td style="padding:3px 10px 3px 0;font-family:ui-monospace,monospace;font-size:12px;'+(mine?"color:#8fe3bd":"")+'">'+esc(x.k)+(mine?" \u2190 this assessment":"")+'</td><td style="padding:3px 0;text-align:right;font-variant-numeric:tabular-nums">'+fmtKB(x.b)+'</td></tr>';}).join("");
+      box.innerHTML='<table style="width:100%;max-width:520px;border-collapse:collapse">'+rows+'<tr><td style="padding:6px 10px 0 0;border-top:1px solid #6b5a3c"><b>Total</b></td><td style="padding:6px 0 0;text-align:right;border-top:1px solid #6b5a3c"><b>'+fmtKB(uu.total)+'</b></td></tr></table>'
+        +'<p style="margin:8px 0 0;color:#d9c8a6">Items above that are not this assessment belong to other pages on this address. Clear them from your browser settings (Site settings \u2192 Cookies and site data) if they are no longer needed \u2014 review before deleting, as this cannot be undone.</p>';}
+    box.style.display="block";db.textContent="Hide details";});}
 const _restored=loadState();
 renderAll();updateScores();renderCompare();renderGuide("");renderEvidenceScores();
-if(!storageOK())showPersistWarn();
+if(SAVE_OK===false||SAVE_TRIM>0||!storageOK())showPersistWarn();
 window.addEventListener("beforeunload",saveState);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")saveState();});
 if(typeof _restored==="string"){const ns=Object.keys(EVSCORES).length;

@@ -411,7 +411,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 <body>
 <header>
   <div class="bar">
-    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.2.3</span></span>
+    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.2.4</span></span>
       <span class="s">Reuel et al. FAccT '25 model · aligned to King V governance & global RAI standards · 13 organisational sub-components, 8 operational dimensions</span></div>
     <div class="tools">
       <input type="file" id="file" accept=".xlsx" hidden>
@@ -502,7 +502,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 
       <div class="mm-wrap">
         <div class="mm">
-          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.2.3 &middot; two pillars</span></div>
+          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.2.4 &middot; two pillars</span></div>
           <div class="mm-split">
             <div class="mm-branch"><div class="mm-node pA">Pillar A &middot; Organisational</div><div class="mm-arrow">↓</div><div class="mm-node">13 Sub-components<br><span>GOV &hellip; PVC &middot; rated L1&ndash;L5 / N/A</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per level<br><span>L2&ndash;L5 &middot; 52 sets</span></div></div>
             <div class="mm-branch"><div class="mm-node pB">Pillar B &middot; Operational</div><div class="mm-arrow">↓</div><div class="mm-node">8 Dimensions &middot; 41 Measures<br><span>PRV &hellip; GAI &middot; binary</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per measure<br><span>41 sets</span></div></div>
@@ -956,6 +956,40 @@ function renderReport(){
   const orgEvidenced=DATA.org.filter(o2=>{const s=S.org[o2.id];return !s.na&&s.level;}).length;
   const operRel=DATA.oper.filter(d=>S.oper[d.id].relevant==="Y").length;
   const today=new Date().toISOString().slice(0,10);
+  /* The tables say WHAT was rated; the commentary says WHY. A maturity profile without the assessor's
+     reasoning is not reviewable evidence -- a reader cannot tell a considered judgement from a guess,
+     and a second assessor has nothing to reconcile against. Only recorded notes appear; nothing is
+     inferred or auto-written. */
+  const cmtOrg=DATA.org.map(o2=>{const st=S.org[o2.id];const n=(st.notes||"").trim();if(!n)return "";
+      const lv=st.na?"N/A":(st.level?("L"+st.level+(st.progressing&&st.level<5?" \u2192 "+(st.level+1)+" in progress":"")):"not yet rated");
+      const ev=(st.evidence||"").trim();
+      return `<div class="cmt-item" style="margin:0 0 10px;padding-left:10px;border-left:2px solid #d3dae2">
+        <div style="font-weight:600">${esc(o2.name)} <span style="font-weight:400;color:#5a6b80">\u2014 ${esc(lv)}</span></div>
+        ${ev?`<div style="font-size:12px;color:#5a6b80">Evidence cited: ${esc(ev)}</div>`:""}
+        <div style="white-space:pre-wrap">${esc(n)}</div></div>`;}).filter(Boolean).join("");
+
+  const cmtOper=DATA.oper.map(d=>{const st=S.oper[d.id];const dn=(st.notes||"").trim();
+      const ms=d.measures.map((m,i)=>{const mn=((st.mnotes||{})[i]||"").trim();if(!mn)return "";
+        const cur=st.status[i]||"not yet rated";
+        return `<div style="margin:6px 0 0 12px;padding-left:10px;border-left:2px solid #e3e8ee">
+          <div style="font-size:12px;color:#5a6b80"><b>${esc(m.id)}</b> \u00b7 ${esc(m.text)} \u2014 <i>${esc(cur)}</i></div>
+          <div style="white-space:pre-wrap">${esc(mn)}</div></div>`;}).filter(Boolean).join("");
+      if(!dn&&!ms)return "";
+      const de=(st.evidence||"").trim();
+      return `<div class="cmt-item" style="margin:0 0 12px;padding-left:10px;border-left:2px solid #d3dae2">
+        <div style="font-weight:600">${esc(d.name)}</div>
+        ${de?`<div style="font-size:12px;color:#5a6b80">Evidence cited: ${esc(de)}</div>`:""}
+        ${dn?`<div style="white-space:pre-wrap">${esc(dn)}</div>`:""}${ms}</div>`;}).filter(Boolean).join("");
+
+  const cmtN=(cmtOrg?1:0)+(cmtOper?1:0);
+  const cmtSection=cmtN
+    ? `<h3 style="font-family:'Space Grotesk';margin:20px 0 6px">Assessor commentary \u2014 the reasoning behind the ratings</h3>
+       <p class="hint" style="margin:0 0 10px">Recorded by the assessor. These notes carry the judgement the scores cannot: what is actually held, what is missing, and why this rating rather than the one above or below it.</p>
+       ${cmtOrg?`<div style="margin-bottom:12px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#5a6b80;margin-bottom:6px">Organisational</div>${cmtOrg}</div>`:""}
+       ${cmtOper?`<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#5a6b80;margin-bottom:6px">Operational</div>${cmtOper}</div>`:""}`
+    : `<h3 style="font-family:'Space Grotesk';margin:20px 0 6px">Assessor commentary \u2014 the reasoning behind the ratings</h3>
+       <p class="hint" style="margin:0 0 10px"><b>No assessor notes recorded yet.</b> The profile below shows the ratings but not the reasoning for them. Before sign-off, add notes against the sub-components and measures that carry the most weight \u2014 a rating a reviewer cannot interrogate is weak evidence, however carefully it was made.</p>`;
+
   const signHTML=SIGN.map(s=>`<div><label>${esc(s.label)}</label>${s.ta?`<textarea rows="2" data-sign="${s.id}">${esc(S.sign[s.id])}</textarea>`:`<input type="text" data-sign="${s.id}" value="${esc(S.sign[s.id])}">`}</div>`).join("");
   const _evEids=Object.keys(EVSCORES);let evSection="";
   if(_evEids.length){let evAll=[];_evEids.forEach(e=>evAll=evAll.concat(EVSCORES[e].map(x=>x.score)));
@@ -981,6 +1015,7 @@ function renderReport(){
     </div>
     <p style="font-size:13px;color:#5a6b80;margin:0 0 14px">Coverage: ${oc.done}/${oc.total} organisational sub-components assessed · ${pc.done}/${pc.total} operational dimensions assessed${allCmpl?'':' — <b>assessment incomplete; the maturity score is withheld until every item is assessed or marked N/A</b>'}. This report is decision-support, not a verdict.</p>
     ${evSection}
+    ${cmtSection}
     <h3 style="font-family:'Space Grotesk';margin:18px 0 6px">A · Organisational maturity profile</h3>
     <table class="rtbl"><tr><th>Sub-component</th><th>Level</th><th>Points</th><th>Evidence held (Evidence ID · artefacts confirmed)</th><th>Evidence quality</th></tr>${orgRows}</table>
     <h3 style="font-family:'Space Grotesk';margin:20px 0 6px">B · Operational maturity profile</h3>
@@ -1365,7 +1400,7 @@ function downloadGuide(){
   try{
     const wb=XLSX.utils.book_new();
     // 1) Metamodel / read-me
-    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.2.3 · generated "+new Date().toISOString().slice(0,10)],[],
+    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.2.4 · generated "+new Date().toISOString().slice(0,10)],[],
       ["This workbook lists every artefact template (the evidence guide), an illustrative sample entry for each, and a worked example."],[],
       ["METAMODEL — entity","Meaning","ID pattern","Count"],
       ["Pillar","The two halves of the model","A / B","2"],

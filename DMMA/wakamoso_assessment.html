@@ -411,7 +411,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 <body>
 <header>
   <div class="bar">
-    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.2.2</span></span>
+    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.2.3</span></span>
       <span class="s">Reuel et al. FAccT '25 model · aligned to King V governance & global RAI standards · 13 organisational sub-components, 8 operational dimensions</span></div>
     <div class="tools">
       <input type="file" id="file" accept=".xlsx" hidden>
@@ -502,7 +502,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 
       <div class="mm-wrap">
         <div class="mm">
-          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.2.2 &middot; two pillars</span></div>
+          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.2.3 &middot; two pillars</span></div>
           <div class="mm-split">
             <div class="mm-branch"><div class="mm-node pA">Pillar A &middot; Organisational</div><div class="mm-arrow">↓</div><div class="mm-node">13 Sub-components<br><span>GOV &hellip; PVC &middot; rated L1&ndash;L5 / N/A</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per level<br><span>L2&ndash;L5 &middot; 52 sets</span></div></div>
             <div class="mm-branch"><div class="mm-node pB">Pillar B &middot; Operational</div><div class="mm-arrow">↓</div><div class="mm-node">8 Dimensions &middot; 41 Measures<br><span>PRV &hellip; GAI &middot; binary</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per measure<br><span>41 sets</span></div></div>
@@ -680,7 +680,7 @@ const SIGN=[{id:"standing",label:"Assessed maturity standing (in your words)",ta
  {id:"date",label:"Date of assessment / next review"}];
 const S={org:{},oper:{},sign:{}};
 DATA.org.forEach(o=>S.org[o.id]={level:null,na:false,progressing:false,evidence:"",notes:"",confirm:{},superseded:{}});
-DATA.oper.forEach(d=>S.oper[d.id]={relevant:null,status:{},evidence:"",notes:""});
+DATA.oper.forEach(d=>S.oper[d.id]={relevant:null,status:{},evidence:"",notes:"",mnotes:{}});
 SIGN.forEach(s=>S.sign[s.id]="");
 const collapsed=new Set();
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
@@ -707,7 +707,7 @@ function saveAppFile(){try{
   const ev=Object.keys(EVSCORES).length;
   toast("Saved a copy of the app with your data baked in"+(ev?(" ("+ev+" evidence sets)"):"")+" \u2014 open that .html to continue where you left off.");
 }catch(e){console.error(e);toast("Couldn't build the save file in this browser.",true);}}
-let SAVE_OK=null,SAVE_ERR="",LOAD_SRC="",SAVE_TRIM=0,PW_DISMISSED="",EV_TRIMMED=0,TRIM_ERR="";
+let SAVE_OK=null,SAVE_ERR="",LOAD_SRC="",SAVE_TRIM=0,PW_DISMISSED="",EV_TRIMMED=0,TRIM_ERR="",LOCAL_SAVED_AT="";
 /* Auto-save must never fail quietly: a swallowed error looks identical to a successful save,
    and the assessor only discovers the loss after re-importing evidence for the third time.
 
@@ -766,6 +766,7 @@ function loadState(){try{
 /* Applies a snapshot to live state. Extracted from loadState so the Team-sync pull path reuses
    exactly the same merge rules -- one code path, one set of semantics, wherever state arrives from. */
 function applySnapshot(d){if(!d)return false;
+  LOCAL_SAVED_AT=d.savedAt||"";
   EV_TRIMMED=d.trim||0;
   if(d.scores){EVSCORES=d.scores;EVNAMES=d.evnames||{};EVSCORES_AT=d.scoresAt||null;}
   if(d.org)Object.keys(d.org).forEach(k=>{if(S.org[k])Object.assign(S.org[k],d.org[k]);});
@@ -853,8 +854,15 @@ function renderOper(){
     const ms=d.measures.map((m,i)=>{const cur=st.status[i];
       const sts=STATUSES.map(s=>`<button class="st ${cur===s?'on':''} ${s==='Fully operationalised'?'full':''}" data-dim="${d.id}" data-mi="${i}" data-st="${esc(s)}">${esc(s)}</button>`).join("")
         +`<button class="st na ${cur==='N/A'?'on':''}" data-dim="${d.id}" data-mi="${i}" data-st="N/A" title="Not applicable — excluded from score">N/A</button>`;
+      /* The status button records WHAT was decided; this records WHY. That rationale is what makes a
+         rating reviewable — and what a second assessor needs when Compare flags a disagreement. */
+      const mn=(st.mnotes&&st.mnotes[i])||"";
+      const noteHtml=`<details class="mnote"${mn?" open":""} style="margin:6px 0 0">
+          <summary style="cursor:pointer;font-size:12px;color:${mn?"#1f6f6b":"#5a6b80"};list-style:none;user-select:none">${mn?"\u25BE Assessor note":"\uFF0B Add assessor note"}</summary>
+          <textarea rows="2" data-mnote="${d.id}" data-mi="${i}" placeholder="Why this status? Cite what you hold, what is missing, and who confirmed it." style="width:100%;box-sizing:border-box;margin-top:5px;padding:7px 9px;border:1px solid #d3dae2;border-radius:6px;font:13px Inter,system-ui,sans-serif;color:#16243a;resize:vertical">${esc(mn)}</textarea>
+        </details>`;
       return `<div class="measure"><div class="mtxt">${esc(m.text)}</div>
-        <div class="mart">Evidence: <b>${m.id}</b> — ${esc(m.art)}${evBadge(scoreRollup(m.id))}</div><div class="statuses">${sts}</div></div>`;}).join("");
+        <div class="mart">Evidence: <b>${m.id}</b> — ${esc(m.art)}${evBadge(scoreRollup(m.id))}</div><div class="statuses">${sts}</div>${noteHtml}</div>`;}).join("");
     return `<div class="card ${col?'collapsed':''}">
       <div class="card-h"><div class="meta"><h3>${esc(d.name)}${d.ext?tagHTML("wakamoso"):""}</h3><p class="desc">${esc(d.def)}</p><span class="aim">What this shows — ${esc(d.aim)}</span></div>
         <span class="scorepill ${pillNa?'na':''}">${pill}</span>
@@ -1030,11 +1038,12 @@ document.addEventListener("input",e=>{const t=e.target;
   else if(t.dataset.notes!=null)S.org[t.dataset.notes].notes=t.value;
   else if(t.dataset.oevid!=null)S.oper[t.dataset.oevid].evidence=t.value;
   else if(t.dataset.onotes!=null)S.oper[t.dataset.onotes].notes=t.value;
+  else if(t.dataset.mnote!=null){const ms=S.oper[t.dataset.mnote];ms.mnotes=ms.mnotes||{};ms.mnotes[+t.dataset.mi]=t.value;}
   else if(t.dataset.sign!=null)S.sign[t.dataset.sign]=t.value;
   else if(t.id==="regFilter")renderEvidence(t.value);
   else if(t.id==="tplFilter")renderTemplates(t.value);
   else if(t.id==="guideFilter")renderGuide(t.value);
-  if(t.dataset.evid!=null||t.dataset.notes!=null||t.dataset.oevid!=null||t.dataset.onotes!=null||t.dataset.sign!=null)saveSoon();});
+  if(t.dataset.evid!=null||t.dataset.notes!=null||t.dataset.oevid!=null||t.dataset.onotes!=null||t.dataset.mnote!=null||t.dataset.sign!=null)saveSoon();});
 $$("#nav a").forEach(a=>a.addEventListener("click",()=>{const v=a.dataset.v;
   $$("#nav a").forEach(x=>x.classList.toggle("on",x===a));
   $$("section.view").forEach(s=>s.classList.toggle("on",s.id===v));window.scrollTo({top:0,behavior:"smooth"});}));
@@ -1102,13 +1111,13 @@ function exportXlsx(){
   orgRows.push([],["ORGANIZATIONAL MATURITY SCORE","","","","","","","",scCell(o,oc),bdCell(o,oc)]);
   const w2=XLSX.utils.aoa_to_sheet(orgRows);w2["!cols"]=[{wch:34},{wch:12},{wch:24},{wch:24},{wch:24},{wch:24},{wch:24},{wch:11},{wch:8},{wch:22},{wch:28}];
   XLSX.utils.book_append_sheet(wb,w2,"2. Organizational Maturity");
-  const opRows=[["Dimension","Relevant?","Measure","Evidence ID","Status","Score","Notes"]];
+  const opRows=[["Dimension","Relevant?","Measure","Evidence ID","Status","Score","Assessor note (measure)","Dimension notes"]];
   DATA.oper.forEach(d=>{const st=S.oper[d.id],ds=dimScore(d);
     d.measures.forEach((m,i)=>{const v=st.status[i]||"";const sc=st.relevant==="N"?"n/a":((v&&v!=="N/A")?(v==="Fully operationalised"?100:0):"");
-      opRows.push([i===0?d.name:"",i===0?(st.relevant||""):"",m.text,m.id,v,sc,i===0?st.notes:""]);});
-    opRows.push([d.name+" — dimension score","","","","",st.relevant==="N"?"n/a":(!dimComplete(d)?(st.relevant==="Y"?dimRated(d)+"/"+d.measures.length+" rated — pending":""):(ds==null?"all N/A":Math.round(ds))),""],[]);});
+      opRows.push([i===0?d.name:"",i===0?(st.relevant||""):"",m.text,m.id,v,sc,(st.mnotes&&st.mnotes[i])||"",i===0?st.notes:""]);});
+    opRows.push([d.name+" — dimension score","","","","",st.relevant==="N"?"n/a":(!dimComplete(d)?(st.relevant==="Y"?dimRated(d)+"/"+d.measures.length+" rated — pending":""):(ds==null?"all N/A":Math.round(ds))),"",""],[]);});
   opRows.push(["OPERATIONAL MATURITY SCORE","","","","",scCell(p,pc),bdCell(p,pc)]);
-  const w3=XLSX.utils.aoa_to_sheet(opRows);w3["!cols"]=[{wch:42},{wch:10},{wch:54},{wch:13},{wch:20},{wch:8},{wch:26}];
+  const w3=XLSX.utils.aoa_to_sheet(opRows);w3["!cols"]=[{wch:42},{wch:10},{wch:54},{wch:13},{wch:20},{wch:8},{wch:46},{wch:26}];
   XLSX.utils.book_append_sheet(wb,w3,"3. Operational Maturity");
   const sc=[["Maturity Scorecard — input to human judgment (NOT a verdict)"],[],
     ["Coverage", oc.done+"/"+oc.total+" organisational assessed", pc.done+"/"+pc.total+" operational assessed"],
@@ -1123,7 +1132,7 @@ function exportXlsx(){
   const w5=XLSX.utils.aoa_to_sheet(reg);w5["!cols"]=[{wch:13},{wch:30},{wch:34},{wch:42},{wch:30},{wch:32},{wch:24}];XLSX.utils.book_append_sheet(wb,w5,"5. Evidence Register");
   const d=[["section","key","value"]];
   DATA.org.forEach(o2=>{const st=S.org[o2.id];d.push(["org",o2.id+".level",st.na?"NA":(st.level||"")]);d.push(["org",o2.id+".evidence",st.evidence]);d.push(["org",o2.id+".notes",st.notes]);d.push(["org",o2.id+".confirm",JSON.stringify(st.confirm||{})]);d.push(["org",o2.id+".superseded",JSON.stringify(st.superseded||{})]);d.push(["org",o2.id+".progressing",st.progressing?"1":""]);});
-  DATA.oper.forEach(x=>{const st=S.oper[x.id];d.push(["oper",x.id+".relevant",st.relevant||""]);d.push(["oper",x.id+".evidence",st.evidence]);d.push(["oper",x.id+".notes",st.notes]);x.measures.forEach((m,i)=>d.push(["oper",x.id+".status."+i,st.status[i]||""]));});
+  DATA.oper.forEach(x=>{const st=S.oper[x.id];d.push(["oper",x.id+".relevant",st.relevant||""]);d.push(["oper",x.id+".evidence",st.evidence]);d.push(["oper",x.id+".notes",st.notes]);x.measures.forEach((m,i)=>{d.push(["oper",x.id+".status."+i,st.status[i]||""]);const mn=st.mnotes&&st.mnotes[i];if(mn)d.push(["oper",x.id+".mnote."+i,mn]);});});
   SIGN.forEach(s=>d.push(["sign",s.id,S.sign[s.id]]));
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(d),"_Data");
   (function(){const eids=Object.keys(EVSCORES);if(eids.length){const rows=[["Evidence set ID","Evidence set","Section","Element","Score","Band","Comment"]];eids.forEach(e=>{(EVSCORES[e]||[]).forEach(x=>{rows.push([e,EVNAMES[e]||"",x.sec,x.nm||"",x.score,x.band||bandOf(x.score),x.comment||""]);});});const ws=XLSX.utils.aoa_to_sheet(rows);XLSX.utils.book_append_sheet(wb,ws,"_Scores");}})();
@@ -1131,7 +1140,7 @@ function exportXlsx(){
   toast("Exported workbook to your downloads.");
 }
 /* IMPORT */
-function resetState(){DATA.org.forEach(o=>S.org[o.id]={level:null,na:false,progressing:false,evidence:"",notes:"",confirm:{},superseded:{}});DATA.oper.forEach(d=>S.oper[d.id]={relevant:null,status:{},evidence:"",notes:""});SIGN.forEach(s=>S.sign[s.id]="");
+function resetState(){DATA.org.forEach(o=>S.org[o.id]={level:null,na:false,progressing:false,evidence:"",notes:"",confirm:{},superseded:{}});DATA.oper.forEach(d=>S.oper[d.id]={relevant:null,status:{},evidence:"",notes:"",mnotes:{}});SIGN.forEach(s=>S.sign[s.id]="");
 const collapsed=new Set();}
 function importXlsx(file){const rd=new FileReader();rd.onload=ev=>{try{
   const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"});
@@ -1150,7 +1159,7 @@ function importXlsx(file){const rd=new FileReader();rd.onload=ev=>{try{
 function loadData(sheet){const rows=XLSX.utils.sheet_to_json(sheet,{header:1});resetState();let any=false;
   rows.slice(1).forEach(r=>{const sec=r[0],key=r[1],val=r[2]==null?"":String(r[2]);if(!sec||!key)return;any=true;
     if(sec==="org"){const[id,f]=key.split(".");if(!S.org[id])return;if(f==="level"){if(val==="NA")S.org[id].na=true;else if(val!=="")S.org[id].level=+val;}else if(f==="evidence")S.org[id].evidence=val;else if(f==="notes")S.org[id].notes=val;else if(f==="confirm"){try{S.org[id].confirm=JSON.parse(val||"{}");}catch(_){S.org[id].confirm={};}}else if(f==="progressing"){S.org[id].progressing=(val==="1"||val==="true");}else if(f==="superseded"){try{S.org[id].superseded=JSON.parse(val||"{}");}catch(_){S.org[id].superseded={};}}}
-    else if(sec==="oper"){const p=key.split(".");const id=p[0];if(!S.oper[id])return;if(p[1]==="relevant")S.oper[id].relevant=val||null;else if(p[1]==="evidence")S.oper[id].evidence=val;else if(p[1]==="notes")S.oper[id].notes=val;else if(p[1]==="status"&&val!=="")S.oper[id].status[+p[2]]=val;}
+    else if(sec==="oper"){const p=key.split(".");const id=p[0];if(!S.oper[id])return;if(p[1]==="relevant")S.oper[id].relevant=val||null;else if(p[1]==="evidence")S.oper[id].evidence=val;else if(p[1]==="notes")S.oper[id].notes=val;else if(p[1]==="status"&&val!=="")S.oper[id].status[+p[2]]=val;else if(p[1]==="mnote"&&val!==""){S.oper[id].mnotes=S.oper[id].mnotes||{};S.oper[id].mnotes[+p[2]]=val;}}
     else if(sec==="sign"){if(S.sign[key]!=null)S.sign[key]=val;}});return any;}
 function loadLegacy(wb){resetState();let any=false;const sn=n=>wb.SheetNames.find(s=>s.trim().startsWith(n));
   const o2=sn("2.");if(o2){XLSX.utils.sheet_to_json(wb.Sheets[o2],{header:1,blankrows:false}).forEach(r=>{const first=(r[0]||"").toString();
@@ -1168,7 +1177,7 @@ function parseRespondent(wb,fname){const sh=wb.Sheets["_Data"];if(!sh)return nul
   const r={name:nm,org:{},oper:{},sign:{}};
   rows.slice(1).forEach(row=>{const sec=row[0],key=row[1],val=row[2]==null?"":String(row[2]);if(!sec||!key)return;
     if(sec==="org"){const[id,f]=key.split(".");if(f==="level")r.org[id]=val;}
-    else if(sec==="oper"){const p=key.split(".");const id=p[0];r.oper[id]=r.oper[id]||{status:{},relevant:""};if(p[1]==="relevant")r.oper[id].relevant=val;else if(p[1]==="status")r.oper[id].status[+p[2]]=val;}
+    else if(sec==="oper"){const p=key.split(".");const id=p[0];r.oper[id]=r.oper[id]||{status:{},relevant:"",mnotes:{}};if(p[1]==="relevant")r.oper[id].relevant=val;else if(p[1]==="status")r.oper[id].status[+p[2]]=val;else if(p[1]==="mnote")r.oper[id].mnotes[+p[2]]=val;}
     else if(sec==="sign")r.sign[key]=val;});
   if(r.sign.owner&&r.sign.owner.trim())r.name=r.sign.owner.trim();
   return r;}
@@ -1194,7 +1203,9 @@ function renderCompare(){const host=$("#compareOut");
   let opDiv=0;const opSecs=DATA.oper.map(d=>{
     const rowsH=d.measures.map((m,i)=>{const cells=R.map(r=>{const od=r.oper[d.id];
         if(od&&od.relevant==="N")return'<td class="r cell-na">n/r</td>';
-        const s=od&&od.status?od.status[i]:"";return s?`<td class="r">${esc(s==="Fully operationalised"?"Full":s)}</td>`:'<td class="r cell-na">—</td>';}).join("");
+        const s=od&&od.status?od.status[i]:"";const nt=(od&&od.mnotes&&od.mnotes[i])||"";
+        const mk=nt?`<span class="mnote-mk" title="${esc(r.name)} noted: ${esc(nt)}" style="cursor:help;color:#1f6f6b;font-weight:700">\u00B0</span>`:"";
+        return s?`<td class="r">${esc(s==="Fully operationalised"?"Full":s)}${mk}</td>`:`<td class="r cell-na">\u2014${mk}</td>`;}).join("");
       const vals=R.map(r=>{const od=r.oper[d.id];if(od&&od.relevant==="N")return null;return od&&od.status&&od.status[i]?od.status[i]:null;}).filter(Boolean);
       const distinct=[...new Set(vals)];let cls="partial",txt="—";
       if(vals.length>=2){if(distinct.length===1){cls="agree";txt="agree";}else{const anyFull=distinct.includes("Fully operationalised"),allFull=distinct.every(x=>x==="Fully operationalised");cls=(anyFull&&!allFull)?"major":"minor";txt="differ";opDiv++;}}
@@ -1209,7 +1220,7 @@ function renderCompare(){const host=$("#compareOut");
        <div class="cmp-card ${orgMajor?'warn':''}"><div class="big">${orgMajor}</div><div class="lab">of those \u22652 levels apart</div></div>
        <div class="cmp-card ${opDiv?'warn':''}"><div class="big">${opDiv}/41</div><div class="lab">Operational measures<br>with disagreement</div></div>
      </div>
-     <p class="hint" style="margin:0 0 14px">Rows are sorted as in the assessment. <b>Divergence</b> flags where assessors chose different levels — green = agree, amber = within one level, red = two or more levels apart (or a split on whether a control is fully operationalised). These are discussion points for reconciliation, not errors.</p>
+     <p class="hint" style="margin:0 0 14px">Rows are sorted as in the assessment. <b>Divergence</b> flags where assessors chose different levels — green = agree, amber = within one level, red = two or more levels apart (or a split on whether a control is fully operationalised). These are discussion points for reconciliation, not errors. A <span class="mnote-mk" style="color:#1f6f6b;font-weight:700">\u00B0</span> marks a measure where that assessor recorded a note \u2014 hover to read their reasoning.</p>
      <div class="cmp-divider">A · Organisational maturity — level chosen by each respondent</div>
      <div style="overflow-x:auto"><table class="cmptbl">${head}${orgBody}</table></div>
      <div class="cmp-divider">B · Operational maturity — status chosen by each respondent</div>
@@ -1354,7 +1365,7 @@ function downloadGuide(){
   try{
     const wb=XLSX.utils.book_new();
     // 1) Metamodel / read-me
-    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.2.2 · generated "+new Date().toISOString().slice(0,10)],[],
+    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.2.3 · generated "+new Date().toISOString().slice(0,10)],[],
       ["This workbook lists every artefact template (the evidence guide), an illustrative sample entry for each, and a worked example."],[],
       ["METAMODEL — entity","Meaning","ID pattern","Count"],
       ["Pillar","The two halves of the model","A / B","2"],
@@ -1466,7 +1477,12 @@ function ghName(){try{return localStorage.getItem(NKEY)||"";}catch(_){return "";
    Note what is absent: no token, ever. */
 function teamSnapshot(){return{org:S.org,oper:S.oper,sign:S.sign,scores:EVSCORES,evnames:EVNAMES,
   scoresAt:EVSCORES_AT,savedAt:new Date().toISOString(),savedBy:ghName()||"unnamed editor"};}
-function localSavedAt(){try{const raw=localStorage.getItem(LSKEY);if(raw){const d=JSON.parse(raw);if(d&&d.savedAt)return d.savedAt;}}catch(_){}return TEAM.lastApplied||"";}
+/* Boot calls saveState() before the team check runs, which re-stamps savedAt to "now". Comparing the
+   shared copy against that would make local state look permanently fresher, so a colleague's earlier
+   publish would never be announced. Compare against when the loaded state was actually authored. */
+function localSavedAt(){if(LOCAL_SAVED_AT)return LOCAL_SAVED_AT;
+  try{const raw=localStorage.getItem(LSKEY);if(raw){const d=JSON.parse(raw);if(d&&d.savedAt)return d.savedAt;}}catch(_){}
+  return TEAM.lastApplied||"";}
 function ghHeaders(t){return{Authorization:"Bearer "+t,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};}
 function ghMsg(code){
   if(code===401)return "Token rejected (401). It may be mistyped, revoked or expired.";
@@ -1542,7 +1558,7 @@ function teamPull(){
   if(TEAM.busy)return;TEAM.busy=true;teamStatus("Pulling\u2026");
   ghGet(t).then(function(res){
     if(res.missing){TEAM.sha=null;teamStatus("Nothing published yet. Use Publish to create the shared copy.");return;}
-    applySnapshot(res.data);TEAM.sha=res.sha;TEAM.lastApplied=res.data.savedAt||"";
+    applySnapshot(res.data);TEAM.sha=res.sha;TEAM.lastApplied=res.data.savedAt||"";LOCAL_SAVED_AT=res.data.savedAt||"";
     saveState();teamRerender();
     const who=res.data.savedBy?" by "+res.data.savedBy:"";
     teamStatus("Pulled the shared copy"+who+" ("+String(res.data.savedAt||"").slice(0,16).replace("T"," ")+").","ok");
@@ -1555,7 +1571,7 @@ function teamPublish(){
   if(TEAM.busy)return;TEAM.busy=true;teamStatus("Publishing\u2026");
   const snap=teamSnapshot();
   ghPut(t,snap,TEAM.sha,"Assessment update \u2014 "+snap.savedBy+" \u2014 "+snap.savedAt)
-  .then(function(sha){TEAM.sha=sha||TEAM.sha;TEAM.lastApplied=snap.savedAt;
+  .then(function(sha){TEAM.sha=sha||TEAM.sha;TEAM.lastApplied=snap.savedAt;LOCAL_SAVED_AT=snap.savedAt;
     teamStatus("Published as "+snap.savedBy+".","ok");toast("Published to the team copy.");})
   .catch(function(e){
     if(e.conflict){teamStatus("Someone published newer changes \u2014 Pull latest first, reconcile, then publish again.","err");

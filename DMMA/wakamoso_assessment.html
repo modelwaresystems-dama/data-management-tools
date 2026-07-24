@@ -411,10 +411,11 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 <body>
 <header>
   <div class="bar">
-    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.2.4</span></span>
+    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.5.0</span></span>
       <span class="s">Reuel et al. FAccT '25 model · aligned to King V governance & global RAI standards · 13 organisational sub-components, 8 operational dimensions</span></div>
     <div class="tools">
       <input type="file" id="file" accept=".xlsx" hidden>
+      <span id="statusChip" title="Assessment status">v0.1 &middot; Draft</span>
       <span id="saveChip" title="Persistence status">Auto-save &mdash;</span>
       <button class="btn" id="teamBtn" title="Share one assessment with your co-editors via a private GitHub repository">☁ Team</button>
       <button class="btn" id="importBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Import</button>
@@ -502,7 +503,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 
       <div class="mm-wrap">
         <div class="mm">
-          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.2.4 &middot; two pillars</span></div>
+          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.5.0 &middot; two pillars</span></div>
           <div class="mm-split">
             <div class="mm-branch"><div class="mm-node pA">Pillar A &middot; Organisational</div><div class="mm-arrow">↓</div><div class="mm-node">13 Sub-components<br><span>GOV &hellip; PVC &middot; rated L1&ndash;L5 / N/A</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per level<br><span>L2&ndash;L5 &middot; 52 sets</span></div></div>
             <div class="mm-branch"><div class="mm-node pB">Pillar B &middot; Operational</div><div class="mm-arrow">↓</div><div class="mm-node">8 Dimensions &middot; 41 Measures<br><span>PRV &hellip; GAI &middot; binary</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per measure<br><span>41 sets</span></div></div>
@@ -678,7 +679,7 @@ const SIGN=[{id:"standing",label:"Assessed maturity standing (in your words)",ta
  {id:"owner",label:"Accountable owner (name & role)"},
  {id:"board",label:"Reviewed / escalated to Ethical Governance Board?"},
  {id:"date",label:"Date of assessment / next review"}];
-const S={org:{},oper:{},sign:{}};
+const S={org:{},oper:{},sign:{},reviews:[],meta:null,fixes:[]};
 DATA.org.forEach(o=>S.org[o.id]={level:null,na:false,progressing:false,evidence:"",notes:"",confirm:{},superseded:{}});
 DATA.oper.forEach(d=>S.oper[d.id]={relevant:null,status:{},evidence:"",notes:"",mnotes:{}});
 SIGN.forEach(s=>S.sign[s.id]="");
@@ -692,7 +693,7 @@ function tagHTML(p){return p==="kingv"?'<span class="tag king">King V/RAI review
 /* persistence — this is a standalone file; ratings are saved in this browser so a refresh or reopen keeps them */
 const LSKEY="wakamoso_assessment_v2";let saveT;
 function saveAppFile(){try{
-  const state={org:S.org,oper:S.oper,sign:S.sign,scores:EVSCORES,evnames:EVNAMES,scoresAt:EVSCORES_AT,savedAt:new Date().toISOString()};
+  const state={org:S.org,oper:S.oper,sign:S.sign,reviews:S.reviews,meta:S.meta,fixes:S.fixes,scores:EVSCORES,evnames:EVNAMES,scoresAt:EVSCORES_AT,savedAt:new Date().toISOString()};
   const b64=btoa(unescape(encodeURIComponent(JSON.stringify(state))));
   const clone=document.documentElement.cloneNode(true);
   ["orgCards","operCards","tplCards","tplIndex","reportDoc","insightsBody","evScorePanel","guideGrid","strip"].forEach(id=>{const el=clone.querySelector("#"+id);if(el)el.innerHTML="";});
@@ -723,10 +724,10 @@ const SAVE_TIERS=[
   {id:2,lbl:"scores only \u2014 comments and element names not cached", ev:()=>mapEv(e=>({sec:e.sec,score:e.score}))},
   {id:3,lbl:"ratings only \u2014 imported evidence not cached",  ev:()=>null}
 ];
-function saveState(){let lastErr="";
+function saveState(){touchMeta();let lastErr="";
   for(let i=0;i<SAVE_TIERS.length;i++){const t=SAVE_TIERS[i];let sc;
     try{sc=t.ev();}catch(_){continue;}
-    const p={org:S.org,oper:S.oper,sign:S.sign,scores:sc||{},evnames:sc?EVNAMES:{},scoresAt:sc?EVSCORES_AT:null,savedAt:new Date().toISOString(),trim:t.id};
+    const p={org:S.org,oper:S.oper,sign:S.sign,reviews:S.reviews,meta:S.meta,fixes:S.fixes,scores:sc||{},evnames:sc?EVNAMES:{},scoresAt:sc?EVSCORES_AT:null,savedAt:new Date().toISOString(),trim:t.id};
     try{localStorage.setItem(LSKEY,JSON.stringify(p));SAVE_OK=true;SAVE_ERR="";SAVE_TRIM=t.id;TRIM_ERR=t.id>0?lastErr:"";updateSaveChip();return true;}
     catch(e){lastErr=(e&&(e.name||e.message))||"blocked";}}
   SAVE_OK=false;SAVE_ERR=lastErr;SAVE_TRIM=-1;updateSaveChip();return false;}
@@ -772,6 +773,10 @@ function applySnapshot(d){if(!d)return false;
   if(d.org)Object.keys(d.org).forEach(k=>{if(S.org[k])Object.assign(S.org[k],d.org[k]);});
   if(d.oper)Object.keys(d.oper).forEach(k=>{if(S.oper[k])Object.assign(S.oper[k],d.oper[k]);});
   if(d.sign)Object.assign(S.sign,d.sign);
+  if(Array.isArray(d.reviews))S.reviews=d.reviews;
+  if(d.meta&&typeof d.meta==="object")S.meta=d.meta;
+  if(Array.isArray(d.fixes))S.fixes=d.fixes;
+  metaOK();
   return d.savedAt||true;}
 function clearState(){try{localStorage.removeItem(LSKEY);}catch(_){}}
 /* scoring */
@@ -927,6 +932,228 @@ function updateScores(){const o=orgScore(),p=operScore(),all=(o!=null&&p!=null)?
   renderReport();renderInsights();}
 /* report */
 function repEvCell(ru){if(!ru)return '<span style="color:#8493a6">—</span>';const c=ru.band==="Strong"?"#1f7a4d":ru.band==="Adequate"?"#1f6f6b":ru.band==="Weak"?"#bf7d2c":"#b23b4e";return '<span style="color:'+c+';font-weight:600">'+ru.avg.toFixed(2)+' · '+ru.band+(ru.gaps?' · '+ru.gaps+' gap'+(ru.gaps>1?'s':''):'')+'</span>';}
+/* =====================================================================================
+   REVIEW & AUDIT EVIDENCE
+   Records that a named human reviewed and signed off this assessment, and makes that record
+   verifiable later.
+
+   The signed file's BYTES are deliberately never written into the assessment state. Browser
+   storage is already tight (a 193 KB assessment has been evicted before now), and a scanned
+   signature would push the assessment itself out. What is stored is the audit metadata plus a
+   SHA-256 fingerprint of the file -- 64 characters that prove, months later, that the document
+   produced for an auditor is byte-identical to the one that was signed. The file itself belongs
+   in a system of record: the private team repository, or wherever signed governance artefacts
+   are kept, cited by location.
+
+   Nothing here is inferred. Recording a review does not change a rating, close a gap or mark the
+   assessment approved -- it records what a person attests to, and the decision remains theirs.
+   ===================================================================================== */
+const RV_DECISIONS=["Approved","Approved with conditions","Returned for rework","Noted \u2014 no decision"];
+let REVIEW_DRAFT={reviewer:"",role:"",decision:"",date:"",statement:"",location:""};
+let LC_DRAFT={to:"",by:"",note:"",bump:false};
+let FIX_DRAFT={title:"",detail:"",ref:"",owner:""};
+let REVIEW_FILE=null;   /* {name,size,type,sha256,b64} -- transient; never persisted */
+function rvBlank(){return{reviewer:"",role:"",decision:"",date:"",statement:"",location:""};}
+function fmtBytes(b){return b>=1048576?(b/1048576).toFixed(2)+" MB":Math.max(1,Math.round(b/1024))+" KB";}
+function sha256Hex(buf){
+  if(!(window.crypto&&window.crypto.subtle&&window.crypto.subtle.digest))return Promise.resolve(null);
+  return window.crypto.subtle.digest("SHA-256",buf).then(function(h){
+    return Array.prototype.map.call(new Uint8Array(h),function(x){return("0"+x.toString(16)).slice(-2);}).join("");});}
+function bufToB64(buf){const u=new Uint8Array(buf);let str="";
+  for(let i=0;i<u.length;i+=0x8000)str+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));
+  return btoa(str);}
+function readReviewFile(f){const rd=new FileReader();
+  rd.onload=function(ev){const buf=ev.target.result;
+    sha256Hex(buf).then(function(hash){
+      REVIEW_FILE={name:f.name,size:f.size,type:f.type||"",sha256:hash||"",b64:bufToB64(buf)};
+      renderReport();
+      if(!hash)toast("Read "+f.name+", but this browser cannot compute a fingerprint here \u2014 serve the page over https to enable it.",true);
+      else toast("Read "+f.name+" \u00b7 "+fmtBytes(f.size)+" \u00b7 fingerprint computed.");});};
+  rd.onerror=function(){toast("Could not read that file.",true);};
+  rd.readAsArrayBuffer(f);}
+/* Verification is the whole point of storing a fingerprint: hand it a file and it says, without
+   ambiguity, whether this is the document that was signed. */
+function verifyReviewFile(f,ix){const rec=S.reviews[ix];if(!rec||!rec.file||!rec.file.sha256){toast("That record has no fingerprint to check against.",true);return;}
+  const rd=new FileReader();
+  rd.onload=function(ev){sha256Hex(ev.target.result).then(function(hash){
+    if(!hash){toast("This browser cannot compute a fingerprint here \u2014 serve the page over https.",true);return;}
+    const ok=hash===rec.file.sha256;
+    const el=document.getElementById("rvVerify-"+ix);
+    if(el){el.style.display="block";el.style.color=ok?"#1f7a4d":"#b23b4e";
+      el.textContent=ok?("\u2713 Identical to the file recorded on "+(rec.date||rec.recordedAt||"")+" \u2014 "+f.name)
+                       :("\u2717 "+f.name+" does NOT match the recorded fingerprint. It is a different file, or it has been altered since review.");}
+    toast(ok?"Match \u2014 this is the reviewed file.":"No match \u2014 this file differs from the one recorded.",!ok);});};
+  rd.readAsArrayBuffer(f);}
+function recordReview(attach){
+  const d=REVIEW_DRAFT;
+  if(!d.reviewer.trim()||!d.date.trim()||!d.decision){
+    toast("A review record needs at least a reviewer, a date and a decision.",true);return;}
+  const rec={id:"RV-"+new Date().toISOString().replace(/[^0-9]/g,"").slice(0,14),
+    reviewer:d.reviewer.trim(),role:d.role.trim(),decision:d.decision,date:d.date.trim(),
+    statement:d.statement.trim(),location:d.location.trim(),
+    file:REVIEW_FILE?{name:REVIEW_FILE.name,size:REVIEW_FILE.size,type:REVIEW_FILE.type,sha256:REVIEW_FILE.sha256}:null,
+    repo:null,recordedAt:new Date().toISOString()};
+  const finish=function(){S.reviews.push(rec);REVIEW_DRAFT=rvBlank();REVIEW_FILE=null;
+    const ok=saveState();renderReport();
+    toast("Review recorded"+(rec.file?" with a fingerprint of "+rec.file.name:"")+"."+(ok?"":" NOTE: it could not be saved to this browser \u2014 publish or export now."),!ok);};
+  if(attach&&REVIEW_FILE&&ghToken()){
+    const path="reviews/"+rec.id+"-"+REVIEW_FILE.name.replace(/[^A-Za-z0-9._-]/g,"_");
+    toast("Uploading the signed file to the team repository\u2026");
+    ghPutFile(ghToken(),path,REVIEW_FILE.b64,"Signed review \u2014 "+rec.reviewer+" \u2014 "+rec.date)
+      .then(function(info){rec.repo={path:path,sha:(info&&info.sha)||""};finish();
+        toast("Signed file stored in the repository at "+path+".");})
+      .catch(function(e){finish();toast("Review recorded, but the upload failed: "+(e.message||"error")+". The file was not stored \u2014 keep it in your own system of record.",true);});
+  } else finish();}
+function ghPutFile(t,path,b64,msg){
+  const url=GH.api+"/repos/"+GH.owner+"/"+GH.repo+"/contents/"+encodeURI(path);
+  return fetch(url,{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders(t)),
+    body:JSON.stringify({message:msg,content:b64,branch:GH.branch})})
+    .then(function(r){if(!r.ok){const e=new Error(ghMsg(r.status));e.code=r.status;throw e;}
+      return r.json().then(function(j){return j&&j.content;});});}
+function removeReview(ix){const r=S.reviews[ix];if(!r)return;
+  if(!window.confirm("Remove the review recorded by "+(r.reviewer||"?")+" on "+(r.date||"?")+"?\n\nThis deletes the audit record from the assessment and cannot be undone. Any file already stored in the repository is NOT deleted."))return;
+  S.reviews.splice(ix,1);saveState();renderReport();toast("Review record removed.");}
+/* =====================================================================================
+   ASSESSMENT LIFECYCLE
+   A maturity assessment is not a document that is simply "done" -- it is drafted, submitted,
+   sent back for fixes and further evidence, and only then approved. The status is therefore a
+   DECLARED HUMAN DECISION with a recorded history, never something derived from the scores.
+   The tool will warn when a declaration looks inconsistent with the evidence (approving with no
+   recorded review, or with sub-components still unrated) but it will not block the person, and
+   it will never move the status by itself.
+   ===================================================================================== */
+const RV_STATUSES=[
+  {id:"draft",      label:"Draft",             c:"#5a6b80", d:"Being assessed. Not yet submitted for review."},
+  {id:"in_review",  label:"In review",         c:"#24406b", d:"Submitted; a reviewer is examining it."},
+  {id:"changes",    label:"Changes requested", c:"#bf7d2c", d:"Returned for fixes and further evidence before it can be approved."},
+  {id:"approved",   label:"Approved",          c:"#1f7a4d", d:"Reviewed and signed off at this version."},
+  {id:"superseded", label:"Superseded",        c:"#8a94a3", d:"Replaced by a later version of the assessment."}];
+function statusOf(id){return RV_STATUSES.find(x=>x.id===id)||RV_STATUSES[0];}
+function newMeta(){const n=new Date().toISOString();
+  return{version:"0.1",status:"draft",statusNote:"",statusBy:"",statusAt:n,createdAt:n,updatedAt:n,history:[]};}
+function metaOK(){if(!S.meta||typeof S.meta!=="object")S.meta=newMeta();
+  if(!Array.isArray(S.meta.history))S.meta.history=[];return S.meta;}
+/* "Last updated" must reflect real edits, so it is stamped by the save path rather than by a button. */
+function touchMeta(){const m=metaOK();m.updatedAt=new Date().toISOString();}
+function nextVersion(cur,major){const p=String(cur||"0.1").split(".");let a=parseInt(p[0],10)||0,b=parseInt(p[1],10)||0;
+  if(major){a+=1;b=0;}else{b+=1;}return a+"."+b;}
+function fmtTs(t){return t?String(t).slice(0,16).replace("T"," "):"\u2014";}
+/* Declaring a status records WHO declared it, WHEN, at WHICH version and WHY. That history is the
+   workflow's audit trail -- without it a status flag is just a label anyone can flip. */
+function setStatus(to,by,note,bump){
+  const m=metaOK(),from=m.status;
+  if(!to){toast("Choose a status first.",true);return false;}
+  if(!by||!by.trim()){toast("A status change needs a name \u2014 who is declaring it.",true);return false;}
+  const st=statusOf(to);
+  if(to==="approved"){
+    const noReview=!(S.reviews&&S.reviews.length);
+    const unrated=DATA.org.filter(o=>{const x=S.org[o.id];return !x.na&&!x.level;}).length;
+    const warn=[];
+    if(noReview)warn.push("no signed review has been recorded");
+    if(unrated)warn.push(unrated+" organisational sub-component(s) are still unrated");
+    if(warn.length&&!window.confirm("Approving this assessment, but "+warn.join(" and ")+".\n\nThe status is your declaration and the tool will record it as given. Continue?"))return false;
+  }
+  if(bump)m.version=nextVersion(m.version,to==="approved");
+  m.history.push({from:from,to:to,by:by.trim(),note:(note||"").trim(),at:new Date().toISOString(),version:m.version});
+  m.status=to;m.statusBy=by.trim();m.statusNote=(note||"").trim();m.statusAt=new Date().toISOString();
+  const ok=saveState();renderReport();updateStatusChip();
+  toast("Status set to \u201c"+st.label+"\u201d at v"+m.version+"."+(ok?"":" NOTE: could not save to this browser \u2014 publish or export now."),!ok);
+  return true;}
+function updateStatusChip(){const el=document.getElementById("statusChip");if(!el)return;
+  const m=metaOK(),st=statusOf(m.status);
+  el.textContent="v"+m.version+" \u00b7 "+st.label;
+  el.style.cssText="font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;padding:6px 9px;border-radius:6px;text-transform:uppercase;white-space:nowrap;cursor:help;background:"+st.c+";color:#fff;border:1px solid rgba(255,255,255,.18)";
+  el.title=st.label+" \u2014 "+st.d+"\nVersion "+m.version+(m.statusBy?"\nDeclared by "+m.statusBy:"")+"\nSet "+fmtTs(m.statusAt)+"\nLast edited "+fmtTs(m.updatedAt);}
+/* =====================================================================================
+   REPOSITORY-BACKED REVIEW WORKFLOW
+   Two artefacts live in the private repository alongside the working assessment:
+
+   1. reports/  \u2014 an immutable archive. Each archive freezes the snapshot AND the rendered
+      report at that moment, so the audit question "what exactly was approved, and how does it
+      differ from what we hold now?" has a real answer, with git supplying the diff.
+
+   2. Issues    \u2014 the fix loop. Each adjustment a reviewer requires becomes an issue that can be
+      assigned, discussed and closed with the new evidence attached. Closure becomes visible
+      rather than asserted.
+
+   The issue is the source of truth for its OWN state, so refreshing pulls open/closed from
+   GitHub. It is not the source of truth for the ASSESSMENT's state: all fixes closing does not
+   approve anything. The tool says so and leaves the declaration to a person.
+   ===================================================================================== */
+function ghJson(t,method,path,body){
+  return fetch(GH.api+"/repos/"+GH.owner+"/"+GH.repo+path,
+    {method:method,headers:Object.assign({"Content-Type":"application/json"},ghHeaders(t)),
+     body:body?JSON.stringify(body):undefined,cache:"no-store"})
+    .then(function(r){
+      if(r.status===403||r.status===404){const e=new Error(ghMsg(r.status)+(method!=="GET"?" Issues also need the token's \u2018Issues: Read and write\u2019 permission.":""));e.code=r.status;throw e;}
+      if(!r.ok){const e=new Error(ghMsg(r.status));e.code=r.status;throw e;}
+      return r.json();});}
+
+/* ---- archive ---- */
+function archiveStamp(){return new Date().toISOString().replace(/[-:]/g,"").slice(0,13);}
+function archiveToRepo(){
+  const t=ghToken();
+  if(!t){toast("Connect a token under \u2601 Team before archiving.",true);return Promise.resolve(false);}
+  const m=metaOK(),base="reports/v"+m.version+"-"+m.status+"-"+archiveStamp();
+  const snap=teamSnapshot();snap.archivedAt=new Date().toISOString();snap.archivedVersion=m.version;snap.archivedStatus=m.status;
+  const jsonB64=btoa(unescape(encodeURIComponent(JSON.stringify(snap,null,2))));
+  let htmlB64;
+  try{htmlB64=btoa(unescape(encodeURIComponent(reportHtmlDoc())));}
+  catch(_){htmlB64=null;}
+  const msg="Archive v"+m.version+" \u2014 "+statusOf(m.status).label+(m.statusBy?" \u2014 "+m.statusBy:"");
+  toast("Archiving v"+m.version+" to the repository\u2026");
+  return ghPutFile(t,base+".json",jsonB64,msg)
+    .then(function(){return htmlB64?ghPutFile(t,base+".html",htmlB64,msg):null;})
+    .then(function(){
+      m.archives=m.archives||[];
+      m.archives.push({version:m.version,status:m.status,at:new Date().toISOString(),by:m.statusBy||"",
+                       json:base+".json",html:htmlB64?base+".html":""});
+      saveState();renderReport();
+      toast("Archived v"+m.version+" \u2014 frozen copy filed at "+base+".*");return true;})
+    .catch(function(e){toast("Archive failed: "+(e.message||"error")+" \u2014 nothing was filed.",true);return false;});}
+
+/* ---- fixes / issues ---- */
+function fixRefOptions(){
+  let out='<option value="">\u2014 not tied to a specific item \u2014</option>';
+  out+='<optgroup label="Organisational sub-components">'+DATA.org.map(function(o){return '<option value="ORG:'+o.id+'">'+esc(o.id+" \u2014 "+o.name)+'</option>';}).join("")+'</optgroup>';
+  out+='<optgroup label="Operational measures">'+DATA.oper.map(function(d){
+    return d.measures.map(function(mm){return '<option value="OP:'+mm.id+'">'+esc(mm.id+" \u2014 "+mm.text.slice(0,70))+'</option>';}).join("");}).join("")+'</optgroup>';
+  return out;}
+function fixRefLabel(ref){if(!ref)return "";
+  if(ref.indexOf("ORG:")===0){const o=DATA.org.find(x=>x.id===ref.slice(4));return o?(o.id+" \u2014 "+o.name):ref;}
+  if(ref.indexOf("OP:")===0){let f=null;DATA.oper.forEach(d=>d.measures.forEach(mm=>{if(mm.id===ref.slice(3))f=mm;}));return f?(f.id+" \u2014 "+f.text):ref;}
+  return ref;}
+function addFix(createIssue){
+  const d=FIX_DRAFT;
+  if(!d.title.trim()){toast("A fix needs a short title describing what must change.",true);return;}
+  const m=metaOK();
+  const fx={id:"FX-"+Date.now(),title:d.title.trim(),detail:(d.detail||"").trim(),ref:d.ref||"",
+    owner:(d.owner||"").trim(),raisedAt:new Date().toISOString(),atVersion:m.version,issue:null};
+  const finish=function(){S.fixes.push(fx);FIX_DRAFT={title:"",detail:"",ref:"",owner:""};
+    saveState();renderReport();toast("Fix recorded"+(fx.issue?" and raised as issue #"+fx.issue.number:"")+".");};
+  if(createIssue&&ghToken()){
+    const bodyTxt=[d.detail||"",fx.ref?"\n\nApplies to: "+fixRefLabel(fx.ref):"",
+      "\n\nRaised from the WAKAMOSO Ethical Maturity Assessment at v"+m.version+" ("+statusOf(m.status).label+")."+
+      (fx.owner?"\nSuggested owner: "+fx.owner:"")].join("");
+    toast("Raising an issue\u2026");
+    ghJson(ghToken(),"POST","/issues",{title:fx.title,body:bodyTxt,labels:["assessment-fix"]})
+      .then(function(j){fx.issue={number:j.number,url:j.html_url,state:j.state||"open"};finish();})
+      .catch(function(e){finish();toast("Fix recorded, but the issue could not be raised: "+(e.message||"error"),true);});
+  } else finish();}
+function refreshFixes(){
+  const t=ghToken();if(!t){toast("Connect a token under \u2601 Team first.",true);return;}
+  const linked=(S.fixes||[]).filter(function(f){return f.issue&&f.issue.number;});
+  if(!linked.length){toast("No fixes are linked to issues yet.",true);return;}
+  toast("Checking "+linked.length+" issue(s)\u2026");
+  Promise.all(linked.map(function(f){
+    return ghJson(t,"GET","/issues/"+f.issue.number).then(function(j){
+      f.issue.state=j.state;f.issue.closedAt=j.closed_at||"";return true;}).catch(function(){return false;});}))
+   .then(function(res){const ok=res.filter(Boolean).length;saveState();renderReport();
+     const closed=(S.fixes||[]).filter(function(f){return f.issue&&f.issue.state==="closed";}).length;
+     toast("Refreshed "+ok+" of "+linked.length+" issue(s) \u2014 "+closed+" closed.");});}
+function removeFix(ix){const f=S.fixes[ix];if(!f)return;
+  if(!window.confirm("Remove the fix \u201c"+f.title+"\u201d from the assessment?"+(f.issue?"\n\nIssue #"+f.issue.number+" on GitHub is NOT closed or deleted.":"")))return;
+  S.fixes.splice(ix,1);saveState();renderReport();toast("Fix removed from the assessment.");}
 function renderReport(){
   const o=orgScore(),p=operScore(),all=(o!=null&&p!=null)?(o+p)/2:(o!=null?o:p);
   const oc=orgCoverage(),pc=operCoverage(),oCmpl=oc.done===oc.total,pCmpl=pc.done===pc.total,allCmpl=oCmpl&&pCmpl;
@@ -990,6 +1217,144 @@ function renderReport(){
     : `<h3 style="font-family:'Space Grotesk';margin:20px 0 6px">Assessor commentary \u2014 the reasoning behind the ratings</h3>
        <p class="hint" style="margin:0 0 10px"><b>No assessor notes recorded yet.</b> The profile below shows the ratings but not the reasoning for them. Before sign-off, add notes against the sub-components and measures that carry the most weight \u2014 a rating a reviewer cannot interrogate is weak evidence, however carefully it was made.</p>`;
 
+  const M=metaOK(), MST=statusOf(M.status);
+  const hist=(M.history||[]).slice().reverse().map(function(h){
+    return `<tr><td style="white-space:nowrap">${esc(fmtTs(h.at))}</td><td style="white-space:nowrap">v${esc(h.version||"")}</td>
+      <td>${esc(statusOf(h.from).label)} \u2192 <b>${esc(statusOf(h.to).label)}</b></td><td>${esc(h.by||"")}</td>
+      <td>${esc(h.note||"")}</td></tr>`;}).join("");
+  const inpL="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d3dae2;border-radius:6px;font:13px Inter,system-ui,sans-serif;color:#16243a";
+  const ARCH=(M.archives||[]).slice().reverse();
+  const archHtml=ARCH.length?`<details style="margin-top:9px"><summary style="cursor:pointer;font-size:12px;color:#5a6b80">Archived versions in the repository (${ARCH.length})</summary>
+      <table class="rtbl" style="margin-top:7px;font-size:12px"><tr><th>Version</th><th>Status</th><th>Filed</th><th>By</th><th>Path</th></tr>
+      ${ARCH.map(a=>`<tr><td>v${esc(a.version)}</td><td>${esc(statusOf(a.status).label)}</td><td style="white-space:nowrap">${esc(fmtTs(a.at))}</td><td>${esc(a.by||"")}</td>
+        <td style="font-family:ui-monospace,monospace;font-size:11px">${esc(a.json)}${a.html?`<br>${esc(a.html)}`:""}</td></tr>`).join("")}</table></details>`
+    :`<p class="hint" style="margin:9px 0 0">No version has been archived yet \u2014 there is no frozen record of what any reviewer saw.</p>`;
+
+  const FX=S.fixes||[];
+  const fxOpen=FX.filter(f=>!(f.issue&&f.issue.state==="closed")).length;
+  const fxClosed=FX.length-fxOpen;
+  const fxRows=FX.map(function(f,ix){
+    const closed=f.issue&&f.issue.state==="closed";
+    return `<div style="border:1px solid ${closed?"#cfe4d6":"#e3d6c0"};border-radius:7px;padding:9px 11px;margin:0 0 7px;background:${closed?"#f4faf6":"#fdfaf4"}">
+      <div style="display:flex;justify-content:space-between;gap:9px;flex-wrap:wrap">
+        <div><b>${esc(f.title)}</b>${f.ref?`<div style="font-size:12px;color:#5a6b80">${esc(fixRefLabel(f.ref))}</div>`:""}</div>
+        <span style="font:600 10px/1 ui-monospace,monospace;letter-spacing:.05em;text-transform:uppercase;padding:5px 7px;border-radius:5px;background:${closed?"#1f7a4d":"#bf7d2c"};color:#fff;align-self:flex-start;white-space:nowrap">${closed?"Closed":(f.issue?"Open":"Not raised")}</span></div>
+      ${f.detail?`<div style="margin-top:5px;white-space:pre-wrap;font-size:13px">${esc(f.detail)}</div>`:""}
+      <div style="margin-top:5px;font-size:12px;color:#5a6b80">
+        Raised ${esc(fmtTs(f.raisedAt))} at v${esc(f.atVersion||"")}${f.owner?` \u00b7 owner ${esc(f.owner)}`:""}
+        ${f.issue?` \u00b7 <a href="${esc(f.issue.url)}" target="_blank" rel="noreferrer">issue #${esc(String(f.issue.number))}</a>${f.issue.closedAt?" \u00b7 closed "+esc(fmtTs(f.issue.closedAt)):""}`:" \u00b7 recorded locally only"}</div>
+      <div class="rv-actions" style="margin-top:6px"><button class="btn" data-fxremove="${ix}" style="font-size:12px;padding:3px 8px">Remove</button></div></div>`;}).join("");
+
+  const fxPanel=`
+    <div style="margin-top:13px;border-top:1px solid #e3e8ee;padding-top:11px">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
+        <b>Required fixes &amp; adjustments</b>
+        <span style="font-size:12px;color:#5a6b80">${FX.length?`${fxOpen} outstanding \u00b7 ${fxClosed} closed`:"none recorded"}</span></div>
+      <p class="hint" style="margin:5px 0 9px">Each adjustment a reviewer requires can be raised as an issue in <code>${esc(GH.owner)}/${esc(GH.repo)}</code> \u2014 assignable, discussable, and closed against the evidence that resolves it.</p>
+      ${fxRows}
+      ${(FX.length&&fxOpen===0)?`<p style="margin:0 0 9px;padding:9px 11px;border-left:3px solid #1f7a4d;background:#f4faf6;font-size:13px">All recorded fixes are closed. That does not approve anything \u2014 set the status yourself when you judge the assessment ready.</p>`:""}
+      <div class="fx-new" style="border:1px dashed #b9c4d1;border-radius:8px;padding:11px 12px;background:#fbfcfd">
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:9px">
+          <div><label style="font-size:12px;color:#5a6b80">What must change *</label>
+            <input type="text" data-fx="title" value="${esc(FIX_DRAFT.title)}" style="${inpL}" placeholder="e.g. Board minutes evidencing ethics decisions"></div>
+          <div><label style="font-size:12px;color:#5a6b80">Owner</label>
+            <input type="text" data-fx="owner" value="${esc(FIX_DRAFT.owner)}" style="${inpL}" placeholder="Who will fix it"></div></div>
+        <div style="margin-top:9px"><label style="font-size:12px;color:#5a6b80">Applies to</label>
+          <select data-fx="ref" style="${inpL}">${fixRefOptions()}</select></div>
+        <div style="margin-top:9px"><label style="font-size:12px;color:#5a6b80">Detail / evidence required</label>
+          <textarea rows="2" data-fx="detail" style="${inpL};resize:vertical" placeholder="What is missing, and what evidence would close it.">${esc(FIX_DRAFT.detail)}</textarea></div>
+        <div style="margin-top:10px;display:flex;gap:9px;flex-wrap:wrap">
+          <button class="btn" data-fxadd="local">Record fix</button>
+          ${ghToken()?`<button class="btn" data-fxadd="issue" style="background:#1f7a5a;color:#fff;border:0">Record &amp; raise issue</button>
+            <button class="btn" data-fxrefresh="1">Refresh issue states</button>`
+            :`<span style="font-size:12px;color:#5a6b80;align-self:center">Connect a token under <b>\u2601 Team</b> to raise these as issues.</span>`}
+        </div></div></div>`;
+
+  const lcPanel=`
+    <div class="lc-panel" style="border:1px solid #d3dae2;border-left:4px solid ${MST.c};border-radius:8px;padding:13px 15px;margin:0 0 16px;background:#fbfcfd">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
+        <div>
+          <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+            <span style="font:600 11px/1 ui-monospace,monospace;letter-spacing:.05em;text-transform:uppercase;padding:6px 10px;border-radius:6px;background:${MST.c};color:#fff">${esc(MST.label)}</span>
+            <span style="font:700 15px 'Space Grotesk',sans-serif">Version ${esc(M.version)}</span></div>
+          <div style="font-size:12px;color:#5a6b80;margin-top:6px">${esc(MST.d)}</div>
+          <div style="font-size:12px;color:#5a6b80;margin-top:4px">
+            Created ${esc(fmtTs(M.createdAt))} \u00b7 last edited ${esc(fmtTs(M.updatedAt))} \u00b7 status set ${esc(fmtTs(M.statusAt))}${M.statusBy?` by ${esc(M.statusBy)}`:""}</div>
+          ${M.statusNote?`<div style="font-size:12px;margin-top:5px;white-space:pre-wrap"><b>Note:</b> ${esc(M.statusNote)}</div>`:""}
+        </div>
+      </div>
+      ${M.status==="changes"?`<p style="margin:10px 0 0;padding:9px 11px;border-left:3px solid #bf7d2c;background:#fbf6ee;font-size:13px">
+         <b>Changes requested.</b> Work the fixes against the sub-components and measures named in the reviewer\u2019s note, record what changed in the assessor notes, attach the new evidence, then set the status back to <b>In review</b> with a bumped version so the reviewer can see what moved.</p>`:""}
+      <div class="lc-controls">
+      <div style="margin-top:11px;display:grid;grid-template-columns:1fr 1fr;gap:9px">
+        <div><label style="font-size:12px;color:#5a6b80">Change status to</label>
+          <select data-lc="to" style="${inpL}"><option value="">\u2014 select \u2014</option>${RV_STATUSES.filter(x=>x.id!==M.status).map(x=>`<option value="${x.id}">${esc(x.label)}</option>`).join("")}</select></div>
+        <div><label style="font-size:12px;color:#5a6b80">Declared by *</label>
+          <input type="text" data-lc="by" value="${esc(LC_DRAFT.by)}" style="${inpL}" placeholder="Your name"></div>
+      </div>
+      <div style="margin-top:9px"><label style="font-size:12px;color:#5a6b80">Reason / what is required</label>
+        <textarea rows="2" data-lc="note" style="${inpL};resize:vertical" placeholder="For &lsquo;Changes requested&rsquo;, name the sub-components or measures needing fixes and the evidence still outstanding.">${esc(LC_DRAFT.note)}</textarea></div>
+      <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:13px;display:flex;gap:6px;align-items:center;cursor:pointer">
+          <input type="checkbox" data-lc="bump"${LC_DRAFT.bump?" checked":""}> Increment version (\u2192 v${esc(nextVersion(M.version,(LC_DRAFT.to||"")==="approved"))})</label>
+        <button class="btn" data-lcset="1">Record status change</button>
+        ${ghToken()?`<button class="btn" data-archive="1" title="Freeze this version — snapshot and rendered report — into the repository">Archive this version to the repository</button>`:`<span style="font-size:12px;color:#5a6b80;align-self:center">Connect a token under <b>☁ Team</b> to archive versions.</span>`}
+      </div>
+      </div>
+      ${archHtml}
+      ${fxPanel}
+      ${hist?`<details style="margin-top:11px"><summary style="cursor:pointer;font-size:12px;color:#5a6b80">Status history (${(M.history||[]).length})</summary>
+        <table class="rtbl" style="margin-top:7px;font-size:12px"><tr><th>When</th><th>Version</th><th>Change</th><th>By</th><th>Reason</th></tr>${hist}</table></details>`
+        :`<p class="hint" style="margin:9px 0 0">No status changes recorded yet \u2014 this assessment is still at its initial draft.</p>`}
+    </div>`;
+  const rvRows=(S.reviews||[]).map(function(r,ix){
+    const f=r.file||null;
+    return `<div class="rv-rec" style="border:1px solid #d3dae2;border-radius:8px;padding:11px 13px;margin:0 0 9px">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div><b>${esc(r.reviewer||"\u2014")}</b>${r.role?` <span style="color:#5a6b80">\u00b7 ${esc(r.role)}</span>`:""}
+          <div style="font-size:12px;color:#5a6b80">Reviewed ${esc(r.date||"\u2014")}${r.recordedAt?` \u00b7 recorded ${esc(r.recordedAt.slice(0,16).replace("T"," "))}`:""}</div></div>
+        <span style="align-self:flex-start;font:600 11px/1 ui-monospace,monospace;letter-spacing:.04em;text-transform:uppercase;padding:5px 8px;border-radius:6px;background:${r.decision==="Approved"?"#e6f4ec":r.decision==="Returned for rework"?"#fbeaec":"#fdf3e3"};color:#16243a">${esc(r.decision||"\u2014")}</span></div>
+      ${r.statement?`<div style="margin-top:7px;white-space:pre-wrap">${esc(r.statement)}</div>`:""}
+      ${f?`<div style="margin-top:7px;font-size:12px;color:#5a6b80">Signed file: <b>${esc(f.name)}</b>${f.size?` \u00b7 ${fmtBytes(f.size)}`:""}
+           ${f.sha256?`<div style="font-family:ui-monospace,monospace;font-size:11px;word-break:break-all">SHA-256 ${esc(f.sha256)}</div>`:`<div style="color:#b23b4e">No fingerprint recorded \u2014 integrity cannot be verified.</div>`}</div>`
+        :`<div style="margin-top:7px;font-size:12px;color:#b23b4e">No file attached to this record.</div>`}
+      ${r.repo&&r.repo.path?`<div style="font-size:12px;color:#5a6b80">Stored in repository: <code>${esc(r.repo.path)}</code></div>`:""}
+      ${r.location?`<div style="font-size:12px;color:#5a6b80">Held at: ${esc(r.location)}</div>`:""}
+      <div class="rv-actions" style="margin-top:8px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+        ${f&&f.sha256?`<label style="font-size:12px;color:#24406b;cursor:pointer;text-decoration:underline">Verify a file against this record
+           <input type="file" data-rvverify="${ix}" hidden></label>`:""}
+        <button class="btn" data-rvremove="${ix}" style="font-size:12px;padding:4px 9px">Remove record</button></div>
+      <div id="rvVerify-${ix}" style="display:none;margin-top:7px;font-size:12px"></div></div>`;}).join("");
+
+  const dQ=REVIEW_DRAFT, fSel=REVIEW_FILE;
+  const inp="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d3dae2;border-radius:6px;font:13px Inter,system-ui,sans-serif;color:#16243a";
+  const rvPanel=`
+    <h3 style="font-family:'Space Grotesk';margin:22px 0 6px">Review &amp; audit evidence</h3>
+    <p class="hint" style="margin:0 0 10px">Record that a named person reviewed and signed this assessment. The signed document is fingerprinted (SHA-256) so it can be proved later to be the very file that was reviewed \u2014 the fingerprint is stored here, the document itself belongs in your system of record. Recording a review changes no rating and approves nothing; it records what a person attests to.</p>
+    ${rvRows||`<p class="hint" style="margin:0 0 10px"><b>No review recorded yet.</b> An assessment without an attested review is an unreviewed draft, whatever the scores say.</p>`}
+    <div class="rv-new" style="border:1px dashed #b9c4d1;border-radius:8px;padding:12px 13px;background:#fbfcfd">
+      <div style="font-weight:600;margin-bottom:8px">Record a review</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+        <div><label style="font-size:12px;color:#5a6b80">Reviewer name *</label><input type="text" data-rv="reviewer" value="${esc(dQ.reviewer)}" style="${inp}" placeholder="Who reviewed it"></div>
+        <div><label style="font-size:12px;color:#5a6b80">Role</label><input type="text" data-rv="role" value="${esc(dQ.role)}" style="${inp}" placeholder="e.g. Chair, Ethical Governance Board"></div>
+        <div><label style="font-size:12px;color:#5a6b80">Date reviewed *</label><input type="date" data-rv="date" value="${esc(dQ.date)}" style="${inp}"></div>
+        <div><label style="font-size:12px;color:#5a6b80">Decision *</label><select data-rv="decision" style="${inp}"><option value="">\u2014 select \u2014</option>${RV_DECISIONS.map(x=>`<option${dQ.decision===x?" selected":""}>${esc(x)}</option>`).join("")}</select></div>
+      </div>
+      <div style="margin-top:9px"><label style="font-size:12px;color:#5a6b80">Review statement / conditions</label>
+        <textarea rows="2" data-rv="statement" style="${inp};resize:vertical" placeholder="What was reviewed, what was accepted, and any conditions attached.">${esc(dQ.statement)}</textarea></div>
+      <div style="margin-top:9px"><label style="font-size:12px;color:#5a6b80">Where the signed document is held</label>
+        <input type="text" data-rv="location" value="${esc(dQ.location)}" style="${inp}" placeholder="e.g. Governance register / board pack reference"></div>
+      <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label class="btn" style="cursor:pointer">Choose signed file\u2026<input type="file" id="rvFile" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" hidden></label>
+        ${fSel?`<span style="font-size:12px;color:#1f7a4d">\u2713 ${esc(fSel.name)} \u00b7 ${fmtBytes(fSel.size)}${fSel.sha256?" \u00b7 fingerprinted":" \u00b7 no fingerprint"}</span>`:`<span style="font-size:12px;color:#5a6b80">Optional \u2014 a record without a file cannot be integrity-checked.</span>`}
+      </div>
+      ${fSel&&fSel.size>5242880?`<p style="margin:8px 0 0;font-size:12px;color:#bf7d2c">That file is ${fmtBytes(fSel.size)}. Large files are a poor fit for the repository API \u2014 consider keeping it in your document store and citing its location above; the fingerprint still proves which file was reviewed.</p>`:""}
+      <div style="margin-top:11px;display:flex;gap:9px;flex-wrap:wrap">
+        <button class="btn" data-rvsave="1">Record review</button>
+        ${(REVIEW_FILE&&ghToken())?`<button class="btn" data-rvsave="attach" style="background:#1f7a5a;color:#fff;border:0">Record &amp; store file in team repository</button>`:""}
+      </div>
+      ${(REVIEW_FILE&&!ghToken())?`<p style="margin:8px 0 0;font-size:12px;color:#5a6b80">Connect a token under <b>\u2601 Team</b> to store the signed file in the private repository as well.</p>`:""}
+    </div>`;
   const signHTML=SIGN.map(s=>`<div><label>${esc(s.label)}</label>${s.ta?`<textarea rows="2" data-sign="${s.id}">${esc(S.sign[s.id])}</textarea>`:`<input type="text" data-sign="${s.id}" value="${esc(S.sign[s.id])}">`}</div>`).join("");
   const _evEids=Object.keys(EVSCORES);let evSection="";
   if(_evEids.length){let evAll=[];_evEids.forEach(e=>evAll=evAll.concat(EVSCORES[e].map(x=>x.score)));
@@ -1006,7 +1371,8 @@ function renderReport(){
       +'<ul style="list-style:none;padding-left:0;margin:0;font-size:12.5px">'+priHTML+'</ul></div>';}
   $("#reportDoc").innerHTML=`
     <div class="rephead"><div><h1>WAKAMOSO — Ethical Maturity Assessment</h1>
-      <div class="sub">Phase 1 baseline · Reuel et al. FAccT '25 model, King V &amp; RAI aligned · generated ${today}</div></div>
+      <div class="sub">Phase 1 baseline · Reuel et al. FAccT '25 model, King V &amp; RAI aligned</div>
+      <div class="sub"><b>Version ${esc(M.version)} · ${esc(MST.label)}</b> · status set ${esc(fmtTs(M.statusAt))}${M.statusBy?` by ${esc(M.statusBy)}`:""} · last edited ${esc(fmtTs(M.updatedAt))} · report generated ${today}</div></div>
       <div style="text-align:right"><div class="sub">${allCmpl?'Indicative overall':'Assessment progress'}</div><div class="mono" style="font-size:30px;font-weight:700">${allCmpl?(all==null?'—':Math.round(all)):ac.done+'/'+ac.total}</div><div style="font-family:'Space Grotesk';font-weight:600">${allCmpl?band(all):(ac.done?'In progress — score pending':'Not started')}</div></div></div>
     <div class="repgrid">
       ${tile('A · Organizational',o,oc,'linear-gradient(90deg,#4ea3a0,#7fd0cc)')}
@@ -1014,6 +1380,7 @@ function renderReport(){
       ${tile('Overall (mean A·B)',all,ac,'linear-gradient(90deg,#8fb3e6,#bcd4f5)')}
     </div>
     <p style="font-size:13px;color:#5a6b80;margin:0 0 14px">Coverage: ${oc.done}/${oc.total} organisational sub-components assessed · ${pc.done}/${pc.total} operational dimensions assessed${allCmpl?'':' — <b>assessment incomplete; the maturity score is withheld until every item is assessed or marked N/A</b>'}. This report is decision-support, not a verdict.</p>
+    ${lcPanel}
     ${evSection}
     ${cmtSection}
     <h3 style="font-family:'Space Grotesk';margin:18px 0 6px">A · Organisational maturity profile</h3>
@@ -1024,6 +1391,7 @@ function renderReport(){
     <ul class="focus" style="list-style:none;padding-left:0;margin:0">${focus}</ul>
     <h3 style="font-family:'Space Grotesk';margin:20px 0 6px">Mandatory human sign-off</h3>
     <div class="signoff">${signHTML}</div>
+    ${rvPanel}
     <p class="src" style="margin-top:18px">Governance basis: King V (technology &amp; information governance, ethical leadership, risk, compliance, stakeholder inclusivity, performance &amp; value creation). RAI basis: NIST AI RMF, ISO/IEC 42001, EU AI Act, POPIA, FAIR/CARE. Full per-Evidence justification in the Evidence Register.</p>`;
 }
 /* events */
@@ -1068,7 +1436,29 @@ document.addEventListener("change",e=>{const na=e.target.closest("[data-na]");if
   if(cf){const id=cf.dataset.confirm,art=cf.dataset.art,ei=+cf.dataset.ei;S.org[id].confirm=S.org[id].confirm||{};S.org[id].confirm[art]=S.org[id].confirm[art]||{};S.org[id].confirm[art][ei]=cf.checked;renderOrg();updateScores();return;}
   const sup=e.target.closest("[data-sup]");
   if(sup){const id=sup.dataset.sup,lv=+sup.dataset.lv;S.org[id].superseded=S.org[id].superseded||{};if(sup.checked)S.org[id].superseded[lv]=true;else delete S.org[id].superseded[lv];renderOrg();updateScores();}});
+document.addEventListener("change",e=>{const t=e.target;
+  if(t.dataset&&t.dataset.lc!=null){LC_DRAFT[t.dataset.lc]=(t.type==="checkbox")?t.checked:t.value;if(t.dataset.lc==="to")renderReport();return;}
+  if(t.dataset&&t.dataset.fx!=null){FIX_DRAFT[t.dataset.fx]=t.value;return;}
+  if(t.id==="rvFile"&&t.files&&t.files[0]){readReviewFile(t.files[0]);t.value="";}
+  else if(t.dataset&&t.dataset.rvverify!=null&&t.files&&t.files[0]){verifyReviewFile(t.files[0],+t.dataset.rvverify);t.value="";}
+  else if(t.dataset&&t.dataset.rv!=null){REVIEW_DRAFT[t.dataset.rv]=t.value;}});
+document.addEventListener("click",e=>{
+  const ar=e.target.closest("[data-archive]");if(ar){archiveToRepo();return;}
+  const fa=e.target.closest("[data-fxadd]");if(fa){addFix(fa.dataset.fxadd==="issue");return;}
+  const fr=e.target.closest("[data-fxrefresh]");if(fr){refreshFixes();return;}
+  const fx=e.target.closest("[data-fxremove]");if(fx){removeFix(+fx.dataset.fxremove);return;}
+  const l=e.target.closest("[data-lcset]");
+  if(l){/* keep what was typed unless the transition actually happened — a refused confirmation
+           must not silently discard the reason someone just wrote out */
+    if(setStatus(LC_DRAFT.to,LC_DRAFT.by,LC_DRAFT.note,LC_DRAFT.bump))LC_DRAFT={to:"",by:LC_DRAFT.by,note:"",bump:false};
+    renderReport();return;}
+  const b=e.target.closest("[data-rvsave],[data-rvremove]");if(!b)return;
+  if(b.dataset.rvsave!=null)recordReview(b.dataset.rvsave==="attach");
+  else removeReview(+b.dataset.rvremove);});
 document.addEventListener("input",e=>{const t=e.target;
+  if(t.dataset&&t.dataset.lc!=null&&t.type!=="checkbox"){LC_DRAFT[t.dataset.lc]=t.value;return;}
+  if(t.dataset&&t.dataset.fx!=null){FIX_DRAFT[t.dataset.fx]=t.value;return;}
+  if(t.dataset&&t.dataset.rv!=null){REVIEW_DRAFT[t.dataset.rv]=t.value;return;}
   if(t.dataset.evid!=null)S.org[t.dataset.evid].evidence=t.value;
   else if(t.dataset.notes!=null)S.org[t.dataset.notes].notes=t.value;
   else if(t.dataset.oevid!=null)S.oper[t.dataset.oevid].evidence=t.value;
@@ -1169,13 +1559,20 @@ function exportXlsx(){
   DATA.org.forEach(o2=>{const st=S.org[o2.id];d.push(["org",o2.id+".level",st.na?"NA":(st.level||"")]);d.push(["org",o2.id+".evidence",st.evidence]);d.push(["org",o2.id+".notes",st.notes]);d.push(["org",o2.id+".confirm",JSON.stringify(st.confirm||{})]);d.push(["org",o2.id+".superseded",JSON.stringify(st.superseded||{})]);d.push(["org",o2.id+".progressing",st.progressing?"1":""]);});
   DATA.oper.forEach(x=>{const st=S.oper[x.id];d.push(["oper",x.id+".relevant",st.relevant||""]);d.push(["oper",x.id+".evidence",st.evidence]);d.push(["oper",x.id+".notes",st.notes]);x.measures.forEach((m,i)=>{d.push(["oper",x.id+".status."+i,st.status[i]||""]);const mn=st.mnotes&&st.mnotes[i];if(mn)d.push(["oper",x.id+".mnote."+i,mn]);});});
   SIGN.forEach(s=>d.push(["sign",s.id,S.sign[s.id]]));
+  const M0=metaOK();["version","status","statusNote","statusBy","statusAt","createdAt","updatedAt"].forEach(k=>{if(M0[k])d.push(["meta",k,M0[k]]);});
+  (M0.archives||[]).forEach((a,i)=>d.push(["meta","archive."+i,[a.version,a.status,a.at,a.by,a.json,a.html].join("|")]));
+  (S.fixes||[]).forEach((f,i)=>d.push(["fix","item."+i,[f.id,f.title,f.ref,f.owner,f.raisedAt,f.atVersion,(f.issue?f.issue.number:""),(f.issue?f.issue.state:""),(f.issue?f.issue.url:""),(f.detail||"").replace(/\|/g,"/")].join("|")]));
+  (M0.history||[]).forEach((h,i)=>d.push(["meta","history."+i,[h.at,h.version,h.from,h.to,h.by,(h.note||"").replace(/\|/g,"/")].join("|")]));
+  (S.reviews||[]).forEach((r,i)=>{["id","reviewer","role","decision","date","statement","location","recordedAt"].forEach(k=>{if(r[k])d.push(["review",i+"."+k,r[k]]);});
+    if(r.file){["name","size","type","sha256"].forEach(k=>{if(r.file[k]!=null&&r.file[k]!=="")d.push(["review",i+".file_"+k,String(r.file[k])]);});}
+    if(r.repo&&r.repo.path)d.push(["review",i+".repo_path",r.repo.path]);});
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(d),"_Data");
   (function(){const eids=Object.keys(EVSCORES);if(eids.length){const rows=[["Evidence set ID","Evidence set","Section","Element","Score","Band","Comment"]];eids.forEach(e=>{(EVSCORES[e]||[]).forEach(x=>{rows.push([e,EVNAMES[e]||"",x.sec,x.nm||"",x.score,x.band||bandOf(x.score),x.comment||""]);});});const ws=XLSX.utils.aoa_to_sheet(rows);XLSX.utils.book_append_sheet(wb,ws,"_Scores");}})();
   XLSX.writeFile(wb,"WAKAMOSO_Ethical_Maturity_Assessment_"+new Date().toISOString().slice(0,10)+".xlsx");
   toast("Exported workbook to your downloads.");
 }
 /* IMPORT */
-function resetState(){DATA.org.forEach(o=>S.org[o.id]={level:null,na:false,progressing:false,evidence:"",notes:"",confirm:{},superseded:{}});DATA.oper.forEach(d=>S.oper[d.id]={relevant:null,status:{},evidence:"",notes:"",mnotes:{}});SIGN.forEach(s=>S.sign[s.id]="");
+function resetState(){DATA.org.forEach(o=>S.org[o.id]={level:null,na:false,progressing:false,evidence:"",notes:"",confirm:{},superseded:{}});DATA.oper.forEach(d=>S.oper[d.id]={relevant:null,status:{},evidence:"",notes:"",mnotes:{}});SIGN.forEach(s=>S.sign[s.id]="");S.reviews=[];S.meta=newMeta();S.fixes=[];
 const collapsed=new Set();}
 function importXlsx(file){const rd=new FileReader();rd.onload=ev=>{try{
   const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"});
@@ -1195,7 +1592,20 @@ function loadData(sheet){const rows=XLSX.utils.sheet_to_json(sheet,{header:1});r
   rows.slice(1).forEach(r=>{const sec=r[0],key=r[1],val=r[2]==null?"":String(r[2]);if(!sec||!key)return;any=true;
     if(sec==="org"){const[id,f]=key.split(".");if(!S.org[id])return;if(f==="level"){if(val==="NA")S.org[id].na=true;else if(val!=="")S.org[id].level=+val;}else if(f==="evidence")S.org[id].evidence=val;else if(f==="notes")S.org[id].notes=val;else if(f==="confirm"){try{S.org[id].confirm=JSON.parse(val||"{}");}catch(_){S.org[id].confirm={};}}else if(f==="progressing"){S.org[id].progressing=(val==="1"||val==="true");}else if(f==="superseded"){try{S.org[id].superseded=JSON.parse(val||"{}");}catch(_){S.org[id].superseded={};}}}
     else if(sec==="oper"){const p=key.split(".");const id=p[0];if(!S.oper[id])return;if(p[1]==="relevant")S.oper[id].relevant=val||null;else if(p[1]==="evidence")S.oper[id].evidence=val;else if(p[1]==="notes")S.oper[id].notes=val;else if(p[1]==="status"&&val!=="")S.oper[id].status[+p[2]]=val;else if(p[1]==="mnote"&&val!==""){S.oper[id].mnotes=S.oper[id].mnotes||{};S.oper[id].mnotes[+p[2]]=val;}}
-    else if(sec==="sign"){if(S.sign[key]!=null)S.sign[key]=val;}});return any;}
+    else if(sec==="sign"){if(S.sign[key]!=null)S.sign[key]=val;}
+    else if(sec==="meta"){const m=metaOK();
+      if(key.indexOf("archive.")===0){const q=val.split("|");m.archives=m.archives||[];m.archives.push({version:q[0]||"",status:q[1]||"",at:q[2]||"",by:q[3]||"",json:q[4]||"",html:q[5]||""});}
+      else if(key.indexOf("history.")===0){const q=val.split("|");m.history.push({at:q[0]||"",version:q[1]||"",from:q[2]||"draft",to:q[3]||"draft",by:q[4]||"",note:q.slice(5).join("|")||""});}
+      else m[key]=val;}
+    else if(sec==="fix"){const q=val.split("|");
+      S.fixes.push({id:q[0]||"",title:q[1]||"",ref:q[2]||"",owner:q[3]||"",raisedAt:q[4]||"",atVersion:q[5]||"",
+        issue:q[6]?{number:+q[6],state:q[7]||"open",url:q[8]||""}:null,detail:q.slice(9).join("|")||""});}
+    else if(sec==="review"){const p2=key.split("."),ix=+p2[0],f=p2[1];if(isNaN(ix))return;
+      S.reviews[ix]=S.reviews[ix]||{file:null,repo:null};const r=S.reviews[ix];
+      if(f.indexOf("file_")===0){r.file=r.file||{};r.file[f.slice(5)]=(f==="file_size")?+val:val;}
+      else if(f==="repo_path"){r.repo={path:val};}
+      else r[f]=val;}});
+  S.reviews=(S.reviews||[]).filter(Boolean);S.fixes=(S.fixes||[]).filter(Boolean);metaOK();return any;}
 function loadLegacy(wb){resetState();let any=false;const sn=n=>wb.SheetNames.find(s=>s.trim().startsWith(n));
   const o2=sn("2.");if(o2){XLSX.utils.sheet_to_json(wb.Sheets[o2],{header:1,blankrows:false}).forEach(r=>{const first=(r[0]||"").toString();
     const m=DATA.org.find(x=>first.startsWith(x.name));if(m){for(let c=1;c<r.length;c++){const v=r[c];
@@ -1260,16 +1670,28 @@ function renderCompare(){const host=$("#compareOut");
      <div style="overflow-x:auto"><table class="cmptbl">${head}${orgBody}</table></div>
      <div class="cmp-divider">B · Operational maturity — status chosen by each respondent</div>
      <div style="overflow-x:auto"><table class="cmptbl">${headOp}${opSecs}</table></div>`;}
-function downloadReport(){
+/* One builder for both the downloaded report and the archived copy, so what is filed in the
+   repository is byte-for-byte the document a reader was shown -- not a re-render that might drift. */
+function reportHtmlDoc(){
   const css=`body{font-family:Inter,Arial,sans-serif;color:#16243a;max-width:900px;margin:24px auto;padding:0 16px}
     h1{font-size:21px;margin:0 0 4px}h3{margin:18px 0 6px}table{width:100%;border-collapse:collapse;font-size:13px}
     th{text-align:left;text-transform:uppercase;font-size:11px;color:#5a6b80;border-bottom:2px solid #d3dae2;padding:6px 8px}
     td{padding:7px 8px;border-bottom:1px solid #e3e8ee;vertical-align:top}.rephead{display:flex;justify-content:space-between;border-bottom:2px solid #16243a;padding-bottom:10px}
     .bigscore{display:inline-block;border:1px solid #d3dae2;border-radius:8px;padding:12px 18px;margin:6px 8px 6px 0}.tag{font-size:10px;padding:2px 6px;border-radius:8px;background:#eee;margin-left:6px}
     ul{padding-left:18px}.sub{font-size:12px;color:#5a6b80}`;
-  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>WAKAMOSO Assessment Report</title><style>${css}</style></head><body>${$("#reportDoc").innerHTML.replace(/<textarea[^>]*>([\s\S]*?)<\/textarea>/g,(m,c)=>'<div>'+c+'</div>').replace(/<input[^>]*value="([^"]*)"[^>]*>/g,'<div>$1</div>')}</body></html>`;
-  const blob=new Blob([html],{type:"text/html"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-  a.download="WAKAMOSO_Assessment_Report_"+new Date().toISOString().slice(0,10)+".html";a.click();URL.revokeObjectURL(a.href);toast("Report downloaded.");}
+  const src=$("#reportDoc").cloneNode(true);
+  /* An archived report is a record, not a form: strip the controls that only make sense live. */
+  src.querySelectorAll(".rv-new,.lc-controls,.rv-actions,.fx-new,[data-lcset],[data-rvsave],select,button,input[type=file]").forEach(function(el){el.remove();});
+  const body=src.innerHTML
+    .replace(/<textarea[^>]*>([\s\S]*?)<\/textarea>/g,function(m,c){return '<div>'+c+'</div>';})
+    .replace(/<input[^>]*value="([^"]*)"[^>]*>/g,'<div>$1</div>');
+  const m=metaOK();
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>WAKAMOSO Assessment Report v${esc(m.version)} \u2014 ${esc(statusOf(m.status).label)}</title><style>${css}</style></head><body>${body}</body></html>`;}
+function downloadReport(){
+  const m=metaOK();
+  const blob=new Blob([reportHtmlDoc()],{type:"text/html"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="WAKAMOSO_Assessment_Report_v"+m.version+"_"+m.status+"_"+new Date().toISOString().slice(0,10)+".html";
+  a.click();URL.revokeObjectURL(a.href);toast("Report downloaded.");}
 /* init */
 function renderAll(){renderOrg();renderOper();renderEvidence($("#regFilter")?$("#regFilter").value:"");renderTemplates($("#tplFilter")?$("#tplFilter").value:"");}
 $("#importBtn").addEventListener("click",()=>$("#file").click());
@@ -1400,7 +1822,7 @@ function downloadGuide(){
   try{
     const wb=XLSX.utils.book_new();
     // 1) Metamodel / read-me
-    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.2.4 · generated "+new Date().toISOString().slice(0,10)],[],
+    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.5.0 · generated "+new Date().toISOString().slice(0,10)],[],
       ["This workbook lists every artefact template (the evidence guide), an illustrative sample entry for each, and a worked example."],[],
       ["METAMODEL — entity","Meaning","ID pattern","Count"],
       ["Pillar","The two halves of the model","A / B","2"],
@@ -1510,7 +1932,7 @@ function ghToken(){try{return localStorage.getItem(TKEY)||"";}catch(_){return ""
 function ghName(){try{return localStorage.getItem(NKEY)||"";}catch(_){return "";}}
 /* The snapshot shape mirrors saveState()/saveAppFile() exactly, plus attribution.
    Note what is absent: no token, ever. */
-function teamSnapshot(){return{org:S.org,oper:S.oper,sign:S.sign,scores:EVSCORES,evnames:EVNAMES,
+function teamSnapshot(){return{org:S.org,oper:S.oper,sign:S.sign,reviews:S.reviews,meta:S.meta,fixes:S.fixes,scores:EVSCORES,evnames:EVNAMES,
   scoresAt:EVSCORES_AT,savedAt:new Date().toISOString(),savedBy:ghName()||"unnamed editor"};}
 /* Boot calls saveState() before the team check runs, which re-stamps savedAt to "now". Comparing the
    shared copy against that would make local state look permanently fresher, so a colleague's earlier
@@ -1644,6 +2066,7 @@ function checkXlsx(){
   return false;}
 const _restored=loadState();
 renderAll();updateScores();renderCompare();renderGuide("");renderEvidenceScores();
+updateStatusChip();
 initTeamSync();
 checkXlsx();
 showPersistWarn();

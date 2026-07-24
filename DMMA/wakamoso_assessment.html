@@ -411,7 +411,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 <body>
 <header>
   <div class="bar">
-    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.6.0</span></span>
+    <div class="brand"><span class="t">WAKAMOSO · Ethical Maturity Assessment <span class="ver">Version 1.7.0</span></span>
       <span class="s">Reuel et al. FAccT '25 model · aligned to King V governance & global RAI standards · 13 organisational sub-components, 8 operational dimensions</span></div>
     <div class="tools">
       <input type="file" id="file" accept=".xlsx" hidden>
@@ -503,7 +503,7 @@ table.reg tr.flash td{background:#fff3d6!important;transition:background 1.5s ea
 
       <div class="mm-wrap">
         <div class="mm">
-          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.6.0 &middot; two pillars</span></div>
+          <div class="mm-node lvl0">Ethical Maturity Assessment <span>Version 1.7.0 &middot; two pillars</span></div>
           <div class="mm-split">
             <div class="mm-branch"><div class="mm-node pA">Pillar A &middot; Organisational</div><div class="mm-arrow">↓</div><div class="mm-node">13 Sub-components<br><span>GOV &hellip; PVC &middot; rated L1&ndash;L5 / N/A</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per level<br><span>L2&ndash;L5 &middot; 52 sets</span></div></div>
             <div class="mm-branch"><div class="mm-node pB">Pillar B &middot; Operational</div><div class="mm-arrow">↓</div><div class="mm-node">8 Dimensions &middot; 41 Measures<br><span>PRV &hellip; GAI &middot; binary</span></div><div class="mm-arrow">↓</div><div class="mm-node">Evidence set per measure<br><span>41 sets</span></div></div>
@@ -1107,7 +1107,7 @@ function archiveToRepo(){
     .then(function(){
       m.archives=m.archives||[];
       m.archives.push({version:m.version,status:m.status,at:new Date().toISOString(),by:m.statusBy||"",
-                       json:base+".json",html:htmlB64?base+".html":""});
+                       json:base+".json",html:htmlB64?base+".html":"",metrics:targetMetrics()});
       saveState();renderReport();
       toast("Archived v"+m.version+" \u2014 frozen copy filed at "+base+".*");return true;})
     .catch(function(e){toast("Archive failed: "+(e.message||"error")+" \u2014 nothing was filed.",true);return false;});}
@@ -1155,6 +1155,52 @@ function refreshFixes(){
 function removeFix(ix){const f=S.fixes[ix];if(!f)return;
   if(!window.confirm("Remove the fix \u201c"+f.title+"\u201d from the assessment?"+(f.issue?"\n\nIssue #"+f.issue.number+" on GitHub is NOT closed or deleted.":"")))return;
   S.fixes.splice(ix,1);saveState();renderReport();toast("Fix removed from the assessment.");}
+/* =====================================================================================
+   TARGET STATE & BURN-DOWN
+   "Done" needs a definition before progress toward it can be drawn. The target defaults to
+   Determined (L3) for organisational sub-components and Fully operationalised for operational
+   measures -- i.e. defined AND operational -- and is editable, because the right target is a
+   governance decision, not a constant.
+
+   The burn-down counts items still short of that target. Its time series comes from the archived
+   versions (each freeze stores its own counts) plus the live state as the final point, so the
+   chart is drawn from records that were actually filed, not from reconstructed history.
+   ===================================================================================== */
+function targetOf(){const m=metaOK();if(!m.target)m.target={org:3,oper:"Fully operationalised"};return m.target;}
+function targetMetrics(){
+  const t=targetOf();let orgTotal=0,orgAt=0,operTotal=0,operAt=0;
+  DATA.org.forEach(function(o){const st=S.org[o.id];if(!st||st.na)return;orgTotal++;if(st.level&&st.level>=t.org)orgAt++;});
+  DATA.oper.forEach(function(d){const st=S.oper[d.id];if(!st||st.relevant!=="Y")return;
+    d.measures.forEach(function(m,i){const v=st.status[i];if(!v||v==="N/A")return;operTotal++;if(v===t.oper)operAt++;});});
+  const total=orgTotal+operTotal,at=orgAt+operAt;
+  return{orgTotal:orgTotal,orgAt:orgAt,operTotal:operTotal,operAt:operAt,total:total,at:at,remaining:total-at,
+         pct:total?Math.round(at/total*100):0};}
+function burndownSeries(){
+  const pts=(metaOK().archives||[]).filter(function(a){return a.metrics;})
+    .map(function(a){return{label:"v"+a.version,at:a.at,remaining:a.metrics.remaining,total:a.metrics.total};});
+  const now=targetMetrics();
+  pts.push({label:"now",at:new Date().toISOString(),remaining:now.remaining,total:now.total,live:true});
+  return pts;}
+function burndownSVG(){
+  const pts=burndownSeries();
+  if(pts.length<2)return '<div class="evsc-empty">Archive a version to start the burn-down. Each archived version becomes a point on this chart, so the line is drawn from records that were actually filed \u2014 the first archive establishes the baseline.</div>';
+  const W=620,H=210,L=44,R=14,T=14,B=34;
+  const maxY=Math.max.apply(null,pts.map(function(p){return p.remaining;}).concat([1]));
+  const x=function(i){return L+(pts.length===1?0:i*(W-L-R)/(pts.length-1));};
+  const y=function(v){return T+(H-T-B)*(1-v/maxY);};
+  let grid="",ticks="";
+  [0,0.5,1].forEach(function(f){const v=Math.round(maxY*f),yy=y(v);
+    grid+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R)+'" y2="'+yy+'" stroke="#e6eaef"/>';
+    ticks+='<text x="'+(L-7)+'" y="'+(yy+3.5)+'" font-size="10" text-anchor="end" fill="#5a6b80">'+v+'</text>';});
+  const line=pts.map(function(p,i){return x(i)+","+y(p.remaining);}).join(" ");
+  const dots=pts.map(function(p,i){return '<circle cx="'+x(i)+'" cy="'+y(p.remaining)+'" r="'+(p.live?5:4)+'" fill="'+(p.live?"#bf7d2c":"#1f6f6b")+'"/>'
+     +'<text x="'+x(i)+'" y="'+(y(p.remaining)-10)+'" font-size="10" text-anchor="middle" fill="#16243a" font-weight="700">'+p.remaining+'</text>'
+     +'<text x="'+x(i)+'" y="'+(H-12)+'" font-size="10" text-anchor="middle" fill="#5a6b80">'+esc(p.label)+'</text>';}).join("");
+  return '<svg viewBox="0 0 '+W+' '+H+'" class="burndown" role="img" style="width:100%;max-width:640px;height:auto">'
+    +grid+ticks
+    +'<polyline points="'+line+'" fill="none" stroke="#1f6f6b" stroke-width="2.5"/>'
+    +dots
+    +'<text x="'+L+'" y="'+(T+2)+'" font-size="10" fill="#5a6b80">items still short of target</text></svg>';}
 function renderReport(){
   const o=orgScore(),p=operScore(),all=(o!=null&&p!=null)?(o+p)/2:(o!=null?o:p);
   const oc=orgCoverage(),pc=operCoverage(),oCmpl=oc.done===oc.total,pCmpl=pc.done===pc.total,allCmpl=oCmpl&&pCmpl;
@@ -1246,10 +1292,9 @@ function renderReport(){
         ${f.issue?` \u00b7 <a href="${esc(f.issue.url)}" target="_blank" rel="noreferrer">issue #${esc(String(f.issue.number))}</a>${f.issue.closedAt?" \u00b7 closed "+esc(fmtTs(f.issue.closedAt)):""}`:" \u00b7 recorded locally only"}</div>
       <div class="rv-actions" style="margin-top:6px"><button class="btn" data-fxremove="${ix}" style="font-size:12px;padding:3px 8px">Remove</button></div></div>`;}).join("");
 
-  const fxPanel=`
-    <div style="margin-top:13px;border-top:1px solid #e3e8ee;padding-top:11px">
+  const fxBody=`
+    <div>
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
-        <b>Required fixes &amp; adjustments</b>
         <span style="font-size:12px;color:#5a6b80">${FX.length?`${fxOpen} outstanding \u00b7 ${fxClosed} closed`:"none recorded"}</span></div>
       <p class="hint" style="margin:5px 0 9px">Each adjustment a reviewer requires can be raised as an issue in <code>${esc(GH.owner)}/${esc(GH.repo)}</code> \u2014 assignable, discussable, and closed against the evidence that resolves it.</p>
       ${fxRows}
@@ -1302,8 +1347,6 @@ function renderReport(){
         ${ghToken()?`<button class="btn" data-archive="1" title="Freeze this version — snapshot and rendered report — into the repository">Archive this version to the repository</button>`:`<span style="font-size:12px;color:#5a6b80;align-self:center">Connect a token under <b>☁ Team</b> to archive versions.</span>`}
       </div>
       </div>
-      ${archHtml}
-      ${fxPanel}
       ${hist?`<details style="margin-top:11px"><summary style="cursor:pointer;font-size:12px;color:#5a6b80">Status history (${(M.history||[]).length})</summary>
         <table class="rtbl" style="margin-top:7px;font-size:12px"><tr><th>When</th><th>Version</th><th>Change</th><th>By</th><th>Reason</th></tr>${hist}</table></details>`
         :`<p class="hint" style="margin:9px 0 0">No status changes recorded yet \u2014 this assessment is still at its initial draft.</p>`}
@@ -1350,8 +1393,7 @@ function renderReport(){
 
   const dQ=REVIEW_DRAFT, fSel=REVIEW_FILE;
   const inp="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d3dae2;border-radius:6px;font:13px Inter,system-ui,sans-serif;color:#16243a";
-  const rvPanel=`
-    <h3 style="font-family:'Space Grotesk';margin:22px 0 6px">Review &amp; audit evidence</h3>
+  const rvBody=`
     <p class="hint" style="margin:0 0 10px">Record that a named person reviewed and signed this assessment. The signed document is fingerprinted (SHA-256) so it can be proved later to be the very file that was reviewed \u2014 the fingerprint is stored here, the document itself belongs in your system of record. Recording a review changes no rating and approves nothing; it records what a person attests to.</p>
     ${rvRows||`<p class="hint" style="margin:0 0 10px"><b>No review recorded yet.</b> An assessment without an attested review is an unreviewed draft, whatever the scores say.</p>`}
     <div class="rv-new" style="border:1px dashed #b9c4d1;border-radius:8px;padding:12px 13px;background:#fbfcfd">
@@ -1378,6 +1420,51 @@ function renderReport(){
       ${(REVIEW_FILE&&!ghToken())?`<p style="margin:8px 0 0;font-size:12px;color:#5a6b80">Connect a token under <b>\u2601 Team</b> to store the signed file in the private repository as well.</p>`:""}
     </div>`;
   const signHTML=SIGN.map(s=>`<div><label>${esc(s.label)}</label>${s.ta?`<textarea rows="2" data-sign="${s.id}">${esc(S.sign[s.id])}</textarea>`:`<input type="text" data-sign="${s.id}" value="${esc(S.sign[s.id])}">`}</div>`).join("");
+  const TM=targetMetrics(),TG=targetOf();
+  const cmtCount=DATA.org.filter(o2=>(S.org[o2.id].notes||"").trim()).length
+    + DATA.oper.reduce((a,d)=>a+((S.oper[d.id].notes||"").trim()?1:0)+Object.values(S.oper[d.id].mnotes||{}).filter(x=>(x||"").trim()).length,0);
+  const step=function(n,title,done,body){
+    return `<div class="wf-step" style="border:1px solid #d3dae2;border-left:4px solid ${done?"#1f7a4d":"#b9c4d1"};border-radius:8px;padding:12px 14px;margin:0 0 10px;background:#fff">
+      <div style="display:flex;gap:10px;align-items:baseline">
+        <span style="font:700 12px/1 ui-monospace,monospace;background:${done?"#1f7a4d":"#8a94a3"};color:#fff;padding:5px 8px;border-radius:5px">${n}</span>
+        <b style="font-size:14px">${title}</b>${done?`<span style="font-size:12px;color:#1f7a4d">\u2713 done</span>`:""}</div>
+      <div style="margin-top:8px">${body}</div></div>`;};
+  const wfSection=`
+    <h3 style="font-family:'Space Grotesk';margin:24px 0 4px">Review &amp; workflow</h3>
+    <p class="hint" style="margin:0 0 12px">Everything to do with reviewing, accepting and re-assessing this report lives here, in the order it happens. Nothing below changes a rating on its own.</p>
+    ${step(1,"Baseline \u2014 file the assessment you showed the customer",(M.archives||[]).length>0,
+      `<p style="margin:0 0 8px">Freeze the assessment as it stood when you presented it. The archive stores the snapshot <i>and</i> the rendered report, so what the customer saw is recoverable exactly.</p>
+       <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+         ${ghToken()?`<button class="btn" data-archive="1">Archive this version to the repository</button>`:`<span style="font-size:12px;color:#5a6b80">Connect a token under <b>\u2601 Team</b> to archive.</span>`}
+         <button class="btn" id="dlReportBtn2">Download this report</button></div>
+       ${archHtml}`)}
+    ${step(2,"Joint review \u2014 capture their feedback and adjust",cmtCount>0,
+      `<p style="margin:0 0 6px">Work through the assessment with the customer. Adjust ratings up or down on the <b>Organisational</b> and <b>Operational</b> tabs, and record <i>why</i> in the assessor notes \u2014 the note is what makes an adjustment defensible later.</p>
+       <p style="margin:0;font-size:13px;color:#5a6b80"><b>${cmtCount}</b> note(s) recorded so far. They appear in the <b>Assessor commentary</b> section above.
+       Set the status to <b>In review</b> while this is running.</p>`)}
+    ${step(3,"Acceptance \u2014 record their sign-off",(S.reviews||[]).length>0&&M.status==="approved",
+      `<p style="margin:0 0 9px">When the customer accepts, record who signed, attach the signed document, and set the status to <b>Approved</b>. The fingerprint proves later that the file you hold is the one they signed.</p>
+       <div style="margin:0 0 10px"><div style="font-size:12px;color:#5a6b80;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Assessment summary &amp; accountable owner</div>
+         <div class="signoff">${signHTML}</div></div>
+       ${rvBody}`)}
+    ${step(4,"Remediation \u2014 what they are fixing",(S.fixes||[]).length>0,
+      `<p style="margin:0 0 8px">Turn roadmap gaps into tracked items. Each becomes an issue in <code>${esc(GH.owner)}/${esc(GH.repo)}</code> that the customer can work and close against the evidence that resolves it.</p>
+       ${fxBody}`)}
+    ${step(5,"Re-assessment \u2014 review the updates they provide",(M.history||[]).some(h=>h.to==="in_review"&&(M.archives||[]).length>1),
+      `<p style="margin:0">When they submit new evidence: re-import the updated <b>Evidence Scoring Grid</b>, revise the affected ratings and notes, set the status back to <b>In review</b>, increment the version, then archive again at step 1. Each archive adds a point to the burn-down below, so the record of improvement builds itself.</p>`)}
+    ${step(6,"Progress to target",TM.remaining===0&&TM.total>0,
+      `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:9px">
+         <div><div style="font-size:12px;color:#5a6b80">Target state</div>
+           <div style="display:flex;gap:8px;align-items:center;margin-top:3px">
+             <select data-tg="org" style="${inpL};width:auto">${[2,3,4,5].map(l=>`<option value="${l}"${TG.org===l?" selected":""}>Org: L${l} \u00b7 ${esc(LVLNAME[l-1])}</option>`).join("")}</select>
+             <select data-tg="oper" style="${inpL};width:auto">${STATUSES.map(x=>`<option${TG.oper===x?" selected":""}>Oper: ${esc(x)}</option>`).join("")}</select></div></div>
+         <div><div style="font-size:12px;color:#5a6b80">At target</div>
+           <div style="font:700 22px 'Space Grotesk',sans-serif">${TM.at}/${TM.total} <span style="font-size:13px;font-weight:400;color:#5a6b80">(${TM.pct}%)</span></div></div>
+         <div><div style="font-size:12px;color:#5a6b80">Still to do</div>
+           <div style="font:700 22px 'Space Grotesk',sans-serif;color:${TM.remaining?"#bf7d2c":"#1f7a4d"}">${TM.remaining}</div></div>
+       </div>
+       <div style="font-size:12px;color:#5a6b80;margin-bottom:7px">Organisational ${TM.orgAt}/${TM.orgTotal} at L${TG.org}+ \u00b7 Operational ${TM.operAt}/${TM.operTotal} at \u201c${esc(TG.oper)}\u201d. Unrated and N/A items are excluded, so the denominator only counts what you have actually assessed.</div>
+       ${burndownSVG()}`)}`;
   const _evEids=Object.keys(EVSCORES);let evSection="";
   if(_evEids.length){let evAll=[];_evEids.forEach(e=>evAll=evAll.concat(EVSCORES[e].map(x=>x.score)));
     const evAvg=evAll.reduce((a,b)=>a+b,0)/evAll.length,evBand=bandAvg(evAvg);
@@ -1412,9 +1499,7 @@ function renderReport(){
     ${insSection}
     <h3 style="font-family:'Space Grotesk';margin:20px 0 6px">Lowest-scoring items → Phase 2 focus</h3>
     <ul class="focus" style="list-style:none;padding-left:0;margin:0">${focus}</ul>
-    <h3 style="font-family:'Space Grotesk';margin:20px 0 6px">Mandatory human sign-off</h3>
-    <div class="signoff">${signHTML}</div>
-    ${rvPanel}
+    ${wfSection}
     <p class="src" style="margin-top:18px">Governance basis: King V (technology &amp; information governance, ethical leadership, risk, compliance, stakeholder inclusivity, performance &amp; value creation). RAI basis: NIST AI RMF, ISO/IEC 42001, EU AI Act, POPIA, FAIR/CARE. Full per-Evidence justification in the Evidence Register.</p>`;
 }
 /* events */
@@ -1461,12 +1546,16 @@ document.addEventListener("change",e=>{const na=e.target.closest("[data-na]");if
   if(sup){const id=sup.dataset.sup,lv=+sup.dataset.lv;S.org[id].superseded=S.org[id].superseded||{};if(sup.checked)S.org[id].superseded[lv]=true;else delete S.org[id].superseded[lv];renderOrg();updateScores();}});
 document.addEventListener("change",e=>{const t=e.target;
   if(t.dataset&&t.dataset.lc!=null){LC_DRAFT[t.dataset.lc]=(t.type==="checkbox")?t.checked:t.value;if(t.dataset.lc==="to")renderReport();return;}
+  if(t.dataset&&t.dataset.tg!=null){const tg=targetOf();
+    tg[t.dataset.tg]=(t.dataset.tg==="org")?(+t.value):String(t.value).replace(/^Oper:\s*/,"");
+    saveState();renderReport();return;}
   if(t.dataset&&t.dataset.fx!=null){FIX_DRAFT[t.dataset.fx]=t.value;return;}
   if(t.id==="rvFile"&&t.files&&t.files[0]){readReviewFile(t.files[0]);t.value="";}
   else if(t.dataset&&t.dataset.rvverify!=null&&t.files&&t.files[0]){verifyReviewFile(t.files[0],+t.dataset.rvverify);t.value="";}
   else if(t.dataset&&t.dataset.rv!=null){REVIEW_DRAFT[t.dataset.rv]=t.value;}});
 document.addEventListener("click",e=>{
   const ar=e.target.closest("[data-archive]");if(ar){archiveToRepo();return;}
+  if(e.target.id==="dlReportBtn2"){downloadReport();return;}
   const fa=e.target.closest("[data-fxadd]");if(fa){addFix(fa.dataset.fxadd==="issue");return;}
   const fr=e.target.closest("[data-fxrefresh]");if(fr){refreshFixes();return;}
   const fx=e.target.closest("[data-fxremove]");if(fx){removeFix(+fx.dataset.fxremove);return;}
@@ -1865,7 +1954,7 @@ function downloadGuide(){
   try{
     const wb=XLSX.utils.book_new();
     // 1) Metamodel / read-me
-    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.6.0 · generated "+new Date().toISOString().slice(0,10)],[],
+    const mm=[["Ethical Maturity Assessment — Evidence Guide"],["Version 1.7.0 · generated "+new Date().toISOString().slice(0,10)],[],
       ["This workbook lists every artefact template (the evidence guide), an illustrative sample entry for each, and a worked example."],[],
       ["METAMODEL — entity","Meaning","ID pattern","Count"],
       ["Pillar","The two halves of the model","A / B","2"],

@@ -181,8 +181,8 @@ footer{margin-top:2rem;font-size:.72rem;color:var(--muted);font-family:"Source S
    Semantium String Classifier — Level 0 Lexical Gate (standalone)
    Modelware Systems International · Glossary_SemanticModel suite
    ============================================================ */
-const APP_VERSION = "1.15.1";
-const APP_BUILT = "2026-07-29 07:07 SAST";
+const APP_VERSION = "1.16.0";
+const APP_BUILT = "2026-07-29 08:28 SAST";
 const APP_NAME = "Semantium String Classifier";
 /* Release history — every shipped change bumps the minor and appends here (rendered in Reference › About, exported in Meta). */
 const VERSION_HISTORY = [
@@ -206,7 +206,8 @@ const VERSION_HISTORY = [
   ["1.14.0","Genus-chain algorithm: the genus is the first governed mention plus explicit-coordination chains only — participial/relative clauses (issued by, plays when) can no longer inject fake broader/narrower proposals; fixes Physician appearing as both broader and narrower of Prescription (D37)"],
   ["1.14.1","Longest-match-wins mention resolution (Party inside Party Role is not a mention — the role-as-party trap via substring); Instance Data / Fact rows excluded from genus-differentia derivation: instance-of is not narrower-of (D38)"],
   ["1.15.0","Instance grounding display: instances attach to the concept they instantiate (Marco grounds Person, wears roles via playsRole) as a distinct dashed group — never on the broader/narrower axes (D39)"],
-  ["1.15.1","Fix blank Thesaurus: v1.15.0's instance guard was spliced into two locations by a non-unique patch anchor, throwing mid-render; a render-level smoke test against the shipped worked-example workbook is now part of the harness (D40)"]
+  ["1.15.1","Fix blank Thesaurus: v1.15.0's instance guard was spliced into two locations by a non-unique patch anchor, throwing mid-render; a render-level smoke test against the shipped worked-example workbook is now part of the harness (D40)"],
+  ["1.16.0","Graph parity with the Thesaurus card: governed predicate edges (S-P-O from Type verbalizations, gold, labeled, arrowed Subject→Object) and Related-via-differentia sector (grey dotted); the ego view now shows how the definition's terms actually connect (D41)"]
 ];
 
 /* ---------------- Closed vocabularies (single source of truth) -------- */
@@ -1959,6 +1960,40 @@ Object.assign(App,{
         }
       }
     }
+    /* Governed predicate edges — S-P-O usage from Type-level verbalizations where this concept
+       is Subject or Object: the graph form of the card's Related terms */
+    groups.predicates=[]; groups.related=[];
+    {
+      const prims=this.lex.rows.filter(r=>!r.primaryEquivalent&&r.termType!=="Relationship");
+      const resolve=(txt)=>{ /* alias-aware, longest surface wins */
+        const t=txt.trim().replace(/^(the|a|an)\s+/i,"").replace(/[.\u201c\u201d"']/g,"").trim();
+        let best=null;
+        for(const r of prims){
+          const sfs=[r.label,...this.lex.rows.filter(x=>x.primaryEquivalent===r.id).map(x=>x.label)];
+          for(const sf of sfs)
+            if(sf&&t.toLowerCase()===sf.toLowerCase()||new RegExp("(^|\\s)"+sf.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"s?$","i").test(t))
+              if(!best||sf.length>best.len) best={r,len:sf.length};
+        }
+        return best&&best.r;
+      };
+      for(const rel of this.lex.rows.filter(r=>r.termType==="Relationship"&&!r.primaryEquivalent)){
+        for(const v of (rel.verbalizations||[])){
+          if(v.level!=="Type") continue;
+          const m=new RegExp("^(.*?)\\b"+rel.label.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b(.*)$").exec(v.text||"");
+          if(!m) continue;
+          const S=resolve(m[1]||""), O=resolve(m[2]||"");
+          if(!S||!O) continue;
+          if(S.id===p.id&&O.id!==p.id&&!groups.predicates.some(x=>x.id===O.id&&x.pred===rel.label))
+            groups.predicates.push({id:O.id,label:O.label,kind:"pred",pred:rel.label,dir:"out",title:v.text+" · governed predicate "+(rel.edgeDirection||"")});
+          else if(O.id===p.id&&S.id!==p.id&&!groups.predicates.some(x=>x.id===S.id&&x.pred===rel.label))
+            groups.predicates.push({id:S.id,label:S.label,kind:"pred",pred:rel.label,dir:"in",title:v.text+" · governed predicate "+(rel.edgeDirection||"")});
+        }
+      }
+      const taken=new Set([].concat(...Object.values(groups).map(g=>g.map(n=>n.id).filter(Boolean))));
+      const sg2=this.governedSuggestions(p);
+      for(const r of (sg2.related||[])) if(!taken.has(r.id))
+        groups.related.push({id:r.id,label:r.label,kind:"derived",title:"related via differentia — the gloss mentions it after the genus; no hierarchy claimed"});
+    }
     return groups;
   },
   renderGraph(){
@@ -1970,15 +2005,17 @@ Object.assign(App,{
     const W=980,H=560,cx=W/2,cy=H/2;
     const sectors={broader:{x:cx,y:70,dx:170,dy:0,lab:"Broader"},narrower:{x:cx,y:H-60,dx:170,dy:0,lab:"Narrower"},
       equivalence:{x:W-130,y:cy,dx:0,dy:64,lab:"Equivalence"},opposite:{x:120,y:cy,dx:0,dy:64,lab:"Opposite"},
-      partOf:{x:180,y:130,dx:150,dy:44,lab:"Part-Of"},hasPart:{x:W-190,y:H-130,dx:-150,dy:-44,lab:"Has-Part"}};
+      partOf:{x:180,y:130,dx:150,dy:44,lab:"Part-Of"},hasPart:{x:W-190,y:H-130,dx:-150,dy:-44,lab:"Has-Part"},
+      predicates:{x:W-200,y:120,dx:-160,dy:46,lab:"Predicates (S-P-O)"},related:{x:190,y:H-120,dx:160,dy:-46,lab:"Related (differentia)"}};
     const styles={broader:"stroke:#0d7a8a;stroke-width:2",narrower:"stroke:#0d7a8a;stroke-width:2",
       equivalence:"stroke:#2d6a4f;stroke-width:2",opposite:"stroke:#a12d2d;stroke-width:2;stroke-dasharray:6 4",
-      hasPart:"stroke:#7a5aa0;stroke-width:2",partOf:"stroke:#7a5aa0;stroke-width:2"};
+      hasPart:"stroke:#7a5aa0;stroke-width:2",partOf:"stroke:#7a5aa0;stroke-width:2",
+      predicates:"stroke:#b8860b;stroke-width:1.6",related:"stroke:#8a8a80;stroke-width:1.4;stroke-dasharray:2 5"};
     let nodes="",edges="";
     const nodeBox=(n,x,y,rel)=>{
       const w=Math.max(80,Math.min(180,n.label.length*8+22)),h=30;
-      const fill=n.kind==="gov"?"#dcf3df":n.kind==="alias"?"#e8f5d8":n.kind==="dep"?"#fbe4e4":n.kind==="derived"?"#ffffff":n.kind==="wn-gov"?"#eef7f8":"#f3f3ef";
-      const stroke=n.kind==="gov"?"#2d6a4f":n.kind==="derived"?"#9aa7a0":n.kind==="wn"||n.kind==="wn-gov"?"#9db8bd":"#2d6a4f";
+      const fill=n.kind==="gov"?"#dcf3df":n.kind==="alias"?"#e8f5d8":n.kind==="dep"?"#fbe4e4":n.kind==="derived"?"#ffffff":n.kind==="wn-gov"?"#eef7f8":n.kind==="pred"?"#fdf6e3":"#f3f3ef";
+      const stroke=n.kind==="gov"?"#2d6a4f":n.kind==="derived"?"#9aa7a0":n.kind==="wn"||n.kind==="wn-gov"?"#9db8bd":n.kind==="pred"?"#b8860b":"#2d6a4f";
       const dash=n.kind==="derived"?"stroke-dasharray:2 3;":n.kind==="wn"||n.kind==="wn-gov"?"stroke-dasharray:5 4;":"";
       const op=n.weak?"opacity:.55;":"";
       const click=n.id?`onclick="App.graphSel='${esc(n.id)}';App.renderGraph()" style="cursor:pointer"`
@@ -1994,8 +2031,10 @@ Object.assign(App,{
         const off=i-(Math.min(arr.length,5)-1)/2;
         const x=sec.x+off*sec.dx, y=sec.y+off*sec.dy;
         const st=styles[key]+(n.kind==="derived"?";stroke-dasharray:2 4;opacity:.6":n.kind==="wn"||n.kind==="wn-gov"?";stroke-dasharray:5 4;opacity:"+(n.weak?".35":".6"):"");
-        const marker=key==="broader"?' marker-end="url(#arr)"':key==="narrower"?' marker-start="url(#arr)"':(key==="hasPart"||key==="partOf")?' marker-end="url(#arr)"':"";
+        const marker=key==="broader"?' marker-end="url(#arr)"':key==="narrower"?' marker-start="url(#arr)"':(key==="hasPart"||key==="partOf")?' marker-end="url(#arr)"':key==="predicates"?(n.dir==="out"?' marker-end="url(#arr)"':' marker-start="url(#arr)"'):"";
         edges+=`<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" style="${st}"${marker}/>`;
+        if(n.pred){ const mx=(cx+x)/2, my=(cy+y)/2-5;
+          edges+=`<text x="${mx}" y="${my}" text-anchor="middle" style="font-size:10px;font-style:italic;fill:#8a6d1a;font-family:Space Grotesk,sans-serif">${esc(n.pred)}</text>`; }
         nodes+=nodeBox(n,x,y,key);
       });
       if(arr.length>5) nodes+=`<text x="${sec.x}" y="${sec.y+(sec.dy?3*sec.dy:26)}" text-anchor="middle" style="font-size:11px;fill:#5f6d72">+${arr.length-5} more</text>`;

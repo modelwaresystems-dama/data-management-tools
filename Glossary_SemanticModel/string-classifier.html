@@ -181,8 +181,8 @@ footer{margin-top:2rem;font-size:.72rem;color:var(--muted);font-family:"Source S
    Semantium String Classifier — Level 0 Lexical Gate (standalone)
    Modelware Systems International · Glossary_SemanticModel suite
    ============================================================ */
-const APP_VERSION = "1.12.0";
-const APP_BUILT = "2026-07-22 17:29 SAST";
+const APP_VERSION = "1.14.0";
+const APP_BUILT = "2026-07-29 06:15 SAST";
 const APP_NAME = "Semantium String Classifier";
 /* Release history — every shipped change bumps the minor and appends here (rendered in Reference › About, exported in Meta). */
 const VERSION_HISTORY = [
@@ -201,7 +201,9 @@ const VERSION_HISTORY = [
   ["1.11.0","Review tab: filterable steward pass over existing classifications — full editable record per string with sense decision, claim assessment, relations, validation, and status ruling chips (D30)"],
   ["1.11.1","Claim verdicts clarified: neutral ○ “yours to define (L1–L3)” for property/relational claims outside the dictionary's jurisdiction; red ✗ reserved for an unsupported genus; anchors-vs-definition summary line (D31)"],
   ["1.11.2","Two-hierarchies signposting: Review card separates “Governed relations (your model)” from “Dictionary broader (WordNet)”; Thesaurus and Reference explain that model rulings and word ancestry answer different questions (D32)"],
-  ["1.12.0","Review card shows Primary Equivalent with visible LEX ID (editable); thesaurus equivalence chips carry IDs; anchor-tree summary in plain words; Predicate Registry gains chip legend, Remaining-governance line and one-click Retire→alias (D33)"]
+  ["1.12.0","Review card shows Primary Equivalent with visible LEX ID (editable); thesaurus equivalence chips carry IDs; anchor-tree summary in plain words; Predicate Registry gains chip legend, Remaining-governance line and one-click Retire→alias (D33)"],
+  ["1.13.0","Type-blindness fix: genus-differentia analysis (umbrella, members, broader advisory) no longer runs on Relationship rows — a Line's gloss is Subject-predicate-Object; Thesaurus shows a Predicate reading (domain/range candidates + direction) instead (D34)"],
+  ["1.14.0","Genus-chain algorithm: the genus is the first governed mention plus explicit-coordination chains only — participial/relative clauses (issued by, plays when) can no longer inject fake broader/narrower proposals; fixes Physician appearing as both broader and narrower of Prescription (D37)"]
 ];
 
 /* ---------------- Closed vocabularies (single source of truth) -------- */
@@ -1307,6 +1309,22 @@ Object.assign(App,{
     const out={narrower:[],broader:[],related:[],children:[],umbrella:false};
     const gloss=String(p.senseGloss||"");
     if(!gloss.trim()) return out;
+    if(p.termType==="Relationship"){
+      /* A Line's gloss is a verbalization — Subject-predicate-Object, not genus-differentia.
+         Its governed mentions are DOMAIN/RANGE candidates (Level 1/2 territory), never members. */
+      const escR=x=>x.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+      const prims=this.lex.rows.filter(r=>!r.primaryEquivalent&&r.id!==p.id&&r.termType!=="Relationship");
+      const hits=[];
+      for(const r of prims){
+        const sfs=[{t:r.label,via:null},...this.lex.rows.filter(a=>a.primaryEquivalent===r.id&&a.label.trim()).map(a=>({t:a.label,via:a.label}))];
+        for(const sf of sfs){ const m=new RegExp("\\b"+escR(sf.t)+"s?\\b","i").exec(gloss);
+          if(m){ hits.push({r,via:sf.via,pos:m.index}); break; } }
+      }
+      hits.sort((a,b)=>a.pos-b.pos);
+      out.predicateReading={subject:hits[0]||null,object:hits[1]||null,extras:hits.slice(2)};
+      out.ungoverned=[]; /* worklist for predicates comes from the verbalization highlighter */
+      return out;
+    }
     const escRe=x=>x.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
     const primaries=this.lex.rows.filter(r=>!r.primaryEquivalent&&r.id!==p.id&&r.termType!=="Relationship");
     /* alias-aware: a primary matches by its own label OR any governed alias label (Primary Equivalent) */
@@ -1317,36 +1335,71 @@ Object.assign(App,{
     const genusPhrase=cut>=0?gloss.slice(0,cut):gloss.split(/[,;]/)[0];
     const rest=cut>=0?gloss.slice(cut):gloss.slice(genusPhrase.length);
     const inGenus=[],inRest=[];
-    const notComposition=(text,sf)=>{ /* "group of persons": mention after "of" = composition, not genus */
-      const m=new RegExp("\\bof\\s+(?:[a-z]+\\s+){0,2}"+sf.t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"s?\\b","i");
-      return !m.test(text); };
-    for(const r of primaries){
-      const g=findIn(r,genusPhrase);
-      if(g&&notComposition(genusPhrase,g)){ r._via=g.via; inGenus.push(r); continue; }
-      if(g){ r._via=g.via; inRest.push(r); continue; }
-      const x=findIn(r,rest);
-      if(x){ r._via=x.via; inRest.push(r); }
+    const notComposition=(text,pos)=>{ /* a genus head follows only articles/adjectives — never a
+      preposition ("group OF persons", "issued BY a Physician") or a gerund ("dispensing a Prescription") */
+      const before=text.slice(Math.max(0,pos-30),pos);
+      if(/\b(of|by|for|under|within|from|via|per|to|with|in|on|at)\s+(?:[a-z]+\s+){0,2}$/i.test(before)) return false;
+      if(/\b[a-z]{3,}ing\s+(?:an?\s+|the\s+)?$/i.test(before)) return false;
+      return true; };
+    /* GENUS CHAIN: the genus is the FIRST governed mention plus only mentions chained to it by
+       explicit coordination (comma / or / and). "a person or organisation" chains (umbrella);
+       "Medical Directive issued by a Physician" does NOT chain (Physician → related);
+       "the Party Role a Party plays when…" → genus is Party Role; later mentions → related. */
+    const genusChain=(phrase,cands,surfFn)=>{
+      const ms=[];
+      for(const r of cands){
+        for(const sf of surfFn(r)){
+          const m=new RegExp("\\b"+escRe(sf.t)+"s?\\b","i").exec(phrase);
+          if(m&&notComposition(phrase,m.index)){ ms.push({r,via:sf.via,pos:m.index,end:m.index+m[0].length}); break; }
+        }
+      }
+      ms.sort((a,b)=>a.pos-b.pos);
+      if(!ms.length) return {chain:[],rest:[],disjunctive:false};
+      const chain=[ms[0]]; let disjunctive=false; const rest=[];
+      for(let k=1;k<ms.length;k++){
+        const link=phrase.slice(chain[chain.length-1].end,ms[k].pos);
+        if(/^(\s*(,|\bor\b|\band\b|\ban\b|\ba\b)\s*)+$/i.test(link)&&/(,|\bor\b|\band\b)/i.test(link)){
+          chain.push(ms[k]); if(/(\bor\b|\band\b|,)/i.test(link)) disjunctive=true;
+        } else rest.push(ms[k]);
+      }
+      return {chain,rest,disjunctive};
+    };
+    /* coordination touching a mention — catches "a party or automated system" where the
+       other disjunct is ungoverned */
+    const adjDisj=(phrase,m)=>/^\s*(,|\bor\b|\band\b)/i.test(phrase.slice(m.end))
+      ||/(\bor\b|\band\b|,)\s*(?:an?\s+|the\s+)?$/i.test(phrase.slice(0,m.pos));
+    {
+      const gc=genusChain(genusPhrase,primaries,surfaces);
+      for(const m of gc.chain){ m.r._via=m.via; inGenus.push(m.r); }
+      for(const m of gc.rest){ m.r._via=m.via; inRest.push(m.r); }
+      const inG=new Set(inGenus.map(r=>r.id)), inR=new Set(inRest.map(r=>r.id));
+      for(const r of primaries){
+        if(inG.has(r.id)||inR.has(r.id)) continue;
+        const x=findIn(r,genusPhrase)||findIn(r,rest);
+        if(x){ r._via=x.via; inRest.push(r); }
+      }
+      if((gc.disjunctive&&inGenus.length>=2)||(inGenus.length>=1&&adjDisj(genusPhrase,gc.chain[0]))){
+        out.umbrella=true; out.narrower=inGenus;
+      } else if(inGenus.length){ out.broader=[inGenus[0]]; for(const r of inGenus.slice(1)) inRest.push(r); }
+      out.related=inRest;
     }
-    if(inGenus.length>=2||(inGenus.length>=1&&/\b(or|and)\b/i.test(genusPhrase))){
-      out.umbrella=true; out.narrower=inGenus;         /* disjunctive genus = union type = umbrella */
-    } else if(inGenus.length===1){ out.broader=inGenus; }
-    out.related=inRest;
-    const mySurfaces=surfaces(p);
     for(const r of primaries){
       const g=String(r.senseGloss||""); if(!g) continue;
       const c=g.search(/\b(that|which|who)\b/i);
       const gp=c>=0?g.slice(0,c):g.split(/[,;]/)[0];
-      const hit=mySurfaces.find(sf=>new RegExp("\\b"+escRe(sf.t)+"s?\\b","i").test(gp)&&notComposition(gp,sf));
-      if(hit){
-        r._via=hit.via;
-        /* SAME rule both directions: a disjunctive genus is an umbrella over its mentions.
-           If THEIR genus mentions me disjunctively ("a party or system that…"), they are my BROADER —
-           only a single-genus mention makes them my narrower child ("a party that buys…"). */
-        if(/\b(or|and)\b/i.test(gp)||gp.includes(",")){
-          if(!out.broader.some(x=>x.id===r.id)) out.broader.push(r);
-        } else {
-          r._roleTrap=this._roleish(r); out.children.push(r);
-        }
+      /* Their genus chain, computed over ALL governed primaries (me included). I matter only
+         if I am IN the chain: disjunctive chain containing me → they are my BROADER (umbrella over me);
+         me as the single genus head → they are my narrower CHILD. A mention outside the chain
+         ("…plays when licensed to issue Prescriptions") is neither. */
+      const candidates=[...primaries.filter(x=>x.id!==r.id),p];
+      const gc2=genusChain(gp,candidates,surfaces);
+      const mine=gc2.chain.find(m=>m.r.id===p.id);
+      if(!mine) continue;
+      r._via=mine.via;
+      if((gc2.disjunctive&&gc2.chain.length>=2)||adjDisj(gp,mine)){
+        if(!out.broader.some(x=>x.id===r.id)) out.broader.push(r);
+      } else if(gc2.chain[0].r.id===p.id){
+        r._roleTrap=this._roleish(r); out.children.push(r);
       }
     }
     /* Role-as-subtype trap: the term names a Role but its genus is the PLAYER (a Who).
@@ -1430,6 +1483,15 @@ Object.assign(App,{
           return `<div style="margin-top:.35rem"><label class="f">Governed thesaurus relations — YOUR model's hierarchy (steward rulings; independent of the dictionary ancestry below, and overriding every derivation)</label>
             ${rels.length?`<div class="wnrel">${rels.map(relRow).join(" ")}</div>`:'<p class="hint" style="margin:.15rem 0">None yet — add one below, or confirm a derived proposal with its ✓.</p>'}${addSel}</div>`;})()}
         ${(()=>{const sg=this.governedSuggestions(p);
+          if(p.termType==="Relationship"){
+            const prd=sg.predicateReading||{};
+            const chipR=(h,role)=>h?`<span class="chip on" title="${esc(h.r.id)}${h.via?" · via alias “"+esc(h.via)+"”":""}">${esc(role)}: ${esc(h.r.label)}</span>`:"";
+            if(!prd.subject&&!prd.object) return "";
+            return `<div style="margin-top:.35rem"><label class="f">Predicate reading — a Line's gloss is Subject-predicate-Object, not genus-differentia</label>
+              <div class="wnrel">${chipR(prd.subject,"Subject-side")} <span class="chip">${esc(p.label)}</span> ${chipR(prd.object,"Object-side")}
+              ${p.edgeDirection?` · <span class="chip on">${esc(p.edgeDirection)}</span>`:' · <span class="chip v-WARN">no Edge Direction declared</span>'}</div>
+              <p class="hint" style="margin:.2rem 0 0">These governed mentions are domain / range candidates — naming them formally is Level 1–2 territory. No broader, no umbrella: predicates have inverses and directions, not parents.</p></div>`;
+          }
           const any=sg.narrower.length||sg.broader.length||sg.related.length||sg.children.length;
           if(!any&&!(sg.ungoverned||[]).length) return "";
           if(!any) return `<div style="margin-top:.35rem"><label class="f">Governed suggestions — none yet; your gloss names ungoverned strings</label>
@@ -1812,6 +1874,8 @@ Object.assign(App,{
     <tr><td>Broader / narrower / related</td><td>WordNet evidence only (governed relations live in the Glossary Workbench thesaurus layer)</td><td>skos:broader / narrower / related</td></tr>
     <tr><td>Definition / scope note</td><td>Sense Gloss</td><td>skos:definition</td></tr></table>
 
+    <h3>Predicates in the thesaurus</h3>
+    <p>A Line's gloss is a <em>verbalization</em> — Subject-predicate-Object — so genus-differentia analysis never runs on it: predicates have no genus, no umbrella, no broader concept. The Thesaurus shows a <strong>Predicate reading</strong> instead: the governed mentions in gloss order as Subject-side and Object-side (domain/range candidates — formal naming is Level 1–2), alongside the declared Edge Direction. What predicates DO have at Level 0: an inverse, a direction, an equivalence chain of retired stems.</p>
     <h3>Two hierarchies, two jobs</h3>
     <p>The <strong>WordNet anchor</strong> pins the word's lexical identity — its dictionary ancestry (person → organism → …) answers “what does this word mean in English?”. The <strong>governed relations</strong> record your enterprise model — Broader → Party is the DAMA Party pattern (Party generalises Person and Organisation), a ruling the dictionary was never asked about. They routinely diverge, and the divergence is the point: Party's own sense is Enhanced precisely because the business supertype concept exceeds the dictionary. Where your model and the dictionary agree, WordNet corroborates; where they differ, governance wins and the dictionary remains evidence about the word only.</p>
     <h3>Thesaurus relations — governed vs derived</h3>

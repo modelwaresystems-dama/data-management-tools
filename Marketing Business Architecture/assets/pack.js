@@ -215,7 +215,8 @@
         '<div class="brand"><span class="dot"></span>Modelware<small>Data Management</small></div>'+
         '<div class="nav-links">'+links+'</div>'+
         '<div class="nav-right">'+
-          (CFG.version?'<span class="ver-pill" title="Built '+PACK.esc(CFG.built||"")+'">'+PACK.esc(CFG.version)+'</span>':'')+
+          (CFG.version?'<span class="ver-pill">'+PACK.esc(CFG.version)+'</span>':'')+
+          (CFG.built?'<span class="ver-built">Updated '+PACK.esc(CFG.built)+'</span>':'')+
           '<div class="src-sel"><label>Source</label>'+
           '<select onchange="PACK.setSource(this.value)">'+srcOpts+'</select></div></div>'+
       '</div>'+

@@ -999,3 +999,15 @@ window.PACK_CONFIG.chain = [
   if(!has("business_process.html")){ var i=p.findIndex(function(x){return x.file==="customer_journey.html";}); p.splice(i+1,0,{file:"business_process.html", nav:"Processes", title:"Business Processes (SIPOC)"}); }
   if(!has("decisions.html")){ var j=p.findIndex(function(x){return x.file==="business_process.html";}); p.splice(j+1,0,{file:"decisions.html", nav:"Decisions", title:"Decision Models"}); }
 })();
+
+/* ---- version control stamp ---------------------------------------------- */
+window.PACK_CONFIG.version = "v1.2.0";
+window.PACK_CONFIG.built   = "2026-07-31 15:42 SAST";
+window.PACK_CONFIG.changelog = [
+  { v:"v1.2.0", date:"2026-07-31 15:42 SAST",
+    note:"Version-control stamp added (number + build date-time, SAST). Pack linked from the site's top-level Asset Navigator." },
+  { v:"v1.1.0", date:"2026-07-31 SAST",
+    note:"Architecture Navigator (guided walk of the full traceability chain) with a breadcrumb rail on every page; Business Processes as SIPOC; Decision Models as DMN-style tables; capability map recast under a value proposition as a value-stream heat map with an Attention / Maturity toggle." },
+  { v:"v1.0.0", date:"2026-07-31 SAST",
+    note:"Initial 8-page pack — Landing, Business Architecture, Customer Journey & CX, Hyper-personalisation & CDP, AI Use-Cases, Training & Adoption, Governance & Responsible AI, Glossary settings. Generic baked-in content layer." }
+];

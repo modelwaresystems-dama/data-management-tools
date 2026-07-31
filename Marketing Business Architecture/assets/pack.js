@@ -214,7 +214,9 @@
       '<div class="nav-top">'+
         '<div class="brand"><span class="dot"></span>Modelware<small>Data Management</small></div>'+
         '<div class="nav-links">'+links+'</div>'+
-        '<div class="nav-right"><div class="src-sel"><label>Source</label>'+
+        '<div class="nav-right">'+
+          (CFG.version?'<span class="ver-pill" title="Built '+PACK.esc(CFG.built||"")+'">'+PACK.esc(CFG.version)+'</span>':'')+
+          '<div class="src-sel"><label>Source</label>'+
           '<select onchange="PACK.setSource(this.value)">'+srcOpts+'</select></div></div>'+
       '</div>'+
       (wb ? '<div class="nav-work"><span class="wl">Workbooks</span>'+wb+'</div>' : '')+
@@ -231,8 +233,9 @@
   };
 
   PACK.footer = function(){
+    var vb = (CFG.version?('  ·  <strong>'+PACK.esc(CFG.version)+'</strong>'):'')+(CFG.built?('  ·  Built '+PACK.esc(CFG.built)):'');
     return '<footer class="pf">'+PACK.esc(CFG.identity)+'  ·  '+PACK.esc(CFG.engagement)+
-      '  ·  Client: '+PACK.esc(CFG.client)+'  ·  Generic reference content — self-contained, offline-capable.</footer>';
+      '  ·  Client: '+PACK.esc(CFG.client)+vb+'  ·  Self-contained, offline-capable.</footer>';
   };
 })();
 

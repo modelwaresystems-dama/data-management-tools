@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.2.5";
-window.PACK_CONFIG.built   = "2026-07-31 16:39 SAST";
+window.PACK_CONFIG.version = "v1.2.6";
+window.PACK_CONFIG.built   = "2026-07-31 16:48 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.2.6", date:"2026-07-31 16:48 SAST",
+    note:"Introduced Data Products: the governed, owned data assets that deliver the AI use-cases and CDP, each mapped to a data domain (owner/steward) to align demand to the Data Strategy. Added a Data Products catalog page (filter by domain) and a 10th Navigator step showing the data products required by the selected AI use-case and its CDP services, grouped by domain." },
   { v:"v1.2.5", date:"2026-07-31 16:39 SAST",
     note:"Extended the Navigator chain past Decision with two steps: AI Use Case (the use-cases that apply the chosen decision) and Personalisation (CDP) (the CDP services, models, data and governance guardrails that use-case requires). Breadcrumb/stepper now span all nine steps." },
   { v:"v1.2.4", date:"2026-07-31 16:26 SAST",
@@ -1053,3 +1055,84 @@ window.GENERIC.aiCdp = {
   U17:{ services:["CDP1","CDP2","CDP3","CDP4","CDP6","CDP7"], models:["Next best action","Content personalisation"], data:["Life-event / contextual signals","Transaction behaviour","Consent"] },
   U18:{ services:["CDP3","CDP4","CDP6","CDP8"], models:[], data:["Digital events"] }
 };
+
+/* ============================================================================
+   v4: Data Products — the governed, owned data assets that deliver the AI
+   use-cases and the CDP. Each sits in a data DOMAIN (with owner/steward),
+   connecting demand (AI/CDP) to the Data Strategy's governed supply.
+   ========================================================================== */
+window.GENERIC.dataDomains = [
+  { id:"DM1", name:"Party & Customer",       owner:"Chief Data Office",        steward:"Customer Data Steward",  def:"Identity, household/business relationships and the unified customer profile." },
+  { id:"DM2", name:"Product & Offer",         owner:"Product Data Office",      steward:"Product Data Steward",   def:"Products held, offers, eligibility and pricing data." },
+  { id:"DM3", name:"Interaction & Event",     owner:"Digital & Channels",       steward:"Event Data Steward",     def:"Behavioural events, transactions and journey state." },
+  { id:"DM4", name:"Consent & Preference",    owner:"Privacy Office",           steward:"Consent Steward",        def:"Consent, purpose and preference permissions." },
+  { id:"DM5", name:"Risk & Eligibility",      owner:"Risk & Compliance",        steward:"Risk Data Steward",      def:"Risk indicators, affordability, eligibility and fraud signals." },
+  { id:"DM6", name:"Insight & Model",         owner:"Data Science / Analytics", steward:"Model Data Steward",     def:"Features, model scores, segments and audiences." },
+  { id:"DM7", name:"Experience & Feedback",   owner:"CX Office",                steward:"Voice-of-Customer Steward", def:"Voice-of-customer, complaints and journey analytics." },
+  { id:"DM8", name:"Activation & Measurement",owner:"Marketing Data Office",    steward:"Marketing Data Steward", def:"Activation audiences, next-best-action decisions, attribution and ROI." },
+  { id:"DM9", name:"Governance & Metadata",   owner:"Chief Data Office",        steward:"Metadata Steward",       def:"Data quality, lineage, provenance and audit across products." }
+];
+/* Each data product: domain, description, the CDP services it realises, the AI
+   use-cases it serves, and the governed glossary terms it carries. */
+window.GENERIC.dataProducts = [
+  { id:"DP01", name:"Customer Identity Graph", domain:"DM1",
+    desc:"Resolved party / person / household / business identity and relationships (the golden customer record).",
+    cdp:["CDP1"], ai:["U01","U02","U03","U04","U09","U12","U14","U17"], terms:["Party","Match Key","Beneficial Owner (UBO)"] },
+  { id:"DP02", name:"Customer 360 Profile", domain:"DM1",
+    desc:"Unified demographic, behavioural, product, service, complaint and journey-state profile per customer.",
+    cdp:["CDP3"], ai:["U01","U02","U03","U04","U05","U07","U09","U10","U11","U12","U14","U17","U18"], terms:["Customer 360"] },
+  { id:"DP03", name:"Product Holdings", domain:"DM2",
+    desc:"Products and services currently held per customer, with tenure and balances.",
+    cdp:["CDP3","CDP6"], ai:["U02","U04","U14"], terms:["Product Holding"] },
+  { id:"DP04", name:"Offer & Eligibility Catalogue", domain:"DM2",
+    desc:"Available offers with product rules, affordability and eligibility criteria.",
+    cdp:["CDP6"], ai:["U02","U05","U09"], terms:["Offer","Eligibility"] },
+  { id:"DP05", name:"Behavioural Event Stream", domain:"DM3",
+    desc:"Real-time digital and behavioural events (taps, swipes, sessions, triggers).",
+    cdp:["CDP4"], ai:["U01","U07","U08","U10","U13","U17","U18"], terms:["Behavioural Event"] },
+  { id:"DP06", name:"Transaction Ledger", domain:"DM3",
+    desc:"Transaction behaviour used for propensity, churn, CLV and affordability.",
+    cdp:["CDP3","CDP6"], ai:["U01","U03","U04","U12"], terms:["Transaction"] },
+  { id:"DP07", name:"Journey State", domain:"DM3",
+    desc:"Current lifecycle stage and journey context per customer (moments of truth).",
+    cdp:["CDP4"], ai:["U01","U10","U17"], terms:["Journey State","Moment of Truth"] },
+  { id:"DP08", name:"Consent & Preference Ledger", domain:"DM4",
+    desc:"Consent, purpose, channel and campaign permissions, with opt-out enforcement.",
+    cdp:["CDP2"], ai:["U05","U06","U08","U15","U17"], terms:["Consent Basis","Preference Management"] },
+  { id:"DP09", name:"Risk & Affordability Signals", domain:"DM5",
+    desc:"Risk indicators, affordability, eligibility and fraud/vulnerability flags.",
+    cdp:["CDP6"], ai:["U03","U16","U17"], terms:["Risk Rating","Affordability"] },
+  { id:"DP10", name:"Feature Store", domain:"DM6",
+    desc:"Governed, reusable features feeding the marketing models, with explainability attributes.",
+    cdp:["CDP6"], ai:["U01","U02","U03","U04","U12","U14","U16"], terms:["Feature Store"] },
+  { id:"DP11", name:"Model Score Products", domain:"DM6",
+    desc:"Published propensity, churn, CLV and next-best-action scores as governed products.",
+    cdp:["CDP6","CDP7"], ai:["U01","U02","U03","U04","U14"], terms:["Propensity Model","Churn Model","CLV"] },
+  { id:"DP12", name:"Segment & Audience Product", domain:"DM6",
+    desc:"Lifecycle and ML segments and activation-ready audiences with eligibility filters.",
+    cdp:["CDP5"], ai:["U05","U07","U12","U13"], terms:["Segmentation","Audience"] },
+  { id:"DP13", name:"Voice-of-Customer & Complaints", domain:"DM7",
+    desc:"Complaints, surveys, sentiment and service interactions for driver insight.",
+    cdp:["CDP3"], ai:["U03","U11","U17"], terms:["Voice of Customer","CSAT"] },
+  { id:"DP14", name:"Journey Analytics Product", domain:"DM7",
+    desc:"Drop-off, pathing and journey KPIs feeding the improvement backlog.",
+    cdp:["CDP8"], ai:["U10","U11"], terms:["Journey Analytics"] },
+  { id:"DP15", name:"Activation Audience & NBA Decisions", domain:"DM8",
+    desc:"Activation-ready audiences and next-best-action decisions surfaced to channels, RMs and advisors.",
+    cdp:["CDP7"], ai:["U01","U05","U08","U14","U17"], terms:["Next Best Action","Activation"] },
+  { id:"DP16", name:"Attribution & Marketing ROI", domain:"DM8",
+    desc:"Attributed outcomes, marketing ROI and experiment lift for accountability.",
+    cdp:["CDP8"], ai:["U07","U13","U18"], terms:["Attribution","Marketing ROI"] },
+  { id:"DP17", name:"Data Quality & Lineage", domain:"DM9",
+    desc:"Provenance, match confidence, quality scores, masking and audit across every product.",
+    cdp:["CDP8"], ai:["U15","U16","U18"], terms:["Data Quality","Lineage"] }
+];
+/* chain step 10 + catalog page registration */
+window.PACK_CONFIG.chain.push({ key:"dp", label:"Data Products" });
+(function(){
+  var p = window.PACK_CONFIG.pages;
+  if(!p.some(function(x){return x.file==="data_products.html";})){
+    var i = p.findIndex(function(x){return x.file==="hyperpersonalisation_cdp.html";});
+    p.splice((i>=0?i+1:p.length),0,{file:"data_products.html", nav:"Data Products", title:"Data Products"});
+  }
+})();

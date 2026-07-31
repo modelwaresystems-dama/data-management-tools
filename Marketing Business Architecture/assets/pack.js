@@ -248,7 +248,7 @@
   var PACK = window.PACK, CFG = window.PACK_CONFIG, D = PACK.data();
 
   /* ---- chain context via URL query params (shareable, carries selection) -- */
-  PACK._chainKeys = ["sh","vp","kpi","cap","cj","proc","dec","ai","cdp"];
+  PACK._chainKeys = ["sh","vp","kpi","cap","cj","proc","dec","ai","cdp","dp"];
   function parseSearch(){
     var q = {}; (location.search.replace(/^\?/,"").split("&")).forEach(function(p){
       if(!p) return; var kv=p.split("="); q[kv[0]]=decodeURIComponent(kv[1]||""); });
@@ -292,6 +292,7 @@
     if(!v){
       if(key==="cap" && c.vp) return "value-stream view";
       if(key==="cdp" && c.ai) return "CDP requirements";
+      if(key==="dp"  && c.ai) return "required data products";
       return null;
     }
     if(key==="sh"){ var o=PACK.MAP.SH[v]; return o?o.name:v; }
@@ -303,6 +304,7 @@
     if(key==="dec"){ var o7=PACK.MAP.D[v]; return o7?o7.name:v; }
     if(key==="ai"){ var o8=PACK.MAP.AI[v]; return o8?o8.name:v; }
     if(key==="cdp"){ return v || (c.ai?"CDP requirements":null); }
+    if(key==="dp"){ var o9=PACK.dpById?PACK.dpById(v):null; return o9?o9.name:(v||(c.ai?"required data products":null)); }
     return v;
   };
   PACK.renderBreadcrumb = function(activeKey){
@@ -417,4 +419,35 @@
         (rows||'<tr><td class="dc-i">R1</td><td>'+PACK.esc(d.rules)+'</td><td class="dc-then">'+PACK.esc(d.outcome)+'</td></tr>')+'</table></div>';
   };
 
+})();
+
+/* ============================================================================
+   v4 ADD-ONS: Data Product helpers + reusable card renderer
+   ========================================================================== */
+(function(){
+  var PACK = window.PACK, D = PACK.data();
+  PACK.dpById = function(id){ return (D.dataProducts||[]).filter(function(x){return x.id===id;})[0]; };
+  PACK.domainById = function(id){ return (D.dataDomains||[]).filter(function(x){return x.id===id;})[0]; };
+  /* data products required by an AI use-case: those that serve it directly, or
+     that realise one of its required CDP services */
+  PACK.dataProductsForAI = function(aiId){
+    var svc = (D.aiCdp && D.aiCdp[aiId] ? D.aiCdp[aiId].services : []) || [];
+    return (D.dataProducts||[]).filter(function(p){
+      return (p.ai||[]).indexOf(aiId)>=0 || (p.cdp||[]).some(function(s){return svc.indexOf(s)>=0;});
+    });
+  };
+  PACK.dpCardHtml = function(dp){
+    var dom = PACK.domainById(dp.domain) || {name:dp.domain, owner:"—", steward:"—"};
+    var cdpChips = (dp.cdp||[]).map(function(s){ return '<a class="chip proc" href="hyperpersonalisation_cdp.html"><span class="id">'+PACK.esc(s)+'</span></a>'; }).join("");
+    var aiChips  = (dp.ai||[]).map(function(u){ return PACK.chip(u); }).join("");
+    return '<div class="dpcard">'+
+      '<div class="dp-top"><span class="dp-dom" title="'+PACK.esc(dom.name)+'">'+PACK.esc(dom.name)+'</span><span class="dp-id">'+PACK.esc(dp.id)+'</span></div>'+
+      '<div class="dp-name">'+PACK.esc(dp.name)+'</div>'+
+      '<p class="dp-desc">'+PACK.esc(dp.desc)+'</p>'+
+      '<div class="dp-owner"><span>Owner: <b>'+PACK.esc(dom.owner)+'</b></span><span>Steward: <b>'+PACK.esc(dom.steward)+'</b></span></div>'+
+      (cdpChips?'<div class="chiprow"><span class="lbl">Realises CDP</span>'+cdpChips+'</div>':'')+
+      (aiChips?'<div class="chiprow"><span class="lbl">Serves AI</span>'+aiChips+'</div>':'')+
+      (dp.terms&&dp.terms.length?PACK.termChips(dp.terms,"Terms"):'')+
+    '</div>';
+  };
 })();

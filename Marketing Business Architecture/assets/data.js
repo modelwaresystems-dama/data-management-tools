@@ -848,7 +848,7 @@ window.PACK_CONFIG = {
     {file:"index.html", nav:"Home", title:"Landing"},
     {file:"business_architecture.html", nav:"Architecture", title:"Business Architecture"},
     {file:"customer_journey.html", nav:"Journeys", title:"Customer Journey & CX"},
-    {file:"hyperpersonalisation_cdp.html", nav:"Personalisation & CDP", title:"Hyper-personalisation & CDP"},
+    {file:"hyperpersonalisation_cdp.html", nav:"Personalisation", title:"Hyper-personalisation & CDP"},
     {file:"ai_usecases.html", nav:"AI Use-Cases", title:"AI Use-Cases"},
     {file:"training_adoption.html", nav:"Training", title:"Training & Adoption"},
     {file:"governance_responsible_ai.html", nav:"Governance", title:"Governance & Responsible AI"},
@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.2.3";
-window.PACK_CONFIG.built   = "2026-07-31 16:12 SAST";
+window.PACK_CONFIG.version = "v1.2.4";
+window.PACK_CONFIG.built   = "2026-07-31 16:26 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.2.4", date:"2026-07-31 16:26 SAST",
+    note:"Navigator selections now persist across ANY navigation (top-nav links, cross-page chips, reloads) via saved chain context, so the breadcrumb never comes up empty; \"Start a new walk\" clears it. Decluttered the header: single-row nav (no wrapping into the breadcrumb), workbook row hidden until real downloads exist, version/last-change moved into the breadcrumb bar, slimmer Navigator heading." },
   { v:"v1.2.3", date:"2026-07-31 16:12 SAST",
     note:"Lightened the app header for readability (white header, dark text, higher contrast) and made the last-change time visible in the header (\"Updated <date-time> SAST\") rather than only on hover." },
   { v:"v1.2.2", date:"2026-07-31 16:08 SAST",

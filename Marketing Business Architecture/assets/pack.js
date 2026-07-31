@@ -206,8 +206,10 @@
       return '<option value="'+s.id+'"'+(s.id===PACK.source?" selected":"")+(s.available?"":" disabled")+'>'+
         PACK.esc(s.label)+(s.available?"":" — pending")+'</option>';
     }).join("");
-    var wb = (PACK._workbooks||[]).map(function(w){
-      return '<a class="wbchip'+(w.href?"":" dim")+'"'+(w.href?' href="'+w.href+'" download':'')+'>⭳ '+PACK.esc(w.label)+'</a>';
+    /* only show the workbooks row once there are real downloads — keeps the
+       header uncluttered while these are still placeholders */
+    var wb = (PACK._workbooks||[]).filter(function(w){return w.href;}).map(function(w){
+      return '<a class="wbchip" href="'+w.href+'" download>⭳ '+PACK.esc(w.label)+'</a>';
     }).join("");
     var html =
     '<nav class="nav"><div class="nav-in">'+
@@ -215,8 +217,6 @@
         '<div class="brand"><span class="dot"></span>Modelware<small>Data Management</small></div>'+
         '<div class="nav-links">'+links+'</div>'+
         '<div class="nav-right">'+
-          (CFG.version?'<span class="ver-pill">'+PACK.esc(CFG.version)+'</span>':'')+
-          (CFG.built?'<span class="ver-built">Updated '+PACK.esc(CFG.built)+'</span>':'')+
           '<div class="src-sel"><label>Source</label>'+
           '<select onchange="PACK.setSource(this.value)">'+srcOpts+'</select></div></div>'+
       '</div>'+
@@ -248,13 +248,39 @@
   var PACK = window.PACK, CFG = window.PACK_CONFIG, D = PACK.data();
 
   /* ---- chain context via URL query params (shareable, carries selection) -- */
-  PACK.ctx = function(){
+  PACK._chainKeys = ["sh","vp","kpi","cap","cj","proc","dec"];
+  function parseSearch(){
     var q = {}; (location.search.replace(/^\?/,"").split("&")).forEach(function(p){
       if(!p) return; var kv=p.split("="); q[kv[0]]=decodeURIComponent(kv[1]||""); });
     return q;
+  }
+  /* Chain context persists in localStorage so a selection survives ANY
+     navigation — a top-nav link, a cross-page chip, or a full reload — not
+     just links that happen to carry the query string. When the URL carries
+     chain params they are authoritative (and saved); otherwise we hydrate the
+     last-known chain from storage so the breadcrumb never comes up empty. */
+  PACK.ctx = function(){
+    var url = parseSearch();
+    var hasChain = PACK._chainKeys.some(function(k){return url[k];}) || ("step" in url);
+    if(hasChain){
+      var store={}; PACK._chainKeys.forEach(function(k){ if(url[k]) store[k]=url[k]; });
+      try{ window.localStorage.setItem("nbpack.chain", JSON.stringify(store)); }catch(e){}
+      return url;
+    }
+    var s={}; try{ s=JSON.parse(window.localStorage.getItem("nbpack.chain")||"{}"); }catch(e){}
+    return Object.assign({}, s, url);
   };
+  PACK.resetChain = function(){ try{ window.localStorage.removeItem("nbpack.chain"); }catch(e){} };
   PACK.ctxUrl = function(page, patch){
-    var c = Object.assign(PACK.ctx(), patch||{});
+    patch = patch||{};
+    var order = PACK._chainKeys;
+    var base = Object.assign({}, PACK.ctx()); delete base.step;
+    var setKeys = Object.keys(patch).filter(function(k){return order.indexOf(k)>=0;});
+    if(setKeys.length){ // a new selection clears everything downstream to keep the chain consistent
+      var from = Math.min.apply(null, setKeys.map(function(k){return order.indexOf(k);}));
+      order.slice(from+1).forEach(function(k){ delete base[k]; });
+    }
+    var c = Object.assign(base, patch);
     var qs = Object.keys(c).filter(function(k){return c[k];}).map(function(k){return k+"="+encodeURIComponent(c[k]);}).join("&");
     return page + (qs?("?"+qs):"");
   };
@@ -276,6 +302,8 @@
   PACK.renderBreadcrumb = function(activeKey){
     var host = document.getElementById("breadcrumb"); if(!host) return;
     var c = PACK.ctx();
+    var ver = CFG.version ? ('<span class="bc-ver"><span class="ver-pill">'+PACK.esc(CFG.version)+'</span>'+
+      (CFG.built?'<span class="ver-built">Updated '+PACK.esc(CFG.built)+'</span>':'')+'</span>') : '';
     var html = '<div class="bc-in"><span class="bc-lead">Traceability</span>'+
       CFG.chain.map(function(s,i){
         var lbl = PACK.chainLabelFor(s.key, c);
@@ -284,7 +312,7 @@
         var inner = '<span class="bc-k">'+PACK.esc(s.label)+'</span>'+(lbl?'<span class="bc-v">'+PACK.esc(lbl)+'</span>':'');
         var el = '<a class="'+cls+'" href="'+PACK.navUrl(s.key)+'">'+inner+'</a>';
         return (i?'<span class="bc-sep">›</span>':'')+el;
-      }).join("")+'</div>';
+      }).join("")+ver+'</div>';
     host.className = "breadcrumb"; host.innerHTML = html;
   };
 

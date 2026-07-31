@@ -318,6 +318,7 @@
      coloured by attention or maturity (toggle).                            */
   PACK.valueStreamHeat = function(host, vpId, opts){
     opts = opts||{}; var mode = opts.mode || (PACK._vsMode||"attention"); PACK._vsMode = mode;
+    host._vsOpts = opts; // remember opts (incl. journeyHref) so the mode toggle keeps them
     var vp = PACK.MAP.VP[vpId]; if(!vp){ host.innerHTML='<p class="muted">Select a value proposition.</p>'; return; }
     var jids = vp.journeys && vp.journeys.length ? vp.journeys : [];
     var legend = (mode==="attention")
@@ -339,12 +340,15 @@
         }).join("");
         return '<div class="vs-col"><div class="vs-stage">'+PACK.esc(s.stage)+'</div><div class="vs-tiles">'+(tiles||'<div class="vs-empty">—</div>')+'</div></div>';
       }).join("");
-      return '<div class="vs-stream"><div class="vs-title">'+PACK.chip(j.id)+' <span class="muted" style="font-size:.82rem">value stream</span></div>'+
+      var jhref = opts.journeyHref ? opts.journeyHref(jid) : ("customer_journey.html#"+jid);
+      var jlink = '<a class="chip cj" href="'+jhref+'"><span class="id">'+jid+'</span>'+PACK.esc(j.name)+'</a>';
+      return '<div class="vs-stream"><div class="vs-title">'+jlink+' <span class="muted" style="font-size:.82rem">value stream</span></div>'+
         '<div class="vs-grid">'+stageCols+'</div></div>';
     }).join("");
     host.innerHTML = head + (streams || '<p class="muted">No journeys mapped to this value proposition.</p>');
   };
-  PACK._vsSet = function(vpId, mode, hostId){ PACK._vsMode=mode; PACK.valueStreamHeat(document.getElementById(hostId), vpId, {mode:mode}); };
+  PACK._vsSet = function(vpId, mode, hostId){ PACK._vsMode=mode; var host=document.getElementById(hostId);
+    var prev=(host&&host._vsOpts)||{}; PACK.valueStreamHeat(host, vpId, Object.assign({}, prev, {mode:mode})); };
 
   /* ---- SIPOC renderer ------------------------------------------------------ */
   PACK.renderSIPOC = function(host, procId){

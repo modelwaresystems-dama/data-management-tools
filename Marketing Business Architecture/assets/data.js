@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.2.1";
-window.PACK_CONFIG.built   = "2026-07-31 15:56 SAST";
+window.PACK_CONFIG.version = "v1.2.2";
+window.PACK_CONFIG.built   = "2026-07-31 16:08 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.2.2", date:"2026-07-31 16:08 SAST",
+    note:"Fixed context loss in the Navigator: clicking a value stream on the Capability Map now advances in place to the journey step (keeping Stakeholder / Value Proposition / KPI), instead of linking out and dropping the chain. Returning to the Capability Map re-renders the heat map for the same value proposition." },
   { v:"v1.2.1", date:"2026-07-31 15:56 SAST",
     note:"Navigator now moves between steps in place (no page reload / jump); selections persist across the chain and the Capability Map node reflects the value-stream context. Back/forward supported." },
   { v:"v1.2.0", date:"2026-07-31 15:42 SAST",

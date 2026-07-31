@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.2.4";
-window.PACK_CONFIG.built   = "2026-07-31 16:26 SAST";
+window.PACK_CONFIG.version = "v1.2.5";
+window.PACK_CONFIG.built   = "2026-07-31 16:39 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.2.5", date:"2026-07-31 16:39 SAST",
+    note:"Extended the Navigator chain past Decision with two steps: AI Use Case (the use-cases that apply the chosen decision) and Personalisation (CDP) (the CDP services, models, data and governance guardrails that use-case requires). Breadcrumb/stepper now span all nine steps." },
   { v:"v1.2.4", date:"2026-07-31 16:26 SAST",
     note:"Navigator selections now persist across ANY navigation (top-nav links, cross-page chips, reloads) via saved chain context, so the breadcrumb never comes up empty; \"Start a new walk\" clears it. Decluttered the header: single-row nav (no wrapping into the breadcrumb), workbook row hidden until real downloads exist, version/last-change moved into the breadcrumb bar, slimmer Navigator heading." },
   { v:"v1.2.3", date:"2026-07-31 16:12 SAST",
@@ -1019,3 +1021,35 @@ window.PACK_CONFIG.changelog = [
   { v:"v1.0.0", date:"2026-07-31 SAST",
     note:"Initial 8-page pack — Landing, Business Architecture, Customer Journey & CX, Hyper-personalisation & CDP, AI Use-Cases, Training & Adoption, Governance & Responsible AI, Glossary settings. Generic baked-in content layer." }
 ];
+
+/* ============================================================================
+   v3: extend the traceability chain past Decision → AI Use Case → CDP
+   ========================================================================== */
+window.PACK_CONFIG.chain.push(
+  { key:"ai",  label:"AI Use Case" },
+  { key:"cdp", label:"Personalisation (CDP)" }
+);
+
+/* Required Personalisation on the Customer Data Platform, per AI use case:
+   the CDP services (CDP1..CDP8) and models each use case depends on, plus the
+   most relevant data. Governance guardrails are the shared CDP set. */
+window.GENERIC.aiCdp = {
+  U01:{ services:["CDP1","CDP3","CDP4","CDP6","CDP7","CDP2","CDP8"], models:["Propensity","Churn risk","CLV","Next best action","Contact policy"], data:["Customer identity","Product holdings","Transaction behaviour","Digital events","Consent"] },
+  U02:{ services:["CDP1","CDP3","CDP5","CDP6"], models:["Propensity"], data:["Product holdings","Transaction behaviour"] },
+  U03:{ services:["CDP1","CDP3","CDP4","CDP6"], models:["Churn risk","CLV","Next best action"], data:["Transaction behaviour","Complaints & service interactions"] },
+  U04:{ services:["CDP1","CDP3","CDP6"], models:["CLV"], data:["Product holdings","Transaction behaviour"] },
+  U05:{ services:["CDP1","CDP2","CDP3","CDP5","CDP6","CDP7","CDP8"], models:["Content personalisation","Next best action","Propensity","Contact policy"], data:["Consent","Channel preferences","Transaction behaviour","Life-event / contextual signals"] },
+  U06:{ services:["CDP2","CDP8"], models:["Content personalisation"], data:["Consent"] },
+  U07:{ services:["CDP3","CDP5","CDP6"], models:["Propensity"], data:["Digital events"] },
+  U08:{ services:["CDP2","CDP3","CDP6","CDP7"], models:["Channel selection","Contact policy"], data:["Channel preferences","Digital events"] },
+  U09:{ services:["CDP1","CDP3","CDP6"], models:["Propensity"], data:["Product holdings"] },
+  U10:{ services:["CDP3","CDP4","CDP8"], models:[], data:["Digital events"] },
+  U11:{ services:["CDP3","CDP8"], models:[], data:["Complaints & service interactions"] },
+  U12:{ services:["CDP1","CDP3","CDP5","CDP6"], models:["Propensity"], data:["Transaction behaviour"] },
+  U13:{ services:["CDP5","CDP6","CDP7"], models:[], data:["Digital events"] },
+  U14:{ services:["CDP1","CDP3","CDP6","CDP7"], models:["Next best conversation","Propensity","CLV"], data:["Customer identity","Product holdings"] },
+  U15:{ services:["CDP2","CDP8"], models:[], data:["Consent","Channel preferences"] },
+  U16:{ services:["CDP6","CDP8"], models:[], data:["Risk indicators & eligibility"] },
+  U17:{ services:["CDP1","CDP2","CDP3","CDP4","CDP6","CDP7"], models:["Next best action","Content personalisation"], data:["Life-event / contextual signals","Transaction behaviour","Consent"] },
+  U18:{ services:["CDP3","CDP4","CDP6","CDP8"], models:[], data:["Digital events"] }
+};

@@ -97,6 +97,10 @@ function stepHead(title, extra){
     (extra?('<p class="muted" style="margin:4px 0 14px">'+extra+'</p>'):'');
 }
 
+function aiForDecision(decId){ return decId ? D.aiUseCases.filter(function(u){return (u.decisions||[]).indexOf(decId)>=0;}) : D.aiUseCases; }
+function cdpServiceById(id){ return (D.cdpServices||[]).filter(function(s){return s.id===id;})[0]; }
+function meanOf(o){ var v=Object.keys(o).map(function(k){return o[k];}); return (v.reduce(function(a,b){return a+b;},0)/v.length).toFixed(1); }
+
 function renderStage(){
   var c = ctx(), step = curStep(), host = document.getElementById("stage"), h = "";
   if(step==="sh"){
@@ -149,9 +153,47 @@ function renderStage(){
   }
   else if(step==="dec"){
     var cjd = MAP.CJ[c.cj], decs = cjd?decisionsForJourney(cjd):D.decisions;
-    h = stepHead("Step 7 · Decision model","The governed decision that runs inside the process — as a decision table.");
+    h = stepHead("Step 7 · Decision model","The governed decision that runs inside the process — as a decision table. Pick an AI use-case to continue.");
     h += '<div class="opts" style="margin-bottom:16px">'+decs.map(function(d){return '<a class="opt'+(c.dec===d.id?'" style="border-color:var(--accent)':'')+'" href="'+PACK.navUrl("dec",{dec:d.id})+'"><span class="oid">'+d.id+'</span><div class="on2">'+PACK.esc(d.name)+'</div></a>';}).join("")+'</div>';
-    if(c.dec){ h += '<div class="card" id="dmn"></div>'; h += '<div style="margin-top:14px"><a class="btn ghost" href="decisions.html'+"#"+c.dec+'">Open full decision view ›</a> <a class="btn" href="architecture_navigator.html?step=sh" onclick="PACK.resetChain()">↺ Start a new walk</a></div>'; }
+    if(c.dec){
+      h += '<div class="card" id="dmn"></div>';
+      var aisD = aiForDecision(c.dec);
+      h += '<h3 style="margin-top:18px">AI use-cases applying this decision</h3><div class="opts">'+
+        (aisD.length ? aisD.map(function(u){return optCard(u.id,u.name,u.desc,"ai",{ai:u.id});}).join("")
+          : '<p class="muted">No AI use-case is mapped to this decision — <a href="'+PACK.navUrl("ai")+'">see all AI use-cases ›</a></p>')+'</div>';
+      h += '<div style="margin-top:14px"><a class="btn ghost" href="decisions.html#'+c.dec+'">Open full decision view ›</a></div>';
+    }
+  }
+  else if(step==="ai"){
+    var aiList = c.dec ? aiForDecision(c.dec) : D.aiUseCases;
+    var uc = MAP.AI[c.ai];
+    h = stepHead("Step 8 · AI use-case","The AI use-cases that apply the chosen decision. Pick one to see what it requires on the Customer Data Platform.");
+    if(!c.dec && !uc) h = '<div class="hintbar">No decision chosen — showing all AI use-cases.</div>'+h;
+    h += '<div class="opts" style="margin-bottom:16px">'+aiList.map(function(u){return '<a class="opt'+(c.ai===u.id?'" style="border-color:var(--accent)':'')+'" href="'+PACK.navUrl("ai",{ai:u.id})+'"><span class="oid">'+u.id+'</span><div class="on2">'+PACK.esc(u.name)+'</div><div class="od">'+PACK.esc(u.theme)+' · '+u.phase+'</div></a>';}).join("")+'</div>';
+    if(uc){
+      h += '<div class="card"><div class="chiprow" style="margin-bottom:8px">'+PACK.chip(uc.id)+'<span class="muted" style="font-size:.82rem">'+PACK.esc(uc.theme)+' · '+uc.phase+'</span></div>'+
+        '<p class="muted tight" style="margin-bottom:10px">'+PACK.esc(uc.desc)+'</p>'+
+        '<div class="metrics" style="display:flex;gap:16px;font-size:.85rem;margin-bottom:10px"><span>Value <b>'+meanOf(uc.value)+'</b>/5</span><span>Risk <b>'+meanOf(uc.risk)+'</b>/5</span></div>'+
+        (uc.decisions&&uc.decisions.length?('<div class="chiprow"><span class="lbl">Decisions</span>'+uc.decisions.map(function(d){return PACK.chip(d);}).join("")+'</div>'):'')+
+        (uc.terms&&uc.terms.length?PACK.termChips(uc.terms,"Glossary"):'')+
+        '<div style="margin-top:12px"><a class="btn ghost" href="ai_usecases.html#'+uc.id+'">Open in AI matrix ›</a></div></div>';
+      h += '<h3 style="margin-top:18px">Continue to the required Personalisation (CDP)</h3><div class="opts"><a class="opt" href="'+PACK.navUrl("cdp")+'"><div class="on2">Show CDP requirements ›</div><div class="od">The CDP services, models and data this use-case needs.</div></a></div>';
+    }
+  }
+  else if(step==="cdp"){
+    var uc2 = MAP.AI[c.ai];
+    h = stepHead("Step 9 · Personalisation on the Customer Data Platform","What the selected AI use-case requires from the CDP — the governed services, models and data.");
+    if(!uc2){ h += '<div class="hintbar">Pick an AI use-case first. <a href="'+PACK.navUrl("ai")+'">Choose one ›</a></div>'; }
+    else {
+      var req = D.aiCdp[uc2.id] || {services:[],models:[],data:[]};
+      h += '<div class="card" style="margin-bottom:14px"><div class="chiprow">'+PACK.chip(uc2.id)+'<span class="muted" style="font-size:.82rem">required personalisation on the CDP</span></div></div>';
+      h += '<h3>Required CDP services</h3><div class="opts" style="margin-bottom:16px">'+
+        (req.services.length ? req.services.map(function(sid){var s=cdpServiceById(sid);return '<a class="opt" href="hyperpersonalisation_cdp.html"><span class="oid">'+sid+'</span><div class="on2">'+PACK.esc(s?s.name:sid)+'</div><div class="od">'+PACK.esc(s?s.desc:'')+'</div></a>';}).join("") : '<p class="muted">—</p>')+'</div>';
+      h += '<div class="card"><h3 style="margin-top:0">Models</h3><div class="chiprow">'+(req.models.length?req.models.map(function(m){return '<span class="chip ai" style="cursor:default">'+PACK.esc(m)+'</span>';}).join(""):'<span class="muted">—</span>')+'</div>'+
+        '<h4 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-top:14px">Key data</h4><div class="chiprow">'+((req.data||[]).length?req.data.map(function(d){return '<span class="chip term off">'+PACK.esc(d)+'</span>';}).join(""):'<span class="muted">—</span>')+'</div>'+
+        '<h4 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-top:14px">Governance guardrails</h4><div class="chiprow">'+(D.hyperPersonalisation.governance||[]).map(function(g){return '<span class="chip term off">'+PACK.esc(g)+'</span>';}).join("")+'</div></div>';
+      h += '<div style="margin-top:14px"><a class="btn ghost" href="hyperpersonalisation_cdp.html">Open full Personalisation &amp; CDP page ›</a> <a class="btn" href="architecture_navigator.html?step=sh" onclick="PACK.resetChain()">↺ Start a new walk</a></div>';
+    }
   }
   host.innerHTML = h;
   // post-render dynamic bits

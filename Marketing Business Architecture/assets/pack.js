@@ -248,7 +248,7 @@
   var PACK = window.PACK, CFG = window.PACK_CONFIG, D = PACK.data();
 
   /* ---- chain context via URL query params (shareable, carries selection) -- */
-  PACK._chainKeys = ["sh","vp","kpi","cap","cj","proc","dec"];
+  PACK._chainKeys = ["sh","vp","kpi","cap","cj","proc","dec","ai","cdp"];
   function parseSearch(){
     var q = {}; (location.search.replace(/^\?/,"").split("&")).forEach(function(p){
       if(!p) return; var kv=p.split("="); q[kv[0]]=decodeURIComponent(kv[1]||""); });
@@ -289,7 +289,11 @@
   /* ---- breadcrumb rail (rendered on every page) --------------------------- */
   PACK.chainLabelFor = function(key, c){
     var v = c[key];
-    if(!v){ return (key==="cap" && c.vp) ? "value-stream view" : null; }
+    if(!v){
+      if(key==="cap" && c.vp) return "value-stream view";
+      if(key==="cdp" && c.ai) return "CDP requirements";
+      return null;
+    }
     if(key==="sh"){ var o=PACK.MAP.SH[v]; return o?o.name:v; }
     if(key==="vp"){ var o2=PACK.MAP.VP[v]; return o2?o2.group:v; }
     if(key==="kpi"){ var o3=PACK.MAP.KPI[v]; return o3?o3.theme:v; }
@@ -297,6 +301,8 @@
     if(key==="cj"){ var o5=PACK.MAP.CJ[v]; return o5?o5.lob:v; }
     if(key==="proc"){ var o6=PACK.MAP.P[v]; return o6?o6.name:v; }
     if(key==="dec"){ var o7=PACK.MAP.D[v]; return o7?o7.name:v; }
+    if(key==="ai"){ var o8=PACK.MAP.AI[v]; return o8?o8.name:v; }
+    if(key==="cdp"){ return v || (c.ai?"CDP requirements":null); }
     return v;
   };
   PACK.renderBreadcrumb = function(activeKey){

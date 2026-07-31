@@ -235,3 +235,143 @@
       '  ·  Client: '+PACK.esc(CFG.client)+'  ·  Generic reference content — self-contained, offline-capable.</footer>';
   };
 })();
+
+/* ============================================================================
+   v2 ADD-ONS: chain context, breadcrumb rail, reusable renderers
+   (value-stream capability heat map, SIPOC, decision table)
+   ========================================================================== */
+(function(){
+  var PACK = window.PACK, CFG = window.PACK_CONFIG, D = PACK.data();
+
+  /* ---- chain context via URL query params (shareable, carries selection) -- */
+  PACK.ctx = function(){
+    var q = {}; (location.search.replace(/^\?/,"").split("&")).forEach(function(p){
+      if(!p) return; var kv=p.split("="); q[kv[0]]=decodeURIComponent(kv[1]||""); });
+    return q;
+  };
+  PACK.ctxUrl = function(page, patch){
+    var c = Object.assign(PACK.ctx(), patch||{});
+    var qs = Object.keys(c).filter(function(k){return c[k];}).map(function(k){return k+"="+encodeURIComponent(c[k]);}).join("&");
+    return page + (qs?("?"+qs):"");
+  };
+  PACK.navUrl = function(step, patch){ return PACK.ctxUrl("architecture_navigator.html", Object.assign({step:step}, patch||{})); };
+
+  /* ---- breadcrumb rail (rendered on every page) --------------------------- */
+  PACK.chainLabelFor = function(key, c){
+    var v = c[key]; if(!v) return null;
+    if(key==="sh"){ var o=PACK.MAP.SH[v]; return o?o.name:v; }
+    if(key==="vp"){ var o2=PACK.MAP.VP[v]; return o2?o2.group:v; }
+    if(key==="kpi"){ var o3=PACK.MAP.KPI[v]; return o3?o3.theme:v; }
+    if(key==="cap"){ var o4=PACK.MAP.CAP[(v||"").split(".")[0]]; return o4?o4.name:v; }
+    if(key==="cj"){ var o5=PACK.MAP.CJ[v]; return o5?o5.lob:v; }
+    if(key==="proc"){ var o6=PACK.MAP.P[v]; return o6?o6.name:v; }
+    if(key==="dec"){ var o7=PACK.MAP.D[v]; return o7?o7.name:v; }
+    return v;
+  };
+  PACK.renderBreadcrumb = function(activeKey){
+    var host = document.getElementById("breadcrumb"); if(!host) return;
+    var c = PACK.ctx();
+    var html = '<div class="bc-in"><span class="bc-lead">Traceability</span>'+
+      CFG.chain.map(function(s,i){
+        var lbl = PACK.chainLabelFor(s.key, c);
+        var on = s.key===activeKey;
+        var cls = "bc-step"+(on?" on":"")+(lbl?" has":"");
+        var inner = '<span class="bc-k">'+PACK.esc(s.label)+'</span>'+(lbl?'<span class="bc-v">'+PACK.esc(lbl)+'</span>':'');
+        var el = '<a class="'+cls+'" href="'+PACK.navUrl(s.key)+'">'+inner+'</a>';
+        return (i?'<span class="bc-sep">›</span>':'')+el;
+      }).join("")+'</div>';
+    host.className = "breadcrumb"; host.innerHTML = html;
+  };
+
+  /* ---- attention helpers --------------------------------------------------- */
+  PACK.attnInfo = function(k){
+    var a = (CFG.attentionScale||[]).filter(function(x){return x.k===k;})[0];
+    return a? {k:a.k,color:a.color} : {k:"—",color:CFG.unratedColor};
+  };
+  PACK.effAttention = function(capId){
+    var so = PACK.signoff(capId); if(so && so.attention) return so.attention;
+    return (D.capAttention||{})[capId] || null;
+  };
+
+  /* ---- generic capability panel (reusable) -------------------------------- */
+  PACK.openCapPanel = function(capId){
+    var c = PACK.MAP.CAP[(capId||"").split(".")[0]]; if(!c) return;
+    var m = PACK.maturityInfo(PACK.effMaturity(c));
+    var a = PACK.attnInfo(PACK.effAttention(c.id));
+    var kids = (c.children||[]).map(function(k){return '<span class="chip cap" style="cursor:default"><span class="id">'+k.id+'</span>'+PACK.esc(k.name)+'</span>';}).join(" ");
+    var body =
+      '<div class="def">'+PACK.esc(c.def)+'</div>'+
+      '<div class="chiprow" style="margin:6px 0"><span class="pill" style="font-size:.72rem">Attention: <b style="color:'+a.color+'">'+a.k+'</b></span>'+
+        '<span class="pill" style="font-size:.72rem">Maturity: '+(m.v==null?"Unrated":m.v+" "+m.name)+'</span>'+(c.ext?'<span class="pill" style="font-size:.72rem">Extension</span>':'')+'</div>'+
+      '<h4>Level 2 / 3</h4><div class="chiprow">'+(kids||'<span class="muted">—</span>')+'</div>'+
+      '<div style="margin-top:14px"><a class="btn ghost" href="'+PACK.ctxUrl("business_architecture.html",{cap:c.id})+'">Open in capability map ›</a></div>';
+    PACK.openPanel(c.id, PACK.esc(c.name), body);
+  };
+
+  /* ---- value-stream capability heat map (capabilities under a VP) --------
+     Renders each journey mapped to the value proposition as a value stream:
+     stage chevrons across the top, capability tiles beneath each stage,
+     coloured by attention or maturity (toggle).                            */
+  PACK.valueStreamHeat = function(host, vpId, opts){
+    opts = opts||{}; var mode = opts.mode || (PACK._vsMode||"attention"); PACK._vsMode = mode;
+    var vp = PACK.MAP.VP[vpId]; if(!vp){ host.innerHTML='<p class="muted">Select a value proposition.</p>'; return; }
+    var jids = vp.journeys && vp.journeys.length ? vp.journeys : [];
+    var legend = (mode==="attention")
+      ? (CFG.attentionScale.map(function(a){return '<span class="sw"><i style="background:'+a.color+'"></i>'+a.k+'</span>';}).join(""))
+      : (CFG.maturityScale.map(function(m){return '<span class="sw"><i style="background:'+m.color+'"></i>'+m.v+' '+m.name+'</span>';}).join("")+'<span class="sw"><i style="background:'+CFG.unratedColor+'"></i>Unrated</span>');
+    var head = '<div class="vs-controls"><div class="seg2">'+
+        '<button class="'+(mode==="attention"?"on":"")+'" onclick="PACK._vsSet(\''+vpId+'\',\'attention\',\''+host.id+'\')">Attention</button>'+
+        '<button class="'+(mode==="maturity"?"on":"")+'" onclick="PACK._vsSet(\''+vpId+'\',\'maturity\',\''+host.id+'\')">Maturity</button>'+
+      '</div><div class="legend">'+legend+'</div></div>';
+    var streams = jids.map(function(jid){
+      var j = PACK.MAP.CJ[jid]; if(!j) return "";
+      var stageCols = j.stages.map(function(s){
+        var tiles = (s.capabilities||[]).map(function(capId){
+          var c=PACK.MAP.CAP[capId]; if(!c) return "";
+          var col = (mode==="attention") ? PACK.attnInfo(PACK.effAttention(capId)).color : PACK.maturityInfo(PACK.effMaturity(c)).color;
+          var badge = (mode==="attention") ? PACK.effAttention(capId) : (function(){var v=PACK.effMaturity(c);return v==null?"—":v;})();
+          return '<div class="vs-cap" style="background:'+col+'" onclick="PACK.openCapPanel(\''+capId+'\')" title="'+PACK.esc(c.name)+'">'+
+            '<span class="vc-id">'+capId+'</span><span class="vc-n">'+PACK.esc(c.name)+'</span><span class="vc-b">'+badge+'</span></div>';
+        }).join("");
+        return '<div class="vs-col"><div class="vs-stage">'+PACK.esc(s.stage)+'</div><div class="vs-tiles">'+(tiles||'<div class="vs-empty">—</div>')+'</div></div>';
+      }).join("");
+      return '<div class="vs-stream"><div class="vs-title">'+PACK.chip(j.id)+' <span class="muted" style="font-size:.82rem">value stream</span></div>'+
+        '<div class="vs-grid">'+stageCols+'</div></div>';
+    }).join("");
+    host.innerHTML = head + (streams || '<p class="muted">No journeys mapped to this value proposition.</p>');
+  };
+  PACK._vsSet = function(vpId, mode, hostId){ PACK._vsMode=mode; PACK.valueStreamHeat(document.getElementById(hostId), vpId, {mode:mode}); };
+
+  /* ---- SIPOC renderer ------------------------------------------------------ */
+  PACK.renderSIPOC = function(host, procId){
+    var p = PACK.MAP.P[procId]; var s = (D.processSIPOC||{})[procId];
+    if(!p || !s){ host.innerHTML='<p class="muted">Select a process.</p>'; return; }
+    function party(x){ return x.sh ? PACK.chip(x.sh, x.l) : '<span class="chip term off">'+PACK.esc(x.l)+'</span>'; }
+    var bands = [
+      {k:"SUPPLIERS", cls:"sup", body:'<div class="chiprow">'+s.suppliers.map(party).join("")+'</div>'},
+      {k:"INPUTS",    cls:"inp", body:'<div class="siw">'+s.inputs.map(function(i){return '<span class="sitag">'+PACK.esc(i)+'</span>';}).join("")+'</div>'},
+      {k:"PROCESS",   cls:"prc", body:'<div class="steps">'+'<span class="stp start">'+PACK.esc(p.name)+'</span>'+s.steps.map(function(st,i){return '<span class="stp">'+(i+1)+'. '+PACK.esc(st)+'</span>';}).join("")+'</div>'},
+      {k:"OUTPUTS",   cls:"out", body:'<div class="siw">'+s.outputs.map(function(o){return '<span class="sitag">'+PACK.esc(o)+'</span>';}).join("")+'</div>'},
+      {k:"CUSTOMERS", cls:"cus", body:'<div class="chiprow">'+s.customers.map(party).join("")+'</div>'}
+    ];
+    var cross = '<div class="sipoc-cross"><span class="lbl">Capabilities</span>'+PACK.chips(p.capabilities||[]).replace(/^<div class="chiprow">|<\/div>$/g,"")+'</div>';
+    host.innerHTML = '<div class="sipoc">'+bands.map(function(b){
+      return '<div class="sipoc-band"><div class="sipoc-k '+b.cls+'">'+b.k+'</div><div class="sipoc-b">'+b.body+'</div></div>';
+    }).join("")+'</div>'+
+      '<div class="sipoc-meta"><span class="muted">Participants:</span> '+PACK.esc(p.participants)+'</div>'+cross;
+  };
+
+  /* ---- Decision table (DMN-style) ----------------------------------------- */
+  PACK.renderDecisionTable = function(host, decId){
+    var d = PACK.MAP.D[decId]; var rules = (D.decisionRules||{})[decId] || [];
+    if(!d){ host.innerHTML='<p class="muted">Select a decision.</p>'; return; }
+    var rows = rules.map(function(r,i){return '<tr><td class="dc-i">R'+(i+1)+'</td><td>'+PACK.esc(r.when)+'</td><td class="dc-then">'+PACK.esc(r.then)+'</td></tr>';}).join("");
+    host.innerHTML =
+      '<div class="dmn-head"><div><span class="mono" style="color:var(--c-dec);font-weight:700">'+d.id+'</span> <strong>'+PACK.esc(d.name)+'</strong></div>'+
+        '<span class="status-pill" style="background:#f8e9f5;color:var(--c-dec)">Owner: '+PACK.esc(d.owner)+'</span></div>'+
+      '<div class="dmn-io"><div><span class="lbl">Inputs</span> '+PACK.esc(d.inputs)+'</div><div><span class="lbl">Outcome</span> '+PACK.esc(d.outcome)+'</div></div>'+
+      '<div class="tbl-wrap"><table class="tbl dmn"><tr><th>Rule</th><th>When (condition)</th><th>Then (outcome)</th></tr>'+
+        (rows||'<tr><td class="dc-i">R1</td><td>'+PACK.esc(d.rules)+'</td><td class="dc-then">'+PACK.esc(d.outcome)+'</td></tr>')+'</table></div>';
+  };
+
+})();

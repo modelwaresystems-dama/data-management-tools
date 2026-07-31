@@ -855,3 +855,147 @@ window.PACK_CONFIG = {
     {file:"glossary_settings.html", nav:"Glossary", title:"Glossary settings"}
   ]
 };
+
+/* ============================================================================
+   REWORK ADD-ONS (v2): attention levels, SIPOC, decision tables, chain config
+   ========================================================================== */
+
+/* ---- Attention level per capability (heatmap 2nd dimension) -------------- */
+/* Scale from the recruit-employee example: New · High · Medium · Low.        */
+window.GENERIC.capAttention = {
+  C1:"Medium", C2:"High", C3:"Medium", C4:"High", C5:"High", C6:"Low",
+  C7:"High", C8:"Medium", C9:"Medium", C10:"High",
+  C11:"New", C12:"New", C13:"New", C14:"New", C15:"High", C16:"New", C17:"High"
+};
+
+/* ---- SIPOC per process (Suppliers · Inputs · Process steps · Outputs · Customers)
+   suppliers/customers carry an optional stakeholder id (sh) for cross-linking. */
+window.GENERIC.processSIPOC = {
+  P1:{ suppliers:[{l:"Executives & strategy",sh:"SH08"},{l:"Market research",sh:"SH05"},{l:"Finance",sh:"SH08"},{l:"Product",sh:"SH03"}],
+       inputs:["Strategy","Market research","Segment economics","Brand position"],
+       steps:["Review market & segment economics","Set segment priorities","Draft segment CVP","Define KPI tree","Approve strategy"],
+       outputs:["Segment CVP","Priority outcomes","KPI tree"],
+       customers:[{l:"Marketing",sh:"SH05"},{l:"Product",sh:"SH03"},{l:"Segment heads",sh:"SH08"}] },
+  P2:{ suppliers:[{l:"Analytics & data",sh:"SH09"},{l:"Data owners",sh:"SH09"},{l:"RMs",sh:"SH02"},{l:"Risk/Compliance",sh:"SH07"}],
+       inputs:["Customer data","Market triggers","Consent","Relationship insight"],
+       steps:["Assemble consented data","Detect triggers & events","Score propensity","Build target segments & personas"],
+       outputs:["Target segments","Personas","Propensity lists"],
+       customers:[{l:"Marketing",sh:"SH05"},{l:"RMs",sh:"SH02"},{l:"Product",sh:"SH03"}] },
+  P3:{ suppliers:[{l:"Marketing",sh:"SH05"},{l:"Product",sh:"SH03"},{l:"Legal/Compliance",sh:"SH07"},{l:"Channel owners",sh:"SH04"}],
+       inputs:["CVP","Product rules","Channel constraints","Compliance rules"],
+       steps:["Draft campaign brief","Design offer logic","Create content","Design journey","Compliance review"],
+       outputs:["Campaign brief","Offer logic","Content","Journey design"],
+       customers:[{l:"Marketing ops",sh:"SH05"},{l:"Agencies",sh:"SH10"},{l:"Channels",sh:"SH04"}] },
+  P4:{ suppliers:[{l:"Marketing ops",sh:"SH05"},{l:"Agencies",sh:"SH10"},{l:"Digital",sh:"SH04"},{l:"Comms",sh:"SH05"}],
+       inputs:["Brief","Content","Rules","Budget","Channel plan"],
+       steps:["Final go/no-go approval","Configure channels","Deploy campaign","Brief RMs"],
+       outputs:["Approved campaign","Channel deployment","RM packs"],
+       customers:[{l:"Digital & channels",sh:"SH04"},{l:"RMs",sh:"SH02"},{l:"Customers",sh:"SH01"}] },
+  P5:{ suppliers:[{l:"Digital",sh:"SH04"},{l:"Contact centre",sh:"SH04"},{l:"CRM / Sales ops",sh:"SH02"},{l:"Partners",sh:"SH10"}],
+       inputs:["Responses","Event leads","Digital signals","Referrals"],
+       steps:["Capture responses","Score leads","Qualify","Route to owner","Start nurture"],
+       outputs:["Scored leads","RM tasks","Nurturing journeys"],
+       customers:[{l:"Sales / RM",sh:"SH02"},{l:"Contact centre",sh:"SH04"}] },
+  P6:{ suppliers:[{l:"Sales",sh:"SH02"},{l:"Onboarding & Ops",sh:"SH06"},{l:"KYC",sh:"SH07"},{l:"Product",sh:"SH03"}],
+       inputs:["Qualified lead","Customer intent","Documents","Eligibility"],
+       steps:["Confirm intent & eligibility","Capture KYC/KYB","Open account","Fulfil product / service"],
+       outputs:["New / expanded relationship","Fulfilled product / service"],
+       customers:[{l:"Customers",sh:"SH01"},{l:"RMs",sh:"SH02"},{l:"Product",sh:"SH03"}] },
+  P7:{ suppliers:[{l:"RMs",sh:"SH02"},{l:"Service",sh:"SH04"},{l:"Analytics",sh:"SH09"},{l:"Product",sh:"SH03"}],
+       inputs:["Usage","Satisfaction","Attrition signals","Relationship data"],
+       steps:["Monitor usage & attrition","Identify cross-sell / retention","Trigger next-best-action","Capture referrals"],
+       outputs:["Cross-sell","Retention interventions","Referrals"],
+       customers:[{l:"Customers",sh:"SH01"},{l:"RMs / advisors",sh:"SH02"}] },
+  P8:{ suppliers:[{l:"Analytics",sh:"SH09"},{l:"Finance",sh:"SH08"},{l:"Marketing",sh:"SH05"},{l:"Risk",sh:"SH07"}],
+       inputs:["Campaign data","Sales data","CX data","Risk & cost data"],
+       steps:["Consolidate results","Analyse lift & ROI","Update models & segments","Prioritise improvement"],
+       outputs:["Performance report","Decision learning","Revised models"],
+       customers:[{l:"Executives",sh:"SH08"},{l:"Marketing",sh:"SH05"},{l:"Product",sh:"SH03"}] },
+  PX1:{ suppliers:[{l:"CX / Journey owner",sh:"SH05"},{l:"Product",sh:"SH03"},{l:"Operations",sh:"SH06"}],
+        inputs:["Persona","JTBD","Stage & touchpoint definitions","Pain / gain"],
+        steps:["Define persona & JTBD","Map stages & touchpoints","Mark moments of truth","Set journey KPIs"],
+        outputs:["Journey map","Moment-of-truth register","KPI map"],
+        customers:[{l:"CX Analytics",sh:"SH09"},{l:"Marketing",sh:"SH05"}] },
+  PX2:{ suppliers:[{l:"CX Analytics",sh:"SH09"},{l:"Digital",sh:"SH04"},{l:"Contact centre",sh:"SH04"}],
+        inputs:["Journey performance","Drop-offs","Complaints","Sentiment"],
+        steps:["Collect journey telemetry","Detect drop-offs","Analyse sentiment","Log issues"],
+        outputs:["Journey dashboard","Issue backlog"],
+        customers:[{l:"CXO",sh:"SH08"},{l:"Product",sh:"SH03"}] },
+  PX3:{ suppliers:[{l:"CXO",sh:"SH08"},{l:"Product",sh:"SH03"},{l:"Operations",sh:"SH06"}],
+        inputs:["Issue backlog","Test results","Priorities"],
+        steps:["Prioritise fixes","Design change","Test","Release"],
+        outputs:["Improvement backlog","Releases","Test results"],
+        customers:[{l:"Customers",sh:"SH01"},{l:"Journey owners",sh:"SH05"}] },
+  PX4:{ suppliers:[{l:"Personalisation CoE",sh:"SH05"},{l:"Data & Analytics",sh:"SH09"},{l:"Channels",sh:"SH04"}],
+        inputs:["Targeting rules","Treatment selection","Content & channel rules"],
+        steps:["Configure treatments","Apply consent & frequency caps","Activate journeys","Monitor"],
+        outputs:["Active journeys","NBA rules","Contact policy"],
+        customers:[{l:"Customers",sh:"SH01"},{l:"Channels",sh:"SH04"}] },
+  PX5:{ suppliers:[{l:"Customer Intelligence",sh:"SH09"},{l:"Voice of Customer",sh:"SH05"},{l:"Data",sh:"SH09"}],
+        inputs:["Data","VoC","Behavioural analytics"],
+        steps:["Aggregate signals","Analyse behaviour","Form hypotheses","Publish insight briefs"],
+        outputs:["Insight briefs","Segment definitions","Opportunity hypotheses"],
+        customers:[{l:"Marketing",sh:"SH05"},{l:"Product",sh:"SH03"}] },
+  PX6:{ suppliers:[{l:"Finance",sh:"SH08"},{l:"Marketing",sh:"SH05"},{l:"Product",sh:"SH03"}],
+        inputs:["CLV forecast","Cost","Margin","Retention uplift"],
+        steps:["Forecast CLV","Model treatment ROI","Prioritise investment","Recommend"],
+        outputs:["CLV scenarios","Value-based treatments"],
+        customers:[{l:"Executives",sh:"SH08"},{l:"Marketing",sh:"SH05"}] },
+  PX7:{ suppliers:[{l:"CX / VoC",sh:"SH05"},{l:"Contact centre",sh:"SH04"},{l:"Digital",sh:"SH04"}],
+        inputs:["NPS / CSAT / CES","Feedback","Driver analysis"],
+        steps:["Collect feedback","Analyse drivers","Plan actions","Close the loop"],
+        outputs:["Driver analysis","Action plan","Closed loop"],
+        customers:[{l:"CXO",sh:"SH08"},{l:"Customers",sh:"SH01"}] },
+  PX8:{ suppliers:[{l:"Data / CDP Product Owner",sh:"SH09"},{l:"Source systems",sh:"SH09"},{l:"Risk / Privacy",sh:"SH07"}],
+        inputs:["Identity","Consent","Profiles","Activation","Lineage"],
+        steps:["Resolve identity","Enforce consent","Build Customer 360","Activate audiences","Log lineage"],
+        outputs:["Customer 360","Audiences","Audit logs"],
+        customers:[{l:"Personalisation CoE",sh:"SH05"},{l:"Analytics",sh:"SH09"}] }
+};
+
+/* ---- DMN-style decision-table rows (when → then) per decision ------------ */
+window.GENERIC.decisionRules = {
+  D1:[{when:"Customer not consented",then:"Exclude from targeting"},{when:"High value & high propensity & consented",then:"Include in priority target list"},{when:"Risk flag present",then:"Refer to Risk before targeting"}],
+  D2:[{when:"Message states product feature only",then:"Reject — restate as customer benefit"},{when:"Segment need matches proposition",then:"Select CVP / message theme"}],
+  D3:[{when:"Owner, KPI, compliance approval & capacity all present",then:"Approve"},{when:"Any of the above missing",then:"Defer"},{when:"Expected ROI below threshold",then:"No-go"}],
+  D4:[{when:"Product criteria or affordability fails",then:"Suppress offer"},{when:"Eligible & suitable",then:"Add to eligible offer set"}],
+  D5:[{when:"Purpose not covered by consent",then:"Block data use"},{when:"Consent valid for purpose",then:"Allow — honour opt-out"}],
+  D6:[{when:"Preferred channel known & no override",then:"Use preferred channel"},{when:"Regulatory or service need",then:"Override to required channel"}],
+  D7:[{when:"Open service issue",then:"Service recovery outranks sales offer"},{when:"No service issue & high propensity",then:"Recommend top offer"}],
+  D8:[{when:"High-value commercial / wealth lead",then:"Route to named RM / advisor with SLA"},{when:"Retail lead",then:"Route to contact centre / branch queue"}],
+  D9:[{when:"Claim unsubstantiated",then:"Reject content"},{when:"Required disclosures included & claims substantiated",then:"Approve"}],
+  D10:[{when:"Lift negative",then:"Stop"},{when:"Lift positive & complaints below threshold",then:"Scale"},{when:"Complaints exceed threshold",then:"Adjust / hold"}],
+  DX1:[{when:"High CLV-at-risk & poor experience",then:"Top of improvement backlog"},{when:"Low value & good experience",then:"Deprioritise"}],
+  DX2:[{when:"Treatment fits stage intent & consent",then:"Apply treatment"},{when:"Consent absent",then:"Suppress"}],
+  DX3:[{when:"Ranked by value × eligibility × consent",then:"Serve top-ranked action"},{when:"No eligible action",then:"No action"}],
+  DX4:[{when:"Sensitive treatment",then:"Use secure / preferred channel"},{when:"Low sensitivity",then:"Optimise for cost"}],
+  DX5:[{when:"Vulnerability or eligibility fails",then:"Suppress or refer"},{when:"All checks pass",then:"Allow"}],
+  DX6:[{when:"High value & high churn risk",then:"Priority retention path"},{when:"Low value & high churn",then:"Standard / self-serve retention"}],
+  DX7:[{when:"Marginal CLV uplift > cost",then:"Invest"},{when:"Uplift ≤ cost",then:"Do not invest"}],
+  DX8:[{when:"High-risk / regulated advice / GenAI output",then:"Route to human review"},{when:"Low-risk automated",then:"Auto-proceed"}]
+};
+
+/* ---- Attention scale + traceability chain + new pages -------------------- */
+window.PACK_CONFIG.attentionScale = [
+  {k:"New",    color:"#7f1010"},
+  {k:"High",   color:"#dc2626"},
+  {k:"Medium", color:"#eab308"},
+  {k:"Low",    color:"#16a34a"}
+];
+window.PACK_CONFIG.chain = [
+  {key:"sh",  label:"Stakeholder"},
+  {key:"vp",  label:"Value Proposition"},
+  {key:"kpi", label:"KPI"},
+  {key:"cap", label:"Capability Map"},
+  {key:"cj",  label:"Customer Journey"},
+  {key:"proc",label:"Business Process"},
+  {key:"dec", label:"Decision"}
+];
+/* register the 3 new pages in nav order */
+(function(){
+  var p = window.PACK_CONFIG.pages;
+  function has(f){ return p.some(function(x){return x.file===f;}); }
+  if(!has("architecture_navigator.html")) p.splice(1,0,{file:"architecture_navigator.html", nav:"Navigator", title:"Architecture Navigator"});
+  if(!has("business_process.html")){ var i=p.findIndex(function(x){return x.file==="customer_journey.html";}); p.splice(i+1,0,{file:"business_process.html", nav:"Processes", title:"Business Processes (SIPOC)"}); }
+  if(!has("decisions.html")){ var j=p.findIndex(function(x){return x.file==="business_process.html";}); p.splice(j+1,0,{file:"decisions.html", nav:"Decisions", title:"Decision Models"}); }
+})();

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Architecture Navigator — Nedbank Marketing Pack</title>
+<link rel="stylesheet" href="assets/pack.css">
+<style>
+  .navlayout{display:grid;grid-template-columns:260px 1fr;gap:20px;align-items:start}
+  @media(max-width:860px){.navlayout{grid-template-columns:1fr}}
+  .stepper{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:8px;position:sticky;top:104px}
+  @media(max-width:860px){.stepper{position:static}}
+  .stepper a{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:9px;text-decoration:none;color:var(--ink)}
+  .stepper a:hover{background:#f4f7fc;text-decoration:none}
+  .stepper a.on{background:var(--accent-soft)}
+  .stepper .n{width:22px;height:22px;border-radius:50%;background:#e6ebf3;color:var(--mut);font-size:.74rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px}
+  .stepper a.on .n{background:var(--accent);color:#fff}
+  .stepper a.done .n{background:var(--accent2);color:#fff}
+  .stepper .sl{font-size:.7rem;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+  .stepper .sv{font-size:.84rem;font-weight:600;line-height:1.2}
+  .stepper .sv.empty{color:var(--faint);font-weight:400}
+  .opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+  .opt{border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:var(--shadow);padding:12px;cursor:pointer;text-decoration:none;color:inherit;display:block}
+  .opt:hover{border-color:var(--accent);box-shadow:var(--shadow-lg);text-decoration:none;transform:translateY(-1px)}
+  .opt .oid{font-family:"SF Mono",monospace;font-size:.68rem;color:var(--accent);font-weight:700}
+  .opt .on2{font-weight:600;margin:2px 0 4px}
+  .opt .od{font-size:.8rem;color:var(--mut);line-height:1.35}
+  .stephead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  .stepnav{display:flex;gap:8px}
+  .hintbar{background:#fff8e6;border:1px solid #f6e0a8;border-radius:8px;padding:9px 13px;font-size:.84rem;color:#8a6d1a;margin-bottom:14px}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div id="breadcrumb"></div>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div class="eyebrow">One connected path</div>
+    <h1>Architecture Navigator</h1>
+    <p class="lede">Walk the traceability chain end to end — <strong>Stakeholder → Value Proposition → KPI → Capability Map →
+    Customer Journey → Business Process → Decision</strong>. Each choice carries forward, so every downstream view is shown in the
+    context of what you picked. The breadcrumb above always shows where you are.</p>
+  </div>
+
+  <div class="navlayout">
+    <div class="stepper" id="stepper"></div>
+    <div id="stage"></div>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/pack.js"></script>
+<script>
+PACK.setWorkbooks([{label:"Traceability Matrix .xlsx", href:""}]);
+PACK.renderNav("architecture_navigator.html");
+var D = PACK.data(), MAP = PACK.MAP, CFG = window.PACK_CONFIG;
+var STEPS = CFG.chain; // sh, vp, kpi, cap, cj, proc, dec
+var ORDER = STEPS.map(function(s){return s.key;});
+
+function ctx(){ return PACK.ctx(); }
+function curStep(){ var s=ctx().step; return ORDER.indexOf(s)>=0 ? s : "sh"; }
+function nextKey(k){ var i=ORDER.indexOf(k); return i>=0 && i<ORDER.length-1 ? ORDER[i+1] : null; }
+function go(step, patch){ location.href = PACK.navUrl(step, patch); }
+
+/* ---- relevance helpers --------------------------------------------------- */
+function vpsForSH(sh){ return sh ? D.valuePropositions.filter(function(v){return (v.stakeholders||[]).indexOf(sh)>=0;}) : D.valuePropositions; }
+function journeysForVP(vp){ return (vp && vp.journeys)? vp.journeys.map(function(id){return MAP.CJ[id];}).filter(Boolean) : []; }
+function kpisForVP(vp){
+  var js = journeysForVP(vp); var words = {};
+  js.forEach(function(j){ j.stages.forEach(function(s){ (s.kpis||[]).forEach(function(k){ words[k.toLowerCase()]=1; }); }); });
+  var scored = D.kpis.map(function(t){ var hit=t.items.filter(function(it){return words[it.toLowerCase()];}).length; return {t:t,hit:hit}; });
+  var any = scored.some(function(x){return x.hit>0;});
+  return any ? scored.filter(function(x){return x.hit>0;}).map(function(x){return x.t;}) : D.kpis;
+}
+function processesForJourney(cj){ var set={}; if(cj){ cj.stages.forEach(function(s){ (s.processes||[]).forEach(function(p){set[p]=1;}); }); } return Object.keys(set).map(function(id){return MAP.P[id];}).filter(Boolean); }
+function decisionsForJourney(cj){ var set={}; if(cj){ cj.stages.forEach(function(s){ (s.decisions||[]).forEach(function(dd){set[dd]=1;}); }); } return Object.keys(set).map(function(id){return MAP.D[id];}).filter(Boolean); }
+
+/* ---- stepper ------------------------------------------------------------- */
+function renderStepper(){
+  var c = ctx(), active = curStep();
+  document.getElementById("stepper").innerHTML = STEPS.map(function(s,i){
+    var val = PACK.chainLabelFor(s.key, c);
+    var cls = "step "+(s.key===active?"on":"")+(val && s.key!==active?" done":"");
+    return '<a class="'+cls+'" href="'+PACK.navUrl(s.key)+'"><span class="n">'+(i+1)+'</span>'+
+      '<span><span class="sl">'+PACK.esc(s.label)+'</span><br>'+
+      '<span class="sv'+(val?'':' empty')+'">'+PACK.esc(val||"— any —")+'</span></span></a>';
+  }).join("");
+}
+
+/* ---- stage (current step content) --------------------------------------- */
+function optCard(id, name, desc, step, patch){
+  return '<a class="opt" href="'+PACK.navUrl(step,patch)+'"><span class="oid">'+PACK.esc(id)+'</span>'+
+    '<div class="on2">'+PACK.esc(name)+'</div>'+(desc?'<div class="od">'+PACK.esc(desc)+'</div>':'')+'</a>';
+}
+function stepHead(title, extra){
+  var nk = nextKey(curStep());
+  return '<div class="stephead"><h2 style="border:0;margin:0;padding:0">'+title+'</h2>'+
+    '<div class="stepnav">'+(nk?'<a class="btn ghost" href="'+PACK.navUrl(nk)+'">Skip to '+PACK.esc(STEPS[ORDER.indexOf(nk)].label)+' ›</a>':'')+'</div></div>'+
+    (extra?('<p class="muted" style="margin:4px 0 14px">'+extra+'</p>'):'');
+}
+
+function renderStage(){
+  var c = ctx(), step = curStep(), host = document.getElementById("stage"), h = "";
+  if(step==="sh"){
+    h = stepHead("Step 1 · Choose a stakeholder","Who derives value from Marketing? Pick one to see the value propositions made to them.");
+    h += '<div class="opts">'+D.stakeholders.map(function(s){return optCard(s.id,s.name,s.value,"vp",{sh:s.id});}).join("")+'</div>';
+  }
+  else if(step==="vp"){
+    var sh = c.sh, vps = vpsForSH(sh);
+    h = stepHead("Step 2 · Value proposition"+(sh?(" for "+PACK.esc(MAP.SH[sh].name)):""),"The promise made to this stakeholder. Pick one to see how its value is measured and delivered.");
+    if(!sh) h = '<div class="hintbar">No stakeholder chosen — showing all value propositions.</div>'+h;
+    h += '<div class="opts">'+vps.map(function(v){return optCard(v.id,v.group,v.generic,"kpi",{vp:v.id});}).join("")+'</div>';
+  }
+  else if(step==="kpi"){
+    var vp = MAP.VP[c.vp];
+    h = stepHead("Step 3 · KPIs / outcomes"+(vp?(" for "+PACK.esc(vp.group)):""),"How value is proven. Pick a KPI theme to carry into the capability view.");
+    if(!vp) h = '<div class="hintbar">No value proposition chosen — showing all KPI themes.</div>'+h;
+    var kt = vp?kpisForVP(vp):D.kpis;
+    h += '<div class="opts">'+kt.map(function(t){return optCard(t.id,t.theme,t.items.slice(0,4).join(", ")+"…","cap",{kpi:t.id});}).join("")+'</div>';
+  }
+  else if(step==="cap"){
+    var vp2 = MAP.VP[c.vp];
+    h = stepHead("Step 4 · Capability map"+(vp2?(" under "+PACK.esc(vp2.group)):""),"The capabilities that deliver this value proposition, laid out under the value-stream stages and heat-coloured. Click a capability for detail; pick a journey below to continue.");
+    if(!vp2){ h += '<div class="hintbar">Pick a value proposition first to see its capability heat map. <a href="'+PACK.navUrl("vp")+'">Choose one ›</a></div>'; }
+    else {
+      h += '<div id="vsheat" style="margin-bottom:18px"></div>';
+      h += '<h3>Continue to a customer journey</h3><div class="opts">'+journeysForVP(vp2).map(function(j){return optCard(j.id,j.name,j.lob+" · "+j.persona,"cj",{cj:j.id});}).join("")+'</div>';
+    }
+  }
+  else if(step==="cj"){
+    var vp3 = MAP.VP[c.vp], cj = MAP.CJ[c.cj];
+    var js = vp3?journeysForVP(vp3):D.journeys;
+    h = stepHead("Step 5 · Customer journey","How the customer experiences the value across stages. Pick a stage's process to continue.");
+    if(!cj){
+      h += '<div class="opts">'+js.map(function(j){return optCard(j.id,j.name,j.lob+" · "+j.persona,"cj",{cj:j.id});}).join("")+'</div>';
+    } else {
+      h += '<div class="card" style="margin-bottom:16px"><div class="chiprow" style="margin-bottom:10px">'+PACK.chip(cj.id)+'<span class="muted" style="font-size:.82rem">'+PACK.esc(cj.persona)+'</span> <a class="btn ghost" style="margin-left:auto" href="customer_journey.html'+"#"+cj.id+'">Open full journey view ›</a></div>'+
+        '<div class="opts">'+cj.stages.map(function(s){
+          return '<div class="opt" style="cursor:default"><div class="on2">'+PACK.esc(s.stage)+' · exp '+s.emotion+'/5</div>'+
+            '<div class="od" style="margin-bottom:8px">'+PACK.esc(s.touchpoints)+'</div>'+
+            '<div class="chiprow">'+(s.processes||[]).map(function(p){return '<a class="chip proc" href="'+PACK.navUrl("proc",{cj:cj.id,proc:p})+'"><span class="id">'+p+'</span>'+PACK.esc(MAP.P[p]?MAP.P[p].name:p)+'</a>';}).join("")+'</div></div>';
+        }).join("")+'</div></div>';
+    }
+  }
+  else if(step==="proc"){
+    var cjp = MAP.CJ[c.cj], procs = cjp?processesForJourney(cjp):D.processes;
+    h = stepHead("Step 6 · Business process (SIPOC)","The process that delivers the stage — Suppliers, Inputs, Process, Outputs, Customers. Pick a decision to continue.");
+    h += '<div class="opts" style="margin-bottom:16px">'+procs.map(function(p){return '<a class="opt'+(c.proc===p.id?'" style="border-color:var(--accent)':'')+'" href="'+PACK.navUrl("proc",{proc:p.id})+'"><span class="oid">'+p.id+'</span><div class="on2">'+PACK.esc(p.name)+'</div></a>';}).join("")+'</div>';
+    if(c.proc){ h += '<div id="sipoc"></div>'+
+      '<h3 style="margin-top:18px">Decisions in this flow</h3><div class="opts">'+(cjp?decisionsForJourney(cjp):D.decisions).map(function(d){return optCard(d.id,d.name,d.outcome,"dec",{dec:d.id});}).join("")+'</div>'; }
+  }
+  else if(step==="dec"){
+    var cjd = MAP.CJ[c.cj], decs = cjd?decisionsForJourney(cjd):D.decisions;
+    h = stepHead("Step 7 · Decision model","The governed decision that runs inside the process — as a decision table.");
+    h += '<div class="opts" style="margin-bottom:16px">'+decs.map(function(d){return '<a class="opt'+(c.dec===d.id?'" style="border-color:var(--accent)':'')+'" href="'+PACK.navUrl("dec",{dec:d.id})+'"><span class="oid">'+d.id+'</span><div class="on2">'+PACK.esc(d.name)+'</div></a>';}).join("")+'</div>';
+    if(c.dec){ h += '<div class="card" id="dmn"></div>'; h += '<div style="margin-top:14px"><a class="btn ghost" href="decisions.html'+"#"+c.dec+'">Open full decision view ›</a> <a class="btn" href="'+PACK.navUrl("sh")+'">↺ Start a new walk</a></div>'; }
+  }
+  host.innerHTML = h;
+  // post-render dynamic bits
+  if(step==="cap" && c.vp) PACK.valueStreamHeat(document.getElementById("vsheat"), c.vp, {});
+  if(step==="proc" && c.proc) PACK.renderSIPOC(document.getElementById("sipoc"), c.proc);
+  if(step==="dec" && c.dec) PACK.renderDecisionTable(document.getElementById("dmn"), c.dec);
+}
+
+renderStepper();
+renderStage();
+PACK.renderBreadcrumb(curStep());
+document.body.insertAdjacentHTML("beforeend", PACK.footer());
+</script>
+</body>
+</html>

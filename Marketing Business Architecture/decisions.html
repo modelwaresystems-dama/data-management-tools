@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Decision Models — Nedbank Marketing Pack</title>
+<link rel="stylesheet" href="assets/pack.css">
+<style>
+  .declayout{display:grid;grid-template-columns:250px 1fr;gap:20px;align-items:start}
+  @media(max-width:820px){.declayout{grid-template-columns:1fr}}
+  .dlist{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:8px;position:sticky;top:104px}
+  @media(max-width:820px){.dlist{position:static}}
+  .dlist .grp{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:700;padding:8px 10px 4px}
+  .dlist a{display:flex;gap:8px;padding:8px 10px;border-radius:8px;text-decoration:none;color:var(--ink);font-size:.86rem}
+  .dlist a:hover{background:#f4f7fc;text-decoration:none} .dlist a.on{background:#f8e9f5;color:var(--c-dec);font-weight:600}
+  .dlist a .did{font-family:"SF Mono",monospace;font-size:.72rem;color:var(--c-dec);flex:none}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div id="breadcrumb"></div>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div class="eyebrow">The governed choice — DMN</div>
+    <h1>Decision Models</h1>
+    <p class="lede">Each decision as a <strong>DMN-style decision table</strong> — its inputs, the when→then rules, the outcome and
+    the owner. These are the decisions invoked inside the business processes and along the customer journeys.</p>
+  </div>
+
+  <div class="declayout">
+    <div class="dlist" id="dlist"></div>
+    <div>
+      <div class="stephead" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 id="dtitle" style="border:0;margin:0;padding:0">—</h2>
+        <a class="btn ghost" id="navlink" href="#">Open in Navigator ›</a>
+      </div>
+      <div class="card" id="dmn"></div>
+      <div class="card" id="related" style="margin-top:14px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/pack.js"></script>
+<script>
+PACK.setWorkbooks([{label:"Decision Model catalogue .xlsx", href:""}]);
+PACK.renderNav("decisions.html");
+var D = PACK.data(), MAP = PACK.MAP;
+var current = null;
+
+function renderList(){
+  var core = D.decisions.filter(function(d){return !d.ext;}), ext = D.decisions.filter(function(d){return d.ext;});
+  function grp(title, arr){ return '<div class="grp">'+title+'</div>'+arr.map(function(d){
+    return '<a class="'+(d.id===current?"on":"")+'" href="#'+d.id+'" onclick="sel(\''+d.id+'\')"><span class="did">'+d.id+'</span>'+PACK.esc(d.name)+'</a>';
+  }).join(""); }
+  document.getElementById("dlist").innerHTML = grp("Core (D1–D10)",core)+grp("Extension (DX1–DX8)",ext);
+}
+// which journeys / processes invoke this decision
+function usage(decId){
+  var js = D.journeys.filter(function(j){return j.stages.some(function(s){return (s.decisions||[]).indexOf(decId)>=0;});});
+  var ai = D.aiUseCases.filter(function(u){return (u.decisions||[]).indexOf(decId)>=0;});
+  return {js:js, ai:ai};
+}
+window.sel = function(id){
+  current = id; renderList();
+  var d = MAP.D[id];
+  document.getElementById("dtitle").innerHTML = '<span class="mono" style="color:var(--c-dec)">'+id+'</span> '+PACK.esc(d.name);
+  document.getElementById("navlink").href = PACK.navUrl("dec",{dec:id});
+  PACK.renderDecisionTable(document.getElementById("dmn"), id);
+  var u = usage(id);
+  document.getElementById("related").innerHTML =
+    '<h3 style="margin-top:0">Where this decision is used</h3>'+
+    '<h4 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)">Customer journeys</h4>'+
+    (u.js.length?PACK.chips(u.js.map(function(j){return j.id;})):'<span class="muted">—</span>')+
+    '<h4 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-top:12px">AI use-cases</h4>'+
+    (u.ai.length?PACK.chips(u.ai.map(function(a){return a.id;})):'<span class="muted">—</span>');
+  try{ history.replaceState(null,"","#"+id); }catch(e){}
+  PACK.renderBreadcrumb("dec");
+};
+
+renderList();
+var start = location.hash.replace(/^#/,"");
+sel(MAP.D[start] ? start : "D1");
+PACK.renderBreadcrumb("dec");
+document.body.insertAdjacentHTML("beforeend", PACK.footer());
+</script>
+</body>
+</html>

@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.2.0";
-window.PACK_CONFIG.built   = "2026-07-31 15:42 SAST";
+window.PACK_CONFIG.version = "v1.2.1";
+window.PACK_CONFIG.built   = "2026-07-31 15:56 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.2.1", date:"2026-07-31 15:56 SAST",
+    note:"Navigator now moves between steps in place (no page reload / jump); selections persist across the chain and the Capability Map node reflects the value-stream context. Back/forward supported." },
   { v:"v1.2.0", date:"2026-07-31 15:42 SAST",
     note:"Version-control stamp added (number + build date-time, SAST). Pack linked from the site's top-level Asset Navigator." },
   { v:"v1.1.0", date:"2026-07-31 SAST",

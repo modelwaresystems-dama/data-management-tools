@@ -261,11 +261,12 @@
 
   /* ---- breadcrumb rail (rendered on every page) --------------------------- */
   PACK.chainLabelFor = function(key, c){
-    var v = c[key]; if(!v) return null;
+    var v = c[key];
+    if(!v){ return (key==="cap" && c.vp) ? "value-stream view" : null; }
     if(key==="sh"){ var o=PACK.MAP.SH[v]; return o?o.name:v; }
     if(key==="vp"){ var o2=PACK.MAP.VP[v]; return o2?o2.group:v; }
     if(key==="kpi"){ var o3=PACK.MAP.KPI[v]; return o3?o3.theme:v; }
-    if(key==="cap"){ var o4=PACK.MAP.CAP[(v||"").split(".")[0]]; return o4?o4.name:v; }
+    if(key==="cap"){ if(v){ var o4=PACK.MAP.CAP[v.split(".")[0]]; return o4?o4.name:v; } return c.vp?"value-stream view":null; }
     if(key==="cj"){ var o5=PACK.MAP.CJ[v]; return o5?o5.lob:v; }
     if(key==="proc"){ var o6=PACK.MAP.P[v]; return o6?o6.name:v; }
     if(key==="dec"){ var o7=PACK.MAP.D[v]; return o7?o7.name:v; }

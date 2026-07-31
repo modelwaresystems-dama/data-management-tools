@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Governance &amp; Responsible AI — Nedbank Marketing Pack</title>
+<link rel="stylesheet" href="assets/pack.css">
+<style>
+  .layer{margin-bottom:16px}
+  .layer-hd{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .layer-hd .lid{font-family:"SF Mono",monospace;font-size:.7rem;color:var(--accent)}
+  .layer-hd h3{margin:0}
+  .cells{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+  .gcell{border-radius:10px;padding:12px;color:#fff;cursor:pointer;min-height:88px;display:flex;flex-direction:column;justify-content:space-between;
+    border:1px solid rgba(255,255,255,.14);transition:.12s}
+  .gcell:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+  .gcell .gn{font-weight:700;font-size:.9rem;text-shadow:0 1px 2px rgba(0,0,0,.15)}
+  .gcell .gm{font-size:.7rem;background:rgba(0,0,0,.25);padding:2px 8px;border-radius:20px;align-self:flex-start}
+  .scorecard{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+  .sm{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--panel);box-shadow:var(--shadow)}
+  .sm .smn{font-weight:600;font-size:.88rem} .sm .smb{height:6px;border-radius:4px;background:#eef2f8;margin-top:8px;overflow:hidden}
+  .sm .smb i{display:block;height:100%;background:var(--accent)}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div class="eyebrow">Three horizontal layers — adoption heatmapped</div>
+    <h1>Governance &amp; Responsible AI</h1>
+    <p class="lede">The layers that run <em>across</em> every stakeholder pathway. Each sub-capability cell carries an
+    adoption / maturity colour on the same 0–5 scale as the capability map. Click a cell for its detail, cross-links and sign-off.</p>
+  </div>
+
+  <div class="stat-row" id="rollup" style="margin-bottom:16px"></div>
+  <div class="legend" id="legend"></div>
+
+  <div class="section" id="layers"></div>
+
+  <div class="section">
+    <h2>Expanded success measures</h2>
+    <p class="muted">The scorecard that proves the engagement is working — adoption, governance and business outcomes. (Bars illustrative pending baseline.)</p>
+    <div class="scorecard" id="scorecard"></div>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/pack.js"></script>
+<script>
+PACK.setWorkbooks([{label:"Governance Model .docx", href:""},{label:"Responsible AI Checklist .xlsx", href:""}]);
+PACK.renderNav("governance_responsible_ai.html");
+var D = PACK.data(), G = D.governance;
+var CFG = window.PACK_CONFIG;
+
+(function(){
+  var sc=CFG.maturityScale;
+  var h=sc.map(function(m){return '<span class="sw"><i style="background:'+m.color+'"></i>'+m.v+' '+m.name+'</span>';}).join("");
+  document.getElementById("legend").innerHTML=h;
+})();
+
+function cellId(layerId,i){ return "GC-"+layerId+"-"+i; }
+
+function renderLayers(){
+  document.getElementById("layers").innerHTML = G.layers.map(function(L){
+    var cells = L.subs.map(function(s,i){
+      var id=cellId(L.id,i);
+      var eff = PACK.signoff(id).maturity; var v = (eff!=null)?eff:s.maturity;
+      var m = PACK.maturityInfo(v);
+      return '<div class="gcell" style="background:'+m.color+'" onclick="openCell(\''+L.id+'\','+i+')">'+
+        '<div class="gn">'+PACK.esc(s.name)+'</div>'+
+        '<div class="gm">'+(m.v==null?"—":m.v+" · "+m.name)+'</div></div>';
+    }).join("");
+    return '<div class="layer"><div class="layer-hd"><span class="lid">'+L.id+'</span><h3>'+PACK.esc(L.name)+'</h3></div>'+
+      '<div class="cells">'+cells+'</div></div>';
+  }).join("");
+}
+
+window.openCell=function(layerId,i){
+  var L=G.layers.filter(function(x){return x.id===layerId;})[0], s=L.subs[i], id=cellId(layerId,i);
+  var body =
+    '<div class="def">Layer: <strong>'+PACK.esc(L.name)+'</strong></div>'+
+    '<h4>Success measure</h4><p class="tight">'+PACK.esc(s.measure)+'</p>'+
+    (s.decisions&&s.decisions.length?('<h4>Governs decisions</h4>'+PACK.chips(s.decisions)):'')+
+    '<h4>Adoption / maturity &amp; sign-off</h4><div id="gsign"></div>';
+  PACK.openPanel(id, PACK.esc(s.name), body);
+  PACK.signoffWidget(document.getElementById("gsign"), id, {maturity:true, onChange:function(){ renderLayers(); renderRollup(); }});
+};
+
+function renderRollup(){
+  var all=[]; G.layers.forEach(function(L){ L.subs.forEach(function(s,i){ var id=cellId(L.id,i);
+    var eff=PACK.signoff(id).maturity; all.push((eff!=null)?eff:s.maturity); }); });
+  var avg=(all.reduce(function(a,b){return a+b;},0)/all.length).toFixed(1);
+  var ids=[]; G.layers.forEach(function(L){L.subs.forEach(function(s,i){ids.push(cellId(L.id,i));});});
+  var st=PACK.signoffStats(ids);
+  document.getElementById("rollup").innerHTML =
+    stat(G.layers.length,"Governance layers")+
+    stat(all.length,"Sub-capabilities")+
+    stat(avg,"Average adoption (0–5)")+
+    stat(st.agreed,"Agreed");
+}
+function stat(n,k){ return '<div class="stat"><div class="n">'+n+'</div><div class="k">'+k+'</div></div>'; }
+
+document.getElementById("scorecard").innerHTML = G.successMeasures.map(function(m,i){
+  var pct=[42,38,35,40,55,30,34,48,52,45,28][i]||40;
+  return '<div class="sm"><div class="smn">'+PACK.esc(m)+'</div><div class="smb"><i style="width:'+pct+'%"></i></div></div>';
+}).join("");
+
+renderLayers(); renderRollup();
+document.body.insertAdjacentHTML("beforeend", PACK.footer());
+</script>
+</body>
+</html>

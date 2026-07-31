@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Glossary settings — Nedbank Marketing Pack</title>
+<link rel="stylesheet" href="assets/pack.css">
+<style>
+  .field{margin-bottom:16px}
+  .field label{display:block;font-weight:600;font-size:.86rem;margin-bottom:5px}
+  .field input[type=text],.field select{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-family:inherit;font-size:.9rem}
+  .field .hint{color:var(--mut);font-size:.78rem;margin-top:4px}
+  .resolved{background:#0e1626;color:#e6ebf5;border-radius:8px;padding:11px 13px;font-family:"SF Mono",monospace;font-size:.82rem;word-break:break-all}
+  .toggle{display:flex;align-items:center;gap:10px}
+  .switch{position:relative;width:44px;height:24px;background:#cbd5e1;border-radius:20px;cursor:pointer;transition:.15s}
+  .switch.on{background:var(--accent)} .switch i{position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.15s}
+  .switch.on i{left:22px}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div class="eyebrow">Configurable link-out — no rebuild needed</div>
+    <h1>Glossary settings</h1>
+    <p class="lede">The pack doesn't ship its own glossary. Governed terms live in the Nedbank <strong>Glossary Workbench &amp; String Lexicon</strong>.
+    Point the pack at it here — set once, and every term chip and dotted term across the pack deep-links straight to the term.</p>
+  </div>
+
+  <div class="grid" style="grid-template-columns:1fr 1fr;gap:18px">
+    <div class="card">
+      <h3>Configuration</h3>
+
+      <div class="field toggle" style="margin-top:6px">
+        <div class="switch" id="sw" onclick="toggleEnabled()"><i></i></div>
+        <label style="margin:0">Glossary links enabled</label>
+      </div>
+
+      <div class="field">
+        <label>Base URL</label>
+        <input type="text" id="base" placeholder="https://…/glossary-workbench">
+        <div class="hint">The root of the Nedbank Glossary Workbench. Can differ per content source.</div>
+      </div>
+
+      <div class="field">
+        <label>Link template</label>
+        <input type="text" id="tmpl" placeholder="{base}?term={key}">
+        <div class="hint">Use <span class="mono">{base}</span> and <span class="mono">{key}</span>. Match the Trade Finance scheme exactly.</div>
+      </div>
+
+      <div class="field">
+        <label>Presets</label>
+        <select id="preset" onchange="applyPreset()">
+          <option value="">— choose a pattern —</option>
+          <option value="{base}?term={key}">Query&nbsp; · &nbsp;{base}?term={key}</option>
+          <option value="{base}#{key}">Hash&nbsp; · &nbsp;{base}#{key}</option>
+          <option value="{base}/{key}">Path&nbsp; · &nbsp;{base}/{key}</option>
+        </select>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button class="btn" onclick="save()">Save settings</button>
+        <button class="btn ghost" onclick="clearCfg()">Reset</button>
+      </div>
+      <div class="muted" id="saved" style="font-size:.8rem;margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h3>Preview</h3>
+      <p class="muted tight" style="margin-bottom:10px">Resolved deep-link for a sample term:</p>
+      <div class="field">
+        <label>Sample term</label>
+        <input type="text" id="term" value="Next Best Action" oninput="preview()">
+      </div>
+      <div class="resolved" id="resolved">—</div>
+      <p class="muted" style="font-size:.8rem;margin-top:14px">When enabled with a base URL set, term chips like the one below become live links. Otherwise they show but are inert.</p>
+      <div class="chiprow" id="samplechip" style="margin-top:8px"></div>
+
+      <div class="notice" style="margin-top:16px">
+        Because the template is a settings value, the whole pack works without glossary links until you provide them —
+        turning them on is configuration, not a rebuild. Build-time input still needed: the base URL, one example Trade
+        Finance term link (or the template), and the term → key/URL export from the Workbench.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/pack.js"></script>
+<script>
+PACK.setWorkbooks([{label:"Term → Key map .xlsx", href:""}]);
+PACK.renderNav("glossary_settings.html");
+
+var g = PACK.glossary();
+document.getElementById("base").value = g.baseUrl||"";
+document.getElementById("tmpl").value = g.linkTemplate||"{base}?term={key}";
+setSwitch(!!g.enabled);
+
+function setSwitch(on){ document.getElementById("sw").classList.toggle("on",on); document.getElementById("sw").dataset.on=on?"1":""; }
+window.toggleEnabled=function(){ setSwitch(!document.getElementById("sw").dataset.on); preview(); };
+window.applyPreset=function(){ var v=document.getElementById("preset").value; if(v){document.getElementById("tmpl").value=v; preview();} };
+window.preview=function(){
+  var base=document.getElementById("base").value.trim();
+  var tmpl=document.getElementById("tmpl").value.trim()||"{base}?term={key}";
+  var term=document.getElementById("term").value.trim();
+  var key=term.replace(/\s+/g,"_");
+  var on=!!document.getElementById("sw").dataset.on;
+  var url = base? tmpl.replace("{base}",base).replace("{key}",encodeURIComponent(key)) : "(set a base URL)";
+  document.getElementById("resolved").textContent = (on? url : "(links disabled)");
+  // sample chip using a live glossary object
+  var tmp={enabled:on,baseUrl:base,linkTemplate:tmpl};
+  var saved=PACK.glossary(); PACK.saveGlossary(tmp);
+  document.getElementById("samplechip").innerHTML = PACK.termChip(term);
+  PACK.saveGlossary(saved); // don't persist until Save clicked
+};
+window.save=function(){
+  var cfg={ enabled:!!document.getElementById("sw").dataset.on,
+    baseUrl:document.getElementById("base").value.trim(),
+    linkTemplate:document.getElementById("tmpl").value.trim()||"{base}?term={key}" };
+  PACK.saveGlossary(cfg);
+  document.getElementById("saved").textContent="Saved. Term links across the pack now use these settings.";
+};
+window.clearCfg=function(){ localStorage.removeItem("nbpack.glossary"); document.getElementById("saved").textContent="Reset to shipped default (links off)."; setTimeout(function(){location.reload();},600); };
+
+preview();
+document.body.insertAdjacentHTML("beforeend", PACK.footer());
+</script>
+</body>
+</html>

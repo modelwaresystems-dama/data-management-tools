@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Customer Journey &amp; CX — Nedbank Marketing Pack</title>
+<link rel="stylesheet" href="assets/pack.css">
+<style>
+  .lobtabs{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 16px}
+  .lobtabs button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:9px 16px;cursor:pointer;font-family:inherit;font-weight:600;color:var(--mut)}
+  .lobtabs button.on{background:var(--c-cj);color:#fff;border-color:var(--c-cj)}
+  .jmap{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:18px;overflow:auto}
+  .stagegrid{display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:10px;min-width:960px}
+  .stagecard{border:1px solid var(--line);border-radius:10px;padding:11px;cursor:pointer;background:#fbfcfe;transition:.12s}
+  .stagecard:hover{border-color:var(--c-cj);box-shadow:var(--shadow);transform:translateY(-2px)}
+  .stagecard .st{font-weight:700;font-size:.9rem;margin-bottom:4px}
+  .stagecard .em{display:flex;align-items:center;gap:5px;font-size:.72rem;color:var(--mut);margin-bottom:6px}
+  .emdot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .stagecard .tp{font-size:.76rem;color:var(--mut);line-height:1.4}
+  .emcurve{min-width:960px}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div class="eyebrow">The added layer — how the customer experiences the value</div>
+    <h1>Customer Journey &amp; CX</h1>
+    <p class="lede">The lifecycle backbone — <strong>Acquire → Onboard → Serve → Grow → Retain → Advocate</strong> —
+    specialised per line of business. Each stage carries its touchpoints, an experience rating, journey KPIs, and links
+    to the <em>same</em> capabilities, processes and decisions used on the Business Architecture page.</p>
+  </div>
+
+  <div class="lobtabs" id="lobtabs"></div>
+  <div id="jtitle" class="muted" style="margin-bottom:10px"></div>
+
+  <div class="jmap">
+    <svg class="emcurve" id="emcurve" height="90" preserveAspectRatio="none"></svg>
+    <div class="stagegrid" id="stagegrid"></div>
+  </div>
+
+  <div class="section">
+    <h2>CLV Governance</h2>
+    <div class="card">
+      <p class="def">A shared, governed business outcome — not just a marketing KPI.</p>
+      <p class="tight" id="clvdef" style="margin-bottom:14px"></p>
+      <div class="tbl-wrap"><table class="tbl" id="clvtbl"></table></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>CXO Operating Model</h2>
+    <div class="card">
+      <p class="tight" id="cxodef" style="margin-bottom:14px"></p>
+      <div class="tbl-wrap"><table class="tbl" id="cxotbl"></table></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/pack.js"></script>
+<script>
+PACK.setWorkbooks([{label:"Journey Architecture .docx", href:""},{label:"CLV Governance .docx", href:""}]);
+PACK.renderNav("customer_journey.html");
+var D = PACK.data();
+var EMC = window.PACK_CONFIG.maturityScale; // reuse the 6-colour ramp for 0..5 emotion-ish
+function emColor(e){ // 1..5 experience → red..green
+  var map={1:"#b91c1c",2:"#d97706",3:"#ca8a04",4:"#65a30d",5:"#15803d"}; return map[e]||"#6b7280";
+}
+var current = 0;
+
+function renderTabs(){
+  document.getElementById("lobtabs").innerHTML = D.journeys.map(function(j,i){
+    return '<button class="'+(i===current?"on":"")+'" onclick="selJourney('+i+')">'+PACK.esc(j.lob)+'</button>';
+  }).join("");
+}
+window.selJourney=function(i){ current=i; renderTabs(); renderJourney(); };
+
+function renderJourney(){
+  var j = D.journeys[current];
+  document.getElementById("jtitle").innerHTML =
+    '<span class="chip cj" style="cursor:default"><span class="id">'+j.id+'</span>'+PACK.esc(j.name)+'</span> '+
+    '<span class="muted" style="font-size:.85rem">· persona: '+PACK.esc(j.persona)+'</span>';
+
+  // emotion curve
+  var W=960,H=90,pad=24, n=j.stages.length;
+  var pts = j.stages.map(function(s,idx){
+    var x = pad + idx*( (W-2*pad)/(n-1) );
+    var y = H-12 - ( (s.emotion-1)/4 )*(H-30);
+    return [x,y,s.emotion];
+  });
+  var path = pts.map(function(p,idx){return (idx?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1);}).join(" ");
+  var svg='<defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">'+
+    '<stop offset="0%" stop-color="#15803d" stop-opacity=".18"/><stop offset="100%" stop-color="#15803d" stop-opacity="0"/></linearGradient></defs>';
+  svg+='<path d="'+path+" L"+pts[n-1][0].toFixed(1)+" "+H+" L"+pts[0][0].toFixed(1)+" "+H+' Z" fill="url(#eg)"/>';
+  svg+='<path d="'+path+'" fill="none" stroke="#0e9488" stroke-width="2.5"/>';
+  pts.forEach(function(p){ svg+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="5" fill="'+emColor(p[2])+'" stroke="#fff" stroke-width="1.5"/>'; });
+  var el=document.getElementById("emcurve"); el.setAttribute("viewBox","0 0 "+W+" "+H); el.innerHTML=svg;
+
+  document.getElementById("stagegrid").innerHTML = j.stages.map(function(s,idx){
+    return '<div class="stagecard" onclick="openStage('+idx+')">'+
+      '<div class="st">'+PACK.esc(s.stage)+'</div>'+
+      '<div class="em"><span class="emdot" style="background:'+emColor(s.emotion)+'"></span>Experience '+s.emotion+'/5</div>'+
+      '<div class="tp">'+PACK.esc(s.touchpoints)+'</div></div>';
+  }).join("");
+}
+
+window.openStage=function(idx){
+  var j=D.journeys[current], s=j.stages[idx];
+  var kpis = (s.kpis||[]).map(function(k){return '<span class="chip kpi" style="cursor:default">'+PACK.esc(k)+'</span>';}).join(" ");
+  var body =
+    '<div class="def"><span class="emdot" style="background:'+emColor(s.emotion)+';margin-right:6px"></span>Experience rating <strong>'+s.emotion+'/5</strong></div>'+
+    '<h4>Touchpoints &amp; moments of truth</h4><p class="tight">'+PACK.esc(s.touchpoints)+'</p>'+
+    '<h4>Journey KPIs</h4><div class="chiprow">'+(kpis||'<span class="muted">—</span>')+'</div>'+
+    '<h4>Delivered by capabilities</h4>'+ PACK.chips(s.capabilities||[])+
+    '<h4>Run by processes</h4>'+ PACK.chips(s.processes||[])+
+    '<h4>Governed by decisions</h4>'+ PACK.chips(s.decisions||[]);
+  PACK.openPanel(j.id+" · "+s.stage, PACK.esc(j.name)+" — "+PACK.esc(s.stage), body);
+};
+
+// CLV
+document.getElementById("clvdef").innerHTML = PACK.esc(D.clv.definition);
+document.getElementById("clvtbl").innerHTML =
+  '<tr><th>Function</th><th>Accountable for CLV</th><th>Marketing support</th></tr>'+
+  D.clv.accountability.map(function(r){return '<tr><td><strong>'+PACK.esc(r.fn)+'</strong></td><td>'+PACK.esc(r.owns)+'</td><td>'+PACK.esc(r.marketing)+'</td></tr>';}).join("");
+
+// CXO
+document.getElementById("cxodef").innerHTML = PACK.esc(D.cxo.definition);
+document.getElementById("cxotbl").innerHTML =
+  '<tr><th>Decision area</th><th>CXO role</th><th>Shared with</th></tr>'+
+  D.cxo.decisionRights.map(function(r){return '<tr><td><strong>'+PACK.esc(r.area)+'</strong></td><td>'+PACK.esc(r.cxo)+'</td><td>'+PACK.esc(r.shared)+'</td></tr>';}).join("");
+
+renderTabs(); renderJourney();
+PACK.onHash(function(id){ if(PACK.kindOf(id)==="CJ"){ var i=D.journeys.findIndex(function(j){return j.id===id;}); if(i>=0){selJourney(i);} } });
+document.body.insertAdjacentHTML("beforeend", PACK.footer());
+</script>
+</body>
+</html>

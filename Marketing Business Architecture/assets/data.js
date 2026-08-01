@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.2.8";
-window.PACK_CONFIG.built   = "2026-08-01 17:49 SAST";
+window.PACK_CONFIG.version = "v1.2.9";
+window.PACK_CONFIG.built   = "2026-08-01 18:09 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.2.9", date:"2026-08-01 18:09 SAST",
+    note:"Corrected the Navigation Graph hierarchy to the real model: Stakeholder \u2192 Value Proposition \u2192 Value Stream \u2192 Stage; a Stage has KPIs and required Capabilities; a Capability has a Business Process; a Process has Decisions; Processes/Decisions are automated by AI Use-Cases \u2192 AI Agents; an AI Agent requires Data Products (\u2192 Domain) and Semantic Models, and a Human-in-the-Loop for crucial, high-risk decisions. Added AI Agents, Semantic Models, Human-in-the-Loop and Value-Stream Stages as first-class nodes." },
   { v:"v1.2.8", date:"2026-08-01 17:49 SAST",
     note:"Top bar made readable — all navigation links now show on one row (no longer hidden behind the source selector) and the traceability breadcrumb sits on a single tidy scrollable line. Navigation Graph rebuilt as a full expandable hierarchy: expand any node to drill down every level (Stakeholder → Value Prop → Journey → Capability/Process/Decision → AI Use-Case → CDP → Data Product → Domain), with a path-from-top, explanation and value panel; it no longer stops at one hop." },
   { v:"v1.2.7", date:"2026-08-01 16:52 SAST",
@@ -1218,3 +1220,52 @@ window.GENERIC.dataContracts = {
     p.splice((i>=0?i+1:1),0,{file:"navigation_graph.html", nav:"Graph", title:"Navigation Graph"});
   }
 })();
+
+/* ============================================================================
+   v6: AI Agents, Semantic Models — the automation layer under AI Use-Cases.
+   Hierarchy (Howard): Value-Stream Stage → KPI + required Capabilities;
+   Capability → Business Process → Decision; Process/Decision automated by
+   AI Use-Cases → AI Agents; AI Agents require Data Products + Semantic Models
+   and Human-in-the-Loop for crucial / high-risk decisions.
+   ========================================================================== */
+window.GENERIC.semanticModels = [
+  { id:"SM1", name:"Customer Semantic Model",           def:"Party, customer 360, household and relationship meaning.", terms:["Party","Customer 360","Beneficial Owner (UBO)"] },
+  { id:"SM2", name:"Consent & Preference Semantic Model",def:"Consent, purpose, channel and preference semantics.",     terms:["Consent Basis","Preference Management"] },
+  { id:"SM3", name:"Product & Offer Semantic Model",     def:"Product, holding, offer and eligibility meaning.",         terms:["Product Holding","Offer","Eligibility"] },
+  { id:"SM4", name:"Campaign & Attribution Semantic Model",def:"Campaign, touch, attribution and ROI meaning.",         terms:["Attribution","Marketing ROI"] },
+  { id:"SM5", name:"Journey & Experience Semantic Model",def:"Journey, stage, moment-of-truth and experience meaning.", terms:["Journey State","Moment of Truth","CSAT"] },
+  { id:"SM6", name:"Responsible-AI Semantic Model",      def:"Fairness, explainability, risk and oversight meaning.",    terms:["Fairness Testing","Explainability"] },
+  { id:"SM7", name:"Brand & Content Semantic Model",     def:"Brand, content, claim and disclosure meaning.",           terms:["GenAI","Content Approval"] }
+];
+window.GENERIC.aiAgents = [
+  { id:"AG01", name:"Next-Best-Action Decisioning Agent", def:"Selects and sequences the best action per customer in real time.",
+    useCases:["U01","U14"], dataProducts:["DP01","DP02","DP11","DP15"], semanticModels:["SM1","SM2","SM3"],
+    hitl:true, hitlReason:"High-value and relationship treatment decisions are confirmed by an RM / advisor." },
+  { id:"AG02", name:"Propensity & CLV Scoring Agent", def:"Produces propensity, churn and CLV scores as governed products.",
+    useCases:["U02","U03","U04"], dataProducts:["DP06","DP10","DP11"], semanticModels:["SM1","SM3"], hitl:false },
+  { id:"AG03", name:"Content Generation Agent", def:"Drafts copy, variants and creative at scale.",
+    useCases:["U05","U06"], dataProducts:["DP08","DP02"], semanticModels:["SM7","SM2"],
+    hitl:true, hitlReason:"Brand, claims and disclosure are reviewed by a human before publication." },
+  { id:"AG04", name:"Campaign Optimisation Agent", def:"Allocates spend, channel and timing to maximise ROI.",
+    useCases:["U07","U08","U18"], dataProducts:["DP16","DP05","DP12"], semanticModels:["SM4"], hitl:false },
+  { id:"AG05", name:"Lead Routing Agent", def:"Scores and routes leads to the right owner with SLA.",
+    useCases:["U09"], dataProducts:["DP01","DP11"], semanticModels:["SM1"], hitl:false },
+  { id:"AG06", name:"Journey Insight Agent", def:"Detects drop-off, mines sentiment and feeds the backlog.",
+    useCases:["U10","U11"], dataProducts:["DP14","DP13"], semanticModels:["SM5"], hitl:false },
+  { id:"AG07", name:"Segmentation & Experiment Agent", def:"Builds micro-segments and runs experiments.",
+    useCases:["U12","U13"], dataProducts:["DP12","DP10"], semanticModels:["SM1"], hitl:false },
+  { id:"AG08", name:"Consent & Fairness Guardrail Agent", def:"Enforces consent and monitors fairness / bias.",
+    useCases:["U15","U16"], dataProducts:["DP08","DP17"], semanticModels:["SM2","SM6"],
+    hitl:true, hitlReason:"Fairness, consent and compliance are regulated, high-risk decisions requiring human sign-off." },
+  { id:"AG09", name:"Financial-Wellness Nudge Agent", def:"Serves proactive, non-sales life-event and wellness nudges.",
+    useCases:["U17"], dataProducts:["DP07","DP09"], semanticModels:["SM1","SM2"],
+    hitl:true, hitlReason:"Vulnerable-customer and life-event nudges require human oversight." }
+];
+
+/* Process → Decision(s) map (a business process invokes these decisions) */
+window.GENERIC.processDecisions = {
+  P1:["D1","D2"], P2:["D1","D5"], P3:["D2","D4","D9","DX2"], P4:["D3","D6","D9"],
+  P5:["D8","D7"], P6:["D4","D5"], P7:["D7","DX6","DX3"], P8:["D10"],
+  PX1:["DX1"], PX2:["DX1"], PX3:["DX1"], PX4:["DX2","DX3","DX4","DX5"],
+  PX5:["D1"], PX6:["DX7","DX6"], PX7:["DX1"], PX8:["D5","DX5"]
+};

@@ -43,7 +43,8 @@
     <div class="eyebrow">See the whole picture</div>
     <h1>Navigation Graph</h1>
     <p class="lede" style="font-size:.95rem">The full hierarchy, top to bottom. Expand any node (▶) to drill <strong>down every level</strong> —
-    Stakeholder → Value Proposition → Journey → Capability / Process / Decision → AI Use-Case → CDP → Data Product → Domain. Click a node for its explanation and value.</p>
+    Stakeholder → Value Proposition → Value Stream → <strong>Stage</strong> → (KPI + required Capabilities); Capability → Process → Decision;
+    Process/Decision automated by <strong>AI Use-Case → AI Agent</strong>; the Agent requires <strong>Data Products + Semantic Models + Human-in-the-Loop</strong>. Click a node for its explanation and value.</p>
   </div>
 
   <div class="glayout">
@@ -71,47 +72,66 @@ var D = PACK.data(), MAP = PACK.MAP;
 
 var TYPE = {
   SH:{name:"Stakeholder", color:"#7c3aed"}, VP:{name:"Value Prop", color:"#0e9488"},
+  CJ:{name:"Value Stream", color:"#c2410c"}, ST:{name:"Stage", color:"#d9480f"},
   KT:{name:"KPI", color:"#2b8a3e"}, CAP:{name:"Capability", color:"#2f6fed"},
-  CJ:{name:"Journey", color:"#d9480f"}, P:{name:"Process", color:"#0b7285"},
-  D:{name:"Decision", color:"#9c3587"}, U:{name:"AI Use-Case", color:"#b45309"},
-  CDP:{name:"CDP Service", color:"#2aa9a0"}, DP:{name:"Data Product", color:"#2f8fd6"},
-  DM:{name:"Data Domain", color:"#475569"}
+  P:{name:"Process", color:"#0b7285"}, D:{name:"Decision", color:"#9c3587"},
+  U:{name:"AI Use-Case", color:"#b45309"}, AG:{name:"AI Agent", color:"#ae3ec9"},
+  DP:{name:"Data Product", color:"#2f8fd6"}, SM:{name:"Semantic Model", color:"#1098ad"},
+  HITL:{name:"Human-in-the-Loop", color:"#f76707"}, DM:{name:"Data Domain", color:"#475569"}
 };
 function typeOfId(id){
-  if(/^SH/.test(id))return"SH"; if(/^VP/.test(id))return"VP"; if(/^KT/.test(id))return"KT";
-  if(/^CJ/.test(id))return"CJ"; if(/^CDP/.test(id))return"CDP"; if(/^DP/.test(id))return"DP";
-  if(/^DM/.test(id))return"DM"; if(/^C\d/.test(id))return"CAP"; if(/^P/.test(id))return"P";
-  if(/^D/.test(id))return"D"; if(/^U/.test(id))return"U"; return null;
+  if(/^STG::/.test(id))return"ST"; if(/^HITL::/.test(id))return"HITL";
+  if(/^SH/.test(id))return"SH"; if(/^SM/.test(id))return"SM"; if(/^VP/.test(id))return"VP";
+  if(/^KT/.test(id))return"KT"; if(/^CJ/.test(id))return"CJ"; if(/^DP/.test(id))return"DP";
+  if(/^DM/.test(id))return"DM"; if(/^AG/.test(id))return"AG"; if(/^C\d/.test(id))return"CAP";
+  if(/^P/.test(id))return"P"; if(/^D/.test(id))return"D"; if(/^U/.test(id))return"U"; return null;
 }
-var cdpById={}; (D.cdpServices||[]).forEach(function(s){cdpById[s.id]=s;});
+/* helpers for the new node types */
+function agentById(id){ return (D.aiAgents||[]).filter(function(a){return a.id===id;})[0]; }
+function smById(id){ return (D.semanticModels||[]).filter(function(s){return s.id===id;})[0]; }
+function getStage(id){ var p=id.split("::"); var j=MAP.CJ[p[1]]; return j?{journey:j, stage:j.stages[+p[2]], idx:+p[2]}:null; }
+function hitlAgent(id){ return agentById(id.split("::")[1]); }
+function stageKPIs(stage){ var w={}; (stage.kpis||[]).forEach(function(x){w[x.toLowerCase()]=1;}); return D.kpis.filter(function(k){return k.items.some(function(it){return w[it.toLowerCase()];});}).map(function(k){return k.id;}); }
+function capProcesses(capId){ return D.processes.filter(function(p){return (p.capabilities||[]).indexOf(capId)>=0;}).map(function(p){return p.id;}); }
+function procDecisions(pid){ return ((D.processDecisions||{})[pid]||[]).slice(); }
+function aiForDecision(did){ return D.aiUseCases.filter(function(u){return (u.decisions||[]).indexOf(did)>=0;}).map(function(u){return u.id;}); }
+function agentsForUC(uid){ return (D.aiAgents||[]).filter(function(a){return a.useCases.indexOf(uid)>=0;}).map(function(a){return a.id;}); }
+function displayId(id){ var t=typeOfId(id); if(t==="ST")return"S"+(getStage(id).idx+1); if(t==="HITL")return"HITL"; return id; }
 
 function meta(id){
   var t=typeOfId(id), o;
   if(t==="SH"){o=MAP.SH[id];return{t:t,label:o.name,exp:o.members,val:"Value derived: "+o.value};}
   if(t==="VP"){o=MAP.VP[id];return{t:t,label:o.group,exp:o.generic,val:"The promise — Retail: "+o.retail+" · Wealth: "+o.wealth};}
-  if(t==="KT"){o=MAP.KPI[id];return{t:t,label:o.theme,exp:"Outcome KPIs: "+o.items.join(", "),val:"Proves whether the value proposition was achieved."};}
+  if(t==="CJ"){o=MAP.CJ[id];return{t:t,label:o.name,exp:o.lob+" · "+o.persona,val:"A value stream of "+o.stages.length+" stages — how the customer experiences the value."};}
+  if(t==="ST"){var g=getStage(id);return{t:t,label:g.stage.stage+" — "+g.journey.lob,exp:"Touchpoints: "+g.stage.touchpoints,val:"Experience "+g.stage.emotion+"/5 · KPIs: "+(g.stage.kpis||[]).join(", ")};}
+  if(t==="KT"){o=MAP.KPI[id];return{t:t,label:o.theme,exp:"Outcome KPIs: "+o.items.join(", "),val:"Measures whether the stage's value was achieved."};}
   if(t==="CAP"){o=MAP.CAP[id.split(".")[0]];var a=PACK.attnInfo(PACK.effAttention(o.id)),m=PACK.maturityInfo(PACK.effMaturity(o));return{t:t,label:o.name,exp:o.def,val:"Attention: "+a.k+" · Maturity: "+(m.v==null?"Unrated":m.v+" "+m.name)};}
-  if(t==="CJ"){o=MAP.CJ[id];return{t:t,label:o.name,exp:o.lob+" · "+o.persona,val:"How the customer experiences the value across "+o.stages.length+" stages."};}
   if(t==="P"){o=MAP.P[id];return{t:t,label:o.name,exp:"Inputs: "+o.inputs,val:"Delivers: "+o.outputs};}
   if(t==="D"){o=MAP.D[id];return{t:t,label:o.name,exp:"Inputs: "+o.inputs,val:"Outcome: "+o.outcome+" · Owner: "+o.owner};}
-  if(t==="U"){o=MAP.AI[id];var mv=function(x){var v=Object.keys(x).map(function(k){return x[k];});return (v.reduce(function(a,b){return a+b;},0)/v.length).toFixed(1);};return{t:t,label:o.name,exp:o.desc,val:"Value "+mv(o.value)+"/5 · Risk "+mv(o.risk)+"/5 · "+o.phase};}
-  if(t==="CDP"){o=cdpById[id];return{t:t,label:o?o.name:id,exp:o?o.desc:"",val:"Governed CDP service supplying real-time context."};}
+  if(t==="U"){o=MAP.AI[id];var mv=function(x){var v=Object.keys(x).map(function(k){return x[k];});return (v.reduce(function(a,b){return a+b;},0)/v.length).toFixed(1);};return{t:t,label:o.name,exp:o.desc,val:"Automation opportunity — Value "+mv(o.value)+"/5 · Risk "+mv(o.risk)+"/5 · "+o.phase};}
+  if(t==="AG"){o=agentById(id);return{t:t,label:o.name,exp:o.def+" — automates "+o.useCases.join(", "),val:"Requires "+o.dataProducts.length+" data products & "+o.semanticModels.length+" semantic models"+(o.hitl?" · Human-in-the-loop required":" · fully automatable")};}
+  if(t==="SM"){o=smById(id);return{t:t,label:o.name,exp:o.def,val:"Governs terms: "+(o.terms||[]).join(", ")};}
+  if(t==="HITL"){o=hitlAgent(id);return{t:t,label:"Human-in-the-Loop",exp:o?o.hitlReason:"",val:"Required for crucial, high-risk / regulated decisions involving people."};}
   if(t==="DP"){o=PACK.dpById(id);var dom=PACK.domainById(o.domain)||{};return{t:t,label:o.name,exp:o.desc,val:"Domain: "+(dom.name||"")+" · Owner: "+(dom.owner||"")};}
   if(t==="DM"){o=PACK.domainById(id);return{t:t,label:o.name,exp:o.def,val:"Owner: "+o.owner+" · Steward: "+o.steward};}
   return{t:t,label:id,exp:"",val:""};
 }
 
-/* ---- children (down the hierarchy) --------------------------------------- */
+/* ---- children (down the hierarchy) — Howard's model ----------------------
+   SH → VP → Value Stream → Stage → {KPI, Capability};
+   Capability → Process → Decision → AI Use-Case → AI Agent →
+   {Data Product → Domain, Semantic Model, Human-in-the-Loop}.            */
 function childrenOf(id){
   var t=typeOfId(id), out=[];
   if(t==="SH"){ D.valuePropositions.forEach(function(v){ if((v.stakeholders||[]).indexOf(id)>=0)out.push(v.id); }); }
-  else if(t==="VP"){ var v=MAP.VP[id];
-    D.kpis.forEach(function(k){ var js=(v.journeys||[]).map(function(x){return MAP.CJ[x];}).filter(Boolean); var w={}; js.forEach(function(j){j.stages.forEach(function(s){(s.kpis||[]).forEach(function(x){w[x.toLowerCase()]=1;});});}); if(k.items.some(function(it){return w[it.toLowerCase()];}))out.push(k.id); });
-    (v.journeys||[]).forEach(function(j){out.push(j);}); }
-  else if(t==="CJ"){ var j=MAP.CJ[id]; var caps={},pr={},de={}; j.stages.forEach(function(s){(s.capabilities||[]).forEach(function(c){caps[c]=1;});(s.processes||[]).forEach(function(p){pr[p]=1;});(s.decisions||[]).forEach(function(d){de[d]=1;});}); Object.keys(caps).forEach(function(x){out.push(x);}); Object.keys(pr).forEach(function(x){out.push(x);}); Object.keys(de).forEach(function(x){out.push(x);}); }
-  else if(t==="D"){ D.aiUseCases.forEach(function(u){ if((u.decisions||[]).indexOf(id)>=0)out.push(u.id); }); }
-  else if(t==="U"){ ((D.aiCdp[id]||{}).services||[]).forEach(function(s){out.push(s);}); (D.dataProducts||[]).forEach(function(dp){ if((dp.ai||[]).indexOf(id)>=0)out.push(dp.id); }); }
-  else if(t==="CDP"){ (D.dataProducts||[]).forEach(function(dp){ if((dp.cdp||[]).indexOf(id)>=0)out.push(dp.id); }); }
+  else if(t==="VP"){ (MAP.VP[id].journeys||[]).forEach(function(j){out.push(j);}); }
+  else if(t==="CJ"){ MAP.CJ[id].stages.forEach(function(s,i){ out.push("STG::"+id+"::"+i); }); }
+  else if(t==="ST"){ var g=getStage(id); stageKPIs(g.stage).forEach(function(k){out.push(k);}); (g.stage.capabilities||[]).forEach(function(c){out.push(c);}); }
+  else if(t==="CAP"){ capProcesses(id).forEach(function(p){out.push(p);}); }
+  else if(t==="P"){ procDecisions(id).forEach(function(d){out.push(d);}); }
+  else if(t==="D"){ aiForDecision(id).forEach(function(u){out.push(u);}); }
+  else if(t==="U"){ agentsForUC(id).forEach(function(a){out.push(a);}); }
+  else if(t==="AG"){ var ag=agentById(id); (ag.dataProducts||[]).forEach(function(dp){out.push(dp);}); (ag.semanticModels||[]).forEach(function(sm){out.push(sm);}); if(ag.hitl)out.push("HITL::"+ag.id); }
   else if(t==="DP"){ var dp=PACK.dpById(id); if(dp)out.push(dp.domain); }
   return out;
 }
@@ -123,7 +143,7 @@ function nodeHTML(id, depth){
   return '<div class="trow" data-id="'+id+'" data-depth="'+depth+'" style="padding-left:'+(8+depth*18)+'px">'+
     (kids?'<span class="texp">▶</span>':'<span class="tdot">·</span>')+
     '<span class="tpill" style="background:'+TYPE[t].color+'">'+TYPE[t].name+'</span>'+
-    '<span class="tid">'+id+'</span><span class="tlabel">'+PACK.esc(m.label)+'</span></div>'+
+    '<span class="tid">'+displayId(id)+'</span><span class="tlabel">'+PACK.esc(m.label)+'</span></div>'+
     '<div class="tkids"></div>';
 }
 function rootIds(){
@@ -188,11 +208,11 @@ function renderPanel(id, row){
   if(t==="CJ")openLink='customer_journey.html#'+id;
   var openBtn=(t==="DP")?'<button class="btn ghost" onclick="PACK.openDataProductPanel(\''+id+'\')">View data contract ›</button>':(openLink?'<a class="btn ghost" href="'+openLink+'">Open in page ›</a>':'');
   var path = row ? ancestorsOf(row) : [];
-  var pathHtml = path.length ? path.map(function(pid){var pm=meta(pid);return '<span class="mono" style="color:'+TYPE[pm.t].color+';font-size:.7rem">'+pid+'</span>';}).join('<span class="sep">›</span>') : '<span class="muted">root</span>';
+  var pathHtml = path.length ? path.map(function(pid){var pm=meta(pid);return '<span class="mono" style="color:'+TYPE[pm.t].color+';font-size:.7rem">'+displayId(pid)+'</span>';}).join('<span class="sep">›</span>') : '<span class="muted">root</span>';
   var kids=childrenOf(id);
   document.getElementById("panel").innerHTML =
     '<span class="gp-type" style="background:'+TYPE[t].color+'">'+TYPE[t].name+'</span>'+
-    '<div class="gp-id">'+id+'</div><div class="gp-name">'+PACK.esc(m.label)+'</div>'+
+    '<div class="gp-id">'+displayId(id)+'</div><div class="gp-name">'+PACK.esc(m.label)+'</div>'+
     '<div class="gp-h">Path from top</div><div class="gp-path">'+pathHtml+'</div>'+
     '<div class="gp-h">Explanation</div><p class="tight" style="font-size:.87rem;color:var(--mut)">'+PACK.esc(m.exp)+'</p>'+
     '<div class="gp-h">Value</div><div class="gp-val">'+PACK.esc(m.val)+'</div>'+

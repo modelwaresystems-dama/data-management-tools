@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.2.7";
-window.PACK_CONFIG.built   = "2026-08-01 16:52 SAST";
+window.PACK_CONFIG.version = "v1.2.8";
+window.PACK_CONFIG.built   = "2026-08-01 17:49 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.2.8", date:"2026-08-01 17:49 SAST",
+    note:"Top bar made readable — all navigation links now show on one row (no longer hidden behind the source selector) and the traceability breadcrumb sits on a single tidy scrollable line. Navigation Graph rebuilt as a full expandable hierarchy: expand any node to drill down every level (Stakeholder → Value Prop → Journey → Capability/Process/Decision → AI Use-Case → CDP → Data Product → Domain), with a path-from-top, explanation and value panel; it no longer stops at one hop." },
   { v:"v1.2.7", date:"2026-08-01 16:52 SAST",
     note:"Added an interactive Navigation Graph (click a node to focus it, see its explanation + value, and step up/down/across to connected nodes). Data products now carry a full Data Contract (fundamentals, schema, semantics, quality, SLA, terms of use, producers/consumers) shown in a detail panel. AI Use-Case step now shows its supporting CDP services inline so the CDP context is visible." },
   { v:"v1.2.6", date:"2026-07-31 16:48 SAST",

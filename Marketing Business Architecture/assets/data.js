@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.2.9";
-window.PACK_CONFIG.built   = "2026-08-01 18:09 SAST";
+window.PACK_CONFIG.version = "v1.3.0";
+window.PACK_CONFIG.built   = "2026-08-01 18:54 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.3.0", date:"2026-08-01 18:54 SAST",
+    note:"Added a Model Export / Import page: export the complete architecture model to Excel as one sheet per level in the corrected hierarchy (Stakeholder → Value Proposition → Stream → Stage → KPI → Capability → Business Process → Decision Model incl. Human-in-the-Loop → AI Use-Case → AI Agent → Semantic Model → Data Product → Data Domain), with every attribute and parent/child link plus a referential-integrity validation sheet. Import an edited workbook back as a live “Imported (Excel)” source that drives the Navigator, Graph and all pages. Offline (SheetJS vendored, no CDN)." },
   { v:"v1.2.9", date:"2026-08-01 18:09 SAST",
     note:"Corrected the Navigation Graph hierarchy to the real model: Stakeholder \u2192 Value Proposition \u2192 Value Stream \u2192 Stage; a Stage has KPIs and required Capabilities; a Capability has a Business Process; a Process has Decisions; Processes/Decisions are automated by AI Use-Cases \u2192 AI Agents; an AI Agent requires Data Products (\u2192 Domain) and Semantic Models, and a Human-in-the-Loop for crucial, high-risk decisions. Added AI Agents, Semantic Models, Human-in-the-Loop and Value-Stream Stages as first-class nodes." },
   { v:"v1.2.8", date:"2026-08-01 17:49 SAST",
@@ -1269,3 +1271,14 @@ window.GENERIC.processDecisions = {
   PX1:["DX1"], PX2:["DX1"], PX3:["DX1"], PX4:["DX2","DX3","DX4","DX5"],
   PX5:["D1"], PX6:["DX7","DX6"], PX7:["DX1"], PX8:["D5","DX5"]
 };
+
+/* ============================================================================
+   v7: Model Export / Import page (complete hierarchy to Excel, one sheet per
+   level, and Excel → live "Imported" source). Registered last in the nav.
+   ========================================================================== */
+(function(){ var p=window.PACK_CONFIG.pages;
+  if(!p.some(function(x){return x.file==="model_export_import.html";})){
+    var i=p.findIndex(function(x){return x.file==="glossary_settings.html";});
+    p.splice((i>=0?i:p.length),0,{file:"model_export_import.html", nav:"Model I/O", title:"Model Export / Import"});
+  }
+})();

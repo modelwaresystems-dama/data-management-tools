@@ -9,9 +9,18 @@
   var LS = window.localStorage;
   var PACK = window.PACK = {};
 
-  /* ---- source management (only "generic" carries baked-in data for now) --- */
+  /* ---- source management --------------------------------------------------
+     "generic" ships inside the app. "imported" is a full model reconstructed
+     from an Excel workbook (Model I/O page) and kept in localStorage, so the
+     whole pack — Navigator, Graph and every page — renders from the imported
+     model until it is cleared. Nedbank Public/Private load from the GitHub
+     layer (wired later); until then they fall back to Generic. */
+  var IMPORT_KEY = "nbpack.model";
+  function importedModel(){ try{ var s=LS.getItem(IMPORT_KEY); return s?JSON.parse(s):null; }catch(e){ return null; } }
+  PACK.hasImport = function(){ try{ return !!LS.getItem(IMPORT_KEY); }catch(e){ return false; } };
   function currentSourceId(){
     var s = LS.getItem("nbpack.source") || "generic";
+    if(s==="imported") return importedModel() ? "imported" : "generic";
     var def = CFG.sources.filter(function(x){return x.id===s;})[0];
     if(!def || !def.available) return "generic";
     return s;
@@ -19,9 +28,16 @@
   PACK.source = currentSourceId();
   PACK.setSource = function(id){ LS.setItem("nbpack.source", id); location.reload(); };
   PACK.data = function(){
-    /* Generic ships inside the app. Nedbank Public/Private load from the GitHub
-       layer (wired later); until then they fall back to the Generic baseline. */
+    if(PACK.source==="imported"){ var m=importedModel(); if(m) return m; }
     return window.GENERIC;
+  };
+  /* install / clear an imported model (used by the Model I/O page) */
+  PACK.setImportedModel = function(model){
+    LS.setItem(IMPORT_KEY, JSON.stringify(model)); LS.setItem("nbpack.source","imported");
+  };
+  PACK.clearImportedModel = function(){
+    try{ LS.removeItem(IMPORT_KEY); }catch(e){}
+    if((LS.getItem("nbpack.source")||"")==="imported") LS.setItem("nbpack.source","generic");
   };
 
   /* ---- lookup maps --------------------------------------------------------- */
@@ -206,6 +222,9 @@
       return '<option value="'+s.id+'"'+(s.id===PACK.source?" selected":"")+(s.available?"":" disabled")+'>'+
         PACK.esc(s.label)+(s.available?"":" — pending")+'</option>';
     }).join("");
+    if(PACK.hasImport && PACK.hasImport()){
+      srcOpts += '<option value="imported"'+(PACK.source==="imported"?" selected":"")+'>Imported (Excel)</option>';
+    }
     /* only show the workbooks row once there are real downloads — keeps the
        header uncluttered while these are still placeholders */
     var wb = (PACK._workbooks||[]).filter(function(w){return w.href;}).map(function(w){

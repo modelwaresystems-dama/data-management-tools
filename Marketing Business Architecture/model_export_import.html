@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Model Export / Import — Nedbank Marketing Pack</title>
+<link rel="stylesheet" href="assets/pack.css">
+<style>
+  .io-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+  @media(max-width:860px){.io-grid{grid-template-columns:1fr}}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;background:#fafbfe;transition:.15s}
+  .drop.over{border-color:var(--accent);background:var(--accent-soft)}
+  .drop input{display:none}
+  .lvltbl{width:100%;border-collapse:collapse;font-size:.86rem}
+  .lvltbl th,.lvltbl td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  .lvltbl th{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+  .lvltbl td.n{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .arrow{color:var(--faint);font-weight:700}
+  .vlist{margin:0;padding:0;list-style:none;font-size:.84rem;max-height:260px;overflow:auto}
+  .vlist li{padding:5px 8px;border-radius:7px;margin-bottom:3px;line-height:1.35}
+  .vlist li.error{background:#fdecea;color:#8a1c12}
+  .vlist li.warn{background:#fff8e6;color:#7a5c10}
+  .vlist li .lv{font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;margin-right:6px}
+  .srcflag{display:inline-flex;align-items:center;gap:8px;font-weight:600}
+  .srcflag .dotg{width:9px;height:9px;border-radius:50%;background:var(--accent2)}
+  .srcflag.imp .dotg{background:#b8860b}
+  .steps-mini{font-size:.84rem;color:var(--mut);line-height:1.5;margin:6px 0 0}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div id="breadcrumb"></div>
+
+<div class="wrap">
+  <div class="pagehead" style="margin-bottom:14px">
+    <div class="eyebrow">Modelware · Data Management &nbsp;·&nbsp; Client: Nedbank</div>
+    <h1 style="margin-bottom:3px">Model Export / Import</h1>
+    <p class="lede" style="font-size:.95rem">The complete architecture model as one Excel workbook — a spreadsheet per level, in the corrected
+    hierarchy the Navigator and Graph use. Export it to check every element and link; edit it and import it back to drive the
+    whole pack from your version.</p>
+  </div>
+
+  <div id="srcbar" class="notice" style="margin-bottom:16px"></div>
+
+  <div class="io-grid">
+    <!-- EXPORT -->
+    <div class="section" style="margin:0">
+      <h2>Export to Excel</h2>
+      <div class="card">
+        <p class="tight" style="margin-bottom:12px">Downloads the model you are viewing now (<strong id="exsrc"></strong>) as a
+        <code>.xlsx</code> workbook: an overview sheet plus one sheet per level, with every attribute and every
+        parent (<span class="arrow">←</span>) / child (<span class="arrow">→</span>) link. Fully offline — nothing leaves the browser.</p>
+        <button class="btn" id="btnExport">⭳ Export model to Excel</button>
+        <p class="steps-mini">Sheets: Hierarchy overview, then Stakeholder → Value Proposition → Stream → Stage → KPI →
+        Capability → Business Process → Decision Model (incl. Human-in-the-Loop) → AI Use-Case → AI Agent → Semantic Model →
+        Data Product → Data Domain.</p>
+      </div>
+
+      <h2 style="margin-top:22px">Levels in this model</h2>
+      <div class="card">
+        <table class="lvltbl" id="lvltbl"></table>
+      </div>
+    </div>
+
+    <!-- IMPORT -->
+    <div class="section" style="margin:0">
+      <h2>Import from Excel</h2>
+      <div class="card">
+        <p class="tight" style="margin-bottom:12px">Load an edited workbook. It is overlaid on the baked-in model, checked for
+        broken links, and — once you confirm — becomes the live <strong>Imported (Excel)</strong> source, so the Navigator,
+        Graph and every page render from it. Detail tables not in the sheets (decision rules, SIPOC, data contracts) are kept
+        from the baseline.</p>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept=".xlsx,.xls">
+          <div style="font-weight:600;margin-bottom:4px">Drop an .xlsx here, or click to choose</div>
+          <div class="muted" style="font-size:.82rem">Best results: export first, edit, then import the same workbook.</div>
+        </label>
+        <div id="importResult" style="margin-top:14px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Validation — referential integrity</h2>
+    <div class="card">
+      <p class="muted tight" id="valsummary" style="margin-bottom:10px"></p>
+      <ul class="vlist" id="vlist"></ul>
+    </div>
+  </div>
+
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/pack.js"></script>
+<script src="assets/xlsx.full.min.js"></script>
+<script src="assets/model_io.js"></script>
+<script>
+PACK.setWorkbooks([]);
+PACK.renderNav("model_export_import.html");
+try{ PACK.renderBreadcrumb(null); }catch(e){}
+var MIO = PACK.MODELIO, CFG = window.PACK_CONFIG;
+
+function activeModel(){ return PACK.data(); }
+function srcLabel(){ return PACK.source==="imported" ? "Imported (Excel)" : "Generic (baked-in)"; }
+
+/* ---- source flag + reset ------------------------------------------------- */
+function renderSrcBar(){
+  var imp = PACK.source==="imported";
+  document.getElementById("srcbar").innerHTML =
+    '<span class="srcflag'+(imp?' imp':'')+'"><span class="dotg"></span>Active source: '+PACK.esc(srcLabel())+'</span>'+
+    (imp ? ' &nbsp;·&nbsp; the pack is running from your imported workbook. '+
+      '<a href="#" id="resetSrc">Reset to Generic (baked-in) ›</a>'
+         : ' &nbsp;·&nbsp; showing the baked-in reference model.');
+  document.getElementById("exsrc").textContent = srcLabel();
+  var r = document.getElementById("resetSrc");
+  if(r) r.onclick = function(e){ e.preventDefault(); PACK.clearImportedModel(); location.reload(); };
+}
+
+/* ---- level table + validation for a model -------------------------------- */
+function renderLevels(model){
+  var rows = MIO.SHEETS.map(function(sh,i){
+    return '<tr><td class="n">'+(i+1)+'</td><td><strong>'+PACK.esc(sh.element)+'</strong><div class="muted" style="font-size:.78rem">'+PACK.esc(sh.name)+'</div></td>'+
+      '<td>'+PACK.esc(sh.parent)+'</td><td>'+PACK.esc(sh.child)+'</td>'+
+      '<td class="n">'+sh.rows(model).length+'</td></tr>';
+  }).join("");
+  document.getElementById("lvltbl").innerHTML =
+    '<tr><th>#</th><th>Element (sheet)</th><th>Parent</th><th>Child</th><th class="n">Rows</th></tr>'+rows;
+}
+function renderValidation(model, title){
+  var issues = MIO.validate(model);
+  var errs = issues.filter(function(x){return x.sev==="error";}), warns = issues.filter(function(x){return x.sev==="warn";});
+  document.getElementById("valsummary").innerHTML =
+    (title?('<strong>'+PACK.esc(title)+'</strong> — '):'')+
+    (issues.length===0 ? 'No broken references — every link resolves. ✓'
+      : (errs.length+' error'+(errs.length===1?'':'s')+', '+warns.length+' warning'+(warns.length===1?'':'s')+'. Errors are broken links; warnings are elements with no downstream child.'));
+  document.getElementById("vlist").innerHTML = issues.length===0
+    ? '<li class="warn" style="background:#eaf6ec;color:#1a6b2e">Every stakeholder, value proposition, stream, stage, capability, process, decision, use-case, agent, semantic model and data product link resolves.</li>'
+    : issues.map(function(x){ return '<li class="'+x.sev+'"><span class="lv">'+x.level+'</span>'+PACK.esc(x.msg)+'</li>'; }).join("");
+}
+
+/* ---- export -------------------------------------------------------------- */
+document.getElementById("btnExport").onclick = function(){
+  var model = activeModel();
+  var wb = MIO.toWorkbook(model, XLSX);
+  var tag = (CFG.version||"").replace(/[^\w.]/g,"") || "model";
+  var suffix = PACK.source==="imported" ? "imported" : "generic";
+  XLSX.writeFile(wb, "nedbank_marketing_model_"+tag+"_"+suffix+".xlsx");
+};
+
+/* ---- import -------------------------------------------------------------- */
+var pending = null;
+var drop = document.getElementById("drop"), fileInput = document.getElementById("file");
+["dragenter","dragover"].forEach(function(ev){ drop.addEventListener(ev,function(e){ e.preventDefault(); drop.classList.add("over"); }); });
+["dragleave","drop"].forEach(function(ev){ drop.addEventListener(ev,function(e){ e.preventDefault(); drop.classList.remove("over"); }); });
+drop.addEventListener("drop", function(e){ if(e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", function(){ if(fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+function handleFile(f){
+  var res = document.getElementById("importResult");
+  res.innerHTML = '<p class="muted">Reading '+PACK.esc(f.name)+' …</p>';
+  var rd = new FileReader();
+  rd.onload = function(){
+    try{
+      var wb = XLSX.read(new Uint8Array(rd.result), {type:"array"});
+      var model = MIO.fromWorkbook(wb, XLSX, window.GENERIC);   // overlay on baked-in baseline
+      pending = model;
+      var issues = MIO.validate(model);
+      var errs = issues.filter(function(x){return x.sev==="error";}).length;
+      var total = MIO.SHEETS.reduce(function(a,sh){ return a + sh.rows(model).length; }, 0);
+      res.innerHTML =
+        '<div class="notice" style="margin:0 0 12px"><strong>'+PACK.esc(f.name)+'</strong> parsed. '+
+          MIO.SHEETS.length+' levels · '+total+' elements · '+
+          (errs? ('<span style="color:#b42318;font-weight:700">'+errs+' broken-link error'+(errs===1?'':'s')+' — see Validation below</span>')
+               : '<span style="color:#1a6b2e;font-weight:700">no broken links</span>')+'.</div>'+
+        '<div class="chiprow" style="gap:8px"><button class="btn" id="btnLoad">Load into the pack (Navigator, Graph &amp; pages) ›</button>'+
+        '<button class="btn ghost" id="btnCancel">Cancel</button></div>'+
+        '<p class="muted" style="font-size:.8rem;margin-top:8px">Loading switches the active source to <strong>Imported (Excel)</strong>. You can reset to Generic any time from the bar above or the source selector.</p>';
+      renderValidation(model, "Imported: "+f.name);
+      renderLevels(model);
+      document.getElementById("btnLoad").onclick = function(){
+        PACK.setImportedModel(pending);
+        location.href = "architecture_navigator.html";
+      };
+      document.getElementById("btnCancel").onclick = function(){
+        pending=null; res.innerHTML=''; fileInput.value='';
+        renderValidation(activeModel(), "Active: "+srcLabel()); renderLevels(activeModel());
+      };
+    }catch(err){
+      res.innerHTML = '<div class="notice" style="background:#fdecea;color:#8a1c12;margin:0"><strong>Could not read that workbook.</strong> '+PACK.esc(err.message||String(err))+
+        '<br><span style="font-size:.82rem">Make sure it is an .xlsx exported from this page (sheet names must match the levels).</span></div>';
+    }
+  };
+  rd.onerror = function(){ res.innerHTML = '<div class="notice" style="background:#fdecea;color:#8a1c12;margin:0">Could not read the file.</div>'; };
+  rd.readAsArrayBuffer(f);
+}
+
+/* ---- initial paint ------------------------------------------------------- */
+renderSrcBar();
+renderLevels(activeModel());
+renderValidation(activeModel(), "Active model: "+srcLabel());
+document.body.insertAdjacentHTML("beforeend", PACK.footer());
+</script>
+</body>
+</html>

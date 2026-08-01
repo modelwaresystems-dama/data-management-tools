@@ -451,3 +451,83 @@
     '</div>';
   };
 })();
+
+/* ============================================================================
+   v5 ADD-ONS: Data Product detail panel showing the full Data Contract
+   ========================================================================== */
+(function(){
+  var PACK = window.PACK, D = PACK.data(), CFG = window.PACK_CONFIG;
+  PACK.dataContract = function(dpId){
+    var dp = PACK.dpById(dpId); if(!dp) return null;
+    var c = (D.dataContracts||{})[dpId] || {};
+    var def = D.contractDefaults || {sla:{},terms:{},quality:[]};
+    var dom = PACK.domainById(dp.domain) || {};
+    return {
+      dp:dp, domain:dom,
+      purpose: c.purpose || dp.desc,
+      sources: c.sources || [],
+      classification: c.classification || "Confidential",
+      schema: c.schema || [],
+      sla: Object.assign({}, def.sla, c.slaOverride||{}),
+      terms: def.terms,
+      quality: (def.quality||[]).concat(c.extraQuality||[]),
+      consumersAI: dp.ai || [],
+      realisesCDP: dp.cdp || [],
+      terms_list: dp.terms || []
+    };
+  };
+  PACK.openDataProductPanel = function(dpId){
+    var k = PACK.dataContract(dpId); if(!k) return;
+    var dp = k.dp, dom = k.domain;
+    function row(a,b){ return '<tr><td style="color:var(--mut);white-space:nowrap;padding-right:14px">'+a+'</td><td>'+b+'</td></tr>'; }
+    var schema = k.schema.length ? ('<table class="tbl"><tr><th>Field</th><th>Type</th><th>PII</th></tr>'+
+      k.schema.map(function(f){return '<tr><td class="mono">'+PACK.esc(f[0])+'</td><td class="muted">'+PACK.esc(f[1])+'</td><td>'+(f[2]==="pii"?'<span class="chip" style="background:#fdecea;color:#b42318;cursor:default">PII</span>':'—')+'</td></tr>';}).join("")+'</table>') : '<span class="muted">—</span>';
+    var body =
+      '<div class="dc">'+
+      '<h4>Contract fundamentals</h4>'+
+      '<table class="dc-kv">'+
+        row("Data product","<strong>"+PACK.esc(dp.name)+"</strong> <span class=\"mono\" style=\"color:var(--accent)\">"+dp.id+"</span>")+
+        row("Domain", PACK.esc(dom.name||dp.domain))+
+        row("Owner", "<strong>"+PACK.esc(dom.owner||"—")+"</strong>")+
+        row("Steward", PACK.esc(dom.steward||"—"))+
+        row("Status", '<span class="status-pill status-Agreed">Published (Generic)</span>')+
+        row("Version", PACK.esc(CFG.version||"—"))+
+        row("Classification", '<strong>'+PACK.esc(k.classification)+'</strong>')+
+      '</table>'+
+      '<h4>Purpose</h4><p class="tight">'+PACK.esc(k.purpose)+'</p>'+
+      '<h4>Schema</h4>'+schema+
+      '<h4>Semantics — governed terms</h4>'+(k.terms_list.length?PACK.termChips(k.terms_list):'<span class="muted">—</span>')+
+      '<h4>Data quality rules</h4><ul class="dc-list">'+k.quality.map(function(q){return '<li>'+PACK.esc(q)+'</li>';}).join("")+'</ul>'+
+      '<h4>SLA / service levels</h4><table class="dc-kv">'+
+        row("Freshness",PACK.esc(k.sla.freshness||"—"))+row("Latency",PACK.esc(k.sla.latency||"—"))+
+        row("Availability",PACK.esc(k.sla.availability||"—"))+row("Update frequency",PACK.esc(k.sla.frequency||"—"))+
+        row("Retention",PACK.esc(k.sla.retention||"—"))+row("Support",PACK.esc(k.sla.support||"—"))+
+      '</table>'+
+      '<h4>Terms of use</h4><table class="dc-kv">'+
+        row("Access",PACK.esc(k.terms.access))+row("Allowed purposes",PACK.esc(k.terms.purposes))+
+        row("Restrictions",PACK.esc(k.terms.restrictions))+row("Consent",PACK.esc(k.terms.consent))+
+      '</table>'+
+      '<h4>Producers (source systems)</h4>'+(k.sources.length?('<div class="chiprow">'+k.sources.map(function(s){return '<span class="chip term off">'+PACK.esc(s)+'</span>';}).join("")+'</div>'):'<span class="muted">—</span>')+
+      '<h4>Consumers</h4>'+
+        (k.realisesCDP.length?('<div class="chiprow"><span class="lbl">CDP services</span>'+k.realisesCDP.map(function(s){return '<a class="chip proc" href="hyperpersonalisation_cdp.html"><span class="id">'+PACK.esc(s)+'</span></a>';}).join("")+'</div>'):'')+
+        (k.consumersAI.length?('<div class="chiprow"><span class="lbl">AI use-cases</span>'+k.consumersAI.map(function(u){return PACK.chip(u);}).join("")+'</div>'):'')+
+      '</div>';
+    PACK.openPanel(dp.id, PACK.esc(dp.name)+' — Data Contract', body);
+  };
+  /* card with a "view data contract" affordance (opens the panel) */
+  PACK.dpCardHtml = function(dp){
+    var dom = PACK.domainById(dp.domain) || {name:dp.domain, owner:"—", steward:"—"};
+    var cdpChips = (dp.cdp||[]).map(function(s){ return '<a class="chip proc" href="hyperpersonalisation_cdp.html" onclick="event.stopPropagation()"><span class="id">'+PACK.esc(s)+'</span></a>'; }).join("");
+    var aiChips  = (dp.ai||[]).map(function(u){ return PACK.chip(u).replace('<a ','<a onclick="event.stopPropagation()" '); }).join("");
+    return '<div class="dpcard dpcard-click" onclick="PACK.openDataProductPanel(\''+dp.id+'\')">'+
+      '<div class="dp-top"><span class="dp-dom" title="'+PACK.esc(dom.name)+'">'+PACK.esc(dom.name)+'</span><span class="dp-id">'+PACK.esc(dp.id)+'</span></div>'+
+      '<div class="dp-name">'+PACK.esc(dp.name)+'</div>'+
+      '<p class="dp-desc">'+PACK.esc(dp.desc)+'</p>'+
+      '<div class="dp-owner"><span>Owner: <b>'+PACK.esc(dom.owner)+'</b></span><span>Steward: <b>'+PACK.esc(dom.steward)+'</b></span></div>'+
+      (cdpChips?'<div class="chiprow"><span class="lbl">Realises CDP</span>'+cdpChips+'</div>':'')+
+      (aiChips?'<div class="chiprow"><span class="lbl">Serves AI</span>'+aiChips+'</div>':'')+
+      (dp.terms&&dp.terms.length?PACK.termChips(dp.terms,"Terms"):'')+
+      '<div class="dp-view">View data contract ›</div>'+
+    '</div>';
+  };
+})();

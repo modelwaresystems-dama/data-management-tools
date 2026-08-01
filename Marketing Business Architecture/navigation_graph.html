@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Navigation Graph — Nedbank Marketing Pack</title>
+<link rel="stylesheet" href="assets/pack.css">
+<style>
+  .glayout{display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start}
+  @media(max-width:920px){.glayout{grid-template-columns:1fr}}
+  .gwrap{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:10px;overflow:hidden}
+  #graph{width:100%;height:auto;display:block}
+  .gnode{cursor:pointer}
+  .gnode rect{transition:.12s}
+  .gnode:hover rect{filter:brightness(.97)}
+  .gpanel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:18px;position:sticky;top:104px}
+  @media(max-width:920px){.gpanel{position:static}}
+  .gp-type{display:inline-block;font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#fff;padding:3px 9px;border-radius:20px;margin-bottom:8px}
+  .gp-id{font-family:"SF Mono",monospace;font-size:.72rem;color:var(--accent);font-weight:700}
+  .gp-name{font-weight:700;font-size:1.05rem;margin:2px 0 8px}
+  .gp-h{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:700;margin:14px 0 5px}
+  .gp-val{background:var(--accent-soft);border:1px solid #cfe0ff;border-radius:8px;padding:9px 12px;font-size:.85rem;color:#1e3a8a}
+  .gp-nb{display:flex;flex-direction:column;gap:5px}
+  .gp-nb a{display:flex;gap:8px;align-items:center;padding:6px 9px;border:1px solid var(--line);border-radius:8px;text-decoration:none;color:var(--ink);font-size:.82rem;cursor:pointer}
+  .gp-nb a:hover{background:#f4f7fc;text-decoration:none}
+  .gp-nb .dir{font-size:.62rem;font-weight:700;text-transform:uppercase;color:var(--faint);width:38px;flex:none}
+  .gp-dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .glegend{display:flex;gap:10px;flex-wrap:wrap;font-size:.72rem;color:var(--mut);padding:6px 4px 0}
+  .glegend .sw{display:inline-flex;align-items:center;gap:5px}
+  .glegend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+</style>
+</head>
+<body>
+<div id="nav"></div>
+<div id="breadcrumb"></div>
+
+<div class="wrap">
+  <div class="pagehead" style="margin-bottom:12px">
+    <div class="eyebrow">See the whole picture</div>
+    <h1>Navigation Graph</h1>
+    <p class="lede" style="font-size:.95rem">Every element and how it connects. Click any node to focus it — the panel shows its
+    explanation and value, and you can step <strong>up, down and across</strong> the hierarchy by clicking its neighbours.</p>
+  </div>
+
+  <div class="glayout">
+    <div>
+      <div class="gwrap"><svg id="graph" viewBox="0 0 900 620" preserveAspectRatio="xMidYMid meet"></svg></div>
+      <div class="glegend" id="glegend"></div>
+    </div>
+    <div class="gpanel" id="panel"></div>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/pack.js"></script>
+<script>
+PACK.setWorkbooks([]);
+PACK.renderNav("navigation_graph.html");
+try{ PACK.renderBreadcrumb(null); }catch(e){}
+var D = PACK.data(), MAP = PACK.MAP;
+
+/* ---- type system --------------------------------------------------------- */
+var TYPE = {
+  SH:{name:"Stakeholder", rank:0, color:"#7c3aed"},
+  VP:{name:"Value Proposition", rank:1, color:"#0e9488"},
+  KT:{name:"KPI", rank:2, color:"#2b8a3e"},
+  CAP:{name:"Capability", rank:3, color:"#2f6fed"},
+  CJ:{name:"Customer Journey", rank:4, color:"#d9480f"},
+  P:{name:"Business Process", rank:5, color:"#0b7285"},
+  D:{name:"Decision", rank:6, color:"#9c3587"},
+  U:{name:"AI Use-Case", rank:7, color:"#b45309"},
+  CDP:{name:"CDP Service", rank:8, color:"#2aa9a0"},
+  DP:{name:"Data Product", rank:9, color:"#2f8fd6"},
+  DM:{name:"Data Domain", rank:10, color:"#475569"}
+};
+function typeOfId(id){
+  if(/^SH/.test(id))return"SH"; if(/^VP/.test(id))return"VP"; if(/^KT/.test(id))return"KT";
+  if(/^CJ/.test(id))return"CJ"; if(/^CDP/.test(id))return"CDP"; if(/^DP/.test(id))return"DP";
+  if(/^DM/.test(id))return"DM"; if(/^C\d/.test(id))return"CAP"; if(/^P/.test(id))return"P";
+  if(/^D/.test(id))return"D"; if(/^U/.test(id))return"U"; return null;
+}
+var cdpById={}; (D.cdpServices||[]).forEach(function(s){cdpById[s.id]=s;});
+
+/* ---- label / explanation / value per node -------------------------------- */
+function meta(id){
+  var t=typeOfId(id), o;
+  if(t==="SH"){o=MAP.SH[id];return{t:t,label:o.name,exp:o.members,val:"Value derived: "+o.value};}
+  if(t==="VP"){o=MAP.VP[id];return{t:t,label:o.group,exp:o.generic,val:"The promise — Retail: "+o.retail+" · Wealth: "+o.wealth};}
+  if(t==="KT"){o=MAP.KPI[id];return{t:t,label:o.theme,exp:"Outcome KPIs: "+o.items.join(", "),val:"Proves whether the value proposition was achieved."};}
+  if(t==="CAP"){o=MAP.CAP[id.split(".")[0]];var a=PACK.attnInfo(PACK.effAttention(o.id)),m=PACK.maturityInfo(PACK.effMaturity(o));return{t:t,label:o.name,exp:o.def,val:"Attention: "+a.k+" · Maturity: "+(m.v==null?"Unrated":m.v+" "+m.name)};}
+  if(t==="CJ"){o=MAP.CJ[id];return{t:t,label:o.name,exp:o.lob+" · "+o.persona,val:"How the customer experiences the value across "+o.stages.length+" stages."};}
+  if(t==="P"){o=MAP.P[id];return{t:t,label:o.name,exp:"Inputs: "+o.inputs,val:"Delivers: "+o.outputs};}
+  if(t==="D"){o=MAP.D[id];return{t:t,label:o.name,exp:"Inputs: "+o.inputs,val:"Outcome: "+o.outcome+" · Owner: "+o.owner};}
+  if(t==="U"){o=MAP.AI[id];var mv=function(x){var v=Object.keys(x).map(function(k){return x[k];});return (v.reduce(function(a,b){return a+b;},0)/v.length).toFixed(1);};return{t:t,label:o.name,exp:o.desc,val:"Value "+mv(o.value)+"/5 · Risk "+mv(o.risk)+"/5 · "+o.phase};}
+  if(t==="CDP"){o=cdpById[id];return{t:t,label:o?o.name:id,exp:o?o.desc:"",val:"Governed CDP service supplying real-time context."};}
+  if(t==="DP"){o=PACK.dpById(id);var dom=PACK.domainById(o.domain)||{};return{t:t,label:o.name,exp:o.desc,val:"Domain: "+(dom.name||"")+" · Owner: "+(dom.owner||"")};}
+  if(t==="DM"){o=PACK.domainById(id);return{t:t,label:o.name,exp:o.def,val:"Owner: "+o.owner+" · Steward: "+o.steward};}
+  return{t:t,label:id,exp:"",val:""};
+}
+
+/* ---- neighbours (real data links) ---------------------------------------- */
+function uniq(a){var s={},o=[];a.forEach(function(x){if(!s[x]){s[x]=1;o.push(x);}});return o;}
+function neighbours(id){
+  var t=typeOfId(id), n=[];
+  if(t==="SH"){ D.valuePropositions.forEach(function(v){ if((v.stakeholders||[]).indexOf(id)>=0)n.push(v.id); }); }
+  else if(t==="VP"){ var v=MAP.VP[id]; (v.stakeholders||[]).forEach(function(s){n.push(s);}); (v.journeys||[]).forEach(function(j){n.push(j);});
+    D.kpis.forEach(function(k){ var js=(v.journeys||[]).map(function(x){return MAP.CJ[x];}).filter(Boolean); var words={}; js.forEach(function(j){j.stages.forEach(function(s){(s.kpis||[]).forEach(function(w){words[w.toLowerCase()]=1;});});}); if(k.items.some(function(it){return words[it.toLowerCase()];}))n.push(k.id); }); }
+  else if(t==="KT"){ D.valuePropositions.forEach(function(v){ var js=(v.journeys||[]).map(function(x){return MAP.CJ[x];}).filter(Boolean); var words={}; js.forEach(function(j){j.stages.forEach(function(s){(s.kpis||[]).forEach(function(w){words[w.toLowerCase()]=1;});});}); if(MAP.KPI[id].items.some(function(it){return words[it.toLowerCase()];}))n.push(v.id); }); }
+  else if(t==="CJ"){ var j=MAP.CJ[id]; D.valuePropositions.forEach(function(v){ if((v.journeys||[]).indexOf(id)>=0)n.push(v.id); });
+    var caps={},procs={},decs={}; j.stages.forEach(function(s){(s.capabilities||[]).forEach(function(c){caps[c]=1;});(s.processes||[]).forEach(function(p){procs[p]=1;});(s.decisions||[]).forEach(function(d){decs[d]=1;});});
+    Object.keys(caps).forEach(function(x){n.push(x);}); Object.keys(procs).forEach(function(x){n.push(x);}); Object.keys(decs).forEach(function(x){n.push(x);}); }
+  else if(t==="CAP"){ var cid=id.split(".")[0]; D.journeys.forEach(function(j){ if(j.stages.some(function(s){return (s.capabilities||[]).indexOf(cid)>=0;}))n.push(j.id); }); D.processes.forEach(function(p){ if((p.capabilities||[]).indexOf(cid)>=0)n.push(p.id); }); }
+  else if(t==="P"){ var p=MAP.P[id]; (p.capabilities||[]).forEach(function(c){n.push(c);}); D.journeys.forEach(function(j){ if(j.stages.some(function(s){return (s.processes||[]).indexOf(id)>=0;}))n.push(j.id); }); }
+  else if(t==="D"){ D.journeys.forEach(function(j){ if(j.stages.some(function(s){return (s.decisions||[]).indexOf(id)>=0;}))n.push(j.id); }); D.aiUseCases.forEach(function(u){ if((u.decisions||[]).indexOf(id)>=0)n.push(u.id); }); }
+  else if(t==="U"){ var u=MAP.AI[id]; (u.decisions||[]).forEach(function(d){n.push(d);}); ((D.aiCdp[id]||{}).services||[]).forEach(function(s){n.push(s);}); (D.dataProducts||[]).forEach(function(dp){ if((dp.ai||[]).indexOf(id)>=0)n.push(dp.id); }); }
+  else if(t==="CDP"){ Object.keys(D.aiCdp||{}).forEach(function(uid){ if((D.aiCdp[uid].services||[]).indexOf(id)>=0)n.push(uid); }); (D.dataProducts||[]).forEach(function(dp){ if((dp.cdp||[]).indexOf(id)>=0)n.push(dp.id); }); }
+  else if(t==="DP"){ var dp=PACK.dpById(id); (dp.ai||[]).forEach(function(u){n.push(u);}); (dp.cdp||[]).forEach(function(s){n.push(s);}); n.push(dp.domain); }
+  else if(t==="DM"){ (D.dataProducts||[]).filter(function(p){return p.domain===id;}).forEach(function(p){n.push(p.id);}); }
+  return uniq(n);
+}
+
+/* ---- render -------------------------------------------------------------- */
+var focus = PACK.ctx().node && typeOfId(PACK.ctx().node) ? PACK.ctx().node : "VP01";
+function short(s,n){ s=String(s); return s.length>n?s.slice(0,n-1)+"…":s; }
+function nodeSVG(id,x,y,isFocus){
+  var t=typeOfId(id), col=TYPE[t].color, w=isFocus?190:150, hh=isFocus?54:44;
+  var m=meta(id);
+  return '<g class="gnode" transform="translate('+(x-w/2)+','+(y-hh/2)+')" onclick="setFocus(\''+id+'\')">'+
+    '<rect width="'+w+'" height="'+hh+'" rx="10" fill="'+col+'" '+(isFocus?'stroke="#0e1626" stroke-width="2.5"':'fill-opacity="0.92"')+'/>'+
+    '<text x="10" y="17" fill="#fff" font-size="9" font-family="SF Mono,monospace" opacity="0.9">'+PACK.esc(id)+'</text>'+
+    '<text x="10" y="'+(isFocus?34:32)+'" fill="#fff" font-size="'+(isFocus?12:11)+'" font-weight="700">'+PACK.esc(short(m.label,isFocus?26:20))+'</text>'+
+    (isFocus?'<text x="10" y="48" fill="#fff" font-size="8.5" opacity="0.85">'+PACK.esc(TYPE[t].name)+'</text>':'')+
+    '<title>'+PACK.esc(id+' · '+m.label)+'</title></g>';
+}
+function layoutRow(ids, y, svgRef){
+  var W=900, n=ids.length; if(!n) return [];
+  var pad=80, step=(W-2*pad)/Math.max(1,n-1);
+  return ids.map(function(id,i){ var x=n===1?W/2:(pad+i*step); svgRef.edges.push([W/2,310,x,y]); return {id:id,x:x,y:y}; });
+}
+function render(){
+  var fT=typeOfId(focus), fRank=TYPE[fT].rank;
+  var nb=neighbours(focus);
+  var up=[],down=[],side=[];
+  nb.forEach(function(id){ var r=TYPE[typeOfId(id)].rank; if(r<fRank)up.push(id); else if(r>fRank)down.push(id); else side.push(id); });
+  // cap per row to keep readable
+  function cap(a){ return a.length>7 ? a.slice(0,7) : a; }
+  var upC=cap(up),downC=cap(down),sideC=cap(side);
+  var ref={edges:[]};
+  var upN=layoutRow(upC,70,ref), downN=layoutRow(downC,545,ref);
+  // side nodes: left & right of focus
+  var sideN=[]; sideC.forEach(function(id,i){ var x=(i%2===0)?150:750; var y=310+(Math.floor(i/2)-((Math.ceil(sideC.length/2)-1)/2))*70; ref.edges.push([450,310,x,y]); sideN.push({id:id,x:x,y:y}); });
+  var svg="";
+  ref.edges.forEach(function(e){ svg+='<line x1="'+e[0]+'" y1="'+e[1]+'" x2="'+e[2]+'" y2="'+e[3]+'" stroke="#c8d2e0" stroke-width="1.4"/>'; });
+  svg+='<text x="450" y="24" text-anchor="middle" font-size="10" fill="#8593ab" font-weight="700">▲ UP THE CHAIN</text>';
+  svg+='<text x="450" y="600" text-anchor="middle" font-size="10" fill="#8593ab" font-weight="700">▼ DOWN THE CHAIN</text>';
+  [].concat(upN,downN,sideN).forEach(function(p){ svg+=nodeSVG(p.id,p.x,p.y,false); });
+  svg+=nodeSVG(focus,450,310,true);
+  document.getElementById("graph").innerHTML=svg;
+  renderPanel(up,down,side);
+  try{ history.replaceState(null,"","navigation_graph.html?node="+focus); }catch(e){}
+}
+function nbLink(id,dir){ var t=typeOfId(id),m=meta(id); return '<a onclick="setFocus(\''+id+'\')"><span class="dir">'+dir+'</span><span class="gp-dot" style="background:'+TYPE[t].color+'"></span><span class="mono" style="font-size:.7rem;color:'+TYPE[t].color+'">'+id+'</span> '+PACK.esc(short(m.label,22))+'</a>'; }
+function renderPanel(up,down,side){
+  var m=meta(focus), t=m.t;
+  var openLink = ({U:'ai_usecases.html#'+focus, DP:null, CDP:'hyperpersonalisation_cdp.html', DM:'data_products.html'})[t];
+  if(t==="SH"||t==="VP"||t==="KT"||t==="CAP"||t==="P"||t==="D") openLink='business_architecture.html#'+focus;
+  if(t==="CJ") openLink='customer_journey.html#'+focus;
+  var openBtn = (t==="DP") ? '<button class="btn ghost" onclick="PACK.openDataProductPanel(\''+focus+'\')">View data contract ›</button>'
+                : (openLink?'<a class="btn ghost" href="'+openLink+'">Open in page ›</a>':'');
+  document.getElementById("panel").innerHTML =
+    '<span class="gp-type" style="background:'+TYPE[t].color+'">'+TYPE[t].name+'</span>'+
+    '<div class="gp-id">'+focus+'</div><div class="gp-name">'+PACK.esc(m.label)+'</div>'+
+    '<div class="gp-h">Explanation</div><p class="tight" style="font-size:.87rem;color:var(--mut)">'+PACK.esc(m.exp)+'</p>'+
+    '<div class="gp-h">Value</div><div class="gp-val">'+PACK.esc(m.val)+'</div>'+
+    '<div class="gp-h">Navigate</div><div class="gp-nb">'+
+      (up.map(function(id){return nbLink(id,"up");}).join(""))+
+      (side.map(function(id){return nbLink(id,"across");}).join(""))+
+      (down.map(function(id){return nbLink(id,"down");}).join(""))+
+      (up.length+down.length+side.length===0?'<span class="muted" style="font-size:.82rem">No further links.</span>':'')+
+    '</div>'+
+    '<div style="margin-top:14px">'+openBtn+'</div>';
+}
+window.setFocus=function(id){ if(typeOfId(id)){ focus=id; render(); window.scrollTo({top:0,behavior:"smooth"}); } };
+
+// legend
+document.getElementById("glegend").innerHTML = Object.keys(TYPE).map(function(k){return '<span class="sw"><i style="background:'+TYPE[k].color+'"></i>'+PACK.esc(TYPE[k].name)+'</span>';}).join("");
+
+render();
+document.body.insertAdjacentHTML("beforeend", PACK.footer());
+</script>
+</body>
+</html>

@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.2.6";
-window.PACK_CONFIG.built   = "2026-07-31 16:48 SAST";
+window.PACK_CONFIG.version = "v1.2.7";
+window.PACK_CONFIG.built   = "2026-08-01 16:52 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.2.7", date:"2026-08-01 16:52 SAST",
+    note:"Added an interactive Navigation Graph (click a node to focus it, see its explanation + value, and step up/down/across to connected nodes). Data products now carry a full Data Contract (fundamentals, schema, semantics, quality, SLA, terms of use, producers/consumers) shown in a detail panel. AI Use-Case step now shows its supporting CDP services inline so the CDP context is visible." },
   { v:"v1.2.6", date:"2026-07-31 16:48 SAST",
     note:"Introduced Data Products: the governed, owned data assets that deliver the AI use-cases and CDP, each mapped to a data domain (owner/steward) to align demand to the Data Strategy. Added a Data Products catalog page (filter by domain) and a 10th Navigator step showing the data products required by the selected AI use-case and its CDP services, grouped by domain." },
   { v:"v1.2.5", date:"2026-07-31 16:39 SAST",
@@ -1134,5 +1136,83 @@ window.PACK_CONFIG.chain.push({ key:"dp", label:"Data Products" });
   if(!p.some(function(x){return x.file==="data_products.html";})){
     var i = p.findIndex(function(x){return x.file==="hyperpersonalisation_cdp.html";});
     p.splice((i>=0?i+1:p.length),0,{file:"data_products.html", nav:"Data Products", title:"Data Products"});
+  }
+})();
+
+/* ============================================================================
+   v5: Data Contracts — every element of a data contract, per data product.
+   A shared default (SLA, terms, quality) + per-product specifics (purpose,
+   sources, classification, schema fields). Consumers derive from the product's
+   AI use-cases & CDP services; owner/steward from its domain.
+   ========================================================================== */
+window.GENERIC.contractDefaults = {
+  sla:{ freshness:"Near-real-time to daily (per source)", availability:"99.5% monthly", latency:"< 15 min for streaming feeds", retention:"7 years (regulatory)", frequency:"Streaming / batch per source", support:"Domain data team · business hours" },
+  terms:{ access:"Request via Data Catalog; approved by the domain owner", purposes:"Approved marketing personalisation & analytics only", restrictions:"No onward sharing; purpose-bound; masked in non-prod", consent:"Enforced against the Consent & Preference Ledger (DP08)" },
+  quality:["Completeness ≥ agreed threshold per field","Validity against schema & reference data","Freshness within SLA","Uniqueness on the primary key"]
+};
+window.GENERIC.dataContracts = {
+  DP01:{ purpose:"Provide the single resolved customer identity and relationships as the join key for all personalisation.",
+    sources:["Core banking CIF","CRM","KYC / onboarding"], classification:"Confidential · PII",
+    schema:[["partyId","string","pii"],["personName","string","pii"],["householdId","string",""],["businessId","string",""],["matchKey","string",""],["advisorId","string",""],["relationshipType","string",""]],
+    extraQuality:["Match confidence ≥ 0.95 for auto-merge"] },
+  DP02:{ purpose:"Unified customer view for targeting, treatment selection and journey context.",
+    sources:["CIF","CRM","CDP","Servicing"], classification:"Confidential · PII",
+    schema:[["partyId","string","pii"],["segment","string",""],["tenureMonths","int",""],["productCount","int",""],["lastInteractionTs","timestamp",""],["journeyStage","string",""],["churnRisk","decimal",""],["clv","decimal",""]] },
+  DP03:{ purpose:"Products and services currently held per customer, with tenure and balances.",
+    sources:["Core banking","Cards","Lending"], classification:"Confidential",
+    schema:[["partyId","string","pii"],["productId","string",""],["productType","string",""],["openedDate","date",""],["balance","decimal",""],["status","string",""]] },
+  DP04:{ purpose:"Available offers with product, affordability and eligibility rules.",
+    sources:["Product","Pricing","Risk"], classification:"Internal",
+    schema:[["offerId","string",""],["productType","string",""],["eligibilityRule","string",""],["affordabilityRule","string",""],["validFrom","date",""],["validTo","date",""]] },
+  DP05:{ purpose:"Real-time digital and behavioural events for triggers and context.",
+    sources:["Mobile app","Web","Contact centre"], classification:"Confidential · PII",
+    schema:[["eventId","string",""],["partyId","string","pii"],["eventType","string",""],["channel","string",""],["eventTs","timestamp",""],["context","json",""]],
+    slaOverride:{ freshness:"Real-time (< 5s)", latency:"< 5s" } },
+  DP06:{ purpose:"Transaction behaviour feeding propensity, churn, CLV and affordability.",
+    sources:["Core banking","Cards","Payments"], classification:"Confidential · PII",
+    schema:[["txnId","string",""],["partyId","string","pii"],["amount","decimal",""],["currency","string",""],["mcc","string",""],["txnTs","timestamp",""]] },
+  DP07:{ purpose:"Current lifecycle stage and journey context per customer.",
+    sources:["CDP","Journey orchestration"], classification:"Confidential",
+    schema:[["partyId","string","pii"],["journeyId","string",""],["stage","string",""],["enteredTs","timestamp",""],["nextBestAction","string",""]] },
+  DP08:{ purpose:"Authoritative consent, purpose and channel permissions, with opt-out enforcement.",
+    sources:["Preference centre","Privacy platform"], classification:"Confidential · PII · Sensitive",
+    schema:[["partyId","string","pii"],["purpose","string",""],["channel","string",""],["consentStatus","string",""],["consentTs","timestamp",""],["expiryTs","timestamp",""]],
+    extraQuality:["Consent basis present for every downstream purpose","Opt-out propagated within 1 hour"] },
+  DP09:{ purpose:"Risk, affordability, eligibility and vulnerability signals.",
+    sources:["Risk engine","Credit bureau","Fraud"], classification:"Confidential · Sensitive",
+    schema:[["partyId","string","pii"],["riskRating","string",""],["affordabilityScore","decimal",""],["vulnerabilityFlag","boolean",""],["eligibilityFlags","json",""]] },
+  DP10:{ purpose:"Governed, reusable model features with explainability attributes.",
+    sources:["Feature pipelines"], classification:"Confidential",
+    schema:[["partyId","string","pii"],["featureName","string",""],["featureValue","decimal",""],["asOfTs","timestamp",""],["version","string",""]] },
+  DP11:{ purpose:"Published propensity, churn, CLV and next-best-action model scores.",
+    sources:["Model serving"], classification:"Confidential",
+    schema:[["partyId","string","pii"],["modelId","string",""],["score","decimal",""],["scoredTs","timestamp",""],["explanation","json",""]],
+    extraQuality:["Model version & drift status attached to every score"] },
+  DP12:{ purpose:"Lifecycle and ML segments and activation-ready audiences with eligibility.",
+    sources:["Segmentation engine","CDP"], classification:"Confidential",
+    schema:[["audienceId","string",""],["partyId","string","pii"],["segment","string",""],["eligibility","boolean",""],["refreshedTs","timestamp",""]] },
+  DP13:{ purpose:"Complaints, surveys, sentiment and service interactions.",
+    sources:["Complaints","Survey","Contact centre"], classification:"Confidential · Sensitive",
+    schema:[["interactionId","string",""],["partyId","string","pii"],["channel","string",""],["sentiment","decimal",""],["topic","string",""],["createdTs","timestamp",""]] },
+  DP14:{ purpose:"Drop-off, pathing and journey KPIs for the improvement backlog.",
+    sources:["Journey analytics"], classification:"Internal",
+    schema:[["journeyId","string",""],["stage","string",""],["dropoffRate","decimal",""],["npsScore","decimal",""],["periodStart","date",""]] },
+  DP15:{ purpose:"Activation-ready audiences and next-best-action decisions surfaced to channels, RMs and advisors.",
+    sources:["Decisioning","CDP activation"], classification:"Confidential · PII",
+    schema:[["decisionId","string",""],["partyId","string","pii"],["action","string",""],["channel","string",""],["treatmentId","string",""],["decidedTs","timestamp",""],["consentChecked","boolean",""]],
+    extraQuality:["Consent & contact policy checked on every decision"] },
+  DP16:{ purpose:"Attributed outcomes, marketing ROI and experiment lift for accountability.",
+    sources:["Campaign","Finance","Web analytics"], classification:"Internal",
+    schema:[["campaignId","string",""],["partyId","string","pii"],["touchType","string",""],["conversionFlag","boolean",""],["attributedValue","decimal",""],["periodStart","date",""]] },
+  DP17:{ purpose:"Provenance, quality scores, lineage and audit across every product.",
+    sources:["Catalog","Quality engine","Lineage"], classification:"Internal",
+    schema:[["productId","string",""],["qualityScore","decimal",""],["lineageRef","string",""],["lastProfiledTs","timestamp",""],["issuesOpen","int",""]] }
+};
+
+/* navigation graph page registration (v5) */
+(function(){ var p=window.PACK_CONFIG.pages;
+  if(!p.some(function(x){return x.file==="navigation_graph.html";})){
+    var i=p.findIndex(function(x){return x.file==="architecture_navigator.html";});
+    p.splice((i>=0?i+1:1),0,{file:"navigation_graph.html", nav:"Graph", title:"Navigation Graph"});
   }
 })();

@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.6.0";
-window.PACK_CONFIG.built   = "2026-08-02 16:31 SAST";
+window.PACK_CONFIG.version = "v1.7.0";
+window.PACK_CONFIG.built   = "2026-08-02 16:52 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.7.0", date:"2026-08-02 16:52 SAST",
+    note:"Fixed the version stamp overlapping the traceability breadcrumb — the version / last-updated block now sits in its own fixed region beside the scrollable path. Added a Value Flow (Sankey) view to the Navigation Graph: for a selected value stream it flows Value Stream → Value Stage → Capability → AI Use-Case, with flow width = AI value contribution (mean use-case value score) and each value stage labelled with its KPI — showing the value relation and the improvement metric at a glance. Toggle between the hierarchy tree and the value flow." },
   { v:"v1.6.0", date:"2026-08-02 16:31 SAST",
     note:"Added the Value Streams — Ownership & Governance page: pick a value stream and trace it down to who owns and governs it — value stages with primary KPIs, the business outcomes it delivers (each with its accountable role and review forum/cadence), the ownership-role model, and the governance operating layer (governance councils, decision-rights RACI, policy domains → policies → controls, and the risk register). Loaded the ownership + governance data from the future-state model into the pack." },
   { v:"v1.5.0", date:"2026-08-02 16:14 SAST",

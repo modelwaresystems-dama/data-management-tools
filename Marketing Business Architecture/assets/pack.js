@@ -339,7 +339,7 @@
     var c = PACK.ctx();
     var ver = CFG.version ? ('<span class="bc-ver"><span class="ver-pill">'+PACK.esc(CFG.version)+'</span>'+
       (CFG.built?'<span class="ver-built">Updated '+PACK.esc(CFG.built)+'</span>':'')+'</span>') : '';
-    var html = '<div class="bc-in"><span class="bc-lead">Traceability</span>'+
+    var steps = '<div class="bc-in"><span class="bc-lead">Traceability</span>'+
       CFG.chain.map(function(s,i){
         var lbl = PACK.chainLabelFor(s.key, c);
         var on = s.key===activeKey;
@@ -347,8 +347,15 @@
         var inner = '<span class="bc-k">'+PACK.esc(s.label)+'</span>'+(lbl?'<span class="bc-v">'+PACK.esc(lbl)+'</span>':'');
         var el = '<a class="'+cls+'" href="'+PACK.navUrl(s.key)+'">'+inner+'</a>';
         return (i?'<span class="bc-sep">›</span>':'')+el;
-      }).join("")+ver+'</div>';
-    host.className = "breadcrumb"; host.innerHTML = html;
+      }).join("")+'</div>';
+    /* version block lives OUTSIDE the scrollable chain so it never overlaps the path */
+    host.className = "breadcrumb"; host.innerHTML = '<div class="bc-row">'+steps+ver+'</div>';
+    /* keep the active step in view when the chain is deep enough to scroll */
+    try{
+      var bcin = host.querySelector(".bc-in"), act = host.querySelector(".bc-step.on");
+      if(bcin && act){ var want = act.offsetLeft - bcin.clientWidth + act.offsetWidth + 40;
+        bcin.scrollLeft = Math.max(0, want); }
+    }catch(e){}
   };
 
   /* ---- attention helpers --------------------------------------------------- */

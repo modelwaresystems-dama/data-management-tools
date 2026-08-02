@@ -77,15 +77,16 @@
 
   <div id="flowview" style="display:none">
     <div class="tools">
-      <label style="font-size:.8rem;font-weight:600;color:var(--mut)">Value stream</label>
-      <select id="sankeyVS"></select>
+      <label style="font-size:.8rem;font-weight:600;color:var(--mut)">Start from</label>
+      <select id="sankeySH"></select>
       <label style="font-size:.8rem;font-weight:600;color:var(--mut);margin-left:6px">Weight by</label>
       <select id="sankeyWeight">
         <option value="ai">AI value score</option>
         <option value="kpi">KPI roll-up weight</option>
       </select>
-      <span class="muted" style="font-size:.8rem">flows Value Stream → Value Stage → Capability → AI Use-Case → Data Product</span>
+      <button class="btn ghost" id="sankeyClear" style="display:none">✕ Clear path</button>
     </div>
+    <div id="sankeyPath" style="font-size:.82rem;color:var(--mut);margin:2px 2px 8px"></div>
     <div class="treewrap" style="max-height:none;overflow:auto;padding:14px"><svg id="sankey" width="100%"></svg></div>
     <div class="glegend" id="flowlegend"></div>
     <p class="muted" id="flowinfo" style="font-size:.83rem;margin-top:8px"></p>
@@ -312,64 +313,110 @@ function kpiWeightFor(g){
   return (w!=null)?w:10;   // default weight when the KPI isn't in an outcome roll-up
 }
 function dpsForUC(u){ try{ return (PACK.dataProductsForAI(u)||[]).map(function(d){return d.id;}); }catch(e){ return []; } }
-var SCOL={VS:"#c2410c",VSG:"#e8590c",CAP:"#2f6fed",U:"#b45309",DP:"#2f8fd6"};
-var SNAME={VS:"Value Stream",VSG:"Value Stage",CAP:"Capability",U:"AI Use-Case",DP:"Data Product"};
+var SCOL={SH:"#7c3aed",VP:"#0e9488",VS:"#c2410c",VSG:"#e8590c",CAP:"#2f6fed",U:"#b45309",DP:"#2f8fd6"};
+var SNAME={SH:"Stakeholder",VP:"Value Prop",VS:"Value Stream",VSG:"Value Stage",CAP:"Capability",U:"AI Use-Case",DP:"Data Product"};
+function streamsForVP(vpId){ return (D.valueStreams||[]).filter(function(s){return s.vp===vpId;}).map(function(s){return s.id;}); }
+function vpsForSH2(shId){ return D.valuePropositions.filter(function(v){return (v.stakeholders||[]).indexOf(shId)>=0;}).map(function(v){return v.id;}); }
+function stagesOf(vsId){ return (D.valueStages||[]).filter(function(g){return g.vs===vsId;}).sort(function(a,b){return a.seq-b.seq;}); }
 
-/* Build a 5-level flow: Value Stream → Value Stage → Capability → AI Use-Case → Data Product.
-   mode "ai"  : flow width = AI value contribution (mean use-case value), aggregated bottom-up.
-   mode "kpi" : flow width = the value stage's KPI roll-up weight, distributed top-down.        */
-function sankeyData(vsId, mode){
-  var vs=vsById(vsId); if(!vs) return null;
-  var stages=(D.valueStages||[]).filter(function(g){return g.vs===vsId;}).sort(function(a,b){return a.seq-b.seq;});
-  var nodes={}, links={};
+/* Build the full flow starting at Stakeholder:
+   Stakeholder → Value Proposition → Value Stream → Value Stage → Capability → AI Use-Case → Data Product.
+   `filt` carries the selected navigation path (sh/vp/vs/vsg/cap/ai/dp); at each level, if a value is
+   selected only that node passes — otherwise every child is shown. `rootSHs` seeds the top level.
+   mode "ai"  = flow width by AI value score (peaks at the use-case); "kpi" = by value-stage KPI weight. */
+function sankeyData(mode, rootSHs, filt){
+  filt = filt||{};
+  var nodes={}, children={}, parents={};
   function node(id,type,name,sub){ if(!nodes[id])nodes[id]={id:id,type:type,name:name,sub:sub||""}; return id; }
-  function link(a,b,v){ if(!(v>0))return; var k=a+"|"+b; links[k]=links[k]||{source:a,target:b,value:0}; links[k].value+=v; }
-  var vsN=node("VS:"+vs.id,"VS",vs.name);
-
-  var capUC={}, capStages={}, ucCaps={};
-  stages.forEach(function(g){ (g.caps||[]).forEach(function(cap){ capStages[cap]=(capStages[cap]||0)+1; if(!capUC[cap]) capUC[cap]=reachableUCs(cap); }); });
-  Object.keys(capUC).forEach(function(cap){ capUC[cap].forEach(function(u){ ucCaps[u]=(ucCaps[u]||0)+1; }); });
-  var allUC={}; Object.keys(capUC).forEach(function(cap){ capUC[cap].forEach(function(u){ allUC[u]=1; }); });
-  var ucDP={}; Object.keys(allUC).forEach(function(u){ ucDP[u]=dpsForUC(u); });
-
-  // nodes
-  stages.forEach(function(g){ node("VSG:"+g.id,"VSG",g.seq+". "+g.name,"◷ "+g.primaryKPI+(mode==="kpi"?(" ("+kpiWeightFor(g)+"%)"):"")); });
-  Object.keys(capUC).forEach(function(cap){ var o=MAP.CAP[cap]; node("CAP:"+cap,"CAP",o?o.name:cap); });
-  Object.keys(allUC).forEach(function(u){ var o=MAP.AI[u]; node("U:"+u,"U",o?o.name:u,"Value "+ucVal(u).toFixed(1)+"/5"); });
-  var dpSet={}; Object.keys(ucDP).forEach(function(u){ ucDP[u].forEach(function(dp){ dpSet[dp]=1; }); });
-  Object.keys(dpSet).forEach(function(dp){ var o=PACK.dpById(dp); var dom=PACK.domainById(o?o.domain:"")||{}; node("DP:"+dp,"DP",o?o.name:dp, dom.name||""); });
-
+  function edge(a,b){ (children[a]=children[a]||{})[b]=1; (parents[b]=parents[b]||{})[a]=1; }
+  function keep(sel,id){ return !sel || sel===id; }
+  (rootSHs||[]).forEach(function(shId){
+    var sh=MAP.SH[shId]; if(!sh) return; node("SH:"+shId,"SH",sh.name);
+    vpsForSH2(shId).forEach(function(vpId){ if(!keep(filt.vp,vpId))return; var vp=MAP.VP[vpId]; node("VP:"+vpId,"VP",vp.group);
+      streamsForVP(vpId).forEach(function(vsId){ if(!keep(filt.vs,vsId))return; var vs=vsById(vsId); node("VS:"+vsId,"VS",vs.name);
+        stagesOf(vsId).forEach(function(g){ if(!keep(filt.vsg,g.id))return;
+          node("VSG:"+g.id,"VSG",g.seq+". "+g.name,"◷ "+g.primaryKPI+(mode==="kpi"?(" ("+kpiWeightFor(g)+"%)"):""));
+          (g.caps||[]).forEach(function(cap){ if(!keep(filt.cap,cap))return; var co=MAP.CAP[cap]; node("CAP:"+cap,"CAP",co?co.name:cap);
+            reachableUCs(cap).forEach(function(u){ if(!keep(filt.ai,u))return; var uo=MAP.AI[u]; node("U:"+u,"U",uo?uo.name:u,"Value "+ucVal(u).toFixed(1)+"/5");
+              dpsForUC(u).forEach(function(dp){ if(!keep(filt.dp,dp))return; var dpo=PACK.dpById(dp); var dom=PACK.domainById(dpo?dpo.domain:"")||{};
+                node("DP:"+dp,"DP",dpo?dpo.name:dp,dom.name||""); edge("U:"+u,"DP:"+dp); });
+              edge("CAP:"+cap,"U:"+u);
+            });
+            edge("VSG:"+g.id,"CAP:"+cap);
+          });
+          edge("VS:"+vsId,"VSG:"+g.id);
+        });
+        edge("VP:"+vpId,"VS:"+vsId);
+      });
+      edge("SH:"+shId,"VP:"+vpId);
+    });
+  });
+  function nc(a){ return Object.keys(children[a]||{}).length; }
+  function np(b){ return Object.keys(parents[b]||{}).length; }
+  var val={};
+  // node values
+  Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="U") val[id]= (mode==="kpi"?0:ucVal(id.slice(2))); });
   if(mode==="kpi"){
-    // capIn[cap] = sum over stages using cap of (stageWeight / #caps in stage)
-    var capIn={};
-    stages.forEach(function(g){ var caps=(g.caps||[]); if(!caps.length)return; var per=kpiWeightFor(g)/caps.length;
-      link(vsN,"VSG:"+g.id,kpiWeightFor(g));
-      caps.forEach(function(cap){ link("VSG:"+g.id,"CAP:"+cap,per); capIn[cap]=(capIn[cap]||0)+per; }); });
-    var ucIn={};
-    Object.keys(capUC).forEach(function(cap){ var ucs=capUC[cap]; if(!ucs.length||!(capIn[cap]>0))return; var per=capIn[cap]/ucs.length;
-      ucs.forEach(function(u){ link("CAP:"+cap,"U:"+u,per); ucIn[u]=(ucIn[u]||0)+per; }); });
-    Object.keys(allUC).forEach(function(u){ var dps=ucDP[u]||[]; if(!dps.length||!(ucIn[u]>0))return; var per=ucIn[u]/dps.length;
-      dps.forEach(function(dp){ link("U:"+u,"DP:"+dp,per); }); });
+    Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="VSG"){ var g=find(D.valueStages,id.slice(4)); val[id]=g?kpiWeightFor(g):1; } });
+    // down: CAP,U,DP
+    ["CAP","U","DP"].forEach(function(T){ Object.keys(nodes).forEach(function(id){ if(nodes[id].type!==T)return;
+      var s=0; Object.keys(parents[id]||{}).forEach(function(p){ s += (val[p]||0)/(nc(p)||1); }); val[id]=s; }); });
   } else {
-    Object.keys(allUC).forEach(function(u){ var V=ucVal(u), dps=ucDP[u]||[]; if(dps.length){ var per=V/dps.length; dps.forEach(function(dp){ link("U:"+u,"DP:"+dp,per); }); } });
-    Object.keys(capUC).forEach(function(cap){ capUC[cap].forEach(function(u){ link("CAP:"+cap,"U:"+u, ucVal(u)/(ucCaps[u]||1)); }); });
-    stages.forEach(function(g){ (g.caps||[]).forEach(function(cap){
-      var capOut=capUC[cap].reduce(function(s,u){return s+ ucVal(u)/(ucCaps[u]||1);},0);
-      var v=capOut/(capStages[cap]||1);
-      link("VSG:"+g.id,"CAP:"+cap,v); link(vsN,"VSG:"+g.id,v);
-    }); });
+    // up: CAP,VSG then VS,VP,SH ; down: DP
+    ["CAP"].forEach(function(){ });
+    Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="CAP"){ var s=0; Object.keys(children[id]||{}).forEach(function(c){ s+=(val[c]||0)/(np(c)||1); }); val[id]=s; } });
+    Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="VSG"){ var s=0; Object.keys(children[id]||{}).forEach(function(c){ s+=(val[c]||0)/(np(c)||1); }); val[id]=s; } });
+    Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="DP"){ var s=0; Object.keys(parents[id]||{}).forEach(function(p){ s+=(val[p]||0)/(nc(p)||1); }); val[id]=s; } });
   }
-  return {nodes:Object.keys(nodes).map(function(k){return nodes[k];}), links:Object.keys(links).map(function(k){return links[k];})};
+  // up-aggregate VS,VP,SH (both modes)
+  ["VS","VP","SH"].forEach(function(T){ Object.keys(nodes).forEach(function(id){ if(nodes[id].type!==T)return;
+    var s=0; Object.keys(children[id]||{}).forEach(function(c){ s+=(val[c]||0)/(np(c)||1); }); val[id]=s; }); });
+
+  // edges
+  var links={};
+  function put(a,b,v){ if(!(v>0))return; links[a+"|"+b]={source:a,target:b,value:v}; }
+  Object.keys(children).forEach(function(a){ Object.keys(children[a]).forEach(function(b){
+    var ta=nodes[a].type, tb=nodes[b].type, v;
+    if(tb==="DP") v=(val[a]||0)/(nc(a)||1);                        // U → DP (down)
+    else if(mode==="kpi" && (ta==="VSG"||ta==="CAP")) v=(val[a]||0)/(nc(a)||1);  // down distribution
+    else v=(val[b]||0)/(np(b)||1);                                 // up aggregation
+    put(a,b,v);
+  }); });
+  // prune zero-value nodes (dead-ends carry no flow in AI mode)
+  var linkArr=Object.keys(links).map(function(k){return links[k];}).filter(function(l){return l.value>0;});
+  var used={}; linkArr.forEach(function(l){ used[l.source]=1; used[l.target]=1; });
+  var nodeArr=Object.keys(nodes).map(function(k){return nodes[k];}).filter(function(n){ return used[n.id] || (val[n.id]>0 && !parents[n.id] && !children[n.id]); });
+  return {nodes:nodeArr, links:linkArr};
+}
+
+function pathReadout(filt, rootSHs){
+  var c=PACK.ctx();
+  var parts=[];
+  var order=[["sh","Stakeholder"],["vp","Value Proposition"],["vs","Value Stream"],["vsg","Value Stage"],["cap","Capability"],["ai","AI Use-Case"],["dp","Data Product"]];
+  order.forEach(function(o){ var k=o[0]; var v = (k==="sh")?(rootSHs.length===1?rootSHs[0]:null):filt[k];
+    if(v){ var lbl=PACK.chainLabelFor(k==="sh"?"sh":k, k==="sh"?{sh:v}:c); parts.push(PACK.esc(lbl||v)); } });
+  return parts;
 }
 
 function renderSankey(){
-  var vsId=document.getElementById("sankeyVS").value;
   var mode=document.getElementById("sankeyWeight").value;
-  var data=sankeyData(vsId, mode);
+  var shSel=document.getElementById("sankeySH").value;
+  var c=PACK.ctx();
+  var rootSHs = shSel ? [shSel] : D.stakeholders.map(function(s){return s.id;});
+  // deeper path filters apply only when they descend from the chosen stakeholder
+  var filt = (shSel && c.sh===shSel) ? c : {};
+  var data=sankeyData(mode, rootSHs, filt);
+  // path readout + clear button
+  var parts=pathReadout(filt, rootSHs);
+  var anyFilter = shSel || Object.keys(filt).some(function(k){return ["vp","vs","vsg","cap","ai","dp"].indexOf(k)>=0 && filt[k];});
+  document.getElementById("sankeyPath").innerHTML = parts.length
+    ? '<strong>Selected path:</strong> '+parts.join(' <span style="color:#94a3b8">▸</span> ')
+    : 'Whole model — pick a stakeholder above, or walk the Navigator to filter this flow to a single path.';
+  document.getElementById("sankeyClear").style.display = anyFilter ? "" : "none";
   var svg=d3.select("#sankey"); svg.selectAll("*").remove();
   var info=document.getElementById("flowinfo");
-  if(!data || !data.links.length){ info.textContent="No downstream value paths for this value stream yet."; svg.attr("height",40); return; }
-  var W=Math.max(860, svg.node().clientWidth||1060), H=Math.max(420, data.nodes.length*13);
+  if(!data || !data.links.length){ info.textContent="No downstream value paths for this selection yet."; svg.attr("height",40); return; }
+  var W=Math.max(980, svg.node().clientWidth||1120), H=Math.max(420, data.nodes.length*13);
   svg.attr("viewBox","0 0 "+W+" "+H).attr("height",H);
   var sankey=d3.sankey().nodeId(function(d){return d.id;}).nodeAlign(d3.sankeyLeft)
     .nodeWidth(13).nodePadding(9).extent([[8,10],[W-230,H-10]]);
@@ -396,14 +443,16 @@ function setView(v){
   document.getElementById("treeview").style.display = v==="tree"?"":"none";
   document.getElementById("flowview").style.display = v==="flow"?"":"none";
   document.querySelectorAll(".vtb").forEach(function(b){ b.classList.toggle("on", b.dataset.view===v); });
-  if(v==="flow") renderSankey();
+  if(v==="flow"){ var c=PACK.ctx(); document.getElementById("sankeySH").value = c.sh||""; renderSankey(); }
 }
 window.setView=setView;
 (function(){
-  var sel=document.getElementById("sankeyVS");
-  sel.innerHTML=(D.valueStreams||[]).map(function(v){return '<option value="'+v.id+'">'+v.id+' · '+PACK.esc(v.name)+'</option>';}).join("");
+  var sel=document.getElementById("sankeySH");
+  sel.innerHTML='<option value="">All stakeholders</option>'+D.stakeholders.map(function(s){return '<option value="'+s.id+'">'+s.id+' · '+PACK.esc(s.name)+'</option>';}).join("");
+  var c=PACK.ctx(); sel.value=c.sh||"";
   sel.onchange=renderSankey;
   document.getElementById("sankeyWeight").onchange=renderSankey;
+  document.getElementById("sankeyClear").onclick=function(){ try{PACK.resetChain();}catch(e){} sel.value=""; renderSankey(); };
   document.getElementById("flowlegend").innerHTML=Object.keys(SNAME).map(function(k){return '<span class="sw"><i style="background:'+SCOL[k]+'"></i>'+SNAME[k]+'</span>';}).join("");
 })();
 

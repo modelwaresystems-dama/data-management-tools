@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.7.1";
-window.PACK_CONFIG.built   = "2026-08-02 17:08 SAST";
+window.PACK_CONFIG.version = "v1.7.2";
+window.PACK_CONFIG.built   = "2026-08-02 17:24 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.7.2", date:"2026-08-02 17:24 SAST",
+    note:"Value Flow (Sankey) now starts at the Stakeholder and follows the selected navigation path: Stakeholder → Value Proposition → Value Stream → Value Stage → Capability → AI Use-Case → Data Product. Wherever you've made a selection in the Navigator (the carried chain), the flow narrows to just that path; where you haven't, it fans out. Added a 'Start from' stakeholder picker, a live 'Selected path' readout and a Clear-path button; with nothing selected it shows the whole model from every stakeholder." },
   { v:"v1.7.1", date:"2026-08-02 17:08 SAST",
     note:"Value Flow (Sankey) enhancements: added a “Weight by” selector — choose AI value score (bottom-up mean use-case value) or KPI roll-up weight (top-down % of the value proposition, per value stage) — and extended the flow one level further, down to the Data Products, so it now runs Value Stream → Value Stage → Capability → AI Use-Case → Data Product." },
   { v:"v1.7.0", date:"2026-08-02 16:52 SAST",

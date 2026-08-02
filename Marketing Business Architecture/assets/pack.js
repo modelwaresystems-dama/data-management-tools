@@ -267,7 +267,7 @@
   var PACK = window.PACK, CFG = window.PACK_CONFIG, D = PACK.data();
 
   /* ---- chain context via URL query params (shareable, carries selection) -- */
-  PACK._chainKeys = ["sh","vp","kpi","cap","cj","proc","dec","ai","cdp","dp"];
+  PACK._chainKeys = ["sh","vp","bo","vs","vsg","cj","cap","proc","dec","ai","ag","dp","dm"];
   function parseSearch(){
     var q = {}; (location.search.replace(/^\?/,"").split("&")).forEach(function(p){
       if(!p) return; var kv=p.split("="); q[kv[0]]=decodeURIComponent(kv[1]||""); });
@@ -308,22 +308,30 @@
   /* ---- breadcrumb rail (rendered on every page) --------------------------- */
   PACK.chainLabelFor = function(key, c){
     var v = c[key];
+    var D = PACK.data();
+    function find(arr,id){ return (arr||[]).filter(function(x){return x.id===id;})[0]; }
     if(!v){
-      if(key==="cap" && c.vp) return "value-stream view";
-      if(key==="cdp" && c.ai) return "CDP requirements";
-      if(key==="dp"  && c.ai) return "required data products";
+      if(key==="bo"  && c.vp) return "business outcomes";
+      if(key==="vs"  && c.vp) return "value streams";
+      if(key==="vsg" && c.vs) return "value stages";
+      if(key==="cap" && c.vsg) return "enabling capabilities";
+      if(key==="ag"  && c.ai) return "AI agents";
+      if(key==="dm"  && c.dp) return "data domain";
       return null;
     }
     if(key==="sh"){ var o=PACK.MAP.SH[v]; return o?o.name:v; }
     if(key==="vp"){ var o2=PACK.MAP.VP[v]; return o2?o2.group:v; }
-    if(key==="kpi"){ var o3=PACK.MAP.KPI[v]; return o3?o3.theme:v; }
-    if(key==="cap"){ if(v){ var o4=PACK.MAP.CAP[v.split(".")[0]]; return o4?o4.name:v; } return c.vp?"value-stream view":null; }
+    if(key==="bo"){ var b=find(D.businessOutcomes,v); return b?b.name:v; }
+    if(key==="vs"){ var s=find(D.valueStreams,v); return s?s.name:v; }
+    if(key==="vsg"){ var g=find(D.valueStages,v); return g?g.name:v; }
     if(key==="cj"){ var o5=PACK.MAP.CJ[v]; return o5?o5.lob:v; }
+    if(key==="cap"){ var o4=PACK.MAP.CAP[v.split(".")[0]]; return o4?o4.name:v; }
     if(key==="proc"){ var o6=PACK.MAP.P[v]; return o6?o6.name:v; }
     if(key==="dec"){ var o7=PACK.MAP.D[v]; return o7?o7.name:v; }
     if(key==="ai"){ var o8=PACK.MAP.AI[v]; return o8?o8.name:v; }
-    if(key==="cdp"){ return v || (c.ai?"CDP requirements":null); }
-    if(key==="dp"){ var o9=PACK.dpById?PACK.dpById(v):null; return o9?o9.name:(v||(c.ai?"required data products":null)); }
+    if(key==="ag"){ var a=find(D.aiAgents,v); return a?a.name:v; }
+    if(key==="dp"){ var o9=PACK.dpById?PACK.dpById(v):null; return o9?o9.name:v; }
+    if(key==="dm"){ var dm=PACK.domainById?PACK.domainById(v):null; return dm?dm.name:v; }
     return v;
   };
   PACK.renderBreadcrumb = function(activeKey){

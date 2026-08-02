@@ -79,7 +79,12 @@
     <div class="tools">
       <label style="font-size:.8rem;font-weight:600;color:var(--mut)">Value stream</label>
       <select id="sankeyVS"></select>
-      <span class="muted" style="font-size:.8rem">Flow width = AI value contribution · value stages show their KPI (the improvement metric)</span>
+      <label style="font-size:.8rem;font-weight:600;color:var(--mut);margin-left:6px">Weight by</label>
+      <select id="sankeyWeight">
+        <option value="ai">AI value score</option>
+        <option value="kpi">KPI roll-up weight</option>
+      </select>
+      <span class="muted" style="font-size:.8rem">flows Value Stream → Value Stage → Capability → AI Use-Case → Data Product</span>
     </div>
     <div class="treewrap" style="max-height:none;overflow:auto;padding:14px"><svg id="sankey" width="100%"></svg></div>
     <div class="glegend" id="flowlegend"></div>
@@ -301,59 +306,91 @@ buildTree();
 var SMEAN=function(o){var v=Object.keys(o).map(function(k){return o[k];});return v.reduce(function(a,b){return a+b;},0)/(v.length||1);};
 function reachableUCs(cap){var s={};capProcesses(cap).forEach(function(p){procDecisions(p).forEach(function(d){aiForDecision(d).forEach(function(u){s[u]=1;});});});return Object.keys(s);}
 function ucVal(u){var o=MAP.AI[u];return o?SMEAN(o.value):1;}
-var SCOL={VS:"#c2410c",VSG:"#e8590c",CAP:"#2f6fed",U:"#b45309"};
-var SNAME={VS:"Value Stream",VSG:"Value Stage",CAP:"Capability",U:"AI Use-Case"};
+function kpiWeightFor(g){
+  var id=(D.kpiByName||{})[g.primaryKPI], w=null;
+  if(id) (D.businessOutcomes||[]).forEach(function(b){ (b.kpis||[]).forEach(function(k){ if(k.kpiId===id && w==null) w=k.weight; }); });
+  return (w!=null)?w:10;   // default weight when the KPI isn't in an outcome roll-up
+}
+function dpsForUC(u){ try{ return (PACK.dataProductsForAI(u)||[]).map(function(d){return d.id;}); }catch(e){ return []; } }
+var SCOL={VS:"#c2410c",VSG:"#e8590c",CAP:"#2f6fed",U:"#b45309",DP:"#2f8fd6"};
+var SNAME={VS:"Value Stream",VSG:"Value Stage",CAP:"Capability",U:"AI Use-Case",DP:"Data Product"};
 
-function sankeyData(vsId){
+/* Build a 5-level flow: Value Stream → Value Stage → Capability → AI Use-Case → Data Product.
+   mode "ai"  : flow width = AI value contribution (mean use-case value), aggregated bottom-up.
+   mode "kpi" : flow width = the value stage's KPI roll-up weight, distributed top-down.        */
+function sankeyData(vsId, mode){
   var vs=vsById(vsId); if(!vs) return null;
   var stages=(D.valueStages||[]).filter(function(g){return g.vs===vsId;}).sort(function(a,b){return a.seq-b.seq;});
   var nodes={}, links={};
   function node(id,type,name,sub){ if(!nodes[id])nodes[id]={id:id,type:type,name:name,sub:sub||""}; return id; }
-  function link(a,b,v){ var k=a+"|"+b; links[k]=links[k]||{source:a,target:b,value:0}; links[k].value+=v; }
-  var vsNode=node("VS:"+vs.id,"VS",vs.name);
-  var capUC={}, capStages={};
-  stages.forEach(function(g){ (g.caps||[]).forEach(function(cap){ capStages[cap]=(capStages[cap]||0)+1; if(!capUC[cap])capUC[cap]=reachableUCs(cap); }); });
-  var capW={}; Object.keys(capUC).forEach(function(cap){ capW[cap]=capUC[cap].reduce(function(s,u){return s+ucVal(u);},0)||0.6; });
-  stages.forEach(function(g){
-    var gid=node("VSG:"+g.id,"VSG",g.seq+". "+g.name,"◷ "+g.primaryKPI);
-    (g.caps||[]).forEach(function(cap){
-      var o=MAP.CAP[cap]; var cid=node("CAP:"+cap,"CAP",o?o.name:cap);
-      var w=(capW[cap]||0.6)/(capStages[cap]||1);
-      link(vsNode,gid,w); link(gid,cid,w);
-    });
-  });
-  Object.keys(capUC).forEach(function(cap){
-    capUC[cap].forEach(function(u){ var o=MAP.AI[u]; var uid=node("U:"+u,"U",o?o.name:u,"Value "+ucVal(u).toFixed(1)+"/5"); link("CAP:"+cap,uid,ucVal(u)); });
-  });
+  function link(a,b,v){ if(!(v>0))return; var k=a+"|"+b; links[k]=links[k]||{source:a,target:b,value:0}; links[k].value+=v; }
+  var vsN=node("VS:"+vs.id,"VS",vs.name);
+
+  var capUC={}, capStages={}, ucCaps={};
+  stages.forEach(function(g){ (g.caps||[]).forEach(function(cap){ capStages[cap]=(capStages[cap]||0)+1; if(!capUC[cap]) capUC[cap]=reachableUCs(cap); }); });
+  Object.keys(capUC).forEach(function(cap){ capUC[cap].forEach(function(u){ ucCaps[u]=(ucCaps[u]||0)+1; }); });
+  var allUC={}; Object.keys(capUC).forEach(function(cap){ capUC[cap].forEach(function(u){ allUC[u]=1; }); });
+  var ucDP={}; Object.keys(allUC).forEach(function(u){ ucDP[u]=dpsForUC(u); });
+
+  // nodes
+  stages.forEach(function(g){ node("VSG:"+g.id,"VSG",g.seq+". "+g.name,"◷ "+g.primaryKPI+(mode==="kpi"?(" ("+kpiWeightFor(g)+"%)"):"")); });
+  Object.keys(capUC).forEach(function(cap){ var o=MAP.CAP[cap]; node("CAP:"+cap,"CAP",o?o.name:cap); });
+  Object.keys(allUC).forEach(function(u){ var o=MAP.AI[u]; node("U:"+u,"U",o?o.name:u,"Value "+ucVal(u).toFixed(1)+"/5"); });
+  var dpSet={}; Object.keys(ucDP).forEach(function(u){ ucDP[u].forEach(function(dp){ dpSet[dp]=1; }); });
+  Object.keys(dpSet).forEach(function(dp){ var o=PACK.dpById(dp); var dom=PACK.domainById(o?o.domain:"")||{}; node("DP:"+dp,"DP",o?o.name:dp, dom.name||""); });
+
+  if(mode==="kpi"){
+    // capIn[cap] = sum over stages using cap of (stageWeight / #caps in stage)
+    var capIn={};
+    stages.forEach(function(g){ var caps=(g.caps||[]); if(!caps.length)return; var per=kpiWeightFor(g)/caps.length;
+      link(vsN,"VSG:"+g.id,kpiWeightFor(g));
+      caps.forEach(function(cap){ link("VSG:"+g.id,"CAP:"+cap,per); capIn[cap]=(capIn[cap]||0)+per; }); });
+    var ucIn={};
+    Object.keys(capUC).forEach(function(cap){ var ucs=capUC[cap]; if(!ucs.length||!(capIn[cap]>0))return; var per=capIn[cap]/ucs.length;
+      ucs.forEach(function(u){ link("CAP:"+cap,"U:"+u,per); ucIn[u]=(ucIn[u]||0)+per; }); });
+    Object.keys(allUC).forEach(function(u){ var dps=ucDP[u]||[]; if(!dps.length||!(ucIn[u]>0))return; var per=ucIn[u]/dps.length;
+      dps.forEach(function(dp){ link("U:"+u,"DP:"+dp,per); }); });
+  } else {
+    Object.keys(allUC).forEach(function(u){ var V=ucVal(u), dps=ucDP[u]||[]; if(dps.length){ var per=V/dps.length; dps.forEach(function(dp){ link("U:"+u,"DP:"+dp,per); }); } });
+    Object.keys(capUC).forEach(function(cap){ capUC[cap].forEach(function(u){ link("CAP:"+cap,"U:"+u, ucVal(u)/(ucCaps[u]||1)); }); });
+    stages.forEach(function(g){ (g.caps||[]).forEach(function(cap){
+      var capOut=capUC[cap].reduce(function(s,u){return s+ ucVal(u)/(ucCaps[u]||1);},0);
+      var v=capOut/(capStages[cap]||1);
+      link("VSG:"+g.id,"CAP:"+cap,v); link(vsN,"VSG:"+g.id,v);
+    }); });
+  }
   return {nodes:Object.keys(nodes).map(function(k){return nodes[k];}), links:Object.keys(links).map(function(k){return links[k];})};
 }
 
 function renderSankey(){
   var vsId=document.getElementById("sankeyVS").value;
-  var data=sankeyData(vsId);
+  var mode=document.getElementById("sankeyWeight").value;
+  var data=sankeyData(vsId, mode);
   var svg=d3.select("#sankey"); svg.selectAll("*").remove();
   var info=document.getElementById("flowinfo");
-  if(!data || !data.links.length){ info.textContent="No downstream AI value paths for this value stream yet."; svg.attr("height",40); return; }
-  var W=Math.max(720, svg.node().clientWidth||1000), H=Math.max(380, data.nodes.length*15);
+  if(!data || !data.links.length){ info.textContent="No downstream value paths for this value stream yet."; svg.attr("height",40); return; }
+  var W=Math.max(860, svg.node().clientWidth||1060), H=Math.max(420, data.nodes.length*13);
   svg.attr("viewBox","0 0 "+W+" "+H).attr("height",H);
   var sankey=d3.sankey().nodeId(function(d){return d.id;}).nodeAlign(d3.sankeyLeft)
-    .nodeWidth(14).nodePadding(11).extent([[8,10],[W-220,H-10]]);
+    .nodeWidth(13).nodePadding(9).extent([[8,10],[W-230,H-10]]);
   var graph=sankey({nodes:data.nodes.map(function(d){return Object.assign({},d);}), links:data.links.map(function(d){return Object.assign({},d);})});
   svg.append("g").attr("fill","none").selectAll("path").data(graph.links).join("path")
     .attr("d",d3.sankeyLinkHorizontal())
     .attr("stroke",function(d){return SCOL[d.source.type]||"#94a3b8";}).attr("stroke-opacity",.32)
     .attr("stroke-width",function(d){return Math.max(1,d.width);})
-    .append("title").text(function(d){return d.source.name+" → "+d.target.name+" · value "+d.value.toFixed(1);});
+    .append("title").text(function(d){return d.source.name+" → "+d.target.name+" · "+(mode==="kpi"?"KPI weight ":"value ")+d.value.toFixed(1);});
   var nd=svg.append("g").selectAll("g").data(graph.nodes).join("g").attr("class","snode");
   nd.append("rect").attr("x",function(d){return d.x0;}).attr("y",function(d){return d.y0;})
     .attr("height",function(d){return Math.max(1,d.y1-d.y0);}).attr("width",function(d){return d.x1-d.x0;})
     .attr("fill",function(d){return SCOL[d.type]||"#64748b";}).attr("rx",2)
     .append("title").text(function(d){return SNAME[d.type]+": "+d.name+(d.sub?(" · "+d.sub):"");});
   nd.append("text").attr("x",function(d){return d.x1+6;}).attr("y",function(d){return (d.y0+d.y1)/2;})
-    .attr("dy","0.32em").attr("text-anchor","start").style("font","11px Arial").attr("fill","#222")
-    .text(function(d){var n=d.name.length>26?d.name.slice(0,25)+"…":d.name; return n;})
+    .attr("dy","0.32em").attr("text-anchor","start").style("font","10.5px Arial").attr("fill","#222")
+    .text(function(d){var n=d.name.length>24?d.name.slice(0,23)+"…":d.name; return n;})
     .filter(function(d){return d.sub;}).append("tspan").attr("fill","#8a6d1a").style("font-size","9px").text(function(d){return "  "+d.sub;});
-  info.textContent="Flow width = AI value contribution (mean use-case value score). Value stages carry their KPI — the improvement metric. Hover any flow for its value.";
+  info.textContent = (mode==="kpi")
+    ? "Flow width = the value stage's KPI roll-up weight (% into the value proposition), distributed down to the data products. Value stages show their KPI and weight."
+    : "Flow width = AI value contribution (mean use-case value score), aggregated up from the data products. Value stages carry their KPI; use-cases their value score.";
 }
 function setView(v){
   document.getElementById("treeview").style.display = v==="tree"?"":"none";
@@ -366,6 +403,7 @@ window.setView=setView;
   var sel=document.getElementById("sankeyVS");
   sel.innerHTML=(D.valueStreams||[]).map(function(v){return '<option value="'+v.id+'">'+v.id+' · '+PACK.esc(v.name)+'</option>';}).join("");
   sel.onchange=renderSankey;
+  document.getElementById("sankeyWeight").onchange=renderSankey;
   document.getElementById("flowlegend").innerHTML=Object.keys(SNAME).map(function(k){return '<span class="sw"><i style="background:'+SCOL[k]+'"></i>'+SNAME[k]+'</span>';}).join("");
 })();
 

@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.7.0";
-window.PACK_CONFIG.built   = "2026-08-02 16:52 SAST";
+window.PACK_CONFIG.version = "v1.7.1";
+window.PACK_CONFIG.built   = "2026-08-02 17:08 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.7.1", date:"2026-08-02 17:08 SAST",
+    note:"Value Flow (Sankey) enhancements: added a “Weight by” selector — choose AI value score (bottom-up mean use-case value) or KPI roll-up weight (top-down % of the value proposition, per value stage) — and extended the flow one level further, down to the Data Products, so it now runs Value Stream → Value Stage → Capability → AI Use-Case → Data Product." },
   { v:"v1.7.0", date:"2026-08-02 16:52 SAST",
     note:"Fixed the version stamp overlapping the traceability breadcrumb — the version / last-updated block now sits in its own fixed region beside the scrollable path. Added a Value Flow (Sankey) view to the Navigation Graph: for a selected value stream it flows Value Stream → Value Stage → Capability → AI Use-Case, with flow width = AI value contribution (mean use-case value score) and each value stage labelled with its KPI — showing the value relation and the improvement metric at a glance. Toggle between the hierarchy tree and the value flow." },
   { v:"v1.6.0", date:"2026-08-02 16:31 SAST",

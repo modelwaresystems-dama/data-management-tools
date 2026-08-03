@@ -250,6 +250,30 @@ the global version. All read the **same** `model/Nedbank_FutureState_Model_Enhan
 
 ---
 
+## 7b · Model Editor — private authoring workflow (pull → edit → push)
+
+`model_editor.html` (nav: **Editor**) is the governed authoring surface. It is **passphrase-gated**
+(`PACK_CONFIG.editUnlock` in `data.js` — change it) and is meant for the **private repository**, not
+public consumption. It edits **every sheet**: `…_Map` / traceability / registry / EndToEnd sheets as
+**editable grids** (add a relationship, delete a row); every other sheet as a **list + form** (add /
+edit / delete records). The content it reads is bundled in `assets/model_all.js`
+(`window.NB_MODEL_SHEETS`, generated from the Excel).
+
+Editing does **not** auto-publish. The loop for an approved editor is:
+1. **Pull** the repo; open the Editor page and reload (or click **Load published**) so you start from the
+   current published content — the browser keeps a per-browser *draft* that must not go stale.
+2. **Unlock** (passphrase) and edit. Grids for relationships, forms for everything else.
+3. **Save for repo** → downloads `model_all.js`; drop it over `assets/model_all.js` in your clone.
+   **Export .xlsx** → save it over `model/Nedbank_FutureState_Model_Enhanced.xlsx` as the workbook record.
+4. `git add · commit · push`. After Pages rebuilds, all editors see the change (hard-refresh).
+
+Regenerating the derived app data: the other pages (Navigator, Graph, Value Streams, Customer Journey,
+…) render from the future-state arrays in `data.js` (the v8/v9/v10 appends), not from `model_all.js`
+directly. After a content change lands, a maintainer re-runs the extraction (see §2/§5) to refresh
+those arrays so the rendered pages reflect the edits — or wire the pages to derive from
+`model_all.js` (backlog). The **Model I/O** page already round-trips the 13-level core to the live pages
+via import.
+
 ## 8 · Backlog beyond the 5
 
 - Rewire `business_architecture.html` capability map to the future‑state (capability ↔ value stage ↔

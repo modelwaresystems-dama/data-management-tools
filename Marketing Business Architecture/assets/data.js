@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.7.2";
-window.PACK_CONFIG.built   = "2026-08-02 17:24 SAST";
+window.PACK_CONFIG.version = "v1.8.0";
+window.PACK_CONFIG.built   = "2026-08-03 14:34 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.8.0", date:"2026-08-03 14:34 SAST",
+    note:"Added a Model Editor (approved editors only, passphrase-gated) for the PRIVATE repository: edit every element of the model — all 96 data sheets. Relationship (…_Map) sheets are editable grids where you add a new relationship; every other sheet is a list+form. Add and delete rows anywhere. You edit a local draft in the browser, then ‘Save for repo’ (downloads assets/model_all.js) and ‘Export .xlsx’, and pull → commit → push to publish. ‘Load published’ discards the local draft and reloads the repository baseline. Read-only until unlocked. (Client-side soft-gate — set the passphrase in data.js; the private repo + Pull/Push is the real access control.)" },
   { v:"v1.7.2", date:"2026-08-02 17:24 SAST",
     note:"Value Flow (Sankey) now starts at the Stakeholder and follows the selected navigation path: Stakeholder → Value Proposition → Value Stream → Value Stage → Capability → AI Use-Case → Data Product. Wherever you've made a selection in the Navigator (the carried chain), the flow narrows to just that path; where you haven't, it fans out. Added a 'Start from' stakeholder picker, a live 'Selected path' readout and a Clear-path button; with nothing selected it shows the whole model from every stakeholder." },
   { v:"v1.7.1", date:"2026-08-02 17:08 SAST",
@@ -1332,5 +1334,14 @@ window.GENERIC.riskRegister = [{"id": "R-AI-001", "obj": "U05", "type": "AI/cond
   if(!p.some(function(x){return x.file==="value_streams.html";})){
     var i=p.findIndex(function(x){return x.file==="governance_responsible_ai.html";});
     p.splice((i>=0?i:p.length),0,{file:"value_streams.html", nav:"Value Streams", title:"Value Streams — Ownership & Governance"});
+  }
+})();
+
+/* ---- v12: Model Editor — passphrase (CHANGE THIS) + page registration ---- */
+window.PACK_CONFIG.editUnlock = "nedbank-edit";   // <-- change to your team's editor passphrase
+(function(){ var p=window.PACK_CONFIG.pages;
+  if(!p.some(function(x){return x.file==="model_editor.html";})){
+    var i=p.findIndex(function(x){return x.file==="model_export_import.html";});
+    p.splice((i>=0?i+1:p.length),0,{file:"model_editor.html", nav:"Editor", title:"Model Editor"});
   }
 })();

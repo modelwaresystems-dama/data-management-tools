@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.9.1";
-window.PACK_CONFIG.built   = "2026-08-03 15:25 SAST";
+window.PACK_CONFIG.version = "v1.10.0";
+window.PACK_CONFIG.built   = "2026-08-03 15:47 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.10.0", date:"2026-08-03 15:47 SAST",
+    note:"Added a User Manual (new 'Manual' tab, and a card on the front page). It's a complete guide to the pack — the top-bar controls (navigation, source selector, traceability breadcrumb and carried selection, versioning), the 13-step Navigator flow explained step by step, and every tab documented with 'what you'll see' and 'how to use it', plus an editing-and-publishing workflow and an element-ID quick reference. The tab list and the Navigator flow are generated from the same configuration the app runs on, so the manual stays in step with the pack. It reads in the app (with a contents rail) and downloads as a formatted PDF for onboarding and offline sharing." },
   { v:"v1.9.1", date:"2026-08-03 15:25 SAST",
     note:"Fixed the traceability path being cut off: the chain was forced onto one horizontally-scrolling line, so only the first eight steps showed and the rest (Decision, AI Use-Case, AI Agent, Data Product, Data Domain) were hidden behind a scrollbar. The path now wraps so every step is visible at once — with or without a selection — while the version/last-updated block stays pinned top-right and never overlaps it." },
   { v:"v1.9.0", date:"2026-08-03 15:05 SAST",
@@ -1347,5 +1349,12 @@ window.PACK_CONFIG.editUnlock = "nedbank-edit";   // <-- change to your team's e
   if(!p.some(function(x){return x.file==="model_editor.html";})){
     var i=p.findIndex(function(x){return x.file==="model_export_import.html";});
     p.splice((i>=0?i+1:p.length),0,{file:"model_editor.html", nav:"Editor", title:"Model Editor"});
+  }
+})();
+
+/* ---- v13: User Manual — registered last so it reads as reference material ---- */
+(function(){ var p=window.PACK_CONFIG.pages;
+  if(!p.some(function(x){return x.file==="user_manual.html";})){
+    p.push({file:"user_manual.html", nav:"Manual", title:"User Manual"});
   }
 })();

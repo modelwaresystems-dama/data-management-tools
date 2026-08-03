@@ -425,6 +425,12 @@ function mselReachable(){
   return R;
 }
 function mselClearDeeper(key){ var hit=false; MLEVELS.forEach(function(L){ if(hit) delete MSEL[L[0]]; if(L[0]===key) hit=true; }); }
+/* top-down cascade: once a level is "All", every deeper level is forced to All too
+   (you filter from the top; opening a level fans everything beneath it). */
+function mselNormalize(){ var opened=false; MLEVELS.forEach(function(L){ var k=L[0];
+  if(opened) delete MSEL[k];
+  if(!MSEL[k] || !MSEL[k].length) opened=true; }); }
+function mselFirstAllIdx(){ for(var i=0;i<MLEVELS.length;i++){ var k=MLEVELS[i][0]; if(!MSEL[k]||!MSEL[k].length) return i; } return MLEVELS.length; }
 function mselAll(key){ delete MSEL[key]; mselClearDeeper(key); mselSave(); renderSankey(); }
 function mselToggle(key,id){
   var s=MSEL[key]; if(!s||s==="*") s=[]; else s=s.slice();
@@ -435,17 +441,20 @@ function mselToggle(key,id){
 function mselResetPath(){ mselSeedFromCtx(); document.getElementById("sankeySH").value=PACK.ctx().sh||""; renderSankey(); }
 function mselWholeModel(){ MSEL={}; mselSave(); document.getElementById("sankeySH").value=""; renderSankey(); }
 window.mselAll=mselAll; window.mselToggle=mselToggle; window.mselResetPath=mselResetPath; window.mselWholeModel=mselWholeModel;
-function mchip(active,label,onclick){ return '<button type="button" onclick="'+onclick+'" style="cursor:pointer;font-family:inherit;font-size:.74rem;border-radius:20px;padding:3px 11px;border:1px solid '+(active?"var(--accent)":"var(--line)")+';background:'+(active?"var(--accent)":"#fff")+';color:'+(active?"#fff":"var(--mut)")+';font-weight:600">'+label+'</button>'; }
+function mchip(active,label,onclick,disabled){
+  if(disabled) return '<span style="font-family:inherit;font-size:.74rem;border-radius:20px;padding:3px 11px;border:1px solid var(--line);background:#f1f4f8;color:#b3bccb;font-weight:600">'+label+'</span>';
+  return '<button type="button" onclick="'+onclick+'" style="cursor:pointer;font-family:inherit;font-size:.74rem;border-radius:20px;padding:3px 11px;border:1px solid '+(active?"var(--accent)":"var(--line)")+';background:'+(active?"var(--accent)":"#fff")+';color:'+(active?"#fff":"var(--mut)")+';font-weight:600">'+label+'</button>'; }
 function renderSankeyFilters(){
   var host=document.getElementById("sankeyFilters"); if(!host) return;
-  var R=mselReachable();
-  var rows=MLEVELS.map(function(L){
+  var R=mselReachable(); var firstAll=mselFirstAllIdx();
+  var rows=MLEVELS.map(function(L,idx){
     var key=L[0], opts=R[key]||[]; if(!opts.length) return "";
-    var chips = mchip(!MSEL[key], "All", "mselAll('"+key+"')") +
+    var forced = idx>firstAll;   // a shallower level is "All" → this level fans fully
+    var chips = mchip(!MSEL[key], "All", "mselAll('"+key+"')", forced) +
       opts.map(function(id){ var on = MSEL[key] && MSEL[key].indexOf && MSEL[key].indexOf(id)>=0;
-        return mchip(on, PACK.esc(mselLabel(key,id)), "mselToggle('"+key+"','"+id+"')"); }).join("");
-    return '<div style="display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;margin:4px 0">'+
-      '<span style="font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;min-width:118px;padding-top:5px">'+PACK.esc(L[1])+'</span>'+
+        return mchip(on, PACK.esc(mselLabel(key,id)), "mselToggle('"+key+"','"+id+"')", forced); }).join("");
+    return '<div style="display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;margin:4px 0'+(forced?';opacity:.7':'')+'">'+
+      '<span style="font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;min-width:118px;padding-top:5px">'+PACK.esc(L[1])+(forced?' <span style="color:#b3bccb;font-weight:600">· all</span>':'')+'</span>'+
       '<div style="display:flex;gap:6px;flex-wrap:wrap;flex:1">'+chips+'</div></div>';
   }).join("");
   host.innerHTML = '<div style="border:1px solid var(--line);border-radius:12px;background:#fbfcfe;padding:10px 12px">'+
@@ -458,6 +467,7 @@ function renderSankeyFilters(){
 
 function renderSankey(){
   var mode=document.getElementById("sankeyWeight").value;
+  mselNormalize();                     // enforce top-down cascade before rendering
   var rootSHs = mselRootSHs();
   renderSankeyFilters();
   var data=sankeyData(mode, rootSHs, MSEL);

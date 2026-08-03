@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.10.1";
-window.PACK_CONFIG.built   = "2026-08-03 19:37 SAST";
+window.PACK_CONFIG.version = "v1.10.2";
+window.PACK_CONFIG.built   = "2026-08-03 19:50 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.10.2", date:"2026-08-03 19:50 SAST",
+    note:"Value Flow multi-select now cascades top-down so 'All' really means all. Previously, choosing All at a level (e.g. all Value Stages) could still collapse to one or two branches because a deeper level was left narrowed to a subset — the value-weighted flow pruned every stage that didn't reach the chosen capabilities. Now, opening any level to All forces every deeper level to All as well and fans the flow fully down to the Data Products; the forced-open levels are shown greyed and marked '· all' so it's clear they can't be narrowed beneath an open level (narrow a level above first). Picking all Value Stages now shows all of them branching to every capability, use-case and data product." },
   { v:"v1.10.1", date:"2026-08-03 19:37 SAST",
     note:"Value Flow (Sankey) now supports multiple elements per level. A new filter rail sits above the chart: for every level — Value Proposition, Value Stream, Value Stage, Capability, AI Use-Case, Data Product — you can pick 'All' or tick several specific items, and the flow splits across all of them, fanning all the way down to the Data Products. Whatever path you walked in the Navigator seeds the rail (so you start where you were), and 'My Navigator path' / 'Whole model' reset it. This fixes the case where you wanted, say, all Value Stages: previously the flow collapsed to a single path because the levels below were pinned; now choosing 'All' at a level clears the deeper pins and branches out." },
   { v:"v1.10.0", date:"2026-08-03 15:47 SAST",

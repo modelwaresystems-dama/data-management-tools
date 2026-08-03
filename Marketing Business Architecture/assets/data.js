@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.10.2";
-window.PACK_CONFIG.built   = "2026-08-03 19:50 SAST";
+window.PACK_CONFIG.version = "v1.10.3";
+window.PACK_CONFIG.built   = "2026-08-03 20:01 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.10.3", date:"2026-08-03 20:01 SAST",
+    note:"Refined the Value Flow multi-select so it keeps your focus. Levels are now independent: choosing 'All' at one level (e.g. all Value Stages) no longer forces the levels below it open. Every value stage is shown, but a stage that has none of the capabilities you've selected at the next level is displayed and then stops there — a thin stub carrying its name and KPI — rather than being force-connected to everything. So you can hold, say, all six value stages on screen while the flow still concentrates on the two capabilities (and their use-cases and data products) you're focused on. Picking 'All' at the next level reconnects them." },
   { v:"v1.10.2", date:"2026-08-03 19:50 SAST",
     note:"Value Flow multi-select now cascades top-down so 'All' really means all. Previously, choosing All at a level (e.g. all Value Stages) could still collapse to one or two branches because a deeper level was left narrowed to a subset — the value-weighted flow pruned every stage that didn't reach the chosen capabilities. Now, opening any level to All forces every deeper level to All as well and fans the flow fully down to the Data Products; the forced-open levels are shown greyed and marked '· all' so it's clear they can't be narrowed beneath an open level (narrow a level above first). Picking all Value Stages now shows all of them branching to every capability, use-case and data product." },
   { v:"v1.10.1", date:"2026-08-03 19:37 SAST",

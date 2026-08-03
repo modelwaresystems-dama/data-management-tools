@@ -376,9 +376,11 @@ function sankeyData(mode, rootSHs, msel){
   ["VS","VP","SH"].forEach(function(T){ Object.keys(nodes).forEach(function(id){ if(nodes[id].type!==T)return;
     var s=0; Object.keys(children[id]||{}).forEach(function(c){ s+=(val[c]||0)/(np(c)||1); }); val[id]=s; }); });
 
-  // edges
-  var links={};
-  function put(a,b,v){ if(!(v>0))return; links[a+"|"+b]={source:a,target:b,value:v}; }
+  // edges — every structural link between shown nodes renders. A node whose
+  // next-level children were all filtered out is shown but ends there: a thin
+  // stub in AI mode (no downstream value), its real KPI width in KPI mode.
+  var links={}, STUB=0.02;
+  function put(a,b,v){ links[a+"|"+b]={source:a,target:b,value:Math.max(v||0, STUB)}; }
   Object.keys(children).forEach(function(a){ Object.keys(children[a]).forEach(function(b){
     var ta=nodes[a].type, tb=nodes[b].type, v;
     if(tb==="DP") v=(val[a]||0)/(nc(a)||1);                        // U → DP (down)
@@ -386,10 +388,10 @@ function sankeyData(mode, rootSHs, msel){
     else v=(val[b]||0)/(np(b)||1);                                 // up aggregation
     put(a,b,v);
   }); });
-  // prune zero-value nodes (dead-ends carry no flow in AI mode)
-  var linkArr=Object.keys(links).map(function(k){return links[k];}).filter(function(l){return l.value>0;});
+  // keep every reachable node (including stubs that stop early under a deeper filter)
+  var linkArr=Object.keys(links).map(function(k){return links[k];});
   var used={}; linkArr.forEach(function(l){ used[l.source]=1; used[l.target]=1; });
-  var nodeArr=Object.keys(nodes).map(function(k){return nodes[k];}).filter(function(n){ return used[n.id] || (val[n.id]>0 && !parents[n.id] && !children[n.id]); });
+  var nodeArr=Object.keys(nodes).map(function(k){return nodes[k];}).filter(function(n){ return used[n.id] || (!parents[n.id] && !children[n.id]); });
   return {nodes:nodeArr, links:linkArr};
 }
 
@@ -424,19 +426,17 @@ function mselReachable(){
   });
   return R;
 }
-function mselClearDeeper(key){ var hit=false; MLEVELS.forEach(function(L){ if(hit) delete MSEL[L[0]]; if(L[0]===key) hit=true; }); }
-/* top-down cascade: once a level is "All", every deeper level is forced to All too
-   (you filter from the top; opening a level fans everything beneath it). */
-function mselNormalize(){ var opened=false; MLEVELS.forEach(function(L){ var k=L[0];
-  if(opened) delete MSEL[k];
-  if(!MSEL[k] || !MSEL[k].length) opened=true; }); }
-function mselFirstAllIdx(){ for(var i=0;i<MLEVELS.length;i++){ var k=MLEVELS[i][0]; if(!MSEL[k]||!MSEL[k].length) return i; } return MLEVELS.length; }
-function mselAll(key){ delete MSEL[key]; mselClearDeeper(key); mselSave(); renderSankey(); }
+/* drop any selected id no longer reachable under the current shallower choices, so
+   each level stays valid — without forcing deeper levels open (levels are independent). */
+function mselPrune(){ var R=mselReachable(); MLEVELS.forEach(function(L){ var k=L[0];
+  if(MSEL[k] && MSEL[k].length){ var f=MSEL[k].filter(function(id){ return (R[k]||[]).indexOf(id)>=0; });
+    if(f.length) MSEL[k]=f; else delete MSEL[k]; } }); }
+function mselAll(key){ delete MSEL[key]; mselSave(); renderSankey(); }
 function mselToggle(key,id){
   var s=MSEL[key]; if(!s||s==="*") s=[]; else s=s.slice();
   var i=s.indexOf(id); if(i>=0) s.splice(i,1); else s.push(id);
   if(s.length) MSEL[key]=s; else delete MSEL[key];
-  mselClearDeeper(key); mselSave(); renderSankey();
+  mselSave(); renderSankey();
 }
 function mselResetPath(){ mselSeedFromCtx(); document.getElementById("sankeySH").value=PACK.ctx().sh||""; renderSankey(); }
 function mselWholeModel(){ MSEL={}; mselSave(); document.getElementById("sankeySH").value=""; renderSankey(); }
@@ -446,20 +446,19 @@ function mchip(active,label,onclick,disabled){
   return '<button type="button" onclick="'+onclick+'" style="cursor:pointer;font-family:inherit;font-size:.74rem;border-radius:20px;padding:3px 11px;border:1px solid '+(active?"var(--accent)":"var(--line)")+';background:'+(active?"var(--accent)":"#fff")+';color:'+(active?"#fff":"var(--mut)")+';font-weight:600">'+label+'</button>'; }
 function renderSankeyFilters(){
   var host=document.getElementById("sankeyFilters"); if(!host) return;
-  var R=mselReachable(); var firstAll=mselFirstAllIdx();
-  var rows=MLEVELS.map(function(L,idx){
+  var R=mselReachable();
+  var rows=MLEVELS.map(function(L){
     var key=L[0], opts=R[key]||[]; if(!opts.length) return "";
-    var forced = idx>firstAll;   // a shallower level is "All" → this level fans fully
-    var chips = mchip(!MSEL[key], "All", "mselAll('"+key+"')", forced) +
+    var chips = mchip(!MSEL[key], "All", "mselAll('"+key+"')") +
       opts.map(function(id){ var on = MSEL[key] && MSEL[key].indexOf && MSEL[key].indexOf(id)>=0;
-        return mchip(on, PACK.esc(mselLabel(key,id)), "mselToggle('"+key+"','"+id+"')", forced); }).join("");
-    return '<div style="display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;margin:4px 0'+(forced?';opacity:.7':'')+'">'+
-      '<span style="font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;min-width:118px;padding-top:5px">'+PACK.esc(L[1])+(forced?' <span style="color:#b3bccb;font-weight:600">· all</span>':'')+'</span>'+
+        return mchip(on, PACK.esc(mselLabel(key,id)), "mselToggle('"+key+"','"+id+"')"); }).join("");
+    return '<div style="display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;margin:4px 0">'+
+      '<span style="font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;min-width:118px;padding-top:5px">'+PACK.esc(L[1])+'</span>'+
       '<div style="display:flex;gap:6px;flex-wrap:wrap;flex:1">'+chips+'</div></div>';
   }).join("");
   host.innerHTML = '<div style="border:1px solid var(--line);border-radius:12px;background:#fbfcfe;padding:10px 12px">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px">'+
-      '<span style="font-size:.72rem;font-weight:700;color:var(--mut)">Include in the flow — pick <em>All</em> or tick several at any level; the flow splits across them, all the way down to Data Products.</span>'+
+      '<span style="font-size:.72rem;font-weight:700;color:var(--mut)">Include in the flow — pick <em>All</em> or tick several at any level. A node with no selected item at the next level is still shown, but stops there — so your focused path stays the focus.</span>'+
       '<span style="display:flex;gap:6px"><button type="button" class="btn ghost" style="padding:5px 10px;font-size:.75rem" onclick="mselResetPath()">↺ My Navigator path</button>'+
       '<button type="button" class="btn ghost" style="padding:5px 10px;font-size:.75rem" onclick="mselWholeModel()">⤢ Whole model</button></span>'+
     '</div>'+rows+'</div>';
@@ -467,7 +466,7 @@ function renderSankeyFilters(){
 
 function renderSankey(){
   var mode=document.getElementById("sankeyWeight").value;
-  mselNormalize();                     // enforce top-down cascade before rendering
+  mselPrune();                         // keep each level's selection valid (independent levels)
   var rootSHs = mselRootSHs();
   renderSankeyFilters();
   var data=sankeyData(mode, rootSHs, MSEL);

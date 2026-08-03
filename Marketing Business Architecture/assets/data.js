@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.8.0";
-window.PACK_CONFIG.built   = "2026-08-03 14:34 SAST";
+window.PACK_CONFIG.version = "v1.9.0";
+window.PACK_CONFIG.built   = "2026-08-03 15:05 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.9.0", date:"2026-08-03 15:05 SAST",
+    note:"Every page now derives its content directly from the editable model bundle (assets/model_all.js) at load time, via a new hydrator (assets/model_hydrate.js) that rebuilds the app's data from the 96 workbook sheets and overlays the base content the sheets don't carry (AI value/risk scores, data contracts, SIPOC detail, decision rules and the page-narrative blocks). The upshot: an approved editor's changes — saved to the private repo through the Model Editor — now flow automatically to the Navigator, Graph, Customer Journey, Value Streams, AI Use-Cases and every other page, with no separate extraction step to re-run. The Model Editor itself continues to edit the raw sheets. Verified: all pages render identically to the baked model with zero console errors, and the model now carries a value proposition for every stakeholder (the parallel-mapped cardinality rule)." },
   { v:"v1.8.0", date:"2026-08-03 14:34 SAST",
     note:"Added a Model Editor (approved editors only, passphrase-gated) for the PRIVATE repository: edit every element of the model — all 96 data sheets. Relationship (…_Map) sheets are editable grids where you add a new relationship; every other sheet is a list+form. Add and delete rows anywhere. You edit a local draft in the browser, then ‘Save for repo’ (downloads assets/model_all.js) and ‘Export .xlsx’, and pull → commit → push to publish. ‘Load published’ discards the local draft and reloads the repository baseline. Read-only until unlocked. (Client-side soft-gate — set the passphrase in data.js; the private repo + Pull/Push is the real access control.)" },
   { v:"v1.7.2", date:"2026-08-02 17:24 SAST",

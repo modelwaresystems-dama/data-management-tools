@@ -214,9 +214,9 @@
 
   /* ---- nav + workbook chips + source selector ----------------------------- */
   PACK.renderNav = function(activeFile){
-    var g = PACK.glossary();
-    var links = CFG.pages.map(function(p){
-      return '<a href="'+p.file+'"'+(p.file===activeFile?' class="active"':'')+'>'+PACK.esc(p.nav)+'</a>';
+    var links = CFG.pages.map(function(p,i){
+      return '<a href="'+p.file+'"'+(p.file===activeFile?' class="active"':'')+
+        '><span class="ix">'+(i+1)+'</span><span class="lb">'+PACK.esc(p.nav)+'</span></a>';
     }).join("");
     var srcOpts = CFG.sources.map(function(s){
       return '<option value="'+s.id+'"'+(s.id===PACK.source?" selected":"")+(s.available?"":" disabled")+'>'+
@@ -225,21 +225,21 @@
     if(PACK.hasImport && PACK.hasImport()){
       srcOpts += '<option value="imported"'+(PACK.source==="imported"?" selected":"")+'>Imported (Excel)</option>';
     }
-    /* only show the workbooks row once there are real downloads — keeps the
-       header uncluttered while these are still placeholders */
+    /* only show the workbooks row once there are real downloads */
     var wb = (PACK._workbooks||[]).filter(function(w){return w.href;}).map(function(w){
       return '<a class="wbchip" href="'+w.href+'" download>⭳ '+PACK.esc(w.label)+'</a>';
     }).join("");
+    var ver = CFG.version ? ('<div class="sb-ver"><span class="vpill">'+PACK.esc(CFG.version)+'</span>'+
+      (CFG.built?'<span class="vbuilt">Updated '+PACK.esc(CFG.built)+'</span>':'')+'</div>') : '';
     var html =
-    '<nav class="nav"><div class="nav-in">'+
-      '<div class="nav-top">'+
-        '<div class="brand"><span class="dot"></span>Modelware<small>Data Management</small></div>'+
-        '<div class="nav-links">'+links+'</div>'+
-        '<div class="nav-right">'+
-          '<div class="src-sel"><label>Source</label>'+
-          '<select onchange="PACK.setSource(this.value)">'+srcOpts+'</select></div></div>'+
-      '</div>'+
+    '<nav class="nav sidebar"><div class="sb-in">'+
+      '<a class="brand" href="index.html"><span class="dot"></span>'+
+        '<span class="bt"><strong>Modelware</strong><small>Data Management</small></span></a>'+
+      '<div class="src-sel"><label>Source</label>'+
+        '<select onchange="PACK.setSource(this.value)">'+srcOpts+'</select></div>'+
+      '<div class="nav-links">'+links+'</div>'+
       (wb ? '<div class="nav-work"><span class="wl">Workbooks</span>'+wb+'</div>' : '')+
+      ver+
     '</div></nav>';
     document.getElementById("nav").outerHTML = html;
   };
@@ -336,9 +336,11 @@
   };
   PACK.renderBreadcrumb = function(activeKey){
     var host = document.getElementById("breadcrumb"); if(!host) return;
+    /* the traceability path is only meaningful on the Navigator, where you build
+       it — everywhere else it just added clutter, so hide it there. */
+    var file = (location.pathname.split("/").pop()||"index.html").toLowerCase();
+    if(file!=="architecture_navigator.html"){ host.innerHTML=""; host.className=""; return; }
     var c = PACK.ctx();
-    var ver = CFG.version ? ('<span class="bc-ver"><span class="ver-pill">'+PACK.esc(CFG.version)+'</span>'+
-      (CFG.built?'<span class="ver-built">Updated '+PACK.esc(CFG.built)+'</span>':'')+'</span>') : '';
     var steps = '<div class="bc-in"><span class="bc-lead">Traceability</span>'+
       CFG.chain.map(function(s,i){
         var lbl = PACK.chainLabelFor(s.key, c);
@@ -348,8 +350,7 @@
         var el = '<a class="'+cls+'" href="'+PACK.navUrl(s.key)+'">'+inner+'</a>';
         return (i?'<span class="bc-sep">›</span>':'')+el;
       }).join("")+'</div>';
-    /* version block lives OUTSIDE the scrollable chain so it never overlaps the path */
-    host.className = "breadcrumb"; host.innerHTML = '<div class="bc-row">'+steps+ver+'</div>';
+    host.className = "breadcrumb"; host.innerHTML = '<div class="bc-row">'+steps+'</div>';
     /* keep the active step in view when the chain is deep enough to scroll */
     try{
       var bcin = host.querySelector(".bc-in"), act = host.querySelector(".bc-step.on");

@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.10.3";
-window.PACK_CONFIG.built   = "2026-08-03 20:01 SAST";
+window.PACK_CONFIG.version = "v1.11.0";
+window.PACK_CONFIG.built   = "2026-08-03 20:12 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.11.0", date:"2026-08-03 20:12 SAST",
+    note:"Reworked the top of the screen for clarity. The navigation moved from a crowded top strip to a clean left sidebar: the Modelware brand sits top-left, the source selector and the version/last-updated stamp live in the rail, and every page is listed as a numbered tab down the side (1–17) with the current page highlighted. Content now uses the full width to the right of the rail. The traceability path (the Stakeholder → … → Data Domain selection breadcrumb) now appears only on the Architecture Navigator — the one place you build it — instead of on every page, which removes the biggest source of clutter. On narrow screens the sidebar collapses back to a wrapped top bar." },
   { v:"v1.10.3", date:"2026-08-03 20:01 SAST",
     note:"Refined the Value Flow multi-select so it keeps your focus. Levels are now independent: choosing 'All' at one level (e.g. all Value Stages) no longer forces the levels below it open. Every value stage is shown, but a stage that has none of the capabilities you've selected at the next level is displayed and then stops there — a thin stub carrying its name and KPI — rather than being force-connected to everything. So you can hold, say, all six value stages on screen while the flow still concentrates on the two capabilities (and their use-cases and data products) you're focused on. Picking 'All' at the next level reconnects them." },
   { v:"v1.10.2", date:"2026-08-03 19:50 SAST",

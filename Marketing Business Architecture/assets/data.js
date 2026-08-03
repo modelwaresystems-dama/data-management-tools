@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.10.0";
-window.PACK_CONFIG.built   = "2026-08-03 15:47 SAST";
+window.PACK_CONFIG.version = "v1.10.1";
+window.PACK_CONFIG.built   = "2026-08-03 19:37 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.10.1", date:"2026-08-03 19:37 SAST",
+    note:"Value Flow (Sankey) now supports multiple elements per level. A new filter rail sits above the chart: for every level — Value Proposition, Value Stream, Value Stage, Capability, AI Use-Case, Data Product — you can pick 'All' or tick several specific items, and the flow splits across all of them, fanning all the way down to the Data Products. Whatever path you walked in the Navigator seeds the rail (so you start where you were), and 'My Navigator path' / 'Whole model' reset it. This fixes the case where you wanted, say, all Value Stages: previously the flow collapsed to a single path because the levels below were pinned; now choosing 'All' at a level clears the deeper pins and branches out." },
   { v:"v1.10.0", date:"2026-08-03 15:47 SAST",
     note:"Added a User Manual (new 'Manual' tab, and a card on the front page). It's a complete guide to the pack — the top-bar controls (navigation, source selector, traceability breadcrumb and carried selection, versioning), the 13-step Navigator flow explained step by step, and every tab documented with 'what you'll see' and 'how to use it', plus an editing-and-publishing workflow and an element-ID quick reference. The tab list and the Navigator flow are generated from the same configuration the app runs on, so the manual stays in step with the pack. It reads in the app (with a contents rail) and downloads as a formatted PDF for onboarding and offline sharing." },
   { v:"v1.9.1", date:"2026-08-03 15:25 SAST",

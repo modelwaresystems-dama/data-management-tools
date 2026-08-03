@@ -87,6 +87,7 @@
       <button class="btn ghost" id="sankeyClear" style="display:none">✕ Clear path</button>
     </div>
     <div id="sankeyPath" style="font-size:.82rem;color:var(--mut);margin:2px 2px 8px"></div>
+    <div id="sankeyFilters" style="margin:4px 2px 10px"></div>
     <div class="treewrap" style="max-height:none;overflow:auto;padding:14px"><svg id="sankey" width="100%"></svg></div>
     <div class="glegend" id="flowlegend"></div>
     <p class="muted" id="flowinfo" style="font-size:.83rem;margin-top:8px"></p>
@@ -326,21 +327,22 @@ function stagesOf(vsId){ return (D.valueStages||[]).filter(function(g){return g.
    `filt` carries the selected navigation path (sh/vp/vs/vsg/cap/ai/dp); at each level, if a value is
    selected only that node passes — otherwise every child is shown. `rootSHs` seeds the top level.
    mode "ai"  = flow width by AI value score (peaks at the use-case); "kpi" = by value-stage KPI weight. */
-function sankeyData(mode, rootSHs, filt){
-  filt = filt||{};
+function sankeyKeep(msel,key,id){ var s=msel[key]; return !s || s==="*" || (s.indexOf && s.indexOf(id)>=0); }
+function sankeyData(mode, rootSHs, msel){
+  msel = msel||{};
+  function keep(key,id){ return sankeyKeep(msel,key,id); }
   var nodes={}, children={}, parents={};
   function node(id,type,name,sub){ if(!nodes[id])nodes[id]={id:id,type:type,name:name,sub:sub||""}; return id; }
   function edge(a,b){ (children[a]=children[a]||{})[b]=1; (parents[b]=parents[b]||{})[a]=1; }
-  function keep(sel,id){ return !sel || sel===id; }
   (rootSHs||[]).forEach(function(shId){
     var sh=MAP.SH[shId]; if(!sh) return; node("SH:"+shId,"SH",sh.name);
-    vpsForSH2(shId).forEach(function(vpId){ if(!keep(filt.vp,vpId))return; var vp=MAP.VP[vpId]; node("VP:"+vpId,"VP",vp.group);
-      streamsForVP(vpId).forEach(function(vsId){ if(!keep(filt.vs,vsId))return; var vs=vsById(vsId); node("VS:"+vsId,"VS",vs.name);
-        stagesOf(vsId).forEach(function(g){ if(!keep(filt.vsg,g.id))return;
+    vpsForSH2(shId).forEach(function(vpId){ if(!keep("vp",vpId))return; var vp=MAP.VP[vpId]; node("VP:"+vpId,"VP",vp.group);
+      streamsForVP(vpId).forEach(function(vsId){ if(!keep("vs",vsId))return; var vs=vsById(vsId); node("VS:"+vsId,"VS",vs.name);
+        stagesOf(vsId).forEach(function(g){ if(!keep("vsg",g.id))return;
           node("VSG:"+g.id,"VSG",g.seq+". "+g.name,"◷ "+g.primaryKPI+(mode==="kpi"?(" ("+kpiWeightFor(g)+"%)"):""));
-          (g.caps||[]).forEach(function(cap){ if(!keep(filt.cap,cap))return; var co=MAP.CAP[cap]; node("CAP:"+cap,"CAP",co?co.name:cap);
-            reachableUCs(cap).forEach(function(u){ if(!keep(filt.ai,u))return; var uo=MAP.AI[u]; node("U:"+u,"U",uo?uo.name:u,"Value "+ucVal(u).toFixed(1)+"/5");
-              dpsForUC(u).forEach(function(dp){ if(!keep(filt.dp,dp))return; var dpo=PACK.dpById(dp); var dom=PACK.domainById(dpo?dpo.domain:"")||{};
+          (g.caps||[]).forEach(function(cap){ if(!keep("cap",cap))return; var co=MAP.CAP[cap]; node("CAP:"+cap,"CAP",co?co.name:cap);
+            reachableUCs(cap).forEach(function(u){ if(!keep("ai",u))return; var uo=MAP.AI[u]; node("U:"+u,"U",uo?uo.name:u,"Value "+ucVal(u).toFixed(1)+"/5");
+              dpsForUC(u).forEach(function(dp){ if(!keep("dp",dp))return; var dpo=PACK.dpById(dp); var dom=PACK.domainById(dpo?dpo.domain:"")||{};
                 node("DP:"+dp,"DP",dpo?dpo.name:dp,dom.name||""); edge("U:"+u,"DP:"+dp); });
               edge("CAP:"+cap,"U:"+u);
             });
@@ -391,30 +393,80 @@ function sankeyData(mode, rootSHs, filt){
   return {nodes:nodeArr, links:linkArr};
 }
 
-function pathReadout(filt, rootSHs){
-  var c=PACK.ctx();
-  var parts=[];
-  var order=[["sh","Stakeholder"],["vp","Value Proposition"],["vs","Value Stream"],["vsg","Value Stage"],["cap","Capability"],["ai","AI Use-Case"],["dp","Data Product"]];
-  order.forEach(function(o){ var k=o[0]; var v = (k==="sh")?(rootSHs.length===1?rootSHs[0]:null):filt[k];
-    if(v){ var lbl=PACK.chainLabelFor(k==="sh"?"sh":k, k==="sh"?{sh:v}:c); parts.push(PACK.esc(lbl||v)); } });
-  return parts;
+/* ---- multi-select filter state for the Value Flow --------------------------- */
+var MSEL = {};            // per level: array of chosen ids (a subset); absent = All
+var MLEVELS = [["vp","Value Proposition"],["vs","Value Stream"],["vsg","Value Stage"],
+  ["cap","Capability"],["ai","AI Use-Case"],["dp","Data Product"]];
+function mselRootSHs(){ var v=document.getElementById("sankeySH").value; return v?[v]:D.stakeholders.map(function(s){return s.id;}); }
+function mselSave(){ try{ localStorage.setItem("nbpack.msel", JSON.stringify(MSEL)); }catch(e){} }
+function mselSeedFromCtx(){ var c=PACK.ctx(); MSEL={}; MLEVELS.forEach(function(L){ if(c[L[0]]) MSEL[L[0]]=[c[L[0]]]; }); mselSave(); }
+function mselLabel(key,id){
+  if(key==="vp"){ var v=MAP.VP[id]; return v?v.group:id; }
+  if(key==="vs"){ var s=vsById(id); return s?s.name:id; }
+  if(key==="vsg"){ var g=find(D.valueStages,id); return g?(g.seq+". "+g.name):id; }
+  if(key==="cap"){ var co=MAP.CAP[id]; return co?co.name:id; }
+  if(key==="ai"){ var uo=MAP.AI[id]; return uo?uo.name:id; }
+  if(key==="dp"){ var d=PACK.dpById(id); return d?d.name:id; }
+  return id;
+}
+/* options reachable at each level given the kept parents above it */
+function mselReachable(){
+  var R={vp:[],vs:[],vsg:[],cap:[],ai:[],dp:[]}, seen={vp:{},vs:{},vsg:{},cap:{},ai:{},dp:{}};
+  function add(k,id){ if(!seen[k][id]){seen[k][id]=1;R[k].push(id);} }
+  function kept(k,id){ return sankeyKeep(MSEL,k,id); }
+  mselRootSHs().forEach(function(sh){
+    vpsForSH2(sh).forEach(function(vp){ add("vp",vp); if(!kept("vp",vp))return;
+      streamsForVP(vp).forEach(function(vs){ add("vs",vs); if(!kept("vs",vs))return;
+        stagesOf(vs).forEach(function(g){ add("vsg",g.id); if(!kept("vsg",g.id))return;
+          (g.caps||[]).forEach(function(cap){ add("cap",cap); if(!kept("cap",cap))return;
+            reachableUCs(cap).forEach(function(u){ add("ai",u); if(!kept("ai",u))return;
+              dpsForUC(u).forEach(function(dp){ add("dp",dp); }); }); }); }); }); });
+  });
+  return R;
+}
+function mselClearDeeper(key){ var hit=false; MLEVELS.forEach(function(L){ if(hit) delete MSEL[L[0]]; if(L[0]===key) hit=true; }); }
+function mselAll(key){ delete MSEL[key]; mselClearDeeper(key); mselSave(); renderSankey(); }
+function mselToggle(key,id){
+  var s=MSEL[key]; if(!s||s==="*") s=[]; else s=s.slice();
+  var i=s.indexOf(id); if(i>=0) s.splice(i,1); else s.push(id);
+  if(s.length) MSEL[key]=s; else delete MSEL[key];
+  mselClearDeeper(key); mselSave(); renderSankey();
+}
+function mselResetPath(){ mselSeedFromCtx(); document.getElementById("sankeySH").value=PACK.ctx().sh||""; renderSankey(); }
+function mselWholeModel(){ MSEL={}; mselSave(); document.getElementById("sankeySH").value=""; renderSankey(); }
+window.mselAll=mselAll; window.mselToggle=mselToggle; window.mselResetPath=mselResetPath; window.mselWholeModel=mselWholeModel;
+function mchip(active,label,onclick){ return '<button type="button" onclick="'+onclick+'" style="cursor:pointer;font-family:inherit;font-size:.74rem;border-radius:20px;padding:3px 11px;border:1px solid '+(active?"var(--accent)":"var(--line)")+';background:'+(active?"var(--accent)":"#fff")+';color:'+(active?"#fff":"var(--mut)")+';font-weight:600">'+label+'</button>'; }
+function renderSankeyFilters(){
+  var host=document.getElementById("sankeyFilters"); if(!host) return;
+  var R=mselReachable();
+  var rows=MLEVELS.map(function(L){
+    var key=L[0], opts=R[key]||[]; if(!opts.length) return "";
+    var chips = mchip(!MSEL[key], "All", "mselAll('"+key+"')") +
+      opts.map(function(id){ var on = MSEL[key] && MSEL[key].indexOf && MSEL[key].indexOf(id)>=0;
+        return mchip(on, PACK.esc(mselLabel(key,id)), "mselToggle('"+key+"','"+id+"')"); }).join("");
+    return '<div style="display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;margin:4px 0">'+
+      '<span style="font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;min-width:118px;padding-top:5px">'+PACK.esc(L[1])+'</span>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;flex:1">'+chips+'</div></div>';
+  }).join("");
+  host.innerHTML = '<div style="border:1px solid var(--line);border-radius:12px;background:#fbfcfe;padding:10px 12px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px">'+
+      '<span style="font-size:.72rem;font-weight:700;color:var(--mut)">Include in the flow — pick <em>All</em> or tick several at any level; the flow splits across them, all the way down to Data Products.</span>'+
+      '<span style="display:flex;gap:6px"><button type="button" class="btn ghost" style="padding:5px 10px;font-size:.75rem" onclick="mselResetPath()">↺ My Navigator path</button>'+
+      '<button type="button" class="btn ghost" style="padding:5px 10px;font-size:.75rem" onclick="mselWholeModel()">⤢ Whole model</button></span>'+
+    '</div>'+rows+'</div>';
 }
 
 function renderSankey(){
   var mode=document.getElementById("sankeyWeight").value;
-  var shSel=document.getElementById("sankeySH").value;
-  var c=PACK.ctx();
-  var rootSHs = shSel ? [shSel] : D.stakeholders.map(function(s){return s.id;});
-  // deeper path filters apply only when they descend from the chosen stakeholder
-  var filt = (shSel && c.sh===shSel) ? c : {};
-  var data=sankeyData(mode, rootSHs, filt);
-  // path readout + clear button
-  var parts=pathReadout(filt, rootSHs);
-  var anyFilter = shSel || Object.keys(filt).some(function(k){return ["vp","vs","vsg","cap","ai","dp"].indexOf(k)>=0 && filt[k];});
-  document.getElementById("sankeyPath").innerHTML = parts.length
-    ? '<strong>Selected path:</strong> '+parts.join(' <span style="color:#94a3b8">▸</span> ')
-    : 'Whole model — pick a stakeholder above, or walk the Navigator to filter this flow to a single path.';
-  document.getElementById("sankeyClear").style.display = anyFilter ? "" : "none";
+  var rootSHs = mselRootSHs();
+  renderSankeyFilters();
+  var data=sankeyData(mode, rootSHs, MSEL);
+  // readout + clear button
+  var parts=[]; MLEVELS.forEach(function(L){ var s=MSEL[L[0]]; if(s&&s.length){ parts.push('<strong>'+PACK.esc(L[1])+':</strong> '+s.map(function(id){return PACK.esc(mselLabel(L[0],id));}).join(", ")); } });
+  var shv=document.getElementById("sankeySH").value;
+  var head = shv ? ('<strong>Start:</strong> '+PACK.esc((MAP.SH[shv]||{}).name||shv)) : '<strong>All stakeholders</strong>';
+  document.getElementById("sankeyPath").innerHTML = head + (parts.length? (' &nbsp;·&nbsp; '+parts.join(' &nbsp;·&nbsp; ')) : ' &nbsp;·&nbsp; every level fanned out');
+  document.getElementById("sankeyClear").style.display = (shv || parts.length) ? "" : "none";
   var svg=d3.select("#sankey"); svg.selectAll("*").remove();
   var info=document.getElementById("flowinfo");
   if(!data || !data.links.length){ info.textContent="No downstream value paths for this selection yet."; svg.attr("height",40); return; }
@@ -445,16 +497,20 @@ function setView(v){
   document.getElementById("treeview").style.display = v==="tree"?"":"none";
   document.getElementById("flowview").style.display = v==="flow"?"":"none";
   document.querySelectorAll(".vtb").forEach(function(b){ b.classList.toggle("on", b.dataset.view===v); });
-  if(v==="flow"){ var c=PACK.ctx(); document.getElementById("sankeySH").value = c.sh||""; renderSankey(); }
+  if(v==="flow"){ renderSankey(); }
 }
 window.setView=setView;
 (function(){
   var sel=document.getElementById("sankeySH");
   sel.innerHTML='<option value="">All stakeholders</option>'+D.stakeholders.map(function(s){return '<option value="'+s.id+'">'+s.id+' · '+PACK.esc(s.name)+'</option>';}).join("");
   var c=PACK.ctx(); sel.value=c.sh||"";
-  sel.onchange=renderSankey;
+  // seed the flow's multi-select from any path walked in the Navigator; else restore last used
+  var saved=null; try{ saved=JSON.parse(localStorage.getItem("nbpack.msel")||"null"); }catch(e){}
+  if(MLEVELS.some(function(L){return c[L[0]];})) mselSeedFromCtx();
+  else if(saved && typeof saved==="object") MSEL=saved;
+  sel.onchange=function(){ MSEL={}; mselSave(); renderSankey(); };   // new start-point resets level filters
   document.getElementById("sankeyWeight").onchange=renderSankey;
-  document.getElementById("sankeyClear").onclick=function(){ try{PACK.resetChain();}catch(e){} sel.value=""; renderSankey(); };
+  document.getElementById("sankeyClear").onclick=function(){ MSEL={}; mselSave(); try{PACK.resetChain();}catch(e){} sel.value=""; renderSankey(); };
   document.getElementById("flowlegend").innerHTML=Object.keys(SNAME).map(function(k){return '<span class="sw"><i style="background:'+SCOL[k]+'"></i>'+SNAME[k]+'</span>';}).join("");
 })();
 

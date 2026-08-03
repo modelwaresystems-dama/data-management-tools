@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.9.0";
-window.PACK_CONFIG.built   = "2026-08-03 15:05 SAST";
+window.PACK_CONFIG.version = "v1.9.1";
+window.PACK_CONFIG.built   = "2026-08-03 15:25 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.9.1", date:"2026-08-03 15:25 SAST",
+    note:"Fixed the traceability path being cut off: the chain was forced onto one horizontally-scrolling line, so only the first eight steps showed and the rest (Decision, AI Use-Case, AI Agent, Data Product, Data Domain) were hidden behind a scrollbar. The path now wraps so every step is visible at once — with or without a selection — while the version/last-updated block stays pinned top-right and never overlaps it." },
   { v:"v1.9.0", date:"2026-08-03 15:05 SAST",
     note:"Every page now derives its content directly from the editable model bundle (assets/model_all.js) at load time, via a new hydrator (assets/model_hydrate.js) that rebuilds the app's data from the 96 workbook sheets and overlays the base content the sheets don't carry (AI value/risk scores, data contracts, SIPOC detail, decision rules and the page-narrative blocks). The upshot: an approved editor's changes — saved to the private repo through the Model Editor — now flow automatically to the Navigator, Graph, Customer Journey, Value Streams, AI Use-Cases and every other page, with no separate extraction step to re-run. The Model Editor itself continues to edit the raw sheets. Verified: all pages render identically to the baked model with zero console errors, and the model now carries a value proposition for every stakeholder (the parallel-mapped cardinality rule)." },
   { v:"v1.8.0", date:"2026-08-03 14:34 SAST",

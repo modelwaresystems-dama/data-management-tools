@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.11.0";
-window.PACK_CONFIG.built   = "2026-08-03 20:12 SAST";
+window.PACK_CONFIG.version = "v1.12.0";
+window.PACK_CONFIG.built   = "2026-08-04 18:40 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.12.0", date:"2026-08-04 18:40 SAST",
+    note:"Rewrote the User Guide as a Data & AI education primer for executives, assuming no prior knowledge of business architecture. It now opens with 'the big idea' — why AI initiatives need a business architecture and the 'golden thread' from a stakeholder down to governed data — then defines every one of the thirteen building blocks in plain language, each with the question it answers, why it matters to a sponsor, a worked example from a single running story (preventing customer churn), and a clear call-out wherever AI enters. Added a six-step playbook for taking one AI idea through the model (start from an outcome, find the decision, name the use-case, check the data, set human oversight, close the loop on the KPI), a guide to reading each visualisation (Navigator, hierarchy tree, Value-Flow Sankey, value-vs-risk portfolio, capability heatmap), and refreshed the 'finding your way around' section for the new sidebar. The downloadable PDF is regenerated to match." },
   { v:"v1.11.0", date:"2026-08-03 20:12 SAST",
     note:"Reworked the top of the screen for clarity. The navigation moved from a crowded top strip to a clean left sidebar: the Modelware brand sits top-left, the source selector and the version/last-updated stamp live in the rail, and every page is listed as a numbered tab down the side (1–17) with the current page highlighted. Content now uses the full width to the right of the rail. The traceability path (the Stakeholder → … → Data Domain selection breadcrumb) now appears only on the Architecture Navigator — the one place you build it — instead of on every page, which removes the biggest source of clutter. On narrow screens the sidebar collapses back to a wrapped top bar." },
   { v:"v1.10.3", date:"2026-08-03 20:01 SAST",

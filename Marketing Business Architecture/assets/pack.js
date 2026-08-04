@@ -566,3 +566,65 @@
     '</div>';
   };
 })();
+
+/* ============================================================================
+   Concept primer — in-context "what is this?" definitions, shown as a small
+   info-dot popover. One shared source used by the Navigator, the Graph, etc.
+   ========================================================================== */
+(function(){
+  var PACK = window.PACK;
+  PACK.CONCEPTS = {
+    sh:{term:"Stakeholder", what:"The people or groups the business serves or must answer to — customers and prospects, partners, regulators, and internal teams.", why:"Every AI initiative should trace back to a stakeholder need; without one it is a solution looking for a problem."},
+    per:{term:"Persona", what:"A named, representative example of a stakeholder — a specific segment made concrete so teams design for a real person, not an average."},
+    vp:{term:"Value Proposition", what:"The promise of value made to a stakeholder — what they get and why it is worth their attention.", why:"It anchors downstream investment to a benefit someone actually wants."},
+    bo:{term:"Business Outcome", what:"The measurable result that proves the promise is being kept, together with the KPI that quantifies it.", why:"If an AI initiative cannot name the outcome and KPI it moves, it cannot be justified or measured."},
+    kpi:{term:"KPI", what:"A specific number that measures a business outcome — the metric you watch to know whether value is being created.", why:"It turns a goal into evidence; AI earns its place by moving a KPI."},
+    vs:{term:"Value Stream", what:"The end-to-end activities that create and deliver value, from trigger to result, seen from the business side.", why:"It gives an AI investment a concrete place to live — you improve a stream, not an abstraction."},
+    vsg:{term:"Value Stage", what:"One step of a value stream, with a clear start and finish and its own KPI.", why:"AI is applied stage by stage; each stage KPI rolls up to the outcome, so you can see where value is won or lost."},
+    cj:{term:"Customer Journey", what:"The same value seen from the customer side — the experience they go through, moment by moment.", why:"It keeps the customer in view, so AI does not improve an internal metric while worsening the experience."},
+    cap:{term:"Capability", what:"An ability the business must have to deliver — a what-we-can-do, independent of how teams are organised.", why:"Capabilities are reusable building blocks; one AI investment in a capability can serve many streams and journeys."},
+    proc:{term:"Business Process", what:"The concrete, repeatable way a capability actually gets done — its steps, inputs and outputs (shown as SIPOC).", why:"You cannot automate what you cannot describe; the process is where AI plugs into real work."},
+    dec:{term:"Decision", what:"A single judgement made inside a process: inputs in, an outcome out, following rules.", why:"Most AI automates or assists a decision — naming it is where a vague AI idea becomes something concrete you can build and govern."},
+    ai:{term:"AI Use-Case", what:"A specific application of AI to a decision or task, with a value it creates and a risk it carries.", why:"Anchored to a decision, outcome and KPI, its value and risk become visible and comparable against every other use-case."},
+    ag:{term:"AI Agent", what:"The working system that runs a use-case — the model or service that does the job — plus its stance on human oversight.", why:"Executives need to know how AI is operated and controlled, not just that it is used."},
+    hitl:{term:"Human-in-the-Loop", what:"A control where a person reviews or approves an AI output before it takes effect, used for high-value, high-risk or regulated decisions.", why:"It is the main dial between full automation and human control."},
+    dp:{term:"Data Product", what:"A governed, owned, reusable data asset the AI needs, with a clear owner, an agreed definition and a quality contract.", why:"AI is only as good as its data; data products make the dependency explicit and accountable."},
+    dm:{term:"Data Domain", what:"The area of the business that owns and governs a group of related data products, with a named owner and steward.", why:"Ownership and stewardship are what make data trustworthy at scale."},
+    sem:{term:"Semantic model / governed term", what:"The agreed, written definition of a business term — what churn, active customer or lifetime value actually mean.", why:"When every model and report uses the same definition, the numbers reconcile."},
+    cdp:{term:"CDP (Customer Data Platform)", what:"The engine that unifies customer signals in near-real-time and activates them, so a next-best-action can fire at the right moment.", why:"It is the plumbing beneath real-time personalisation."}
+  };
+  PACK.conceptTypeMap = {SH:"sh",PER:"per",VP:"vp",BO:"bo",K:"kpi",KPI:"kpi",VS:"vs",VSG:"vsg",STG:"vsg",CJ:"cj",CX:"cj",CAP:"cap",P:"proc",STEP:"proc",D:"dec",U:"ai",AG:"ag",SM:"sem",CDP:"cdp",DP:"dp",DM:"dm",HITL:"hitl"};
+  PACK.conceptKeyForType = function(t){ return PACK.conceptTypeMap[t]||null; };
+  PACK.infoDot = function(key){ var c=key&&PACK.CONCEPTS[key]; if(!c) return "";
+    return '<button type="button" class="info-dot" onclick="return PACK.showConcept(event,\''+key+'\')" aria-label="What is '+PACK.esc(c.term)+'?" title="What is '+PACK.esc(c.term)+'?">i</button>'; };
+
+  var pop=null;
+  function ensurePop(){ if(pop) return pop; pop=document.createElement("div"); pop.className="pack-pop"; pop.style.display="none";
+    (document.body||document.documentElement).appendChild(pop); return pop; }
+  function closePop(){ if(pop) pop.style.display="none"; }
+  PACK.closeConcept = closePop;
+  /* inline onclick (not delegation) so a dot nested inside a nav link never navigates */
+  PACK.showConcept = function(ev, key){
+    if(ev){ ev.preventDefault(); ev.stopPropagation(); }
+    var c = PACK.CONCEPTS[key]; if(!c) return false;
+    var dot = ev && (ev.currentTarget||ev.target);
+    var p = ensurePop();
+    p.innerHTML = '<div class="pp-t">'+PACK.esc(c.term)+'</div>'+
+      '<div class="pp-w"><strong>What it is.</strong> '+PACK.esc(c.what)+'</div>'+
+      (c.why?'<div class="pp-y"><strong>Why it matters.</strong> '+PACK.esc(c.why)+'</div>':'')+
+      '<a class="pp-more" href="user_manual.html#blocks">Learn more in the guide &rsaquo;</a>';
+    p.style.display="block";
+    var w=Math.min(340, (window.innerWidth||360)-24); p.style.width=w+"px";
+    if(dot){ var r=dot.getBoundingClientRect();
+      var left=window.scrollX + r.left - 6, top=window.scrollY + r.bottom + 8;
+      if(left + w > window.scrollX + window.innerWidth - 12) left = window.scrollX + window.innerWidth - w - 12;
+      p.style.left=Math.max(window.scrollX+8, left)+"px"; p.style.top=top+"px"; }
+    return false;
+  };
+  document.addEventListener("click", function(e){
+    if(e.target && e.target.closest && e.target.closest(".info-dot")) return;     // handled inline
+    if(pop && pop.style.display!=="none" && !(e.target.closest && e.target.closest(".pack-pop"))) closePop();
+  });
+  window.addEventListener("scroll", closePop, true);
+  window.addEventListener("resize", closePop);
+})();

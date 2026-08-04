@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.12.0";
-window.PACK_CONFIG.built   = "2026-08-04 18:40 SAST";
+window.PACK_CONFIG.version = "v1.13.0";
+window.PACK_CONFIG.built   = "2026-08-04 19:37 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.13.0", date:"2026-08-04 19:37 SAST",
+    note:"Brought the User-Guide definitions into the app itself, so the teaching happens in context while you explore. Every architectural element now carries a small “i” you can click for a plain-language pop-up — what it is, why it matters, and a link into the guide. Wired into the Architecture Navigator (each step title and every level in the stepper) and the Navigation Graph (each level of the Value-Flow filter rail, and the node detail panel). The definitions live in one shared place, so they stay consistent everywhere and can be reused on other pages. Someone new to business architecture can now learn the model by hovering, without leaving the page." },
   { v:"v1.12.0", date:"2026-08-04 18:40 SAST",
     note:"Rewrote the User Guide as a Data & AI education primer for executives, assuming no prior knowledge of business architecture. It now opens with 'the big idea' — why AI initiatives need a business architecture and the 'golden thread' from a stakeholder down to governed data — then defines every one of the thirteen building blocks in plain language, each with the question it answers, why it matters to a sponsor, a worked example from a single running story (preventing customer churn), and a clear call-out wherever AI enters. Added a six-step playbook for taking one AI idea through the model (start from an outcome, find the decision, name the use-case, check the data, set human oversight, close the loop on the KPI), a guide to reading each visualisation (Navigator, hierarchy tree, Value-Flow Sankey, value-vs-risk portfolio, capability heatmap), and refreshed the 'finding your way around' section for the new sidebar. The downloadable PDF is regenerated to match." },
   { v:"v1.11.0", date:"2026-08-03 20:12 SAST",

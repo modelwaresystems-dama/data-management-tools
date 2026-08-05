@@ -20,6 +20,26 @@
   .sm{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--panel);box-shadow:var(--shadow)}
   .sm .smn{font-weight:600;font-size:.88rem} .sm .smb{height:6px;border-radius:4px;background:#eef2f8;margin-top:8px;overflow:hidden}
   .sm .smb i{display:block;height:100%;background:var(--accent)}
+  /* governance registers */
+  .rtabs{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 14px}
+  .rtb{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 13px;cursor:pointer;font-family:inherit;font-weight:600;color:var(--mut);font-size:.85rem}
+  .rtb.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .rtb .c{opacity:.7;font-weight:700;margin-left:5px}
+  .rgrid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  @media(max-width:900px){.rgrid{grid-template-columns:1fr}}
+  .rcard{border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:var(--shadow);overflow:hidden}
+  .rcard>h3{margin:0;padding:11px 14px;font-size:.92rem;border-bottom:1px solid var(--line);background:#f7f9fc;display:flex;justify-content:space-between;align-items:center}
+  .rcard>h3 .n{font-size:.72rem;color:var(--mut);font-weight:700;background:#eef2f8;border-radius:20px;padding:2px 9px}
+  .rtable{width:100%;border-collapse:collapse;font-size:.8rem}
+  .rtable th{text-align:left;font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .rtable td{padding:7px 10px;border-bottom:1px solid #eef1f6;vertical-align:top}
+  .rtable tr:last-child td{border-bottom:none}
+  .rtable tr:hover td{background:#f9fbff}
+  .rid{font-family:"SF Mono",monospace;font-size:.72rem;color:var(--accent);font-weight:700;white-space:nowrap}
+  .rref{font-family:"SF Mono",monospace;font-size:.7rem;color:var(--mut);white-space:nowrap}
+  .rpill{display:inline-block;font-size:.64rem;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+  .rmut{color:var(--mut)}
+  .rfull{grid-column:1/-1}
 </style>
 </head>
 <body>
@@ -38,6 +58,13 @@
   <div class="legend" id="legend"></div>
 
   <div class="section" id="layers"></div>
+
+  <div class="section" id="registersSection">
+    <h2>Governance registers</h2>
+    <p class="muted">The working immune system — the policies, controls, risks, decision rights and records that run across every AI use case and data product. Drawn live from the model; edit them in the Model Editor and they flow here.</p>
+    <div class="rtabs" id="rtabs"></div>
+    <div id="registers"></div>
+  </div>
 
   <div class="section">
     <h2>Expanded success measures</h2>
@@ -111,6 +138,93 @@ document.getElementById("scorecard").innerHTML = G.successMeasures.map(function(
 }).join("");
 
 renderLayers(); renderRollup();
+
+/* ============================ Governance registers ============================ */
+(function(){
+  var esc=PACK.esc;
+  var roles={}; (D.ownershipRoles||[]).forEach(function(r){ roles[r.id]=r.name; });
+  function roleName(id){ return roles[id]||id||""; }
+  function role(id){ if(!id) return ""; return '<span class="rref" title="'+esc(roleName(id))+'">'+esc(id)+'</span>'; }
+  function roleList(v){ var a=Array.isArray(v)?v:String(v||"").split(/[,|]/).map(function(x){return x.trim();}).filter(Boolean);
+    return a.map(role).join(" "); }
+  function ref(id){ return id?'<span class="rref">'+esc(id)+'</span>':'<span class="rmut">—</span>'; }
+
+  // colour helpers
+  var LI={High:"#e11d48",Medium:"#d97706",Low:"#16a34a"};
+  function likePill(v){ var c=LI[v]||"#64748b"; return '<span class="rpill" style="background:'+c+'18;color:'+c+'">'+esc(v||"")+'</span>'; }
+  function statusPill(v){ v=String(v||""); var c="#64748b";
+    if(/active|approved|pass\b|agreed/i.test(v)) c="#16a34a";
+    else if(/draft|pending|review|scheduled/i.test(v)) c="#d97706";
+    else if(/fail|breach|reject/i.test(v)) c="#e11d48";
+    return '<span class="rpill" style="background:'+c+'18;color:'+c+'">'+esc(v)+'</span>'; }
+
+  function table(cols, rows){
+    if(!rows.length) return '<div class="rmut" style="padding:12px 14px">No rows in the model yet.</div>';
+    return '<table class="rtable"><thead><tr>'+cols.map(function(c){return '<th>'+esc(c)+'</th>';}).join("")+
+      '</tr></thead><tbody>'+rows.map(function(r){return '<tr>'+r.map(function(c){return '<td>'+c+'</td>';}).join("")+'</tr>';}).join("")+'</tbody></table>';
+  }
+  function card(title, count, inner, full){ return '<div class="rcard'+(full?" rfull":"")+'"><h3>'+esc(title)+
+    (count!=null?'<span class="n">'+count+'</span>':'')+'</h3>'+inner+'</div>'; }
+
+  var domName={}; (D.policyDomains||[]).forEach(function(d){ domName[d.id]=d.name; });
+
+  var VIEWS = {
+    pc:{ label:"Policies & Controls", build:function(){
+      var pd=(D.policyDomains||[]).map(function(d){ return [ '<span class="rid">'+esc(d.id)+'</span>', esc(d.name), '<span class="rmut">'+esc(d.scope||"")+'</span>', role(d.owner) ]; });
+      var pol=(D.policies||[]).map(function(p){ return [ '<span class="rid">'+esc(p.id)+'</span>', ref(p.domain), esc(p.statement), role(p.owner), statusPill(p.status) ]; });
+      var ctl=(D.controls||[]).map(function(c){ return [ '<span class="rid">'+esc(c.id)+'</span>', ref(c.policy), esc(c.objective), '<span class="rmut">'+esc(c.activity)+'</span>', '<span class="rmut">'+esc(c.freq)+'</span>' ]; });
+      return card("Policy domains",(D.policyDomains||[]).length,table(["ID","Domain","Scope","Owner"],pd))+
+             card("Policies",(D.policies||[]).length,table(["ID","Domain","Statement","Owner","Status"],pol),true)+
+             card("Standard controls",(D.controls||[]).length,table(["ID","Policy","Objective","Activity","Frequency"],ctl),true);
+    }},
+    risk:{ label:"Risk", build:function(){
+      var rr=(D.riskRegister||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ref(r.obj), '<span class="rmut">'+esc(r.type)+'</span>', esc(r.desc), likePill(r.like), likePill(r.impact), ref(r.control), role(r.owner) ]; });
+      return card("Risk register",(D.riskRegister||[]).length,table(["ID","Object","Type","Description","Likelihood","Impact","Mitigating control","Owner"],rr),true);
+    }},
+    council:{ label:"Councils & RACI", build:function(){
+      var gc=(D.governanceCouncils||[]).map(function(c){ return [ '<span class="rid">'+esc(c.id)+'</span>', esc(c.name), '<span class="rmut">'+esc(c.mandate)+'</span>', roleList(c.members), '<span class="rmut">'+esc(c.cadence)+'</span>', '<span class="rmut">'+esc(c.escalation)+'</span>' ]; });
+      var ra=(D.raci||[]).map(function(x){ return [ '<span class="rmut">'+esc(x.objType)+'</span>', ref(x.objId), role(x.a), role(x.r), roleList(x.c), roleList(x.i) ]; });
+      return card("Governance councils & forums",(D.governanceCouncils||[]).length,table(["ID","Name","Mandate","Members","Cadence","Escalation"],gc),true)+
+             card("Decision rights (RACI)",(D.raci||[]).length,table(["Object type","Object","Accountable","Responsible","Consulted","Informed"],ra),true);
+    }},
+    rec:{ label:"Records & Evidence", build:function(){
+      var ev=(D.evidenceRegister||[]).map(function(e){ return [ '<span class="rid">'+esc(e.id)+'</span>', esc(e.name), ref(e.obj), role(e.owner), '<span class="rmut">'+esc(e.repo)+'</span>', statusPill(e.status) ]; });
+      var ce=(D.controlEvidence||[]).map(function(m){ return [ ref(m.control), ref(m.evidence), esc(m.required), '<span class="rmut">'+esc(m.freq)+'</span>' ]; });
+      var rr=(D.recordsRetention||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', esc(r.cls), '<span class="rmut">'+esc(r.objType)+'</span>', esc(r.retention), '<span class="rmut">'+esc(r.disposal)+'</span>', (r.legalHold?'<span class="rpill" style="background:#e11d4818;color:#e11d48">Legal hold</span>':'<span class="rmut">No</span>') ]; });
+      var aa=(D.auditAssurance||[]).map(function(a){ return [ '<span class="rid">'+esc(a.id)+'</span>', ref(a.control), '<span class="rmut">'+esc(a.method)+'</span>', statusPill(a.result), esc(a.finding), role(a.owner) ]; });
+      return card("Evidence register",(D.evidenceRegister||[]).length,table(["ID","Evidence","Object","Owner","Repository","Status"],ev),true)+
+             card("Control → evidence",(D.controlEvidence||[]).length,table(["Control","Evidence","Required","Frequency"],ce))+
+             card("Records retention",(D.recordsRetention||[]).length,table(["ID","Record class","Object","Retention","Disposal","Legal hold"],rr),true)+
+             card("Audit & assurance",(D.auditAssurance||[]).length,table(["ID","Control","Test method","Result","Finding","Remediation"],aa),true);
+    }},
+    ai:{ label:"AI governance", build:function(){
+      var mc=(D.modelCards||[]).map(function(m){ return [ '<span class="rid">'+esc(m.id)+'</span>', ref(m.uc), esc(m.use), '<span class="rmut">'+esc(m.limits)+'</span>', '<span class="rmut">'+esc(m.metrics)+'</span>', esc(m.fairness), ref(m.monitoring) ]; });
+      var pr=(D.promptRegister||[]).map(function(p){ return [ '<span class="rid">'+esc(p.id)+'</span>', ref(p.agent), esc(p.purpose), '<span class="rref">'+esc(p.version)+'</span>', statusPill(p.status), ref(p.records) ]; });
+      var dl=(D.aiDecisionLog||[]).map(function(l){ return [ '<span class="rid">'+esc(l.id)+'</span>', ref(l.uc), '<span class="rmut">'+esc(l.segment)+'</span>', esc(l.output), (l.override?'<span class="rpill" style="background:#d9770618;color:#d97706">Override</span>':'<span class="rmut">No</span>'), '<span class="rref">'+esc(l.ts)+'</span>', ref(l.evidence) ]; });
+      return card("Model cards",(D.modelCards||[]).length,table(["ID","Use case","Intended use","Limitations","Metrics","Fairness","Monitoring"],mc),true)+
+             card("Prompt / instruction register",(D.promptRegister||[]).length,table(["ID","Agent","Purpose","Version","Status","Records class"],pr),true)+
+             card("AI decision log",(D.aiDecisionLog||[]).length,table(["ID","Use case","Segment","Decision","Override","Timestamp","Evidence"],dl),true);
+    }}
+  };
+  var ORDER=["pc","risk","council","rec","ai"];
+  var counts={ pc:(D.policies||[]).length+(D.controls||[]).length,
+    risk:(D.riskRegister||[]).length,
+    council:(D.governanceCouncils||[]).length+(D.raci||[]).length,
+    rec:(D.evidenceRegister||[]).length+(D.recordsRetention||[]).length+(D.auditAssurance||[]).length,
+    ai:(D.modelCards||[]).length+(D.promptRegister||[]).length+(D.aiDecisionLog||[]).length };
+  var cur="pc";
+  function draw(){
+    document.getElementById("rtabs").innerHTML=ORDER.map(function(k){
+      return '<button class="rtb'+(k===cur?" on":"")+'" data-k="'+k+'">'+esc(VIEWS[k].label)+'<span class="c">'+counts[k]+'</span></button>';
+    }).join("");
+    document.getElementById("registers").innerHTML='<div class="rgrid">'+VIEWS[cur].build()+'</div>';
+    Array.prototype.forEach.call(document.querySelectorAll(".rtb"),function(b){
+      b.onclick=function(){ cur=b.getAttribute("data-k"); draw(); };
+    });
+  }
+  draw();
+})();
+
 document.body.insertAdjacentHTML("beforeend", PACK.footer());
 </script>
 </body>

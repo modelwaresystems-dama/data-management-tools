@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.14.2";
-window.PACK_CONFIG.built   = "2026-08-05 06:44 SAST";
+window.PACK_CONFIG.version = "v1.15.0";
+window.PACK_CONFIG.built   = "2026-08-05 17:10 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.15.0", date:"2026-08-05 17:10 SAST",
+    note:"Built out the governance layer — the model's 'immune system' — and surfaced it in the app. The Policy & Controls, Risk, Governance-council/RACI, Records/Evidence and AI-governance sheets (63–75) are now populated with representative Nedbank marketing content, fully cross-referenced to the spine (use cases, data products, decisions, roles): 16 policies across 9 domains, 20 standard controls, an 18-item evidence register with control→evidence mapping, 6 councils and a RACI, a 16-line risk register, 12 record-retention classes, a 14-test audit/assurance log, plus AI model cards, a prompt/instruction register and an AI decision log. The Governance & Responsible AI page now has a live 'Governance registers' section with five tabs (Policies & Controls · Risk · Councils & RACI · Records & Evidence · AI governance) drawn straight from the model via the hydrator, so editing the sheets flows through to the page. Also added the two data-foundation sheets the metaphor recommends — DataAsset and StoragePlatform (the 'feet that touch the ground') — mapping every data product down to its physical asset and storage platform." },
   { v:"v1.14.2", date:"2026-08-05 06:44 SAST",
     note:"Made the Explorer (expand map) use the full screen. The view now breaks out of the centred page column and spans the width to the right of the sidebar, the detail panel on the right is slimmer so the map gets the room, the first level opens automatically so you land on a full picture rather than a lone card, and the cards sit further apart with longer connectors — so the map fills the screen instead of hugging the top-left corner." },
   { v:"v1.14.1", date:"2026-08-05 06:16 SAST",

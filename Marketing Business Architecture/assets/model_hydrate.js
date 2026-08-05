@@ -127,6 +127,15 @@
   set("policies", recs("63 ·").map(function(r){ return {id:r.PolicyID,domain:r.PolicyDomainID,statement:r.Statement,owner:r.OwnerRoleID,status:r.Status}; }));
   set("controls", recs("64 ·").map(function(r){ return {id:r.ControlID,policy:r.PolicyID,objective:r.ControlObjective,activity:r.ControlActivity,freq:r.Frequency,evidence:r.EvidenceType}; }));
   set("riskRegister", recs("69 ·").map(function(r){ return {id:r.RiskID,obj:r.ObjectID,type:r.RiskType,desc:r.Description,like:r.Likelihood,impact:r.Impact,control:r.MitigationControlID,owner:r.OwnerRoleID}; }));
+  set("controlEvidence", recs("65 ·").map(function(r){ return {control:r.ControlID,evidence:r.EvidenceID,required:r.EvidenceRequired,freq:r.ReviewFrequency}; }));
+  set("evidenceRegister", recs("66 ·").map(function(r){ return {id:r.EvidenceID,name:r.EvidenceName,obj:r.ObjectID,owner:r.OwnerRoleID,repo:r.RepositoryLocation,status:r.ReviewStatus}; }));
+  set("recordsRetention", recs("70 ·").map(function(r){ return {id:r.RecordClassID,cls:r.RecordClass,objType:r.ObjectType,retention:r.RetentionRule,disposal:r.DisposalRule,legalHold:B(r.LegalHoldFlag)}; }));
+  set("auditAssurance", recs("71 ·").map(function(r){ return {id:r.AssuranceID,control:r.ControlID,method:r.TestMethod,result:r.Result,finding:r.Finding,owner:r.RemediationOwner}; }));
+  set("modelCards", recs("73 ·").map(function(r){ return {id:r.ModelCardID,uc:r.UseCaseID,use:r.IntendedUse,limits:r.Limitations,metrics:r.Metrics,fairness:r.FairnessNotes,monitoring:r.MonitoringPlanID}; }));
+  set("promptRegister", recs("74 ·").map(function(r){ return {id:r.PromptID,agent:r.AgentID,purpose:r.PromptPurpose,version:r.Version,status:r.ApprovalStatus,records:r.RecordsClassID}; }));
+  set("aiDecisionLog", recs("75 ·").map(function(r){ return {id:r.DecisionLogID,uc:r.UseCaseID,segment:r.CustomerSegment,output:r.DecisionOutput,override:B(r.HumanOverride),ts:r.Timestamp,evidence:r.EvidenceID}; }));
+  set("dataAssets", recs("98 ·").map(function(r){ return {id:r.DataAssetID,dp:r.DataProductID,name:r.AssetName,type:r.AssetType,layer:r.Layer,platform:r.StoragePlatformID,format:r.Format,pii:B(r.PII),owner:r.Owner}; }));
+  set("storagePlatforms", recs("99 ·").map(function(r){ return {id:r.StoragePlatformID,name:r.Name,type:r.PlatformType,zone:r.Zone,region:r.Region,owner:r.Owner,notes:r.Notes}; }));
 
   W.NB_HYDRATED=true; try{ W.PACK && (W.PACK._hydrated=true); }catch(e){}
 })();

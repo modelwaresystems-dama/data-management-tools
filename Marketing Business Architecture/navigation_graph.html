@@ -57,6 +57,7 @@
   <div class="viewtabs">
     <button class="vtb on" data-view="tree" onclick="setView('tree')">▤ Hierarchy tree</button>
     <button class="vtb" data-view="flow" onclick="setView('flow')">⋙ Value flow (Sankey)</button>
+    <button class="vtb" data-view="explore" onclick="setView('explore')">⊹ Explorer (expand map)</button>
   </div>
 
   <div id="treeview">
@@ -91,6 +92,20 @@
     <div class="treewrap" style="max-height:none;overflow:auto;padding:14px"><svg id="sankey" width="100%"></svg></div>
     <div class="glegend" id="flowlegend"></div>
     <p class="muted" id="flowinfo" style="font-size:.83rem;margin-top:8px"></p>
+  </div>
+
+  <div id="exploreview" style="display:none">
+    <div class="tools">
+      <label style="font-size:.8rem;font-weight:600;color:var(--mut)">Start from</label>
+      <select id="exRoot"></select>
+      <button class="btn ghost" onclick="exReset()">↺ Collapse all</button>
+      <span class="muted" style="font-size:.8rem">Click a node to expand or collapse it, and see its details on the right. Traverses left → right.</span>
+    </div>
+    <div class="glayout">
+      <div class="treewrap" style="max-height:76vh;overflow:auto;padding:6px"><svg id="extree"></svg></div>
+      <div class="gpanel" id="expanel"><p class="muted">Select a node to see its explanation and value.</p></div>
+    </div>
+    <div class="glegend" id="exlegend"></div>
   </div>
 </div>
 
@@ -274,7 +289,7 @@ function ancestorsOf(row){
   }
   return path;
 }
-function renderPanel(id, row){
+function renderPanel(id, row, targetId){
   var m=meta(id), t=m.t;
   var openLink=({U:'ai_usecases.html#'+id, CDP:'hyperpersonalisation_cdp.html', DM:'data_products.html'})[t];
   if(t==="SH"||t==="VP"||t==="CAP"||t==="P"||t==="D")openLink='business_architecture.html#'+id;
@@ -283,7 +298,7 @@ function renderPanel(id, row){
   var path = row ? ancestorsOf(row) : [];
   var pathHtml = path.length ? path.map(function(pid){var pm=meta(pid);return '<span class="mono" style="color:'+TYPE[pm.t].color+';font-size:.7rem">'+displayId(pid)+'</span>';}).join('<span class="sep">›</span>') : '<span class="muted">root</span>';
   var kids=childrenOf(id);
-  document.getElementById("panel").innerHTML =
+  document.getElementById(targetId||"panel").innerHTML =
     '<span class="gp-type" style="background:'+TYPE[t].color+'">'+TYPE[t].name+'</span>'+PACK.infoDot(PACK.conceptKeyForType(t))+
     '<div class="gp-id">'+displayId(id)+'</div><div class="gp-name">'+PACK.esc(m.label)+'</div>'+
     '<div class="gp-h">Path from top</div><div class="gp-path">'+pathHtml+'</div>'+
@@ -505,8 +520,10 @@ function renderSankey(){
 function setView(v){
   document.getElementById("treeview").style.display = v==="tree"?"":"none";
   document.getElementById("flowview").style.display = v==="flow"?"":"none";
+  document.getElementById("exploreview").style.display = v==="explore"?"":"none";
   document.querySelectorAll(".vtb").forEach(function(b){ b.classList.toggle("on", b.dataset.view===v); });
   if(v==="flow"){ renderSankey(); }
+  if(v==="explore"){ exInit(); }
 }
 window.setView=setView;
 (function(){
@@ -522,6 +539,78 @@ window.setView=setView;
   document.getElementById("sankeyClear").onclick=function(){ MSEL={}; mselSave(); try{PACK.resetChain();}catch(e){} sel.value=""; renderSankey(); };
   document.getElementById("flowlegend").innerHTML=Object.keys(SNAME).map(function(k){return '<span class="sw"><i style="background:'+SCOL[k]+'"></i>'+SNAME[k]+'</span>';}).join("");
 })();
+
+/* ============================ EXPLORER — collapsible left-to-right map ============================
+   Same parallel-mapped hierarchy as the tree, drawn as an expand/collapse node-link map that
+   traverses left to right. Click a node to open/close its branch and read its details on the right. */
+var EX = { rootData:null, selId:null };
+function exRootIds(){
+  var r=document.getElementById("exRoot").value;
+  if(r==="vp")return D.valuePropositions.map(function(v){return v.id;});
+  if(r==="vs")return (D.valueStreams||[]).map(function(v){return v.id;});
+  if(r==="bo")return (D.businessOutcomes||[]).map(function(b){return b.id;});
+  if(r==="u")return D.aiUseCases.map(function(u){return u.id;});
+  return D.stakeholders.map(function(s){return s.id;});
+}
+function exNode(id){ return {id:id, loaded:false, children:null, _children:null}; }
+function exBuildRoot(){ EX.rootData={id:"__ROOT__", loaded:true, children:exRootIds().map(exNode)}; }
+function exToggle(n){
+  if(n.children){ n._children=n.children; n.children=null; return; }     // collapse
+  if(n._children){ n.children=n._children; n._children=null; return; }   // re-open cached
+  n.children = childrenOf(n.id).map(exNode); n.loaded=true;              // first open: load
+}
+function exRender(){
+  var svg=d3.select("#extree"); svg.selectAll("*").remove();
+  var root=d3.hierarchy(EX.rootData, function(d){return d.children;});
+  var dx=24, dy=252;
+  d3.tree().nodeSize([dx,dy])(root);
+  var nodes=root.descendants().filter(function(d){return d.depth>0;});
+  var links=root.links().filter(function(l){return l.source.depth>0;});
+  var xMin=Infinity,xMax=-Infinity,yMin=Infinity,dMax=0;
+  nodes.forEach(function(d){ xMin=Math.min(xMin,d.x); xMax=Math.max(xMax,d.x); yMin=Math.min(yMin,d.y); dMax=Math.max(dMax,d.depth); });
+  if(!isFinite(xMin)){ xMin=0; xMax=0; yMin=0; }
+  var W=dMax*dy+220, H=(xMax-xMin)+70;
+  svg.attr("viewBox","0 0 "+W+" "+H).attr("width",W).attr("height",H);
+  var g=svg.append("g").attr("transform","translate("+(40-yMin)+","+(35-xMin)+")");
+  g.append("g").attr("fill","none").attr("stroke","#cbd5e1").attr("stroke-width",1.3)
+    .selectAll("path").data(links).join("path")
+    .attr("d", d3.linkHorizontal().x(function(d){return d.y;}).y(function(d){return d.x;}));
+  var node=g.append("g").selectAll("g.exn").data(nodes).join("g").attr("class","exn")
+    .attr("transform",function(d){return "translate("+d.y+","+d.x+")";})
+    .style("cursor","pointer")
+    .on("click", function(){ var d=d3.select(this).datum();
+      EX.selId=d.data.id; renderPanel(d.data.id, null, "expanel"); exToggle(d.data); exRender(); });
+  node.each(function(d){
+    var t=typeOfId(d.data.id), col=(TYPE[t]||{color:"#64748b"}).color;
+    var hasKids=childrenOf(d.data.id).length>0, expanded=!!d.data.children;
+    var s=d3.select(this);
+    if(d.data.id===EX.selId) s.append("circle").attr("r",9).attr("fill","none").attr("stroke","#2f6fed").attr("stroke-width",2);
+    s.append("circle").attr("r",5).attr("fill", hasKids ? (expanded?"#fff":col) : col)
+      .attr("stroke",col).attr("stroke-width", hasKids?2:1);
+    var lbl=meta(d.data.id).label; if(lbl&&lbl.length>36) lbl=lbl.slice(0,35)+"…";
+    s.append("text").attr("x",11).attr("y",-3.5).style("font","700 8.5px Arial").attr("fill",col)
+      .text((TYPE[t]||{name:t}).name);
+    s.append("text").attr("x",11).attr("y",8).style("font","12px Arial").attr("fill","#1e293b")
+      .text(displayId(d.data.id)+"   "+lbl);
+    s.append("title").text((TYPE[t]||{name:t}).name+": "+meta(d.data.id).label);
+  });
+}
+function exReset(){ exBuildRoot(); EX.selId=null; exRender(); }
+function exInit(){
+  var sel=document.getElementById("exRoot");
+  if(!sel.dataset.built){
+    sel.innerHTML='<option value="sh">Stakeholders (top of chain)</option>'+
+      '<option value="vp">Value Propositions</option>'+
+      '<option value="vs">Value Streams</option>'+
+      '<option value="bo">Business Outcomes</option>'+
+      '<option value="u">AI Use-Cases</option>';
+    sel.dataset.built="1"; sel.onchange=exReset;
+    document.getElementById("exlegend").innerHTML = Object.keys(TYPE).map(function(k){return '<span class="sw"><i style="background:'+TYPE[k].color+'"></i>'+PACK.esc(TYPE[k].name)+'</span>';}).join("");
+  }
+  if(!EX.rootData) exBuildRoot();
+  exRender();
+}
+window.exReset=exReset;
 
 document.body.insertAdjacentHTML("beforeend", PACK.footer());
 </script>

@@ -1001,11 +1001,23 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+>>>>>>> Stashed changes
 window.PACK_CONFIG.version = "v1.14.0";
 window.PACK_CONFIG.built   = "2026-08-05 02:41 SAST";
 window.PACK_CONFIG.changelog = [
   { v:"v1.14.0", date:"2026-08-05 02:41 SAST",
     note:"Added a third view to the Navigation Graph — Explorer (expand map) — for when the Sankey gets crowded. It draws the same parallel-mapped hierarchy as an expand/collapse node-link map that traverses left to right: click any node to open or close just that branch, so you only ever see the part of the tree you care about, and the detail panel on the right shows the selected element's type, definition (with the ‘i’ primer), explanation and value. Start from Stakeholders, Value Propositions, Value Streams, Business Outcomes or AI Use-Cases, with a Collapse-all reset. The hierarchy tree, the value-weighted Sankey and the new Explorer are three lenses on the same model." },
+<<<<<<< Updated upstream
+=======
+=======
+window.PACK_CONFIG.version = "v1.13.0";
+window.PACK_CONFIG.built   = "2026-08-04 19:37 SAST";
+window.PACK_CONFIG.changelog = [
+>>>>>>> 4fec96a231db938e903991ed42acbd4217e9f156
+>>>>>>> Stashed changes
   { v:"v1.13.0", date:"2026-08-04 19:37 SAST",
     note:"Brought the User-Guide definitions into the app itself, so the teaching happens in context while you explore. Every architectural element now carries a small “i” you can click for a plain-language pop-up — what it is, why it matters, and a link into the guide. Wired into the Architecture Navigator (each step title and every level in the stepper) and the Navigation Graph (each level of the Value-Flow filter rail, and the node detail panel). The definitions live in one shared place, so they stay consistent everywhere and can be reused on other pages. Someone new to business architecture can now learn the model by hovering, without leaving the page." },
   { v:"v1.12.0", date:"2026-08-04 18:40 SAST",

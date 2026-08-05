@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.14.1";
-window.PACK_CONFIG.built   = "2026-08-05 06:16 SAST";
+window.PACK_CONFIG.version = "v1.14.2";
+window.PACK_CONFIG.built   = "2026-08-05 06:44 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.14.2", date:"2026-08-05 06:44 SAST",
+    note:"Made the Explorer (expand map) use the full screen. The view now breaks out of the centred page column and spans the width to the right of the sidebar, the detail panel on the right is slimmer so the map gets the room, the first level opens automatically so you land on a full picture rather than a lone card, and the cards sit further apart with longer connectors — so the map fills the screen instead of hugging the top-left corner." },
   { v:"v1.14.1", date:"2026-08-05 06:16 SAST",
     note:"Reworked the Explorer (expand map) into a clean card-based mind-map, so it reads clearly even with several branches open. Each element is now a rounded card — tinted and colour-banded by type, with a category line, the element name, a count badge, and small pills summarising what it connects to (e.g. ‘4 Persona · 1 Value Proposition’, ‘6 Value Stage’) — joined by smooth colour-coded connectors that fan left to right. Click a card to expand or collapse just that branch and read the full detail on the right. Replaces the earlier dense text layout." },
   { v:"v1.14.0", date:"2026-08-05 02:41 SAST",

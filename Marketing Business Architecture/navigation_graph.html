@@ -51,6 +51,12 @@
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .ex-card .ec-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
   .ex-card .ec-tag{font-size:.6rem;font-weight:600;color:var(--mut);background:rgba(255,255,255,.75);border:1px solid var(--line);border-radius:20px;padding:1px 7px;white-space:nowrap}
+  /* Explorer view uses (near) full screen width — break out of the 1280px centred wrap */
+  #exploreview{--exgut:16px;
+    width:calc(100vw - 212px - var(--exgut)*2);
+    margin-left:calc(-1 * max(0px,(100vw - 212px - 1280px)/2) - 22px + var(--exgut));}
+  #exploreview .exlayout{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
+  @media(max-width:920px){#exploreview{width:auto;margin-left:0}#exploreview .exlayout{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -115,8 +121,8 @@
       <button class="btn ghost" onclick="exReset()">↺ Collapse all</button>
       <span class="muted" style="font-size:.8rem">Click a node to expand or collapse it, and see its details on the right. Traverses left → right.</span>
     </div>
-    <div class="glayout">
-      <div class="treewrap" style="max-height:78vh;overflow:auto;padding:6px;background:#f7f9fc"><div id="exmap"></div></div>
+    <div class="exlayout">
+      <div class="treewrap" style="max-height:80vh;overflow:auto;padding:6px;background:#f7f9fc"><div id="exmap"></div></div>
       <div class="gpanel" id="expanel"><p class="muted">Select a node to see its explanation and value.</p></div>
     </div>
     <div class="glegend" id="exlegend"></div>
@@ -567,7 +573,19 @@ function exRootIds(){
   return D.stakeholders.map(function(s){return s.id;});
 }
 function exNode(id){ return {id:id, loaded:false, children:null, _children:null}; }
-function exBuildRoot(){ EX.rootData={id:"__ROOT__", loaded:true, children:exRootIds().map(exNode)}; }
+function exLoad(n){ if(!n.loaded){ n.children=childrenOf(n.id).map(exNode); n.loaded=true; } }
+function exBuildRoot(){
+  var kids=exRootIds().map(exNode);
+  EX.rootData={id:"__ROOT__", loaded:true, children:kids};
+  // auto-expand breadth-first within a node budget so the map lands full (several columns) instead of a lone card
+  var budget=52, queue=kids.slice(), count=kids.length;
+  while(queue.length){
+    var n=queue.shift();
+    if(count + childrenOf(n.id).length > budget) continue;   // would overflow the budget — leave this branch collapsed
+    exLoad(n); count += n.children.length;
+    n.children.forEach(function(c){ queue.push(c); });
+  }
+}
 function exToggle(n){
   if(n.children){ n._children=n.children; n.children=null; return; }     // collapse
   if(n._children){ n.children=n._children; n._children=null; return; }   // re-open cached
@@ -576,7 +594,7 @@ function exToggle(n){
 function exRender(){
   var host=document.getElementById("exmap"); if(!host) return; host.innerHTML="";
   var root=d3.hierarchy(EX.rootData, function(d){return d.children;});
-  var CW=238, ROW=108, COL=CW+104;                 // card width, row gap, column gap
+  var CW=252, ROW=112, COL=CW+128;                 // card width, row gap, column gap
   d3.tree().nodeSize([ROW,COL])(root);
   var nodes=root.descendants().filter(function(d){return d.depth>0;});
   var links=root.links().filter(function(l){return l.source.depth>0;});

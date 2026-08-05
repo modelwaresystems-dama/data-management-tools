@@ -37,6 +37,20 @@
   .vtb.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   #sankey text{pointer-events:none}
   #sankey .snode:hover rect{stroke:#1e293b;stroke-width:1.5}
+  /* Explorer (expand map) — styled cards over an SVG connector layer */
+  #exmap{position:relative}
+  .ex-card{position:absolute;box-sizing:border-box;background:#fff;border:1px solid #e5e9f0;border-radius:14px;
+    box-shadow:0 2px 8px rgba(16,24,40,.09);padding:9px 12px 10px 17px;cursor:pointer;font-family:inherit;
+    transition:box-shadow .12s,transform .12s}
+  .ex-card:hover{box-shadow:0 8px 22px rgba(16,24,40,.16);transform:translateY(-1px);z-index:5}
+  .ex-card.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(47,111,237,.28),0 8px 22px rgba(16,24,40,.16);z-index:5}
+  .ex-card .ec-band{position:absolute;left:7px;top:11px;bottom:11px;width:4px;border-radius:3px}
+  .ex-card .ec-count{position:absolute;top:9px;right:11px;font-size:.7rem;font-weight:700;color:var(--faint)}
+  .ex-card .ec-cat{font-size:.6rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding-right:36px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ex-card .ec-title{font-weight:700;font-size:.9rem;line-height:1.16;color:var(--ink);margin-top:2px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ex-card .ec-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+  .ex-card .ec-tag{font-size:.6rem;font-weight:600;color:var(--mut);background:rgba(255,255,255,.75);border:1px solid var(--line);border-radius:20px;padding:1px 7px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -102,7 +116,7 @@
       <span class="muted" style="font-size:.8rem">Click a node to expand or collapse it, and see its details on the right. Traverses left → right.</span>
     </div>
     <div class="glayout">
-      <div class="treewrap" style="max-height:76vh;overflow:auto;padding:6px"><svg id="extree"></svg></div>
+      <div class="treewrap" style="max-height:78vh;overflow:auto;padding:6px;background:#f7f9fc"><div id="exmap"></div></div>
       <div class="gpanel" id="expanel"><p class="muted">Select a node to see its explanation and value.</p></div>
     </div>
     <div class="glegend" id="exlegend"></div>
@@ -298,15 +312,7 @@ function renderPanel(id, row, targetId){
   var path = row ? ancestorsOf(row) : [];
   var pathHtml = path.length ? path.map(function(pid){var pm=meta(pid);return '<span class="mono" style="color:'+TYPE[pm.t].color+';font-size:.7rem">'+displayId(pid)+'</span>';}).join('<span class="sep">›</span>') : '<span class="muted">root</span>';
   var kids=childrenOf(id);
-<<<<<<< Updated upstream
   document.getElementById(targetId||"panel").innerHTML =
-=======
-<<<<<<< HEAD
-  document.getElementById(targetId||"panel").innerHTML =
-=======
-  document.getElementById("panel").innerHTML =
->>>>>>> 4fec96a231db938e903991ed42acbd4217e9f156
->>>>>>> Stashed changes
     '<span class="gp-type" style="background:'+TYPE[t].color+'">'+TYPE[t].name+'</span>'+PACK.infoDot(PACK.conceptKeyForType(t))+
     '<div class="gp-id">'+displayId(id)+'</div><div class="gp-name">'+PACK.esc(m.label)+'</div>'+
     '<div class="gp-h">Path from top</div><div class="gp-path">'+pathHtml+'</div>'+
@@ -568,39 +574,55 @@ function exToggle(n){
   n.children = childrenOf(n.id).map(exNode); n.loaded=true;              // first open: load
 }
 function exRender(){
-  var svg=d3.select("#extree"); svg.selectAll("*").remove();
+  var host=document.getElementById("exmap"); if(!host) return; host.innerHTML="";
   var root=d3.hierarchy(EX.rootData, function(d){return d.children;});
-  var dx=24, dy=252;
-  d3.tree().nodeSize([dx,dy])(root);
+  var CW=238, ROW=108, COL=CW+104;                 // card width, row gap, column gap
+  d3.tree().nodeSize([ROW,COL])(root);
   var nodes=root.descendants().filter(function(d){return d.depth>0;});
   var links=root.links().filter(function(l){return l.source.depth>0;});
   var xMin=Infinity,xMax=-Infinity,yMin=Infinity,dMax=0;
   nodes.forEach(function(d){ xMin=Math.min(xMin,d.x); xMax=Math.max(xMax,d.x); yMin=Math.min(yMin,d.y); dMax=Math.max(dMax,d.depth); });
   if(!isFinite(xMin)){ xMin=0; xMax=0; yMin=0; }
-  var W=dMax*dy+220, H=(xMax-xMin)+70;
-  svg.attr("viewBox","0 0 "+W+" "+H).attr("width",W).attr("height",H);
-  var g=svg.append("g").attr("transform","translate("+(40-yMin)+","+(35-xMin)+")");
-  g.append("g").attr("fill","none").attr("stroke","#cbd5e1").attr("stroke-width",1.3)
-    .selectAll("path").data(links).join("path")
-    .attr("d", d3.linkHorizontal().x(function(d){return d.y;}).y(function(d){return d.x;}));
-  var node=g.append("g").selectAll("g.exn").data(nodes).join("g").attr("class","exn")
-    .attr("transform",function(d){return "translate("+d.y+","+d.x+")";})
-    .style("cursor","pointer")
-    .on("click", function(){ var d=d3.select(this).datum();
-      EX.selId=d.data.id; renderPanel(d.data.id, null, "expanel"); exToggle(d.data); exRender(); });
-  node.each(function(d){
-    var t=typeOfId(d.data.id), col=(TYPE[t]||{color:"#64748b"}).color;
-    var hasKids=childrenOf(d.data.id).length>0, expanded=!!d.data.children;
-    var s=d3.select(this);
-    if(d.data.id===EX.selId) s.append("circle").attr("r",9).attr("fill","none").attr("stroke","#2f6fed").attr("stroke-width",2);
-    s.append("circle").attr("r",5).attr("fill", hasKids ? (expanded?"#fff":col) : col)
-      .attr("stroke",col).attr("stroke-width", hasKids?2:1);
-    var lbl=meta(d.data.id).label; if(lbl&&lbl.length>36) lbl=lbl.slice(0,35)+"…";
-    s.append("text").attr("x",11).attr("y",-3.5).style("font","700 8.5px Arial").attr("fill",col)
-      .text((TYPE[t]||{name:t}).name);
-    s.append("text").attr("x",11).attr("y",8).style("font","12px Arial").attr("fill","#1e293b")
-      .text(displayId(d.data.id)+"   "+lbl);
-    s.append("title").text((TYPE[t]||{name:t}).name+": "+meta(d.data.id).label);
+  var MX=46, MY=44;
+  var W=dMax*COL + CW + MX*2, H=(xMax-xMin) + ROW + MY*2;
+  host.style.width=W+"px"; host.style.height=H+"px";
+  function cardLeft(d){ return MX + (d.y - yMin); }     // left edge x of the card
+  function centerY(d){ return MY + (d.x - xMin); }      // vertical centre of the card
+  /* connector layer (behind the cards) */
+  var NS="http://www.w3.org/2000/svg";
+  var svg=document.createElementNS(NS,"svg");
+  svg.setAttribute("width",W); svg.setAttribute("height",H);
+  svg.setAttribute("style","position:absolute;left:0;top:0;pointer-events:none");
+  host.appendChild(svg);
+  links.forEach(function(l){
+    var col=(TYPE[typeOfId(l.target.data.id)]||{color:"#94a3b8"}).color;
+    var x1=cardLeft(l.source)+CW, y1=centerY(l.source), x2=cardLeft(l.target), y2=centerY(l.target), mx=(x1+x2)/2;
+    var p=document.createElementNS(NS,"path");
+    p.setAttribute("d","M"+x1+" "+y1+" C"+mx+" "+y1+" "+mx+" "+y2+" "+x2+" "+y2);
+    p.setAttribute("fill","none"); p.setAttribute("stroke",col); p.setAttribute("stroke-width","2.4"); p.setAttribute("stroke-opacity",".5");
+    svg.appendChild(p);
+  });
+  /* cards */
+  nodes.forEach(function(d){
+    var id=d.data.id, t=typeOfId(id), col=(TYPE[t]||{name:t,color:"#64748b"}).color;
+    var kids=childrenOf(id), hasKids=kids.length>0, expanded=!!d.data.children;
+    var tags="";
+    if(hasKids){
+      var byType={}, order=[]; kids.forEach(function(k){ var kt=typeOfId(k); if(byType[kt]==null){byType[kt]=0;order.push(kt);} byType[kt]++; });
+      tags = order.slice(0,3).map(function(kt){ return '<span class="ec-tag">'+byType[kt]+' '+PACK.esc((TYPE[kt]||{name:kt}).name)+'</span>'; }).join("");
+    }
+    var card=document.createElement("div");
+    card.className="ex-card"+(id===EX.selId?" sel":"");
+    card.style.left=cardLeft(d)+"px"; card.style.width=CW+"px"; card.style.background=col+"12";
+    card.innerHTML =
+      '<span class="ec-band" style="background:'+col+'"></span>'+
+      (hasKids?'<span class="ec-count">'+kids.length+' '+(expanded?"▾":"▸")+'</span>':'')+
+      '<div class="ec-cat" style="color:'+col+'">'+PACK.esc((TYPE[t]||{name:t}).name)+' · '+PACK.esc(displayId(id))+'</div>'+
+      '<div class="ec-title">'+PACK.esc(meta(id).label)+'</div>'+
+      (tags?'<div class="ec-tags">'+tags+'</div>':'');
+    card.onclick=function(){ EX.selId=id; renderPanel(id,null,"expanel"); exToggle(d.data); exRender(); };
+    host.appendChild(card);
+    card.style.top=(centerY(d) - card.offsetHeight/2)+"px";   // vertical-centre after measuring
   });
 }
 function exReset(){ exBuildRoot(); EX.selId=null; exRender(); }

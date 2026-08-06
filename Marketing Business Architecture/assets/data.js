@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.15.0";
-window.PACK_CONFIG.built   = "2026-08-05 17:10 SAST";
+window.PACK_CONFIG.version = "v1.15.1";
+window.PACK_CONFIG.built   = "2026-08-06 02:17 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.15.1", date:"2026-08-06 02:17 SAST",
+    note:"Made the governance relationships visible. The Governance registers now open on a 'Domain → Policy → Control → Evidence' tree that shows the chain explicitly: each governance domain expands to its policies, each policy to the controls that enforce it, and each control to the evidence that proves it (with the control's audit result shown inline). Colour-banded and indented by level, expand/collapse per node or all at once, with counts at every level (e.g. a domain's policy count, a policy's control count, a control's evidence count). The flat lookup tables are still there under a 'Tables' tab; Risk, Councils & RACI, Records & Evidence and AI governance are unchanged." },
   { v:"v1.15.0", date:"2026-08-05 17:10 SAST",
     note:"Built out the governance layer — the model's 'immune system' — and surfaced it in the app. The Policy & Controls, Risk, Governance-council/RACI, Records/Evidence and AI-governance sheets (63–75) are now populated with representative Nedbank marketing content, fully cross-referenced to the spine (use cases, data products, decisions, roles): 16 policies across 9 domains, 20 standard controls, an 18-item evidence register with control→evidence mapping, 6 councils and a RACI, a 16-line risk register, 12 record-retention classes, a 14-test audit/assurance log, plus AI model cards, a prompt/instruction register and an AI decision log. The Governance & Responsible AI page now has a live 'Governance registers' section with five tabs (Policies & Controls · Risk · Councils & RACI · Records & Evidence · AI governance) drawn straight from the model via the hydrator, so editing the sheets flows through to the page. Also added the two data-foundation sheets the metaphor recommends — DataAsset and StoragePlatform (the 'feet that touch the ground') — mapping every data product down to its physical asset and storage platform." },
   { v:"v1.14.2", date:"2026-08-05 06:44 SAST",

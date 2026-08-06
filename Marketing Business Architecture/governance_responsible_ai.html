@@ -40,6 +40,26 @@
   .rpill{display:inline-block;font-size:.64rem;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
   .rmut{color:var(--mut)}
   .rfull{grid-column:1/-1}
+  /* governance chain (Domain -> Policy -> Control -> Evidence) */
+  .gtools{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .glegend2{display:flex;gap:14px;flex-wrap:wrap;font-size:.72rem;color:var(--mut);margin-left:auto}
+  .glegend2 i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+  .gkids{display:none;margin-left:20px;padding-left:16px;border-left:2px solid #e7ebf2}
+  .gnode.open + .gkids{display:block}
+  .gnode{display:flex;align-items:center;gap:9px;padding:8px 12px;margin:6px 0;border:1px solid var(--line);border-left-width:4px;border-radius:10px;background:#fff}
+  .gnode[data-toggle]{cursor:pointer}
+  .gnode[data-toggle]:hover{background:#f7f9fc}
+  .gcar{width:12px;color:var(--faint);font-size:.7rem;transition:transform .12s;flex:none;text-align:center}
+  .gnode.open>.gcar{transform:rotate(90deg)}
+  .gtag{font-family:"SF Mono",monospace;font-size:.7rem;font-weight:700;flex:none}
+  .gttl{font-weight:600;font-size:.86rem;flex:1;min-width:0}
+  .gmeta{font-size:.72rem;color:var(--mut);text-align:right;display:flex;align-items:center;gap:6px;flex:none}
+  .gcount{font-size:.68rem;background:#eef2f8;color:var(--mut);border-radius:20px;padding:1px 9px;font-weight:700}
+  .gnode.lvl-dom{border-left-color:#7c3aed;background:#faf8ff}
+  .gnode.lvl-dom .gtag{color:#7c3aed} .gnode.lvl-dom .gttl{font-weight:700;font-size:.95rem}
+  .gnode.lvl-pol{border-left-color:#2f6fed} .gnode.lvl-pol .gtag{color:#2f6fed}
+  .gnode.lvl-ctl{border-left-color:#0d9488} .gnode.lvl-ctl .gtag{color:#0d9488}
+  .gnode.lvl-ev{border-left-color:#d97706;background:#fffdf7} .gnode.lvl-ev .gtag{color:#d97706}
 </style>
 </head>
 <body>
@@ -168,8 +188,55 @@ renderLayers(); renderRollup();
 
   var domName={}; (D.policyDomains||[]).forEach(function(d){ domName[d.id]=d.name; });
 
+  function gnode(level, id, title, meta, childrenHtml){
+    var hasK = !!(childrenHtml && childrenHtml.length);
+    return '<div class="gnode lvl-'+level+(hasK?' open':'')+'"'+(hasK?' data-toggle="1"':'')+'>'+
+      '<span class="gcar">'+(hasK?'▸':'<span style="opacity:0">•</span>')+'</span>'+
+      '<span class="gtag">'+esc(id)+'</span>'+
+      '<span class="gttl">'+esc(title)+'</span>'+
+      (meta?'<span class="gmeta">'+meta+'</span>':'')+
+    '</div>'+(hasK?'<div class="gkids">'+childrenHtml+'</div>':'');
+  }
+
   var VIEWS = {
-    pc:{ label:"Policies & Controls", build:function(){
+    chain:{ label:"Domain → Policy → Control → Evidence", plain:true, build:function(){
+      var polByDom={}; (D.policies||[]).forEach(function(p){ (polByDom[p.domain]=polByDom[p.domain]||[]).push(p); });
+      var ctlByPol={}; (D.controls||[]).forEach(function(c){ (ctlByPol[c.policy]=ctlByPol[c.policy]||[]).push(c); });
+      var evByCtl={}; (D.controlEvidence||[]).forEach(function(m){ (evByCtl[m.control]=evByCtl[m.control]||[]).push(m); });
+      var evReg={}; (D.evidenceRegister||[]).forEach(function(e){ evReg[e.id]=e; });
+      var auditByCtl={}; (D.auditAssurance||[]).forEach(function(a){ (auditByCtl[a.control]=auditByCtl[a.control]||[]).push(a); });
+
+      var dhtml=(D.policyDomains||[]).map(function(dom){
+        var pols=polByDom[dom.id]||[];
+        var phtml=pols.map(function(p){
+          var ctls=ctlByPol[p.id]||[];
+          var chtml=ctls.map(function(c){
+            var evs=evByCtl[c.id]||[];
+            var ehtml=evs.map(function(m){ var e=evReg[m.evidence]||{};
+              var meta=statusPill(e.status)+(e.owner?' '+role(e.owner):'');
+              return gnode("ev", m.evidence, e.name||m.required||m.evidence, meta, null);
+            }).join("");
+            var aud=(auditByCtl[c.id]||[])[0];
+            var cmeta='<span class="rmut">'+esc(c.freq||"")+'</span>'+(evs.length?'<span class="gcount">'+evs.length+' evidence</span>':'')+(aud?statusPill(aud.result):'');
+            return gnode("ctl", c.id, c.objective, cmeta, ehtml);
+          }).join("");
+          var pmeta=statusPill(p.status)+role(p.owner)+(ctls.length?'<span class="gcount">'+ctls.length+' controls</span>':'');
+          return gnode("pol", p.id, p.statement, pmeta, chtml);
+        }).join("");
+        var dmeta=role(dom.owner)+'<span class="gcount">'+pols.length+' policies</span>';
+        return gnode("dom", dom.id, dom.name, dmeta, phtml);
+      }).join("");
+
+      var legend='<div class="glegend2">'+
+        '<span><i style="background:#7c3aed"></i>Governance domain</span>'+
+        '<span><i style="background:#2f6fed"></i>Policy</span>'+
+        '<span><i style="background:#0d9488"></i>Control</span>'+
+        '<span><i style="background:#d97706"></i>Evidence</span></div>';
+      return '<div class="gtools"><button class="btn ghost" id="gExpand">⊞ Expand all</button>'+
+        '<button class="btn ghost" id="gCollapse">⊟ Collapse all</button>'+legend+'</div>'+
+        '<div class="gchain">'+dhtml+'</div>';
+    }},
+    pc:{ label:"Tables", build:function(){
       var pd=(D.policyDomains||[]).map(function(d){ return [ '<span class="rid">'+esc(d.id)+'</span>', esc(d.name), '<span class="rmut">'+esc(d.scope||"")+'</span>', role(d.owner) ]; });
       var pol=(D.policies||[]).map(function(p){ return [ '<span class="rid">'+esc(p.id)+'</span>', ref(p.domain), esc(p.statement), role(p.owner), statusPill(p.status) ]; });
       var ctl=(D.controls||[]).map(function(c){ return [ '<span class="rid">'+esc(c.id)+'</span>', ref(c.policy), esc(c.objective), '<span class="rmut">'+esc(c.activity)+'</span>', '<span class="rmut">'+esc(c.freq)+'</span>' ]; });
@@ -206,21 +273,29 @@ renderLayers(); renderRollup();
              card("AI decision log",(D.aiDecisionLog||[]).length,table(["ID","Use case","Segment","Decision","Override","Timestamp","Evidence"],dl),true);
     }}
   };
-  var ORDER=["pc","risk","council","rec","ai"];
-  var counts={ pc:(D.policies||[]).length+(D.controls||[]).length,
+  var ORDER=["chain","pc","risk","council","rec","ai"];
+  var counts={ chain:(D.policies||[]).length,
+    pc:(D.policies||[]).length+(D.controls||[]).length,
     risk:(D.riskRegister||[]).length,
     council:(D.governanceCouncils||[]).length+(D.raci||[]).length,
     rec:(D.evidenceRegister||[]).length+(D.recordsRetention||[]).length+(D.auditAssurance||[]).length,
     ai:(D.modelCards||[]).length+(D.promptRegister||[]).length+(D.aiDecisionLog||[]).length };
-  var cur="pc";
+  var cur="chain";
   function draw(){
     document.getElementById("rtabs").innerHTML=ORDER.map(function(k){
       return '<button class="rtb'+(k===cur?" on":"")+'" data-k="'+k+'">'+esc(VIEWS[k].label)+'<span class="c">'+counts[k]+'</span></button>';
     }).join("");
-    document.getElementById("registers").innerHTML='<div class="rgrid">'+VIEWS[cur].build()+'</div>';
+    var reg=document.getElementById("registers");
+    reg.innerHTML=VIEWS[cur].plain ? VIEWS[cur].build() : '<div class="rgrid">'+VIEWS[cur].build()+'</div>';
     Array.prototype.forEach.call(document.querySelectorAll(".rtb"),function(b){
       b.onclick=function(){ cur=b.getAttribute("data-k"); draw(); };
     });
+    if(cur==="chain"){
+      reg.onclick=function(e){ var n=e.target.closest(".gnode[data-toggle]"); if(n) n.classList.toggle("open"); };
+      var ea=document.getElementById("gExpand"), ca=document.getElementById("gCollapse");
+      if(ea) ea.onclick=function(){ Array.prototype.forEach.call(reg.querySelectorAll(".gnode[data-toggle]"),function(x){x.classList.add("open");}); };
+      if(ca) ca.onclick=function(){ Array.prototype.forEach.call(reg.querySelectorAll(".gnode[data-toggle]"),function(x){x.classList.remove("open");}); };
+    } else { reg.onclick=null; }
   }
   draw();
 })();

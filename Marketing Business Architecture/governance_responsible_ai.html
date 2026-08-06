@@ -60,6 +60,18 @@
   .gnode.lvl-pol{border-left-color:#2f6fed} .gnode.lvl-pol .gtag{color:#2f6fed}
   .gnode.lvl-ctl{border-left-color:#0d9488} .gnode.lvl-ctl .gtag{color:#0d9488}
   .gnode.lvl-ev{border-left-color:#d97706;background:#fffdf7} .gnode.lvl-ev .gtag{color:#d97706}
+  /* policy-as-code */
+  .pstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .pstat{border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:var(--shadow);padding:12px 14px}
+  .pstat .pn{font-size:1.5rem;font-weight:800;line-height:1}
+  .pstat .pk{font-size:.72rem;color:var(--mut);margin-top:4px}
+  .pstat .psub{font-size:.66rem;color:var(--faint);margin-top:2px}
+  .pdist{display:flex;flex-direction:column;gap:6px}
+  .pdist .row{display:flex;align-items:center;gap:8px;font-size:.76rem}
+  .pdist .lab{width:150px;flex:none;color:var(--mut);text-align:right}
+  .pdist .bar{flex:1;height:14px;border-radius:7px;background:#eef2f8;overflow:hidden}
+  .pdist .bar i{display:block;height:100%}
+  .pdist .cnt{width:26px;flex:none;font-weight:700;color:var(--mut)}
 </style>
 </head>
 <body>
@@ -178,6 +190,12 @@ renderLayers(); renderRollup();
     else if(/fail|breach|reject/i.test(v)) c="#e11d48";
     return '<span class="rpill" style="background:'+c+'18;color:'+c+'">'+esc(v)+'</span>'; }
 
+  var EFF={allow:"#16a34a",deny:"#e11d48",suppress:"#d97706",escalate:"#7c3aed",require_human_review:"#2f6fed",require_disclosure:"#0d9488",log_only:"#64748b"};
+  function effPill(v){ var k=String(v||"").trim(); var c=EFF[k]||"#64748b"; if(!k) return '<span class="rmut">—</span>';
+    return '<span class="rpill" style="background:'+c+'18;color:'+c+'">'+esc(k)+'</span>'; }
+  function sevPill(v){ return likePill(v); }
+  function effPill_multi(v){ return String(v||"").split(/\s*\/\s*/).map(function(x){return x.trim();}).filter(Boolean).map(effPill).join(" "); }
+
   function table(cols, rows){
     if(!rows.length) return '<div class="rmut" style="padding:12px 14px">No rows in the model yet.</div>';
     return '<table class="rtable"><thead><tr>'+cols.map(function(c){return '<th>'+esc(c)+'</th>';}).join("")+
@@ -236,6 +254,54 @@ renderLayers(); renderRollup();
         '<button class="btn ghost" id="gCollapse">⊟ Collapse all</button>'+legend+'</div>'+
         '<div class="gchain">'+dhtml+'</div>';
     }},
+    pac:{ label:"Policy-as-Code", plain:true, build:function(){
+      var rules=D.policyRules||[], tests=D.controlTests||[], eps=D.enforcementPoints||[],
+          exc=D.policyExceptions||[], bundles=D.policyBundles||[], log=D.policyDecisionLog||[],
+          reg=D.regObligationMap||[];
+      var pass=tests.filter(function(t){return /pass/i.test(t.result);}).length;
+      var fail=tests.filter(function(t){return /fail/i.test(t.result);}).length;
+      var pct=tests.length?Math.round(pass/tests.length*100):0;
+      function today(){ return "2026-08-06"; }
+      var openExc=exc.length;
+      // stat tiles
+      var stats='<div class="pstats">'+
+        '<div class="pstat"><div class="pn">'+rules.length+'</div><div class="pk">Machine-readable rules</div><div class="psub">'+bundles.length+' bundles</div></div>'+
+        '<div class="pstat"><div class="pn">'+pct+'%</div><div class="pk">Control-test pass rate</div><div class="psub">'+pass+' pass · '+fail+' fail · '+(tests.length-pass-fail)+' pending</div></div>'+
+        '<div class="pstat"><div class="pn">'+eps.length+'</div><div class="pk">Enforcement points</div><div class="psub">agents · CDP · channels · gates</div></div>'+
+        '<div class="pstat"><div class="pn">'+openExc+'</div><div class="pk">Active exceptions</div><div class="psub">governed waivers</div></div>'+
+        '<div class="pstat"><div class="pn">'+reg.length+'</div><div class="pk">Regulatory obligations mapped</div><div class="psub">POPIA · TCF · NIST · ISO · BCBS</div></div>'+
+      '</div>';
+      // decision-effect distribution
+      var byEff={}; rules.forEach(function(r){ var k=(r.effect||"").trim(); byEff[k]=(byEff[k]||0)+1; });
+      var order=["deny","suppress","require_human_review","escalate","require_disclosure","allow","log_only"];
+      var maxc=Math.max.apply(null,order.map(function(k){return byEff[k]||0;}).concat([1]));
+      var dist='<div class="pdist">'+order.filter(function(k){return byEff[k];}).map(function(k){
+        var c=EFF[k]||"#64748b", n=byEff[k]||0;
+        return '<div class="row"><span class="lab">'+esc(k)+'</span><span class="bar"><i style="width:'+Math.round(n/maxc*100)+'%;background:'+c+'"></i></span><span class="cnt">'+n+'</span></div>';
+      }).join("")+'</div>';
+
+      // tables
+      var rrows=rules.map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ref(r.policy), '<span class="rmut">'+esc(r.ruleType)+'</span>', esc(r.nl), '<span class="rref">'+esc(r.ref)+'</span>', sevPill(r.severity), effPill(r.effect) ]; });
+      var lrows=log.map(function(l){ return [ '<span class="rid">'+esc(l.id)+'</span>', ref(l.rule), ref(l.agent), effPill(l.effect), esc(l.reason), '<span class="rref">'+esc(l.hash)+'</span>', ref(l.evidence) ]; });
+      var trows=tests.map(function(t){ return [ '<span class="rid">'+esc(t.id)+'</span>', ref(t.rule), esc(t.test), effPill(t.expected), (t.actual?effPill(t.actual):'<span class="rmut">—</span>'), statusPill(t.result) ]; });
+      var grows=reg.map(function(x){ return [ '<span class="rid">'+esc(x.source)+'</span>', esc(x.clause), (x.obligation?ref(x.obligation):'<span class="rmut">—</span>'), ref(x.policy), ref(x.control) ]; });
+      var eprows=eps.map(function(e){ return [ '<span class="rid">'+esc(e.id)+'</span>', '<span class="rmut">'+esc(e.type)+'</span>', ref(e.obj), '<span class="rmut">'+esc(e.loc)+'</span>', effPill_multi(e.output) ]; });
+      var brows=bundles.map(function(b){ return [ '<span class="rid">'+esc(b.id)+'</span>', '<span class="rref">'+esc(b.version)+'</span>', (b.rules||[]).map(ref).join(" "), role(b.owner), statusPill(b.status), '<span class="rref">'+esc(b.from)+'</span>' ]; });
+      var xrows=exc.map(function(x){ return [ '<span class="rid">'+esc(x.id)+'</span>', ref(x.rule), ref(x.obj), esc(x.reason), role(x.approver), '<span class="rref">'+esc(x.expiry)+'</span>' ]; });
+
+      return '<p class="muted" style="margin:0 0 12px">Every marketing decision runs through a machine-readable rule, resolves to a runtime effect, and writes evidence — so policy compliance is proven and monitored, not assumed. This is the observability control tower for Policy-as-Code.</p>'+
+        stats+
+        '<div class="rgrid">'+
+          card("Decision-effect distribution",rules.length,'<div style="padding:12px 14px">'+dist+'</div>')+
+          card("Regulatory obligation map",reg.length,table(["Source","Clause","Obligation","Policy","Control"],grows),true)+
+          card("Policy rules",rules.length,table(["Rule","Policy","Type","Statement","Machine ref","Severity","Effect"],rrows),true)+
+          card("Control tests",tests.length,table(["Test","Rule","Case","Expected","Actual","Result"],trows),true)+
+          card("Policy decision log",log.length,table(["Log","Rule","Agent","Decision","Reason","Input hash","Evidence"],lrows),true)+
+          card("Enforcement points",eps.length,table(["ID","Type","Object","Runtime location","Output"],eprows),true)+
+          card("Policy bundles",bundles.length,table(["Bundle","Version","Rules","Owner","Status","Effective"],brows),true)+
+          card("Active exceptions",exc.length,table(["ID","Rule","Object","Reason","Approver","Expiry"],xrows))+
+        '</div>';
+    }},
     pc:{ label:"Tables", build:function(){
       var pd=(D.policyDomains||[]).map(function(d){ return [ '<span class="rid">'+esc(d.id)+'</span>', esc(d.name), '<span class="rmut">'+esc(d.scope||"")+'</span>', role(d.owner) ]; });
       var pol=(D.policies||[]).map(function(p){ return [ '<span class="rid">'+esc(p.id)+'</span>', ref(p.domain), esc(p.statement), role(p.owner), statusPill(p.status) ]; });
@@ -273,8 +339,9 @@ renderLayers(); renderRollup();
              card("AI decision log",(D.aiDecisionLog||[]).length,table(["ID","Use case","Segment","Decision","Override","Timestamp","Evidence"],dl),true);
     }}
   };
-  var ORDER=["chain","pc","risk","council","rec","ai"];
+  var ORDER=["chain","pac","pc","risk","council","rec","ai"];
   var counts={ chain:(D.policies||[]).length,
+    pac:(D.policyRules||[]).length,
     pc:(D.policies||[]).length+(D.controls||[]).length,
     risk:(D.riskRegister||[]).length,
     council:(D.governanceCouncils||[]).length+(D.raci||[]).length,

@@ -137,5 +137,17 @@
   set("dataAssets", recs("98 ·").map(function(r){ return {id:r.DataAssetID,dp:r.DataProductID,name:r.AssetName,type:r.AssetType,layer:r.Layer,platform:r.StoragePlatformID,format:r.Format,pii:B(r.PII),owner:r.Owner}; }));
   set("storagePlatforms", recs("99 ·").map(function(r){ return {id:r.StoragePlatformID,name:r.Name,type:r.PlatformType,zone:r.Zone,region:r.Region,owner:r.Owner,notes:r.Notes}; }));
 
+  /* ---- Policy-as-Code layer ------------------------------------------- */
+  set("policyRules", recs("100 ·").map(function(r){ return {id:r.RuleID,policy:r.PolicyID,ruleType:r.RuleType,nl:r.NaturalLanguageRule,ref:r.MachineRuleRef,severity:r.Severity,effect:r.DecisionEffect}; }));
+  set("obligations", recs("101 ·").map(function(r){ return {id:r.ObligationID,policy:r.PolicyID,actor:r.Actor,action:r.ActionRequired,timing:r.Timing,evidence:r.EvidenceRequired}; }));
+  set("prohibitions", recs("102 ·").map(function(r){ return {id:r.ProhibitionID,policy:r.PolicyID,action:r.ProhibitedAction,cond:r.Condition,enforce:r.EnforcementAction}; }));
+  set("permissions", recs("103 ·").map(function(r){ return {id:r.PermissionID,policy:r.PolicyID,action:r.PermittedAction,cond:r.Conditions,expiry:r.Expiry}; }));
+  set("enforcementPoints", recs("104 ·").map(function(r){ return {id:r.EnforcementPointID,type:r.Type,obj:r.ObjectID,loc:r.RuntimeLocation,input:r.InputPayload,output:r.OutputDecision}; }));
+  set("policyBundles", recs("105 ·").map(function(r){ return {id:r.BundleID,version:r.Version,rules:L(r.RulesIncluded),owner:r.Owner,status:r.ApprovalStatus,from:r.EffectiveFrom}; }));
+  set("policyExceptions", recs("106 ·").map(function(r){ return {id:r.ExceptionID,rule:r.RuleID,obj:r.ObjectID,reason:r.Reason,approver:r.Approver,expiry:r.Expiry,evidence:r.EvidenceID}; }));
+  set("policyDecisionLog", recs("107 ·").map(function(r){ return {id:r.LogID,rule:r.RuleID,decision:r.DecisionID,agent:r.AgentID,hash:r.InputHash,effect:r.Decision,reason:r.Reason,evidence:r.EvidenceID}; }));
+  set("controlTests", recs("108 ·").map(function(r){ return {id:r.TestID,rule:r.RuleID,test:r.TestCase,expected:r.ExpectedDecision,actual:r.ActualDecision,result:r.Result}; }));
+  set("regObligationMap", recs("109 ·").map(function(r){ return {source:r.Source,clause:r.Clause,obligation:r.ObligationID,policy:r.PolicyID,control:r.ControlID}; }));
+
   W.NB_HYDRATED=true; try{ W.PACK && (W.PACK._hydrated=true); }catch(e){}
 })();

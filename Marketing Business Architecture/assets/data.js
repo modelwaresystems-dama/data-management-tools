@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.15.1";
-window.PACK_CONFIG.built   = "2026-08-06 02:17 SAST";
+window.PACK_CONFIG.version = "v1.16.0";
+window.PACK_CONFIG.built   = "2026-08-06 02:50 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.16.0", date:"2026-08-06 02:50 SAST",
+    note:"Added the Policy-as-Code layer that turns the governance registers from govern-on-paper into govern-by-wire. Expanded the policy taxonomy to the 15-domain banking-marketing set (Consent & Preference, Contact Strategy, Personalisation & NBA, Offer Eligibility, Vulnerable Customer, Content & Brand, Channel Activation, Experimentation, Attribution, Customer Experience, Partner/Agency joining the existing AI/Data/Records/Conduct domains), each with policies and controls. Added ten machine-readable sheets — PolicyRule (with a runtime decision-effect: allow/deny/suppress/escalate/require_human_review/require_disclosure/log_only), Obligation, Prohibition, Permission, EnforcementPoint, PolicyBundle, PolicyException, PolicyDecisionLog (with a tamper-evident input hash), ControlTest and RegulatoryObligationMap tying POPIA s69/s11, the FSCA TCF outcomes, NIST AI RMF, ISO/IEC 42001 and BCBS 239 down to specific controls. The Governance page gains a 'Policy-as-Code' tab — the observability control tower — showing the rule layer, decision-effect distribution, control-test pass rate, enforcement points, the regulatory obligation map and a live policy decision log." },
   { v:"v1.15.1", date:"2026-08-06 02:17 SAST",
     note:"Made the governance relationships visible. The Governance registers now open on a 'Domain → Policy → Control → Evidence' tree that shows the chain explicitly: each governance domain expands to its policies, each policy to the controls that enforce it, and each control to the evidence that proves it (with the control's audit result shown inline). Colour-banded and indented by level, expand/collapse per node or all at once, with counts at every level (e.g. a domain's policy count, a policy's control count, a control's evidence count). The flat lookup tables are still there under a 'Tables' tab; Risk, Councils & RACI, Records & Evidence and AI governance are unchanged." },
   { v:"v1.15.0", date:"2026-08-05 17:10 SAST",

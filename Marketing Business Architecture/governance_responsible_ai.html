@@ -41,6 +41,11 @@
   .rmut{color:var(--mut)}
   .rfull{grid-column:1/-1}
   /* governance chain (Domain -> Policy -> Control -> Evidence) */
+  .ccats{display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  .ccat{border:1px solid var(--line);background:#fff;border-radius:20px;padding:4px 12px;cursor:pointer;font-family:inherit;font-size:.76rem;font-weight:600;color:var(--mut)}
+  .ccat.on{background:#7c3aed;color:#fff;border-color:#7c3aed}
+  .ccat .c{opacity:.7;margin-left:5px;font-weight:700}
+  .gcat{font-size:.62rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#7c3aed;background:#ede9fe;border-radius:20px;padding:2px 8px}
   .gtools{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
   .glegend2{display:flex;gap:14px;flex-wrap:wrap;font-size:.72rem;color:var(--mut);margin-left:auto}
   .glegend2 i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
@@ -206,6 +211,7 @@ renderLayers(); renderRollup();
 
   var domName={}; (D.policyDomains||[]).forEach(function(d){ domName[d.id]=d.name; });
 
+  var chainCat="all";
   function gnode(level, id, title, meta, childrenHtml){
     var hasK = !!(childrenHtml && childrenHtml.length);
     return '<div class="gnode lvl-'+level+(hasK?' open':'')+'"'+(hasK?' data-toggle="1"':'')+'>'+
@@ -224,7 +230,18 @@ renderLayers(); renderRollup();
       var evReg={}; (D.evidenceRegister||[]).forEach(function(e){ evReg[e.id]=e; });
       var auditByCtl={}; (D.auditAssurance||[]).forEach(function(a){ (auditByCtl[a.control]=auditByCtl[a.control]||[]).push(a); });
 
-      var dhtml=(D.policyDomains||[]).map(function(dom){
+      var allDoms=D.policyDomains||[];
+      // category chips (counted by number of policies in the category)
+      var catOrder=["Marketing","AI & Model","Data & Privacy","Records","Enterprise"];
+      var catPolCount={}; allDoms.forEach(function(dm){ var n=(polByDom[dm.id]||[]).length; catPolCount[dm.category]=(catPolCount[dm.category]||0)+n; });
+      var totalPol=(D.policies||[]).length;
+      var chips='<div class="ccats"><button class="ccat'+(chainCat==="all"?" on":"")+'" data-cat="all">All<span class="c">'+totalPol+'</span></button>'+
+        catOrder.filter(function(c){return catPolCount[c];}).map(function(c){
+          return '<button class="ccat'+(chainCat===c?" on":"")+'" data-cat="'+esc(c)+'">'+esc(c)+'<span class="c">'+catPolCount[c]+'</span></button>';
+        }).join("")+'</div>';
+
+      var doms=allDoms.filter(function(dm){ return chainCat==="all" || dm.category===chainCat; });
+      var dhtml=doms.map(function(dom){
         var pols=polByDom[dom.id]||[];
         var phtml=pols.map(function(p){
           var ctls=ctlByPol[p.id]||[];
@@ -241,7 +258,7 @@ renderLayers(); renderRollup();
           var pmeta=statusPill(p.status)+role(p.owner)+(ctls.length?'<span class="gcount">'+ctls.length+' controls</span>':'');
           return gnode("pol", p.id, p.statement, pmeta, chtml);
         }).join("");
-        var dmeta=role(dom.owner)+'<span class="gcount">'+pols.length+' policies</span>';
+        var dmeta='<span class="gcat">'+esc(dom.category)+'</span>'+role(dom.owner)+'<span class="gcount">'+pols.length+' policies</span>';
         return gnode("dom", dom.id, dom.name, dmeta, phtml);
       }).join("");
 
@@ -250,7 +267,7 @@ renderLayers(); renderRollup();
         '<span><i style="background:#2f6fed"></i>Policy</span>'+
         '<span><i style="background:#0d9488"></i>Control</span>'+
         '<span><i style="background:#d97706"></i>Evidence</span></div>';
-      return '<div class="gtools"><button class="btn ghost" id="gExpand">⊞ Expand all</button>'+
+      return chips+'<div class="gtools"><button class="btn ghost" id="gExpand">⊞ Expand all</button>'+
         '<button class="btn ghost" id="gCollapse">⊟ Collapse all</button>'+legend+'</div>'+
         '<div class="gchain">'+dhtml+'</div>';
     }},
@@ -303,10 +320,10 @@ renderLayers(); renderRollup();
         '</div>';
     }},
     pc:{ label:"Tables", build:function(){
-      var pd=(D.policyDomains||[]).map(function(d){ return [ '<span class="rid">'+esc(d.id)+'</span>', esc(d.name), '<span class="rmut">'+esc(d.scope||"")+'</span>', role(d.owner) ]; });
+      var pd=(D.policyDomains||[]).map(function(d){ return [ '<span class="rid">'+esc(d.id)+'</span>', esc(d.name), '<span class="gcat">'+esc(d.category)+'</span>', '<span class="rmut">'+esc(d.scope||"")+'</span>', role(d.owner) ]; });
       var pol=(D.policies||[]).map(function(p){ return [ '<span class="rid">'+esc(p.id)+'</span>', ref(p.domain), esc(p.statement), role(p.owner), statusPill(p.status) ]; });
       var ctl=(D.controls||[]).map(function(c){ return [ '<span class="rid">'+esc(c.id)+'</span>', ref(c.policy), esc(c.objective), '<span class="rmut">'+esc(c.activity)+'</span>', '<span class="rmut">'+esc(c.freq)+'</span>' ]; });
-      return card("Policy domains",(D.policyDomains||[]).length,table(["ID","Domain","Scope","Owner"],pd))+
+      return card("Policy domains",(D.policyDomains||[]).length,table(["ID","Domain","Category","Scope","Owner"],pd))+
              card("Policies",(D.policies||[]).length,table(["ID","Domain","Statement","Owner","Status"],pol),true)+
              card("Standard controls",(D.controls||[]).length,table(["ID","Policy","Objective","Activity","Frequency"],ctl),true);
     }},
@@ -362,6 +379,9 @@ renderLayers(); renderRollup();
       var ea=document.getElementById("gExpand"), ca=document.getElementById("gCollapse");
       if(ea) ea.onclick=function(){ Array.prototype.forEach.call(reg.querySelectorAll(".gnode[data-toggle]"),function(x){x.classList.add("open");}); };
       if(ca) ca.onclick=function(){ Array.prototype.forEach.call(reg.querySelectorAll(".gnode[data-toggle]"),function(x){x.classList.remove("open");}); };
+      Array.prototype.forEach.call(reg.querySelectorAll(".ccat"),function(b){
+        b.onclick=function(){ chainCat=b.getAttribute("data-cat"); draw(); };
+      });
     } else { reg.onclick=null; }
   }
   draw();

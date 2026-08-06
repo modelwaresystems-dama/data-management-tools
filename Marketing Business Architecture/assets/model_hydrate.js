@@ -123,7 +123,7 @@
   if(Object.keys(bg).length) G.boGovernance=bg;
   set("governanceCouncils", recs("67 ·").map(function(r){ return {id:r.CouncilID,name:r.Name,mandate:r.Mandate,members:L(r.MembersRoles),cadence:r.Cadence,escalation:r.EscalationPath}; }));
   set("raci", recs("68 ·").map(function(r){ return {id:r.RACI_ID,objType:r.ObjectType,objId:r.ObjectID,a:r.Accountable,r:r.Responsible,c:L(r.Consulted),i:L(r.Informed)}; }));
-  set("policyDomains", recs("62 ·").map(function(r){ return {id:r.PolicyDomainID,name:r.Name,scope:r.Scope,owner:r.OwnerRoleID}; }));
+  set("policyDomains", recs("62 ·").map(function(r){ return {id:r.PolicyDomainID,name:r.Name,scope:r.Scope,owner:r.OwnerRoleID,category:r.Category||"Enterprise"}; }));
   set("policies", recs("63 ·").map(function(r){ return {id:r.PolicyID,domain:r.PolicyDomainID,statement:r.Statement,owner:r.OwnerRoleID,status:r.Status}; }));
   set("controls", recs("64 ·").map(function(r){ return {id:r.ControlID,policy:r.PolicyID,objective:r.ControlObjective,activity:r.ControlActivity,freq:r.Frequency,evidence:r.EvidenceType}; }));
   set("riskRegister", recs("69 ·").map(function(r){ return {id:r.RiskID,obj:r.ObjectID,type:r.RiskType,desc:r.Description,like:r.Likelihood,impact:r.Impact,control:r.MitigationControlID,owner:r.OwnerRoleID}; }));

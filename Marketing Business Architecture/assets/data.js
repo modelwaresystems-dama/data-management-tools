@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.16.0";
-window.PACK_CONFIG.built   = "2026-08-06 02:50 SAST";
+window.PACK_CONFIG.version = "v1.16.1";
+window.PACK_CONFIG.built   = "2026-08-06 03:05 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.16.1", date:"2026-08-06 03:05 SAST",
+    note:"Made the marketing policies visible and gave them real depth. Every policy domain now carries a Category (Marketing · AI & Model · Data & Privacy · Records · Enterprise), and the marketing catalogue was expanded from a thin one-policy-per-domain set to 30 marketing policies across the 12 marketing domains — each with its own control and evidence link — so Marketing Conduct, Consent & Preference, Contact Strategy, Personalisation & NBA, Offer Eligibility, Vulnerable Customer, Content & Brand, Channel Activation, Experimentation, Attribution, Customer Experience and Partner/Agency are all properly populated. The Domain → Policy → Control → Evidence tree gains a category filter (All · Marketing · AI & Model · Data & Privacy · Records · Enterprise) and each domain now shows its category, and the Tables view adds a Category column. Previously only the two policies literally under 'Marketing Conduct' were easy to find; the rest were spread across sibling domains with nothing marking them as marketing." },
   { v:"v1.16.0", date:"2026-08-06 02:50 SAST",
     note:"Added the Policy-as-Code layer that turns the governance registers from govern-on-paper into govern-by-wire. Expanded the policy taxonomy to the 15-domain banking-marketing set (Consent & Preference, Contact Strategy, Personalisation & NBA, Offer Eligibility, Vulnerable Customer, Content & Brand, Channel Activation, Experimentation, Attribution, Customer Experience, Partner/Agency joining the existing AI/Data/Records/Conduct domains), each with policies and controls. Added ten machine-readable sheets — PolicyRule (with a runtime decision-effect: allow/deny/suppress/escalate/require_human_review/require_disclosure/log_only), Obligation, Prohibition, Permission, EnforcementPoint, PolicyBundle, PolicyException, PolicyDecisionLog (with a tamper-evident input hash), ControlTest and RegulatoryObligationMap tying POPIA s69/s11, the FSCA TCF outcomes, NIST AI RMF, ISO/IEC 42001 and BCBS 239 down to specific controls. The Governance page gains a 'Policy-as-Code' tab — the observability control tower — showing the rule layer, decision-effect distribution, control-test pass rate, enforcement points, the regulatory obligation map and a live policy decision log." },
   { v:"v1.15.1", date:"2026-08-06 02:17 SAST",

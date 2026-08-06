@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.16.1";
-window.PACK_CONFIG.built   = "2026-08-06 03:05 SAST";
+window.PACK_CONFIG.version = "v1.16.2";
+window.PACK_CONFIG.built   = "2026-08-07 01:05 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.16.2", date:"2026-08-07 01:05 SAST",
+    note:"Grouped the governance chain by broad policy area instead of fine-grained domain. The tree now opens on a single Marketing area holding all 30 marketing policies (and AI & Model, Data & Privacy, Records, Enterprise alongside), rather than twelve separate marketing domains — the fine domain (Consent & Preference, Contact Strategy, etc.) is now a small tag on each policy so nothing is lost. Added a Category column to the Policy sheet so the same Marketing grouping works when filtering in Excel." },
   { v:"v1.16.1", date:"2026-08-06 03:05 SAST",
     note:"Made the marketing policies visible and gave them real depth. Every policy domain now carries a Category (Marketing · AI & Model · Data & Privacy · Records · Enterprise), and the marketing catalogue was expanded from a thin one-policy-per-domain set to 30 marketing policies across the 12 marketing domains — each with its own control and evidence link — so Marketing Conduct, Consent & Preference, Contact Strategy, Personalisation & NBA, Offer Eligibility, Vulnerable Customer, Content & Brand, Channel Activation, Experimentation, Attribution, Customer Experience and Partner/Agency are all properly populated. The Domain → Policy → Control → Evidence tree gains a category filter (All · Marketing · AI & Model · Data & Privacy · Records · Enterprise) and each domain now shows its category, and the Tables view adds a Category column. Previously only the two policies literally under 'Marketing Conduct' were easy to find; the rest were spread across sibling domains with nothing marking them as marketing." },
   { v:"v1.16.0", date:"2026-08-06 02:50 SAST",

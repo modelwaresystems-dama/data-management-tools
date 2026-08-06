@@ -46,6 +46,7 @@
   .ccat.on{background:#7c3aed;color:#fff;border-color:#7c3aed}
   .ccat .c{opacity:.7;margin-left:5px;font-weight:700}
   .gcat{font-size:.62rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#7c3aed;background:#ede9fe;border-radius:20px;padding:2px 8px}
+  .gdom{font-size:.6rem;font-weight:700;color:#2f6fed;background:#eaf1fe;border-radius:20px;padding:2px 8px}
   .gtools{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
   .glegend2{display:flex;gap:14px;flex-wrap:wrap;font-size:.72rem;color:var(--mut);margin-left:auto}
   .glegend2 i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
@@ -216,14 +217,14 @@ renderLayers(); renderRollup();
     var hasK = !!(childrenHtml && childrenHtml.length);
     return '<div class="gnode lvl-'+level+(hasK?' open':'')+'"'+(hasK?' data-toggle="1"':'')+'>'+
       '<span class="gcar">'+(hasK?'▸':'<span style="opacity:0">•</span>')+'</span>'+
-      '<span class="gtag">'+esc(id)+'</span>'+
+      (id?'<span class="gtag">'+esc(id)+'</span>':'')+
       '<span class="gttl">'+esc(title)+'</span>'+
       (meta?'<span class="gmeta">'+meta+'</span>':'')+
     '</div>'+(hasK?'<div class="gkids">'+childrenHtml+'</div>':'');
   }
 
   var VIEWS = {
-    chain:{ label:"Domain → Policy → Control → Evidence", plain:true, build:function(){
+    chain:{ label:"Area → Policy → Control → Evidence", plain:true, build:function(){
       var polByDom={}; (D.policies||[]).forEach(function(p){ (polByDom[p.domain]=polByDom[p.domain]||[]).push(p); });
       var ctlByPol={}; (D.controls||[]).forEach(function(c){ (ctlByPol[c.policy]=ctlByPol[c.policy]||[]).push(c); });
       var evByCtl={}; (D.controlEvidence||[]).forEach(function(m){ (evByCtl[m.control]=evByCtl[m.control]||[]).push(m); });
@@ -231,18 +232,21 @@ renderLayers(); renderRollup();
       var auditByCtl={}; (D.auditAssurance||[]).forEach(function(a){ (auditByCtl[a.control]=auditByCtl[a.control]||[]).push(a); });
 
       var allDoms=D.policyDomains||[];
-      // category chips (counted by number of policies in the category)
+      var domById={}; allDoms.forEach(function(d){ domById[d.id]=d; });
+      function catOf(p){ var d=domById[p.domain]; return d?d.category:"Enterprise"; }
+      function domNameOf(p){ var d=domById[p.domain]; return d?d.name:p.domain; }
+      // group policies by broad category (Marketing etc.), not by fine-grained domain
+      var polByCat={}; (D.policies||[]).forEach(function(p){ var c=catOf(p); (polByCat[c]=polByCat[c]||[]).push(p); });
       var catOrder=["Marketing","AI & Model","Data & Privacy","Records","Enterprise"];
-      var catPolCount={}; allDoms.forEach(function(dm){ var n=(polByDom[dm.id]||[]).length; catPolCount[dm.category]=(catPolCount[dm.category]||0)+n; });
       var totalPol=(D.policies||[]).length;
       var chips='<div class="ccats"><button class="ccat'+(chainCat==="all"?" on":"")+'" data-cat="all">All<span class="c">'+totalPol+'</span></button>'+
-        catOrder.filter(function(c){return catPolCount[c];}).map(function(c){
-          return '<button class="ccat'+(chainCat===c?" on":"")+'" data-cat="'+esc(c)+'">'+esc(c)+'<span class="c">'+catPolCount[c]+'</span></button>';
+        catOrder.filter(function(c){return (polByCat[c]||[]).length;}).map(function(c){
+          return '<button class="ccat'+(chainCat===c?" on":"")+'" data-cat="'+esc(c)+'">'+esc(c)+'<span class="c">'+polByCat[c].length+'</span></button>';
         }).join("")+'</div>';
 
-      var doms=allDoms.filter(function(dm){ return chainCat==="all" || dm.category===chainCat; });
-      var dhtml=doms.map(function(dom){
-        var pols=polByDom[dom.id]||[];
+      var cats=catOrder.filter(function(c){ return (polByCat[c]||[]).length && (chainCat==="all"||chainCat===c); });
+      var dhtml=cats.map(function(cat){
+        var pols=polByCat[cat]||[];
         var phtml=pols.map(function(p){
           var ctls=ctlByPol[p.id]||[];
           var chtml=ctls.map(function(c){
@@ -255,15 +259,15 @@ renderLayers(); renderRollup();
             var cmeta='<span class="rmut">'+esc(c.freq||"")+'</span>'+(evs.length?'<span class="gcount">'+evs.length+' evidence</span>':'')+(aud?statusPill(aud.result):'');
             return gnode("ctl", c.id, c.objective, cmeta, ehtml);
           }).join("");
-          var pmeta=statusPill(p.status)+role(p.owner)+(ctls.length?'<span class="gcount">'+ctls.length+' controls</span>':'');
+          var pmeta='<span class="gdom">'+esc(domNameOf(p))+'</span>'+statusPill(p.status)+role(p.owner)+(ctls.length?'<span class="gcount">'+ctls.length+' controls</span>':'');
           return gnode("pol", p.id, p.statement, pmeta, chtml);
         }).join("");
-        var dmeta='<span class="gcat">'+esc(dom.category)+'</span>'+role(dom.owner)+'<span class="gcount">'+pols.length+' policies</span>';
-        return gnode("dom", dom.id, dom.name, dmeta, phtml);
+        var cmeta='<span class="gcount">'+pols.length+' policies</span>';
+        return gnode("dom", "", cat, cmeta, phtml);
       }).join("");
 
       var legend='<div class="glegend2">'+
-        '<span><i style="background:#7c3aed"></i>Governance domain</span>'+
+        '<span><i style="background:#7c3aed"></i>Policy area</span>'+
         '<span><i style="background:#2f6fed"></i>Policy</span>'+
         '<span><i style="background:#0d9488"></i>Control</span>'+
         '<span><i style="background:#d97706"></i>Evidence</span></div>';

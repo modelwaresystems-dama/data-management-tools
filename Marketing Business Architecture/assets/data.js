@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.19.0";
-window.PACK_CONFIG.built   = "2026-08-07 05:11 SAST";
+window.PACK_CONFIG.version = "v1.20.0";
+window.PACK_CONFIG.built   = "2026-08-07 05:45 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.20.0", date:"2026-08-07 05:45 SAST",
+    note:"Rebuilt the Value-Flow (Sankey) so it carries every element type the Navigator does. It previously had six levels and jumped Capability straight to AI Use-Case; it now shows the full chain — Stakeholder → Value Proposition → Value Stream → Value Stage → Capability → Business Process → Decision → AI Use-Case → AI Agent → Data Product → Data Domain — with Business Outcome and Customer Journey branching off Value Proposition and Value Stream. The filter rail gains all twelve levels (Business Outcome, Customer Journey, Business Process, Decision, AI Agent and Data Domain join the rest), each colour-coded, and flow width still reflects AI value (or KPI roll-up weight) aggregated across the longer chain. 'My Navigator path' now carries all of those levels too, so the Graph mirrors the Navigator exactly — including the Business Process and Decision steps that were missing." },
   { v:"v1.19.0", date:"2026-08-07 05:11 SAST",
     note:"Three fixes off the Navigator/Graph review. (1) Filled a mapping gap: decision D4 'Offer eligibility & suitability' had no AI use-case; it now maps to Propensity-to-buy (U02), Next-best-conversation for RMs (U14) and CLV forecasting (U04). Every decision now reaches at least one use-case. (2) Added a cue on the Navigator: when a selected item upstream maps to nothing at the current step (e.g. a decision with no AI use-case), a small note now says so, instead of silently showing fewer cards. (3) The Graph now follows the Navigator. 'My Navigator path' (and opening the Value-flow view after a walk) seeds the Sankey from the full resolved selection at every level — including the AI use-case set that the decision layer narrowed to — so the flow mirrors the walk rather than showing a broader capability→use-case set. 'Whole model' still resets to everything." },
   { v:"v1.18.1", date:"2026-08-07 04:40 SAST",

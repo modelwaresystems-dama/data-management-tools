@@ -351,8 +351,10 @@ function kpiWeightFor(g){
   return (w!=null)?w:10;   // default weight when the KPI isn't in an outcome roll-up
 }
 function dpsForUC(u){ try{ return (PACK.dataProductsForAI(u)||[]).map(function(d){return d.id;}); }catch(e){ return []; } }
-var SCOL={SH:"#7c3aed",VP:"#0e9488",VS:"#c2410c",VSG:"#e8590c",CAP:"#2f6fed",U:"#b45309",DP:"#2f8fd6"};
-var SNAME={SH:"Stakeholder",VP:"Value Prop",VS:"Value Stream",VSG:"Value Stage",CAP:"Capability",U:"AI Use-Case",DP:"Data Product"};
+var SCOL={SH:"#7c3aed",VP:"#0e9488",BO:"#d6336c",VS:"#c2410c",CJ:"#e64980",VSG:"#e8590c",CAP:"#2f6fed",PROC:"#0b7285",DEC:"#9c3587",U:"#b45309",AG:"#ae3ec9",DP:"#2f8fd6",DM:"#475569"};
+var SNAME={SH:"Stakeholder",VP:"Value Prop",BO:"Business Outcome",VS:"Value Stream",CJ:"Customer Journey",VSG:"Value Stage",CAP:"Capability",PROC:"Process",DEC:"Decision",U:"AI Use-Case",AG:"AI Agent",DP:"Data Product",DM:"Data Domain"};
+var SORDER=["SH","VP","BO","VS","CJ","VSG","CAP","PROC","DEC","U","AG","DP","DM"], SLVL={}; SORDER.forEach(function(t,i){SLVL[t]=i;});
+function journeysForVS_g(vs){ return (D.journeys||[]).filter(function(j){ return ((D.journeyMeta||{})[j.id]||{}).valueStream===vs; }); }
 function streamsForVP(vpId){ return (D.valueStreams||[]).filter(function(s){return s.vp===vpId;}).map(function(s){return s.id;}); }
 function vpsForSH2(shId){ return D.valuePropositions.filter(function(v){return (v.stakeholders||[]).indexOf(shId)>=0;}).map(function(v){return v.id;}); }
 function stagesOf(vsId){ return (D.valueStages||[]).filter(function(g){return g.vs===vsId;}).sort(function(a,b){return a.seq-b.seq;}); }
@@ -364,66 +366,61 @@ function stagesOf(vsId){ return (D.valueStages||[]).filter(function(g){return g.
    mode "ai"  = flow width by AI value score (peaks at the use-case); "kpi" = by value-stage KPI weight. */
 function sankeyKeep(msel,key,id){ var s=msel[key]; return !s || s==="*" || (s.indexOf && s.indexOf(id)>=0); }
 function sankeyData(mode, rootSHs, msel){
-  msel = msel||{};
+  msel=msel||{};
   function keep(key,id){ return sankeyKeep(msel,key,id); }
   var nodes={}, children={}, parents={};
   function node(id,type,name,sub){ if(!nodes[id])nodes[id]={id:id,type:type,name:name,sub:sub||""}; return id; }
-  function edge(a,b){ (children[a]=children[a]||{})[b]=1; (parents[b]=parents[b]||{})[a]=1; }
+  function edge(a,b){ if(a===b)return; (children[a]=children[a]||{})[b]=1; (parents[b]=parents[b]||{})[a]=1; }
   (rootSHs||[]).forEach(function(shId){
     var sh=MAP.SH[shId]; if(!sh) return; node("SH:"+shId,"SH",sh.name);
-    vpsForSH2(shId).forEach(function(vpId){ if(!keep("vp",vpId))return; var vp=MAP.VP[vpId]; node("VP:"+vpId,"VP",vp.name||vp.group);
-      streamsForVP(vpId).forEach(function(vsId){ if(!keep("vs",vsId))return; var vs=vsById(vsId); node("VS:"+vsId,"VS",vs.name);
+    vpsForSH2(shId).forEach(function(vpId){ if(!keep("vp",vpId))return; var vp=MAP.VP[vpId]; node("VP:"+vpId,"VP",vp.name||vp.group); edge("SH:"+shId,"VP:"+vpId);
+      outcomesForVP(vpId).forEach(function(boId){ if(!keep("bo",boId))return; var bo=boById(boId); node("BO:"+boId,"BO",bo?bo.name:boId); edge("VP:"+vpId,"BO:"+boId); });
+      streamsForVP(vpId).forEach(function(vsId){ if(!keep("vs",vsId))return; var vs=vsById(vsId); node("VS:"+vsId,"VS",vs?vs.name:vsId); edge("VP:"+vpId,"VS:"+vsId);
+        journeysForVS_g(vsId).forEach(function(j){ if(!keep("cj",j.id))return; node("CJ:"+j.id,"CJ",j.name); edge("VS:"+vsId,"CJ:"+j.id); });
         stagesOf(vsId).forEach(function(g){ if(!keep("vsg",g.id))return;
-          node("VSG:"+g.id,"VSG",g.seq+". "+g.name,"◷ "+g.primaryKPI+(mode==="kpi"?(" ("+kpiWeightFor(g)+"%)"):""));
-          (g.caps||[]).forEach(function(cap){ if(!keep("cap",cap))return; var co=MAP.CAP[cap]; node("CAP:"+cap,"CAP",co?co.name:cap);
-            reachableUCs(cap).forEach(function(u){ if(!keep("ai",u))return; var uo=MAP.AI[u]; node("U:"+u,"U",uo?uo.name:u,"Value "+ucVal(u).toFixed(1)+"/5");
-              dpsForUC(u).forEach(function(dp){ if(!keep("dp",dp))return; var dpo=PACK.dpById(dp); var dom=PACK.domainById(dpo?dpo.domain:"")||{};
-                node("DP:"+dp,"DP",dpo?dpo.name:dp,dom.name||""); edge("U:"+u,"DP:"+dp); });
-              edge("CAP:"+cap,"U:"+u);
+          node("VSG:"+g.id,"VSG",g.seq+". "+g.name,"◷ "+g.primaryKPI+(mode==="kpi"?(" ("+kpiWeightFor(g)+"%)"):"")); edge("VS:"+vsId,"VSG:"+g.id);
+          (g.caps||[]).forEach(function(cap){ if(!keep("cap",cap))return; var co=MAP.CAP[cap]; node("CAP:"+cap,"CAP",co?co.name:cap); edge("VSG:"+g.id,"CAP:"+cap);
+            capProcesses(cap).forEach(function(pid){ if(!keep("proc",pid))return; var po=MAP.P[pid]; node("PROC:"+pid,"PROC",po?po.name:pid); edge("CAP:"+cap,"PROC:"+pid);
+              procDecisions(pid).forEach(function(did){ if(!keep("dec",did))return; var deo=MAP.D[did]; node("DEC:"+did,"DEC",deo?deo.name:did); edge("PROC:"+pid,"DEC:"+did);
+                aiForDecision(did).forEach(function(u){ if(!keep("ai",u))return; var uo=MAP.AI[u]; node("U:"+u,"U",uo?uo.name:u,"Value "+ucVal(u).toFixed(1)+"/5"); edge("DEC:"+did,"U:"+u);
+                  agentsForUC(u).forEach(function(agId){ if(!keep("ag",agId))return; var ago=agentById(agId); node("AG:"+agId,"AG",ago?ago.name:agId); edge("U:"+u,"AG:"+agId);
+                    (ago&&ago.dataProducts?ago.dataProducts:[]).forEach(function(dp){ if(!keep("dp",dp))return; var dpo=PACK.dpById(dp); node("DP:"+dp,"DP",dpo?dpo.name:dp); edge("AG:"+agId,"DP:"+dp);
+                      var dmId=dpo?dpo.domain:null; if(dmId && keep("dm",dmId)){ var dmo=PACK.domainById(dmId); node("DM:"+dmId,"DM",dmo?dmo.name:dmId); edge("DP:"+dp,"DM:"+dmId); }
+                    });
+                  });
+                });
+              });
             });
-            edge("VSG:"+g.id,"CAP:"+cap);
           });
-          edge("VS:"+vsId,"VSG:"+g.id);
         });
-        edge("VP:"+vpId,"VS:"+vsId);
       });
-      edge("SH:"+shId,"VP:"+vpId);
     });
   });
   function nc(a){ return Object.keys(children[a]||{}).length; }
   function np(b){ return Object.keys(parents[b]||{}).length; }
-  var val={};
-  // node values
-  Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="U") val[id]= (mode==="kpi"?0:ucVal(id.slice(2))); });
+  var val={}, STUB=0.02;
+  function aggUp(types){ types.forEach(function(T){ Object.keys(nodes).forEach(function(id){ if(nodes[id].type!==T)return;
+    var s=0; Object.keys(children[id]||{}).forEach(function(c){ s+=(val[c]||0)/(np(c)||1); }); val[id]=s; }); }); }
+  function aggDown(types){ types.forEach(function(T){ Object.keys(nodes).forEach(function(id){ if(nodes[id].type!==T)return;
+    var s=0; Object.keys(parents[id]||{}).forEach(function(p){ s+=(val[p]||0)/(nc(p)||1); }); val[id]=s; }); }); }
+  var pivot;
   if(mode==="kpi"){
-    Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="VSG"){ var g=find(D.valueStages,id.slice(4)); val[id]=g?kpiWeightFor(g):1; } });
-    // down: CAP,U,DP
-    ["CAP","U","DP"].forEach(function(T){ Object.keys(nodes).forEach(function(id){ if(nodes[id].type!==T)return;
-      var s=0; Object.keys(parents[id]||{}).forEach(function(p){ s += (val[p]||0)/(nc(p)||1); }); val[id]=s; }); });
+    Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="VSG"){ var g=vsgById(id.slice(4)); val[id]=g?kpiWeightFor(g):1; } });
+    aggDown(["CAP","PROC","DEC","U","AG","DP","DM"]); aggUp(["VS","VP","SH"]); pivot=SLVL["VSG"];
   } else {
-    // up: CAP,VSG then VS,VP,SH ; down: DP
-    ["CAP"].forEach(function(){ });
-    Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="CAP"){ var s=0; Object.keys(children[id]||{}).forEach(function(c){ s+=(val[c]||0)/(np(c)||1); }); val[id]=s; } });
-    Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="VSG"){ var s=0; Object.keys(children[id]||{}).forEach(function(c){ s+=(val[c]||0)/(np(c)||1); }); val[id]=s; } });
-    Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="DP"){ var s=0; Object.keys(parents[id]||{}).forEach(function(p){ s+=(val[p]||0)/(nc(p)||1); }); val[id]=s; } });
+    Object.keys(nodes).forEach(function(id){ if(nodes[id].type==="U"){ val[id]=ucVal(id.slice(2)); } });
+    aggUp(["DEC","PROC","CAP","VSG","VS","VP","SH"]); aggDown(["AG","DP","DM"]); pivot=SLVL["U"];
   }
-  // up-aggregate VS,VP,SH (both modes)
-  ["VS","VP","SH"].forEach(function(T){ Object.keys(nodes).forEach(function(id){ if(nodes[id].type!==T)return;
-    var s=0; Object.keys(children[id]||{}).forEach(function(c){ s+=(val[c]||0)/(np(c)||1); }); val[id]=s; }); });
-
-  // edges — every structural link between shown nodes renders. A node whose
-  // next-level children were all filtered out is shown but ends there: a thin
-  // stub in AI mode (no downstream value), its real KPI width in KPI mode.
-  var links={}, STUB=0.02;
-  function put(a,b,v){ links[a+"|"+b]={source:a,target:b,value:Math.max(v||0, STUB)}; }
+  Object.keys(nodes).forEach(function(id){ var t=nodes[id].type; if(t==="BO"||t==="CJ") val[id]=STUB; });
+  // edges — value flows toward the pivot level above it and away from it below it
+  var links={};
+  function put(a,b,v){ links[a+"|"+b]={source:a,target:b,value:Math.max(v||0,STUB)}; }
   Object.keys(children).forEach(function(a){ Object.keys(children[a]).forEach(function(b){
-    var ta=nodes[a].type, tb=nodes[b].type, v;
-    if(tb==="DP") v=(val[a]||0)/(nc(a)||1);                        // U → DP (down)
-    else if(mode==="kpi" && (ta==="VSG"||ta==="CAP")) v=(val[a]||0)/(nc(a)||1);  // down distribution
-    else v=(val[b]||0)/(np(b)||1);                                 // up aggregation
+    var tb=nodes[b].type, ta=nodes[a].type, v;
+    if(SLVL[tb] <= pivot) v=(val[b]||0)/(np(b)||1);
+    else v=(val[a]||0)/(nc(a)||1);
     put(a,b,v);
   }); });
-  // keep every reachable node (including stubs that stop early under a deeper filter)
   var linkArr=Object.keys(links).map(function(k){return links[k];});
   var used={}; linkArr.forEach(function(l){ used[l.source]=1; used[l.target]=1; });
   var nodeArr=Object.keys(nodes).map(function(k){return nodes[k];}).filter(function(n){ return used[n.id] || (!parents[n.id] && !children[n.id]); });
@@ -432,33 +429,47 @@ function sankeyData(mode, rootSHs, msel){
 
 /* ---- multi-select filter state for the Value Flow --------------------------- */
 var MSEL = {};            // per level: array of chosen ids (a subset); absent = All
-var MLEVELS = [["vp","Value Proposition"],["vs","Value Stream"],["vsg","Value Stage"],
-  ["cap","Capability"],["ai","AI Use-Case"],["dp","Data Product"]];
+var MLEVELS = [["vp","Value Proposition"],["bo","Business Outcome"],["vs","Value Stream"],["cj","Customer Journey"],
+  ["vsg","Value Stage"],["cap","Capability"],["proc","Business Process"],["dec","Decision"],
+  ["ai","AI Use-Case"],["ag","AI Agent"],["dp","Data Product"],["dm","Data Domain"]];
 function mselRootSHs(){ var v=document.getElementById("sankeySH").value; return v?[v]:D.stakeholders.map(function(s){return s.id;}); }
 function mselSave(){ try{ localStorage.setItem("nbpack.msel", JSON.stringify(MSEL)); }catch(e){} }
 function mselSeedFromCtx(){ var c=PACK.ctx(); MSEL={}; MLEVELS.forEach(function(L){ if(c[L[0]]) MSEL[L[0]]=[c[L[0]]]; }); mselSave(); }
 function mselLabel(key,id){
   if(key==="vp"){ var v=MAP.VP[id]; return v?(v.name||v.group):id; }
+  if(key==="bo"){ var b=boById(id); return b?b.name:id; }
   if(key==="vs"){ var s=vsById(id); return s?s.name:id; }
+  if(key==="cj"){ var j=MAP.CJ[id]; return j?j.name:id; }
   if(key==="vsg"){ var g=find(D.valueStages,id); return g?(g.seq+". "+g.name):id; }
   if(key==="cap"){ var co=MAP.CAP[id]; return co?co.name:id; }
+  if(key==="proc"){ var p=MAP.P[id]; return p?p.name:id; }
+  if(key==="dec"){ var de=MAP.D[id]; return de?de.name:id; }
   if(key==="ai"){ var uo=MAP.AI[id]; return uo?uo.name:id; }
+  if(key==="ag"){ var a=agentById(id); return a?a.name:id; }
   if(key==="dp"){ var d=PACK.dpById(id); return d?d.name:id; }
+  if(key==="dm"){ var dm=PACK.domainById(id); return dm?dm.name:id; }
   return id;
 }
 /* options reachable at each level given the kept parents above it */
 function mselReachable(){
-  var R={vp:[],vs:[],vsg:[],cap:[],ai:[],dp:[]}, seen={vp:{},vs:{},vsg:{},cap:{},ai:{},dp:{}};
-  function add(k,id){ if(!seen[k][id]){seen[k][id]=1;R[k].push(id);} }
+  var keys=["vp","bo","vs","cj","vsg","cap","proc","dec","ai","ag","dp","dm"];
+  var R={}, seen={}; keys.forEach(function(k){ R[k]=[]; seen[k]={}; });
+  function add(k,id){ if(id!=null && !seen[k][id]){ seen[k][id]=1; R[k].push(id); } }
   function kept(k,id){ return sankeyKeep(MSEL,k,id); }
   mselRootSHs().forEach(function(sh){
     vpsForSH2(sh).forEach(function(vp){ add("vp",vp); if(!kept("vp",vp))return;
+      outcomesForVP(vp).forEach(function(bo){ add("bo",bo); });
       streamsForVP(vp).forEach(function(vs){ add("vs",vs); if(!kept("vs",vs))return;
+        journeysForVS_g(vs).forEach(function(j){ add("cj",j.id); });
         stagesOf(vs).forEach(function(g){ add("vsg",g.id); if(!kept("vsg",g.id))return;
           (g.caps||[]).forEach(function(cap){ add("cap",cap); if(!kept("cap",cap))return;
-            reachableUCs(cap).forEach(function(u){ add("ai",u); if(!kept("ai",u))return;
-              dpsForUC(u).forEach(function(dp){ add("dp",dp); }); }); }); }); }); });
-  });
+            capProcesses(cap).forEach(function(pid){ add("proc",pid); if(!kept("proc",pid))return;
+              procDecisions(pid).forEach(function(did){ add("dec",did); if(!kept("dec",did))return;
+                aiForDecision(did).forEach(function(u){ add("ai",u); if(!kept("ai",u))return;
+                  agentsForUC(u).forEach(function(agId){ add("ag",agId); if(!kept("ag",agId))return;
+                    var ago=agentById(agId); (ago&&ago.dataProducts?ago.dataProducts:[]).forEach(function(dp){ add("dp",dp); if(!kept("dp",dp))return;
+                      var dpo=PACK.dpById(dp); if(dpo&&dpo.domain) add("dm",dpo.domain);
+                    }); }); }); }); }); }); }); }); }); });
   return R;
 }
 /* drop any selected id no longer reachable under the current shallower choices, so

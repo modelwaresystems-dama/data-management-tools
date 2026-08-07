@@ -831,10 +831,10 @@ window.PACK_CONFIG = {
   unratedColor:"#3a4358",
   statuses:["Proposed","Agreed","Needs work"],
   sources:[
-    {id:"generic", label:"Generic (baked-in)", auth:"none",
-     role:"Industry-generic Banking Marketing Architecture — the teaching / reference baseline, always available offline", available:true},
-    {id:"nedbank_public", label:"Nedbank Public", auth:"none",
-     role:"The agreed, cleared Nedbank architecture the wider audience reads", available:false},
+    {id:"generic", label:"Nedbank — Marketing Data & AI", auth:"none",
+     role:"Nedbank Marketing Data & AI Business Architecture — the banking engagement", available:true},
+    {id:"aggpsa", label:"AGGPSA — Ecosystem Data & Analytics", auth:"none",
+     role:"Allan & Gill Gray Philanthropy SA — catalytic ecosystem business architecture", available:true},
     {id:"nedbank_private", label:"Nedbank Private", auth:"github-token",
      role:"The live working content the working group edits / votes / signs off", available:false}
   ],
@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.21.0";
-window.PACK_CONFIG.built   = "2026-08-07 16:50 SAST";
+window.PACK_CONFIG.version = "v1.22.0";
+window.PACK_CONFIG.built   = "2026-08-07 23:14 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.22.0", date:"2026-08-07 23:14 SAST",
+    note:"Made the pack multi-tenant: the Source selector now swaps between two whole organisations — 'Nedbank — Marketing Data & AI' and 'AGGPSA — Ecosystem Data & Analytics' (Allan & Gill Gray Philanthropy SA) — and every page re-renders with the chosen organisation's data, labels and narrative, offline, no upload. Built a full parallel AGGPSA business-architecture model: a new 124-sheet workbook (AGGPSA_FutureState_Model.xlsx) mirroring the Nedbank schema exactly, populated with AGGPSA content — beneficiaries, ESOs, educators and government as stakeholders; the Diagnose–Demonstrate–Dialogue framework and the five-phase grant-making lifecycle as value streams and processes; ecosystem-diagnostic tools (Connecten, AEEI, IMM) as the data & analytics use-cases; and the full governance, Policy-as-Code and Ethical Stewardship layers adapted for catalytic philanthropy. Labels adapt where it aids clarity (Journeys→Beneficiary Journeys, AI Use-Cases→Data & Analytics, Personalisation→Ecosystem Targeting). Implemented via an org resolver (org_switch.js) that rebuilds the model for the selected organisation, so the pages themselves are unchanged; Nedbank remains the default and behaves exactly as before." },
   { v:"v1.21.0", date:"2026-08-07 16:50 SAST",
     note:"Built in the Ethical Stewardship Architecture — the orientation layer above Corporate, Data and AI Governance that asks 'should this exist at all, for whom, under whose authority, with what human benefit?' before the safety-and-compliance gates. Added 15 workbook sheets (110–124: EthicalStewardshipPrinciple, PurposeAssessment, HumanOutcomesAssessment, CollectiveBenefitAssessment, AuthorityToControlReview, OutcomeEquityAssessment, EthicalSustainabilityAssessment, CommunityImpactAssessment, StewardshipDecision, StewardshipEvidence, StewardshipMetric, StewardshipMonitoring, StewardshipTraceability, StewardshipException, StewardshipRetirementReview) with comprehensive coverage — one full stewardship assessment per AI use case (U01–U18) across every domain. Added six stewardship policies (PD-STEW) and the Ethical Stewardship Council (GC-STEW) above the existing forums. New 'Ethical Stewardship' tab (next to Governance): orientation-layer diagram with five pillars, nine CARE-derived domains, the ten-step lifecycle with the ethical pre-gate, the pre-gate-vs-delivery-gates comparison, the council, the banking-marketing specialisation, a maturity model, and the full registers including a 'review by use case' rollup. Wired the ethical pre-gate into the Architecture Navigator: the AI use-case step now surfaces the stewardship verdict (approve / conditional / redesign), equity risk and authority for the use-cases on the walk, before Value × Readiness. Refreshed the risk/compliance/legal review as a new Word document covering the layer." },
   { v:"v1.20.1", date:"2026-08-07 16:19 SAST",

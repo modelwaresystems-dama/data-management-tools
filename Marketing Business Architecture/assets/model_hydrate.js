@@ -11,7 +11,8 @@
    If NB_MODEL_SHEETS is absent the page just uses the baked data unchanged.
    ========================================================================== */
 (function(){
-  var W=window, G=W.GENERIC, S=W.NB_MODEL_SHEETS;
+  // ACTIVE_MODEL_SHEETS is set by org_switch.js (Nedbank or AGGPSA); fall back to NB.
+  var W=window, G=W.GENERIC, S=W.ACTIVE_MODEL_SHEETS || W.NB_MODEL_SHEETS;
   if(!G || !S || !S.length) return;
 
   function sheet(pre){ return S.filter(function(x){return x.name.indexOf(pre)===0;})[0]; }

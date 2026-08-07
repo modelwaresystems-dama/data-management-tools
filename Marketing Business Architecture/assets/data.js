@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.22.1";
-window.PACK_CONFIG.built   = "2026-08-08 01:33 SAST";
+window.PACK_CONFIG.version = "v1.22.2";
+window.PACK_CONFIG.built   = "2026-08-08 01:50 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.22.2", date:"2026-08-08 01:50 SAST",
+    note:"Fixed the AGGPSA Graph/Explorer getting stuck at Value Stage. The Explorer types each node by its ID pattern (e.g. a value stage must look like VS07-01), but AGGPSA value-stage IDs were VSG-07-1, so the Explorer couldn't recognise them and stopped expanding. Value-stage IDs now follow the VS<nn>-<nn> convention, and beneficiary-journey IDs were realigned from CRJ… to CJ… so they type and label correctly too. The Explorer now expands the whole parallel-mapped map end-to-end — Stakeholder → Persona → Journey / Value Stream → Value Stage → Capability → Process → Decision → Data & Analytics use-case → Agent → Data Product → Data Domain. Nedbank unaffected." },
   { v:"v1.22.1", date:"2026-08-08 01:33 SAST",
     note:"Fixed AGGPSA reachability in the Architecture Navigator (and the Graph), which was dead-ending with 'Nothing is reachable'. Three data-linkage gaps in the AGGPSA model: (1) three value propositions (VP01/VP03/VP05) had no value stream, so the walk stopped at the Value Stream step — the value-stream↔proposition mapping is now a complete 1:1 cover; (2) the value stages carried no enabling capabilities, so the Capability step dead-ended — each stage now lists its enabling capabilities; (3) beneficiary journeys weren't hydrating (the Nedbank line-of-business journeys leaked through) because the AGGPSA journey base was missing — AGGPSA now supplies its own journey base. Verified: a full walk from every stakeholder and value proposition reaches every downstream level with zero gaps. Nedbank is unaffected." },
   { v:"v1.22.0", date:"2026-08-07 23:14 SAST",

@@ -79,7 +79,7 @@
   var custJids=(G.journeys||[]).map(function(x){return x.id;});
   set("valuePropositions", recs("4 ·").map(function(r){
     var js=custJids.filter(function(jid){ return jm[jid] && jm[jid].vp===r.ValuePropositionID; });
-    return {id:r.ValuePropositionID,group:r.Group,stakeholders:[r.StakeholderID],generic:r.GenericPromise,retail:r.Retail,commercial:r.Commercial,wealth:r.Wealth,trade:r.TradeFinance,journeys:js};
+    return {id:r.ValuePropositionID,name:(r.ValuePropositionName||r.Group),group:r.Group,stakeholders:[r.StakeholderID],generic:r.GenericPromise,retail:r.Retail,commercial:r.Commercial,wealth:r.Wealth,trade:r.TradeFinance,journeys:js};
   }));
 
   /* ---- capabilities (merge: keep child-ids & extension flag) ---------- */

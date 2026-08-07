@@ -1001,9 +1001,13 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.16.2";
-window.PACK_CONFIG.built   = "2026-08-07 01:05 SAST";
+window.PACK_CONFIG.version = "v1.18.0";
+window.PACK_CONFIG.built   = "2026-08-07 04:25 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.18.0", date:"2026-08-07 04:25 SAST",
+    note:"Applied BIZBOK/TOGAF-aligned naming to the value architecture, as a naming-layer change with every ID frozen. Value propositions gained a canonical ValuePropositionName (Trusted Financial Progress, Qualified Relationship Conversations, Accountable Marketing Value, …) kept alongside the long-form GenericPromise; the app now shows these names instead of the stakeholder group. The eleven value streams were renamed to active verb + business object (Build Customer Relationship, Convert Relationship Opportunity, Launch Market Proposition, Execute Marketing Campaign, Clear Marketing Treatment, Publish Governed Data Product, Prove Regulatory Compliance, …) and the value stages to 2–3 word value-producing state changes (Engage Prospect, Convert Opportunity, Launch Offer, Learn from Results, Produce Evidence, …). Names were propagated to the ValueStage map and the Element Registry, and a NamingStandard reference sheet was added. No mapping IDs changed, so all traceability, the Navigator, the Graph and governance are unaffected." },
+  { v:"v1.17.0", date:"2026-08-07 04:13 SAST",
+    note:"Brought All / one / several multi-select to the Architecture Navigator. Every step now has an ‘All’ toggle plus tickable cards — pick all, one, or several elements at any level and the whole set carries forward, with each later step filtered to what’s reachable from the selection above it (widen an earlier step to ‘All’ to open it back up). The stepper summarises each level (— all —, a single name, or an ‘N selected’ badge), Continue/Back move through the walk, and the single-item detail (SIPOC, decision table, agent and data-product cards) still appears when exactly one element is selected. The carried breadcrumb stays in sync with the primary selection." },
   { v:"v1.16.2", date:"2026-08-07 01:05 SAST",
     note:"Grouped the governance chain by broad policy area instead of fine-grained domain. The tree now opens on a single Marketing area holding all 30 marketing policies (and AI & Model, Data & Privacy, Records, Enterprise alongside), rather than twelve separate marketing domains — the fine domain (Consent & Preference, Contact Strategy, etc.) is now a small tag on each policy so nothing is lost. Added a Category column to the Policy sheet so the same Marketing grouping works when filtering in Excel." },
   { v:"v1.16.1", date:"2026-08-06 03:05 SAST",

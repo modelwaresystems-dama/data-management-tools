@@ -29,6 +29,17 @@
   .stepnav{display:flex;gap:8px}
   .hintbar{background:#fff8e6;border:1px solid #f6e0a8;border-radius:8px;padding:9px 13px;font-size:.84rem;color:#8a6d1a;margin-bottom:14px}
   .kwbadge{font-size:.7rem;color:#8a6d1a}
+  /* multi-select */
+  .opt{position:relative}
+  .opt.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(47,111,237,.25)}
+  .opt .tick{position:absolute;top:10px;right:10px;width:18px;height:18px;border-radius:6px;border:1.5px solid var(--line);color:#fff;font-size:.72rem;text-align:center;line-height:15px;font-weight:700}
+  .opt.sel .tick{background:var(--accent);border-color:var(--accent)}
+  .opt .on2{padding-right:24px}
+  .selbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:2px 0 12px}
+  .allchip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:6px 15px;cursor:pointer;font-weight:700;font-size:.82rem;color:var(--mut)}
+  .allchip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .contbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0 4px}
+  .stepper .sv .badge{display:inline-block;background:var(--accent-soft);color:var(--accent);border-radius:20px;padding:0 7px;font-size:.72rem;font-weight:700}
 </style>
 </head>
 <body>
@@ -58,11 +69,24 @@ PACK.setWorkbooks([{label:"Traceability Matrix .xlsx", href:""}]);
 PACK.renderNav("architecture_navigator.html");
 var D = PACK.data(), MAP = PACK.MAP, CFG = window.PACK_CONFIG;
 var STEPS = CFG.chain, ORDER = STEPS.map(function(s){return s.key;});
+var esc = PACK.esc;
 
-function ctx(){ return PACK.ctx(); }
-function curStep(){ var s=ctx().step; return ORDER.indexOf(s)>=0 ? s : "sh"; }
 function nextKey(k){ var i=ORDER.indexOf(k); return i>=0 && i<ORDER.length-1 ? ORDER[i+1] : null; }
+function prevKey(k){ var i=ORDER.indexOf(k); return i>0 ? ORDER[i-1] : null; }
 function find(arr,id){ return (arr||[]).filter(function(x){return x.id===id;})[0]; }
+
+/* ============================ multi-select state ============================
+   NSEL[level] = array of chosen ids (a subset). Absent/empty = All.
+   The walk carries the whole set forward; each step filters to items reachable
+   from the union of the selections above it. */
+var NSEL = { step:"sh" };
+try{ var saved=JSON.parse(localStorage.getItem("nbpack.nsel")||"null"); if(saved&&typeof saved==="object") NSEL=saved; }catch(e){}
+if(ORDER.indexOf(NSEL.step)<0) NSEL.step="sh";
+function nsave(){ try{ localStorage.setItem("nbpack.nsel", JSON.stringify(NSEL)); }catch(e){} }
+function selected(k){ var s=NSEL[k]; return (s && s.length) ? s : null; }   // null = All
+function curStep(){ return NSEL.step||"sh"; }
+
+var PK={vp:"sh",bo:"vp",vs:"vp",vsg:"vs",cj:"vs",cap:"vsg",proc:"cap",dec:"proc",ai:"dec",ag:"ai",dp:"ag",dm:"dp"};
 
 /* ---- relevance helpers --------------------------------------------------- */
 function vpsForSH(sh){ return sh ? D.valuePropositions.filter(function(v){return (v.stakeholders||[]).indexOf(sh)>=0;}) : D.valuePropositions; }
@@ -78,195 +102,181 @@ function agentsForUC(uid){ return (D.aiAgents||[]).filter(function(a){return a.u
 function meanOf(o){ var v=Object.keys(o).map(function(k){return o[k];}); return (v.reduce(function(a,b){return a+b;},0)/v.length).toFixed(1); }
 function kName(id){ return ((D.kpiDetail||{})[id]||{}).name || id; }
 
+/* ---- pools & items ------------------------------------------------------- */
+function allItems(lvl){ return ({sh:D.stakeholders,vp:D.valuePropositions,bo:D.businessOutcomes,vs:D.valueStreams,
+  vsg:D.valueStages,cj:D.journeys,cap:D.capabilities,proc:D.processes,dec:D.decisions,ai:D.aiUseCases,
+  ag:D.aiAgents,dp:D.dataProducts,dm:D.dataDomains})[lvl]||[]; }
+function childrenOf(lvl,pid){
+  switch(lvl){
+    case "vp": return vpsForSH(pid);
+    case "bo": return boFor(pid);
+    case "vs": return vsFor(pid);
+    case "vsg": return vsgFor(pid);
+    case "cj": return journeysForVS(pid);
+    case "cap": return capsFor(pid).map(function(id){return MAP.CAP[id];}).filter(Boolean);
+    case "proc": return capProcesses(pid);
+    case "dec": return procDecs(pid);
+    case "ai": return aiForDec(pid);
+    case "ag": return agentsForUC(pid);
+    case "dp": { var ag=find(D.aiAgents,pid); return ag?(ag.dataProducts||[]).map(function(id){return PACK.dpById(id);}).filter(Boolean):[]; }
+    case "dm": { var dp=PACK.dpById(pid); return dp?[PACK.domainById(dp.domain)].filter(Boolean):[]; }
+  }
+  return [];
+}
+function poolFor(lvl){
+  if(lvl==="sh") return D.stakeholders;
+  var psel=selected(PK[lvl]); if(!psel) return allItems(lvl);
+  var seen={}, out=[]; psel.forEach(function(pid){ childrenOf(lvl,pid).forEach(function(o){ if(o&&!seen[o.id]){seen[o.id]=1;out.push(o);} }); });
+  return out;
+}
+function itemById(lvl,id){ return find(allItems(lvl),id) || find(poolFor(lvl),id); }
+function metaOf(lvl,o){
+  switch(lvl){
+    case "sh": return {id:o.id,name:o.name,desc:o.value};
+    case "vp": return {id:o.id,name:(o.name||o.group),desc:o.generic};
+    case "bo": return {id:o.id,name:o.name,desc:o.desc};
+    case "vs": return {id:o.id,name:o.name,desc:o.desc};
+    case "vsg": return {id:o.id,name:(o.seq?o.seq+". ":"")+o.name,desc:o.valueItem};
+    case "cj": { var m=(D.journeyMeta||{})[o.id]||{}; return {id:o.id,name:o.name,desc:o.lob+" · "+(m.developmentObjective||o.persona)}; }
+    case "cap": return {id:o.id,name:o.name,desc:o.def};
+    case "proc": return {id:o.id,name:o.name,desc:o.inputs?("in: "+o.inputs):""};
+    case "dec": return {id:o.id,name:o.name,desc:o.outcome};
+    case "ai": return {id:o.id,name:o.name,desc:(o.theme||"")+" · "+(o.phase||"")};
+    case "ag": return {id:o.id,name:o.name,desc:o.hitl?"Human-in-the-loop":"Fully automatable"};
+    case "dp": return {id:o.id,name:o.name,desc:o.desc};
+    case "dm": return {id:o.id,name:o.name,desc:o.def};
+  }
+  return {id:o.id,name:o.name||o.id,desc:""};
+}
+function nameOf(lvl,id){ var o=itemById(lvl,id); return o?metaOf(lvl,o).name:id; }
+var TYPEWORD={sh:"stakeholders",vp:"value propositions",bo:"business outcomes",vs:"value streams",vsg:"value stages",
+  cj:"customer journeys",cap:"capabilities",proc:"processes",dec:"decisions",ai:"AI use-cases",ag:"AI agents",
+  dp:"data products",dm:"data domains"};
+
+/* ---- keep the carried chain (breadcrumb + cross-page links) in sync -------- */
+function syncChain(){ var store={}; ORDER.forEach(function(k){ var s=NSEL[k]; if(s&&s.length) store[k]=s[0]; });
+  try{ localStorage.setItem("nbpack.chain", JSON.stringify(store)); }catch(e){} }
+/* prune deeper selections that are no longer reachable after an upstream change */
+function prune(){ ORDER.forEach(function(lvl){ if(lvl==="sh") return; var s=NSEL[lvl]; if(!s||!s.length) return;
+  var ids=poolFor(lvl).map(function(o){return o.id;}); var f=s.filter(function(id){return ids.indexOf(id)>=0;});
+  if(f.length) NSEL[lvl]=f; else delete NSEL[lvl]; }); }
+
+/* ---- selection actions (global) ------------------------------------------ */
+var NAV = {
+  toggle:function(lvl,id){ var s=(NSEL[lvl]||[]).slice(); var i=s.indexOf(id); if(i>=0) s.splice(i,1); else s.push(id);
+    if(s.length) NSEL[lvl]=s; else delete NSEL[lvl]; prune(); nsave(); syncChain(); rerender(false); },
+  all:function(lvl){ delete NSEL[lvl]; prune(); nsave(); syncChain(); rerender(false); },
+  go:function(step){ NSEL.step=step; nsave(); rerender(true); },
+  reset:function(){ NSEL={step:"sh"}; nsave(); try{PACK.resetChain();}catch(e){} rerender(true); }
+};
+window.NAV = NAV;
+
 /* ---- stepper ------------------------------------------------------------- */
 function renderStepper(){
-  var c = ctx(), active = curStep();
+  var active = curStep();
   document.getElementById("stepper").innerHTML = STEPS.map(function(s,i){
-    var val = PACK.chainLabelFor(s.key, c);
-    var cls = "step "+(s.key===active?"on":"")+(val && s.key!==active?" done":"");
-    return '<a class="'+cls+'" href="'+PACK.navUrl(s.key)+'"><span class="n">'+(i+1)+'</span>'+
+    var sel=NSEL[s.key], val, done=false;
+    if(!sel||!sel.length){ val='<span class="empty">— all —</span>'; }
+    else if(sel.length===1){ val=PACK.esc(nameOf(s.key,sel[0])); done=true; }
+    else { val='<span class="badge">'+sel.length+'</span> selected'; done=true; }
+    var cls = "step "+(s.key===active?"on":"")+(done && s.key!==active?" done":"");
+    return '<a class="'+cls+'" href="#" onclick="NAV.go(\''+s.key+'\');return false"><span class="n">'+(i+1)+'</span>'+
       '<span><span class="sl">'+PACK.esc(s.label)+'</span>'+PACK.infoDot(s.key)+'<br>'+
-      '<span class="sv'+(val?'':' empty')+'">'+PACK.esc(val||"— any —")+'</span></span></a>';
+      '<span class="sv">'+val+'</span></span></a>';
   }).join("");
 }
 
+/* ---- single-item detail (shown when exactly one is selected) ------------- */
+function detailFor(step,id){
+  if(step==="vsg"){ var g=find(D.valueStages,id); if(!g) return "";
+    return '<div class="card" style="margin-top:16px"><table class="dc-kv" style="font-size:.86rem">'+
+      '<tr><td style="color:var(--mut);padding-right:12px">Entry</td><td>'+esc(g.entrance)+'</td></tr>'+
+      '<tr><td style="color:var(--mut);padding-right:12px">Exit</td><td>'+esc(g.exit)+'</td></tr>'+
+      '<tr><td style="color:var(--mut);padding-right:12px">Value item</td><td>'+esc(g.valueItem)+'</td></tr>'+
+      '<tr><td style="color:var(--mut);padding-right:12px">Primary KPI</td><td>'+esc(g.primaryKPI)+'</td></tr></table></div>';
+  }
+  if(step==="cj"){ var j=MAP.CJ[id]; if(!j) return "";
+    return '<div class="card" style="margin-top:16px"><div class="chiprow" style="margin-bottom:8px">'+PACK.chip(j.id)+'<span class="muted" style="font-size:.82rem">'+esc(j.persona)+'</span>'+
+      '<a class="btn ghost" style="margin-left:auto" href="customer_journey.html#'+j.id+'">Open full journey ›</a></div>'+
+      '<div class="chiprow">'+(j.stages||[]).map(function(s){return '<span class="chip proc" style="cursor:default">'+esc(s.stage)+' · '+s.emotion+'/5</span>';}).join("")+'</div></div>';
+  }
+  if(step==="proc"){ return '<div id="sipoc" style="margin-top:16px"></div>'; }
+  if(step==="dec"){ var aisD=aiForDec(id);
+    return '<div class="card" id="dmn" style="margin-top:16px"></div>'+
+      '<h3 style="margin-top:16px">AI use-cases applying this decision</h3><div class="chiprow">'+
+      (aisD.length?aisD.map(function(u){return '<span class="chip ai" style="cursor:default"><span class="id">'+u.id+'</span>'+esc(u.name)+'</span>';}).join(""):'<span class="muted">none mapped</span>')+'</div>';
+  }
+  if(step==="ai"){ var uc=MAP.AI[id]; if(!uc) return "";
+    var svc=((D.aiCdp&&D.aiCdp[uc.id])?D.aiCdp[uc.id].services:[])||[];
+    return '<div class="card" style="margin-top:16px"><div class="metrics" style="display:flex;gap:16px;font-size:.85rem"><span>Value <b>'+meanOf(uc.value)+'</b>/5</span><span>Risk <b>'+meanOf(uc.risk)+'</b>/5</span></div>'+
+      '<p class="muted tight" style="margin-top:8px">'+esc(uc.desc)+'</p>'+
+      (svc.length?('<div class="chiprow"><span class="lbl">Supported by CDP</span>'+svc.map(function(s){var cs=find(D.cdpServices,s);return '<span class="chip proc" style="cursor:default"><span class="id">'+s+'</span>'+esc(cs?cs.name:'')+'</span>';}).join("")+'</div>'):'')+
+      '<div style="margin-top:10px"><a class="btn ghost" href="ai_usecases.html#'+uc.id+'">Open in AI matrix ›</a></div></div>';
+  }
+  if(step==="ag"){ var ag=find(D.aiAgents,id); if(!ag) return "";
+    return '<div class="card" style="margin-top:16px"><p class="muted tight">'+esc(ag.def)+'</p>'+
+      '<div class="chiprow" style="margin-top:8px"><span class="lbl">Semantic models</span>'+(ag.semanticModels||[]).map(function(sm){var o=find(D.semanticModels,sm);return '<span class="chip ai" style="cursor:default"><span class="id">'+sm+'</span>'+esc(o?o.name:sm)+'</span>';}).join("")+'</div>'+
+      (ag.hitl?('<div class="hintbar" style="margin-top:10px">\u26a0 Human-in-the-loop \u2014 '+esc(ag.hitlReason||"crucial, high-risk decisions")+'</div>'):'')+'</div>';
+  }
+  if(step==="dp"){ var p=PACK.dpById(id); if(!p) return ""; return '<div style="margin-top:16px" class="dpgrid">'+PACK.dpCardHtml(p)+'</div>'; }
+  if(step==="dm"){ var dm=PACK.domainById(id); if(!dm) return "";
+    var dps2=(D.dataProducts||[]).filter(function(p){return p.domain===dm.id;});
+    return '<div class="card" style="margin-top:16px"><div class="chiprow" style="margin-bottom:6px"><span class="chip term off">'+esc(dm.id)+'</span><strong>'+esc(dm.name)+'</strong></div>'+
+      '<p class="muted tight">'+esc(dm.def)+'</p>'+
+      '<div class="chiprow" style="margin-top:8px"><span class="pill" style="font-size:.72rem">Owner: '+esc(dm.owner)+'</span><span class="pill" style="font-size:.72rem">Steward: '+esc(dm.steward)+'</span></div>'+
+      '<h4 style="margin-top:12px">Data products in this domain</h4><div class="dpgrid">'+dps2.map(function(p){return PACK.dpCardHtml(p);}).join("")+'</div></div>';
+  }
+  return "";
+}
+
+var TITLES={
+  sh:["Step 1 \u00b7 Choose stakeholders","Who derives value from Marketing? Pick All, or tick one or several to carry forward."],
+  vp:["Step 2 \u00b7 Value proposition","The promise made to the selected stakeholders."],
+  bo:["Step 3 \u00b7 Business outcome","The measurable outcomes the selected value propositions promise."],
+  vs:["Step 4 \u00b7 Value stream","How the enterprise creates the selected stakeholder value."],
+  vsg:["Step 5 \u00b7 Value stage","The value increments of the selected streams."],
+  cj:["Step 6 \u00b7 Customer journey","How the customer experiences the value across the selected streams."],
+  cap:["Step 7 \u00b7 Business capability","What the bank must be able to do to enable the selected value stages."],
+  proc:["Step 8 \u00b7 Business process","The process that operationalises the selected capabilities."],
+  dec:["Step 9 \u00b7 Decision model","The governed decision that runs inside the selected processes."],
+  ai:["Step 10 \u00b7 AI use-case","The AI use-cases that automate the selected decisions."],
+  ag:["Step 11 \u00b7 AI agent","The agents that run the selected use-cases."],
+  dp:["Step 12 \u00b7 Data product","The governed data products the selected agents consume."],
+  dm:["Step 13 \u00b7 Data domain","The subject areas that own the selected data products \u2014 the bottom of the chain."]
+};
+
 /* ---- stage --------------------------------------------------------------- */
-function optCard(id, name, desc, step, patch){
-  return '<a class="opt" href="'+PACK.navUrl(step,patch)+'"><span class="oid">'+PACK.esc(id)+'</span>'+
-    '<div class="on2">'+PACK.esc(name)+'</div>'+(desc?'<div class="od">'+PACK.esc(desc)+'</div>':'')+'</a>';
-}
-function stepHead(title, extra){
-  var nk = nextKey(curStep());
-  return '<div class="stephead"><h2 style="border:0;margin:0;padding:0">'+title+' '+PACK.infoDot(curStep())+'</h2>'+
-    '<div class="stepnav">'+(nk?'<a class="btn ghost" href="'+PACK.navUrl(nk)+'">Skip to '+PACK.esc(STEPS[ORDER.indexOf(nk)].label)+' ›</a>':'')+'</div></div>'+
-    (extra?('<p class="muted" style="margin:4px 0 14px">'+extra+'</p>'):'');
-}
-
 function renderStage(){
-  var c = ctx(), step = curStep(), host = document.getElementById("stage"), h = "";
-
-  if(step==="sh"){
-    h = stepHead("Step 1 · Choose a stakeholder","Who derives value from Marketing? Pick one to see the value proposition made to them.");
-    h += '<div class="opts">'+D.stakeholders.map(function(s){return optCard(s.id,s.name,s.value,"vp",{sh:s.id});}).join("")+'</div>';
-  }
-  else if(step==="vp"){
-    var sh=c.sh, vps=vpsForSH(sh);
-    h = stepHead("Step 2 · Value proposition"+(sh?(" for "+PACK.esc(MAP.SH[sh].name)):""),"The promise made to this stakeholder.");
-    if(!sh) h = '<div class="hintbar">No stakeholder chosen — showing all value propositions.</div>'+h;
-    h += '<div class="opts">'+vps.map(function(v){return optCard(v.id,v.group,v.generic,"bo",{vp:v.id});}).join("")+'</div>';
-  }
-  else if(step==="bo"){
-    var vp=MAP.VP[c.vp], bos=vp?boFor(c.vp):D.businessOutcomes;
-    h = stepHead("Step 3 · Business outcome"+(vp?(" of "+PACK.esc(vp.group)):""),"The measurable outcomes this value proposition promises. Each rolls up weighted KPIs.");
-    if(!bos.length){ h += '<div class="hintbar">No business outcome mapped to this value proposition yet — continue to the value stream.</div>'; }
-    h += '<div class="opts">'+bos.map(function(b){
-      var kw=(b.kpis||[]).map(function(k){return kName(k.kpiId)+" "+k.weight+"%";}).join(" · ");
-      return '<a class="opt" href="'+PACK.navUrl("vs",{bo:b.id})+'"><span class="oid">'+b.id+'</span><div class="on2">'+PACK.esc(b.name)+'</div>'+
-        '<div class="od">'+PACK.esc(b.desc)+'</div><div class="kwbadge" style="margin-top:6px">'+PACK.esc(kw)+'</div></a>';
-    }).join("")+'</div>';
-  }
-  else if(step==="vs"){
-    var vp2=MAP.VP[c.vp], vss=vp2?vsFor(c.vp):D.valueStreams;
-    h = stepHead("Step 4 · Value stream"+(vp2?(" realising "+PACK.esc(vp2.group)):""),"How the enterprise creates the stakeholder value — the value-delivery stream.");
-    h += '<div class="opts">'+vss.map(function(s){return optCard(s.id,s.name,s.desc,"vsg",{vs:s.id});}).join("")+'</div>';
-  }
-  else if(step==="vsg"){
-    var vs=find(D.valueStreams,c.vs), stages=c.vs?vsgFor(c.vs):[];
-    h = stepHead("Step 5 · Value stage"+(vs?(" of "+PACK.esc(vs.name)):""),"The value increments of the stream. Each stage carries a KPI and the capabilities that enable it. Pick one to continue to the customer journey.");
-    if(!c.vs){ h += '<div class="hintbar">Pick a value stream first. <a href="'+PACK.navUrl("vs")+'">Choose one ›</a></div>'; }
-    else {
-      h += '<div class="opts">'+stages.map(function(g){
-        return '<a class="opt'+(c.vsg===g.id?'" style="border-color:var(--accent)':'')+'" href="'+PACK.navUrl("vsg",{vsg:g.id})+'"><span class="oid">'+g.id+'</span>'+
-          '<div class="on2">'+g.seq+'. '+PACK.esc(g.name)+'</div>'+
-          '<div class="od">'+PACK.esc(g.valueItem)+'</div>'+
-          '<div class="kwbadge" style="margin-top:6px">◷ '+PACK.esc(g.primaryKPI)+' · caps '+(g.caps||[]).join(", ")+'</div></a>';
-      }).join("")+'</div>';
-      if(c.vsg){ var g=find(D.valueStages,c.vsg);
-        h += '<div class="card" style="margin-top:16px"><div class="chiprow" style="margin-bottom:8px"><span class="chip cap" style="cursor:default"><span class="id">'+g.id+'</span>'+PACK.esc(g.name)+'</span></div>'+
-          '<table class="dc-kv" style="font-size:.86rem"><tr><td style="color:var(--mut);padding-right:12px">Entry</td><td>'+PACK.esc(g.entrance)+'</td></tr>'+
-          '<tr><td style="color:var(--mut);padding-right:12px">Exit</td><td>'+PACK.esc(g.exit)+'</td></tr>'+
-          '<tr><td style="color:var(--mut);padding-right:12px">Value item</td><td>'+PACK.esc(g.valueItem)+'</td></tr></table>'+
-          '<div style="margin-top:10px"><a class="btn ghost" href="'+PACK.navUrl("cj")+'">Continue to the customer journey ›</a></div></div>';
-      }
-    }
-  }
-  else if(step==="cj"){
-    var js = c.vs?journeysForVS(c.vs):D.journeys;
-    var cj = MAP.CJ[c.cj];
-    h = stepHead("Step 6 · Customer journey","How the customer experiences the value across the stream's stages. Pick a stage's capability to continue.");
-    if(!cj){
-      if(!js.length){ h += '<div class="hintbar">No customer journey mapped to this value stream.</div>'; }
-      h += '<div class="opts">'+js.map(function(j){ var m=(D.journeyMeta||{})[j.id]||{}; return optCard(j.id,j.name,j.lob+" · "+(m.developmentObjective||j.persona),"cj",{cj:j.id});}).join("")+'</div>';
-    } else {
-      var cx = (D.cxJourneys||[]).filter(function(x){return x.crJourney===cj.id;});
-      h += '<div class="card" style="margin-bottom:14px"><div class="chiprow" style="margin-bottom:10px">'+PACK.chip(cj.id)+'<span class="muted" style="font-size:.82rem">'+PACK.esc(cj.persona)+'</span> <a class="btn ghost" style="margin-left:auto" href="customer_journey.html#'+cj.id+'">Open full journey view ›</a></div>'+
-        '<div class="opts">'+cj.stages.map(function(s){
-          return '<div class="opt" style="cursor:default"><div class="on2">'+PACK.esc(s.stage)+' · exp '+s.emotion+'/5</div>'+
-            '<div class="od" style="margin-bottom:8px">'+PACK.esc(s.touchpoints)+'</div>'+
-            '<div class="chiprow">'+(s.capabilities||[]).map(function(cap){var o=MAP.CAP[cap];return '<a class="chip cap" href="'+PACK.navUrl("cap",{cap:cap})+'"><span class="id">'+cap+'</span>'+PACK.esc(o?o.name:cap)+'</a>';}).join("")+'</div></div>';
-        }).join("")+'</div>'+
-        (cx.length?('<h4 style="margin-top:14px">Customer Experience Journeys</h4><div class="chiprow">'+cx.map(function(x){return '<span class="chip cj" style="cursor:default" title="'+PACK.esc(x.focus+' — '+x.moment)+'">'+PACK.esc(x.name)+'</span>';}).join("")+'</div>'):'')+'</div>';
-    }
-  }
-  else if(step==="cap"){
-    var caps = c.vsg?capsFor(c.vsg):[];
-    var pool = caps.length?caps.map(function(id){return MAP.CAP[id];}).filter(Boolean):D.capabilities;
-    var cap = MAP.CAP[(c.cap||"").split(".")[0]];
-    h = stepHead("Step 7 · Business capability","What the bank must be able to do to enable this value/journey stage. Pick one to see the process that implements it.");
-    if(caps.length) h += '<p class="muted" style="margin:-8px 0 12px;font-size:.84rem">Capabilities enabling the selected value stage.</p>';
-    h += '<div class="opts">'+pool.map(function(cc){return '<a class="opt'+(c.cap===cc.id?'" style="border-color:var(--accent)':'')+'" href="'+PACK.navUrl("cap",{cap:cc.id})+'"><span class="oid">'+cc.id+'</span><div class="on2">'+PACK.esc(cc.name)+'</div><div class="od">'+PACK.esc(cc.def||"")+'</div></a>';}).join("")+'</div>';
-  }
-  else if(step==="proc"){
-    var cap2=c.cap, procs = cap2?capProcesses(cap2):D.processes;
-    h = stepHead("Step 8 · Business process (SIPOC)","The process that operationalises the capability. Pick a decision to continue.");
-    h += '<div class="opts" style="margin-bottom:16px">'+procs.map(function(p){return '<a class="opt'+(c.proc===p.id?'" style="border-color:var(--accent)':'')+'" href="'+PACK.navUrl("proc",{proc:p.id})+'"><span class="oid">'+p.id+'</span><div class="on2">'+PACK.esc(p.name)+'</div></a>';}).join("")+'</div>';
-    if(c.proc){
-      var steps=((D.processSIPOC||{})[c.proc]||{}).steps||[];
-      h += '<div id="sipoc"></div>';
-      if(steps.length) h += '<h3 style="margin-top:16px">Steps / tasks</h3><div class="chiprow">'+steps.map(function(st,i){return '<span class="chip proc" style="cursor:default"><span class="id">T'+(i+1)+'</span>'+PACK.esc(st)+'</span>';}).join("")+'</div>';
-      h += '<h3 style="margin-top:18px">Decisions in this flow</h3><div class="opts">'+procDecs(c.proc).map(function(d){return optCard(d.id,d.name,d.outcome,"dec",{dec:d.id});}).join("")+'</div>';
-    }
-  }
-  else if(step==="dec"){
-    var procp=MAP.P[c.proc], decs = c.proc?procDecs(c.proc):D.decisions;
-    h = stepHead("Step 9 · Decision model","The governed decision that runs inside the process — as a decision table. Pick an AI use-case to continue.");
-    h += '<div class="opts" style="margin-bottom:16px">'+decs.map(function(d){return '<a class="opt'+(c.dec===d.id?'" style="border-color:var(--accent)':'')+'" href="'+PACK.navUrl("dec",{dec:d.id})+'"><span class="oid">'+d.id+'</span><div class="on2">'+PACK.esc(d.name)+'</div></a>';}).join("")+'</div>';
-    if(c.dec){
-      h += '<div class="card" id="dmn"></div>';
-      var aisD=aiForDec(c.dec);
-      h += '<h3 style="margin-top:18px">AI use-cases applying this decision</h3><div class="opts">'+
-        (aisD.length?aisD.map(function(u){return optCard(u.id,u.name,u.desc,"ai",{ai:u.id});}).join(""):'<p class="muted">No AI use-case is mapped to this decision — <a href="'+PACK.navUrl("ai")+'">see all ›</a></p>')+'</div>';
-    }
-  }
-  else if(step==="ai"){
-    var aiList=c.dec?aiForDec(c.dec):D.aiUseCases, uc=MAP.AI[c.ai];
-    h = stepHead("Step 10 · AI use-case","The AI use-cases that automate the chosen decision. Pick one to see the agent that runs it.");
-    if(!c.dec && !uc) h = '<div class="hintbar">No decision chosen — showing all AI use-cases.</div>'+h;
-    h += '<div class="opts" style="margin-bottom:16px">'+aiList.map(function(u){return '<a class="opt'+(c.ai===u.id?'" style="border-color:var(--accent)':'')+'" href="'+PACK.navUrl("ai",{ai:u.id})+'"><span class="oid">'+u.id+'</span><div class="on2">'+PACK.esc(u.name)+'</div><div class="od">'+PACK.esc(u.theme)+' · '+u.phase+'</div></a>';}).join("")+'</div>';
-    if(uc){
-      var svc=((D.aiCdp&&D.aiCdp[uc.id])?D.aiCdp[uc.id].services:[])||[];
-      h += '<div class="card"><div class="chiprow" style="margin-bottom:8px">'+PACK.chip(uc.id)+'<span class="muted" style="font-size:.82rem">'+PACK.esc(uc.theme)+' · '+uc.phase+'</span></div>'+
-        '<p class="muted tight" style="margin-bottom:10px">'+PACK.esc(uc.desc)+'</p>'+
-        '<div class="metrics" style="display:flex;gap:16px;font-size:.85rem;margin-bottom:10px"><span>Value <b>'+meanOf(uc.value)+'</b>/5</span><span>Risk <b>'+meanOf(uc.risk)+'</b>/5</span></div>'+
-        (svc.length?('<div class="chiprow"><span class="lbl">Supported by CDP</span>'+svc.map(function(s){var cs=find(D.cdpServices,s);return '<a class="chip proc" href="hyperpersonalisation_cdp.html"><span class="id">'+s+'</span>'+PACK.esc(cs?cs.name:'')+'</a>';}).join("")+'</div>'):'')+
-        '<div style="margin-top:12px"><a class="btn ghost" href="ai_usecases.html#'+uc.id+'">Open in AI matrix ›</a></div></div>';
-      h += '<h3 style="margin-top:18px">AI agents that run this use-case</h3><div class="opts">'+
-        agentsForUC(uc.id).map(function(a){return optCard(a.id,a.name,a.def,"ag",{ag:a.id});}).join("")+'</div>';
-    }
-  }
-  else if(step==="ag"){
-    var uc2=MAP.AI[c.ai], agList=uc2?agentsForUC(uc2.id):D.aiAgents, ag=find(D.aiAgents,c.ag);
-    h = stepHead("Step 11 · AI agent","The agent that performs the task — requiring data products, semantic models, and a human-in-the-loop for crucial decisions.");
-    if(!uc2 && !ag) h = '<div class="hintbar">No AI use-case chosen — showing all agents.</div>'+h;
-    h += '<div class="opts" style="margin-bottom:16px">'+agList.map(function(a){return '<a class="opt'+(c.ag===a.id?'" style="border-color:var(--accent)':'')+'" href="'+PACK.navUrl("ag",{ag:a.id})+'"><span class="oid">'+a.id+'</span><div class="on2">'+PACK.esc(a.name)+'</div><div class="od">'+(a.hitl?'Human-in-the-loop':'Fully automatable')+'</div></a>';}).join("")+'</div>';
-    if(ag){
-      var stp=(D.agentStep||{})[ag.id];
-      h += '<div class="card"><p class="muted tight" style="margin-bottom:10px">'+PACK.esc(ag.def)+'</p>'+
-        (stp?('<div class="chiprow"><span class="lbl">Works step</span><span class="chip proc" style="cursor:default"><span class="id">'+stp.pid+'.'+(stp.idx+1)+'</span>'+PACK.esc(stp.text)+'</span></div>'):'')+
-        '<div class="chiprow" style="margin-top:8px"><span class="lbl">Semantic models</span>'+(ag.semanticModels||[]).map(function(sm){var o=find(D.semanticModels,sm);return '<span class="chip ai" style="cursor:default"><span class="id">'+sm+'</span>'+PACK.esc(o?o.name:sm)+'</span>';}).join("")+'</div>'+
-        (ag.hitl?('<div class="hintbar" style="margin-top:10px">⚠ Human-in-the-loop required — '+PACK.esc(ag.hitlReason||"crucial, high-risk decisions")+'</div>'):'')+'</div>';
-      h += '<h3 style="margin-top:18px">Data products the agent requires</h3><div class="opts">'+
-        (ag.dataProducts||[]).map(function(dp){var o=PACK.dpById(dp);return optCard(dp,o?o.name:dp,o?o.desc:"","dp",{dp:dp});}).join("")+'</div>';
-    }
-  }
-  else if(step==="dp"){
-    var ag2=find(D.aiAgents,c.ag), dps=ag2?(ag2.dataProducts||[]).map(function(id){return PACK.dpById(id);}).filter(Boolean):D.dataProducts, dp=PACK.dpById(c.dp);
-    h = stepHead("Step 12 · Data product","The governed data product the agent consumes. Pick it to see its data domain and open the full contract.");
-    h += '<div class="dpgrid" style="margin-bottom:16px">'+dps.map(function(p){return PACK.dpCardHtml(p);}).join("")+'</div>';
-    if(dp){ h += '<h3>Continue to the data domain</h3><div class="opts"><a class="opt" href="'+PACK.navUrl("dm",{dm:dp.domain})+'"><span class="oid">'+dp.domain+'</span><div class="on2">'+PACK.esc((PACK.domainById(dp.domain)||{}).name||dp.domain)+'</div><div class="od">The subject area that owns this data product.</div></a></div>'; }
-  }
-  else if(step==="dm"){
-    var dm=PACK.domainById(c.dm);
-    h = stepHead("Step 13 · Data domain","The governed subject area that owns the data product — the bottom of the chain.");
-    if(!dm){ h += '<div class="hintbar">Pick a data product first. <a href="'+PACK.navUrl("dp")+'">Choose one ›</a></div>'; }
-    else {
-      var dps2=(D.dataProducts||[]).filter(function(p){return p.domain===dm.id;});
-      h += '<div class="card" style="margin-bottom:14px"><div class="chiprow" style="margin-bottom:6px"><span class="chip term off">'+PACK.esc(dm.id)+'</span><strong>'+PACK.esc(dm.name)+'</strong></div>'+
-        '<p class="muted tight">'+PACK.esc(dm.def)+'</p>'+
-        '<div class="chiprow" style="margin-top:8px"><span class="pill" style="font-size:.72rem">Owner: '+PACK.esc(dm.owner)+'</span><span class="pill" style="font-size:.72rem">Steward: '+PACK.esc(dm.steward)+'</span></div>'+
-        '<h4 style="margin-top:12px">Data products in this domain</h4><div class="dpgrid">'+dps2.map(function(p){return PACK.dpCardHtml(p);}).join("")+'</div></div>';
-      h += '<div style="margin-top:8px"><a class="btn ghost" href="data_products.html">Open full Data Products catalog ›</a> <a class="btn" href="architecture_navigator.html?step=sh" onclick="PACK.resetChain()">↺ Start a new walk</a></div>';
-    }
-  }
-
-  host.innerHTML = h;
-  if(step==="proc" && c.proc) PACK.renderSIPOC(document.getElementById("sipoc"), c.proc);
-  if(step==="dec" && c.dec) PACK.renderDecisionTable(document.getElementById("dmn"), c.dec);
+  var step=curStep(), host=document.getElementById("stage");
+  var pool=poolFor(step), sel=selected(step), allOn=!sel;
+  var t=TITLES[step]||["",""];
+  var nk=nextKey(step), pk=prevKey(step);
+  var head='<div class="stephead"><h2 style="border:0;margin:0;padding:0">'+esc(t[0])+' '+PACK.infoDot(step)+'</h2>'+
+    '<div class="stepnav">'+(nk?'<a class="btn ghost" href="#" onclick="NAV.go(\''+nk+'\');return false">Skip to '+esc(STEPS[ORDER.indexOf(nk)].label)+' \u203a</a>':'')+'</div></div>'+
+    '<p class="muted" style="margin:4px 0 12px">'+esc(t[1])+'</p>';
+  var bar='<div class="selbar"><span class="allchip'+(allOn?' on':'')+'" onclick="NAV.all(\''+step+'\')">All '+esc(TYPEWORD[step])+'</span>'+
+    '<span class="muted" style="font-size:.82rem">'+(allOn?('All '+pool.length+' included'):(sel.length+' of '+pool.length+' selected'))+' \u2014 tick one or several, then Continue.</span></div>';
+  var cards=pool.length? pool.map(function(o){ var m=metaOf(step,o); var on=sel&&sel.indexOf(o.id)>=0;
+      return '<div class="opt'+(on?' sel':'')+'" onclick="NAV.toggle(\''+step+'\',\''+esc(o.id)+'\')"><span class="tick">'+(on?'\u2713':'')+'</span>'+
+        '<span class="oid">'+esc(m.id)+'</span><div class="on2">'+esc(m.name)+'</div>'+(m.desc?'<div class="od">'+esc(m.desc)+'</div>':'')+'</div>';
+    }).join("") : '<div class="hintbar">Nothing is reachable here from the selection above \u2014 widen an earlier step to \u201cAll\u201d.</div>';
+  var cont='<div class="contbar">'+(pk?'<button class="btn ghost" onclick="NAV.go(\''+pk+'\')">\u2039 Back</button>':'')+
+    (nk?'<button class="btn" onclick="NAV.go(\''+nk+'\')">Continue to '+esc(STEPS[ORDER.indexOf(nk)].label)+' \u203a</button>':'<button class="btn" onclick="NAV.reset()">\u21ba Start a new walk</button>')+
+    '<span class="muted" style="font-size:.8rem;margin-left:auto">Fewer selections narrow the next step; \u201cAll\u201d keeps it open.</span></div>';
+  var detail=(sel&&sel.length===1)?detailFor(step,sel[0]):"";
+  host.innerHTML = head+bar+cont+'<div class="opts">'+cards+'</div>'+detail;
+  if(step==="proc" && sel && sel.length===1) PACK.renderSIPOC(document.getElementById("sipoc"), sel[0]);
+  if(step==="dec" && sel && sel.length===1) PACK.renderDecisionTable(document.getElementById("dmn"), sel[0]);
 }
 
 function rerender(scroll){
-  renderStepper(); renderStage(); PACK.renderBreadcrumb(curStep());
+  renderStepper(); renderStage(); try{ PACK.renderBreadcrumb(curStep()); }catch(e){}
   if(scroll){ var nl=document.querySelector(".navlayout");
     if(nl){ var y=nl.getBoundingClientRect().top+window.pageYOffset-96; window.scrollTo({top:Math.max(0,y),behavior:"smooth"}); } }
 }
-document.addEventListener("click", function(e){
-  var a=e.target.closest && e.target.closest("a"); if(!a) return;
-  var href=a.getAttribute("href")||"";
-  if(href.indexOf("architecture_navigator.html")===0){ e.preventDefault(); history.pushState(null,"",href); rerender(true); }
-});
-window.addEventListener("popstate", function(){ rerender(false); });
 
-renderStepper(); renderStage(); PACK.renderBreadcrumb(curStep());
+prune(); syncChain();
+renderStepper(); renderStage(); try{ PACK.renderBreadcrumb(curStep()); }catch(e){}
 document.body.insertAdjacentHTML("beforeend", PACK.footer());
 </script>
 </body>

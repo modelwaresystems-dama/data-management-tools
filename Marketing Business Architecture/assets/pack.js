@@ -59,7 +59,7 @@
 
   /* ---- chip builders (deep-links) ----------------------------------------- */
   var KIND = { SH:{cls:"sh",map:"SH",name:function(o){return o.name;}},
-    VP:{cls:"vp",map:"VP",name:function(o){return o.group;}},
+    VP:{cls:"vp",map:"VP",name:function(o){return o.name||o.group;}},
     CJ:{cls:"cj",map:"CJ",name:function(o){return o.name;}},
     CAP:{cls:"cap",map:"CAP",name:function(o){return o.name;}},
     P:{cls:"proc",map:"P",name:function(o){return o.name;}},
@@ -320,7 +320,7 @@
       return null;
     }
     if(key==="sh"){ var o=PACK.MAP.SH[v]; return o?o.name:v; }
-    if(key==="vp"){ var o2=PACK.MAP.VP[v]; return o2?o2.group:v; }
+    if(key==="vp"){ var o2=PACK.MAP.VP[v]; return o2?(o2.name||o2.group):v; }
     if(key==="bo"){ var b=find(D.businessOutcomes,v); return b?b.name:v; }
     if(key==="vs"){ var s=find(D.valueStreams,v); return s?s.name:v; }
     if(key==="vsg"){ var g=find(D.valueStages,v); return g?g.name:v; }

@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.18.0";
-window.PACK_CONFIG.built   = "2026-08-07 04:25 SAST";
+window.PACK_CONFIG.version = "v1.18.1";
+window.PACK_CONFIG.built   = "2026-08-07 04:40 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.18.1", date:"2026-08-07 04:40 SAST",
+    note:"Fixed a Navigator reachability bug: parent selections now carry down transitively. Previously, leaving an intermediate step on ‘All’ (e.g. Value Stage) reset the next step to every item in the model, so choosing one Value Stream still showed all 17 capabilities. Now ‘All’ at an intermediate level means ‘all reachable from the selection above’, so Build Customer Relationship narrows to its 11 enabling capabilities, Publish Governed Data Product to 4, and picking a single value stage narrows further — the constraint flows the whole way down the chain." },
   { v:"v1.18.0", date:"2026-08-07 04:25 SAST",
     note:"Applied BIZBOK/TOGAF-aligned naming to the value architecture, as a naming-layer change with every ID frozen. Value propositions gained a canonical ValuePropositionName (Trusted Financial Progress, Qualified Relationship Conversations, Accountable Marketing Value, …) kept alongside the long-form GenericPromise; the app now shows these names instead of the stakeholder group. The eleven value streams were renamed to active verb + business object (Build Customer Relationship, Convert Relationship Opportunity, Launch Market Proposition, Execute Marketing Campaign, Clear Marketing Treatment, Publish Governed Data Product, Prove Regulatory Compliance, …) and the value stages to 2–3 word value-producing state changes (Engage Prospect, Convert Opportunity, Launch Offer, Learn from Results, Produce Evidence, …). Names were propagated to the ValueStage map and the Element Registry, and a NamingStandard reference sheet was added. No mapping IDs changed, so all traceability, the Navigator, the Graph and governance are unaffected." },
   { v:"v1.17.0", date:"2026-08-07 04:13 SAST",

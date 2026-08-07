@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.20.0";
-window.PACK_CONFIG.built   = "2026-08-07 05:45 SAST";
+window.PACK_CONFIG.version = "v1.20.1";
+window.PACK_CONFIG.built   = "2026-08-07 16:19 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.20.1", date:"2026-08-07 16:19 SAST",
+    note:"Reordered the left sidebar to follow the golden-thread navigation order. The tabs had accumulated in the order features were added, so overview and content pages were interleaved. They now read top-to-bottom as: the three overview tools (Home, Navigator, Value-Flow Graph), then the golden-thread content pages in chain order (Value Streams → Journeys → Architecture/Capabilities → Processes → Decisions → AI Use-Cases → Personalisation → Data Products), then the supporting and admin pages (Governance, Training, Glossary, Model I/O, Editor, Manual). No pages were added or removed — only reordered." },
   { v:"v1.20.0", date:"2026-08-07 05:45 SAST",
     note:"Rebuilt the Value-Flow (Sankey) so it carries every element type the Navigator does. It previously had six levels and jumped Capability straight to AI Use-Case; it now shows the full chain — Stakeholder → Value Proposition → Value Stream → Value Stage → Capability → Business Process → Decision → AI Use-Case → AI Agent → Data Product → Data Domain — with Business Outcome and Customer Journey branching off Value Proposition and Value Stream. The filter rail gains all twelve levels (Business Outcome, Customer Journey, Business Process, Decision, AI Agent and Data Domain join the rest), each colour-coded, and flow width still reflects AI value (or KPI roll-up weight) aggregated across the longer chain. 'My Navigator path' now carries all of those levels too, so the Graph mirrors the Navigator exactly — including the Business Process and Decision steps that were missing." },
   { v:"v1.19.0", date:"2026-08-07 05:11 SAST",
@@ -1395,4 +1397,43 @@ window.PACK_CONFIG.editUnlock = "nedbank-edit";   // <-- change to your team's e
   if(!p.some(function(x){return x.file==="user_manual.html";})){
     p.push({file:"user_manual.html", nav:"Manual", title:"User Manual"});
   }
+})();
+
+/* ---- v1.20.1: sidebar order follows the golden-thread navigation --------- *
+   The tabs above are registered in the order features were built. This final
+   pass sorts them into the order a user actually walks the model:
+     · overview tools first (Home, Navigator, Value-Flow Graph)
+     · golden-thread content pages in chain order
+       (Value Streams → Journeys → Architecture/Capabilities → Processes →
+        Decisions → AI Use-Cases → Personalisation → Data Products)
+     · supporting / admin pages last
+       (Governance, Training, Glossary, Model I/O, Editor, Manual)
+   Runs last so it re-sorts whatever the splices above produced. Any page not
+   listed keeps its relative position at the end (rank 999, stable sort).      */
+(function(){
+  var order = [
+    "index.html",
+    "architecture_navigator.html",
+    "navigation_graph.html",
+    "value_streams.html",
+    "customer_journey.html",
+    "business_architecture.html",
+    "business_process.html",
+    "decisions.html",
+    "ai_usecases.html",
+    "hyperpersonalisation_cdp.html",
+    "data_products.html",
+    "governance_responsible_ai.html",
+    "training_adoption.html",
+    "glossary_settings.html",
+    "model_export_import.html",
+    "model_editor.html",
+    "user_manual.html"
+  ];
+  var rank = function(f){ var i = order.indexOf(f); return i < 0 ? 999 : i; };
+  var p = window.PACK_CONFIG.pages;
+  // stable sort: decorate with original index so unlisted pages keep their order
+  p.map(function(x,i){ x.__i = i; return x; });
+  p.sort(function(a,b){ var d = rank(a.file) - rank(b.file); return d !== 0 ? d : (a.__i - b.__i); });
+  p.forEach(function(x){ delete x.__i; });
 })();

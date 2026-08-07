@@ -159,7 +159,13 @@ var TYPEWORD={sh:"stakeholders",vp:"value propositions",bo:"business outcomes",v
 
 /* ---- keep the carried chain (breadcrumb + cross-page links) in sync -------- */
 function syncChain(){ var store={}; ORDER.forEach(function(k){ var s=NSEL[k]; if(s&&s.length) store[k]=s[0]; });
-  try{ localStorage.setItem("nbpack.chain", JSON.stringify(store)); }catch(e){} }
+  try{ localStorage.setItem("nbpack.chain", JSON.stringify(store)); }catch(e){}
+  // richer path for the Graph: the resolved (explicit selection, else reachable pool)
+  // id-set for each of the Sankey's levels, so 'My Navigator path' mirrors the walk —
+  // including the AI use-case set that the decision layer narrowed to.
+  var navpath={ sh:(selected("sh")?selected("sh")[0]:"") };
+  ["vp","vs","vsg","cap","ai","dp"].forEach(function(k){ navpath[k]=selected(k)||poolFor(k).map(function(o){return o.id;}); });
+  try{ localStorage.setItem("nbpack.navpath", JSON.stringify(navpath)); }catch(e){} }
 /* prune deeper selections that are no longer reachable after an upstream change */
 function prune(){ ORDER.forEach(function(lvl){ if(lvl==="sh") return; var s=NSEL[lvl]; if(!s||!s.length) return;
   var ids=poolFor(lvl).map(function(o){return o.id;}); var f=s.filter(function(id){return ids.indexOf(id)>=0;});
@@ -260,6 +266,11 @@ function renderStage(){
     '<p class="muted" style="margin:4px 0 12px">'+esc(t[1])+'</p>';
   var bar='<div class="selbar"><span class="allchip'+(allOn?' on':'')+'" onclick="NAV.all(\''+step+'\')">All '+esc(TYPEWORD[step])+'</span>'+
     '<span class="muted" style="font-size:.82rem">'+(allOn?('All '+pool.length+' included'):(sel.length+' of '+pool.length+' selected'))+' \u2014 tick one or several, then Continue.</span></div>';
+  // cue: flag any upstream selection that maps to nothing at this step (e.g. a decision with no AI use-case)
+  var note="", pk0=PK[step], psel0=pk0?selected(pk0):null;
+  if(psel0){ var dead=psel0.filter(function(pid){ return childrenOf(step,pid).length===0; });
+    if(dead.length){ var lbl=dead.map(function(pid){ var o=itemById(pk0,pid); return o?(metaOf(pk0,o).id+" \u00b7 "+metaOf(pk0,o).name):pid; });
+      note='<div class="hintbar" style="margin:-4px 0 12px">\u24d8 No '+esc(TYPEWORD[step])+' is mapped to '+esc(lbl.join("; "))+', so '+(dead.length>1?'they add':'it adds')+' nothing here.</div>'; } }
   var cards=pool.length? pool.map(function(o){ var m=metaOf(step,o); var on=sel&&sel.indexOf(o.id)>=0;
       return '<div class="opt'+(on?' sel':'')+'" onclick="NAV.toggle(\''+step+'\',\''+esc(o.id)+'\')"><span class="tick">'+(on?'\u2713':'')+'</span>'+
         '<span class="oid">'+esc(m.id)+'</span><div class="on2">'+esc(m.name)+'</div>'+(m.desc?'<div class="od">'+esc(m.desc)+'</div>':'')+'</div>';
@@ -268,7 +279,7 @@ function renderStage(){
     (nk?'<button class="btn" onclick="NAV.go(\''+nk+'\')">Continue to '+esc(STEPS[ORDER.indexOf(nk)].label)+' \u203a</button>':'<button class="btn" onclick="NAV.reset()">\u21ba Start a new walk</button>')+
     '<span class="muted" style="font-size:.8rem;margin-left:auto">Fewer selections narrow the next step; \u201cAll\u201d keeps it open.</span></div>';
   var detail=(sel&&sel.length===1)?detailFor(step,sel[0]):"";
-  host.innerHTML = head+bar+cont+'<div class="opts">'+cards+'</div>'+detail;
+  host.innerHTML = head+bar+note+cont+'<div class="opts">'+cards+'</div>'+detail;
   if(step==="proc" && sel && sel.length===1) PACK.renderSIPOC(document.getElementById("sipoc"), sel[0]);
   if(step==="dec" && sel && sel.length===1) PACK.renderDecisionTable(document.getElementById("dmn"), sel[0]);
 }

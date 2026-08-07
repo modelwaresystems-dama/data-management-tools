@@ -473,7 +473,12 @@ function mselToggle(key,id){
   if(s.length) MSEL[key]=s; else delete MSEL[key];
   mselSave(); renderSankey();
 }
-function mselResetPath(){ mselSeedFromCtx(); document.getElementById("sankeySH").value=PACK.ctx().sh||""; renderSankey(); }
+function mselNavpath(){ try{ return JSON.parse(localStorage.getItem("nbpack.navpath")||"null"); }catch(e){ return null; } }
+function mselSeedFromNavpath(np){ MSEL={}; MLEVELS.forEach(function(L){ var v=np[L[0]]; if(v&&v.length) MSEL[L[0]]=v.slice(); }); mselSave(); }
+function mselResetPath(){ var np=mselNavpath();
+  if(np){ mselSeedFromNavpath(np); document.getElementById("sankeySH").value=np.sh||""; }
+  else { mselSeedFromCtx(); document.getElementById("sankeySH").value=PACK.ctx().sh||""; }
+  renderSankey(); }
 function mselWholeModel(){ MSEL={}; mselSave(); document.getElementById("sankeySH").value=""; renderSankey(); }
 window.mselAll=mselAll; window.mselToggle=mselToggle; window.mselResetPath=mselResetPath; window.mselWholeModel=mselWholeModel;
 function mchip(active,label,onclick,disabled){
@@ -550,9 +555,11 @@ window.setView=setView;
   var sel=document.getElementById("sankeySH");
   sel.innerHTML='<option value="">All stakeholders</option>'+D.stakeholders.map(function(s){return '<option value="'+s.id+'">'+s.id+' · '+PACK.esc(s.name)+'</option>';}).join("");
   var c=PACK.ctx(); sel.value=c.sh||"";
-  // seed the flow's multi-select from any path walked in the Navigator; else restore last used
+  // seed the flow's multi-select from the path walked in the Navigator; else restore last used
   var saved=null; try{ saved=JSON.parse(localStorage.getItem("nbpack.msel")||"null"); }catch(e){}
-  if(MLEVELS.some(function(L){return c[L[0]];})) mselSeedFromCtx();
+  var np=mselNavpath();
+  if(np){ mselSeedFromNavpath(np); sel.value=np.sh||c.sh||""; }
+  else if(MLEVELS.some(function(L){return c[L[0]];})) mselSeedFromCtx();
   else if(saved && typeof saved==="object") MSEL=saved;
   sel.onchange=function(){ MSEL={}; mselSave(); renderSankey(); };   // new start-point resets level filters
   document.getElementById("sankeyWeight").onchange=renderSankey;

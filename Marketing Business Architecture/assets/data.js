@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.18.1";
-window.PACK_CONFIG.built   = "2026-08-07 04:40 SAST";
+window.PACK_CONFIG.version = "v1.19.0";
+window.PACK_CONFIG.built   = "2026-08-07 05:11 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.19.0", date:"2026-08-07 05:11 SAST",
+    note:"Three fixes off the Navigator/Graph review. (1) Filled a mapping gap: decision D4 'Offer eligibility & suitability' had no AI use-case; it now maps to Propensity-to-buy (U02), Next-best-conversation for RMs (U14) and CLV forecasting (U04). Every decision now reaches at least one use-case. (2) Added a cue on the Navigator: when a selected item upstream maps to nothing at the current step (e.g. a decision with no AI use-case), a small note now says so, instead of silently showing fewer cards. (3) The Graph now follows the Navigator. 'My Navigator path' (and opening the Value-flow view after a walk) seeds the Sankey from the full resolved selection at every level — including the AI use-case set that the decision layer narrowed to — so the flow mirrors the walk rather than showing a broader capability→use-case set. 'Whole model' still resets to everything." },
   { v:"v1.18.1", date:"2026-08-07 04:40 SAST",
     note:"Fixed a Navigator reachability bug: parent selections now carry down transitively. Previously, leaving an intermediate step on ‘All’ (e.g. Value Stage) reset the next step to every item in the model, so choosing one Value Stream still showed all 17 capabilities. Now ‘All’ at an intermediate level means ‘all reachable from the selection above’, so Build Customer Relationship narrows to its 11 enabling capabilities, Publish Governed Data Product to 4, and picking a single value stage narrows further — the constraint flows the whole way down the chain." },
   { v:"v1.18.0", date:"2026-08-07 04:25 SAST",

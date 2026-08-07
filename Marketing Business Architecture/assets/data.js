@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.22.0";
-window.PACK_CONFIG.built   = "2026-08-07 23:14 SAST";
+window.PACK_CONFIG.version = "v1.22.1";
+window.PACK_CONFIG.built   = "2026-08-08 01:33 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.22.1", date:"2026-08-08 01:33 SAST",
+    note:"Fixed AGGPSA reachability in the Architecture Navigator (and the Graph), which was dead-ending with 'Nothing is reachable'. Three data-linkage gaps in the AGGPSA model: (1) three value propositions (VP01/VP03/VP05) had no value stream, so the walk stopped at the Value Stream step — the value-stream↔proposition mapping is now a complete 1:1 cover; (2) the value stages carried no enabling capabilities, so the Capability step dead-ended — each stage now lists its enabling capabilities; (3) beneficiary journeys weren't hydrating (the Nedbank line-of-business journeys leaked through) because the AGGPSA journey base was missing — AGGPSA now supplies its own journey base. Verified: a full walk from every stakeholder and value proposition reaches every downstream level with zero gaps. Nedbank is unaffected." },
   { v:"v1.22.0", date:"2026-08-07 23:14 SAST",
     note:"Made the pack multi-tenant: the Source selector now swaps between two whole organisations — 'Nedbank — Marketing Data & AI' and 'AGGPSA — Ecosystem Data & Analytics' (Allan & Gill Gray Philanthropy SA) — and every page re-renders with the chosen organisation's data, labels and narrative, offline, no upload. Built a full parallel AGGPSA business-architecture model: a new 124-sheet workbook (AGGPSA_FutureState_Model.xlsx) mirroring the Nedbank schema exactly, populated with AGGPSA content — beneficiaries, ESOs, educators and government as stakeholders; the Diagnose–Demonstrate–Dialogue framework and the five-phase grant-making lifecycle as value streams and processes; ecosystem-diagnostic tools (Connecten, AEEI, IMM) as the data & analytics use-cases; and the full governance, Policy-as-Code and Ethical Stewardship layers adapted for catalytic philanthropy. Labels adapt where it aids clarity (Journeys→Beneficiary Journeys, AI Use-Cases→Data & Analytics, Personalisation→Ecosystem Targeting). Implemented via an org resolver (org_switch.js) that rebuilds the model for the selected organisation, so the pages themselves are unchanged; Nedbank remains the default and behaves exactly as before." },
   { v:"v1.21.0", date:"2026-08-07 16:50 SAST",

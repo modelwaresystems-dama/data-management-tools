@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.20.1";
-window.PACK_CONFIG.built   = "2026-08-07 16:19 SAST";
+window.PACK_CONFIG.version = "v1.21.0";
+window.PACK_CONFIG.built   = "2026-08-07 16:50 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.21.0", date:"2026-08-07 16:50 SAST",
+    note:"Built in the Ethical Stewardship Architecture — the orientation layer above Corporate, Data and AI Governance that asks 'should this exist at all, for whom, under whose authority, with what human benefit?' before the safety-and-compliance gates. Added 15 workbook sheets (110–124: EthicalStewardshipPrinciple, PurposeAssessment, HumanOutcomesAssessment, CollectiveBenefitAssessment, AuthorityToControlReview, OutcomeEquityAssessment, EthicalSustainabilityAssessment, CommunityImpactAssessment, StewardshipDecision, StewardshipEvidence, StewardshipMetric, StewardshipMonitoring, StewardshipTraceability, StewardshipException, StewardshipRetirementReview) with comprehensive coverage — one full stewardship assessment per AI use case (U01–U18) across every domain. Added six stewardship policies (PD-STEW) and the Ethical Stewardship Council (GC-STEW) above the existing forums. New 'Ethical Stewardship' tab (next to Governance): orientation-layer diagram with five pillars, nine CARE-derived domains, the ten-step lifecycle with the ethical pre-gate, the pre-gate-vs-delivery-gates comparison, the council, the banking-marketing specialisation, a maturity model, and the full registers including a 'review by use case' rollup. Wired the ethical pre-gate into the Architecture Navigator: the AI use-case step now surfaces the stewardship verdict (approve / conditional / redesign), equity risk and authority for the use-cases on the walk, before Value × Readiness. Refreshed the risk/compliance/legal review as a new Word document covering the layer." },
   { v:"v1.20.1", date:"2026-08-07 16:19 SAST",
     note:"Reordered the left sidebar to follow the golden-thread navigation order. The tabs had accumulated in the order features were added, so overview and content pages were interleaved. They now read top-to-bottom as: the three overview tools (Home, Navigator, Value-Flow Graph), then the golden-thread content pages in chain order (Value Streams → Journeys → Architecture/Capabilities → Processes → Decisions → AI Use-Cases → Personalisation → Data Products), then the supporting and admin pages (Governance, Training, Glossary, Model I/O, Editor, Manual). No pages were added or removed — only reordered." },
   { v:"v1.20.0", date:"2026-08-07 05:45 SAST",
@@ -1399,6 +1401,14 @@ window.PACK_CONFIG.editUnlock = "nedbank-edit";   // <-- change to your team's e
   }
 })();
 
+/* ---- v1.21.0: Ethical Stewardship — the orientation layer ---------------- */
+(function(){ var p=window.PACK_CONFIG.pages;
+  if(!p.some(function(x){return x.file==="ethical_stewardship.html";})){
+    var i=p.findIndex(function(x){return x.file==="governance_responsible_ai.html";});
+    p.splice((i>=0?i:p.length),0,{file:"ethical_stewardship.html", nav:"Ethical Stewardship", title:"Ethical Stewardship — the orientation layer"});
+  }
+})();
+
 /* ---- v1.20.1: sidebar order follows the golden-thread navigation --------- *
    The tabs above are registered in the order features were built. This final
    pass sorts them into the order a user actually walks the model:
@@ -1423,6 +1433,7 @@ window.PACK_CONFIG.editUnlock = "nedbank-edit";   // <-- change to your team's e
     "ai_usecases.html",
     "hyperpersonalisation_cdp.html",
     "data_products.html",
+    "ethical_stewardship.html",
     "governance_responsible_ai.html",
     "training_adoption.html",
     "glossary_settings.html",

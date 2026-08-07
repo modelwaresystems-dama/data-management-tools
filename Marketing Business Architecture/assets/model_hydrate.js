@@ -149,5 +149,22 @@
   set("controlTests", recs("108 ·").map(function(r){ return {id:r.TestID,rule:r.RuleID,test:r.TestCase,expected:r.ExpectedDecision,actual:r.ActualDecision,result:r.Result}; }));
   set("regObligationMap", recs("109 ·").map(function(r){ return {source:r.Source,clause:r.Clause,obligation:r.ObligationID,policy:r.PolicyID,control:r.ControlID}; }));
 
+  /* ---- Ethical Stewardship Architecture (orientation layer) ----------- */
+  set("stewardshipPrinciples", recs("110 ·").map(function(r){ return {id:r.PrincipleID,name:r.Name,def:r.Definition,source:r.Source,owner:r.OwnerRoleID,status:r.Status}; }));
+  set("purposeAssessments", recs("111 ·").map(function(r){ return {id:r.PurposeID,objType:r.ObjectType,obj:r.ObjectID,purpose:r.PurposeStatement,need:r.HumanNeed,nonai:r.NonAIAlternative,decision:r.Decision}; }));
+  set("humanOutcomes", recs("112 ·").map(function(r){ return {id:r.HumanOutcomeID,obj:r.ObjectID,stakeholder:r.StakeholderID,intended:r.IntendedOutcome,harm:r.PotentialHarm,mitig:r.Mitigation,owner:r.Owner}; }));
+  set("collectiveBenefits", recs("113 ·").map(function(r){ return {id:r.BenefitID,obj:r.ObjectID,group:r.BeneficiaryGroup,type:r.BenefitType,bank:r.BankBenefit,customer:r.CustomerBenefit,metric:r.EvidenceMetric}; }));
+  set("authorityReviews", recs("114 ·").map(function(r){ return {id:r.AuthorityID,obj:r.ObjectID,subject:r.DataSubject,basis:r.AuthorityBasis,consent:r.ConsentRequired,appeal:r.AppealRoute,decision:r.Decision}; }));
+  set("equityAssessments", recs("115 ·").map(function(r){ return {id:r.EquityID,obj:r.ObjectID,segment:r.Segment,pos:r.PositiveImpact,neg:r.NegativeImpact,risk:r.EquityRisk,decision:r.ReviewDecision}; }));
+  set("sustainabilityAssessments", recs("116 ·").map(function(r){ return {id:r.SustainabilityID,obj:r.ObjectID,scale:r.ScaleScenario,ltRisk:r.LongTermRisk,trust:r.TrustImpact,cont:r.ContinueCriteria}; }));
+  set("communityImpacts", recs("117 ·").map(function(r){ return {id:r.CommunityImpactID,obj:r.ObjectID,group:r.Group,impact:r.ImpactType,consult:r.ConsultationNeed,feedback:r.FeedbackMechanism}; }));
+  set("stewardshipDecisions", recs("118 ·").map(function(r){ return {id:r.StewardshipDecisionID,obj:r.ObjectID,decision:r.Decision,conditions:r.Conditions,forum:r.ApproverForum,evidence:r.EvidenceID}; }));
+  set("stewardshipEvidence", recs("119 ·").map(function(r){ return {id:r.EvidenceID,obj:r.ObjectID,type:r.EvidenceType,repo:r.Repository,status:r.ReviewStatus}; }));
+  set("stewardshipMetrics", recs("120 ·").map(function(r){ return {id:r.MetricID,name:r.Name,type:r.Type,def:r.Definition,target:r.Target,owner:r.OwnerRoleID}; }));
+  set("stewardshipMonitoring", recs("121 ·").map(function(r){ return {id:r.MonitorID,obj:r.ObjectID,metric:r.MetricID,threshold:r.Threshold,alertOwner:r.AlertOwner,action:r.Action}; }));
+  set("stewardshipTraceability", recs("122 ·").map(function(r){ return {stakeholder:r.StakeholderID,vp:r.VPID,outcome:r.OutcomeID,useCase:r.UseCaseID,dataProduct:r.DataProductID,policy:r.PolicyID,control:r.ControlID,humanOutcome:r.HumanOutcomeID,equity:r.EquityID,evidence:r.EvidenceID}; }));
+  set("stewardshipExceptions", recs("123 ·").map(function(r){ return {id:r.ExceptionID,obj:r.ObjectID,principle:r.PrincipleID,reason:r.Reason,approver:r.Approver,expiry:r.Expiry,control:r.CompensatingControl}; }));
+  set("stewardshipRetirement", recs("124 ·").map(function(r){ return {id:r.RetirementID,obj:r.ObjectID,trigger:r.Trigger,finding:r.Finding,decision:r.Decision,evidence:r.EvidenceID}; }));
+
   W.NB_HYDRATED=true; try{ W.PACK && (W.PACK._hydrated=true); }catch(e){}
 })();

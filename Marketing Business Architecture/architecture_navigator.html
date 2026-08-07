@@ -40,6 +40,23 @@
   .allchip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .contbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0 4px}
   .stepper .sv .badge{display:inline-block;background:var(--accent-soft);color:var(--accent);border-radius:20px;padding:0 7px;font-size:.72rem;font-weight:700}
+  /* ethical stewardship pre-gate */
+  .pregate{border:1.5px solid #e6b8dd;border-radius:12px;background:linear-gradient(180deg,#fdf5fb,#fff);box-shadow:var(--shadow);padding:14px 16px;margin:16px 0 4px}
+  .pregate .pgh{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:4px}
+  .pregate .pgband{background:#d946a8;color:#fff;font-size:.64rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;border-radius:6px;padding:3px 9px}
+  .pregate h3{margin:0;font-size:1rem}
+  .pregate .pgsub{font-size:.8rem;color:var(--mut);margin:2px 0 12px}
+  .pgt{width:100%;border-collapse:collapse;font-size:.82rem}
+  .pgt th{text-align:left;font-size:.62rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:800;padding:6px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .pgt td{padding:7px 9px;border-bottom:1px solid #f1e6ef;vertical-align:top}
+  .pgt tr:last-child td{border-bottom:none}
+  .pgt .uid{font-family:"SF Mono",monospace;font-size:.72rem;color:var(--accent);font-weight:700;white-space:nowrap}
+  .pgpill{display:inline-block;font-size:.63rem;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+  .pglink{font-size:.78rem;font-weight:600;color:#b4468f;text-decoration:none;white-space:nowrap}
+  .pglink:hover{text-decoration:underline}
+  .pgflow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.74rem;color:var(--mut);margin-top:11px}
+  .pgflow b{color:#b4468f}
+  .pgflow .arr{color:var(--faint)}
 </style>
 </head>
 <body>
@@ -256,6 +273,44 @@ var TITLES={
 };
 
 /* ---- stage --------------------------------------------------------------- */
+/* ---- Ethical Stewardship pre-gate ---------------------------------------- *
+   The stewardship layer is an absolute pre-gate: the AI use-cases on the walk
+   must clear Purpose / Benefit / Authority / Equity / Sustainability BEFORE the
+   Value x Readiness and technical delivery gates. Surfaced here so a walk shows
+   the ethical verdict at the point AI use-cases enter the chain.                */
+function stewardBy(arr){ var m={}; (arr||[]).forEach(function(r){ if(r.obj) m[r.obj]=r; }); return m; }
+var _sd=stewardBy(D.stewardshipDecisions), _eq=stewardBy(D.equityAssessments),
+    _ar=stewardBy(D.authorityReviews), _ho=stewardBy(D.humanOutcomes);
+function pgVerdict(v){ v=String(v||""); var c="#64748b";
+  if(/^approve/i.test(v)&&!/redesign/i.test(v)) c="#16a34a"; else if(/conditional/i.test(v)) c="#d97706";
+  else if(/redesign/i.test(v)) c="#7c3aed"; else if(/reject|no.?go/i.test(v)) c="#e11d48";
+  return '<span class="pgpill" style="background:'+c+'18;color:'+c+'">'+esc(v||"—")+'</span>'; }
+function pgRisk(v){ v=String(v||""); var c={High:"#e11d48",Medium:"#d97706",Low:"#16a34a"}[v]||"#64748b";
+  return '<span class="pgpill" style="background:'+c+'18;color:'+c+'">'+esc(v||"—")+'</span>'; }
+function pgConsent(v){ return /yes/i.test(String(v||""))?'<span class="pgpill" style="background:#7c3aed18;color:#7c3aed">Consent</span>':'<span class="rmut" style="color:var(--mut)">—</span>'; }
+function stewardshipPreGate(ucIds){
+  if(!ucIds||!ucIds.length) return "";
+  if(!(D.stewardshipDecisions&&D.stewardshipDecisions.length)) return "";
+  var rows=ucIds.map(function(id){
+    var d=_sd[id]||{}, e=_eq[id]||{}, a=_ar[id]||{}, h=_ho[id]||{};
+    var u=find(D.aiUseCases,id)||{};
+    return '<tr><td><span class="uid">'+esc(id)+'</span></td><td>'+esc(u.name||"")+'</td>'+
+      '<td>'+pgVerdict(d.decision)+'</td><td>'+pgRisk(e.risk)+'</td><td>'+pgConsent(a.consent)+'</td>'+
+      '<td class="rmut" style="color:var(--mut)">'+esc((h.harm||"").slice(0,64))+'</td>'+
+      '<td><a class="pglink" href="ethical_stewardship.html">Review ›</a></td></tr>';
+  }).join("");
+  var red=ucIds.filter(function(id){return /redesign/i.test((_sd[id]||{}).decision||"");}).length;
+  var cond=ucIds.filter(function(id){return /conditional/i.test((_sd[id]||{}).decision||"");}).length;
+  var hi=ucIds.filter(function(id){return (_eq[id]||{}).risk==="High";}).length;
+  var sub=ucIds.length+' use-case'+(ucIds.length>1?'s':'')+' on this path — '+cond+' conditional, '+red+' need redesign, '+hi+' high equity-risk. Each must clear stewardship before Value × Readiness.';
+  return '<div class="pregate"><div class="pgh"><span class="pgband">Ethical pre-gate</span>'+
+      '<h3>Stewardship verdict for the AI use-cases on this walk</h3></div>'+
+    '<div class="pgsub">'+esc(sub)+'</div>'+
+    '<table class="pgt"><thead><tr><th>Use case</th><th>Name</th><th>Verdict</th><th>Equity risk</th><th>Authority</th><th>Key human harm watched</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<div class="pgflow"><b>Should we do this?</b><span class="arr">→</span>Value × Readiness <span class="arr">(should we do it now?)</span> <span class="arr">→</span> AI Governance <span class="arr">→</span> Policy-as-Code <span class="arr">→</span> Observability</div>'+
+  '</div>';
+}
+
 function renderStage(){
   var step=curStep(), host=document.getElementById("stage");
   var pool=poolFor(step), sel=selected(step), allOn=!sel;
@@ -279,7 +334,12 @@ function renderStage(){
     (nk?'<button class="btn" onclick="NAV.go(\''+nk+'\')">Continue to '+esc(STEPS[ORDER.indexOf(nk)].label)+' \u203a</button>':'<button class="btn" onclick="NAV.reset()">\u21ba Start a new walk</button>')+
     '<span class="muted" style="font-size:.8rem;margin-left:auto">Fewer selections narrow the next step; \u201cAll\u201d keeps it open.</span></div>';
   var detail=(sel&&sel.length===1)?detailFor(step,sel[0]):"";
-  host.innerHTML = head+bar+note+cont+'<div class="opts">'+cards+'</div>'+detail;
+  // Ethical Stewardship pre-gate: on the AI use-case step, surface the verdict for
+  // the use-cases currently in scope (explicit selection, else the reachable pool).
+  var pregate="";
+  if(step==="ai"){ var ucIds=sel && sel.length ? sel.slice() : pool.map(function(o){return o.id;});
+    pregate=stewardshipPreGate(ucIds); }
+  host.innerHTML = head+bar+note+cont+'<div class="opts">'+cards+'</div>'+pregate+detail;
   if(step==="proc" && sel && sel.length===1) PACK.renderSIPOC(document.getElementById("sipoc"), sel[0]);
   if(step==="dec" && sel && sel.length===1) PACK.renderDecisionTable(document.getElementById("dmn"), sel[0]);
 }

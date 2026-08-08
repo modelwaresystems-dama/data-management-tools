@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.22.2";
-window.PACK_CONFIG.built   = "2026-08-08 01:50 SAST";
+window.PACK_CONFIG.version = "v1.22.3";
+window.PACK_CONFIG.built   = "2026-08-08 01:58 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.22.3", date:"2026-08-08 01:58 SAST",
+    note:"Gave the AGGPSA beneficiary journeys realistic, uneven experience arcs. Previously every journey stage was flat at 3/5 with identical touchpoints and metrics; each stage now carries its own experience score (1–5), stage-appropriate touchpoints and stage metrics. The arcs reflect where experience is genuinely won or lost — e.g. the township micro-entrepreneur dips at Discover (2, awareness & trust) then rises to Grow (4); the educator journey dips at Practise (2) in stressed schools; the grant lifecycle dips at Due diligence (2) then peaks at Approval and Closeout (4). Applied to both the Beneficiary Journeys page and the Graph/Explorer stage cards. Nedbank unaffected." },
   { v:"v1.22.2", date:"2026-08-08 01:50 SAST",
     note:"Fixed the AGGPSA Graph/Explorer getting stuck at Value Stage. The Explorer types each node by its ID pattern (e.g. a value stage must look like VS07-01), but AGGPSA value-stage IDs were VSG-07-1, so the Explorer couldn't recognise them and stopped expanding. Value-stage IDs now follow the VS<nn>-<nn> convention, and beneficiary-journey IDs were realigned from CRJ… to CJ… so they type and label correctly too. The Explorer now expands the whole parallel-mapped map end-to-end — Stakeholder → Persona → Journey / Value Stream → Value Stage → Capability → Process → Decision → Data & Analytics use-case → Agent → Data Product → Data Domain. Nedbank unaffected." },
   { v:"v1.22.1", date:"2026-08-08 01:33 SAST",

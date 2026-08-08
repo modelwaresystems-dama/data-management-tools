@@ -830,6 +830,11 @@ window.PACK_CONFIG = {
   ],
   unratedColor:"#3a4358",
   statuses:["Proposed","Agreed","Needs work"],
+  /* the four ValueProposition segment columns — workbook header names (keys)
+     and the labels shown in the app. Overridden per organisation (AGGPSA uses
+     ecosystem focus segments). */
+  vpSegments:{ keys:["Retail","Commercial","Wealth","TradeFinance"],
+               labels:["Retail","Commercial","Wealth","Trade Finance"] },
   sources:[
     {id:"generic", label:"Nedbank — Marketing Data & AI", auth:"none",
      role:"Nedbank Marketing Data & AI Business Architecture — the banking engagement", available:true},
@@ -1001,9 +1006,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.22.4";
-window.PACK_CONFIG.built   = "2026-08-08 02:14 SAST";
+window.PACK_CONFIG.version = "v1.22.5";
+window.PACK_CONFIG.built   = "2026-08-08 02:22 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.22.5", date:"2026-08-08 02:22 SAST",
+    note:"Removed the Nedbank banking segments (Retail / Commercial / Wealth / Trade Finance) from the AGGPSA model. The ValueProposition segment columns are now organisation-configurable (PACK_CONFIG.vpSegments): AGGPSA uses ecosystem focus segments — Township & Micro, Growth & Scale, Artisan & Trade, Talent & Youth — in both the workbook (sheet 4 headers) and the app (the Architecture value-proposition and segment-comparison tables), with content rewritten to match. Nedbank keeps its banking lines of business unchanged." },
   { v:"v1.22.4", date:"2026-08-08 02:14 SAST",
     note:"Business Outcome now filters the Value-flow (Sankey). Previously a Business Outcome was a leaf branch — selecting one only changed which outcome chips showed, it did not narrow the value streams, capabilities, use-cases etc. that feed it. Now selecting one or more outcomes keeps only the value propositions that deliver them, so the whole downstream chain (value streams, journeys, stages, capabilities, processes, decisions, use-cases, agents, data products, domains) filters to the focused path — e.g. picking 'Professionalise enterprise support' narrows the value stream to 'Support Entrepreneurs & ESOs'. Also let a value stream serve several value propositions (comma-separated), so the outcome→value-stream mapping is accurate (AGGPSA). This behaviour benefits Nedbank too. Nedbank's own data is unchanged." },
   { v:"v1.22.3", date:"2026-08-08 01:58 SAST",

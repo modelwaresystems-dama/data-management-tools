@@ -80,7 +80,8 @@
   var custJids=(G.journeys||[]).map(function(x){return x.id;});
   set("valuePropositions", recs("4 ·").map(function(r){
     var js=custJids.filter(function(jid){ return jm[jid] && jm[jid].vp===r.ValuePropositionID; });
-    return {id:r.ValuePropositionID,name:(r.ValuePropositionName||r.Group),group:r.Group,stakeholders:[r.StakeholderID],generic:r.GenericPromise,retail:r.Retail,commercial:r.Commercial,wealth:r.Wealth,trade:r.TradeFinance,journeys:js};
+    var _sk=((W.PACK_CONFIG&&W.PACK_CONFIG.vpSegments&&W.PACK_CONFIG.vpSegments.keys)||["Retail","Commercial","Wealth","TradeFinance"]);
+    return {id:r.ValuePropositionID,name:(r.ValuePropositionName||r.Group),group:r.Group,stakeholders:[r.StakeholderID],generic:r.GenericPromise,retail:r[_sk[0]],commercial:r[_sk[1]],wealth:r[_sk[2]],trade:r[_sk[3]],journeys:js};
   }));
 
   /* ---- capabilities (merge: keep child-ids & extension flag) ---------- */

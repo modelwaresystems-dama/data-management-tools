@@ -182,7 +182,8 @@ function kInfo(id){ return (D.kpiDetail||{})[id]||{}; }
 function personasForSH(sh){ return (D.personas||[]).filter(function(p){return p.stakeholderId===sh;}).map(function(p){return p.id;}); }
 function vpsForSH(sh){ return D.valuePropositions.filter(function(v){return (v.stakeholders||[]).indexOf(sh)>=0;}).map(function(v){return v.id;}); }
 function outcomesForVP(vp){ return ((D.vpOutcomes||{})[vp]||[]).slice(); }
-function streamsForVP(vp){ return (D.valueStreams||[]).filter(function(s){return s.vp===vp;}).map(function(s){return s.id;}); }
+function vpListOf(s){ return String(s.vp||"").split(",").map(function(x){return x.trim();}).filter(Boolean); }
+function streamsForVP(vp){ return (D.valueStreams||[]).filter(function(s){return vpListOf(s).indexOf(vp)>=0;}).map(function(s){return s.id;}); }
 function kpisForBO(bo){ var o=boById(bo); return o?(o.kpis||[]).map(function(k){return k.kpiId;}):[]; }
 function stagesForVS(vs){ return (D.valueStages||[]).filter(function(g){return g.vs===vs;}).sort(function(a,b){return a.seq-b.seq;}).map(function(g){return g.id;}); }
 function journeysForPersona(per){ var p=perById(per); return p?(p.journeys||[]).filter(function(j){return MAP.CJ[j];}):[]; }
@@ -358,7 +359,7 @@ var SCOL={SH:"#7c3aed",VP:"#0e9488",BO:"#d6336c",VS:"#c2410c",CJ:"#e64980",VSG:"
 var SNAME={SH:"Stakeholder",VP:"Value Prop",BO:"Business Outcome",VS:"Value Stream",CJ:"Customer Journey",VSG:"Value Stage",CAP:"Capability",PROC:"Process",DEC:"Decision",U:"AI Use-Case",AG:"AI Agent",DP:"Data Product",DM:"Data Domain"};
 var SORDER=["SH","VP","BO","VS","CJ","VSG","CAP","PROC","DEC","U","AG","DP","DM"], SLVL={}; SORDER.forEach(function(t,i){SLVL[t]=i;});
 function journeysForVS_g(vs){ return (D.journeys||[]).filter(function(j){ return ((D.journeyMeta||{})[j.id]||{}).valueStream===vs; }); }
-function streamsForVP(vpId){ return (D.valueStreams||[]).filter(function(s){return s.vp===vpId;}).map(function(s){return s.id;}); }
+function streamsForVP(vpId){ return (D.valueStreams||[]).filter(function(s){return vpListOf(s).indexOf(vpId)>=0;}).map(function(s){return s.id;}); }
 function vpsForSH2(shId){ return D.valuePropositions.filter(function(v){return (v.stakeholders||[]).indexOf(shId)>=0;}).map(function(v){return v.id;}); }
 function stagesOf(vsId){ return (D.valueStages||[]).filter(function(g){return g.vs===vsId;}).sort(function(a,b){return a.seq-b.seq;}); }
 
@@ -368,6 +369,11 @@ function stagesOf(vsId){ return (D.valueStages||[]).filter(function(g){return g.
    selected only that node passes — otherwise every child is shown. `rootSHs` seeds the top level.
    mode "ai"  = flow width by AI value score (peaks at the use-case); "kpi" = by value-stage KPI weight. */
 function sankeyKeep(msel,key,id){ var s=msel[key]; return !s || s==="*" || (s.indexOf && s.indexOf(id)>=0); }
+/* When Business Outcome(s) are selected, a value proposition only stays in the
+   flow if it rolls up to one of them — so picking an outcome filters the whole
+   downstream chain that feeds it, not just the outcome chips. */
+function vpMatchesBO(msel,vpId){ var s=msel&&msel.bo; if(!s||!s.length||s==="*") return true;
+  var outs=outcomesForVP(vpId); for(var i=0;i<outs.length;i++){ if(s.indexOf(outs[i])>=0) return true; } return false; }
 function sankeyData(mode, rootSHs, msel){
   msel=msel||{};
   function keep(key,id){ return sankeyKeep(msel,key,id); }
@@ -376,7 +382,7 @@ function sankeyData(mode, rootSHs, msel){
   function edge(a,b){ if(a===b)return; (children[a]=children[a]||{})[b]=1; (parents[b]=parents[b]||{})[a]=1; }
   (rootSHs||[]).forEach(function(shId){
     var sh=MAP.SH[shId]; if(!sh) return; node("SH:"+shId,"SH",sh.name);
-    vpsForSH2(shId).forEach(function(vpId){ if(!keep("vp",vpId))return; var vp=MAP.VP[vpId]; node("VP:"+vpId,"VP",vp.name||vp.group); edge("SH:"+shId,"VP:"+vpId);
+    vpsForSH2(shId).forEach(function(vpId){ if(!keep("vp",vpId))return; if(!vpMatchesBO(msel,vpId))return; var vp=MAP.VP[vpId]; node("VP:"+vpId,"VP",vp.name||vp.group); edge("SH:"+shId,"VP:"+vpId);
       outcomesForVP(vpId).forEach(function(boId){ if(!keep("bo",boId))return; var bo=boById(boId); node("BO:"+boId,"BO",bo?bo.name:boId); edge("VP:"+vpId,"BO:"+boId); });
       streamsForVP(vpId).forEach(function(vsId){ if(!keep("vs",vsId))return; var vs=vsById(vsId); node("VS:"+vsId,"VS",vs?vs.name:vsId); edge("VP:"+vpId,"VS:"+vsId);
         journeysForVS_g(vsId).forEach(function(j){ if(!keep("cj",j.id))return; node("CJ:"+j.id,"CJ",j.name); edge("VS:"+vsId,"CJ:"+j.id); });
@@ -462,6 +468,7 @@ function mselReachable(){
   mselRootSHs().forEach(function(sh){
     vpsForSH2(sh).forEach(function(vp){ add("vp",vp); if(!kept("vp",vp))return;
       outcomesForVP(vp).forEach(function(bo){ add("bo",bo); });
+      if(!vpMatchesBO(MSEL,vp)) return;   // an outcome is selected → only descend from VPs that deliver it
       streamsForVP(vp).forEach(function(vs){ add("vs",vs); if(!kept("vs",vs))return;
         journeysForVS_g(vs).forEach(function(j){ add("cj",j.id); });
         stagesOf(vs).forEach(function(g){ add("vsg",g.id); if(!kept("vsg",g.id))return;

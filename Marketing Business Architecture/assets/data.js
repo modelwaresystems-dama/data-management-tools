@@ -1001,9 +1001,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.22.3";
-window.PACK_CONFIG.built   = "2026-08-08 01:58 SAST";
+window.PACK_CONFIG.version = "v1.22.4";
+window.PACK_CONFIG.built   = "2026-08-08 02:14 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.22.4", date:"2026-08-08 02:14 SAST",
+    note:"Business Outcome now filters the Value-flow (Sankey). Previously a Business Outcome was a leaf branch — selecting one only changed which outcome chips showed, it did not narrow the value streams, capabilities, use-cases etc. that feed it. Now selecting one or more outcomes keeps only the value propositions that deliver them, so the whole downstream chain (value streams, journeys, stages, capabilities, processes, decisions, use-cases, agents, data products, domains) filters to the focused path — e.g. picking 'Professionalise enterprise support' narrows the value stream to 'Support Entrepreneurs & ESOs'. Also let a value stream serve several value propositions (comma-separated), so the outcome→value-stream mapping is accurate (AGGPSA). This behaviour benefits Nedbank too. Nedbank's own data is unchanged." },
   { v:"v1.22.3", date:"2026-08-08 01:58 SAST",
     note:"Gave the AGGPSA beneficiary journeys realistic, uneven experience arcs. Previously every journey stage was flat at 3/5 with identical touchpoints and metrics; each stage now carries its own experience score (1–5), stage-appropriate touchpoints and stage metrics. The arcs reflect where experience is genuinely won or lost — e.g. the township micro-entrepreneur dips at Discover (2, awareness & trust) then rises to Grow (4); the educator journey dips at Practise (2) in stressed schools; the grant lifecycle dips at Due diligence (2) then peaks at Approval and Closeout (4). Applied to both the Beneficiary Journeys page and the Graph/Explorer stage cards. Nedbank unaffected." },
   { v:"v1.22.2", date:"2026-08-08 01:50 SAST",

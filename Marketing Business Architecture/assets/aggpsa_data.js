@@ -14,6 +14,7 @@ window.ORG.aggpsa = {
     client:"AGGPSA",
     identity:"Modelware · Data Management",
     engagement:"AGGPSA Ecosystem Data & Analytics Architecture",
+    archTitle:"Ecosystem Business Architecture",
     publishStatus:"Draft — working copy (AGGPSA business architecture, pending sign-off)",
     /* philanthropy-adapted sidebar labels (by page file) */
     navLabels:{

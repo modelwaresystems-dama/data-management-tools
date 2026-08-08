@@ -819,6 +819,7 @@ window.PACK_CONFIG = {
   client:"Nedbank",
   identity:"Modelware · Data Management",
   engagement:"Nedbank Marketing Data & AI Engagement",
+  archTitle:"Marketing Business Architecture",
   publishStatus:"Draft — working copy (Generic content live; Nedbank content pending sign-off)",
   maturityScale:[
     {v:0, name:"Absent",    color:"#6b7280"},
@@ -1006,9 +1007,11 @@ window.PACK_CONFIG.chain = [
 })();
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.22.5";
-window.PACK_CONFIG.built   = "2026-08-08 02:22 SAST";
+window.PACK_CONFIG.version = "v1.22.6";
+window.PACK_CONFIG.built   = "2026-08-08 02:38 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.22.6", date:"2026-08-08 02:38 SAST",
+    note:"Fixed the empty AGGPSA capability heat-map on the Architecture page (every value-stage cell showed '—'). A build-script variable name collision had written single characters into the JourneyStage→Capability map (e.g. 'C','4' instead of 'C13'), so no capability resolved; each journey stage now correctly inherits its value stream's capabilities. Also made the Architecture page title organisation-configurable — Nedbank keeps 'Marketing Business Architecture', AGGPSA shows 'Ecosystem Business Architecture'. Nedbank unaffected." },
   { v:"v1.22.5", date:"2026-08-08 02:22 SAST",
     note:"Removed the Nedbank banking segments (Retail / Commercial / Wealth / Trade Finance) from the AGGPSA model. The ValueProposition segment columns are now organisation-configurable (PACK_CONFIG.vpSegments): AGGPSA uses ecosystem focus segments — Township & Micro, Growth & Scale, Artisan & Trade, Talent & Youth — in both the workbook (sheet 4 headers) and the app (the Architecture value-proposition and segment-comparison tables), with content rewritten to match. Nedbank keeps its banking lines of business unchanged." },
   { v:"v1.22.4", date:"2026-08-08 02:14 SAST",

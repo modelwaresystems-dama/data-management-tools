@@ -26,7 +26,7 @@
     // point the hydrator at the AGGPSA model (fall back to Nedbank if missing)
     W.ACTIVE_MODEL_SHEETS = W.AGGPSA_MODEL_SHEETS || W.NB_MODEL_SHEETS;
     // config overrides
-    ["client","identity","engagement","publishStatus","vpSegments"].forEach(function(k){
+    ["client","identity","engagement","publishStatus","vpSegments","archTitle"].forEach(function(k){
       if(cfg[k] != null) CFG[k] = cfg[k];
     });
     if(cfg.landing) CFG.landing = cfg.landing;

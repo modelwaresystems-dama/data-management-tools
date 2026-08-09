@@ -230,7 +230,7 @@ function detailFor(step,id){
       '<a class="btn ghost" style="margin-left:auto" href="customer_journey.html#'+j.id+'">Open full journey ›</a></div>'+
       '<div class="chiprow">'+(j.stages||[]).map(function(s){return '<span class="chip proc" style="cursor:default">'+esc(s.stage)+' · '+s.emotion+'/5</span>';}).join("")+'</div></div>';
   }
-  if(step==="proc"){ return '<div id="sipoc" style="margin-top:16px"></div>'; }
+  if(step==="proc"){ return '<div id="sipoc" style="margin-top:16px"></div><div id="stepArch"></div>'; }
   if(step==="dec"){ var aisD=aiForDec(id);
     return '<div class="card" id="dmn" style="margin-top:16px"></div>'+
       '<h3 style="margin-top:16px">AI use-cases applying this decision</h3><div class="chiprow">'+
@@ -257,6 +257,31 @@ function detailFor(step,id){
       '<h4 style="margin-top:12px">Data products in this domain</h4><div class="dpgrid">'+dps2.map(function(p){return PACK.dpCardHtml(p);}).join("")+'</div></div>';
   }
   return "";
+}
+
+/* ---- Process Step Architecture panel (research redesign: step grain) ------ */
+function renderStepArch(pid){
+  var host=document.getElementById("stepArch"); if(!host) return;
+  var steps=(D.processSteps||[]).filter(function(s){return s.process===pid;}).sort(function(a,b){return a.seq-b.seq;});
+  if(!steps.length){ host.innerHTML=""; return; }
+  var cById={}; (D.informationConcepts||[]).forEach(function(c){cById[c.id]=c;});
+  var rById={}; (D.recordClasses||[]).forEach(function(r){rById[r.id]=r;});
+  var rows=steps.map(function(s){
+    var c=cById[s.concept]||{name:s.concept};
+    var rc=rById[s.recordClass]||{name:s.recordClass};
+    return '<tr>'+
+      '<td style="white-space:nowrap"><span class="chip proc" style="cursor:default;font-size:.72rem"><span class="id">'+esc(s.id)+'</span></span></td>'+
+      '<td>'+esc(s.name)+(s.decision?' <span class="chip dec" style="cursor:default;font-size:.66rem"><span class="id">'+esc(s.decision)+'</span></span>'+(s.hitl?' <span style="font-size:.6rem;color:#b91c1c;font-weight:700">HITL</span>':''):'')+'</td>'+
+      '<td style="white-space:nowrap"><strong>'+esc(c.name||"")+'</strong>'+(s.crud?' <span style="font-size:.66rem;font-weight:700;color:#3730a3">'+esc(s.crud)+'</span>':'')+
+        (s.fromState?'<div style="font-size:.72rem;color:var(--mut)">'+esc(s.fromState)+' \u2192 '+esc(s.toState)+'</div>':'')+'</td>'+
+      '<td style="white-space:nowrap">'+(s.recordClass?'<span style="font-size:.72rem">'+esc(rc.name)+'</span>':'')+(s.evidence?'<div style="font-size:.68rem;color:#155e75">'+esc(s.evidence)+'</div>':'')+'</td>'+
+    '</tr>';
+  }).join("");
+  host.innerHTML='<div class="card" style="margin-top:16px">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><h3 style="margin:0">Process Step Architecture</h3>'+
+    '<a class="btn ghost" style="margin-left:auto;font-size:.78rem" href="business_process.html#'+esc(pid)+'">Open step detail \u203a</a></div>'+
+    '<p class="muted tight" style="margin:0 0 10px">Each step and what it governs \u2014 the decision, the information concept it acts on (with lifecycle transition), and the record and evidence it produces.</p>'+
+    '<div style="overflow-x:auto"><table class="tbl" style="font-size:.82rem"><thead><tr><th>Step</th><th>Task</th><th>Concept \u00b7 CRUD</th><th>Record \u2192 evidence</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
 }
 
 var TITLES={
@@ -343,7 +368,7 @@ function renderStage(){
   if(step==="ai"){ var ucIds=sel && sel.length ? sel.slice() : pool.map(function(o){return o.id;});
     pregate=stewardshipPreGate(ucIds); }
   host.innerHTML = head+bar+note+cont+'<div class="opts">'+cards+'</div>'+pregate+detail;
-  if(step==="proc" && sel && sel.length===1) PACK.renderSIPOC(document.getElementById("sipoc"), sel[0]);
+  if(step==="proc" && sel && sel.length===1){ PACK.renderSIPOC(document.getElementById("sipoc"), sel[0]); renderStepArch(sel[0]); }
   if(step==="dec" && sel && sel.length===1) PACK.renderDecisionTable(document.getElementById("dmn"), sel[0]);
 }
 

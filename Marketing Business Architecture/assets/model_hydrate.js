@@ -168,5 +168,29 @@
   set("stewardshipExceptions", recs("123 ·").map(function(r){ return {id:r.ExceptionID,obj:r.ObjectID,principle:r.PrincipleID,reason:r.Reason,approver:r.Approver,expiry:r.Expiry,control:r.CompensatingControl}; }));
   set("stewardshipRetirement", recs("124 ·").map(function(r){ return {id:r.RetirementID,obj:r.ObjectID,trigger:r.Trigger,finding:r.Finding,decision:r.Decision,evidence:r.EvidenceID}; }));
 
+  /* ---- Process Step Architecture (research redesign: step-grain governed layer) --- */
+  set("processSteps", recs("125 ·").map(function(r){ return {
+    id:r.StepID, process:r.ProcessID, name:r.StepName, seq:N(r.StepSequence), type:r.StepType,
+    trigger:r.TriggerEvent, taskType:r.TaskType, gateway:r.GatewayType, lane:r.RoleLane,
+    pre:r.Precondition, post:r.Postcondition,
+    inConcepts:L(r.InputInformationConcepts), inProducts:L(r.InputDataProducts),
+    outConcepts:L(r.OutputInformationConcepts), outProducts:L(r.OutputDataProducts),
+    decision:r.DecisionID, decisionType:r.DecisionType, decisionInput:r.DecisionInput,
+    ruleSet:r.RuleSet, hitl:B(r.HITLRequired), decisionOutcome:r.DecisionOutcome,
+    concept:r.ConceptID, crud:r.CRUDAction, fromState:r.FromState, toState:r.ToState, lifecycleRule:r.LifecycleRule,
+    policy:r.PolicyID, control:r.ControlID, risk:r.RiskID, obligation:r.ObligationID, sod:B(r.SegregationOfDutiesFlag),
+    aiUseCase:r.AIUseCaseID, aiAgent:r.AIAgentID, automation:r.AutomationRole, model:r.ModelID, confidence:r.ConfidenceThreshold,
+    recordClass:r.RecordClassID, recordProduced:r.RecordProduced, evidence:r.EvidenceID, retention:r.RetentionRule, repository:r.Repository,
+    kpi:r.KPIID, outcome:r.OutcomeID, quality:r.QualityMetric, cycleTime:r.CycleTimeMetric, errorMetric:r.ErrorMetric }; }));
+  /* information concepts + lifecycle transitions attached */
+  var icL={}; recs("127 ·").forEach(function(r){ (icL[r.ConceptID]=icL[r.ConceptID]||[]).push({from:r.FromState,to:r.ToState,decision:r.TriggerDecisionID,event:r.TriggerEvent,crud:r.CRUDAction,rule:r.LifecycleRule}); });
+  set("informationConcepts", recs("126 ·").map(function(r){ return {id:r.ConceptID,name:r.Name,def:r.Definition,glossary:r.GlossaryTerm,capability:r.OwningCapabilityID,steward:r.StewardRole,dataProduct:r.PrimaryDataProductID,evidencePattern:r.EvidencePattern,recordClass:r.RecordClassID,lifecycle:(icL[r.ConceptID]||[])}; }));
+  set("recordClasses", recs("128 ·").map(function(r){ return {id:r.RecordClassID,name:r.RecordClass,objType:r.ObjectType,retention:r.RetentionRule,disposal:r.DisposalRule,legalHold:B(r.LegalHoldFlag),owner:r.OwnerRoleID}; }));
+  set("decisionRequirements", recs("129 ·").map(function(r){ return {id:r.DecisionID,name:r.DecisionName,level:r.DecisionLevel,question:r.Question,input:r.InputData,knowledge:r.KnowledgeSource,hitl:B(r.HITLRequired),impact:r.OutcomeImpact}; }));
+  var dt={}; recs("130 ·").forEach(function(r){ (dt[r.DecisionID]=dt[r.DecisionID]||[]).push({rule:r.RuleID,when:r.When,then:r.Then,hit:r.HitPolicy,outcome:r.OutcomeState}); }); set("decisionTables", dt);
+  set("evidencePatterns", recs("131 ·").map(function(r){ return {id:r.PatternID,name:r.Pattern,when:r.WhenUsed,example:r.ExampleEvidence,recordClass:r.RecordClassID}; }));
+  set("capabilityConcepts", recs("139 ·").map(function(r){ return {capability:r.CapabilityID,concept:r.ConceptID,ownership:r.OwnershipType,dataOwner:r.DataOwnerRole,steward:r.DataStewardRole,policyOwner:r.PolicyOwnerRole,quality:r.QualityDimensions,lifecycle:r.LifecycleResponsibility,records:r.RecordResponsibility}; }));
+  set("recordEvidence", recs("140 ·").map(function(r){ return {recordClass:r.RecordClassID,evidence:r.EvidenceID,type:r.EvidenceType}; }));
+
   W.NB_HYDRATED=true; try{ W.PACK && (W.PACK._hydrated=true); }catch(e){}
 })();

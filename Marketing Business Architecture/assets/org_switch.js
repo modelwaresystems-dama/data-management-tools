@@ -26,13 +26,17 @@
     // point the hydrator at the AGGPSA model (fall back to Nedbank if missing)
     W.ACTIVE_MODEL_SHEETS = W.AGGPSA_MODEL_SHEETS || W.NB_MODEL_SHEETS;
     // config overrides
-    ["client","identity","engagement","publishStatus","vpSegments","archTitle"].forEach(function(k){
+    ["client","identity","engagement","publishStatus","vpSegments","archTitle",
+     "packName","pageDir","workbooks","copy","ethical","manual","pageTitles"].forEach(function(k){
       if(cfg[k] != null) CFG[k] = cfg[k];
     });
     if(cfg.landing) CFG.landing = cfg.landing;
-    // philanthropy nav-label overrides (by page file)
-    if(cfg.navLabels && CFG.pages){
-      CFG.pages.forEach(function(p){ if(cfg.navLabels[p.file]) p.nav = cfg.navLabels[p.file]; });
+    // philanthropy nav-label + page-title overrides (by page file)
+    if(CFG.pages){
+      CFG.pages.forEach(function(p){
+        if(cfg.navLabels && cfg.navLabels[p.file]) p.nav = cfg.navLabels[p.file];
+        if(cfg.pageTitles && cfg.pageTitles[p.file]) p.title = cfg.pageTitles[p.file];
+      });
     }
     // baked-narrative GENERIC overrides (sections the hydrator does not rebuild)
     Object.keys(gen).forEach(function(k){ G[k] = gen[k]; });

@@ -242,8 +242,49 @@
       ver+
     '</div></nav>';
     document.getElementById("nav").outerHTML = html;
+    PACK.applyOrgTitle();
+    PACK.applyOrgCopy();
   };
   PACK.setWorkbooks = function(arr){ PACK._workbooks = arr; };
+
+  /* ---- org-aware document <title> --------------------------------------
+     Static page titles read "… — Nedbank Marketing Pack". When another org
+     is active, swap the Nedbank suffix for CFG.packName. ------------------ */
+  PACK.applyOrgTitle = function(){
+    if(!CFG.packName) return;
+    try{
+      document.title = document.title
+        .replace(/Nedbank Marketing Pack/g, CFG.packName)
+        .replace(/Nedbank Marketing Data & AI Engagement/g, CFG.engagement||CFG.packName);
+    }catch(e){}
+  };
+
+  /* ---- org-aware static copy -------------------------------------------
+     Elements carrying data-copy="key" get their text replaced when the
+     active org supplies CFG.copy[key]. Nedbank supplies no CFG.copy, so the
+     baked (Nedbank) text stands. Values containing markup are set as HTML. -- */
+  PACK.applyOrgCopy = function(){
+    /* static pages hardcode "Client: Nedbank" in the eyebrow — retarget to the
+       active client for any org (Nedbank keeps its own name). */
+    if(CFG.client && CFG.client!=="Nedbank"){
+      var ebs=document.querySelectorAll('.eyebrow');
+      for(var j=0;j<ebs.length;j++){
+        if(/Client:\s*Nedbank/.test(ebs[j].innerHTML))
+          ebs[j].innerHTML = ebs[j].innerHTML.replace(/Client:\s*Nedbank/, 'Client: '+PACK.esc(CFG.client));
+      }
+    }
+    var C = CFG.copy; if(!C) return;
+    var els = document.querySelectorAll('[data-copy]');
+    for(var i=0;i<els.length;i++){
+      var el=els[i], k=el.getAttribute('data-copy');
+      if(C[k]==null) continue;
+      if(/[<&]/.test(C[k])) el.innerHTML=C[k]; else el.textContent=C[k];
+    }
+  };
+  /* fetch a single org copy override (for JS-built strings), else fallback */
+  PACK.copyText = function(key, fallback){
+    return (CFG.copy && CFG.copy[key]!=null) ? CFG.copy[key] : fallback;
+  };
 
   /* ---- deep-link on load: open panel for #ID if page registers a handler --- */
   PACK.onHash = function(handler){
@@ -480,7 +521,7 @@
       '<div class="dp-name">'+PACK.esc(dp.name)+'</div>'+
       '<p class="dp-desc">'+PACK.esc(dp.desc)+'</p>'+
       '<div class="dp-owner"><span>Owner: <b>'+PACK.esc(dom.owner)+'</b></span><span>Steward: <b>'+PACK.esc(dom.steward)+'</b></span></div>'+
-      (cdpChips?'<div class="chiprow"><span class="lbl">Realises CDP</span>'+cdpChips+'</div>':'')+
+      (cdpChips?'<div class="chiprow"><span class="lbl">'+PACK.copyText("dpRealisesCdp","Realises CDP")+'</span>'+cdpChips+'</div>':'')+
       (aiChips?'<div class="chiprow"><span class="lbl">Serves AI</span>'+aiChips+'</div>':'')+
       (dp.terms&&dp.terms.length?PACK.termChips(dp.terms,"Terms"):'')+
     '</div>';
@@ -559,7 +600,7 @@
       '<div class="dp-name">'+PACK.esc(dp.name)+'</div>'+
       '<p class="dp-desc">'+PACK.esc(dp.desc)+'</p>'+
       '<div class="dp-owner"><span>Owner: <b>'+PACK.esc(dom.owner)+'</b></span><span>Steward: <b>'+PACK.esc(dom.steward)+'</b></span></div>'+
-      (cdpChips?'<div class="chiprow"><span class="lbl">Realises CDP</span>'+cdpChips+'</div>':'')+
+      (cdpChips?'<div class="chiprow"><span class="lbl">'+PACK.copyText("dpRealisesCdp","Realises CDP")+'</span>'+cdpChips+'</div>':'')+
       (aiChips?'<div class="chiprow"><span class="lbl">Serves AI</span>'+aiChips+'</div>':'')+
       (dp.terms&&dp.terms.length?PACK.termChips(dp.terms,"Terms"):'')+
       '<div class="dp-view">View data contract ›</div>'+

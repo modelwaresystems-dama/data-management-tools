@@ -36,6 +36,12 @@
         <a class="btn ghost" id="navlink" href="#">Open in Navigator ›</a>
       </div>
       <div class="card" id="dmn"></div>
+      <div class="section" id="drd-sec" style="margin-top:14px">
+        <h3 style="margin:0 0 4px">Decision Requirements Diagram (DMN)</h3>
+        <p class="muted tight" style="margin:0 0 10px">The decision, the sub-decisions (analytics) that inform it, its input data, and the knowledge sources and HITL authority that govern it.</p>
+        <div id="drd"></div>
+      </div>
+      <div class="card" id="agentic" style="margin-top:14px"></div>
       <div class="card" id="related" style="margin-top:14px"></div>
     </div>
   </div>
@@ -48,6 +54,7 @@
 <script src="assets/org_switch.js"></script>
 <script src="assets/model_hydrate.js"></script>
 <script src="assets/pack.js"></script>
+<script src="assets/pack_diagrams.js"></script>
 <script>
 PACK.setWorkbooks([{label:"Decision Model catalogue .xlsx", href:""}]);
 PACK.renderNav("decisions.html");
@@ -67,12 +74,42 @@ function usage(decId){
   var ai = D.aiUseCases.filter(function(u){return (u.decisions||[]).indexOf(decId)>=0;});
   return {js:js, ai:ai};
 }
+// Agentic AI decision support — every decision can be supported by an agent,
+// with a human-in-the-loop posture that scales with the decision's stakes.
+function renderAgentic(id){
+  var host=document.getElementById("agentic"); if(!host) return;
+  var dr=(D.decisionRequirements||[]).filter(function(x){return x.id===id;})[0];
+  if(!dr){ host.style.display="none"; return; }
+  host.style.display="";
+  var ucs=(dr.supportUseCases||[]).map(function(uid){ var u=MAP.AI[uid]; return {id:uid,name:u?u.name:uid}; });
+  var hitl=dr.hitlText||(dr.hitl?"Yes":"No");
+  var hcolor = hitl==="Yes"?"#b91c1c":(hitl==="No"?"#15803d":"#b45309");
+  var hbg = hitl==="Yes"?"#fef2f2":(hitl==="No"?"#f0fdf4":"#fffbeb");
+  host.innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'+
+      '<h3 style="margin:0">Agentic AI decision support</h3>'+
+      '<span style="font-size:.72rem;font-weight:700;color:'+hcolor+';background:'+hbg+';border:1px solid '+hcolor+'33;border-radius:20px;padding:2px 10px">Human-in-the-loop: '+PACK.esc(hitl)+'</span>'+
+      '<span class="pill" style="font-size:.72rem;margin-left:auto">'+PACK.esc(dr.level||"")+'</span>'+
+    '</div>'+
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">'+
+      '<div style="flex:1;min-width:240px"><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700">Automation posture</div>'+
+        '<div style="font-weight:600;color:var(--accent)">'+PACK.esc(dr.posture||"AI-assisted — human reviews")+'</div></div>'+
+    '</div>'+
+    '<p class="muted tight" style="margin:0 0 10px">'+PACK.esc(dr.aiSupport||"An agent supports this decision; a human stays accountable for the outcome.")+'</p>'+
+    '<div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;margin-bottom:5px">Supporting AI use-cases</div>'+
+    (ucs.length?'<div class="chiprow">'+ucs.map(function(u){return '<a class="chip ai" href="ai_usecases.html#'+u.id+'"><span class="id">'+PACK.esc(u.id)+'</span>'+PACK.esc(u.name)+'</a>';}).join("")+'</div>':'<span class="muted">—</span>');
+}
+
 window.sel = function(id){
   current = id; renderList();
   var d = MAP.D[id];
   document.getElementById("dtitle").innerHTML = '<span class="mono" style="color:var(--c-dec)">'+id+'</span> '+PACK.esc(d.name);
   document.getElementById("navlink").href = PACK.navUrl("dec",{dec:id});
   PACK.renderDecisionTable(document.getElementById("dmn"), id);
+  if(PACK.renderDMN){ var dr=(D.decisionRequirements||[]).filter(function(x){return x.id===id;})[0];
+    var ucn={}; (D.aiUseCases||[]).forEach(function(u){ucn[u.id]=u.name;});
+    PACK.renderDMN(document.getElementById("drd"), dr, {decName:(MAP.D[id]||{}).name, ucNames:ucn}); }
+  renderAgentic(id);
   var u = usage(id);
   document.getElementById("related").innerHTML =
     '<h3 style="margin-top:0">Where this decision is used</h3>'+

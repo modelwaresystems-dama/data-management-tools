@@ -27,7 +27,8 @@
     W.ACTIVE_MODEL_SHEETS = W.AGGPSA_MODEL_SHEETS || W.NB_MODEL_SHEETS;
     // config overrides
     ["client","identity","engagement","publishStatus","vpSegments","archTitle",
-     "packName","pageDir","workbooks","copy","ethical","manual","pageTitles"].forEach(function(k){
+     "packName","pageDir","workbooks","copy","ethical","manual","pageTitles",
+     "valueProp","capabilityMap","processLandscape"].forEach(function(k){
       if(cfg[k] != null) CFG[k] = cfg[k];
     });
     if(cfg.landing) CFG.landing = cfg.landing;

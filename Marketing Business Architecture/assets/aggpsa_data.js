@@ -31,6 +31,65 @@ window.ORG.aggpsa = {
       "ai_usecases.html":"Ecosystem Analytics",
       "customer_journey.html":"Beneficiary Journeys & CX"
     },
+    /* rich-visual config: value proposition */
+    valueProp:{
+      statement:"AGGPSA is a catalytic ecosystem architect — deploying scarce grant capital and governed evidence to unlock systemic change in South Africa's entrepreneurial and education ecosystems, where the leverage is greatest.",
+      pillars:[
+        {n:1,title:"Catalytic Capital",desc:"Milestone-gated grants that maximise systemic leverage per rand deployed."},
+        {n:2,title:"Evidence & Diagnostics",desc:"Governed ecosystem evidence that steers where scarce catalytic support goes."},
+        {n:3,title:"Enterprise & Talent Uplift",desc:"Stronger entrepreneurs and ESOs, and foundational reading-for-meaning talent."},
+        {n:4,title:"Systemic Change & Policy",desc:"Proven models institutionalised into policy and public systems at scale."}
+      ],
+      beneficiaries:[
+        {name:"Beneficiaries & Entrepreneurs",benefit:"Right-fit catalytic support that lifts survival, growth and jobs."},
+        {name:"The Ecosystem",benefit:"Stronger networks, better evidence and fewer ecosystem data deficits."},
+        {name:"Funders & Board",benefit:"Accountable, evidence-led deployment of catalytic capital."}
+      ],
+      instrumentsLabel:"Core instruments",
+      instruments:["Catalytic Grants","Diagnostics","Programmes","IMM","Policy Engagement","Partnerships"]
+    },
+    /* rich-visual config: capability map */
+    capabilityMap:{
+      steering:[
+        {id:"C7",name:"Theory of Change Management"},
+        {id:"C4",name:"Portfolio & Risk Management"},
+        {id:"C14",name:"Financial Stewardship & Endowment"},
+        {id:"C15",name:"Monitoring & Evaluation"}
+      ],
+      core:[
+        {domain:"1 · Diagnose & Evidence",caps:[{id:"C1",name:"Ecosystem Diagnostics & Data Mapping"},{id:"C2",name:"Africa Entrepreneurial Ecosystem Index"},{id:"C6",name:"Impact Measurement & Management"}]},
+        {domain:"2 · Grant-Making",caps:[{id:"C3",name:"Grant-Making & Due Diligence"}]},
+        {domain:"3 · Programmes & Delivery",caps:[{id:"C5",name:"Incubation & Programme Delivery"},{id:"C11",name:"Talent-Pipeline Programme Mgmt"},{id:"C12",name:"Culture Programme Mgmt"}]},
+        {domain:"4 · Enterprise & ESO Support",caps:[{id:"C13",name:"ESO Capacity Building"}]},
+        {domain:"5 · Advocacy & Scale",caps:[{id:"C8",name:"Policy Advocacy & Convening"},{id:"C17",name:"Collective Impact & Networks"}]}
+      ],
+      enabling:[
+        {name:"Knowledge Management & Research",type:"support"},
+        {name:"Communications & Narrative",type:"support"},
+        {name:"Strategic Partnerships",type:"support"},
+        {name:"Agentic AI & Intelligent Automation",type:"ai"},
+        {name:"Audit, Assurance & Controls",type:"gov"}
+      ]
+    },
+    /* rich-visual config: process landscape */
+    processLandscape:{
+      streams:["Grant Lifecycle","Diagnostic Study","Programme Delivery","Impact & Policy"],
+      steering:["Strategy & Theory of Change","Risk & Portfolio Policy","Governance & Compliance","Performance, Portfolio & Assurance"],
+      core:[
+        {domain:"1 · Diagnose & Evidence",procs:[{id:"P6",name:"Ecosystem Diagnostic Study",ai:true},{id:"P7",name:"AEEI Index Compilation",ai:true},{id:"P8",name:"IMM Data Ingestion & Analysis",ai:true}]},
+        {domain:"2 · Grant-Making",procs:[{id:"P1",name:"Inquiry & Strategic RFP Screening",ai:true},{id:"P2",name:"Rigorous Due Diligence",ai:true},{id:"P3",name:"Recommendation & Board Approval"}]},
+        {domain:"3 · Portfolio & Delivery",procs:[{id:"P4",name:"Active Portfolio Management"},{id:"P5",name:"Closeout, Evaluation & Dialogue"},{id:"P9",name:"Programme Incubation"}]},
+        {domain:"4 · Programmes & Talent",procs:[{id:"P11",name:"Talent-Pipeline Delivery"},{id:"P12",name:"Culture Programme Delivery"},{id:"P13",name:"ESO Capacitation"}]},
+        {domain:"5 · Advocacy & Stewardship",procs:[{id:"P10",name:"Policy Engagement"},{id:"P14",name:"Partnership & Relational Capital"},{id:"P15",name:"Financial Stewardship"}]}
+      ],
+      enabling:[
+        {name:"Programme Operations & Processing",type:"support"},
+        {name:"Endowment, Funding & Finance",type:"support"},
+        {name:"AI Model Lifecycle & Governance (MLOps)",type:"ai"},
+        {name:"Human-in-the-Loop Exception Adjudication",type:"gov"},
+        {name:"Audit, Traceability & Assurance",type:"gov"}
+      ]
+    },
     /* landing-page copy */
     landing:{
       title:"AGGPSA Ecosystem Data & Analytics Architecture",

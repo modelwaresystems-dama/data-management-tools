@@ -1006,10 +1006,75 @@ window.PACK_CONFIG.chain = [
   if(!has("decisions.html")){ var j=p.findIndex(function(x){return x.file==="business_process.html";}); p.splice(j+1,0,{file:"decisions.html", nav:"Decisions", title:"Decision Models"}); }
 })();
 
+/* ============================================================================
+   Rich-visual config (value proposition, capability map, process landscape).
+   Nedbank baseline; AGGPSA overrides the same keys via org_switch.
+   ========================================================================== */
+window.PACK_CONFIG.valueProp = {
+  statement:"Marketing bridges the relevance and trust gap between the bank and its customers — turning governed data and AI into relevant, well-timed, trusted propositions that grow value for the customer and the bank.",
+  pillars:[
+    {n:1,title:"Relevance & Personalisation",desc:"The right proposition, at the right moment, in the right channel — powered by governed data and AI."},
+    {n:2,title:"Growth & Acquisition",desc:"Attract and convert the right customers efficiently, lifting quality acquisition and share of wallet."},
+    {n:3,title:"Relationship & Lifetime Value",desc:"Deepen relationships and grow customer lifetime value through relevant, timely engagement."},
+    {n:4,title:"Trust & Responsible Marketing",desc:"Consent-led, compliant and fair engagement that protects and builds long-term trust."}
+  ],
+  beneficiaries:[
+    {name:"The Customer",benefit:"Relevant offers, less noise, and financial help at the moment it matters."},
+    {name:"The Bank",benefit:"Efficient acquisition, deeper relationships and measurable marketing ROI."},
+    {name:"Risk & Compliance",benefit:"Consent-led, auditable, fair-by-design engagement across every channel."}
+  ],
+  instruments:["Segments","Journeys","Offers","Campaigns","Next-Best-Action","CLV models"]
+};
+window.PACK_CONFIG.capabilityMap = {
+  steering:[
+    {id:"C1",name:"Strategy, brand & portfolio governance"},
+    {id:"C8",name:"Risk, compliance & responsible marketing"},
+    {id:"C10",name:"Measurement, learning & optimization"},
+    {id:"C9",name:"Marketing operations & partner management"}
+  ],
+  core:[
+    {domain:"1 · Insight & Intelligence",caps:[{id:"C2",name:"Market, customer & relationship insight"},{id:"C15",name:"Customer Intelligence"},{id:"C17",name:"Feedback & Measurement"}]},
+    {domain:"2 · Proposition & Value",caps:[{id:"C3",name:"Proposition & offer management"},{id:"C16",name:"CLV Management"}]},
+    {domain:"3 · Engagement & Journeys",caps:[{id:"C4",name:"Campaign & journey orchestration"},{id:"C12",name:"Journey Management"},{id:"C11",name:"Customer Experience Management"}]},
+    {domain:"4 · Personalisation & Activation",caps:[{id:"C13",name:"Personalisation Management"},{id:"C5",name:"Lead, referral & sales enablement"}]},
+    {domain:"5 · Content & Communications",caps:[{id:"C6",name:"Content, communications & reputation"}]}
+  ],
+  enabling:[
+    {name:"Data, MarTech, analytics & AI enablement",type:"support"},
+    {name:"CDP Management",type:"support"},
+    {name:"Agentic AI & Intelligent Automation",type:"ai"},
+    {name:"Audit, Assurance & Controls",type:"gov"}
+  ]
+};
+window.PACK_CONFIG.processLandscape = {
+  streams:["Acquire","Onboard","Serve","Grow","Retain","Advocate"],
+  steering:["Product & Proposition Management","Risk Appetite & Marketing Policy","Regulatory & Compliance Governance","Performance, Portfolio & Assurance"],
+  core:[
+    {domain:"1 · Insight & Targeting",procs:[{id:"P1",name:"Define segment strategy & value proposition"},{id:"P2",name:"Identify opportunity & target audience"},{id:"PX5",name:"Customer Insight Management"}]},
+    {domain:"2 · Design & Origination",procs:[{id:"P3",name:"Design offer, message & journey",ai:true},{id:"P4",name:"Approve & activate campaign"},{id:"PX1",name:"Journey Design"}]},
+    {domain:"3 · Engage & Convert",procs:[{id:"P5",name:"Capture, qualify & route demand",ai:true},{id:"P6",name:"Convert, onboard & fulfil"},{id:"PX4",name:"Personalisation Operations",ai:true}]},
+    {domain:"4 · Retain & Grow",procs:[{id:"P7",name:"Retain, deepen & advocate",ai:true},{id:"PX6",name:"CLV Optimisation",ai:true},{id:"PX7",name:"Customer Feedback Management"}]},
+    {domain:"5 · Measure & Optimise",procs:[{id:"P8",name:"Measure, learn & optimize",ai:true},{id:"PX2",name:"Journey Monitoring"},{id:"PX3",name:"Journey Optimisation",ai:true}]}
+  ],
+  enabling:[
+    {name:"Trade / Marketing Operations & Processing",type:"support"},
+    {name:"Data, CDP & Platform Operations",type:"support"},
+    {name:"AI Model Lifecycle & Governance (MLOps)",type:"ai"},
+    {name:"Human-in-the-Loop Exception Adjudication",type:"gov"},
+    {name:"Audit, Traceability & Assurance",type:"gov"}
+  ]
+};
+
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.23.0";
-window.PACK_CONFIG.built   = "2026-08-08 18:00 SAST";
+window.PACK_CONFIG.version = "v1.24.0";
+window.PACK_CONFIG.built   = "2026-08-09 03:02 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.24.0", date:"2026-08-09 03:02 SAST",
+    note:"Major visual uplift — five architecture views rebuilt to a professional standard, driven by config and model data so each organisation renders its own. (1) Value Proposition: a hero statement, four numbered value pillars, 'who benefits and how' cards and a core-instruments strip, on the Architecture page. (2) Business Capability Map: a layered map — Steering & Governance, the Core value chain in five domains, and Enabling & Supporting capabilities colour-coded by type — with maturity shown on each core capability and a legend. (3) Business Process Landscape: value-stream tabs, a Steering band, five core process domains mirroring the capability map, and an Enabling & Governance band, with AI-assisted processes highlighted; clicking a process opens its steps. (4) BPMN 2.0 swimlane: each process's steps as a governed flow across three lanes — business operations, AI/automation, and human review & approval — with tasks, decision gateways, start/end events, AI-assisted badges and human-in-the-loop markers. (5) DMN Decision Requirements Diagram: the decision, the sub-decisions (analytics) that inform it, its input data, and the knowledge sources and HITL authority that govern it. New shared module assets/pack_diagrams.js; per-org config for the value proposition, capability map and process landscape. Verified 0 console errors across all pages under both organisations." },
+  { v:"v1.23.2", date:"2026-08-09 02:34 SAST",
+    note:"Made agentic AI decision support explicit for every decision. The principle is that any decision can be supported by an AI agent, with a human-in-the-loop posture that scales with the decision's stakes — so no decision should show 'no AI support'. Each decision now carries an automation posture (AI advisory — human decides for high-stakes approvals/board/capital/escalation; AI recommends — human approves for screening, selection, targeting and prioritisation; AI enforces rules — human on exceptions for consent and data-sharing; AI-assisted — human reviews for measurement and research), a HITL requirement, and one or more supporting AI use-cases. The Decision Models page gains an 'Agentic AI decision support' panel showing the posture, the HITL flag and the supporting use-cases; the DecisionRequirement sheet carries the same, and the Decision→AI-use-case map was completed so every decision (including AGGPSA's ToC screening, grant go/no-go, board approval, partner selection and risk escalation) is covered. Process steps that carry a decision now also record the supporting use-case and automation posture. Both workbooks regenerated." },
+  { v:"v1.23.1", date:"2026-08-09 02:26 SAST",
+    note:"Fixed the CRUD/lifecycle semantics on process steps. Previously every step that touched an information concept was marked Create/Update with the same state transition, so a concept looked like it was created several times in one process. Now a concept is CREATED once — at the first step that produces it — and UPDATED on later steps, advancing one lifecycle state each time (e.g. the Ecosystem Diagnostic Study now reads Create (new)→Scoped, Update Scoped→Measured, Update Measured→Mapped, Update Mapped→Published). Consumed concepts (validated but not produced, such as Consent) stay Read/Validate with no state change. Also improved step classification: steps that don't match a specific keyword now fall back to the owning process's primary concept rather than a global default, so a diagnostic study's steps read as Ecosystem Condition instead of Beneficiary. Both workbooks regenerated. Nedbank and AGGPSA only; no other behaviour changed." },
   { v:"v1.23.0", date:"2026-08-08 18:00 SAST",
     note:"Added the Process Step Architecture — the governed step-grain layer from the redesign research — to BOTH organisations. Business processes were under-normalised: process steps lived as text inside a process row. Now every atomic step is a first-class object that declares its decision, the information concept it acts on with a CRUD/lifecycle transition, the data product it touches, the control it runs, and the record and evidence it produces. Added 17 workbook sheets to each model (125–141): seven masters — ProcessStep, InformationConcept, InformationConceptLifecycle, RecordClass, DecisionRequirement, DecisionTable, EvidencePattern — and ten mapping sheets (Outcome/Process/Decision/InformationConcept/DataProduct/Record/Control to ProcessStep, plus Capability→InformationConcept, Record→Evidence and Evidence→Control assurance). Normalised 68 Nedbank steps and 54 AGGPSA steps from the process step lists, each mapped to its concept, CRUD/state transition, data product, control, record and evidence. Extended the End-to-End traceability to step grain (StepID, ConceptID, CRUDAction, LifecycleState, RecordClass, EvidenceProducedAtStep). The Business Process tab now shows steps as first-class rows with a new Information Concepts & lifecycle view (state chains, owning capability, data product, record, evidence) and a Records & Evidence architecture view; the Architecture Navigator surfaces the same step architecture when a process is selected. Nedbank and AGGPSA each get the layer in their own language (Customer/Consent/Offer/Segment/Campaign/CLV/NBA for Nedbank; Beneficiary/Grant/Ecosystem Condition/Programme/Impact Evidence/Catalytic Leverage/Targeting for AGGPSA). Both workbooks regenerated. Verified 0 console errors across all pages under both organisations." },
   { v:"v1.22.8", date:"2026-08-08 17:29 SAST",

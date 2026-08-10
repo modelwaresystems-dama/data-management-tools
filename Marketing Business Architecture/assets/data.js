@@ -1080,9 +1080,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.37.0";
-window.PACK_CONFIG.built   = "2026-08-10 20:05 SAST";
+window.PACK_CONFIG.version = "v1.37.1";
+window.PACK_CONFIG.built   = "2026-08-10 20:40 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.37.1", date:"2026-08-10 20:40 SAST",
+    note:"BPMN lifecycle fix: a human-in-the-loop (HITL) decision gateway is now drawn in the 'Human review & approval' lane instead of the AI/Automation lane. Previously every decision diamond was placed at the same lane as the step that preceded it, so a HITL decision following an AI-Supported step rendered inside the AI lane while being labelled HITL — a contradiction. The gateway now drops into the human lane, with the sequence flow handing down from the AI/ops step to the human decision and back up to the next step, correctly showing that the AI supports the work but a person makes or approves the decision. Non-HITL gateways are unchanged (they stay in their step's lane). Applies to both organisations." },
   { v:"v1.37.0", date:"2026-08-10 20:05 SAST",
     note:"Relationships reworked to true foreign keys, and every KPI now traces to an outcome. Two fixes in response to review of the Element Relationships catalogue. (1) The relationship engine no longer uses co-occurrence — a relationship now exists only where one element's row carries another element's governed ID in a column (a real foreign key), so map/join sheets link their key to each referenced ID and denormalised end-to-end / registry views are excluded from derivation. Related elements are now shown by NAME (ID secondary) with a display-name resolver that reads the correct name column per sheet (e.g. ValuePropositionName, StageName), grouped by architecture layer with direction (→ references, ← referenced by, ↔ both). This removes the spurious foreign keys and the unreadable raw-ID lists. (2) A governance gap is closed: every KPI is now wired to the Business Outcome named by its declared OutcomeTheme via a new map sheet, 162 · KPI_BusinessOutcome_Map, so no KPI is left without an outcome relationship (previously only 10 of 44 Nedbank and 14 of 18 AGGPSA KPIs were mapped; K03 'Funded new accounts' had none). Two Nedbank outcomes were added to home the Brand & trust and Marketing performance themes (BO06, BO07). The catalogue now also reports the count of genuinely unlinked reference elements (retention schedules, readiness dimensions, glossary/QA rows) transparently rather than manufacturing links. Verified 0 KPI orphans and 0 console errors across both organisations." },
   { v:"v1.36.0", date:"2026-08-10 17:27 SAST",

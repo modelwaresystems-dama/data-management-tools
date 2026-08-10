@@ -300,9 +300,12 @@
       parts.push('<text x="'+x+'" y="'+y+'" font-size="9.5" fill="#233" text-anchor="middle"><tspan x="'+x+'" dy="'+(lines.length>1?-3:2)+'">'+svgEsc(lines[0])+'</tspan>'+(lines[1]?'<tspan x="'+x+'" dy="12">'+svgEsc(lines[1])+'</tspan>':'')+'</text>');
       parts.push('<text x="'+(x-nodeW/2+4)+'" y="'+(y-nodeH/2+11)+'" font-size="7.5" fill="#8595a8" font-family="monospace">'+svgEsc(s.id)+'</text>');
       prevX=x+nodeW/2; prevY=y;
-      // decision gateway in the half-column gap
+      // decision gateway in the half-column gap. A human-in-the-loop (HITL)
+      // decision is made / approved by a person, so its gateway belongs in the
+      // "Human review & approval" lane — it drops out of the AI/ops lane and the
+      // flow hands back up to the next step.
       if(s.decision){
-        var gx=x+nodeW/2+(colW-nodeW)/2, gy=y, r=13;
+        var gx=x+nodeW/2+(colW-nodeW)/2, gy=s.hitl?ly("human"):y, r=13;
         connector(prevX, prevY, gx-r, gy);
         parts.push('<path d="M '+gx+' '+(gy-r)+' L '+(gx+r)+' '+gy+' L '+gx+' '+(gy+r)+' L '+(gx-r)+' '+gy+' Z" fill="#fdf1cf" stroke="#c99700" stroke-width="1.4"/>');
         parts.push('<text x="'+gx+'" y="'+(gy+1)+'" font-size="8" fill="#8a6d1a" text-anchor="middle" font-weight="700">'+svgEsc(s.decision)+'</text>');

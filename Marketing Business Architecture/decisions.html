@@ -25,6 +25,16 @@
   .advtag.mdl{background:#eef2ff;color:#3730a3;border-color:#e0e7ff}
   .advtag.km{background:#ecfeff;color:#155e75;border-color:#cffafe}
   .advtag.pol{background:#fef3c7;color:#92400e;border-color:#fde68a}
+  a.advtag{text-decoration:none;cursor:pointer}
+  a.advtag:hover{filter:brightness(.97);box-shadow:0 0 0 2px rgba(47,111,237,.14);text-decoration:none}
+  a.advtag::after{content:" ›";opacity:.55;font-weight:700}
+  .advpanel h4{margin:14px 0 6px;font-size:.82rem;text-transform:uppercase;letter-spacing:.03em;color:var(--faint)}
+  .advpanel .kv{width:100%;border-collapse:collapse;font-size:.86rem}
+  .advpanel .kv td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  .advpanel .kv td.k{color:var(--faint);white-space:nowrap;width:150px;font-weight:600}
+  .advpanel .plist{margin:4px 0 0;padding:0;list-style:none;font-size:.84rem}
+  .advpanel .plist li{padding:4px 0;border-bottom:1px solid var(--line)}
+  .advpanel .plist .pid{font-family:"SF Mono",monospace;font-size:.72rem;color:#2563eb;margin-right:6px}
   /* critical data elements */
   .cdetbl{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:4px}
   .cdetbl th{background:#f4f7fc;text-align:left;padding:7px 10px;font-size:.66rem;text-transform:uppercase;letter-spacing:.03em;color:var(--faint);border-bottom:2px solid var(--line);white-space:nowrap}
@@ -174,17 +184,68 @@ function advisoryBlock(id, dr){
   var models = (da&&da.models) || dr.aiModels || "";
   var km = (da&&da.knowledge) || dr.knowledgeManagement || "";
   var pol = (da&&da.policy) || dr.businessPolicy || "";
-  function splitTags(s,cls){ return String(s||"").split(";").map(function(t){t=t.trim();return t;}).filter(Boolean)
-    .map(function(t){return '<span class="advtag '+cls+'">'+PACK.esc(t)+'</span>';}).join(""); }
+  // resolve each tag NAME to its governed element so the chip becomes clickable
+  // (opens a detail panel), mirroring the AI use-case chips. Falls back to a
+  // plain span when a name can't be resolved.
+  function splitTags(s,cls,kind){ return String(s||"").split(";").map(function(t){return t.trim();}).filter(Boolean)
+    .map(function(t){ var eid=ADV_ID(kind,t);
+      if(eid) return '<a class="advtag '+cls+'" onclick="openAdv(\''+kind+'\',\''+String(eid).replace(/'/g,"\\'")+'\')" title="'+PACK.esc(t)+'">'+PACK.esc(t)+'</a>';
+      return '<span class="advtag '+cls+'">'+PACK.esc(t)+'</span>';
+    }).join(""); }
   var agLink = agentId? 'ai_agents.html#'+agentId : 'ai_agents.html';
   return '<div class="advbox">'+
     '<div class="advhd">Advised by AI agent</div>'+
     '<a class="advagent" href="'+agLink+'">'+(agentId?'<span class="aid">'+PACK.esc(agentId)+'</span>':'')+PACK.esc(agentNm)+' ›</a>'+
-    (models?'<div class="advrow"><span class="advk">AI models</span><span class="advv">'+splitTags(models,"mdl")+'</span></div>':'')+
-    (km?'<div class="advrow"><span class="advk">Knowledge Management</span><span class="advv">'+splitTags(km,"km")+'</span></div>':'')+
-    (pol?'<div class="advrow"><span class="advk">Business Policy</span><span class="advv">'+splitTags(pol,"pol")+'</span></div>':'')+
+    (models?'<div class="advrow"><span class="advk">AI models</span><span class="advv">'+splitTags(models,"mdl","model")+'</span></div>':'')+
+    (km?'<div class="advrow"><span class="advk">Knowledge Management</span><span class="advv">'+splitTags(km,"km","knowledge")+'</span></div>':'')+
+    (pol?'<div class="advrow"><span class="advk">Business Policy</span><span class="advv">'+splitTags(pol,"pol","policy")+'</span></div>':'')+
   '</div>';
 }
+// name -> element id lookups for advisory chips (built lazily, per active org)
+var ADV_IX=null;
+function advIndex(){
+  if(ADV_IX) return ADV_IX;
+  function byName(list){ var m={}; (list||[]).forEach(function(o){ if(o&&o.name) m[String(o.name).trim().toLowerCase()]=o.id; }); return m; }
+  ADV_IX={
+    model:byName(D.aiModels), knowledge:byName(D.knowledgeAssets), policy:byName(D.policyDomains)
+  };
+  return ADV_IX;
+}
+function ADV_ID(kind,name){ var ix=advIndex()[kind]; return ix?ix[String(name).trim().toLowerCase()]:null; }
+// open a detail panel for an advisory element (AI model / knowledge asset / policy domain)
+window.openAdv=function(kind,id){
+  if(!PACK.openPanel) return;
+  var esc=PACK.esc, title="", body="", tag=id;
+  if(kind==="model"){
+    var m=(D.aiModels||[]).filter(function(x){return x.id===id;})[0]; if(!m) return;
+    title=esc(m.name)+' <span style="font-weight:400;color:var(--mut);font-size:.82rem">'+esc(m.id)+'</span>';
+    body='<div class="advpanel"><h4>AI model</h4><table class="kv">'+
+      row("Type",m.type)+row("Advises agent",(m.agentName?(m.agentName+(m.agent?' ('+m.agent+')':'')):m.agent))+
+      row("Purpose",m.purpose)+row("Knowledge sources",(m.knowledge||[]).join(", "))+
+      row("Confidence threshold",m.confidence)+row("Owner",m.owner)+row("Risk tier",m.risk)+
+      row("Model card",m.modelCard)+row("Monitoring",m.monitoring)+'</table>'+
+      '<p style="margin-top:12px"><a class="advagent" href="ai_agents.html'+(m.agent?('#'+m.agent):'')+'">Open in AI Agents & Models ›</a></p></div>';
+  } else if(kind==="knowledge"){
+    var k=(D.knowledgeAssets||[]).filter(function(x){return x.id===id;})[0]; if(!k) return;
+    title=esc(k.name)+' <span style="font-weight:400;color:var(--mut);font-size:.82rem">'+esc(k.id)+'</span>';
+    body='<div class="advpanel"><h4>Knowledge asset</h4><table class="kv">'+
+      row("Type",k.type)+row("Steward",k.steward)+row("Used by agents",(k.usedBy||[]).join(", "))+
+      '</table>'+(k.description?'<h4>Description</h4><p style="font-size:.9rem">'+esc(k.description)+'</p>':'')+
+      '<p style="margin-top:12px"><a class="advagent" href="ai_agents.html">Open in AI Agents & Models ›</a></p></div>';
+  } else if(kind==="policy"){
+    var d=(D.policyDomains||[]).filter(function(x){return x.id===id;})[0]; if(!d) return;
+    var pols=(D.policies||[]).filter(function(p){return p.domain===id;});
+    title=esc(d.name)+' <span style="font-weight:400;color:var(--mut);font-size:.82rem">'+esc(d.id)+'</span>';
+    body='<div class="advpanel"><h4>Policy domain</h4><table class="kv">'+
+      row("Scope",d.scope)+row("Owner",d.owner)+row("Category",d.category)+row("Policies",String(pols.length))+'</table>'+
+      (pols.length?'<h4>Policies in this domain</h4><ul class="plist">'+pols.map(function(p){
+        return '<li><span class="pid">'+esc(p.id)+'</span>'+esc(p.statement||"")+(p.status?' <span style="color:var(--faint);font-size:.75rem">— '+esc(p.status)+'</span>':'')+'</li>';
+      }).join("")+'</ul>':'')+
+      '<p style="margin-top:12px"><a class="advagent" href="governance_responsible_ai.html">Open in Governance & Responsible AI ›</a></p></div>';
+  } else return;
+  function row(k,v){ v=(v==null||v===""||(Array.isArray(v)&&!v.length))?"":v; return v!==""?'<tr><td class="k">'+esc(k)+'</td><td>'+esc(v)+'</td></tr>':""; }
+  PACK.openPanel(tag, title, body);
+};
 
 // Reverse view — "is my data fit?": the decision-level fitness assessment that
 // rolls its CDEs' measured quality (supplying data-product scorecards) up against

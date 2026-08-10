@@ -113,8 +113,8 @@
   if(dpD.length) G.dataProducts=mergeKeep(G.dataProducts, dpD, ["terms"]);
   G.dataContracts=G.dataContracts||{};
   recs("18 ·").forEach(function(r){ var b=G.dataContracts[r.DataProductID]||{};
-    var schema=String(r["Schema (field:type[:pii])"]||"").split(/\s*\|\s*/).map(function(x){return x.trim();}).filter(Boolean).map(function(f){ var p=f.split(":"); return [p[0]||"", p[1]||"", (p[2]||"")]; });
-    G.dataContracts[r.DataProductID]=Object.assign({}, b, {classification:r.Classification||b.classification, sources:(L(r.Producers).length?L(r.Producers):b.sources), schema:(schema.length?schema:b.schema)}); });
+    var schema=String(r["Schema (field:type[:pii])"]||"").split(/\s*[|;]\s*/).map(function(x){return x.trim();}).filter(Boolean).map(function(f){ var p=f.split(":"); return [p[0]||"", p[1]||"", (p[2]||"")]; });
+    G.dataContracts[r.DataProductID]=Object.assign({}, b, {purpose:(r.Description||b.purpose), classification:r.Classification||b.classification, sources:(L(r.Producers).length?L(r.Producers):b.sources), schema:(schema.length?schema:b.schema)}); });
 
   /* ---- data domains / ownership roles --------------------------------- */
   set("dataDomains", recs("19 ·").map(function(r){ return {id:r.DataDomainID,name:r.Name,owner:r.Owner,steward:r.Steward,def:r.Definition}; }));

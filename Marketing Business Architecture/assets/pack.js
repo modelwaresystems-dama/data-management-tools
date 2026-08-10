@@ -552,6 +552,50 @@
       terms_list: dp.terms || []
     };
   };
+  PACK.ragDot = function(rag){
+    var c = rag==="Green"?"#16a34a":(rag==="Amber"?"#d97706":(rag==="Red"?"#dc2626":"#94a3b8"));
+    return '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+c+';margin-right:5px;vertical-align:middle"></span>';
+  };
+  PACK.ragPill = function(rag){
+    var m={Green:["#dcfce7","#166534","#bbf7d0"],Amber:["#fef9c3","#854d0e","#fde68a"],Red:["#fee2e2","#b91c1c","#fecaca"]};
+    var c=m[rag]||["#f1f5f9","#475569","#e2e8f0"];
+    return '<span style="display:inline-block;font-size:.66rem;font-weight:800;border-radius:6px;padding:2px 8px;background:'+c[0]+';color:'+c[1]+';border:1px solid '+c[2]+'">'+PACK.esc(rag)+'</span>';
+  };
+  // the DQ control + six-dimension scorecard for a data product that supplies decisions/agents
+  PACK.dqScorecardHtml = function(dpId){
+    var D=PACK.data();
+    var ctl=(D.dataProductDQ||[]).filter(function(x){return x.dp===dpId;})[0];
+    var sc=(D.dataProductScorecard||{})[dpId]||[];
+    if(!ctl && !sc.length) return "";
+    var rows=sc.map(function(s){
+      return '<tr><td>'+PACK.esc(s.dim)+'</td><td class="muted">'+PACK.esc(s.target)+'</td>'+
+        '<td><strong>'+PACK.esc(s.score)+'</strong></td><td>'+PACK.ragPill(s.rag)+'</td>'+
+        '<td class="muted" style="white-space:nowrap">'+PACK.esc(s.trend)+'</td></tr>';
+    }).join("");
+    var head = ctl ? ('<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 8px">'+
+        PACK.ragPill(ctl.rag)+'<strong>Overall '+PACK.esc(ctl.score)+'</strong>'+
+        '<span class="muted" style="font-size:.78rem">Control '+PACK.esc(ctl.control)+' · '+PACK.esc(ctl.freq)+' · governed by '+PACK.esc(ctl.policy)+'</span></div>'+
+        (ctl.decisions&&ctl.decisions.length?'<div class="muted" style="font-size:.78rem;margin-bottom:2px">Supplies decisions: '+ctl.decisions.map(PACK.esc).join(", ")+'</div>':'')+
+        (ctl.agents&&ctl.agents.length?'<div class="muted" style="font-size:.78rem;margin-bottom:6px">Supplies AI agents: '+ctl.agents.map(PACK.esc).join(", ")+'</div>':'')) : '';
+    return '<h4>Data quality scorecard</h4>'+head+
+      '<table class="tbl"><tr><th>Dimension</th><th>Target</th><th>Score</th><th>RAG</th><th>Trend</th></tr>'+rows+'</table>';
+  };
+  // the CDE data-quality rules that are enforceable clauses of this contract
+  PACK.contractDqRulesHtml = function(dpId){
+    var D=PACK.data();
+    var rules=(D.contractDQRules||{})[dpId]||[];
+    if(!rules.length) return '';
+    function sev(s){ var c= /High/i.test(s)?["#fee2e2","#b91c1c"]:(/Medium/i.test(s)?["#fef9c3","#854d0e"]:["#f1f5f9","#475569"]);
+      return '<span style="display:inline-block;font-size:.64rem;font-weight:800;border-radius:6px;padding:2px 7px;background:'+c[0]+';color:'+c[1]+'">'+PACK.esc(s)+'</span>'; }
+    var rows=rules.map(function(r){
+      return '<tr><td><a href="critical_data_elements.html" class="mono" style="color:#0e7490">'+PACK.esc(r.cde)+'</a> '+PACK.esc(r.cdeName)+'</td>'+
+        '<td>'+PACK.esc(r.dims)+' <span class="muted">— '+PACK.esc(r.threshold)+'</span></td>'+
+        '<td>'+sev(r.severity)+'</td><td class="muted">'+PACK.esc(r.enforcement)+'</td>'+
+        '<td class="mono" style="font-size:.72rem">'+PACK.esc(r.rule)+'</td></tr>';
+    }).join("");
+    return '<p class="tight muted" style="font-size:.8rem;margin:0 0 6px">'+rules.length+' Critical Data Element quality rules are enforceable clauses of this contract, governed by the Data Quality policy (POL-DQ). The producer commits to them; a breach triggers the stated enforcement.</p>'+
+      '<table class="tbl"><tr><th>Critical Data Element</th><th>Quality rule</th><th>Severity</th><th>Enforcement</th><th>Rule ID</th></tr>'+rows+'</table>';
+  };
   PACK.openDataProductPanel = function(dpId){
     var k = PACK.dataContract(dpId); if(!k) return;
     var dp = k.dp, dom = k.domain;
@@ -573,7 +617,11 @@
       '<h4>Purpose</h4><p class="tight">'+PACK.esc(k.purpose)+'</p>'+
       '<h4>Schema</h4>'+schema+
       '<h4>Semantics — governed terms</h4>'+(k.terms_list.length?PACK.termChips(k.terms_list):'<span class="muted">—</span>')+
-      '<h4>Data quality rules</h4><ul class="dc-list">'+k.quality.map(function(q){return '<li>'+PACK.esc(q)+'</li>';}).join("")+'</ul>'+
+      '<h4>Data quality rules</h4>'+
+      PACK.contractDqRulesHtml(dp.id)+
+      '<div class="muted tight" style="font-size:.78rem;margin:'+((PACK.data().contractDQRules||{})[dp.id]?'10px 0 4px':'0 0 4px')+'">'+((PACK.data().contractDQRules||{})[dp.id]?'General clauses':'')+'</div>'+
+      '<ul class="dc-list">'+k.quality.map(function(q){return '<li>'+PACK.esc(q)+'</li>';}).join("")+'</ul>'+
+      PACK.dqScorecardHtml(dp.id)+
       '<h4>SLA / service levels</h4><table class="dc-kv">'+
         row("Freshness",PACK.esc(k.sla.freshness||"—"))+row("Latency",PACK.esc(k.sla.latency||"—"))+
         row("Availability",PACK.esc(k.sla.availability||"—"))+row("Update frequency",PACK.esc(k.sla.frequency||"—"))+

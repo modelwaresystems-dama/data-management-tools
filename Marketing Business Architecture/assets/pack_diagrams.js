@@ -31,7 +31,8 @@
   .camap{display:flex;flex-direction:column;gap:16px;margin:6px 0}
   .band{border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
   .band>.bhdr{padding:9px 16px;font-weight:700;font-size:.82rem;letter-spacing:.03em;color:#fff}
-  .band.steer>.bhdr{background:#16305a}.band.core>.bhdr{background:#2e6ba8}.band.enable>.bhdr{background:#2e7d7d}
+  .band.steer>.bhdr{background:#16305a}.band.core>.bhdr{background:#2e6ba8}.band.enable>.bhdr{background:#2e7d7d}.band.data>.bhdr{background:#3b4a8a}
+  .datacell{background:#e7ebf8;border:1px solid #c2ccec;border-radius:9px;padding:11px 12px;font-size:.84rem;color:#2b357a;text-align:center;font-weight:600}
   .band .bbody{padding:14px;background:var(--panel)}
   .steer-row,.enable-row{display:grid;gap:12px}
   .cbox{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fff;text-align:center;font-size:.9rem;font-weight:600;color:var(--ink);position:relative}
@@ -104,6 +105,9 @@
       (cfg.core||[]).map(function(d){
         return '<div class="core-col"><div class="dttl">'+esc(d.domain)+'</div>'+(d.caps||[]).map(capCell).join("")+'</div>';
       }).join("")+'</div></div></div>';
+    var data = (cfg.data&&cfg.data.length) ? '<div class="band data"><div class="bhdr">'+esc(cfg.dataLabel||"Data Management foundation — the base AI and analytics build on")+'</div>'+
+      '<div class="bbody"><div class="enable-row" style="grid-template-columns:repeat('+Math.min(4,cfg.data.length)+',1fr)">'+
+      cfg.data.map(function(d){ return '<div class="datacell">'+esc(d.name||d)+'</div>'; }).join("")+'</div></div></div>' : '';
     var enable='<div class="band enable"><div class="bhdr">'+esc(cfg.enablingLabel||"Enabling & Supporting capabilities")+'</div>'+
       '<div class="bbody"><div class="enable-row" style="grid-template-columns:repeat('+Math.min(4,(cfg.enabling||[]).length||1)+',1fr)">'+
       (cfg.enabling||[]).map(function(e){
@@ -113,10 +117,11 @@
       }).join("")+'</div></div></div>';
     var legend='<div class="maplegend">'+
       '<span><i style="background:#eaf3e2;border:1px solid #c5dcb0"></i>Core capability</span>'+
+      '<span><i style="background:#e7ebf8;border:1px solid #c2ccec"></i>Data Management foundation</span>'+
       '<span><i style="background:#d9edea;border:1px solid #a9d5cf"></i>Supporting / technical enabler</span>'+
       '<span><i style="background:#ece3f7;border:1px solid #cdb8ec"></i>AI &amp; automation enabler</span>'+
       '<span><i style="background:#fdf1cf;border:1px solid #efd88a"></i>Governance, finance &amp; assurance</span></div>';
-    host.innerHTML='<div class="camap">'+steer+core+enable+'</div>'+legend;
+    host.innerHTML='<div class="camap">'+steer+core+data+enable+'</div>'+legend;
   };
 
   /* ---- Process Landscape (value-stream tabs + banded domains) ------------ */
@@ -165,7 +170,12 @@
     {key:"human",name:"Human review & approval",fill:"#fff7ec"}
   ];
   function laneOf(s){
-    var tt=(s.taskType||"").toLowerCase(), au=(s.automation||"").toLowerCase();
+    var xt=s.execType||"", tt=(s.taskType||"").toLowerCase(), au=(s.automation||"").toLowerCase();
+    if(xt){
+      if(xt==="AIS"||xt==="AIE") return "ai";
+      if(xt==="A"||xt==="DS")   return "ops";
+      if(xt==="H") return (s.hitl||tt.indexOf("approval")>=0) ? "human" : "ops";
+    }
     if(s.hitl || tt.indexOf("approval")>=0) return "human";
     if(au.indexOf("ai")>=0 || tt.indexOf("model")>=0 || tt.indexOf("service")>=0) return "ai";
     return "ops";
@@ -280,11 +290,12 @@
       var x=cx(i), y=ly(laneOf(s));
       // connector from prev to this node's left edge
       connector(prevX, prevY, x-nodeW/2, y);
-      // node
-      var ai=(s.automation||"").toLowerCase().indexOf("ai")>=0;
-      var fill=ai?"#f0e9fb":"#ffffff", stroke=ai?"#7c4bc0":"#2e5c8a";
+      // node — coloured by execution type (H / A / AIS / AIE / DS)
+      var XC={H:{f:"#e0e7ff",s:"#4f46e5"},A:{f:"#dcfce7",s:"#16a34a"},AIS:{f:"#fef9c3",s:"#ca8a04"},AIE:{f:"#fae8ff",s:"#c026d3"},DS:{f:"#e2e8f0",s:"#64748b"}};
+      var xt=s.execType||"", xc=XC[xt]||{f:"#ffffff",s:"#2e5c8a"};
+      var fill=xc.f, stroke=xc.s;
       parts.push('<rect x="'+(x-nodeW/2)+'" y="'+(y-nodeH/2)+'" width="'+nodeW+'" height="'+nodeH+'" rx="8" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.6"/>');
-      if(ai) parts.push('<rect x="'+(x-30)+'" y="'+(y-nodeH/2-11)+'" width="60" height="14" rx="7" fill="#ece3f7" stroke="#7c4bc0" stroke-width="0.8"/><text x="'+x+'" y="'+(y-nodeH/2-1)+'" font-size="8" fill="#5b3a8e" text-anchor="middle" font-weight="700">AI-assisted</text>');
+      if(xt) parts.push('<rect x="'+(x-20)+'" y="'+(y-nodeH/2-11)+'" width="40" height="14" rx="7" fill="#fff" stroke="'+stroke+'" stroke-width="0.9"/><text x="'+x+'" y="'+(y-nodeH/2-1)+'" font-size="8" fill="'+stroke+'" text-anchor="middle" font-weight="800">'+svgEsc(xt)+'</text>');
       var lines=wrap2(s.name,20);
       parts.push('<text x="'+x+'" y="'+y+'" font-size="9.5" fill="#233" text-anchor="middle"><tspan x="'+x+'" dy="'+(lines.length>1?-3:2)+'">'+svgEsc(lines[0])+'</tspan>'+(lines[1]?'<tspan x="'+x+'" dy="12">'+svgEsc(lines[1])+'</tspan>':'')+'</text>');
       parts.push('<text x="'+(x-nodeW/2+4)+'" y="'+(y-nodeH/2+11)+'" font-size="7.5" fill="#8595a8" font-family="monospace">'+svgEsc(s.id)+'</text>');
@@ -306,6 +317,6 @@
     parts.push('<text x="'+endX+'" y="'+(endY+26)+'" font-size="8.5" fill="#5b6b7f" text-anchor="middle">end</text>');
     parts.push('</svg>');
     host.innerHTML='<div style="overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:6px">'+parts.join("")+'</div>'+
-      '<div class="maplegend" style="margin-top:8px"><span>◯ start / end</span><span><i style="background:#fff;border:1px solid #2e5c8a"></i>task</span><span><i style="background:#f0e9fb;border:1px solid #7c4bc0"></i>AI-assisted step</span><span><i style="background:#fdf1cf;border:1px solid #c99700"></i>decision gateway</span><span style="color:#b91c1c">HITL = human-in-the-loop</span></div>';
+      '<div class="maplegend" style="margin-top:8px"><span>◯ start / end</span><span><i style="background:#e0e7ff;border:1px solid #4f46e5"></i>H · Human</span><span><i style="background:#dcfce7;border:1px solid #16a34a"></i>A · Automated</span><span><i style="background:#fef9c3;border:1px solid #ca8a04"></i>AIS · AI-Supported</span><span><i style="background:#fae8ff;border:1px solid #c026d3"></i>AIE · AI-Executed</span><span><i style="background:#e2e8f0;border:1px solid #64748b"></i>DS · Data Support</span><span><i style="background:#fdf1cf;border:1px solid #c99700"></i>decision gateway</span><span style="color:#b91c1c">HITL = human-in-the-loop</span></div>';
   };
 })();

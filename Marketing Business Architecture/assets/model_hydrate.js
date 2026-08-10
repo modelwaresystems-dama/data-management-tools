@@ -181,16 +181,65 @@
     policy:r.PolicyID, control:r.ControlID, risk:r.RiskID, obligation:r.ObligationID, sod:B(r.SegregationOfDutiesFlag),
     aiUseCase:r.AIUseCaseID, aiAgent:r.AIAgentID, automation:r.AutomationRole, model:r.ModelID, confidence:r.ConfidenceThreshold,
     recordClass:r.RecordClassID, recordProduced:r.RecordProduced, evidence:r.EvidenceID, retention:r.RetentionRule, repository:r.Repository,
-    kpi:r.KPIID, outcome:r.OutcomeID, quality:r.QualityMetric, cycleTime:r.CycleTimeMetric, errorMetric:r.ErrorMetric }; }));
+    kpi:r.KPIID, outcome:r.OutcomeID, quality:r.QualityMetric, cycleTime:r.CycleTimeMetric, errorMetric:r.ErrorMetric,
+    execType:r.ExecutionType, responsible:r.ResponsibleParty, accountable:r.AccountableParty }; }));
   /* information concepts + lifecycle transitions attached */
   var icL={}; recs("127 ·").forEach(function(r){ (icL[r.ConceptID]=icL[r.ConceptID]||[]).push({from:r.FromState,to:r.ToState,decision:r.TriggerDecisionID,event:r.TriggerEvent,crud:r.CRUDAction,rule:r.LifecycleRule}); });
   set("informationConcepts", recs("126 ·").map(function(r){ return {id:r.ConceptID,name:r.Name,def:r.Definition,glossary:r.GlossaryTerm,capability:r.OwningCapabilityID,steward:r.StewardRole,dataProduct:r.PrimaryDataProductID,evidencePattern:r.EvidencePattern,recordClass:r.RecordClassID,lifecycle:(icL[r.ConceptID]||[])}; }));
   set("recordClasses", recs("128 ·").map(function(r){ return {id:r.RecordClassID,name:r.RecordClass,objType:r.ObjectType,retention:r.RetentionRule,disposal:r.DisposalRule,legalHold:B(r.LegalHoldFlag),owner:r.OwnerRoleID}; }));
-  set("decisionRequirements", recs("129 ·").map(function(r){ return {id:r.DecisionID,name:r.DecisionName,level:r.DecisionLevel,question:r.Question,input:r.InputData,knowledge:r.KnowledgeSource,hitl:B(r.HITLRequired),hitlText:r.HITLRequired,impact:r.OutcomeImpact,aiSupport:r.AISupport,posture:r.AutomationPosture,supportUseCases:L(r.SupportingUseCases)}; }));
+  set("decisionRequirements", recs("129 ·").map(function(r){ return {id:r.DecisionID,name:r.DecisionName,level:r.DecisionLevel,question:r.Question,input:r.InputData,knowledge:r.KnowledgeSource,hitl:B(r.HITLRequired),hitlText:r.HITLRequired,impact:r.OutcomeImpact,aiSupport:r.AISupport,posture:r.AutomationPosture,supportUseCases:L(r.SupportingUseCases),aiInvolvement:r.AIInvolvement,advisingAgentId:r.AdvisingAgentID,advisingAgent:r.AdvisingAgent,aiModels:r.AIModels,knowledgeManagement:r.KnowledgeManagement,businessPolicy:r.BusinessPolicy}; }));
   var dt={}; recs("130 ·").forEach(function(r){ (dt[r.DecisionID]=dt[r.DecisionID]||[]).push({rule:r.RuleID,when:r.When,then:r.Then,hit:r.HitPolicy,outcome:r.OutcomeState}); }); set("decisionTables", dt);
   set("evidencePatterns", recs("131 ·").map(function(r){ return {id:r.PatternID,name:r.Pattern,when:r.WhenUsed,example:r.ExampleEvidence,recordClass:r.RecordClassID}; }));
   set("capabilityConcepts", recs("139 ·").map(function(r){ return {capability:r.CapabilityID,concept:r.ConceptID,ownership:r.OwnershipType,dataOwner:r.DataOwnerRole,steward:r.DataStewardRole,policyOwner:r.PolicyOwnerRole,quality:r.QualityDimensions,lifecycle:r.LifecycleResponsibility,records:r.RecordResponsibility}; }));
   set("recordEvidence", recs("140 ·").map(function(r){ return {recordClass:r.RecordClassID,evidence:r.EvidenceID,type:r.EvidenceType}; }));
+  /* concept lifecycle ACROSS processes: which process creates / updates / deletes a concept */
+  var clcBy={}; recs("142 ·").forEach(function(r){ (clcBy[r.ConceptID]=clcBy[r.ConceptID]||[]).push({seq:N(r.Seq),concept:r.Concept,process:r.ProcessID,processName:r.ProcessName,crud:r.CRUD,state:r.ToState}); });
+  Object.keys(clcBy).forEach(function(k){ clcBy[k].sort(function(a,b){return a.seq-b.seq;}); });
+  if(Object.keys(clcBy).length) G.conceptProcessLifecycle=clcBy;
+
+  /* ---- Execution-level layer (Target Execution-Level Process Definition) ---- */
+  set("executionTypes", recs("143 ·").map(function(r){ return {code:r.ExecutionTypeCode,name:r.ExecutionType,def:r.Definition,responsible:r.DefaultResponsible,accountable:r.DefaultAccountable}; }));
+  set("stepRaci", recs("144 ·").map(function(r){ return {step:r.StepID,name:r.StepName,process:r.ProcessID,execType:r.ExecutionType,responsible:r.Responsible,accountable:r.Accountable,consulted:r.Consulted,informed:r.Informed}; }));
+  set("stepAiExecution", recs("145 ·").map(function(r){ return {step:r.StepID,name:r.StepName,process:r.ProcessID,execType:r.ExecutionType,agent:r.AIAgentID,agentName:r.AgentName,model:r.ModelID,modelName:r.ModelName,useCase:r.AIUseCaseID,knowledge:r.KnowledgeManagement,policy:r.BusinessPolicy,confidence:r.ConfidenceThreshold,hitl:r.HITLRequired,guardrail:r.Guardrail}; }));
+  set("stepEvidence", recs("146 ·").map(function(r){ return {step:r.StepID,name:r.StepName,recordClass:r.RecordClassID,recordProduced:r.RecordProduced,evidence:r.EvidenceID,retention:r.RetentionRule,repository:r.Repository}; }));
+  set("stepStateTransitions", recs("147 ·").map(function(r){ return {step:r.StepID,name:r.StepName,concept:r.ConceptID,conceptName:r.Concept,crud:r.CRUDAction,fromState:r.FromState,toState:r.ToState}; }));
+
+  /* ---- AI advisory spine: models, knowledge assets, agent maps, decision map --- */
+  set("aiModels", recs("148 ·").map(function(r){ return {id:r.ModelID,name:r.ModelName,type:r.ModelType,agent:r.AgentID,agentName:r.AgentName,purpose:r.Purpose,knowledge:L(r.KnowledgeSources),confidence:r.ConfidenceThreshold,modelCard:r.ModelCardID,monitoring:r.MonitoringID,owner:r.OwnerRole,risk:r.RiskTier}; }));
+  set("knowledgeAssets", recs("149 ·").map(function(r){ return {id:r.KnowledgeAssetID,name:r.Name,type:r.Type,steward:r.StewardRole,description:r.Description,usedBy:L(r.UsedByAgents)}; }));
+  var akBy={}; recs("150 ·").forEach(function(r){ (akBy[r.AgentID]=akBy[r.AgentID]||[]).push({id:r.KnowledgeAssetID,name:r.KnowledgeAsset,howUsed:r.HowUsed}); });
+  if(Object.keys(akBy).length) G.agentKnowledge=akBy;
+  var apBy={}; recs("151 ·").forEach(function(r){ (apBy[r.AgentID]=apBy[r.AgentID]||[]).push({domain:r.PolicyDomainID,name:r.PolicyDomain,examples:L(r.ExamplePolicyIDs),guidance:r.GuidanceApplied}); });
+  if(Object.keys(apBy).length) G.agentPolicy=apBy;
+  var daBy={}; recs("152 ·").forEach(function(r){ daBy[r.DecisionID]={agent:r.AgentID,agentName:r.AgentName,role:r.AdvisoryRole,models:r.AIModels,knowledge:r.KnowledgeManagement,policy:r.BusinessPolicy,hitl:r.HITLRequired}; });
+  if(Object.keys(daBy).length) G.decisionAgents=daBy;
+
+  /* ---- Critical Data Elements + decision→CDE map ---- */
+  set("criticalDataElements", recs("153 ·").map(function(r){ return {id:r.CDEID,name:r.Name,def:r.Definition,term:r.BusinessTerm,concept:r.OwningConceptID,source:r.GoldenSource,steward:r.StewardRole,classification:r.Classification,dimensions:r.QualityDimensions,threshold:r.QualityThreshold,policy:r.GoverningPolicyID,tier:r.CriticalityTier,decisions:L(r.Decisions),dataType:r.DataType}; }));
+  var cdeByDec={}; recs("154 ·").forEach(function(r){ (cdeByDec[r.DecisionID]=cdeByDec[r.DecisionID]||[]).push({cde:r.CDEID,name:r.CDEName,role:r.InputRole,classification:r.Classification,tier:r.CriticalityTier}); });
+  if(Object.keys(cdeByDec).length) G.decisionCDEs=cdeByDec;
+
+  /* ---- Data-product DQ control + scorecard (supplying decisions & AI agents) ---- */
+  set("dataProductDQ", recs("155 ·").map(function(r){ return {id:r.DataProductID,dp:r.DataProductID,name:r.DataProductName,owner:r.OwnerRole,decisions:L(r.SuppliesDecisions),agents:L(r.SuppliesAIAgents),objective:r.ControlObjective,activity:r.ControlActivity,freq:r.Frequency,policy:r.GoverningPolicyID,evidence:r.EvidenceID,score:r.OverallScore,rag:r.OverallRAG,control:r.DQControlID}; }));
+  var dqScoreBy={}; recs("156 ·").forEach(function(r){ (dqScoreBy[r.DataProductID]=dqScoreBy[r.DataProductID]||[]).push({dim:r.Dimension,target:r.Target,score:r.Score,rag:r.RAG,trend:r.Trend}); });
+  if(Object.keys(dqScoreBy).length) G.dataProductScorecard=dqScoreBy;
+  var agDp={}; recs("34 ·").forEach(function(r){ (agDp[r.AgentID]=agDp[r.AgentID]||[]).push({dp:r.DataProductID,purpose:r.UsagePurpose}); });
+  if(Object.keys(agDp).length) G.agentDataProducts=agDp;
+
+  /* ---- CDE DQ Profile (statistical) + value distribution ---- */
+  set("cdeProfiles", recs("157 ·").map(function(r){ return {id:r.CDEID,name:r.CDEName,type:r.DataType,records:r.RecordsProfiled,nonNull:r.NonNullPct,nullPct:r.NullPct,distinct:r.DistinctCount,distinctPct:r.DistinctPct,min:r.Min,max:r.Max,mean:r.Mean,median:r.Median,std:r.StdDev,p5:r.P5,p95:r.P95,minLen:r.MinLen,maxLen:r.MaxLen,pattern:r.DominantPattern,patternPct:r.PatternPct,outlier:r.OutlierPct,lastProfiled:r.LastProfiled,profiler:r.Profiler}; }));
+  var cdeDist={}; recs("158 ·").forEach(function(r){ (cdeDist[r.CDEID]=cdeDist[r.CDEID]||[]).push({bucket:r.Bucket,value:r.Value,freq:r.Frequency,pct:parseFloat(r.Percent)||0}); });
+  if(Object.keys(cdeDist).length) G.cdeDistribution=cdeDist;
+
+  /* ---- CDE DQ rules as data-contract clauses (keyed by data product) ---- */
+  var cdcBy={}; recs("159 ·").forEach(function(r){ (cdcBy[r.DataProductID]=cdcBy[r.DataProductID]||[]).push({contract:r.ContractID,cde:r.CDEID,cdeName:r.CDEName,dims:r.Dimensions,threshold:r.Threshold,expr:r.RuleExpression,severity:r.Severity,enforcement:r.Enforcement,rule:r.DQRuleID,policy:r.GoverningPolicyID}); });
+  if(Object.keys(cdcBy).length) G.contractDQRules=cdcBy;
+
+  /* ---- DQ Assessment (reverse view): is each decision's data fit? ---- */
+  var decA={}; recs("160 ·").forEach(function(r){ decA[r.DecisionID]={cdeCount:N(r.CDECount),fit:N(r.Fit),atRisk:N(r.AtRisk),unfit:N(r.Unfit),notAssessed:N(r.NotAssessed),dataProducts:L(r.SupplyingDataProducts),worstDP:r.WorstDPScorecardRAG,verdict:r.OverallFitness,blocking:r.BlockingIssues,recommendation:r.Recommendation,assessedOn:r.AssessedOn}; });
+  if(Object.keys(decA).length) G.decisionAssessment=decA;
+  var decF={}; recs("161 ·").forEach(function(r){ (decF[r.DecisionID]=decF[r.DecisionID]||[]).push({cde:r.CDEID,name:r.CDEName,tier:r.Criticality,expectation:r.Expectation,dim:r.WorstDimension,measured:r.MeasuredScore,target:r.DimensionTarget,status:r.Status,dp:r.SupplyingDataProduct,dpRag:r.DPScorecardRAG,issue:r.Issue}); });
+  if(Object.keys(decF).length) G.decisionCDEFitness=decF;
 
   W.NB_HYDRATED=true; try{ W.PACK && (W.PACK._hydrated=true); }catch(e){}
 })();

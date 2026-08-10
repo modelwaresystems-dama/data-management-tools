@@ -63,10 +63,19 @@ window.ORG.aggpsa = {
         {domain:"4 · Enterprise & ESO Support",caps:[{id:"C13",name:"ESO Capacity Building"}]},
         {domain:"5 · Advocacy & Scale",caps:[{id:"C8",name:"Policy Advocacy & Convening"},{id:"C17",name:"Collective Impact & Networks"}]}
       ],
+      data:[
+        {name:"Data Governance & Stewardship"},
+        {name:"Data Quality & Assurance"},
+        {name:"Metadata & Ecosystem Glossary"},
+        {name:"Master & Reference Data (Grantee/Beneficiary)"},
+        {name:"Data Integration & Ingestion (field, survey, IMM)"},
+        {name:"Data Platform & Storage"},
+        {name:"Data Privacy, Consent & Sharing"},
+        {name:"Ecosystem Data Publishing"}
+      ],
       enabling:[
         {name:"Knowledge Management & Research",type:"support"},
         {name:"Communications & Narrative",type:"support"},
-        {name:"Strategic Partnerships",type:"support"},
         {name:"Agentic AI & Intelligent Automation",type:"ai"},
         {name:"Audit, Assurance & Controls",type:"gov"}
       ]

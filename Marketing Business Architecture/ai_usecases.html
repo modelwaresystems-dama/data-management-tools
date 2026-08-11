@@ -55,6 +55,11 @@
   .uca-sc{font-weight:700;text-align:right;font-size:.76rem}
   .uca-lvl{font-size:.74rem;color:var(--mut)}
   .uca-basis{grid-column:1/-1;font-size:.72rem;color:var(--mut);margin-top:1px}
+  .uca-els{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+  .uca-el{display:inline-flex;align-items:baseline;gap:4px;font-size:.72rem;border:1px solid var(--line);background:#fff;border-radius:6px;padding:2px 7px;text-decoration:none;color:var(--ink);cursor:pointer}
+  .uca-el:hover{background:#f4f7fc;text-decoration:none;box-shadow:0 0 0 2px rgba(47,111,237,.12)}
+  .uca-el .eid{font-family:"SF Mono",monospace;font-size:.64rem;color:var(--faint)}
+  .uca-el.static{cursor:default;color:var(--mut)}
   @media(max-width:620px){.uca-dim,.uca-dim.data{grid-template-columns:1fr auto;gap:4px}.uca-bar,.uca-lvl{grid-column:1/-1}}
 </style>
 </head>
@@ -117,9 +122,12 @@
 <script src="assets/org_switch.js"></script>
 <script src="assets/model_hydrate.js"></script>
 <script src="assets/pack.js"></script>
+<script src="assets/model_explorer.js"></script>
 <script>
 PACK.setWorkbooks([{label:"AI Use-Case Scoring Model .xlsx", href:""},{label:"AI Use-Case User Manual .docx", href:""}]);
 PACK.renderNav("ai_usecases.html");
+// build the model explorer so assessment element chips open a full element panel
+try{ if(window.MODELX) MODELX.build(window.ACTIVE_MODEL_SHEETS||window.NB_MODEL_SHEETS||[]); }catch(e){}
   try{ PACK.renderBreadcrumb(null); }catch(e){}
 var D = PACK.data(), DRV = D.aiDrivers;
 var phaseColor = {concept:"#94a3b8", pilot:"#2f6fed", production:"#15803d"};
@@ -258,14 +266,22 @@ function ucAssessmentBlock(u){
   var rHtml="";
   if(dims.length){
     var avg=(dims.reduce(function(a,d){return a+(d.score||0);},0)/dims.length);
+    var canLink=!!(window.MODELX&&MODELX.ENT&&MODELX.detail);
+    function elChip(id){
+      var e=canLink?MODELX.ENT[id]:null;
+      var nm=e?(e.name||id):id;
+      if(e) return '<a class="uca-el" title="'+PACK.esc(nm)+'" onclick="MODELX.detail(\''+String(id).replace(/\x27/g,"\\\x27")+'\')">'+PACK.esc(nm)+' <span class="eid">'+PACK.esc(id)+'</span></a>';
+      return '<span class="uca-el static" title="'+PACK.esc(id)+'">'+PACK.esc(id)+'</span>';
+    }
     var rows=dims.map(function(d){
       var isData=/data/i.test(d.name);
+      var chips=(d.els&&d.els.length)?('<div class="uca-els">'+d.els.map(elChip).join("")+'</div>'):'';
       return '<div class="uca-dim'+(isData?' data':'')+'">'+
         '<span class="uca-dn">'+PACK.esc(d.name)+(isData?' <span class="uca-derived">derived</span>':'')+'</span>'+
         '<span class="uca-bar"><i style="width:'+(d.score*20)+'%;background:'+ragColor(d.rag)+'"></i></span>'+
         '<span class="uca-sc" style="color:'+ragColor(d.rag)+'">'+PACK.esc(d.score)+'/5</span>'+
         '<span class="uca-lvl">'+PACK.esc(d.level||"")+'</span>'+
-        (d.basis?'<div class="uca-basis">'+PACK.esc(d.basis)+'</div>':'')+'</div>';
+        (d.basis?'<div class="uca-basis">'+PACK.esc(d.basis)+'</div>':'')+chips+'</div>';
     }).join("");
     rHtml='<div class="uca-part"><div class="uca-h">Readiness <span class="muted" style="font-weight:600">avg '+avg.toFixed(1)+'/5 across 6 dimensions</span></div>'+
       '<div class="uca-dims">'+rows+'</div>'+

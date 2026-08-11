@@ -216,8 +216,14 @@
   /* ---- Use-Case Assessment: Value/Commercial + Readiness (6 dimensions) ---- */
   var ucv={}; recs("163 ·").forEach(function(r){ ucv[r.UseCaseID]={uc:r.UseCaseID,name:r.UseCaseName,phase:r.Phase,themeId:r.ValueThemeID,theme:r.ValueTheme,outcome:r.PrimaryOutcomeID,score:N(r.ValueScore),rating:r.CommercialRating,rationale:r.Rationale}; });
   if(Object.keys(ucv).length) G.ucValue=ucv;
-  var ucr={}; recs("164 ·").forEach(function(r){ (ucr[r.UseCaseID]=ucr[r.UseCaseID]||[]).push({dim:r.DimensionID,name:r.DimensionName,score:N(r.Score),level:r.MaturityLevel,rag:r.RAG,basis:r.Basis}); });
+  var ucr={}; recs("164 ·").forEach(function(r){ (ucr[r.UseCaseID]=ucr[r.UseCaseID]||[]).push({dim:r.DimensionID,name:r.DimensionName,score:N(r.Score),level:r.MaturityLevel,rag:r.RAG,basis:r.Basis,els:String(r.Elements||"").split(/[;,]/).map(function(s){return s.trim();}).filter(Boolean)}); });
   if(Object.keys(ucr).length) G.ucReadiness=ucr;
+  /* ---- Operating Model: teams, named role-holders (FTE + staffing), use-case RACI ---- */
+  set("operatingTeams", recs("165 ·").map(function(r){ return {id:r.TeamID,name:r.TeamName,fn:r.Function,lead:r.LeadRoleID,leadPerson:r.LeadPerson,fte:N(r.HeadcountFTE)}; }));
+  var ra={}; recs("166 ·").forEach(function(r){ ra[r.RoleID]={role:r.RoleID,name:r.RoleName,team:r.TeamID,teamName:r.TeamName,holder:r.RoleHolder,fte:N(r.FTE),status:r.AllocationStatus,notes:r.Notes}; });
+  if(Object.keys(ra).length) G.roleAllocation=ra;
+  var ucra={}; recs("167 ·").forEach(function(r){ (ucra[r.UseCaseID]=ucra[r.UseCaseID]||[]).push({raci:r.RACIType,role:r.RoleID,name:r.RoleName,holder:r.RoleHolder,status:r.StaffingStatus,fte:N(r.FTEAllocated)}); });
+  if(Object.keys(ucra).length) G.ucRoleAllocation=ucra;
 
   /* ---- Critical Data Elements + decision→CDE map ---- */
   set("criticalDataElements", recs("153 ·").map(function(r){ return {id:r.CDEID,name:r.Name,def:r.Definition,term:r.BusinessTerm,concept:r.OwningConceptID,source:r.GoldenSource,steward:r.StewardRole,classification:r.Classification,dimensions:r.QualityDimensions,threshold:r.QualityThreshold,policy:r.GoverningPolicyID,tier:r.CriticalityTier,decisions:L(r.Decisions),dataType:r.DataType}; }));

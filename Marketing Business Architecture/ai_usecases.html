@@ -36,6 +36,26 @@
   .ucag-mdls{margin-top:5px}.ucag-mdl{display:inline-block;font-size:.72rem;background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff;border-radius:6px;padding:2px 8px;margin:2px 3px 2px 0}
   .ucag-gov{margin-top:5px;font-size:.74rem;color:var(--mut)}
   .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+  /* Use-case assessment (Value/Commercial + Readiness) */
+  .uca-part{border:1px solid var(--line);background:#fbfcfe;border-radius:10px;padding:10px 12px;margin:0 0 8px}
+  .uca-h{font-size:.82rem;font-weight:700;color:var(--ink);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .uca-rate{font-size:.66rem;font-weight:800;border-radius:6px;padding:2px 8px}
+  .uca-val{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.86rem}
+  .uca-theme{display:inline-flex;align-items:baseline;gap:5px;background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff;border-radius:7px;padding:2px 9px;font-weight:650}
+  .uca-theme .tid{font-family:"SF Mono",monospace;font-size:.68rem;opacity:.75}
+  .uca-score{margin-left:auto;font-size:.75rem;color:var(--mut)}
+  .uca-note{font-size:.74rem;color:var(--mut);margin-top:6px}
+  .uca-dims{display:flex;flex-direction:column;gap:7px}
+  .uca-dim{display:grid;grid-template-columns:120px 1fr 46px 92px;gap:8px;align-items:center;font-size:.8rem}
+  .uca-dim.data{background:#f0f9ff;border:1px solid #d7ecfb;border-radius:8px;padding:5px 8px}
+  .uca-dn{font-weight:600;color:var(--ink)}
+  .uca-derived{font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#0e7490;background:#e0f2fe;border-radius:4px;padding:1px 5px;margin-left:3px}
+  .uca-bar{height:8px;border-radius:5px;background:#eef2f7;overflow:hidden}
+  .uca-bar i{display:block;height:100%;border-radius:5px}
+  .uca-sc{font-weight:700;text-align:right;font-size:.76rem}
+  .uca-lvl{font-size:.74rem;color:var(--mut)}
+  .uca-basis{grid-column:1/-1;font-size:.72rem;color:var(--mut);margin-top:1px}
+  @media(max-width:620px){.uca-dim,.uca-dim.data{grid-template-columns:1fr auto;gap:4px}.uca-bar,.uca-lvl{grid-column:1/-1}}
 </style>
 </head>
 <body>
@@ -197,6 +217,7 @@ function renderCards(){
           '<div class="dcol"><h5>Delivery risk (1–5) — higher = more risk</h5>'+ DRV.risk.map(function(d){return slider(u,"risk",d);}).join("")+
             slider(u,"_cost",{key:"cost",label:"Cost (bubble size)"})+'</div>'+
         '</div>'+
+        ucAssessmentBlock(u)+
         (u.terms&&u.terms.length?('<h4 style="margin-top:14px;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)">Glossary terms</h4>'+PACK.termChips(u.terms)):'')+
         (u.decisions&&u.decisions.length?('<h4 style="margin-top:12px;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)">Decisions</h4>'+PACK.chips(u.decisions)):'')+
         ucAgentBlock(u)+
@@ -215,6 +236,42 @@ function ucAgentBlock(u){
     (models.length?'<div class="ucag-mdls">'+models.map(function(m){return '<span class="ucag-mdl" title="'+PACK.esc(m.type)+'">'+PACK.esc(m.name)+'</span>';}).join("")+'</div>':'')+
     '<div class="ucag-gov">Grounded in '+km.length+' knowledge asset'+(km.length===1?"":"s")+' · governed by '+pol.length+' policy domain'+(pol.length===1?"":"s")+
     (ag.hitl?' · <span style="color:#b91c1c;font-weight:600">human-in-the-loop</span>':'')+'</div></div>';
+}
+// the governed two-part Use-Case Assessment: Value/Commercial + Readiness (6 dims)
+function ucAssessmentBlock(u){
+  var D=PACK.data();
+  var val=(D.ucValue||{})[u.id], dims=(D.ucReadiness||{})[u.id]||[];
+  if(!val && !dims.length) return "";
+  function ragColor(r){ return r==="Green"?"#16a34a":(r==="Amber"?"#d97706":(r==="Red"?"#dc2626":"#94a3b8")); }
+  function ratePill(x){ var c=x==="High"?["#dcfce7","#166534"]:(x==="Medium"?["#fef9c3","#854d0e"]:["#fee2e2","#b91c1c"]);
+    return '<span class="uca-rate" style="background:'+c[0]+';color:'+c[1]+'">'+PACK.esc(x)+'</span>'; }
+  // Value / Commercial part
+  var vHtml="";
+  if(val){
+    vHtml='<div class="uca-part"><div class="uca-h">Value / Commercial'+(val.rating?' '+ratePill(val.rating):'')+'</div>'+
+      '<div class="uca-val">'+(val.themeId?'<span class="uca-theme" title="Enterprise Value theme">'+PACK.esc(val.theme||val.themeId)+' <span class="tid">'+PACK.esc(val.themeId)+'</span></span>':'')+
+      (val.outcome?' <span class="muted">→ outcome '+PACK.esc(val.outcome)+'</span>':'')+
+      (val.score?'<span class="uca-score">value '+PACK.esc(val.score)+'/5</span>':'')+'</div>'+
+      (val.rationale?'<div class="uca-note">'+PACK.esc(val.rationale)+'</div>':'')+'</div>';
+  }
+  // Readiness part — six dimensions with score bar + RAG; Data dimension shows its basis
+  var rHtml="";
+  if(dims.length){
+    var avg=(dims.reduce(function(a,d){return a+(d.score||0);},0)/dims.length);
+    var rows=dims.map(function(d){
+      var isData=/data/i.test(d.name);
+      return '<div class="uca-dim'+(isData?' data':'')+'">'+
+        '<span class="uca-dn">'+PACK.esc(d.name)+(isData?' <span class="uca-derived">derived</span>':'')+'</span>'+
+        '<span class="uca-bar"><i style="width:'+(d.score*20)+'%;background:'+ragColor(d.rag)+'"></i></span>'+
+        '<span class="uca-sc" style="color:'+ragColor(d.rag)+'">'+PACK.esc(d.score)+'/5</span>'+
+        '<span class="uca-lvl">'+PACK.esc(d.level||"")+'</span>'+
+        (d.basis?'<div class="uca-basis">'+PACK.esc(d.basis)+'</div>':'')+'</div>';
+    }).join("");
+    rHtml='<div class="uca-part"><div class="uca-h">Readiness <span class="muted" style="font-weight:600">avg '+avg.toFixed(1)+'/5 across 6 dimensions</span></div>'+
+      '<div class="uca-dims">'+rows+'</div>'+
+      '<div class="uca-note">Data readiness is derived from the supplying data products’ DQ scorecards and their Critical Data Element status.</div></div>';
+  }
+  return '<div class="uca"><h4 style="margin:16px 0 6px;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)">Use-case assessment</h4>'+vHtml+rHtml+'</div>';
 }
 function slider(u,group,d){
   var val = group==="_cost"? u.cost : u[group][d.key];

@@ -1080,9 +1080,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.39.0";
-window.PACK_CONFIG.built   = "2026-08-10 23:30 SAST";
+window.PACK_CONFIG.version = "v1.40.0";
+window.PACK_CONFIG.built   = "2026-08-11 00:10 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.40.0", date:"2026-08-11 00:10 SAST",
+    note:"All six Use-Case readiness dimensions are now derived from concrete governed evidence — not just Data. Previously People, Process, Technology, Governance and Measurement were anchored to the use-case's overall readiness rating; each is now computed from real model signals, each with a transparent basis line: People from accountable owners (the AI agent, the supplying data-product owners, the outcome owner) plus RACI coverage on its process steps and its adoption phase; Process from how many governed process steps it runs in and how many carry RACI and policy/control; Technology from its lifecycle phase, model cards and whether drift/performance monitoring is configured; Data (unchanged) from the supplying data products' DQ scorecards and CDE status; Governance from the agent's policy domains, HITL posture, step-level controls and evidence, and data products under DQ control; Measurement from the outcome's KPIs, step-level metrics, model eval thresholds and the fairness/drift monitoring register. The result is a genuine 1–5 spread across the portfolio rather than a flat anchor. Verified 0 console errors across both organisations." },
   { v:"v1.39.0", date:"2026-08-10 23:30 SAST",
     note:"Governed two-part Use-Case Assessment. Every AI use-case now carries an explicit assessment in two parts, surfaced on the AI Use-Cases page and held as two new governed sheets. (1) Value / Commercial (163 · UseCase_ValueAssessment) maps each use-case to its Enterprise Value theme with a value score and a commercial rating — which links the Enterprise Value Map into the model. (2) Readiness (164 · UseCase_ReadinessAssessment) scores each use-case across the six Readiness Dimensions (People, Process, Technology, Data, Governance, Measurement), each with a maturity level, RAG and basis — which links the previously-unlinked Readiness Dimensions into the model. The Data readiness dimension is DERIVED, not authored: it rolls up the DQ scorecard RAG of the data products that supply the use-case and their Critical Data Element status (e.g. Nedbank U01 shows 13 CDEs governed, 3 at risk, pulling Data readiness from 5 to 4). This resolves the Readiness-Dimension elements from the unlinked list. Verified 0 console errors across both organisations." },
   { v:"v1.38.1", date:"2026-08-10 22:45 SAST",

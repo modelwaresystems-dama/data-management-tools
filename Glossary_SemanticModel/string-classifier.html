@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 <style>
 :root{
   --bg:#f4f7ef; --bg-accent:#e8f5d8; --text:#1f2a2e; --muted:#5f6d72; --card:#ffffff;
@@ -176,13 +177,15 @@ footer{margin-top:2rem;font-size:.72rem;color:var(--muted);font-family:"Source S
 <input type="file" id="wnInput" class="hiddenfile" accept=".js,.json" onchange="App.wnFileChosen(this.files)">
 <div id="modalRoot"></div>
 <script>
+
+
 "use strict";
 /* ============================================================
    Semantium String Classifier — Level 0 Lexical Gate (standalone)
    Modelware Systems International · Glossary_SemanticModel suite
    ============================================================ */
-const APP_VERSION = "1.16.0";
-const APP_BUILT = "2026-07-29 08:28 SAST";
+const APP_VERSION = "1.18.0";
+const APP_BUILT = "2026-08-11 19:47 SAST";
 const APP_NAME = "Semantium String Classifier";
 /* Release history — every shipped change bumps the minor and appends here (rendered in Reference › About, exported in Meta). */
 const VERSION_HISTORY = [
@@ -207,7 +210,9 @@ const VERSION_HISTORY = [
   ["1.14.1","Longest-match-wins mention resolution (Party inside Party Role is not a mention — the role-as-party trap via substring); Instance Data / Fact rows excluded from genus-differentia derivation: instance-of is not narrower-of (D38)"],
   ["1.15.0","Instance grounding display: instances attach to the concept they instantiate (Marco grounds Person, wears roles via playsRole) as a distinct dashed group — never on the broader/narrower axes (D39)"],
   ["1.15.1","Fix blank Thesaurus: v1.15.0's instance guard was spliced into two locations by a non-unique patch anchor, throwing mid-render; a render-level smoke test against the shipped worked-example workbook is now part of the harness (D40)"],
-  ["1.16.0","Graph parity with the Thesaurus card: governed predicate edges (S-P-O from Type verbalizations, gold, labeled, arrowed Subject→Object) and Related-via-differentia sector (grey dotted); the ego view now shows how the definition's terms actually connect (D41)"]
+  ["1.16.0","Graph parity with the Thesaurus card: governed predicate edges (S-P-O from Type verbalizations, gold, labeled, arrowed Subject→Object) and Related-via-differentia sector (grey dotted); the ego view now shows how the definition's terms actually connect (D41)"],
+  ["1.17.0","Instance classification story: instance cards show Quant Level, Term Type, a resolved instance-of → concept chip, and their Instance-level facts (gold); instance ego graphs gain an Instance-of sector and Instance-verbalization edges (D42)"],
+  ["1.18.0","Storage resilience: lexicons persist LZ-compressed; a quota failure can no longer abort a workbook load or throw — the lexicon stays fully usable in memory with a persistent Export-now banner; Lexicons menu shows per-lexicon size and a total meter (D43)"]
 ];
 
 /* ---------------- Closed vocabularies (single source of truth) -------- */
@@ -289,9 +294,26 @@ const Store = {
     return m;
   },
   blankLex(name){ return {name, rows:[], nextNode:NODE_START, nextLine:LINE_START, contributor:"", auditSummary:null, auditHealth:null, auditVerdict:null, lastLoaded:null}; },
-  lex(id){ try{return JSON.parse(localStorage.getItem(this.NS+"lex."+id))||this.blankLex("Lexicon");}catch(e){return this.blankLex("Lexicon");} },
-  saveLex(id,l){ localStorage.setItem(this.NS+"lex."+id,JSON.stringify(l)); },
-  removeLex(id){ localStorage.removeItem(this.NS+"lex."+id); }
+  lex(id){ try{
+      let v=localStorage.getItem(this.NS+"lex."+id);
+      if(v&&v.startsWith("LZ1|")&&typeof LZString!=="undefined") v=LZString.decompressFromUTF16(v.slice(4));
+      return JSON.parse(v)||this.blankLex("Lexicon");
+    }catch(e){return this.blankLex("Lexicon");} },
+  saveLex(id,l){
+    /* compressed persist with graceful quota failure — NEVER throws:
+       a lexicon too large for localStorage stays fully usable in memory */
+    const key=this.NS+"lex."+id, json=JSON.stringify(l);
+    let payload=json;
+    if(typeof LZString!=="undefined"){ try{ payload="LZ1|"+LZString.compressToUTF16(json); }catch(e){ payload=json; } }
+    try{ localStorage.setItem(key,payload); return {ok:true,bytes:payload.length*2}; }
+    catch(e){ try{ localStorage.removeItem(key); }catch(_){/*keep prior value gone rather than half-written*/}
+      return {ok:false,error:String(e&&e.message||e),bytes:payload.length*2}; }
+  },
+  removeLex(id){ localStorage.removeItem(this.NS+"lex."+id); },
+  sizeOf(id){ return (localStorage.getItem(this.NS+"lex."+id)||"").length*2; },
+  totalBytes(){ let t=0; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i);
+      if(k&&k.startsWith(this.NS)) t+=(localStorage.getItem(k)||"").length*2; } return t; },
+  fmtBytes(b){ return b>=1048576?(b/1048576).toFixed(2)+" MB":Math.ceil(b/1024)+" KB"; }
 };
 
 /* ---------------- ID service ---------------- */
@@ -487,7 +509,20 @@ const App = {
     this.renderLexBar(); this.resetWizard(); this.renderAll();
     await WN.init(); this.renderDatasetBanner(); this.renderView();
   },
-  save(){ this.lex.rows.forEach(r=>Validate.deriveFacet(r)); Store.saveLex(this.lexId,this.lex); this.renderTiles(); },
+  save(){ this.lex.rows.forEach(r=>Validate.deriveFacet(r));
+    const res=Store.saveLex(this.lexId,this.lex);
+    this.memOnly=!res.ok; this.renderTiles(); this.renderStorageBanner(res);
+  },
+  renderStorageBanner(res){
+    let b=document.getElementById("storage-banner");
+    if(!this.memOnly){ if(b) b.remove(); return; }
+    if(!b){ b=document.createElement("div"); b.id="storage-banner";
+      const bar=$("#lexbar"); (bar&&bar.parentNode?bar.parentNode:document.body).insertBefore(b,bar?bar.nextSibling:null); }
+    b.innerHTML=`<div class="errorbox" style="margin:.5rem 0"><strong>Browser storage is full — this lexicon now lives in memory only.</strong>
+      Nothing is lost while this tab stays open, but changes are NOT persisted: <strong>Export now</strong> to keep them.
+      Needed ${Store.fmtBytes(res&&res.bytes||0)}; total used ${Store.fmtBytes(Store.totalBytes())} of ~5 MB.
+      Free space in the <i class="fa-solid fa-layer-group"></i> Lexicons menu by deleting unused lexicons, then Export/Load this one again.</div>`;
+  },
   renderAll(){ this.renderTiles(); this.renderView(); },
 
   /* ---------- dataset banner ---------- */
@@ -514,12 +549,14 @@ const App = {
     this.lex=Store.lex(id); Ids.resync(this.lex); this.resetWizard(); this.renderLexBar(); this.renderAll();
   },
   openLexiconManager(){
-    const rows=this.metaCfg.lexicons.map(l=>`<tr><td>${esc(l.name)}</td><td class="small">${esc(l.created)}</td><td class="right">
+    const rows=this.metaCfg.lexicons.map(l=>`<tr><td>${esc(l.name)}</td><td class="small">${esc(l.created)}</td><td class="small right">${Store.fmtBytes(Store.sizeOf(l.id))}</td><td class="right">
       <button onclick="App.renameLexicon('${l.id}')">Rename</button>
       <button onclick="App.duplicateLexicon('${l.id}')">Duplicate</button>
       <button class="danger" onclick="App.deleteLexicon('${l.id}')">Delete</button></td></tr>`).join("");
+    const tot=Store.totalBytes();
     this.modal(`<h2><i class="fa-solid fa-layer-group"></i> Lexicons</h2>
-      <table class="inv"><thead><tr><th>Name</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="hint">Browser storage used: <strong>${Store.fmtBytes(tot)}</strong> of ~5 MB${tot>4*1048576?' — <span style="color:#a12d2d">nearly full; delete unused lexicons</span>':""}. Large lexicons are stored compressed.</p>
+      <table class="inv"><thead><tr><th>Name</th><th>Created</th><th class="right">Size</th><th></th></tr></thead><tbody>${rows}</tbody></table>
       <div class="row-flex" style="margin-top:1rem"><input type="text" id="newLexName" placeholder="New lexicon name" style="max-width:280px">
       <button class="primary" onclick="App.newLexicon()">New lexicon</button><span class="spacer"></span><button onclick="App.closeModal()">Close</button></div>`);
   },
@@ -1315,8 +1352,27 @@ Object.assign(App,{
     if(!gloss.trim()) return out;
     if(p.quantLevel==="Instance Data"||p.termType==="Fact"){
       /* Instances ground concepts (Level 2 empirical check) — they do not classify.
-         instance-of is NOT narrower-of: no genus-differentia derivation for or about them. */
-      out.ungoverned=[]; return out;
+         instance-of is NOT narrower-of: no genus-differentia derivation for or about them.
+         Their classification story is: instance-of → concept, plus Instance-level facts. */
+      out.ungoverned=[];
+      const escR2=x=>x.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+      const concepts=this.lex.rows.filter(r=>!r.primaryEquivalent&&r.id!==p.id&&r.termType!=="Relationship"&&r.termType!=="Fact"&&r.quantLevel!=="Instance Data");
+      const ig=String(p.senseGloss||"");
+      const ic=ig.search(/\b(that|which|who)\b/i);
+      const igp=ic>=0?ig.slice(0,ic):ig.split(/[,;]/)[0];
+      let head=null;
+      for(const r of concepts){
+        const sfs=[{t:r.label},...this.lex.rows.filter(a=>a.primaryEquivalent===r.id&&a.label.trim()).map(a=>({t:a.label}))];
+        for(const sf of sfs){
+          const m=new RegExp("\\b"+escR2(sf.t)+"s?\\b","i").exec(igp);
+          if(!m) continue;
+          /* earliest position wins; on a tie the longer surface wins (Party Role beats Party) */
+          if(!head||m.index<head.pos||(m.index===head.pos&&sf.t.length>head.len))
+            head={r,pos:m.index,len:sf.t.length};
+        }
+      }
+      out.instanceOf=head?head.r:null;
+      return out;
     }
     if(p.termType==="Relationship"){
       /* A Line's gloss is a verbalization — Subject-predicate-Object, not genus-differentia.
@@ -1513,6 +1569,15 @@ Object.assign(App,{
           return `<div style="margin-top:.35rem"><label class="f">Governed thesaurus relations — YOUR model's hierarchy (steward rulings; independent of the dictionary ancestry below, and overriding every derivation)</label>
             ${rels.length?`<div class="wnrel">${rels.map(relRow).join(" ")}</div>`:'<p class="hint" style="margin:.15rem 0">None yet — add one below, or confirm a derived proposal with its ✓.</p>'}${addSel}</div>`;})()}
         ${(()=>{const sg=this.governedSuggestions(p);
+          if(p.quantLevel==="Instance Data"||p.termType==="Fact"){
+            const gm=this.graphModel(p);
+            const facts=(gm.predicates||[]).map(n=>`<span class="chip" style="border-color:#b8860b" title="${esc(n.title||"")}">${n.dir==="out"?esc(p.label)+" "+esc(n.pred)+" → "+esc(n.label):esc(n.label)+" "+esc(n.pred)+" → "+esc(p.label)}</span>`).join(" ");
+            return `<div style="margin-top:.35rem"><label class="f">Instance classification — grounds a concept, wears roles; never in the taxonomy</label>
+              <div class="wnrel"><span class="chip">${esc(p.quantLevel||"Instance Data")}</span> <span class="chip">${esc(p.termType||"Fact")}</span>
+              ${sg.instanceOf?`<span class="chip on" title="instance-of — grounds the concept (D39); click to open" onclick="App.graphSel='${esc(sg.instanceOf.id)}';App.setView('graph')" style="cursor:pointer">instance-of → ${esc(sg.instanceOf.label)} · ${esc(sg.instanceOf.id)}</span>`:'<span class="chip v-WARN">instance-of unresolved — name the concept in the gloss</span>'}
+              ${facts?" "+facts:""}</div>
+              <p class="hint" style="margin:.2rem 0 0">Instance-level facts come from the predicates' Instance verbalizations — this is the Level 2 empirical grounding, previewed at Level 0.</p></div>`;
+          }
           if(p.termType==="Relationship"){
             const prd=sg.predicateReading||{};
             const chipR=(h,role)=>h?`<span class="chip on" title="${esc(h.r.id)}${h.via?" · via alias “"+esc(h.via)+"”":""}">${esc(role)}: ${esc(h.r.label)}</span>`:"";
@@ -1971,14 +2036,24 @@ Object.assign(App,{
         for(const r of prims){
           const sfs=[r.label,...this.lex.rows.filter(x=>x.primaryEquivalent===r.id).map(x=>x.label)];
           for(const sf of sfs)
-            if(sf&&t.toLowerCase()===sf.toLowerCase()||new RegExp("(^|\\s)"+sf.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"s?$","i").test(t))
-              if(!best||sf.length>best.len) best={r,len:sf.length};
+            if(sf&&t.toLowerCase()===sf.toLowerCase()||new RegExp("(^|\\s)"+sf.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"s?$","i").test(t)){
+              /* longest surface wins; on a tie the viewed row wins (duplicate labels are legal across senses) */
+              const score=sf.length*2+(r.id===p.id?1:0);
+              if(!best||score>best.score) best={r,len:sf.length,score};
+            }
         }
         return best&&best.r;
       };
+      const isInst=p.quantLevel==="Instance Data"||p.termType==="Fact";
+      groups.instanceOf=[];
+      if(isInst){
+        const sgI=this.governedSuggestions(p);
+        if(sgI.instanceOf) groups.instanceOf.push({id:sgI.instanceOf.id,label:sgI.instanceOf.label,kind:"gov",
+          title:"instance-of — grounds the concept; never narrower (D39)"});
+      }
       for(const rel of this.lex.rows.filter(r=>r.termType==="Relationship"&&!r.primaryEquivalent)){
         for(const v of (rel.verbalizations||[])){
-          if(v.level!=="Type") continue;
+          if(v.level!==(isInst?"Instance":"Type")) continue;
           const m=new RegExp("^(.*?)\\b"+rel.label.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b(.*)$").exec(v.text||"");
           if(!m) continue;
           const S=resolve(m[1]||""), O=resolve(m[2]||"");
@@ -2006,11 +2081,13 @@ Object.assign(App,{
     const sectors={broader:{x:cx,y:70,dx:170,dy:0,lab:"Broader"},narrower:{x:cx,y:H-60,dx:170,dy:0,lab:"Narrower"},
       equivalence:{x:W-130,y:cy,dx:0,dy:64,lab:"Equivalence"},opposite:{x:120,y:cy,dx:0,dy:64,lab:"Opposite"},
       partOf:{x:180,y:130,dx:150,dy:44,lab:"Part-Of"},hasPart:{x:W-190,y:H-130,dx:-150,dy:-44,lab:"Has-Part"},
-      predicates:{x:W-200,y:120,dx:-160,dy:46,lab:"Predicates (S-P-O)"},related:{x:190,y:H-120,dx:160,dy:-46,lab:"Related (differentia)"}};
+      predicates:{x:W-200,y:120,dx:-160,dy:46,lab:"Predicates (S-P-O)"},related:{x:190,y:H-120,dx:160,dy:-46,lab:"Related (differentia)"},
+      instanceOf:{x:cx,y:70,dx:170,dy:0,lab:"Instance-of (grounds)"}};
     const styles={broader:"stroke:#0d7a8a;stroke-width:2",narrower:"stroke:#0d7a8a;stroke-width:2",
       equivalence:"stroke:#2d6a4f;stroke-width:2",opposite:"stroke:#a12d2d;stroke-width:2;stroke-dasharray:6 4",
       hasPart:"stroke:#7a5aa0;stroke-width:2",partOf:"stroke:#7a5aa0;stroke-width:2",
-      predicates:"stroke:#b8860b;stroke-width:1.6",related:"stroke:#8a8a80;stroke-width:1.4;stroke-dasharray:2 5"};
+      predicates:"stroke:#b8860b;stroke-width:1.6",related:"stroke:#8a8a80;stroke-width:1.4;stroke-dasharray:2 5",
+      instanceOf:"stroke:#2d6a4f;stroke-width:2;stroke-dasharray:7 4"};
     let nodes="",edges="";
     const nodeBox=(n,x,y,rel)=>{
       const w=Math.max(80,Math.min(180,n.label.length*8+22)),h=30;
@@ -2059,6 +2136,8 @@ Object.assign(App,{
     a.download=(this.lex.name+"_thesaurus_"+(this.graphSel||"graph")).replace(/[^A-Za-z0-9_-]+/g,"_")+".svg"; a.click();
   }
 });
+
+
 
 </script>
 </body>

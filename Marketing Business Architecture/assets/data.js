@@ -850,6 +850,12 @@ window.PACK_CONFIG = {
     linkTemplate:"{base}?term={key}",
     note:"Set the Nedbank Glossary Workbench base URL and link template on the Glossary settings page. Until set, term chips are shown but inert."
   },
+  policyInspector:{
+    enabled:false,
+    baseUrl:"",
+    linkTemplate:"{base}?id={key}",
+    note:"Point the pack at your external Policy Inspector HTML app here. Once set, every policy, theme, control and process shows an 'Open in Inspector ↗' deep-link. Until set, the pack's own built-in inspector is used."
+  },
   pages:[
     {file:"index.html", nav:"Home", title:"Landing"},
     {file:"business_architecture.html", nav:"Architecture", title:"Business Architecture"},
@@ -1008,6 +1014,7 @@ window.PACK_CONFIG.chain = [
   if(!has("critical_data_elements.html")){ var q=p.findIndex(function(x){return x.file==="decisions.html";}); p.splice((q>=0?q+1:p.length),0,{file:"critical_data_elements.html", nav:"Critical Data", title:"Critical Data Elements"}); }
   if(!has("north_star.html")){ var vi=p.findIndex(function(x){return x.file==="value_streams.html";}); p.splice((vi>=0?vi+1:1),0,{file:"north_star.html", nav:"North Star", title:"North Star & Metric Tree"}); }
   if(!has("operating_model.html")){ var gi=p.findIndex(function(x){return x.file==="governance_responsible_ai.html";}); p.splice((gi>=0?gi+1:p.length),0,{file:"operating_model.html", nav:"Operating Model", title:"Operating Model"}); }
+  if(!has("policy_inspector.html")){ var pgi=p.findIndex(function(x){return x.file==="operating_model.html";}); p.splice((pgi>=0?pgi+1:p.length),0,{file:"policy_inspector.html", nav:"Policy Inspector", title:"Policy Inspector"}); }
   if(!has("model_review.html")) p.push({file:"model_review.html", nav:"Model Review", title:"Architecture Model — Full Review"});
   if(!has("element_relationships.html")) p.push({file:"element_relationships.html", nav:"Relationships", title:"Element Relationships"});
 })();
@@ -1082,9 +1089,19 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.44.4";
-window.PACK_CONFIG.built   = "2026-08-12 21:55 SAST";
+window.PACK_CONFIG.version = "v1.45.3";
+window.PACK_CONFIG.built   = "2026-08-13 00:05 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.45.3", date:"2026-08-13 00:05 SAST",
+    note:"Re-pointed every legacy control reference to the new PolicyControl model, so the whole pack now speaks one control model. A deterministic crosswalk maps each legacy Standard_Control (CTL-…) to the best-matching new control in the same policy (published as 182 · Control_Crosswalk — 116 Nedbank / 65 AGGPSA rows), and every cross-object reference was rewritten to the new controls: process steps (125, 138), evidence→control assurance (141), the risk register's mitigation control (69), audit & assurance (71), regulatory-obligation map (109), stewardship traceability (122), extended end-to-end traceability (97), decision-rights RACI (68) and the use-case readiness Governance evidence chips (164). The governance and value-stream pages, and the relationship engine, now render and link the new controls; control→evidence uses the new evidence artefacts with their approval state. Verified: 0 legacy references left, 0 dangling ids, all re-pointed ids resolve in the relationship engine, and existing pages load clean across both organisations." },
+  { v:"v1.45.2", date:"2026-08-12 23:35 SAST",
+    note:"Completed and verified every relationship in the policy meta-model. Three gaps were found and closed: (1) the 40 DAMA data-management policies per org (Data Quality, Security, Privacy, Records, Metadata, Master/Reference Data, Architecture, Modelling, Integration, BI/DW, Document, Storage & Operations, Governance, Information) were falling back to generic themes — they now get domain-specific themes and a Data Management principle set; (2) the review/continuous-improvement theme now has its own operating procedure, so every control is implemented by a process (previously ~166 review controls were unlinked); (3) a principle-coverage safety net guarantees every control maps to at least one principle. Referential integrity is now 100% both ways: 0 controls without evidence, acceptance, a principle or an implementing process, and 0 dangling evidence→process, principle→control or process→control references, across both organisations. Nedbank now carries 1,408 controls; AGGPSA 980. Policy Inspector re-verified." },
+  { v:"v1.45.1", date:"2026-08-12 23:05 SAST",
+    note:"New Policy Inspector page (under Governance / Operating Model). It renders the full policy meta-model for every policy: a searchable, domain-filtered policy list on the left, and on the right the selected policy's principles, management intent (with RPN priority), themes (articles) with their themed controls, and the implementing processes and KPIs. Each control shows its core intent, objective, Responsible + Accountable roles, minimum evidence and Pass/Fail acceptance rule, and cross-links to the process that implements it, the evidence artefact it produces (with an Approved/Draft state) and the principles it embodies; processes link to their mapped capability. Everything is deep-linkable by id — open a policy with #POL-DATA-001 or jump straight to a control with #POL-DATA-001-C04. And a 'Connect Inspector app' panel lets you point the pack at your own external Policy Inspector HTML app (base URL + link template, saved in-browser like the Glossary Workbench); once set, every policy, theme, control and process shows an 'Open in Inspector ↗' deep-link. Verified across both organisations." },
+  { v:"v1.45.0", date:"2026-08-12 22:40 SAST",
+    note:"Populated the full Policy meta-model for every policy in both organisations (Nedbank 83, AGGPSA 58), lifting each policy from a single thin control to a themed, traceable control set. Nine governed sheets were added — 173 · PolicyPrinciple, 174 · PolicyManagementIntent, 175 · PolicyTheme (Articles), 176 · PolicyControl (the extended controls, right-sized to ~15–20 per policy across ~5–6 themes, each with core intent, objective, minimum & assurance evidence, frequency and a Responsible + Accountable role), 177 · PolicyControl_Acceptance (Pass/Fail rule per control), 178 · PolicyEvidenceArtefact (created & delivered by the process, with an approval state), 179 · PolicyKPI, 180 · PolicyProcess (the former SOPs, now modelled as processes and mapped to the nearest existing business capability), and 181 · Principle_Control_Map. Controls are generated to implement the policy's Management Intent and Principles, so every control traces up to a theme, a principle and an intent. Nedbank now carries 1,309 controls / 464 themes / 398 principles / 464 intents / 381 processes; AGGPSA 881 / 313 / 249 / 313 / 255. Deterministic content; existing pages verified with no new errors. (Policy Inspector wiring to follow.)" },
+  { v:"v1.44.5", date:"2026-08-12 22:10 SAST",
+    note:"Graph Explorer: fixed CDP-service nodes that rendered as a bare id (e.g. 'AS2') with no type, name or children in the AGGPSA model. The type resolver only recognised CDP services by a 'CDP' id prefix, but AGGPSA's CDP services are 'AS1…AS6'; it is now data-driven, so a CDP service resolves by identity regardless of its id prefix. 'AS2' now shows as the 'Grantee & Enterprise Registry' CDP service and expands to its five realising data products. Added ?v= cache-busting to the Graph page's model scripts. Verified in both organisations with no regression." },
   { v:"v1.44.4", date:"2026-08-12 21:55 SAST",
     note:"Hardened the North Star strategic→operational roll-up against stale caches. Some browsers were serving a cached older model file (same filename) alongside the newer page, which left every strategic driver reading '0 KPIs' because the cached model still used the un-suffixed parent id. The page now matches each driver's KPIs whether the model uses the suffixed ('BO01·M') or bare ('BO01') parent id — with no double-counting on the Execution & Enablement node — so a driver's KPIs always appear. Added cache-busting (?v=) to the model/data script tags so a new page always fetches fresh model data. Verified against both the current and a simulated stale model in both organisations." },
   { v:"v1.44.3", date:"2026-08-12 21:40 SAST",

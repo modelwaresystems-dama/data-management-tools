@@ -119,6 +119,26 @@
   };
   PACK.saveGlossary = function(obj){ LS.setItem("nbpack.glossary", JSON.stringify(obj)); };
 
+  /* ---- Policy Inspector link-out (persisted override of the baked default) -- */
+  PACK.policyInspector = function(){
+    var saved = LS.getItem("nbpack.policyInspector");
+    if(saved){ try{ return JSON.parse(saved); }catch(e){} }
+    return CFG.policyInspector || {enabled:false,baseUrl:"",linkTemplate:"{base}?id={key}"};
+  };
+  PACK.savePolicyInspector = function(obj){ LS.setItem("nbpack.policyInspector", JSON.stringify(obj)); };
+  /* build a deep-link URL to the external Policy Inspector app for any element id */
+  PACK.policyInspectorUrl = function(key){
+    var g = PACK.policyInspector();
+    if(!(g.enabled && g.baseUrl)) return "";
+    return g.linkTemplate.replace("{base}",g.baseUrl).replace("{key}",encodeURIComponent(key));
+  };
+  /* an "Open in Inspector ↗" link, or empty string when not configured */
+  PACK.policyInspectorLink = function(key,label){
+    var url = PACK.policyInspectorUrl(key);
+    if(!url) return "";
+    return '<a class="pi-extlink" href="'+PACK.esc(url)+'" target="_blank" rel="noopener" title="Open '+PACK.esc(key)+' in your Policy Inspector app">'+PACK.esc(label||"Open in Inspector")+' ↗</a>';
+  };
+
   /* ---- sign-off store (localStorage; git-history is the real audit trail) -- */
   function soKey(){ return "nbpack.signoff."+PACK.source; }
   PACK.signoff = function(id){

@@ -127,9 +127,25 @@
   set("raci", recs("68 ·").map(function(r){ return {id:r.RACI_ID,objType:r.ObjectType,objId:r.ObjectID,a:r.Accountable,r:r.Responsible,c:L(r.Consulted),i:L(r.Informed)}; }));
   set("policyDomains", recs("62 ·").map(function(r){ return {id:r.PolicyDomainID,name:r.Name,scope:r.Scope,owner:r.OwnerRoleID,category:r.Category||"Enterprise"}; }));
   set("policies", recs("63 ·").map(function(r){ return {id:r.PolicyID,domain:r.PolicyDomainID,statement:r.Statement,owner:r.OwnerRoleID,status:r.Status}; }));
-  set("controls", recs("64 ·").map(function(r){ return {id:r.ControlID,policy:r.PolicyID,objective:r.ControlObjective,activity:r.ControlActivity,freq:r.Frequency,evidence:r.EvidenceType}; }));
+  /* Controls: the pack now speaks ONE control model — the PolicyControl set (176),
+     superseding the legacy Standard_Control (64). Fields mapped for back-compat so
+     existing pages (governance, value streams) render the richer controls. */
+  var _pc=recs("176 ·");
+  if(_pc.length){
+    set("controls", _pc.map(function(r){ return {id:r.ControlID,policy:r.PolicyID,theme:r.ThemeCode,name:r.ControlName,objective:r.Objective,activity:r.ControlName,intent:r.CoreIntent,freq:r.Frequency,evidence:r.MinimumEvidence,responsible:r.ResponsibleRole,accountable:r.AccountableRole}; }));
+  } else {
+    set("controls", recs("64 ·").map(function(r){ return {id:r.ControlID,policy:r.PolicyID,objective:r.ControlObjective,activity:r.ControlActivity,freq:r.Frequency,evidence:r.EvidenceType}; }));
+  }
+  set("controlCrosswalk", recs("182 ·").map(function(r){ return {legacy:r.LegacyControlID,policy:r.PolicyID,control:r.NewControlID,name:r.NewControlName,basis:r.MatchBasis}; }));
   set("riskRegister", recs("69 ·").map(function(r){ return {id:r.RiskID,obj:r.ObjectID,type:r.RiskType,desc:r.Description,like:r.Likelihood,impact:r.Impact,control:r.MitigationControlID,owner:r.OwnerRoleID}; }));
-  set("controlEvidence", recs("65 ·").map(function(r){ return {control:r.ControlID,evidence:r.EvidenceID,required:r.EvidenceRequired,freq:r.ReviewFrequency}; }));
+  /* Control → evidence: from the new PolicyEvidenceArtefact set (178) so the
+     governance "control → evidence" view speaks the one control model. */
+  var _pe=recs("178 ·");
+  if(_pe.length){
+    set("controlEvidence", _pe.map(function(r){ return {control:r.ControlID,evidence:r.ArtefactID,required:r.Artefact,freq:r.ApprovalState}; }));
+  } else {
+    set("controlEvidence", recs("65 ·").map(function(r){ return {control:r.ControlID,evidence:r.EvidenceID,required:r.EvidenceRequired,freq:r.ReviewFrequency}; }));
+  }
   set("evidenceRegister", recs("66 ·").map(function(r){ return {id:r.EvidenceID,name:r.EvidenceName,obj:r.ObjectID,owner:r.OwnerRoleID,repo:r.RepositoryLocation,status:r.ReviewStatus}; }));
   set("recordsRetention", recs("70 ·").map(function(r){ return {id:r.RecordClassID,cls:r.RecordClass,objType:r.ObjectType,retention:r.RetentionRule,disposal:r.DisposalRule,legalHold:B(r.LegalHoldFlag)}; }));
   set("auditAssurance", recs("71 ·").map(function(r){ return {id:r.AssuranceID,control:r.ControlID,method:r.TestMethod,result:r.Result,finding:r.Finding,owner:r.RemediationOwner}; }));
@@ -229,6 +245,18 @@
   set("metricTree", recs("171 ·").map(function(r){ return {id:r.MetricID,name:r.Name,layer:r.Layer,parent:r.ParentMetricID,parentName:r.ParentName,owner:r.OwnerRole,unit:r.Unit,target:r.Target,att:N(r.Attainment),rag:r.RAG,srcType:r.SourceType,srcId:r.SourceID}; }));
   var evb={}; recs("172 ·").forEach(function(r){ (evb[r.TargetID]=evb[r.TargetID]||[]).push({id:r.EvalID,tType:r.TargetType,target:r.TargetID,targetName:r.TargetName,name:r.EvalName,cat:r.Category,metric:r.Metric,threshold:r.Threshold,method:r.Method,freq:r.Frequency,result:r.Result,status:r.Status,owner:r.OwnerRole}); });
   if(Object.keys(evb).length) G.aiEvals=evb;
+
+  /* ---- Policy meta-model (173..181) — for the Policy Inspector ---- */
+  set("policyPrinciples", recs("173 ·").map(function(r){ return {id:r.PrincipleID,policy:r.PolicyID,number:N(r.Number),name:r.Name,def:r.Definition,source:r.SourceAlignment,rationale:r.Rationale}; }));
+  set("policyIntents", recs("174 ·").map(function(r){ return {id:r.IntentID,policy:r.PolicyID,category:r.OutcomeCategory,statement:r.OutcomeStatement,scope:r.Scope,severity:N(r.Severity),occurrence:N(r.Occurrence),detection:N(r.Detection),rpn:N(r.RPN),priority:r.Priority,owner:r.OwnerRole,approval:r.ApprovalStatus,theme:r.ThemeCode,controls:L(r.ControlIDs)}; }));
+  set("policyThemes", recs("175 ·").map(function(r){ return {code:r.ThemeCode,policy:r.PolicyID,name:r.ThemeName,purpose:r.ThemePurpose,article:r.ArticleNumber,risk:r.InherentRisk,desc:r.ThemeDescription}; }));
+  set("policyControls", recs("176 ·").map(function(r){ return {id:r.ControlID,policy:r.PolicyID,theme:r.ThemeCode,name:r.ControlName,intent:r.CoreIntent,objective:r.Objective,evidence:r.MinimumEvidence,assurance:r.AssuranceEvidence,freq:r.Frequency,responsible:r.ResponsibleRole,accountable:r.AccountableRole,spec:r.SpecCode}; }));
+  var accBy={}; recs("177 ·").forEach(function(r){ accBy[r.ControlID]={criteria:r.AcceptanceCriteria,examples:r.EvidenceExamples,rule:r.MinimumPassRule}; });
+  if(Object.keys(accBy).length) G.policyAcceptance=accBy;
+  set("policyEvidence", recs("178 ·").map(function(r){ return {id:r.ArtefactID,control:r.ControlID,policy:r.PolicyID,process:r.ProcessID,artefact:r.Artefact,owner:r.OwnerRole,location:r.Location,retention:r.Retention,approval:r.ApprovalState}; }));
+  set("policyKPIs", recs("179 ·").map(function(r){ return {id:r.KPIID,policy:r.PolicyID,theme:r.ThemeCode,controls:L(r.Controls),name:r.KPIName,target:r.Target,rationale:r.Rationale}; }));
+  set("policyProcesses", recs("180 ·").map(function(r){ return {id:r.ProcessID,policy:r.PolicyID,name:r.ProcessName,desc:r.Description,cap:r.CapabilityID,capName:r.CapabilityName,responsible:r.ResponsibleRole,freq:r.Frequency,inputs:r.Inputs,outputs:r.Outputs,implements:L(r.ImplementsControls)}; }));
+  set("principleControlMap", recs("181 ·").map(function(r){ return {principle:r.PrincipleID,policy:r.PolicyID,control:r.ControlID,constraint:r.ConstraintType,evidence:r.EvidenceOfAlignment}; }));
 
   /* ---- Critical Data Elements + decision→CDE map ---- */
   set("criticalDataElements", recs("153 ·").map(function(r){ return {id:r.CDEID,name:r.Name,def:r.Definition,term:r.BusinessTerm,concept:r.OwningConceptID,source:r.GoldenSource,steward:r.StewardRole,classification:r.Classification,dimensions:r.QualityDimensions,threshold:r.QualityThreshold,policy:r.GoverningPolicyID,tier:r.CriticalityTier,decisions:L(r.Decisions),dataType:r.DataType}; }));

@@ -1082,9 +1082,13 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.44.2";
-window.PACK_CONFIG.built   = "2026-08-12 21:25 SAST";
+window.PACK_CONFIG.version = "v1.44.4";
+window.PACK_CONFIG.built   = "2026-08-12 21:55 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.44.4", date:"2026-08-12 21:55 SAST",
+    note:"Hardened the North Star strategic→operational roll-up against stale caches. Some browsers were serving a cached older model file (same filename) alongside the newer page, which left every strategic driver reading '0 KPIs' because the cached model still used the un-suffixed parent id. The page now matches each driver's KPIs whether the model uses the suffixed ('BO01·M') or bare ('BO01') parent id — with no double-counting on the Execution & Enablement node — so a driver's KPIs always appear. Added cache-busting (?v=) to the model/data script tags so a new page always fetches fresh model data. Verified against both the current and a simulated stale model in both organisations." },
+  { v:"v1.44.3", date:"2026-08-12 21:40 SAST",
+    note:"Readability fix on the North Star hero — the definition line under the progress bar was inheriting a dark/muted colour from a global style and became hard to read on the coloured (RAG) banner. It is now solid white with a subtle shadow for contrast on all three RAG backgrounds." },
   { v:"v1.44.2", date:"2026-08-12 21:25 SAST",
     note:"Fixed the roll-up of the Strategic layer to the North Star. The operational KPIs now correctly nest under their strategic business-outcome driver (a parent-id suffix mismatch was leaving every strategic card reading '0 KPIs'); each of the 44 (Nedbank) / 18 (AGGPSA) KPIs now links to its driver. Each strategic driver card on the North Star page is now clickable — its title and a 'source ↗' link open the governed Business Outcome behind it — and shows the explicit roll-up arithmetic (e.g. '92% = average of 6 KPIs · (…) ÷ 6'), with the child KPIs expandable and each clickable to its own governed KPI element. Verified 0 console errors across both organisations." },
   { v:"v1.44.1", date:"2026-08-11 03:30 SAST",

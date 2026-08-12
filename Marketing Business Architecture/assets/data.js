@@ -1082,9 +1082,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.44.1";
-window.PACK_CONFIG.built   = "2026-08-11 03:30 SAST";
+window.PACK_CONFIG.version = "v1.44.2";
+window.PACK_CONFIG.built   = "2026-08-12 21:25 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.44.2", date:"2026-08-12 21:25 SAST",
+    note:"Fixed the roll-up of the Strategic layer to the North Star. The operational KPIs now correctly nest under their strategic business-outcome driver (a parent-id suffix mismatch was leaving every strategic card reading '0 KPIs'); each of the 44 (Nedbank) / 18 (AGGPSA) KPIs now links to its driver. Each strategic driver card on the North Star page is now clickable — its title and a 'source ↗' link open the governed Business Outcome behind it — and shows the explicit roll-up arithmetic (e.g. '92% = average of 6 KPIs · (…) ÷ 6'), with the child KPIs expandable and each clickable to its own governed KPI element. Verified 0 console errors across both organisations." },
   { v:"v1.44.1", date:"2026-08-11 03:30 SAST",
     note:"Added a North Star tile to the Home page — a colour-coded (RAG) banner showing the One Metric That Matters, its target, attainment-to-plan, the count of strategic drivers, operational KPIs and AI evals (with pass rate), linking straight to the North Star & Metric Tree dashboard. Adapts per organisation. Verified 0 console errors." },
   { v:"v1.44.0", date:"2026-08-11 03:10 SAST",

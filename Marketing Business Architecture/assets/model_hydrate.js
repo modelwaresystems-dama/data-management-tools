@@ -219,11 +219,16 @@
   var ucr={}; recs("164 ·").forEach(function(r){ (ucr[r.UseCaseID]=ucr[r.UseCaseID]||[]).push({dim:r.DimensionID,name:r.DimensionName,score:N(r.Score),level:r.MaturityLevel,rag:r.RAG,basis:r.Basis,els:String(r.Elements||"").split(/[;,]/).map(function(s){return s.trim();}).filter(Boolean)}); });
   if(Object.keys(ucr).length) G.ucReadiness=ucr;
   /* ---- Operating Model: teams, named role-holders (FTE + staffing), use-case RACI ---- */
-  set("operatingTeams", recs("165 ·").map(function(r){ return {id:r.TeamID,name:r.TeamName,fn:r.Function,lead:r.LeadRoleID,leadPerson:r.LeadPerson,fte:N(r.HeadcountFTE)}; }));
-  var ra={}; recs("166 ·").forEach(function(r){ ra[r.RoleID]={role:r.RoleID,name:r.RoleName,team:r.TeamID,teamName:r.TeamName,holder:r.RoleHolder,fte:N(r.FTE),status:r.AllocationStatus,notes:r.Notes}; });
+  set("operatingTeams", recs("165 ·").map(function(r){ return {id:r.TeamID,name:r.TeamName,dept:r.Department,fn:r.Function,lead:r.LeadRoleID,leadPerson:r.LeadPerson,fte:N(r.HeadcountFTE)}; }));
+  var ra={}; recs("166 ·").forEach(function(r){ ra[r.RoleID]={role:r.RoleID,name:r.RoleName,dept:r.Department,team:r.TeamID,teamName:r.TeamName,holder:r.RoleHolder,fte:N(r.FTE),status:r.AllocationStatus,notes:r.Notes}; });
   if(Object.keys(ra).length) G.roleAllocation=ra;
   var ucra={}; recs("167 ·").forEach(function(r){ (ucra[r.UseCaseID]=ucra[r.UseCaseID]||[]).push({raci:r.RACIType,role:r.RoleID,name:r.RoleName,holder:r.RoleHolder,status:r.StaffingStatus,fte:N(r.FTEAllocated)}); });
   if(Object.keys(ucra).length) G.ucRoleAllocation=ucra;
+  /* ---- North Star (OMTM) + metric tree + AI evals ---- */
+  var nsr=recs("170 ·"); if(nsr.length) G.northStar={id:nsr[0].NorthStarID,name:nsr[0].Name,def:nsr[0].Definition,metric:nsr[0].Metric,unit:nsr[0].Unit,target:nsr[0].Target,current:nsr[0].Current,rag:nsr[0].RAG,owner:nsr[0].OwnerRole,cadence:nsr[0].Cadence};
+  set("metricTree", recs("171 ·").map(function(r){ return {id:r.MetricID,name:r.Name,layer:r.Layer,parent:r.ParentMetricID,parentName:r.ParentName,owner:r.OwnerRole,unit:r.Unit,target:r.Target,att:N(r.Attainment),rag:r.RAG,srcType:r.SourceType,srcId:r.SourceID}; }));
+  var evb={}; recs("172 ·").forEach(function(r){ (evb[r.TargetID]=evb[r.TargetID]||[]).push({id:r.EvalID,tType:r.TargetType,target:r.TargetID,targetName:r.TargetName,name:r.EvalName,cat:r.Category,metric:r.Metric,threshold:r.Threshold,method:r.Method,freq:r.Frequency,result:r.Result,status:r.Status,owner:r.OwnerRole}); });
+  if(Object.keys(evb).length) G.aiEvals=evb;
 
   /* ---- Critical Data Elements + decision→CDE map ---- */
   set("criticalDataElements", recs("153 ·").map(function(r){ return {id:r.CDEID,name:r.Name,def:r.Definition,term:r.BusinessTerm,concept:r.OwningConceptID,source:r.GoldenSource,steward:r.StewardRole,classification:r.Classification,dimensions:r.QualityDimensions,threshold:r.QualityThreshold,policy:r.GoverningPolicyID,tier:r.CriticalityTier,decisions:L(r.Decisions),dataType:r.DataType}; }));

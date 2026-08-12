@@ -1006,6 +1006,8 @@ window.PACK_CONFIG.chain = [
   if(!has("decisions.html")){ var j=p.findIndex(function(x){return x.file==="business_process.html";}); p.splice(j+1,0,{file:"decisions.html", nav:"Decisions", title:"Decision Models"}); }
   if(!has("ai_agents.html")){ var k=p.findIndex(function(x){return x.file==="decisions.html";}); p.splice((k>=0?k+1:p.length),0,{file:"ai_agents.html", nav:"AI Agents", title:"AI Agents & Models"}); }
   if(!has("critical_data_elements.html")){ var q=p.findIndex(function(x){return x.file==="decisions.html";}); p.splice((q>=0?q+1:p.length),0,{file:"critical_data_elements.html", nav:"Critical Data", title:"Critical Data Elements"}); }
+  if(!has("north_star.html")){ var vi=p.findIndex(function(x){return x.file==="value_streams.html";}); p.splice((vi>=0?vi+1:1),0,{file:"north_star.html", nav:"North Star", title:"North Star & Metric Tree"}); }
+  if(!has("operating_model.html")){ var gi=p.findIndex(function(x){return x.file==="governance_responsible_ai.html";}); p.splice((gi>=0?gi+1:p.length),0,{file:"operating_model.html", nav:"Operating Model", title:"Operating Model"}); }
   if(!has("model_review.html")) p.push({file:"model_review.html", nav:"Model Review", title:"Architecture Model — Full Review"});
   if(!has("element_relationships.html")) p.push({file:"element_relationships.html", nav:"Relationships", title:"Element Relationships"});
 })();
@@ -1080,9 +1082,17 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.41.0";
-window.PACK_CONFIG.built   = "2026-08-11 01:00 SAST";
+window.PACK_CONFIG.version = "v1.44.1";
+window.PACK_CONFIG.built   = "2026-08-11 03:30 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.44.1", date:"2026-08-11 03:30 SAST",
+    note:"Added a North Star tile to the Home page — a colour-coded (RAG) banner showing the One Metric That Matters, its target, attainment-to-plan, the count of strategic drivers, operational KPIs and AI evals (with pass rate), linking straight to the North Star & Metric Tree dashboard. Adapts per organisation. Verified 0 console errors." },
+  { v:"v1.44.0", date:"2026-08-11 03:10 SAST",
+    note:"North Star (OMTM), a metric tree that rolls up to it, and an AI model & agent eval framework — all on a new dashboard. A single North Star is defined per organisation (Nedbank: Customer Lifetime Value Growth; AGGPSA: Entrepreneurial Ecosystem Health Index) and every metric rolls up to it through four layers held in the model — 170 · NorthStarMetric and 171 · MetricTree: North Star ← Strategic (the business outcomes, plus an Execution & Enablement branch) ← Operational (the KPIs under each outcome) ← Leading (four enabler indices computed from real signals: Data Quality from the DQ scorecards, AI Assurance from the eval pass-rate, Delivery Readiness from the use-case assessment, and Process health). Attainment rolls up bottom-to-top with a RAG at every layer. A new 172 · AIEval framework runs a standard eval suite on every AI model (predictive accuracy, calibration, fairness, robustness, drift) and every AI agent (groundedness, instruction adherence, safety/guardrails, HITL escalation, hallucination) with a metric, threshold, method, result and Pass/Warn/Fail. A new North Star page (under Value Streams) shows the North Star hero, the strategic drivers with their KPIs, the leading indicators, and the full eval dashboard (filterable, fails first); each agent on the AI Agents page now shows its own and its models' evals. Verified 0 console errors across both organisations." },
+  { v:"v1.43.0", date:"2026-08-11 02:20 SAST",
+    note:"Technology readiness is now the whole technology stack, not just AI models. A new application architecture is added — 168 · Application (the business applications that run the processes, each with category, type, hosting, TIME lifecycle, owner and criticality) and 169 · Process_Application_Map (which applications support each process). Technology readiness is recomposed as three parts, each shown with its own clickable chips: (1) AI — models, model cards and monitoring; (2) Data-management technology — the storage platforms behind the supplying data products (via data assets) and the CDP/data services it consumes; (3) Applications — the applications that support the use-case's processes, with a penalty when any is on a legacy (Tolerate/Retire) lifecycle. So a use-case on a strong AI + data + application stack scores high, while one with no application mapped to its processes or on legacy systems scores lower (e.g. it now reads 'AI: 2 models, 2 model-carded; Data-management: 3 storage platforms, 3 CDP services; Applications: Campaign Management, NBA, Journey Orchestration, Analytics'). Verified 0 console errors across both organisations." },
+  { v:"v1.42.0", date:"2026-08-11 01:40 SAST",
+    note:"New Operating Model page (under Governance) showing the whole model at once. The operating model now has a Department level above functions, so the org reads Department → Function → Role → Person: a new page lists every department and its functions, the governed roles in each, and the people allocated to them with FTE and a Filled / Partially staffed / Vacant status, plus a summary (departments, functions, roles, people allocated, resourcing gaps, committed FTE) and a gaps banner. Each role shows its use-case load (how many use-cases it is accountable / responsible for) and is clickable to open its element panel; the page is searchable and printable. Nedbank: 3 departments, 5 functions, 8 roles; AGGPSA: 5 departments, 8 functions, 12 roles. This is the source that grounds People readiness — a vacant accountable role is a visible resourcing gap. Verified 0 console errors across both organisations." },
   { v:"v1.41.0", date:"2026-08-11 01:00 SAST",
     note:"Operating Model, and every readiness dimension now links to its governed elements. A new operating-model layer names who holds each governed role and how they are resourced: 165 · OperatingModel_Team (functional teams with a lead and headcount), 166 · Role_Allocation (each role's named holder, team, FTE and staffing status — Filled / Partially staffed / Vacant, with a couple deliberately unfilled to reflect real gaps), and 167 · UseCase_RoleAllocation (the Accountable/Responsible/Consulted/Informed roles per use-case, from the DecisionRights RACI where present, otherwise derived from the outcome owner and delivery roles, each joined to its staffing). People readiness is now derived from this — whether the accountable and responsible roles are actually staffed and the FTE allocated — so a vacant accountable role visibly drops the score (e.g. Nedbank U04's accountable Finance CLV Owner is Vacant → People 3/5). And, like Data, every readiness dimension now shows its evidence as clickable chips that open the element panel: roles (People), process steps (Process), models & model cards (Technology), data products & CDEs (Data), the agent, policy domains & controls (Governance), and the outcome, KPIs & models (Measurement). Verified 0 console errors across both organisations." },
   { v:"v1.40.0", date:"2026-08-11 00:10 SAST",
@@ -1577,6 +1587,7 @@ window.PACK_CONFIG.editUnlock = "nedbank-edit";   // <-- change to your team's e
     "architecture_navigator.html",
     "navigation_graph.html",
     "value_streams.html",
+    "north_star.html",
     "customer_journey.html",
     "business_architecture.html",
     "business_process.html",
@@ -1586,6 +1597,7 @@ window.PACK_CONFIG.editUnlock = "nedbank-edit";   // <-- change to your team's e
     "data_products.html",
     "ethical_stewardship.html",
     "governance_responsible_ai.html",
+    "operating_model.html",
     "training_adoption.html",
     "glossary_settings.html",
     "model_export_import.html",

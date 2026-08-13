@@ -1089,9 +1089,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.48.3";
-window.PACK_CONFIG.built   = "2026-08-13 03:55 SAST";
+window.PACK_CONFIG.version = "v1.49.0";
+window.PACK_CONFIG.built   = "2026-08-13 08:02 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.49.0", date:"2026-08-13 08:02 SAST",
+    note:"Authored real, domain-specific policy content for all 15 Nedbank marketing & AI/model-governance domains and consolidated each to a single authoritative policy (AI Governance, Model Risk, Marketing Conduct, Consent, Contactability, Next-Best-Action, Offer Governance, Vulnerable Customer, Content Governance, Channel, Experience, Attribution, CX, Partner Data). Each policy now carries its own Management Intent, Principles and Controls under its own Themes — e.g. AI Governance has Value & Readiness Gating and Explainability & Human Oversight; Marketing Conduct has Fair & Non-Discriminatory Treatment and Responsible Targeting; Vulnerable Customer has Identification & Flagging and Protective Treatment — rather than reusing Data Governance boilerplate. Consolidating PD-AI/PD-MODEL also refreshed the AGGPSA AI & Model policies. Verified: exactly one policy per Nedbank domain, 100% referential integrity across Theme→Control→Evidence in both orgs (NB 30 policies/180 themes/510 controls/510 evidence; AGGPSA 22/132/374/374), 0 console errors." },
   { v:"v1.48.3", date:"2026-08-13 03:55 SAST",
     note:"Fixed the Policy Inspector domain filter so the detail panel follows the filter. Previously, choosing a domain (or typing a search) narrowed the policy list on the left but left the detail showing the previously-selected policy — so filtering to Data Quality could still show the AI policy on the right. Now, when the current policy is filtered out, the Inspector automatically selects the first matching policy. Verified: filter → Data Quality shows POL-DQ-001; search 'safeguard' shows POL-SAFE-001." },
   { v:"v1.48.2", date:"2026-08-13 03:30 SAST",

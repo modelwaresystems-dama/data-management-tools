@@ -1089,9 +1089,13 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.48.0";
-window.PACK_CONFIG.built   = "2026-08-13 02:40 SAST";
+window.PACK_CONFIG.version = "v1.48.2";
+window.PACK_CONFIG.built   = "2026-08-13 03:30 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.48.2", date:"2026-08-13 03:30 SAST",
+    note:"The Governance page's hierarchy tab now shows the full Area → Policy → Theme → Control → Evidence chain (the Theme/Article level was previously missing between Policy and Control). Controls are scoped to their policy and grouped under their themes (with an 'Other controls' fallback), the tab is relabelled and the legend now includes Theme. Verified in AGGPSA: 9 areas → 28 policies → 168 themes → 476 controls → 476 evidence, 0 console errors." },
+  { v:"v1.48.1", date:"2026-08-13 03:05 SAST",
+    note:"Hardened the Policy Inspector's control filtering so it can never show another policy's controls. Controls are now scoped to the selected policy (by control id) first and then grouped under its themes, with an 'Other controls' fallback for any whose theme link doesn't resolve — so even a stale or mismatched cached model shows only the selected policy's controls instead of 'everything'. Verified: with every theme link deliberately broken, Data Architecture still shows exactly its 17 controls and zero from other policies. (If you saw Grant-Making 'POL-GM-002' controls under Data Architecture, that was a cached pre-v1.48.0 model — a hard refresh, Ctrl/Cmd+Shift+R, loads the current one.)" },
   { v:"v1.48.0", date:"2026-08-13 02:40 SAST",
     note:"Extended the one-policy-per-domain treatment and real domain-specific content to the AGGPSA business-governance domains. Grant-Making Governance, Financial Stewardship, Impact & Evaluation, Partnership & Advocacy, Risk & Compliance, Safeguarding and Ethical Stewardship are each now a single authoritative policy (their previous multiple policies folded in, all references re-pointed), with the domain's real obligations as its Management Intent and its own authored principles and controls — e.g. Grant-Making now establishes catalytic grant-making via real controls (screen against Theory-of-Change fit, due diligence on governance/finance/safeguarding, approve through the mandated committee, set milestones & conditions, disburse against verified milestones, monitor the portfolio, act on underperforming grants) with grant-making principles and a Grants Compliance Officer as responsible; Risk & Compliance, Safeguarding, Finance, Impact, Partnership and Ethical Stewardship likewise carry their own controls and principles. Ethical Stewardship, shared by both organisations, is authored and consolidated in each. Verified: one policy per domain, distinct controls/principles per domain, 100% referential integrity, 0 console errors. (Remaining Nedbank business domains — AI Governance, Model Governance and the Marketing domains — are the next pass.)" },
   { v:"v1.47.0", date:"2026-08-13 02:05 SAST",

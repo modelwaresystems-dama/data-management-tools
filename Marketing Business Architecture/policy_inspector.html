@@ -131,10 +131,10 @@
   </div>
 </div>
 
-<script src="assets/data.js?v=1.48.0"></script>
-<script src="assets/model_all.js?v=1.48.0"></script>
-<script src="assets/aggpsa_model_all.js?v=1.48.0"></script>
-<script src="assets/aggpsa_data.js?v=1.48.0"></script>
+<script src="assets/data.js?v=1.48.1"></script>
+<script src="assets/model_all.js?v=1.48.1"></script>
+<script src="assets/aggpsa_model_all.js?v=1.48.1"></script>
+<script src="assets/aggpsa_data.js?v=1.48.1"></script>
 <script src="assets/org_switch.js"></script>
 <script src="assets/model_hydrate.js"></script>
 <script src="assets/pack.js"></script>
@@ -274,9 +274,14 @@ function render(pid){
       }).join("")+'</tbody></table>';
   }
   // ---- PRIMARY HIERARCHY: Theme → Control → Evidence → RACI ----
+  // Scope controls to THIS policy first (by control id), then group by theme, so a
+  // mismatched/stale model can never leak another policy's controls into the view.
+  var myCtls=(ctlByPol[pid]||[]);
+  var byThemeLocal={}; myCtls.forEach(function(c){ (byThemeLocal[c.theme]=byThemeLocal[c.theme]||[]).push(c); });
+  var themeCodes={}; themes.forEach(function(t){ themeCodes[t.code]=1; });
   h+='<div class="sec">Themes (Articles) → Controls → Evidence → RACI</div>';
   themes.forEach(function(t){
-    var ctls=(ctlByTheme[t.code]||[]);
+    var ctls=(byThemeLocal[t.code]||[]);
     h+='<div class="theme open" id="el-'+esc(t.code)+'"><div class="th-h" onclick="this.parentNode.classList.toggle(\'open\')">'+
       '<span class="art">Art. '+esc(t.article)+'</span><span class="th-n">'+esc(t.name)+'</span>'+
       '<span class="th-c">'+ctls.length+' controls ▾</span></div>'+
@@ -284,6 +289,14 @@ function render(pid){
       (t.risk?'<div class="th-risk"><b>Inherent risk:</b> '+esc(t.risk)+'</div>':'')+
       ctls.map(ctlCard).join("")+'</div></div>';
   });
+  // any of this policy's controls whose theme isn't among its themes (defensive)
+  var orphan=myCtls.filter(function(c){ return !themeCodes[c.theme]; });
+  if(orphan.length){
+    h+='<div class="theme open"><div class="th-h" onclick="this.parentNode.classList.toggle(\'open\')">'+
+      '<span class="art">—</span><span class="th-n">Other controls</span>'+
+      '<span class="th-c">'+orphan.length+' controls ▾</span></div>'+
+      '<div class="th-body">'+orphan.map(ctlCard).join("")+'</div></div>';
+  }
   // processes
   if(procs.length){
     h+='<div class="sec">Processes (implementing procedures)</div><div class="cardrow">'+

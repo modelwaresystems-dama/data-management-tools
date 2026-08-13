@@ -64,6 +64,7 @@
   .gnode.lvl-dom{border-left-color:#7c3aed;background:#faf8ff}
   .gnode.lvl-dom .gtag{color:#7c3aed} .gnode.lvl-dom .gttl{font-weight:700;font-size:.95rem}
   .gnode.lvl-pol{border-left-color:#2f6fed} .gnode.lvl-pol .gtag{color:#2f6fed}
+  .gnode.lvl-thm{border-left-color:#4f46e5;background:#f7f7ff} .gnode.lvl-thm .gtag{color:#4f46e5} .gnode.lvl-thm .gttl{font-weight:600}
   .gnode.lvl-ctl{border-left-color:#0d9488} .gnode.lvl-ctl .gtag{color:#0d9488}
   .gnode.lvl-ev{border-left-color:#d97706;background:#fffdf7} .gnode.lvl-ev .gtag{color:#d97706}
   /* policy-as-code */
@@ -227,9 +228,10 @@ renderLayers(); renderRollup();
   }
 
   var VIEWS = {
-    chain:{ label:"Area → Policy → Control → Evidence", plain:true, build:function(){
+    chain:{ label:"Area → Policy → Theme → Control → Evidence", plain:true, build:function(){
       var polByDom={}; (D.policies||[]).forEach(function(p){ (polByDom[p.domain]=polByDom[p.domain]||[]).push(p); });
       var ctlByPol={}; (D.controls||[]).forEach(function(c){ (ctlByPol[c.policy]=ctlByPol[c.policy]||[]).push(c); });
+      var themesByPol={}; (D.policyThemes||[]).forEach(function(t){ (themesByPol[t.policy]=themesByPol[t.policy]||[]).push(t); });
       var evByCtl={}; (D.controlEvidence||[]).forEach(function(m){ (evByCtl[m.control]=evByCtl[m.control]||[]).push(m); });
       var evReg={}; (D.evidenceRegister||[]).forEach(function(e){ evReg[e.id]=e; });
       var auditByCtl={}; (D.auditAssurance||[]).forEach(function(a){ (auditByCtl[a.control]=auditByCtl[a.control]||[]).push(a); });
@@ -252,22 +254,35 @@ renderLayers(); renderRollup();
         }).join("")+'</div>';
 
       var cats=catOrder.filter(function(c){ return (polByCat[c]||[]).length && (chainCat==="all"||chainCat===c); });
+      // control → evidence node (reused for themed and orphan controls)
+      function controlNode(c){
+        var evs=evByCtl[c.id]||[];
+        var ehtml=evs.map(function(m){ var e=evReg[m.evidence]||{};
+          var meta=statusPill(e.status)+(e.owner?' '+role(e.owner):'');
+          return gnode("ev", m.evidence, e.name||m.required||m.evidence, meta, null);
+        }).join("");
+        var aud=(auditByCtl[c.id]||[])[0];
+        var cmeta='<span class="rmut">'+esc(c.freq||"")+'</span>'+(evs.length?'<span class="gcount">'+evs.length+' evidence</span>':'')+(aud?statusPill(aud.result):'');
+        return gnode("ctl", c.id, c.name||c.objective, cmeta, ehtml);
+      }
       var dhtml=cats.map(function(cat){
         var pols=polByCat[cat]||[];
         var phtml=pols.map(function(p){
-          var ctls=ctlByPol[p.id]||[];
-          var chtml=ctls.map(function(c){
-            var evs=evByCtl[c.id]||[];
-            var ehtml=evs.map(function(m){ var e=evReg[m.evidence]||{};
-              var meta=statusPill(e.status)+(e.owner?' '+role(e.owner):'');
-              return gnode("ev", m.evidence, e.name||m.required||m.evidence, meta, null);
-            }).join("");
-            var aud=(auditByCtl[c.id]||[])[0];
-            var cmeta='<span class="rmut">'+esc(c.freq||"")+'</span>'+(evs.length?'<span class="gcount">'+evs.length+' evidence</span>':'')+(aud?statusPill(aud.result):'');
-            return gnode("ctl", c.id, c.objective, cmeta, ehtml);
+          // scope controls to THIS policy, then group under its themes
+          var myCtls=ctlByPol[p.id]||[];
+          var byThemeLocal={}; myCtls.forEach(function(c){ (byThemeLocal[c.theme]=byThemeLocal[c.theme]||[]).push(c); });
+          var pthemes=(themesByPol[p.id]||[]).slice().sort(function(a,b){return String(a.article||"").localeCompare(String(b.article||""));});
+          var themeCodes={}; pthemes.forEach(function(t){ themeCodes[t.code]=1; });
+          var thmHtml=pthemes.map(function(t){
+            var ctls=byThemeLocal[t.code]||[];
+            var tmeta='<span class="gcount">'+ctls.length+' controls</span>';
+            return gnode("thm", t.code, (t.article?'Art. '+t.article+' · ':'')+(t.name||t.code), tmeta, ctls.map(controlNode).join(""));
           }).join("");
-          var pmeta='<span class="gdom">'+esc(domNameOf(p))+'</span>'+statusPill(p.status)+role(p.owner)+(ctls.length?'<span class="gcount">'+ctls.length+' controls</span>':'');
-          return gnode("pol", p.id, p.statement, pmeta, chtml);
+          var orphan=myCtls.filter(function(c){ return !themeCodes[c.theme]; });
+          if(orphan.length){ thmHtml+=gnode("thm","","Other controls",'<span class="gcount">'+orphan.length+' controls</span>', orphan.map(controlNode).join("")); }
+          var pmeta='<span class="gdom">'+esc(domNameOf(p))+'</span>'+statusPill(p.status)+role(p.owner)+
+            (pthemes.length?'<span class="gcount">'+pthemes.length+' themes</span>':'')+(myCtls.length?'<span class="gcount">'+myCtls.length+' controls</span>':'');
+          return gnode("pol", p.id, p.statement, pmeta, thmHtml);
         }).join("");
         var cmeta='<span class="gcount">'+pols.length+' policies</span>';
         return gnode("dom", "", cat, cmeta, phtml);
@@ -276,6 +291,7 @@ renderLayers(); renderRollup();
       var legend='<div class="glegend2">'+
         '<span><i style="background:#7c3aed"></i>Policy area</span>'+
         '<span><i style="background:#2f6fed"></i>Policy</span>'+
+        '<span><i style="background:#4f46e5"></i>Theme (article)</span>'+
         '<span><i style="background:#0d9488"></i>Control</span>'+
         '<span><i style="background:#d97706"></i>Evidence</span></div>';
       return chips+'<div class="gtools"><button class="btn ghost" id="gExpand">⊞ Expand all</button>'+

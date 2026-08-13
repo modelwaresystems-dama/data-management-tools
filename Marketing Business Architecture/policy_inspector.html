@@ -110,8 +110,8 @@
   </div>
 
   <div class="pibar">
-    <input type="text" id="q" placeholder="Search policies by id, statement or domain…" oninput="renderList()">
-    <select id="domf" onchange="renderList()"><option value="">All domains</option></select>
+    <input type="text" id="q" placeholder="Search policies by id, statement or domain…" oninput="onFilter()">
+    <select id="domf" onchange="onFilter()"><option value="">All domains</option></select>
     <button class="pibtn" id="connbtn" onclick="toggleConnect()">⚙ Connect Inspector app</button>
   </div>
 
@@ -131,10 +131,10 @@
   </div>
 </div>
 
-<script src="assets/data.js?v=1.48.1"></script>
-<script src="assets/model_all.js?v=1.48.1"></script>
-<script src="assets/aggpsa_model_all.js?v=1.48.1"></script>
-<script src="assets/aggpsa_data.js?v=1.48.1"></script>
+<script src="assets/data.js?v=1.48.3"></script>
+<script src="assets/model_all.js?v=1.48.3"></script>
+<script src="assets/aggpsa_model_all.js?v=1.48.3"></script>
+<script src="assets/aggpsa_data.js?v=1.48.3"></script>
 <script src="assets/org_switch.js"></script>
 <script src="assets/model_hydrate.js"></script>
 <script src="assets/pack.js"></script>
@@ -187,16 +187,19 @@ POLS.forEach(function(p){ elToPol[p.id]=p.id; });
 
 // ---- list -----------------------------------------------------------------
 var current=null;
-function renderList(){
+function visiblePolicies(){
   var q=(document.getElementById("q").value||"").toLowerCase();
   var df=document.getElementById("domf").value;
-  var groups={};
-  POLS.forEach(function(p){
-    if(df && p.domain!==df) return;
+  return POLS.filter(function(p){
+    if(df && p.domain!==df) return false;
     var hay=(p.id+" "+(p.statement||"")+" "+(domName[p.domain]||"")).toLowerCase();
-    if(q && hay.indexOf(q)<0) return;
-    (groups[p.domain]=groups[p.domain]||[]).push(p);
+    if(q && hay.indexOf(q)<0) return false;
+    return true;
   });
+}
+function renderList(){
+  var vis=visiblePolicies(), groups={};
+  vis.forEach(function(p){ (groups[p.domain]=groups[p.domain]||[]).push(p); });
   var html="";
   Object.keys(groups).forEach(function(d){
     html+='<div class="pidom">'+esc(domName[d]||d)+'</div>';
@@ -208,6 +211,14 @@ function renderList(){
     });
   });
   document.getElementById("list").innerHTML=html||'<div style="padding:14px;color:var(--mut)">No policies match.</div>';
+}
+// when the domain filter / search changes, keep the DETAIL in sync with the list:
+// if the currently-shown policy is filtered out, jump to the first visible one.
+function onFilter(){
+  var vis=visiblePolicies();
+  var stillVisible=vis.some(function(p){ return p.id===current; });
+  if(vis.length && !stillVisible){ select(vis[0].id); }   // select() also re-renders the list
+  else { renderList(); }
 }
 
 // ---- detail ---------------------------------------------------------------

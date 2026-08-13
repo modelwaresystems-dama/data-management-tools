@@ -1089,9 +1089,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.48.2";
-window.PACK_CONFIG.built   = "2026-08-13 03:30 SAST";
+window.PACK_CONFIG.version = "v1.48.3";
+window.PACK_CONFIG.built   = "2026-08-13 03:55 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.48.3", date:"2026-08-13 03:55 SAST",
+    note:"Fixed the Policy Inspector domain filter so the detail panel follows the filter. Previously, choosing a domain (or typing a search) narrowed the policy list on the left but left the detail showing the previously-selected policy — so filtering to Data Quality could still show the AI policy on the right. Now, when the current policy is filtered out, the Inspector automatically selects the first matching policy. Verified: filter → Data Quality shows POL-DQ-001; search 'safeguard' shows POL-SAFE-001." },
   { v:"v1.48.2", date:"2026-08-13 03:30 SAST",
     note:"The Governance page's hierarchy tab now shows the full Area → Policy → Theme → Control → Evidence chain (the Theme/Article level was previously missing between Policy and Control). Controls are scoped to their policy and grouped under their themes (with an 'Other controls' fallback), the tab is relabelled and the legend now includes Theme. Verified in AGGPSA: 9 areas → 28 policies → 168 themes → 476 controls → 476 evidence, 0 console errors." },
   { v:"v1.48.1", date:"2026-08-13 03:05 SAST",

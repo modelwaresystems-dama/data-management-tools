@@ -35,7 +35,10 @@
   .person{font-weight:600;color:var(--ink)}.person.vacant{color:#b91c1c;font-weight:700}
   .stpill{display:inline-block;font-size:.66rem;font-weight:800;border-radius:20px;padding:2px 9px}
   .st-Filled{background:#dcfce7;color:#166534}.st-Partiallystaffed{background:#fef9c3;color:#854d0e}.st-Vacant{background:#fee2e2;color:#b91c1c}
+  .st-Shared{background:#e0f2fe;color:#075985}
+  .person.shared{color:#0369a1;font-weight:600;font-style:italic}
   .load{font-size:.74rem;color:var(--mut)}.load b{color:var(--ink)}
+  .load .ctl{color:#0e7490}.load .sep{display:block;height:2px}
   .accfor{font-size:.76rem;color:var(--mut);max-width:340px}
   @media(max-width:820px){.accfor{display:none}.omdept-h .roll{width:100%;margin-left:0}}
   @media print{ .omtop,.ombtn{display:none!important} .omdept{break-inside:avoid} }
@@ -51,7 +54,9 @@
     <h1 data-copy="omTitle">Operating Model</h1>
     <p class="lede" data-copy="omLede">The whole operating model on one page — <strong>departments</strong> and their <strong>functions</strong>,
     the governed <strong>roles</strong> in each, and the <strong>people</strong> allocated to them with their FTE and staffing status.
-    Vacant and partially-staffed roles are flagged as resourcing gaps. Click any role to open its full element panel.</p>
+    Each role's <strong>responsibility load</strong> shows the AI use-cases and the policy <strong>controls</strong> it is Accountable or Responsible for.
+    Vacant and partially-staffed roles are flagged as resourcing gaps; specialist <strong>Responsible</strong> roles named by the policy controls are shown as
+    shared team capacity. Click any role to open its full element panel.</p>
   </div>
 
   <div class="omstat" id="stat"></div>
@@ -63,12 +68,12 @@
   <div id="content"></div>
 </div>
 
-<script src="assets/data.js"></script>
-<script src="assets/model_all.js"></script>
-<script src="assets/aggpsa_model_all.js"></script>
-<script src="assets/aggpsa_data.js"></script>
+<script src="assets/data.js?v=1.49.1"></script>
+<script src="assets/model_all.js?v=1.49.1"></script>
+<script src="assets/aggpsa_model_all.js?v=1.49.1"></script>
+<script src="assets/aggpsa_data.js?v=1.49.1"></script>
 <script src="assets/org_switch.js"></script>
-<script src="assets/model_hydrate.js"></script>
+<script src="assets/model_hydrate.js?v=1.49.1"></script>
 <script src="assets/pack.js"></script>
 <script src="assets/model_explorer.js"></script>
 <script>
@@ -86,6 +91,12 @@ var roleLoad={};
 Object.keys(ucRole).forEach(function(uc){ (ucRole[uc]||[]).forEach(function(e){
   var r=(roleLoad[e.role]=roleLoad[e.role]||{Accountable:[],Responsible:[],Consulted:[],Informed:[]});
   (r[e.raci]=r[e.raci]||[]).push(uc); }); });
+// role -> policy-control load (accountable / responsible) from the policy meta-model (176)
+var ctlLoad={};
+(D.policyControls||[]).forEach(function(c){
+  if(c.accRoleId){ var a=(ctlLoad[c.accRoleId]=ctlLoad[c.accRoleId]||{acc:0,resp:0}); a.acc++; }
+  if(c.respRoleId){ var b=(ctlLoad[c.respRoleId]=ctlLoad[c.respRoleId]||{acc:0,resp:0}); b.resp++; }
+});
 // role -> AccountableFor / OwnsObjects (from OwnershipRole sheet 20)
 var roleMeta={};
 (function(){ var s=SHEETS.filter(function(x){return x.name.indexOf("20 ·")===0;})[0]; if(!s) return;
@@ -97,18 +108,28 @@ var ucName={}; (D.aiUseCases||[]).forEach(function(u){ ucName[u.id]=u.name; });
 function stClass(s){ return "st-"+String(s||"").replace(/\s/g,""); }
 function roleRow(rid){
   var a=roleAlloc[rid]||{}; var status=a.status||"Vacant"; var holder=a.holder||"—";
-  var vac=(status==="Vacant"); var ld=roleLoad[rid]||{};
+  var vac=(status==="Vacant"); var shared=(status==="Shared"); var ld=roleLoad[rid]||{};
   var nAcc=(ld.Accountable||[]).length, nResp=(ld.Responsible||[]).length;
-  var loadTxt=[];
-  if(nAcc) loadTxt.push('<b>'+nAcc+'</b> accountable');
-  if(nResp) loadTxt.push('<b>'+nResp+'</b> responsible');
+  var cl=ctlLoad[rid]||{acc:0,resp:0};
+  var lines=[];
+  var ucTxt=[];
+  if(nAcc) ucTxt.push('<b>'+nAcc+'</b> accountable');
+  if(nResp) ucTxt.push('<b>'+nResp+'</b> responsible');
+  if(ucTxt.length) lines.push('<span>'+ucTxt.join(" · ")+' <span class="mut">use-cases</span></span>');
+  var clTxt=[];
+  if(cl.acc) clTxt.push('<b>'+cl.acc+'</b> accountable');
+  if(cl.resp) clTxt.push('<b>'+cl.resp+'</b> responsible');
+  if(clTxt.length) lines.push('<span class="ctl">'+clTxt.join(" · ")+' <span class="mut">controls</span></span>');
   var meta=roleMeta[rid]||{};
+  var holderHtml = vac ? '<span class="person vacant">— unfilled</span>'
+                 : shared ? '<span class="person shared">shared capacity</span>'
+                 : '<span class="person">'+esc(holder)+'</span>';
   return '<tr data-txt="'+esc((rid+" "+(a.name||"")+" "+holder).toLowerCase())+'">'+
     '<td><a class="rolelink" onclick="openRole(\''+rid+'\')">'+esc(a.name||rid)+'<span class="rid">'+esc(rid)+'</span></a></td>'+
-    '<td><span class="person'+(vac?" vacant":"")+'">'+esc(vac?"— unfilled":holder)+'</span></td>'+
-    '<td>'+(a.fte!=null?esc(a.fte):"—")+'</td>'+
-    '<td><span class="stpill '+stClass(status)+'">'+esc(status)+'</span></td>'+
-    '<td class="load">'+(loadTxt.length?loadTxt.join(" · "):'<span class="mut">—</span>')+'</td>'+
+    '<td>'+holderHtml+'</td>'+
+    '<td>'+(shared?'<span class="mut">—</span>':(a.fte!=null?esc(a.fte):"—"))+'</td>'+
+    '<td><span class="stpill '+stClass(status)+'">'+esc(status==="Shared"?"Shared capacity":status)+'</span></td>'+
+    '<td class="load">'+(lines.length?lines.join('<span class="sep"></span>'):'<span class="mut">—</span>')+'</td>'+
     '<td class="accfor">'+esc(meta.acc||"")+'</td>'+
   '</tr>';
 }
@@ -123,13 +144,15 @@ var rolesByTeam={}; Object.keys(roleAlloc).forEach(function(rid){ var a=roleAllo
 
 // ---- summary ----
 var allRoles=Object.keys(roleAlloc);
+var sharedRoles=allRoles.filter(function(r){return roleAlloc[r].status==="Shared";});
+var staffable=allRoles.filter(function(r){return roleAlloc[r].status!=="Shared";});
 var filled=allRoles.filter(function(r){return roleAlloc[r].status==="Filled";}).length;
 var vacant=allRoles.filter(function(r){return roleAlloc[r].status==="Vacant";});
 var partial=allRoles.filter(function(r){return /Part/.test(roleAlloc[r].status||"");});
 var totFte=allRoles.reduce(function(a,r){return a+(roleAlloc[r].fte||0);},0);
 document.getElementById("stat").innerHTML=
-  stat(deptOrder.length,"Departments")+stat(teams.length,"Functions")+stat(allRoles.length,"Roles")+
-  stat(filled+" / "+allRoles.length,"People allocated")+
+  stat(deptOrder.length,"Departments")+stat(teams.length,"Functions")+stat(staffable.length,"Roles")+
+  stat(filled+" / "+staffable.length,"People allocated")+
   '<div class="s'+((vacant.length+partial.length)?" warn":"")+'"><div class="n">'+(vacant.length+partial.length)+'</div><div class="l">Resourcing gaps</div></div>'+
   stat(totFte.toFixed(1),"Committed FTE");
 function stat(n,l){ return '<div class="s"><div class="n">'+n+'</div><div class="l">'+esc(l)+'</div></div>'; }
@@ -148,7 +171,8 @@ var html=deptOrder.map(function(dept){
   var dteams=byDept[dept];
   var droles=[]; dteams.forEach(function(t){ droles=droles.concat(rolesByTeam[t.id]||[]); });
   var dfte=droles.reduce(function(a,r){return a+(roleAlloc[r].fte||0);},0);
-  var dvac=droles.filter(function(r){return roleAlloc[r].status!=="Filled";}).length;
+  var dvac=droles.filter(function(r){var s=roleAlloc[r].status;return s!=="Filled"&&s!=="Shared";}).length;
+  var dshared=droles.filter(function(r){return roleAlloc[r].status==="Shared";}).length;
   var fns=dteams.map(function(t){
     var rids=(rolesByTeam[t.id]||[]);
     var rows=rids.map(roleRow).join("");
@@ -156,13 +180,13 @@ var html=deptOrder.map(function(dept){
     return '<div class="omfn">'+
       '<div class="omfn-h"><span class="fnn">'+esc(t.name)+'</span><span class="fntag">'+esc(t.fn)+'</span>'+
         '<span class="lead">'+leadTxt+(t.fte?' · '+esc(t.fte)+' headcount FTE':'')+'</span></div>'+
-      '<table class="omtbl"><thead><tr><th>Role</th><th>Role-holder</th><th>FTE</th><th>Status</th><th>Use-case load</th><th>Accountable for</th></tr></thead>'+
+      '<table class="omtbl"><thead><tr><th>Role</th><th>Role-holder</th><th>FTE</th><th>Status</th><th>Responsibility load</th><th>Accountable for</th></tr></thead>'+
       '<tbody>'+rows+'</tbody></table></div>';
   }).join("");
   return '<div class="omdept" data-dept="'+esc(dept.toLowerCase())+'">'+
     '<div class="omdept-h"><h2>'+esc(dept)+'</h2>'+
-      '<div class="roll"><span><b>'+dteams.length+'</b> functions</span><span><b>'+droles.length+'</b> roles</span>'+
-      '<span><b>'+dfte.toFixed(1)+'</b> FTE</span>'+(dvac?'<span><b>'+dvac+'</b> gaps</span>':'')+'</div></div>'+
+      '<div class="roll"><span><b>'+dteams.length+'</b> functions</span><span><b>'+(droles.length-dshared)+'</b> roles</span>'+
+      '<span><b>'+dfte.toFixed(1)+'</b> FTE</span>'+(dshared?'<span><b>'+dshared+'</b> shared</span>':'')+(dvac?'<span><b>'+dvac+'</b> gaps</span>':'')+'</div></div>'+
     fns+'</div>';
 }).join("");
 document.getElementById("content").innerHTML=html;

@@ -132,7 +132,7 @@
      existing pages (governance, value streams) render the richer controls. */
   var _pc=recs("176 ·");
   if(_pc.length){
-    set("controls", _pc.map(function(r){ return {id:r.ControlID,policy:String(r.ControlID).replace(/-C\d+$/,""),theme:r.ThemeID,name:r.ControlName,objective:r.Objective,activity:r.ControlName,intent:r.CoreIntent,freq:r.Frequency,evidence:r.MinimumEvidence,responsible:r.ResponsibleRole,accountable:r.AccountableRole,consulted:r.ConsultedRoles,informed:r.InformedRoles}; }));
+    set("controls", _pc.map(function(r){ return {id:r.ControlID,policy:String(r.ControlID).replace(/-C\d+$/,""),theme:r.ThemeID,name:r.ControlName,objective:r.Objective,activity:r.ControlName,intent:r.CoreIntent,freq:r.Frequency,evidence:r.MinimumEvidence,responsible:r.ResponsibleRole,accountable:r.AccountableRole,accRoleId:r.AccountableRoleID,respRoleId:r.ResponsibleRoleID,consulted:r.ConsultedRoles,informed:r.InformedRoles}; }));
   } else {
     set("controls", recs("64 ·").map(function(r){ return {id:r.ControlID,policy:r.PolicyID,objective:r.ControlObjective,activity:r.ControlActivity,freq:r.Frequency,evidence:r.EvidenceType}; }));
   }
@@ -250,7 +250,7 @@
   set("policyPrinciples", recs("173 ·").map(function(r){ return {id:r.PrincipleID,policy:r.PolicyID,number:N(r.Number),name:r.Name,def:r.Definition,source:r.SourceAlignment,rationale:r.Rationale}; }));
   set("policyIntents", recs("174 ·").map(function(r){ return {id:r.IntentID,policy:r.PolicyID,category:r.OutcomeCategory,statement:r.OutcomeStatement,scope:r.Scope,severity:N(r.Severity),occurrence:N(r.Occurrence),detection:N(r.Detection),rpn:N(r.RPN),priority:r.Priority,owner:r.OwnerRole,approval:r.ApprovalStatus,theme:r.ThemeID,controls:L(r.ControlIDs)}; }));
   set("policyThemes", recs("175 ·").map(function(r){ return {code:r.ThemeID,policy:r.PolicyID,name:r.ThemeName,purpose:r.ThemePurpose,article:r.ArticleNumber,risk:r.InherentRisk,desc:r.ThemeDescription}; }));
-  set("policyControls", recs("176 ·").map(function(r){ return {id:r.ControlID,policy:String(r.ControlID).replace(/-C\d+$/,""),theme:r.ThemeID,name:r.ControlName,intent:r.CoreIntent,objective:r.Objective,evidence:r.MinimumEvidence,assurance:r.AssuranceEvidence,freq:r.Frequency,responsible:r.ResponsibleRole,accountable:r.AccountableRole,consulted:r.ConsultedRoles,informed:r.InformedRoles,spec:r.SpecCode}; }));
+  set("policyControls", recs("176 ·").map(function(r){ return {id:r.ControlID,policy:String(r.ControlID).replace(/-C\d+$/,""),theme:r.ThemeID,name:r.ControlName,intent:r.CoreIntent,objective:r.Objective,evidence:r.MinimumEvidence,assurance:r.AssuranceEvidence,freq:r.Frequency,responsible:r.ResponsibleRole,accountable:r.AccountableRole,accRoleId:r.AccountableRoleID,respRoleId:r.ResponsibleRoleID,consulted:r.ConsultedRoles,informed:r.InformedRoles,spec:r.SpecCode}; }));
   var accBy={}; recs("177 ·").forEach(function(r){ accBy[r.ControlID]={criteria:r.AcceptanceCriteria,examples:r.EvidenceExamples,rule:r.MinimumPassRule}; });
   if(Object.keys(accBy).length) G.policyAcceptance=accBy;
   set("policyEvidence", recs("178 ·").map(function(r){ return {id:r.ArtefactID,control:r.ControlID,policy:String(r.ControlID).replace(/-C\d+$/,""),process:r.ProcessID,artefact:r.Artefact,owner:r.OwnerRole,location:r.Location,retention:r.Retention,approval:r.ApprovalState}; }));

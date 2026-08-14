@@ -1089,9 +1089,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.49.0";
-window.PACK_CONFIG.built   = "2026-08-13 08:02 SAST";
+window.PACK_CONFIG.version = "v1.49.1";
+window.PACK_CONFIG.built   = "2026-08-13 08:40 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.49.1", date:"2026-08-13 08:40 SAST",
+    note:"Brought the Operating Model up to date with the Policy & Control roles and responsibilities. Every policy control's RACI now resolves to a real, linkable Operating-Model role: the Accountable owner maps to the existing governed role, and the Responsible specialist (Data Governance Specialist, Model Risk & Validation Lead, Records & Retention Officer, …) is now a governed role in its own right (sheet 20 + Role Allocation), placed under its accountable owner's team as SHARED capacity — shown on the page but adding no phantom FTE and not counted as a vacancy. Each role's 'Responsibility load' column now shows both AI use-cases and the policy controls it is Accountable/Responsible for. Added AccountableRoleID/ResponsibleRoleID foreign keys to the control sheet (176) so the graph explorer links controls↔roles. Verified: all control RACI RoleIDs resolve (AGGPSA 22 specialists, NB 30), 0 dangling references, 0 console errors both orgs." },
   { v:"v1.49.0", date:"2026-08-13 08:02 SAST",
     note:"Authored real, domain-specific policy content for all 15 Nedbank marketing & AI/model-governance domains and consolidated each to a single authoritative policy (AI Governance, Model Risk, Marketing Conduct, Consent, Contactability, Next-Best-Action, Offer Governance, Vulnerable Customer, Content Governance, Channel, Experience, Attribution, CX, Partner Data). Each policy now carries its own Management Intent, Principles and Controls under its own Themes — e.g. AI Governance has Value & Readiness Gating and Explainability & Human Oversight; Marketing Conduct has Fair & Non-Discriminatory Treatment and Responsible Targeting; Vulnerable Customer has Identification & Flagging and Protective Treatment — rather than reusing Data Governance boilerplate. Consolidating PD-AI/PD-MODEL also refreshed the AGGPSA AI & Model policies. Verified: exactly one policy per Nedbank domain, 100% referential integrity across Theme→Control→Evidence in both orgs (NB 30 policies/180 themes/510 controls/510 evidence; AGGPSA 22/132/374/374), 0 console errors." },
   { v:"v1.48.3", date:"2026-08-13 03:55 SAST",

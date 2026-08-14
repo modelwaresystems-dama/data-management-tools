@@ -1090,9 +1090,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.50.3";
-window.PACK_CONFIG.built   = "2026-08-14 11:10 SAST";
+window.PACK_CONFIG.version = "v1.50.4";
+window.PACK_CONFIG.built   = "2026-08-14 12:20 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.50.4", date:"2026-08-14 12:20 SAST",
+    note:"The DM Maturity page is now interactive: select a Business Data Steward or a Unit / Department to see how they scored. Picking a steward (or clicking their card) recomputes the whole view to that person's ratings — tiles, radar, DMBOK-layer cards, knowledge-area table and their comments — and overlays their maturity polygon (red) against the whole-organisation average (grey) so you can see where they scored above or below the baseline. Picking a unit aggregates its stewards the same way and narrows the steward list to that unit. Added model sheet 187 DMMA_StewardScore (per-steward × per-knowledge-area maturity, 238 rows). Reset returns to the whole organisation. E.g. Keren Swanson (Head of Dept) averages 0.3 vs the org 0.1, scoring higher on Change Management, Security and Metadata." },
   { v:"v1.50.3", date:"2026-08-14 11:10 SAST",
     note:"Two corrections. (1) Readiness now cannot sit above the maturity foundation: the DMMA maturity is a hard ceiling on each Use-Case Readiness dimension (Unaware→1), with local use-case evidence allowed only a marginal lift above it and never past the evidence. So AGGPSA readiness now reads Red (1–2) across the board — e.g. Governance drops from 3 to 2 — consistent with the Unaware baseline, instead of the earlier 3/5. (2) All 17 knowledge areas are marked In scope: the workbook's per-deliverable 'Out of Scope' marker was not a domain-review flag — every area was assessed with the 14 stewards — so the radar no longer greys or dashes any axis and the table shows all areas In scope. Removed the misleading 'areas in scope 2/17' tiles." },
   { v:"v1.50.2", date:"2026-08-14 10:05 SAST",

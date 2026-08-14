@@ -263,6 +263,7 @@
   set("dmmaDeliverables", recs("184 ·").map(function(r){ return {id:r.DeliverableID,area:r.KnowledgeAreaID,areaName:r.KnowledgeArea,domain:r.PolicyDomainID,phase:r.ActivityPhase,activity:r.Activity,deliverable:r.Deliverable,generic:r.Generic,done:r.Done,scope:r.Scope,current:N(r.CurrentMaturity),target:N(r.TargetMaturity),gap:N(r.Gap)}; }));
   set("businessStewards", recs("185 ·").map(function(r){ return {id:r.StewardID,name:r.Name,fn:r.Function,unit:r.BusinessUnit,email:r.Email,holdsRole:r.HoldsRoleID,team:r.TeamID,teamName:r.TeamName,dept:r.Department,current:N(r.CurrentMaturity),responses:N(r.Responses),comments:N(r.Comments)}; }));
   set("dmmaComments", recs("186 ·").map(function(r){ return {id:r.CommentID,steward:r.StewardID,name:r.StewardName,unit:r.BusinessUnit,area:r.KnowledgeAreaID,domain:r.PolicyDomainID,deliverable:r.Deliverable,text:r.Comment}; }));
+  set("dmmaStewardScores", recs("187 ·").map(function(r){ return {steward:r.StewardID,name:r.StewardName,unit:r.BusinessUnit,area:r.KnowledgeAreaID,areaName:r.KnowledgeArea,current:N(r.CurrentMaturity),responses:N(r.Responses)}; }));
 
   /* ---- Critical Data Elements + decision→CDE map ---- */
   set("criticalDataElements", recs("153 ·").map(function(r){ return {id:r.CDEID,name:r.Name,def:r.Definition,term:r.BusinessTerm,concept:r.OwningConceptID,source:r.GoldenSource,steward:r.StewardRole,classification:r.Classification,dimensions:r.QualityDimensions,threshold:r.QualityThreshold,policy:r.GoverningPolicyID,tier:r.CriticalityTier,decisions:L(r.Decisions),dataType:r.DataType}; }));

@@ -67,6 +67,15 @@
   .cmt .meta b{color:#5b21b6}
   .chip{font-size:.68rem;background:#eef4f7;border-radius:20px;padding:2px 9px;color:#0e4a5a;font-weight:700}
   .empty{background:var(--panel);border:1px dashed var(--line);border-radius:14px;padding:34px;text-align:center;color:var(--mut)}
+  .pbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:11px 14px;margin:0 0 16px}
+  .pbar label{font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:800}
+  .pbar select{padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-family:inherit;font-size:.85rem;min-width:170px;background:#fff;color:var(--ink)}
+  .pbar .rst{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 12px;cursor:pointer;font-family:inherit;font-weight:600;color:var(--mut);font-size:.82rem}
+  .pbar .rst:hover{background:#f6f8fb}
+  .persphdr{font-size:.95rem;font-weight:800;color:#0e4a5a;margin:2px 0 12px}
+  .persphdr span{font-weight:500;color:var(--mut);font-size:.85rem}
+  .unit .uh:hover,.unit .p:hover{filter:brightness(.98)}
+  .unit .p.sel{background:#faf5ff}
   @media(max-width:820px){ .katbl .hidesm{display:none} }
 </style>
 </head>
@@ -84,12 +93,12 @@
   <div id="body"></div>
 </div>
 
-<script src="assets/data.js?v=1.50.3"></script>
-<script src="assets/model_all.js?v=1.50.3"></script>
-<script src="assets/aggpsa_model_all.js?v=1.50.3"></script>
-<script src="assets/aggpsa_data.js?v=1.50.3"></script>
+<script src="assets/data.js?v=1.50.4"></script>
+<script src="assets/model_all.js?v=1.50.4"></script>
+<script src="assets/aggpsa_model_all.js?v=1.50.4"></script>
+<script src="assets/aggpsa_data.js?v=1.50.4"></script>
 <script src="assets/org_switch.js"></script>
-<script src="assets/model_hydrate.js?v=1.50.3"></script>
+<script src="assets/model_hydrate.js?v=1.50.4"></script>
 <script src="assets/pack.js"></script>
 <script src="assets/model_explorer.js"></script>
 <script>
@@ -111,98 +120,67 @@ if(!areas.length){
     '<p>The Data Management Maturity Assessment (DMMA) was conducted for <strong>AGGPSA</strong>. '+
     'Switch the Source to <strong>AGGPSA philanthropy</strong> (top-right) to view the governance-readiness results, '+
     'the knowledge-area maturity and the Business Data Steward network.</p></div>';
-} else {
-  render();
 }
 
+var scores=(D.dmmaStewardScores||[]);
+var TGT=3;
+var SEL={unit:"",steward:""};
+var units=[]; (function(){ var seen={}; stewards.forEach(function(s){ if(s.unit && !seen[s.unit]){ seen[s.unit]=1; units.push(s.unit); } }); })();
+var totDeliv=areas.reduce(function(s,a){return s+(a.deliverables||0);},0);
+var totCom=areas.reduce(function(s,a){return s+(a.comments||0);},0);
+
+function ragOf(gap){ return gap>=2?"Red":(gap>=1?"Amber":"Green"); }
+function overallOf(eff){ var td=0,wc=0; eff.forEach(function(a){ td+=(a.current||0)*(a.deliverables||0); wc+=(a.deliverables||0); }); return wc?td/wc:0; }
+// per-area current (keyed by KnowledgeAreaID) for the selected perspective
+function perArea(unit,steward){
+  var m={};
+  if(steward){ scores.filter(function(s){return s.steward===steward;}).forEach(function(s){ m[s.area]={cur:s.current,n:s.responses}; }); }
+  else if(unit){ var agg={}; scores.filter(function(s){return s.unit===unit;}).forEach(function(s){ var a=(agg[s.area]=agg[s.area]||{sum:0,n:0}); a.sum+=(s.current||0)*(s.responses||0); a.n+=(s.responses||0); });
+    Object.keys(agg).forEach(function(k){ m[k]={cur: agg[k].n?agg[k].sum/agg[k].n:0, n:agg[k].n}; }); }
+  return m;
+}
+function effAreasFor(unit,steward){
+  var m=perArea(unit,steward); var persp=(unit||steward);
+  return areas.map(function(a){
+    var cur = (persp && m[a.id]) ? m[a.id].cur : a.current;
+    var gap = TGT-cur;
+    return {id:a.id,area:a.area,abbr:a.abbr,domain:a.domain,level:a.level,target:TGT,
+            deliverables:a.deliverables,comments:a.comments,current:cur,gap:gap,rag:ragOf(gap),
+            resp:(m[a.id]?m[a.id].n:a.responses)};
+  });
+}
+var orgAreas=effAreasFor("",""); var orgOverall=overallOf(orgAreas);
+function orgMap(){ var m={}; orgAreas.forEach(function(a){ m[a.id]=a.current; }); return m; }
+
 function render(){
-  // ---- overall (deliverable-weighted current vs target 3) ----
-  var td=0, wc=0, tgt=3, totDeliv=0, totCom=0;
-  areas.forEach(function(a){ td+=(a.current||0)*(a.deliverables||0); wc+=(a.deliverables||0); totDeliv+=(a.deliverables||0); totCom+=(a.comments||0); });
-  var oc = wc? td/wc : 0;
-  var gap = tgt-oc;
-  var readiness = Math.round(oc/tgt*100);
-  var inScopeAreas = areas.filter(function(a){return a.scopeStatus!=="Out of scope";}).length;
-  var inScopeDeliv = areas.reduce(function(s,a){return s+(a.inScope||0);},0);
+  var byUnit={}; stewards.forEach(function(s){ (byUnit[s.unit]=byUnit[s.unit]||[]).push(s); });
   var html='';
+  // ---- perspective selector bar ----
+  html+='<div class="pbar">'+
+    '<div><label>Unit / department</label><br><select id="selUnit"></select></div>'+
+    '<div><label>Data steward</label><br><select id="selStew"></select></div>'+
+    '<button class="rst" id="selReset">↺ Whole organisation</button>'+
+    '<span class="ctx" id="pctx"></span></div>';
+  html+='<div id="persp"></div>';
 
-  // ---- stat tiles ----
-  html+='<div class="dmstat">'+
-    tile((oc.toFixed(1)),'Current maturity · '+mlab(oc),'red')+
-    tile(tgt.toFixed(1),'Target · '+mlab(tgt),'')+
-    tile(gap.toFixed(1),'Maturity gap','amber')+
-    tile(readiness+'%','Governance readiness','red')+
-    tile(areas.length,'Knowledge areas','')+
-    tile(totDeliv,'Deliverables assessed','')+
-    tile(stewards.length,'Business Data Stewards','')+
-    tile(totCom,'Steward comments','')+
-  '</div>';
-
-  // ---- radar ----
-  html+='<div class="sec"><div class="sec-h"><h2>Knowledge area maturity radar</h2>'+
-    '<span class="hint">current maturity vs the Defined (3) target — all 17 areas in scope</span></div>'+
-    '<div class="sec-b"><div class="radarwrap">'+
-      '<div style="flex:1;min-width:330px;text-align:center">'+buildRadar(areas)+'</div>'+
-      '<div style="flex:1;min-width:230px">'+
-        '<div class="legrow"><span class="legsw" style="background:rgba(220,38,38,.25);border:2px solid #dc2626"></span> Current maturity ('+mlab(oc)+', '+oc.toFixed(1)+')</div>'+
-        '<div class="legrow"><span class="legsw" style="background:rgba(37,99,235,.08);border:1.5px dashed #2f6fed"></span> Target — Defined (3)</div>'+
-        '<div style="font-size:.8rem;color:var(--mut);margin-top:6px">All <b>'+areas.length+'</b> knowledge areas ('+totDeliv+' deliverables) were assessed with the '+stewards.length+' Business Data Stewards. The current polygon sits near the centre — a near-uniform <b>'+mlab(oc)+'</b> baseline against the Defined (3) target.</div>'+
-        '<div class="abbrlist">'+areas.slice().sort(function(a,b){return a.abbr<b.abbr?-1:1;}).map(function(a){
-          return '<div class="ai"><b>'+esc(a.abbr||"")+'</b> — '+esc(a.area)+'</div>';
-        }).join("")+'</div>'+
-      '</div>'+
-    '</div></div></div>';
-
-  // ---- readiness / mandate ----
-  html+='<div class="readiness"><h2>Governance readiness — a '+gap.toFixed(1)+'-level gap to Defined</h2>'+
-    '<div class="sub">Current maturity sits at <b>'+mlab(oc)+' ('+oc.toFixed(1)+')</b> against an organisational target of <b>'+mlab(tgt)+' ('+tgt.toFixed(0)+')</b> across all '+areas.length+' DMBOK knowledge areas. Data Governance is accountable for raising maturity through three stages:</div>'+
+  // ---- readiness mandate (organisation-level, static) ----
+  var orgGap=TGT-orgOverall;
+  html+='<div class="readiness"><h2>Governance readiness — a '+orgGap.toFixed(1)+'-level gap to Defined</h2>'+
+    '<div class="sub">Across all '+areas.length+' DMBOK knowledge areas the organisation sits at <b>'+mlab(orgOverall)+' ('+orgOverall.toFixed(1)+')</b> against a target of <b>'+mlab(TGT)+' ('+TGT+')</b>. Data Governance is accountable for raising maturity through three stages:</div>'+
     '<div class="journey">'+
       jstep(1,'Define','Set the policies, principles, standards and controls for each domain — the Policy library codifies the management intent and the controls that must be met.')+
       jstep(2,'Implement','Stand up the controls, roles and processes: the Business Data Steward network and the discipline Technical Specialists operationalise each policy in the business units.')+
       jstep(3,'Operationalise','Run, monitor and evidence the controls so maturity moves from Unaware toward Defined — measured by re-assessing the DMMA against this baseline.')+
     '</div></div>';
 
-  // ---- maturity by DMBOK level ----
-  var LORDER=["Oversight","Foundation","Lifecycle","Outcome"];
-  var byLvl={}; areas.forEach(function(a){ (byLvl[a.level]=byLvl[a.level]||[]).push(a); });
-  html+='<div class="sec"><div class="sec-h"><h2>Maturity by DMBOK layer</h2><span class="hint">current vs Defined (3) target</span></div><div class="sec-b"><div class="levelgrid">';
-  LORDER.concat(Object.keys(byLvl).filter(function(l){return LORDER.indexOf(l)<0;})).forEach(function(L){
-    var g=byLvl[L]; if(!g) return;
-    var c=g.reduce(function(s,a){return s+(a.current||0)*(a.deliverables||0);},0)/(g.reduce(function(s,a){return s+(a.deliverables||0);},0)||1);
-    html+='<div class="levelcard"><div class="ln">'+esc(L||"—")+'</div><div class="lv">'+c.toFixed(1)+'</div>'+
-      '<div style="font-size:.72rem;color:var(--mut)">'+mlab(c)+' · '+g.length+' areas</div>'+barHtml(c,3,ragOf(3-c))+'</div>';
-  });
-  html+='</div></div></div>';
-
-  // ---- knowledge area table ----
-  var sorted=areas.slice().sort(function(a,b){ return (b.gap-a.gap)||(a.area<b.area?-1:1); });
-  html+='<div class="sec"><div class="sec-h"><h2>Maturity by knowledge area → policy domain</h2><span class="hint">click an area for its relationships · click the domain to open its policy</span></div><div class="sec-b" style="overflow-x:auto">'+
-    '<table class="katbl"><thead><tr><th></th><th>Knowledge area</th><th class="hidesm">DMBOK layer</th><th>Governed by</th><th>Scope</th><th>Current</th><th class="barcell">Progress to target</th><th>Gap</th><th class="hidesm">Deliverables</th><th class="hidesm">Comments</th></tr></thead><tbody>';
-  sorted.forEach(function(a){
-    html+='<tr>'+
-      '<td><span class="rag '+esc(a.rag)+'"></span></td>'+
-      '<td><span class="kalink" onclick="openEl(\''+esc(a.id)+'\')">'+esc(a.area)+'</span></td>'+
-      '<td class="hidesm"><span class="lvtag">'+esc(a.level||"")+'</span></td>'+
-      '<td><span class="domlink" onclick="openEl(\''+esc(a.domain)+'\')">'+esc(domName(a.domain))+'</span></td>'+
-      '<td><span class="scopeflag '+scopeClass(a.scopeStatus)+'">'+esc(a.scopeStatus)+'</span></td>'+
-      '<td><span class="mnum">'+(a.current!=null?a.current.toFixed(1):"—")+'</span> <span style="font-size:.72rem;color:var(--mut)">'+esc(mlab(a.current||0))+'</span></td>'+
-      '<td class="barcell">'+barHtml(a.current||0,a.target||3,a.rag)+'</td>'+
-      '<td><span class="mnum" style="color:#b45309">'+(a.gap!=null?a.gap.toFixed(1):"—")+'</span></td>'+
-      '<td class="hidesm">'+(a.deliverables||0)+'</td>'+
-      '<td class="hidesm">'+(a.comments?'<span class="chip">'+a.comments+'</span>':'—')+'</td>'+
-    '</tr>';
-  });
-  html+='</tbody></table></div></div>';
-
-  // ---- steward network by unit ----
-  var byUnit={}; stewards.forEach(function(s){ (byUnit[s.unit]=byUnit[s.unit]||[]).push(s); });
-  html+='<div class="sec"><div class="sec-h"><h2>Business Data Steward network</h2><span class="hint">'+stewards.length+' stewards interviewed · mapped to the Operating Model</span></div><div class="sec-b"><div class="units">';
+  // ---- steward network (clickable) ----
+  html+='<div class="sec"><div class="sec-h"><h2>Business Data Steward network</h2><span class="hint">'+stewards.length+' stewards · click a steward or unit to see how they scored</span></div><div class="sec-b"><div class="units">';
   Object.keys(byUnit).forEach(function(u){
     var g=byUnit[u]; var tot=g.reduce(function(s,x){return s+(x.comments||0);},0);
-    html+='<div class="unit"><div class="uh">'+esc(u||"—")+'<span class="cnt">'+g.length+' · '+tot+' comments</span></div>';
+    html+='<div class="unit"><div class="uh" style="cursor:pointer" onclick="selectUnit('+jsq(u)+')">'+esc(u||"—")+'<span class="cnt">'+g.length+' · '+tot+' comments</span></div>';
     g.forEach(function(s){
       var ini=(s.name||"").split(/\s+/).map(function(w){return w[0];}).slice(0,2).join("").toUpperCase();
-      html+='<div class="p"><div class="av">'+esc(ini)+'</div>'+
+      html+='<div class="p" data-sid="'+esc(s.id)+'" style="cursor:pointer" onclick="selectSteward('+jsq(s.id)+')"><div class="av">'+esc(ini)+'</div>'+
         '<div><div class="nm">'+esc(s.name)+'</div><div class="fn">'+esc(s.fn||"")+' · '+esc(s.teamName||s.team||"")+'</div></div>'+
         '<div class="cm">'+(s.comments?s.comments+' comments':'—')+'</div></div>';
     });
@@ -211,19 +189,107 @@ function render(){
   html+='</div><p style="margin:12px 0 0;font-size:.8rem;color:var(--mut)">Each steward holds the shared <b>Business Data Steward</b> role (Responsible on the policy controls) within their business unit — see the <a href="operating_model.html">Operating Model</a>.</p></div></div>';
 
   // ---- voice of the stewards (comments) ----
-  html+='<div class="sec"><div class="sec-h"><h2>Voice of the stewards</h2><span class="hint">'+comments.length+' comments — challenges &amp; perceptions</span></div><div class="sec-b">'+
+  html+='<div class="sec"><div class="sec-h"><h2>Voice of the stewards</h2><span class="hint" id="chint">'+comments.length+' comments — challenges &amp; perceptions</span></div><div class="sec-b">'+
     '<div class="cfilter"><label style="font-size:.8rem;color:var(--mut)">Filter:</label>'+
     '<select id="fdom"><option value="">All domains</option></select>'+
-    '<select id="fstew"><option value="">All stewards</option></select>'+
     '<input type="search" id="fq" placeholder="Search comments…"></div>'+
     '<div id="cmts"></div></div></div>';
 
   body.innerHTML=html;
-  wireComments();
+
+  // populate domain filter
+  var fdom=document.getElementById("fdom"); var doms={}; comments.forEach(function(c){ doms[c.domain]=1; });
+  Object.keys(doms).sort().forEach(function(d){ var o=document.createElement("option"); o.value=d; o.textContent=domName(d); fdom.appendChild(o); });
+  fdom.onchange=wireComments; document.getElementById("fq").oninput=wireComments;
+
+  // wire selectors
+  document.getElementById("selUnit").onchange=function(){ SEL.unit=this.value; SEL.steward=""; apply(); };
+  document.getElementById("selStew").onchange=function(){ SEL.steward=this.value; if(SEL.steward){ var s=findStew(SEL.steward); if(s) SEL.unit=s.unit; } apply(); };
+  document.getElementById("selReset").onclick=function(){ SEL.unit=""; SEL.steward=""; apply(); };
+  syncSelectors(); renderPersp(); wireComments();
 }
 
-function scopeClass(s){ return s==="In scope"?"scope-In":(s==="Partial"?"scope-Partial":"scope-Out"); }
-function buildRadar(A0){
+function findStew(id){ return stewards.filter(function(s){return s.id===id;})[0]; }
+function jsq(s){ return "'"+String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+"'"; }
+window.selectSteward=function(id){ var s=findStew(id); SEL.steward=id; if(s) SEL.unit=s.unit; apply(); scrollTop(); };
+window.selectUnit=function(u){ SEL.unit=u; SEL.steward=""; apply(); scrollTop(); };
+function scrollTop(){ try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(e){} }
+function apply(){ syncSelectors(); renderPersp(); wireComments(); }
+
+function syncSelectors(){
+  var selUnit=document.getElementById("selUnit"), selStew=document.getElementById("selStew");
+  if(selUnit){ selUnit.innerHTML='<option value="">All units / whole organisation</option>'+units.map(function(u){return '<option value="'+esc(u)+'"'+(u===SEL.unit?' selected':'')+'>'+esc(u)+'</option>';}).join(""); }
+  if(selStew){ var us=SEL.unit? stewards.filter(function(s){return s.unit===SEL.unit;}) : stewards;
+    selStew.innerHTML='<option value="">All stewards'+(SEL.unit?' in unit':'')+'</option>'+us.map(function(s){return '<option value="'+esc(s.id)+'"'+(s.id===SEL.steward?' selected':'')+'>'+esc(s.name)+' — '+esc(s.fn||"")+'</option>';}).join(""); }
+  // highlight selected steward card
+  document.querySelectorAll('.unit .p').forEach(function(p){ p.classList.toggle('sel', p.getAttribute('data-sid')===SEL.steward); });
+}
+
+function renderPersp(){
+  var eff=effAreasFor(SEL.unit,SEL.steward), persp=(SEL.unit||SEL.steward);
+  var refMap=persp?orgMap():null;
+  var label='Whole organisation', sub=stewards.length+' Business Data Stewards · all units';
+  if(SEL.steward){ var s=findStew(SEL.steward)||{}; label=s.name||SEL.steward; sub=(s.fn||'')+' · '+(s.unit||'')+' · '+(s.comments||0)+' comments'; }
+  else if(SEL.unit){ var g=stewards.filter(function(x){return x.unit===SEL.unit;}); label=SEL.unit; sub=g.length+' stewards · '+g.reduce(function(a,x){return a+(x.comments||0);},0)+' comments'; }
+  var oc=overallOf(eff), gap=TGT-oc, readiness=Math.round(oc/TGT*100);
+  document.getElementById("pctx").innerHTML='Current maturity <b style="color:#b91c1c">'+oc.toFixed(1)+'</b> ('+mlab(oc)+') · gap <b>'+gap.toFixed(1)+'</b>'+(persp?' · org avg '+orgOverall.toFixed(1):'');
+
+  var html='<div class="persphdr">Showing: '+esc(label)+' <span>— '+esc(sub)+'</span></div>';
+  // tiles
+  html+='<div class="dmstat">'+
+    tile(oc.toFixed(1),'Current maturity · '+mlab(oc),'red')+
+    tile(TGT.toFixed(1),'Target · '+mlab(TGT),'')+
+    tile(gap.toFixed(1),'Maturity gap','amber')+
+    tile(readiness+'%','Readiness to target','red')+
+    tile(areas.length,'Knowledge areas','')+
+    (persp? tile(orgOverall.toFixed(1),'Org average','') : tile(totDeliv,'Deliverables assessed',''))+
+  '</div>';
+  // radar
+  html+='<div class="sec"><div class="sec-h"><h2>Knowledge area maturity radar</h2>'+
+    '<span class="hint">'+(persp?'this selection (red) vs organisation average (grey)':'current maturity vs the Defined (3) target — all 17 areas in scope')+'</span></div>'+
+    '<div class="sec-b"><div class="radarwrap">'+
+      '<div style="flex:1;min-width:330px;text-align:center">'+buildRadar(eff,refMap)+'</div>'+
+      '<div style="flex:1;min-width:230px">'+
+        '<div class="legrow"><span class="legsw" style="background:rgba(220,38,38,.25);border:2px solid #dc2626"></span> '+(persp?esc(label):'Current maturity')+' ('+mlab(oc)+', '+oc.toFixed(1)+')</div>'+
+        '<div class="legrow"><span class="legsw" style="background:rgba(37,99,235,.08);border:1.5px dashed #2f6fed"></span> Target — Defined (3)</div>'+
+        (persp?'<div class="legrow"><span class="legsw" style="background:#fff;border:1px dashed #94a3b8"></span> Organisation average ('+orgOverall.toFixed(1)+')</div>':'')+
+        '<div style="font-size:.8rem;color:var(--mut);margin-top:6px">'+(persp?'The red polygon is this selection; grey is the whole-organisation average, so you can see where this '+(SEL.steward?'steward':'unit')+' scored above or below the baseline.':'All '+areas.length+' knowledge areas ('+totDeliv+' deliverables) were assessed with the '+stewards.length+' Business Data Stewards.')+'</div>'+
+        '<div class="abbrlist">'+areas.slice().sort(function(a,b){return a.abbr<b.abbr?-1:1;}).map(function(a){ return '<div class="ai"><b>'+esc(a.abbr||"")+'</b> — '+esc(a.area)+'</div>'; }).join("")+'</div>'+
+      '</div>'+
+    '</div></div></div>';
+  // level cards
+  var LORDER=["Oversight","Foundation","Lifecycle","Outcome"];
+  var byLvl={}; eff.forEach(function(a){ (byLvl[a.level]=byLvl[a.level]||[]).push(a); });
+  html+='<div class="sec"><div class="sec-h"><h2>Maturity by DMBOK layer</h2><span class="hint">current vs Defined (3) target</span></div><div class="sec-b"><div class="levelgrid">';
+  LORDER.concat(Object.keys(byLvl).filter(function(l){return LORDER.indexOf(l)<0;})).forEach(function(L){
+    var g=byLvl[L]; if(!g) return;
+    var c=g.reduce(function(s,a){return s+(a.current||0)*(a.deliverables||0);},0)/(g.reduce(function(s,a){return s+(a.deliverables||0);},0)||1);
+    html+='<div class="levelcard"><div class="ln">'+esc(L||"—")+'</div><div class="lv">'+c.toFixed(1)+'</div><div style="font-size:.72rem;color:var(--mut)">'+mlab(c)+' · '+g.length+' areas</div>'+barHtml(c,3,ragOf(3-c))+'</div>';
+  });
+  html+='</div></div></div>';
+  // KA table
+  var sorted=eff.slice().sort(function(a,b){ return (b.gap-a.gap)||(a.area<b.area?-1:1); });
+  html+='<div class="sec"><div class="sec-h"><h2>Maturity by knowledge area → policy domain</h2><span class="hint">click an area for its relationships · click the domain to open its policy</span></div><div class="sec-b" style="overflow-x:auto">'+
+    '<table class="katbl"><thead><tr><th></th><th>Knowledge area</th><th class="hidesm">DMBOK layer</th><th>Governed by</th><th>Current</th><th class="barcell">Progress to target</th><th>Gap</th>'+(persp?'<th class="hidesm">Org avg</th>':'<th class="hidesm">Deliverables</th>')+'<th class="hidesm">Comments</th></tr></thead><tbody>';
+  var oM=orgMap();
+  sorted.forEach(function(a){
+    html+='<tr>'+
+      '<td><span class="rag '+esc(a.rag)+'"></span></td>'+
+      '<td><span class="kalink" onclick="openEl('+jsq(a.id)+')">'+esc(a.area)+'</span></td>'+
+      '<td class="hidesm"><span class="lvtag">'+esc(a.level||"")+'</span></td>'+
+      '<td><span class="domlink" onclick="openEl('+jsq(a.domain)+')">'+esc(domName(a.domain))+'</span></td>'+
+      '<td><span class="mnum">'+a.current.toFixed(1)+'</span> <span style="font-size:.72rem;color:var(--mut)">'+esc(mlab(a.current))+'</span></td>'+
+      '<td class="barcell">'+barHtml(a.current,3,a.rag)+'</td>'+
+      '<td><span class="mnum" style="color:#b45309">'+a.gap.toFixed(1)+'</span></td>'+
+      (persp?'<td class="hidesm"><span style="color:var(--mut)">'+(oM[a.id]||0).toFixed(1)+'</span></td>':'<td class="hidesm">'+(a.deliverables||0)+'</td>')+
+      '<td class="hidesm">'+(a.comments?'<span class="chip">'+a.comments+'</span>':'—')+'</td>'+
+    '</tr>';
+  });
+  html+='</tbody></table></div></div>';
+  document.getElementById("persp").innerHTML=html;
+}
+
+function buildRadar(A0,refMap){
   var order={"Oversight":0,"Foundation":1,"Lifecycle":2,"Outcome":3};
   var A=A0.slice().sort(function(a,b){ return ((order[a.level]==null?9:order[a.level])-(order[b.level]==null?9:order[b.level]))||(a.area<b.area?-1:1); });
   var n=A.length, R=140, cx=215, cy=185, W=430, H=360, maxV=5;
@@ -232,13 +298,15 @@ function buildRadar(A0){
   for(var k=1;k<=5;k++){ var pts=[]; for(var i=0;i<n;i++){ var p=pt(i,k); pts.push(p[0].toFixed(1)+','+p[1].toFixed(1)); }
     svg+='<polygon points="'+pts.join(' ')+'" fill="none" stroke="#e8edf4" stroke-width="1"/>'; }
   for(var k=1;k<=5;k++){ svg+='<text x="'+(cx+4)+'" y="'+(cy-(k/maxV)*R+3).toFixed(1)+'" font-size="8" fill="#b0bacb">'+k+'</text>'; }
-  for(var i=0;i<n;i++){ var e=pt(i,5); var a=A[i]; var out=(a.scopeStatus==="Out of scope");
-    svg+='<line x1="'+cx+'" y1="'+cy+'" x2="'+e[0].toFixed(1)+'" y2="'+e[1].toFixed(1)+'" stroke="'+(out?"#eef2f7":"#d7dfea")+'" stroke-width="1"'+(out?' stroke-dasharray="3 3"':'')+'/>';
+  for(var i=0;i<n;i++){ var e=pt(i,5);
+    svg+='<line x1="'+cx+'" y1="'+cy+'" x2="'+e[0].toFixed(1)+'" y2="'+e[1].toFixed(1)+'" stroke="#d7dfea" stroke-width="1"/>';
     var lp=pt(i,5.4), anchor=(Math.abs(lp[0]-cx)<10)?"middle":(lp[0]<cx?"end":"start");
-    svg+='<text x="'+lp[0].toFixed(1)+'" y="'+(lp[1]+3).toFixed(1)+'" font-size="9.5" font-weight="700" text-anchor="'+anchor+'" fill="'+(out?"#9aa6ba":"#334155")+'">'+esc(a.abbr||"")+'</text>';
+    svg+='<text x="'+lp[0].toFixed(1)+'" y="'+(lp[1]+3).toFixed(1)+'" font-size="9.5" font-weight="700" text-anchor="'+anchor+'" fill="#334155">'+esc(A[i].abbr||"")+'</text>';
   }
   var tp=[]; for(var i=0;i<n;i++){ var p=pt(i,A[i].target||3); tp.push(p[0].toFixed(1)+','+p[1].toFixed(1)); }
   svg+='<polygon points="'+tp.join(' ')+'" fill="rgba(47,111,237,0.06)" stroke="#2f6fed" stroke-width="1.5" stroke-dasharray="4 3"/>';
+  if(refMap){ var rp=[]; for(var i=0;i<n;i++){ var p=pt(i, refMap[A[i].id]||0); rp.push(p[0].toFixed(1)+','+p[1].toFixed(1)); }
+    svg+='<polygon points="'+rp.join(' ')+'" fill="none" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="2 2"/>'; }
   var cp=[]; for(var i=0;i<n;i++){ var p=pt(i,A[i].current||0); cp.push(p[0].toFixed(1)+','+p[1].toFixed(1)); }
   svg+='<polygon points="'+cp.join(' ')+'" fill="rgba(220,38,38,0.18)" stroke="#dc2626" stroke-width="2"/>';
   for(var i=0;i<n;i++){ var p=pt(i,A[i].current||0); svg+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.3" fill="#dc2626"/>'; }
@@ -247,7 +315,6 @@ function buildRadar(A0){
 }
 function tile(n,l,cls){ return '<div class="s'+(cls?" "+cls:"")+'"><div class="n">'+esc(String(n))+'</div><div class="l">'+esc(l)+'</div></div>'; }
 function jstep(n,h,p){ return '<div class="step"><div class="h"><span class="dot">'+n+'</span>'+esc(h)+'</div><p>'+esc(p)+'</p></div>'; }
-function ragOf(gap){ return gap>=2?"Red":(gap>=1?"Amber":"Green"); }
 function barHtml(cur,tgt,rag){
   var pct=Math.max(2,Math.min(100, (cur/5)*100));
   var tpct=Math.min(100,(tgt/5)*100);
@@ -256,26 +323,26 @@ function barHtml(cur,tgt,rag){
 }
 
 function wireComments(){
-  var fdom=document.getElementById("fdom"), fstew=document.getElementById("fstew"), fq=document.getElementById("fq"), box=document.getElementById("cmts");
-  var doms={}, stews={};
-  comments.forEach(function(c){ doms[c.domain]=1; stews[c.name]=1; });
-  Object.keys(doms).sort().forEach(function(d){ var o=document.createElement("option"); o.value=d; o.textContent=domName(d); fdom.appendChild(o); });
-  Object.keys(stews).sort().forEach(function(s){ var o=document.createElement("option"); o.value=s; o.textContent=s; fstew.appendChild(o); });
-  function draw(){
-    var d=fdom.value, s=fstew.value, q=(fq.value||"").trim().toLowerCase();
-    var rows=comments.filter(function(c){
-      return (!d||c.domain===d) && (!s||c.name===s) && (!q || (c.text||"").toLowerCase().indexOf(q)>=0 || (c.deliverable||"").toLowerCase().indexOf(q)>=0);
-    });
-    if(!rows.length){ box.innerHTML='<div style="color:var(--mut);font-size:.85rem;padding:6px">No comments match.</div>'; return; }
-    box.innerHTML=rows.map(function(c){
-      return '<div class="cmt"><div class="m">“'+esc(c.text)+'”</div>'+
-        '<div class="meta"><b>'+esc(c.name)+'</b><span>'+esc(c.unit||"")+'</span>'+
-        '<span class="chip">'+esc(domName(c.domain))+'</span>'+
-        (c.deliverable?'<span>· '+esc(c.deliverable)+'</span>':'')+'</div></div>';
-    }).join("");
-  }
-  fdom.onchange=draw; fstew.onchange=draw; fq.oninput=draw; draw();
+  var fdom=document.getElementById("fdom"), fq=document.getElementById("fq"), box=document.getElementById("cmts"), hint=document.getElementById("chint");
+  if(!box) return;
+  var d=fdom?fdom.value:"", q=(fq&&fq.value||"").trim().toLowerCase();
+  var rows=comments.filter(function(c){
+    if(SEL.steward && c.steward!==SEL.steward) return false;
+    if(!SEL.steward && SEL.unit && c.unit!==SEL.unit) return false;
+    if(d && c.domain!==d) return false;
+    if(q && (c.text||"").toLowerCase().indexOf(q)<0 && (c.deliverable||"").toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  if(hint) hint.textContent=rows.length+' comments'+(SEL.steward?' · this steward':(SEL.unit?' · this unit':' — challenges & perceptions'));
+  box.innerHTML = rows.length? rows.map(function(c){
+    return '<div class="cmt"><div class="m">“'+esc(c.text)+'”</div>'+
+      '<div class="meta"><b>'+esc(c.name)+'</b><span>'+esc(c.unit||"")+'</span>'+
+      '<span class="chip">'+esc(domName(c.domain))+'</span>'+
+      (c.deliverable?'<span>· '+esc(c.deliverable)+'</span>':'')+'</div></div>';
+  }).join("") : '<div style="color:var(--mut);font-size:.85rem;padding:6px">No comments match.</div>';
 }
+
+if(areas.length) render();
 </script>
 </body>
 </html>

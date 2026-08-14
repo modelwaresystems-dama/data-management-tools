@@ -1090,9 +1090,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.50.4";
-window.PACK_CONFIG.built   = "2026-08-14 12:20 SAST";
+window.PACK_CONFIG.version = "v1.50.5";
+window.PACK_CONFIG.built   = "2026-08-14 13:05 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.50.5", date:"2026-08-14 13:05 SAST",
+    note:"Fixed the Home page directory cards showing 'undefined' with no description. Nine pages added since the original directory — North Star, Operating Model, Policy Inspector, DM Maturity, Critical Data Elements, AI Agents & Models, Ethical Stewardship, Model Review and Relationships — had no entry in the Home page's icon and description maps, so they rendered an 'undefined' icon and a blank blurb. Added an icon, description and tag for each (in both the Nedbank and AGGPSA directories) and a fallback icon so any future page can never render 'undefined' again." },
   { v:"v1.50.4", date:"2026-08-14 12:20 SAST",
     note:"The DM Maturity page is now interactive: select a Business Data Steward or a Unit / Department to see how they scored. Picking a steward (or clicking their card) recomputes the whole view to that person's ratings — tiles, radar, DMBOK-layer cards, knowledge-area table and their comments — and overlays their maturity polygon (red) against the whole-organisation average (grey) so you can see where they scored above or below the baseline. Picking a unit aggregates its stewards the same way and narrows the steward list to that unit. Added model sheet 187 DMMA_StewardScore (per-steward × per-knowledge-area maturity, 238 rows). Reset returns to the whole organisation. E.g. Keren Swanson (Head of Dept) averages 0.3 vs the org 0.1, scoring higher on Change Management, Security and Metadata." },
   { v:"v1.50.3", date:"2026-08-14 11:10 SAST",

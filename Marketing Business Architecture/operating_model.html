@@ -36,6 +36,7 @@
   .stpill{display:inline-block;font-size:.66rem;font-weight:800;border-radius:20px;padding:2px 9px}
   .st-Filled{background:#dcfce7;color:#166534}.st-Partiallystaffed{background:#fef9c3;color:#854d0e}.st-Vacant{background:#fee2e2;color:#b91c1c}
   .st-Shared{background:#e0f2fe;color:#075985}
+  .st-Steward{background:#ede9fe;color:#5b21b6}
   .person.shared{color:#0369a1;font-weight:600;font-style:italic}
   .load{font-size:.74rem;color:var(--mut)}.load b{color:var(--ink)}
   .load .ctl{color:#0e7490}.load .sep{display:block;height:2px}
@@ -68,12 +69,12 @@
   <div id="content"></div>
 </div>
 
-<script src="assets/data.js?v=1.49.2"></script>
-<script src="assets/model_all.js?v=1.49.2"></script>
-<script src="assets/aggpsa_model_all.js?v=1.49.2"></script>
-<script src="assets/aggpsa_data.js?v=1.49.2"></script>
+<script src="assets/data.js?v=1.50.0"></script>
+<script src="assets/model_all.js?v=1.50.0"></script>
+<script src="assets/aggpsa_model_all.js?v=1.50.0"></script>
+<script src="assets/aggpsa_data.js?v=1.50.0"></script>
 <script src="assets/org_switch.js"></script>
-<script src="assets/model_hydrate.js?v=1.49.2"></script>
+<script src="assets/model_hydrate.js?v=1.50.0"></script>
 <script src="assets/pack.js"></script>
 <script src="assets/model_explorer.js"></script>
 <script>
@@ -101,6 +102,9 @@ function _cl(rid){ return (ctlLoad[rid]=ctlLoad[rid]||{acc:0,resp:0}); }
   if(c.bdsRoleId) _cl(c.bdsRoleId).resp++;
   if(c.tsRoleId)  _cl(c.tsRoleId).resp++;
 });
+// Business Data Steward network (DMMA) keyed by RoleID — maturity + comments
+var stewardBy={}; (D.businessStewards||[]).forEach(function(s){ stewardBy[s.id]=s; });
+var MLABEL={"0":"Unaware","1":"Ad-hoc","2":"Repeatable","3":"Defined","4":"Managed","5":"Optimising"};
 // role -> AccountableFor / OwnsObjects (from OwnershipRole sheet 20)
 var roleMeta={};
 (function(){ var s=SHEETS.filter(function(x){return x.name.indexOf("20 ·")===0;})[0]; if(!s) return;
@@ -112,7 +116,8 @@ var ucName={}; (D.aiUseCases||[]).forEach(function(u){ ucName[u.id]=u.name; });
 function stClass(s){ return "st-"+String(s||"").replace(/\s/g,""); }
 function roleRow(rid){
   var a=roleAlloc[rid]||{}; var status=a.status||"Vacant"; var holder=a.holder||"—";
-  var vac=(status==="Vacant"); var shared=(status==="Shared"); var ld=roleLoad[rid]||{};
+  var vac=(status==="Vacant"); var shared=(status==="Shared"); var steward=(status==="Steward");
+  var ld=roleLoad[rid]||{};
   var nAcc=(ld.Accountable||[]).length, nResp=(ld.Responsible||[]).length;
   var cl=ctlLoad[rid]||{acc:0,resp:0};
   var lines=[];
@@ -124,6 +129,10 @@ function roleRow(rid){
   if(cl.acc) clTxt.push('<b>'+cl.acc+'</b> accountable');
   if(cl.resp) clTxt.push('<b>'+cl.resp+'</b> responsible');
   if(clTxt.length) lines.push('<span class="ctl">'+clTxt.join(" · ")+' <span class="mut">controls</span></span>');
+  // Business Data Steward: show DMMA maturity + comments instead of control load
+  var st=steward?stewardBy[rid]:null;
+  if(st){ var lbl=MLABEL[String(Math.round(st.current||0))]||'';
+    lines=['<span style="color:#5b21b6">DMMA current <b>'+(st.current!=null?st.current.toFixed(1):'—')+'</b>'+(lbl?' ('+esc(lbl)+')':'')+(st.comments?' · <b>'+st.comments+'</b> comments':'')+'</span>']; }
   var meta=roleMeta[rid]||{};
   var holderHtml = vac ? '<span class="person vacant">— unfilled</span>'
                  : shared ? '<span class="person shared">shared capacity</span>'
@@ -131,7 +140,7 @@ function roleRow(rid){
   return '<tr data-txt="'+esc((rid+" "+(a.name||"")+" "+holder).toLowerCase())+'">'+
     '<td><a class="rolelink" onclick="openRole(\''+rid+'\')">'+esc(a.name||rid)+'<span class="rid">'+esc(rid)+'</span></a></td>'+
     '<td>'+holderHtml+'</td>'+
-    '<td>'+(shared?'<span class="mut">—</span>':(a.fte!=null?esc(a.fte):"—"))+'</td>'+
+    '<td>'+((shared||steward)?'<span class="mut">—</span>':(a.fte!=null?esc(a.fte):"—"))+'</td>'+
     '<td><span class="stpill '+stClass(status)+'">'+esc(status==="Shared"?"Shared capacity":status)+'</span></td>'+
     '<td class="load">'+(lines.length?lines.join('<span class="sep"></span>'):'<span class="mut">—</span>')+'</td>'+
     '<td class="accfor">'+esc(meta.acc||"")+'</td>'+
@@ -148,8 +157,9 @@ var rolesByTeam={}; Object.keys(roleAlloc).forEach(function(rid){ var a=roleAllo
 
 // ---- summary ----
 var allRoles=Object.keys(roleAlloc);
-var sharedRoles=allRoles.filter(function(r){return roleAlloc[r].status==="Shared";});
-var staffable=allRoles.filter(function(r){return roleAlloc[r].status!=="Shared";});
+var stewardR=allRoles.filter(function(r){return roleAlloc[r].status==="Steward";});
+var offline={Shared:1,Steward:1};   // not counted as staffable headcount / gaps
+var staffable=allRoles.filter(function(r){return !offline[roleAlloc[r].status];});
 var filled=allRoles.filter(function(r){return roleAlloc[r].status==="Filled";}).length;
 var vacant=allRoles.filter(function(r){return roleAlloc[r].status==="Vacant";});
 var partial=allRoles.filter(function(r){return /Part/.test(roleAlloc[r].status||"");});
@@ -158,6 +168,7 @@ document.getElementById("stat").innerHTML=
   stat(deptOrder.length,"Departments")+stat(teams.length,"Functions")+stat(staffable.length,"Roles")+
   stat(filled+" / "+staffable.length,"People allocated")+
   '<div class="s'+((vacant.length+partial.length)?" warn":"")+'"><div class="n">'+(vacant.length+partial.length)+'</div><div class="l">Resourcing gaps</div></div>'+
+  (stewardR.length?stat(stewardR.length,"Business Data Stewards"):"")+
   stat(totFte.toFixed(1),"Committed FTE");
 function stat(n,l){ return '<div class="s"><div class="n">'+n+'</div><div class="l">'+esc(l)+'</div></div>'; }
 
@@ -175,8 +186,10 @@ var html=deptOrder.map(function(dept){
   var dteams=byDept[dept];
   var droles=[]; dteams.forEach(function(t){ droles=droles.concat(rolesByTeam[t.id]||[]); });
   var dfte=droles.reduce(function(a,r){return a+(roleAlloc[r].fte||0);},0);
-  var dvac=droles.filter(function(r){var s=roleAlloc[r].status;return s!=="Filled"&&s!=="Shared";}).length;
+  var dvac=droles.filter(function(r){var s=roleAlloc[r].status;return s!=="Filled"&&s!=="Shared"&&s!=="Steward";}).length;
   var dshared=droles.filter(function(r){return roleAlloc[r].status==="Shared";}).length;
+  var dstew=droles.filter(function(r){return roleAlloc[r].status==="Steward";}).length;
+  var doff=dshared+dstew;
   var fns=dteams.map(function(t){
     var rids=(rolesByTeam[t.id]||[]);
     var rows=rids.map(roleRow).join("");
@@ -189,8 +202,8 @@ var html=deptOrder.map(function(dept){
   }).join("");
   return '<div class="omdept" data-dept="'+esc(dept.toLowerCase())+'">'+
     '<div class="omdept-h"><h2>'+esc(dept)+'</h2>'+
-      '<div class="roll"><span><b>'+dteams.length+'</b> functions</span><span><b>'+(droles.length-dshared)+'</b> roles</span>'+
-      '<span><b>'+dfte.toFixed(1)+'</b> FTE</span>'+(dshared?'<span><b>'+dshared+'</b> shared</span>':'')+(dvac?'<span><b>'+dvac+'</b> gaps</span>':'')+'</div></div>'+
+      '<div class="roll"><span><b>'+dteams.length+'</b> functions</span><span><b>'+(droles.length-doff)+'</b> roles</span>'+
+      '<span><b>'+dfte.toFixed(1)+'</b> FTE</span>'+(dstew?'<span><b>'+dstew+'</b> stewards</span>':'')+(dshared?'<span><b>'+dshared+'</b> shared</span>':'')+(dvac?'<span><b>'+dvac+'</b> gaps</span>':'')+'</div></div>'+
     fns+'</div>';
 }).join("");
 document.getElementById("content").innerHTML=html;

@@ -1015,6 +1015,7 @@ window.PACK_CONFIG.chain = [
   if(!has("north_star.html")){ var vi=p.findIndex(function(x){return x.file==="value_streams.html";}); p.splice((vi>=0?vi+1:1),0,{file:"north_star.html", nav:"North Star", title:"North Star & Metric Tree"}); }
   if(!has("operating_model.html")){ var gi=p.findIndex(function(x){return x.file==="governance_responsible_ai.html";}); p.splice((gi>=0?gi+1:p.length),0,{file:"operating_model.html", nav:"Operating Model", title:"Operating Model"}); }
   if(!has("policy_inspector.html")){ var pgi=p.findIndex(function(x){return x.file==="operating_model.html";}); p.splice((pgi>=0?pgi+1:p.length),0,{file:"policy_inspector.html", nav:"Policy Inspector", title:"Policy Inspector"}); }
+  if(!has("data_maturity.html")){ var dmi=p.findIndex(function(x){return x.file==="policy_inspector.html";}); p.splice((dmi>=0?dmi+1:p.length),0,{file:"data_maturity.html", nav:"DM Maturity", title:"Data Management Maturity"}); }
   if(!has("model_review.html")) p.push({file:"model_review.html", nav:"Model Review", title:"Architecture Model — Full Review"});
   if(!has("element_relationships.html")) p.push({file:"element_relationships.html", nav:"Relationships", title:"Element Relationships"});
 })();
@@ -1089,9 +1090,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.49.2";
-window.PACK_CONFIG.built   = "2026-08-13 09:20 SAST";
+window.PACK_CONFIG.version = "v1.50.0";
+window.PACK_CONFIG.built   = "2026-08-14 07:20 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.50.0", date:"2026-08-14 07:20 SAST",
+    note:"Added the AGGPSA Data Management Maturity Assessment (DMMA / DMBOK) as governance-readiness evidence, wired into the model. A new 'DM Maturity' page shows overall current-vs-target maturity (current ≈ Unaware 0.1 against a Defined 3 target — a ~2.9-level gap), maturity by DMBOK layer and by knowledge area mapped to its governing policy domain, the Define→Implement→Operationalise mandate, the 14 Business Data Stewards as a network by business unit, and the 48 steward comments (challenges & perceptions) filterable by domain and steward. The 14 interviewed stewards are mapped onto the Operating Model — they appear per business unit as named holders of the shared Business Data Steward role (status 'Steward', no incremental FTE), each showing their DMMA maturity and comment count. New model sheets 183 DMMA_KnowledgeArea, 184 DMMA_Deliverable, 185 BusinessDataSteward, 186 DMMA_Comment (AGGPSA), with graph relationships area→domain, deliverable→area, steward→role/team and comment→steward/area. Verified: 17 areas, 139 deliverables, 14 stewards, 48 comments, 0 console errors both orgs." },
   { v:"v1.49.2", date:"2026-08-13 09:20 SAST",
     note:"Consolidated the control 'Responsible' roles. The ~22–30 per-domain specialists are replaced by ONE shared Business Data Steward (business Responsible, across every control) plus a small set of Technical Specialists by discipline — Data Management, Security & Privacy, AI & Model, Marketing & CX, and Governance/Risk & Compliance — with each policy domain routed to the appropriate discipline. Every control's Responsible is now 'Business Data Steward + the domain's Technical Specialist'; both are governed shared-capacity roles in the Operating Model and both accrue the control's responsibility load. This flows through the Policy Control RACI, the Operating Model and the graph relationships. Verified: NB 6 Responsible roles (Business Data Steward + 5 disciplines), AGGPSA 5, Business Data Steward Responsible on all controls (NB 510, AGGPSA 374), 0 dangling role FKs, 0 console errors both orgs." },
   { v:"v1.49.1", date:"2026-08-13 08:40 SAST",

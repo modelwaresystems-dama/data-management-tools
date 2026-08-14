@@ -258,6 +258,12 @@
   set("policyProcesses", recs("180 ·").map(function(r){ return {id:r.ProcessID,policy:r.PolicyID,name:r.ProcessName,desc:r.Description,cap:r.CapabilityID,capName:r.CapabilityName,responsible:r.ResponsibleRole,freq:r.Frequency,inputs:r.Inputs,outputs:r.Outputs,implements:L(r.ImplementsControls)}; }));
   set("principleControlMap", recs("181 ·").map(function(r){ return {principle:r.PrincipleID,policy:r.PolicyID,control:r.ControlID,constraint:r.ConstraintType,evidence:r.EvidenceOfAlignment}; }));
 
+  /* ---- DMMA / Governance Readiness (AGGPSA) — knowledge areas, deliverables, stewards, comments ---- */
+  set("dmmaAreas", recs("183 ·").map(function(r){ return {id:r.KnowledgeAreaID,area:r.KnowledgeArea,abbr:r.ABBR,domain:r.PolicyDomainID,level:r.DMBOKLevel,sub:r.SubLevel,attention:N(r.Attention),current:N(r.CurrentMaturity),currentLabel:r.CurrentLabel,target:N(r.TargetMaturity),targetLabel:r.TargetLabel,gap:N(r.Gap),rag:r.RAG,deliverables:N(r.Deliverables),responses:N(r.Responses),comments:N(r.Comments)}; }));
+  set("dmmaDeliverables", recs("184 ·").map(function(r){ return {id:r.DeliverableID,area:r.KnowledgeAreaID,areaName:r.KnowledgeArea,domain:r.PolicyDomainID,phase:r.ActivityPhase,activity:r.Activity,deliverable:r.Deliverable,generic:r.Generic,done:r.Done,current:N(r.CurrentMaturity),target:N(r.TargetMaturity),gap:N(r.Gap)}; }));
+  set("businessStewards", recs("185 ·").map(function(r){ return {id:r.StewardID,name:r.Name,fn:r.Function,unit:r.BusinessUnit,email:r.Email,holdsRole:r.HoldsRoleID,team:r.TeamID,teamName:r.TeamName,dept:r.Department,current:N(r.CurrentMaturity),responses:N(r.Responses),comments:N(r.Comments)}; }));
+  set("dmmaComments", recs("186 ·").map(function(r){ return {id:r.CommentID,steward:r.StewardID,name:r.StewardName,unit:r.BusinessUnit,area:r.KnowledgeAreaID,domain:r.PolicyDomainID,deliverable:r.Deliverable,text:r.Comment}; }));
+
   /* ---- Critical Data Elements + decision→CDE map ---- */
   set("criticalDataElements", recs("153 ·").map(function(r){ return {id:r.CDEID,name:r.Name,def:r.Definition,term:r.BusinessTerm,concept:r.OwningConceptID,source:r.GoldenSource,steward:r.StewardRole,classification:r.Classification,dimensions:r.QualityDimensions,threshold:r.QualityThreshold,policy:r.GoverningPolicyID,tier:r.CriticalityTier,decisions:L(r.Decisions),dataType:r.DataType}; }));
   var cdeByDec={}; recs("154 ·").forEach(function(r){ (cdeByDec[r.DecisionID]=cdeByDec[r.DecisionID]||[]).push({cde:r.CDEID,name:r.CDEName,role:r.InputRole,classification:r.Classification,tier:r.CriticalityTier}); });

@@ -1090,9 +1090,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.50.2";
-window.PACK_CONFIG.built   = "2026-08-14 10:05 SAST";
+window.PACK_CONFIG.version = "v1.50.3";
+window.PACK_CONFIG.built   = "2026-08-14 11:10 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.50.3", date:"2026-08-14 11:10 SAST",
+    note:"Two corrections. (1) Readiness now cannot sit above the maturity foundation: the DMMA maturity is a hard ceiling on each Use-Case Readiness dimension (Unaware→1), with local use-case evidence allowed only a marginal lift above it and never past the evidence. So AGGPSA readiness now reads Red (1–2) across the board — e.g. Governance drops from 3 to 2 — consistent with the Unaware baseline, instead of the earlier 3/5. (2) All 17 knowledge areas are marked In scope: the workbook's per-deliverable 'Out of Scope' marker was not a domain-review flag — every area was assessed with the 14 stewards — so the radar no longer greys or dashes any axis and the table shows all areas In scope. Removed the misleading 'areas in scope 2/17' tiles." },
   { v:"v1.50.2", date:"2026-08-14 10:05 SAST",
     note:"Two updates. (1) Business Data Stewards now show their actual business positions in the Operating Model — Programme Manager, Financial Accountant, Grant Making Officer, Head of Department, Research Specialist, M&E Specialist, etc. (from the DMMA interviewee roles) — each tagged 'BD Steward' and still holding the shared Business Data Steward role. (2) The measured DMMA maturity now feeds the AI Use-Case Readiness assessment for AGGPSA: each readiness dimension (People, Process, Technology, Data, Governance, Measurement) is blended 50/50 with the organisation's DMMA maturity for that capability, so use-case readiness is held to the real data-management foundations. AGGPSA readiness drops from ~3.9 to ~2.5 (all dimensions now cite the DMMA and cap at Amber given Unaware foundations); Nedbank is unchanged (no DMMA). The North Star Delivery Readiness Index follows." },
   { v:"v1.50.1", date:"2026-08-14 09:10 SAST",

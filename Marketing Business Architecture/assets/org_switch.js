@@ -28,7 +28,7 @@
     // config overrides
     ["client","identity","engagement","publishStatus","vpSegments","archTitle",
      "packName","pageDir","workbooks","copy","ethical","manual","pageTitles",
-     "valueProp","capabilityMap","processLandscape"].forEach(function(k){
+     "valueProp","capabilityMap","processLandscape","glossary"].forEach(function(k){
       if(cfg[k] != null) CFG[k] = cfg[k];
     });
     if(cfg.landing) CFG.landing = cfg.landing;

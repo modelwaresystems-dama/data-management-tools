@@ -177,8 +177,14 @@
   MX.detail=function(id){
     var e=MX.ENT[id]; if(!e || !W.PACK || !PACK.openPanel) return;
     var g=MX.related(id);
+    // deep-link to the governed term in the Glossary Workbench, if this element is one
+    var gurl = (PACK.glossaryUrlFor ? (PACK.glossaryUrlFor(e.name) || PACK.glossaryUrlFor(id)) : "");
+    var glossHtml = gurl ? ('<div style="margin:0 0 10px"><a href="'+esc(gurl)+'" target="_blank" rel="noopener" '+
+        'style="display:inline-flex;align-items:center;gap:6px;font-size:.82rem;font-weight:600;color:#0e7490;text-decoration:none;border:1px solid #bae6fd;background:#f0f9ff;border-radius:8px;padding:5px 11px">'+
+        '📖 Open “'+esc(e.name||id)+'” in the Glossary Workbench ↗</a></div>') : "";
     var body=
       '<div class="mxmeta"><span class="mut">'+esc(e.sheet)+'</span> &nbsp;·&nbsp; <span class="mut">'+esc(MX.layerOf(e.sheet))+'</span> &nbsp;·&nbsp; <span class="mut">'+esc(e.kind)+'</span></div>'+
+      glossHtml+
       '<h4>Attributes</h4>'+MX.attrsHtml(id)+
       '<h4>Relationships <span class="mut">('+g.count+')</span></h4>'+
       '<div class="mut" style="font-size:.76rem;margin:0 0 8px">Every element linked to this one by a governed foreign key. &nbsp;→ references &nbsp;· &nbsp;← referenced by &nbsp;· &nbsp;↔ both. Hover for the joining sheet &amp; field; click any element to open it.</div>'+

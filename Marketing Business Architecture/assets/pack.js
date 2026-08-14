@@ -95,15 +95,43 @@
     return '<div class="chiprow">'+(label?'<span class="lbl">'+PACK.esc(label)+'</span>':"")+
       ids.map(function(i){return PACK.chip(i);}).join("")+'</div>';
   };
-  /* glossary term chip — resolves via configured template, else inert */
-  PACK.termChip = function(term){
+  /* Resolve a term (by name or alias) to its EXACT glossary-workbench deep link,
+     using the baked term dictionary (term -> [Name, SubjectArea]). Returns "" if
+     the term is not a governed glossary term. Falls back to the {base}/{key}
+     template only when a base URL is set but the term isn't in the dictionary. */
+  PACK.glossaryUrlFor = function(term){
     var g = PACK.glossary();
-    var key = String(term).replace(/\s+/g,"_");
-    if(g.enabled && g.baseUrl){
-      var url = g.linkTemplate.replace("{base}",g.baseUrl).replace("{key}",encodeURIComponent(key));
-      return '<a class="chip term" href="'+PACK.esc(url)+'" target="_blank" rel="noopener">'+PACK.esc(term)+'</a>';
+    var dict = (g && g.terms) || (CFG.glossary && CFG.glossary.terms) || null;
+    var norm = String(term==null?"":term).replace(/\s+/g," ").trim().toLowerCase();
+    if(dict){
+      // the baked dictionary is authoritative: match -> exact deep link, else inert
+      if(dict[norm]){
+        var d = dict[norm], name = d[0], area = d[1];
+        var base = (g.baseUrl || (CFG.glossary&&CFG.glossary.baseUrl) || "");
+        return base + "#glossary=" + encodeURIComponent(area) + "&term=" + encodeURIComponent(name);
+      }
+      return "";
     }
-    return '<span class="chip term off" title="Glossary link not configured — set it on the Glossary page">'+PACK.esc(term)+'</span>';
+    // no dictionary (e.g. Nedbank): fall back to a configured {base}/{key} template
+    if(g && g.enabled && g.baseUrl && g.linkTemplate){
+      return g.linkTemplate.replace("{base}",g.baseUrl).replace("{key}",encodeURIComponent(String(term).replace(/\s+/g,"_")));
+    }
+    return "";
+  };
+  /* Is this term governed (in the glossary dictionary)? */
+  PACK.isGlossaryTerm = function(term){
+    var g = PACK.glossary();
+    var dict = (g && g.terms) || (CFG.glossary && CFG.glossary.terms) || null;
+    if(!dict) return false;
+    return !!dict[String(term==null?"":term).replace(/\s+/g," ").trim().toLowerCase()];
+  };
+  /* glossary term chip — deep-links to the exact term in the workbench, else inert */
+  PACK.termChip = function(term){
+    var url = PACK.glossaryUrlFor(term);
+    if(url){
+      return '<a class="chip term" href="'+PACK.esc(url)+'" target="_blank" rel="noopener" title="Open “'+PACK.esc(term)+'” in the Glossary Workbench">'+PACK.esc(term)+'</a>';
+    }
+    return '<span class="chip term off" title="Not a governed glossary term (or glossary link not configured)">'+PACK.esc(term)+'</span>';
   };
   PACK.termChips = function(terms,label){
     if(!terms||!terms.length) return "";

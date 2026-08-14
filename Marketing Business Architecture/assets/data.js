@@ -1090,9 +1090,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.51.0";
-window.PACK_CONFIG.built   = "2026-08-14 14:30 SAST";
+window.PACK_CONFIG.version = "v1.51.1";
+window.PACK_CONFIG.built   = "2026-08-14 15:20 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.51.1", date:"2026-08-14 15:20 SAST",
+    note:"Wired the AGGPSA Business Glossary Workbench into the app. Baked the full 903-term glossary dictionary (from the deep-links export) into the AGGPSA source and pre-enabled glossary linking. Every governed term now resolves to its EXACT workbench deep link — glossary-workbench.html#glossary={Subject Area}&term={Term} — matching the export byte-for-byte. Term chips (Data Products, Analytics use-cases, Knowledge assets) deep-link to the term; and every element's detail panel now shows an 'Open … in the Glossary Workbench ↗' link whenever that element is a governed term, so any of the 903 terms is one click from the workbench anywhere in the app. Terms not in the glossary render inert (no broken links). Coverage note: the export predates the policy-control consolidation and DMMA work — 683/903 terms match live elements and link today; 220 glossary terms are stale (old pre-consolidation controls); ~600 current elements (374 controls, 132 processes/SOPs, DMMA/steward/etc.) are not yet in the glossary and were exported as a 'terms to add' list for re-sync. Nedbank unaffected." },
   { v:"v1.51.0", date:"2026-08-14 14:30 SAST",
     note:"Rebuilt the User Manual into a complete, screenshot-rich reference for every page in the app — for building the training material. The 'Every page' section now documents all 26 pages in navigation order (plus the standalone Policy Meta-Model), each with a live AGGPSA screenshot, a detailed description of what the page is for, an explicit 'Architecture message' (which layer of the model the page presents and the point it makes), and what you'll see and do on it. Added Policy Inspector and DM Maturity (previously undocumented), a per-page contents list for quick jumps, and screenshots embedded from assets/manual/ so the whole manual prints/exports to a single PDF. Nothing is skipped." },
   { v:"v1.50.5", date:"2026-08-14 13:05 SAST",

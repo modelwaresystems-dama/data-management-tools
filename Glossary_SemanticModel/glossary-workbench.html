@@ -143,8 +143,8 @@ const isUpperOntologyName = (name, areas) =>
   /foundational|upper ontology|core ontology/i.test(String(name || "") + " " + (Array.isArray(areas) ? areas.join(" ") : String(areas || "")));
 
 /* Build identity — shown in the sidebar so the latest build can be confirmed at a glance. */
-const APP_VERSION = "4.72";
-const APP_BUILD = "2026-08-14 13:42 UTC";
+const APP_VERSION = "4.73";
+const APP_BUILD = "2026-08-14 13:59 UTC";
 
 /* ============================================================
    In-app User Guide — content model + a small bridge so any
@@ -2802,6 +2802,7 @@ function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
               <span title={"Build " + APP_BUILD} style={{ fontSize: 11, fontWeight: 800, fontFamily: FONT_MONO, color: "#ffffff", background: C.teal, border: "1px solid " + C.tealDeep, borderRadius: 999, padding: "2px 9px", letterSpacing: 0.4, boxShadow: "0 1px 0 " + C.tealDeep }}>{"v" + APP_VERSION}</span>
               <span style={{ fontSize: 10, color: C.ink2, fontFamily: FONT_MONO, letterSpacing: 0.2 }}>{APP_BUILD}</span>
+              <StorageButton />
             </div>
           </div>
         </div>
@@ -6514,7 +6515,11 @@ const GH = {
   enabled: false, token: "", owner: "modelwaresystems-dama", repo: "modelware_app_storage", folder: "Semantic Model", branch: "main",
   cache: new Map(), sha: new Map(), loaded: false, pending: new Map(), timers: new Map(), onError: null,
   loadCfg() { try { const c = JSON.parse(localStorage.getItem(GH_CFG_KEY) || "null"); if (c && typeof c === "object") { GH.enabled = !!c.enabled; GH.token = c.token || ""; GH.owner = c.owner || GH.owner; GH.repo = c.repo || GH.repo; GH.folder = c.folder || GH.folder; GH.branch = c.branch || "main"; } } catch (e) {} },
-  saveCfg() { try { localStorage.setItem(GH_CFG_KEY, JSON.stringify({ enabled: GH.enabled, token: GH.token, owner: GH.owner, repo: GH.repo, folder: GH.folder, branch: GH.branch })); } catch (e) {} },
+  saveCfg() { try { localStorage.setItem(GH_CFG_KEY, JSON.stringify({ enabled: GH.enabled, token: GH.token, owner: GH.owner, repo: GH.repo, folder: GH.folder, branch: GH.branch })); return true; } catch (e) { return false; } },
+  async clearBrowserData() {
+    try { Object.keys(localStorage).filter((k) => k.startsWith("ig_") && k !== GH_CFG_KEY).forEach((k) => localStorage.removeItem(k)); } catch (e) {}
+    try { const ks = await idbKeys(); for (const k of ks.filter((x) => x.startsWith("ig_"))) await idbDelRaw(k); } catch (e) {}
+  },
   hdrs() { return { "Authorization": "Bearer " + GH.token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }; },
   dirPath() { return GH.folder.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean).map(encodeURIComponent).join("/"); },
   fileUrl(key) { return "https://api.github.com/repos/" + GH.owner + "/" + GH.repo + "/contents/" + GH.dirPath() + "/" + encodeURIComponent(key) + ".json"; },
@@ -6528,7 +6533,13 @@ const GH = {
     if (!r.ok) throw new Error("GitHub list " + r.status);
     const files = (await r.json()).filter((f) => f.type === "file" && /\.json$/.test(f.name));
     await Promise.all(files.map(async (f) => {
-      try { const fr = await fetch(f.url, { headers: GH.hdrs() }); if (!fr.ok) return; const j = await fr.json(); const key = decodeURIComponent(f.name.replace(/\.json$/, "")); GH.sha.set(key, j.sha); GH.cache.set(key, JSON.parse(GH.b64dec(j.content))); } catch (e) {}
+      try {
+        const key = decodeURIComponent(f.name.replace(/\.json$/, ""));
+        if (f.sha) GH.sha.set(key, f.sha);
+        const fr = await fetch(f.url, { headers: Object.assign({}, GH.hdrs(), { "Accept": "application/vnd.github.raw" }) });
+        if (!fr.ok) return;
+        GH.cache.set(key, JSON.parse(await fr.text()));
+      } catch (e) {}
     }));
     GH.loaded = true; return GH.cache.size;
   },
@@ -7496,7 +7507,17 @@ function StorageSettings({ onClose }) {
     setBusy(true); setStatus("Testing connection\u2026");
     try { await GH.testConnection(); } catch (e) { setStatus("\u2717 " + (e.message || e)); setBusy(false); return; }
     try { setStatus("Reading existing repo data\u2026"); await GH.load(); } catch (e) {}
-    try { const n = await GH.migrate((done, total, k) => setStatus("Uploading " + done + "/" + total + " \u00b7 " + k)); GH.enabled = true; GH.loaded = true; GH.saveCfg(); setEnabled(true); setStatus("\u2713 Migrated " + n + " objects. GitHub storage is ON \u2014 reloading\u2026"); setTimeout(() => { try { location.reload(); } catch (e) {} }, 1400); } catch (e) { setStatus("\u2717 Migration failed: " + (e.message || e)); }
+    let n = 0;
+    try { n = await GH.migrate((done, total, k) => setStatus("Uploading " + done + "/" + total + " \u00b7 " + k)); }
+    catch (e) { setStatus("\u2717 Migration failed: " + (e.message || e) + " \u2014 nothing was cleared; your browser data is intact."); setBusy(false); return; }
+    setStatus("Clearing browser copy to free storage\u2026");
+    await GH.clearBrowserData();
+    GH.enabled = true; GH.loaded = true;
+    const saved = GH.saveCfg();
+    if (!saved) { setStatus("\u2717 Migrated " + n + " objects and cleared the browser, but couldn't save the config flag. Reload and re-open Storage \u2014 the data is safe in GitHub."); setBusy(false); return; }
+    setEnabled(true);
+    setStatus("\u2713 Moved " + n + " objects to GitHub, freed browser storage, GitHub is ON \u2014 reloading\u2026");
+    setTimeout(() => { try { location.reload(); } catch (e) {} }, 1500);
     setBusy(false);
   };
   const disable = () => { GH.enabled = false; GH.saveCfg(); setEnabled(false); setStatus("Reverted to browser storage \u2014 reloading\u2026"); setTimeout(() => { try { location.reload(); } catch (e) {} }, 900); };
@@ -7526,7 +7547,7 @@ function StorageSettings({ onClose }) {
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
           <button disabled={busy} onClick={test} style={btn("#fff", C.ink, C.line)}>Test connection</button>
-          {!enabled ? <button disabled={busy} onClick={migrateEnable} style={btn(C.ink, "#fff", C.ink)}>Migrate browser data {"\u2192"} GitHub &amp; enable</button> : null}
+          {!enabled ? <button disabled={busy} onClick={migrateEnable} style={btn(C.ink, "#fff", C.ink)}>Move all data to GitHub {"\u2192"} enable</button> : null}
           {enabled ? <button disabled={busy} onClick={disable} style={btn("#fff", C.ink, C.line)}>Disable (revert to browser)</button> : null}
           {enabled ? <button disabled={busy} onClick={clearBrowser} style={btn("#fff", C.red, C.red)}>Clear browser copy</button> : null}
         </div>
@@ -7537,11 +7558,12 @@ function StorageSettings({ onClose }) {
 }
 function StorageButton() {
   const [open, setOpen] = useState(false);
+  const on = GH.enabled;
   return (
     <>
-      <span onClick={() => setOpen(true)} title="Storage backend \u2014 browser or GitHub private repo"
-        style={{ cursor: "pointer", fontFamily: FONT_UI, fontSize: 11, fontWeight: 700, color: GH.enabled ? C.green : C.muted, display: "inline-flex", alignItems: "center", gap: 4 }}>
-        <ShieldCheck size={12} strokeWidth={2.4} /> {GH.enabled ? "Storage \u00b7 GitHub" : "Storage"}
+      <span onClick={() => setOpen(true)} title="Set up GitHub private-repo storage \u2014 token, folder, and migrate all content off the browser"
+        style={{ cursor: "pointer", fontFamily: FONT_UI, fontSize: 11.5, fontWeight: 800, color: on ? "#fff" : C.tealDeep, background: on ? C.green : C.tealSoft, border: "1px solid " + (on ? C.green : C.tealDeep), borderRadius: 999, padding: "3px 11px", display: "inline-flex", alignItems: "center", gap: 5, letterSpacing: 0.2 }}>
+        <ShieldCheck size={12} strokeWidth={2.6} /> {on ? "Storage \u00b7 GitHub" : "Set up GitHub storage"}
       </span>
       {open ? <StorageSettings onClose={() => setOpen(false)} /> : null}
     </>

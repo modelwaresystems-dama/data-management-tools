@@ -1090,9 +1090,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.50.5";
-window.PACK_CONFIG.built   = "2026-08-14 13:05 SAST";
+window.PACK_CONFIG.version = "v1.51.0";
+window.PACK_CONFIG.built   = "2026-08-14 14:30 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.51.0", date:"2026-08-14 14:30 SAST",
+    note:"Rebuilt the User Manual into a complete, screenshot-rich reference for every page in the app — for building the training material. The 'Every page' section now documents all 26 pages in navigation order (plus the standalone Policy Meta-Model), each with a live AGGPSA screenshot, a detailed description of what the page is for, an explicit 'Architecture message' (which layer of the model the page presents and the point it makes), and what you'll see and do on it. Added Policy Inspector and DM Maturity (previously undocumented), a per-page contents list for quick jumps, and screenshots embedded from assets/manual/ so the whole manual prints/exports to a single PDF. Nothing is skipped." },
   { v:"v1.50.5", date:"2026-08-14 13:05 SAST",
     note:"Fixed the Home page directory cards showing 'undefined' with no description. Nine pages added since the original directory — North Star, Operating Model, Policy Inspector, DM Maturity, Critical Data Elements, AI Agents & Models, Ethical Stewardship, Model Review and Relationships — had no entry in the Home page's icon and description maps, so they rendered an 'undefined' icon and a blank blurb. Added an icon, description and tag for each (in both the Nedbank and AGGPSA directories) and a fallback icon so any future page can never render 'undefined' again." },
   { v:"v1.50.4", date:"2026-08-14 12:20 SAST",

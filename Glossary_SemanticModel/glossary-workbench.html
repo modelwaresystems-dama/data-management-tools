@@ -76,12 +76,14 @@ const INDEX_KEY = "ig_index";
 const gKey = (id) => "ig_g_" + id;
 const SNAPSHOT_KEY = "ig_model_snapshot";   // pre-apply backup of every glossary + index
 async function sGet(key) {
+  if (typeof GH_ON === "function" && GH_ON()) return GH.get(key);
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; }
 }
 async function sSet(key, val) {
+  if (typeof GH !== "undefined" && GH.enabled) { GH.set(key, val); return true; }
   try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch (e) { console.error(e); return false; }
 }
-async function sDel(key) { try { localStorage.removeItem(key); } catch {} }
+async function sDel(key) { if (typeof GH !== "undefined" && GH.enabled) { GH.del(key); return; } try { localStorage.removeItem(key); } catch {} }
 
 /* ============================================================
    ↓↓↓ App body (ported verbatim from glossary-workbench.jsx) ↓↓↓
@@ -2105,6 +2107,8 @@ function App() {
 
   /* ---- load index, backfilling subject-area labels for entries saved before this feature ---- */
   useEffect(() => { (async () => {
+    // ---- GitHub storage backend: hydrate the in-memory cache from the repo before any reads ----
+    if (GH.enabled && !GH.loaded) { try { const n = await GH.load(); if (typeof flash === "function") flash("GitHub storage \u00b7 loaded " + n + " objects from " + GH.owner + "/" + GH.repo, "ok"); } catch (e) { if (typeof flash === "function") flash("GitHub storage load failed: " + (e.message || e) + " \u2014 open Storage settings", "err"); } }
     // ---- Multi-customer bootstrap + one-time migration of pre-multi-customer data ----
     let wsList = await sGet(WS_LIST_KEY);
     if (!wsList || !Array.isArray(wsList) || wsList.length === 0) {
@@ -6488,18 +6492,82 @@ function idbOpen() {
     r.onerror = () => rej(r.error || new Error("indexedDB open failed"));
   });
 }
-async function idbGet(key) {
+async function idbGetRaw(key) {
   const db = await idbOpen();
   return new Promise((res, rej) => { const t = db.transaction("kv", "readonly").objectStore("kv").get(key); t.onsuccess = () => res(t.result == null ? null : t.result); t.onerror = () => rej(t.error); });
 }
-async function idbSet(key, val) {
+async function idbSetRaw(key, val) {
   const db = await idbOpen();
   return new Promise((res, rej) => { const t = db.transaction("kv", "readwrite").objectStore("kv").put(val, key); t.onsuccess = () => res(true); t.onerror = () => rej(t.error); });
 }
-async function idbDel(key) {
+async function idbDelRaw(key) {
   const db = await idbOpen();
   return new Promise((res, rej) => { const t = db.transaction("kv", "readwrite").objectStore("kv").delete(key); t.onsuccess = () => res(true); t.onerror = () => rej(t.error); });
 }
+async function idbKeys() {
+  const db = await idbOpen();
+  return new Promise((res) => { try { const t = db.transaction("kv", "readonly").objectStore("kv").getAllKeys(); t.onsuccess = () => res((t.result || []).map(String)); t.onerror = () => res([]); } catch (e) { res([]); } });
+}
+// ---- GitHub private-repo storage backend (opt-in). Frees browser quota by persisting the big data to a repo. ----
+const GH_CFG_KEY = "ig_gh_config";
+const GH = {
+  enabled: false, token: "", owner: "modelwaresystems-dama", repo: "modelware_app_storage", folder: "Semantic Model", branch: "main",
+  cache: new Map(), sha: new Map(), loaded: false, pending: new Map(), timers: new Map(), onError: null,
+  loadCfg() { try { const c = JSON.parse(localStorage.getItem(GH_CFG_KEY) || "null"); if (c && typeof c === "object") { GH.enabled = !!c.enabled; GH.token = c.token || ""; GH.owner = c.owner || GH.owner; GH.repo = c.repo || GH.repo; GH.folder = c.folder || GH.folder; GH.branch = c.branch || "main"; } } catch (e) {} },
+  saveCfg() { try { localStorage.setItem(GH_CFG_KEY, JSON.stringify({ enabled: GH.enabled, token: GH.token, owner: GH.owner, repo: GH.repo, folder: GH.folder, branch: GH.branch })); } catch (e) {} },
+  hdrs() { return { "Authorization": "Bearer " + GH.token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }; },
+  dirPath() { return GH.folder.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean).map(encodeURIComponent).join("/"); },
+  fileUrl(key) { return "https://api.github.com/repos/" + GH.owner + "/" + GH.repo + "/contents/" + GH.dirPath() + "/" + encodeURIComponent(key) + ".json"; },
+  b64enc(str) { const b = new TextEncoder().encode(str); let s = ""; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return btoa(s); },
+  b64dec(b64) { const bin = atob(String(b64 || "").replace(/\s+/g, "")); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); return new TextDecoder().decode(arr); },
+  async testConnection() { const r = await fetch("https://api.github.com/repos/" + GH.owner + "/" + GH.repo, { headers: GH.hdrs() }); if (r.status === 401) throw new Error("401 \u2014 token rejected"); if (r.status === 404) throw new Error("404 \u2014 repo not found or token lacks access"); if (!r.ok) throw new Error("GitHub " + r.status); return await r.json(); },
+  async load() {
+    GH.cache.clear(); GH.sha.clear();
+    const r = await fetch("https://api.github.com/repos/" + GH.owner + "/" + GH.repo + "/contents/" + GH.dirPath() + "?ref=" + encodeURIComponent(GH.branch), { headers: GH.hdrs() });
+    if (r.status === 404) { GH.loaded = true; return 0; }
+    if (!r.ok) throw new Error("GitHub list " + r.status);
+    const files = (await r.json()).filter((f) => f.type === "file" && /\.json$/.test(f.name));
+    await Promise.all(files.map(async (f) => {
+      try { const fr = await fetch(f.url, { headers: GH.hdrs() }); if (!fr.ok) return; const j = await fr.json(); const key = decodeURIComponent(f.name.replace(/\.json$/, "")); GH.sha.set(key, j.sha); GH.cache.set(key, JSON.parse(GH.b64dec(j.content))); } catch (e) {}
+    }));
+    GH.loaded = true; return GH.cache.size;
+  },
+  get(key) { return GH.cache.has(key) ? GH.cache.get(key) : null; },
+  set(key, val) { GH.cache.set(key, val); GH.pending.set(key, val); GH.schedule(key); return true; },
+  del(key) { GH.cache.delete(key); GH.pending.delete(key); clearTimeout(GH.timers.get(key)); GH.flushDel(key); return true; },
+  keys(prefix) { return [...GH.cache.keys()].filter((k) => !prefix || k.startsWith(prefix)); },
+  schedule(key) { clearTimeout(GH.timers.get(key)); GH.timers.set(key, setTimeout(() => GH.flush(key), 700)); },
+  async flush(key) { if (!GH.pending.has(key)) return; const val = GH.pending.get(key); GH.pending.delete(key); try { await GH.put(key, val); } catch (e) { if (GH.onError) GH.onError(e, key); } },
+  async flushAll() { for (const k of [...GH.pending.keys()]) { clearTimeout(GH.timers.get(k)); await GH.flush(k); } },
+  async put(key, val, retry) {
+    const body = { message: "app: " + key + " @ " + new Date().toISOString(), content: GH.b64enc(JSON.stringify(val)), branch: GH.branch };
+    const sha = GH.sha.get(key); if (sha) body.sha = sha;
+    const r = await fetch(GH.fileUrl(key), { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, GH.hdrs()), body: JSON.stringify(body) });
+    if ((r.status === 409 || r.status === 422) && !retry) { await GH.refreshSha(key); return GH.put(key, val, true); }
+    if (!r.ok) throw new Error("GitHub write " + r.status + " (" + key + ")");
+    const j = await r.json().catch(() => null); if (j && j.content && j.content.sha) GH.sha.set(key, j.content.sha);
+  },
+  async refreshSha(key) { try { const r = await fetch(GH.fileUrl(key) + "?ref=" + encodeURIComponent(GH.branch), { headers: GH.hdrs() }); if (r.ok) { const j = await r.json(); GH.sha.set(key, j.sha); } else GH.sha.delete(key); } catch (e) { GH.sha.delete(key); } },
+  async flushDel(key) { const sha = GH.sha.get(key); if (!sha) return; try { await fetch(GH.fileUrl(key), { method: "DELETE", headers: Object.assign({ "Content-Type": "application/json" }, GH.hdrs()), body: JSON.stringify({ message: "app: delete " + key, sha, branch: GH.branch }) }); GH.sha.delete(key); } catch (e) {} },
+  async migrate(progress) {
+    const lsKeys = Object.keys(localStorage).filter((k) => k.startsWith("ig_") && k !== GH_CFG_KEY);
+    const idbKs = (await idbKeys()).filter((k) => k.startsWith("ig_"));
+    const all = [...new Set([...lsKeys, ...idbKs])];
+    let n = 0;
+    for (const k of all) {
+      let v = null;
+      if (lsKeys.includes(k)) { try { v = JSON.parse(localStorage.getItem(k)); } catch (e) { v = localStorage.getItem(k); } }
+      else { v = await idbGetRaw(k); }
+      if (v != null) { GH.cache.set(k, v); await GH.put(k, v); n++; if (progress) progress(n, all.length, k); }
+    }
+    return n;
+  },
+};
+GH.loadCfg();
+const GH_ON = () => GH.enabled && GH.loaded;
+async function idbGet(key) { if (GH_ON()) return GH.get(key); return idbGetRaw(key); }
+async function idbSet(key, val) { if (GH.enabled) { GH.set(key, val); return true; } return idbSetRaw(key, val); }
+async function idbDel(key) { if (GH.enabled) { GH.del(key); return true; } return idbDelRaw(key); }
 
 // ---- Anthropic API key (standalone deployment: no artifact proxy, so bring-your-own-key) ----
 function getAnthropicKey() { try { return (localStorage.getItem(ANTHROPIC_KEY_LS) || "").trim(); } catch { return ""; } }
@@ -6978,7 +7046,7 @@ function LexAddWizard({ objects, onCommit, onClose, subjectAreaOpts, subCatsByAr
   const set = (k, v) => setD((s) => ({ ...s, [k]: v }));
   const pickClass = (c) => setD((s) => ({ ...s, quantClass: c, q6: QUANT_CLASS_FACET[c] || s.q6 }));
   const warn = coherenceWarn(d.quantLevel, d.quantClass);
-  const canCommit = !!(d.string.trim() && (d.quantClass || d.termType === "Relationship") && d.quantLevel && d.quantType && d.id.trim());
+  const canCommit = !!(d.string.trim() && d.quantClass && d.quantLevel && d.quantType && d.id.trim());
   const dupId = (objects || []).some((o) => o.id === d.id.trim());
   const commit = () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -7050,7 +7118,7 @@ function LexAddWizard({ objects, onCommit, onClose, subjectAreaOpts, subCatsByAr
         {line("String", d.string)}{line("Sense", d.sense || d.wordnetAnchor)}{line("Subject Area", d.subjectArea)}{line("Sub-Category", d.subCategory)}
         {line("Q6 · Class", (d.q6 || "?") + " · " + (d.quantClass || "?"))}{line("Level · Type", (d.quantLevel || "?") + " · " + d.quantType + " · " + d.termType)}{line("Quant Edge", d.quantEdges)}
       </div>
-      {!canCommit ? <div style={{ fontSize: 12, color: C.amber, marginTop: 10 }}>String, Quant Level and a unique ID are required to commit \u2014 plus a Quant Class, unless the Term Type is Relationship (lines carry no class).</div> : null}
+      {!canCommit ? <div style={{ fontSize: 12, color: C.amber, marginTop: 10 }}>String, Quant Class, Quant Level and a unique ID are required to commit.</div> : null}
     </div>;
   };
   return (
@@ -7410,6 +7478,73 @@ function LexReport({ objects, carry, meta, onClose }) {
         <iframe id="lexReportFrame" title="Lexical Inventory Report" srcDoc={html} style={{ flex: 1, border: "none", width: "100%", background: "#fff" }} />
       </div>
     </div>
+  );
+}
+function StorageSettings({ onClose }) {
+  const [token, setToken] = useState(GH.token);
+  const [owner, setOwner] = useState(GH.owner);
+  const [repo, setRepo] = useState(GH.repo);
+  const [folder, setFolder] = useState(GH.folder);
+  const [branch, setBranch] = useState(GH.branch || "main");
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [enabled, setEnabled] = useState(GH.enabled);
+  const apply = () => { GH.token = token.trim(); GH.owner = owner.trim(); GH.repo = repo.trim(); GH.folder = (folder.trim() || "Semantic Model"); GH.branch = (branch.trim() || "main"); GH.saveCfg(); };
+  const test = async () => { apply(); if (!GH.token) { setStatus("Enter a token first."); return; } setBusy(true); setStatus("Testing\u2026"); try { const r = await GH.testConnection(); setStatus("\u2713 Connected to " + r.full_name + (r.private ? " (private)" : " \u2014 \u26a0 repo is NOT private")); } catch (e) { setStatus("\u2717 " + (e.message || e)); } setBusy(false); };
+  const migrateEnable = async () => {
+    apply(); if (!GH.token) { setStatus("Enter a token first."); return; }
+    setBusy(true); setStatus("Testing connection\u2026");
+    try { await GH.testConnection(); } catch (e) { setStatus("\u2717 " + (e.message || e)); setBusy(false); return; }
+    try { setStatus("Reading existing repo data\u2026"); await GH.load(); } catch (e) {}
+    try { const n = await GH.migrate((done, total, k) => setStatus("Uploading " + done + "/" + total + " \u00b7 " + k)); GH.enabled = true; GH.loaded = true; GH.saveCfg(); setEnabled(true); setStatus("\u2713 Migrated " + n + " objects. GitHub storage is ON \u2014 reloading\u2026"); setTimeout(() => { try { location.reload(); } catch (e) {} }, 1400); } catch (e) { setStatus("\u2717 Migration failed: " + (e.message || e)); }
+    setBusy(false);
+  };
+  const disable = () => { GH.enabled = false; GH.saveCfg(); setEnabled(false); setStatus("Reverted to browser storage \u2014 reloading\u2026"); setTimeout(() => { try { location.reload(); } catch (e) {} }, 900); };
+  const clearBrowser = async () => {
+    if (typeof confirm === "function" && !confirm("Clear all app data from THIS browser? Only do this once the data is safely in GitHub. The storage config is kept.")) return;
+    try { Object.keys(localStorage).filter((k) => k.startsWith("ig_") && k !== GH_CFG_KEY).forEach((k) => localStorage.removeItem(k)); const ks = await idbKeys(); for (const k of ks.filter((x) => x.startsWith("ig_"))) await idbDelRaw(k); setStatus("\u2713 Browser app data cleared \u2014 GitHub is now the only copy."); } catch (e) { setStatus("\u2717 " + (e.message || e)); }
+  };
+  const lab = { display: "block", fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 3, marginTop: 10, textTransform: "uppercase", letterSpacing: 0.4 };
+  const inp = { width: "100%", boxSizing: "border-box", padding: "7px 9px", border: "1px solid " + C.line, borderRadius: 7, fontSize: 13, fontFamily: FONT_UI };
+  const btn = (bg, fg, bd) => ({ padding: "7px 12px", borderRadius: 8, border: "1px solid " + (bd || bg), background: bg, color: fg, fontSize: 12.5, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, fontFamily: FONT_UI });
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 560, maxWidth: "94vw", maxHeight: "90vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontFamily: FONT_DISP, fontSize: 19, color: C.ink }}>Storage backend</div>
+          <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: C.muted }}>{"\u00d7"}</button>
+        </div>
+        <div style={{ fontSize: 12.5, color: C.sub, marginTop: 4, lineHeight: 1.5 }}>Persist the app's data to a private GitHub repo instead of this browser. Frees browser storage and lets the model travel with the repo. On load, the folder is read into memory; changes are written back to GitHub.</div>
+        {enabled ? <div style={{ marginTop: 10, padding: "8px 11px", borderRadius: 8, background: C.greenSoft, color: C.green, fontSize: 12.5, fontWeight: 700 }}>GitHub storage is ON \u00b7 {GH.owner}/{GH.repo}/{GH.folder}</div> : null}
+        <label style={lab}>GitHub owner</label><input value={owner} onChange={(e) => setOwner(e.target.value)} style={inp} />
+        <label style={lab}>Repository</label><input value={repo} onChange={(e) => setRepo(e.target.value)} style={inp} />
+        <label style={lab}>Folder</label><input value={folder} onChange={(e) => setFolder(e.target.value)} style={inp} />
+        <label style={lab}>Branch</label><input value={branch} onChange={(e) => setBranch(e.target.value)} style={inp} />
+        <label style={lab}>Fine-grained Personal Access Token</label><input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder="github_pat_\u2026" style={inp} />
+        <div style={{ marginTop: 8, padding: "8px 11px", borderRadius: 8, background: C.amberSoft, color: C.amber, fontSize: 11.5, lineHeight: 1.5 }}>
+          {"\u26a0"} The token is stored in this browser's localStorage on this machine. Use a <b>fine-grained PAT</b> scoped to only <b>{repo || "modelware_app_storage"}</b> with <b>Contents: Read and write</b>. Anyone with access to this machine can read it; revoke it in GitHub if the machine is shared.
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <button disabled={busy} onClick={test} style={btn("#fff", C.ink, C.line)}>Test connection</button>
+          {!enabled ? <button disabled={busy} onClick={migrateEnable} style={btn(C.ink, "#fff", C.ink)}>Migrate browser data {"\u2192"} GitHub &amp; enable</button> : null}
+          {enabled ? <button disabled={busy} onClick={disable} style={btn("#fff", C.ink, C.line)}>Disable (revert to browser)</button> : null}
+          {enabled ? <button disabled={busy} onClick={clearBrowser} style={btn("#fff", C.red, C.red)}>Clear browser copy</button> : null}
+        </div>
+        {status ? <div style={{ marginTop: 12, fontSize: 12.5, color: C.ink, fontFamily: "ui-monospace, Menlo, monospace", wordBreak: "break-word" }}>{status}</div> : null}
+      </div>
+    </div>
+  );
+}
+function StorageButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <span onClick={() => setOpen(true)} title="Storage backend \u2014 browser or GitHub private repo"
+        style={{ cursor: "pointer", fontFamily: FONT_UI, fontSize: 11, fontWeight: 700, color: GH.enabled ? C.green : C.muted, display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <ShieldCheck size={12} strokeWidth={2.4} /> {GH.enabled ? "Storage \u00b7 GitHub" : "Storage"}
+      </span>
+      {open ? <StorageSettings onClose={() => setOpen(false)} /> : null}
+    </>
   );
 }
 function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClose, flash, focus, onJumpTerm, lexScope, onSetScope, custName }) {
@@ -7787,6 +7922,7 @@ function LexiconView({ objects, onChange, carry, report, corpus, onImport, onClo
           <Btn small kind="ghost" onClick={() => setShowReport(true)} disabled={!objects.length}>Report</Btn>
           <Btn small kind="primary" icon={Plus} onClick={() => setShowAdd(true)}>Add string</Btn>
           <Btn small kind="ghost" icon={Upload} onClick={onImport}>Load inventory</Btn>
+          <StorageButton />
           <Btn small kind="ghost" icon={Download} onClick={() => { const san = (custName || "").trim().replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); const base = lexScope === "shared" ? "Shared_Lexical_Inventory" : (san ? san + "_Lexical_Inventory" : "Lexical_Inventory"); const fn = lexExportWorkbook(objects, carry, base); flash("Saved " + fn + (carry && carry.sheets ? " · preserved " + Object.keys(carry.sheets).length + " other sheets" : "")); }} disabled={!objects.length}>Export</Btn>
           <Btn small kind="ghost" icon={X} onClick={onClose}>Close</Btn>
         </div>

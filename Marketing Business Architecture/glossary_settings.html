@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Glossary settings — Nedbank Marketing Pack</title>
+<title>Glossary settings — Modelware Data Management Pack</title>
 <link rel="stylesheet" href="assets/pack.css">
 <style>
   .field{margin-bottom:16px}
@@ -15,6 +15,9 @@
   .switch{position:relative;width:44px;height:24px;background:#cbd5e1;border-radius:20px;cursor:pointer;transition:.15s}
   .switch.on{background:var(--accent)} .switch i{position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.15s}
   .switch.on i{left:22px}
+  .gok{color:#15803d;font-weight:600}.gwarn{color:#b45309;font-weight:600}
+  .gloaded{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 13px;font-size:.86rem;color:#166534}
+  .gloaded b{color:#14532d}
 </style>
 </head>
 <body>
@@ -47,7 +50,7 @@
       <div class="field">
         <label>Link template</label>
         <input type="text" id="tmpl" placeholder="{base}?term={key}">
-        <div class="hint" data-copy="glTmplHint">Use <span class="mono">{base}</span> and <span class="mono">{key}</span>. Match the Trade Finance scheme exactly.</div>
+        <div class="hint" data-copy="glTmplHint">Use <span class="mono">{base}</span> and <span class="mono">{key}</span>. Match the glossary scheme exactly.</div>
       </div>
 
       <div class="field">
@@ -68,20 +71,20 @@
     </div>
 
     <div class="card">
-      <h3>Preview</h3>
-      <p class="muted tight" style="margin-bottom:10px">Resolved deep-link for a sample term:</p>
+      <h3>Preview &amp; term tester</h3>
+      <div class="gloaded" id="gloaded" style="margin-bottom:12px">—</div>
+      <p class="muted tight" style="margin-bottom:10px">Type any term to test whether it is a governed term in this glossary, and see the exact deep-link it resolves to:</p>
       <div class="field">
         <label>Sample term</label>
-        <input type="text" id="term" value="Next Best Action" oninput="preview()">
+        <input type="text" id="term" value="" oninput="preview()">
       </div>
       <div class="resolved" id="resolved">—</div>
-      <p class="muted" style="font-size:.8rem;margin-top:14px">When enabled with a base URL set, term chips like the one below become live links. Otherwise they show but are inert.</p>
+      <div id="gstatus" style="font-size:.82rem;margin-top:8px"></div>
+      <p class="muted" style="font-size:.8rem;margin-top:12px">A governed term deep-links to the workbench; the chip below is a live link when the term is governed, inert otherwise.</p>
       <div class="chiprow" id="samplechip" style="margin-top:8px"></div>
 
-      <div class="notice" style="margin-top:16px" data-copy="glBuildNote">
-        Because the template is a settings value, the whole pack works without glossary links until you provide them —
-        turning them on is configuration, not a rebuild. Build-time input still needed: the base URL, one example Trade
-        Finance term link (or the template), and the term → key/URL export from the Workbench.
+      <div class="notice" style="margin-top:16px">
+        <strong>How the glossary is linked.</strong> The governed terms come from the <strong>term export baked into this source</strong> (the file you provide from the Glossary Workbench). Each term resolves to its exact workbench deep-link automatically — the <em>Base URL</em> above is simply which glossary those links point at, so to repoint the pack at a different glossary, change the Base URL. The <em>Link template</em> is only a fallback for a source that has no baked term list. Only terms that exist in the export will link; anything else stays inert (no broken links).
       </div>
     </div>
   </div>
@@ -99,10 +102,29 @@ PACK.setWorkbooks([{label:"Term → Key map .xlsx", href:""}]);
 PACK.renderNav("glossary_settings.html");
   try{ PACK.renderBreadcrumb(null); }catch(e){}
 
+var CFG = window.PACK_CONFIG, esc = PACK.esc;
 var g = PACK.glossary();
-document.getElementById("base").value = g.baseUrl||"";
+var DICT = (g && g.terms) || (CFG.glossary && CFG.glossary.terms) || null;
+document.getElementById("base").value = g.baseUrl || (CFG.glossary&&CFG.glossary.baseUrl) || "";
 document.getElementById("tmpl").value = g.linkTemplate||"{base}?term={key}";
-setSwitch(!!g.enabled);
+setSwitch(g.enabled!==false);
+
+/* "governed terms loaded" banner + a real sample term drawn from the glossary */
+(function(){
+  var el=document.getElementById("gloaded");
+  if(DICT){
+    var n=Object.keys(DICT).length;
+    el.innerHTML='<b>'+n+' governed terms</b> are loaded for this source ('+esc(CFG.client||"this glossary")+') — linking is on and each resolves to its exact workbench deep-link. Terms are read from the glossary export baked into the source, not typed here.';
+    // default the tester to a real governed term
+    var prefer=["data quality","business glossary","data governance","ecosystem diagnostics"];
+    var pick=null; for(var i=0;i<prefer.length;i++){ if(DICT[prefer[i]]){ pick=DICT[prefer[i]][0]; break; } }
+    if(!pick){ var k=Object.keys(DICT)[0]; pick=DICT[k][0]; }
+    document.getElementById("term").value=pick;
+  } else {
+    el.className="notice"; el.innerHTML='This source has <b>no baked glossary export</b>. Set a Base URL and Link template, and term chips will resolve via the template. (The AGGPSA source ships a 903-term glossary; switch Source to AGGPSA to see it.)';
+    document.getElementById("term").value="Next Best Action";
+  }
+})();
 
 function setSwitch(on){ document.getElementById("sw").classList.toggle("on",on); document.getElementById("sw").dataset.on=on?"1":""; }
 window.toggleEnabled=function(){ setSwitch(!document.getElementById("sw").dataset.on); preview(); };
@@ -111,15 +133,26 @@ window.preview=function(){
   var base=document.getElementById("base").value.trim();
   var tmpl=document.getElementById("tmpl").value.trim()||"{base}?term={key}";
   var term=document.getElementById("term").value.trim();
-  var key=term.replace(/\s+/g,"_");
   var on=!!document.getElementById("sw").dataset.on;
-  var url = base? tmpl.replace("{base}",base).replace("{key}",encodeURIComponent(key)) : "(set a base URL)";
-  document.getElementById("resolved").textContent = (on? url : "(links disabled)");
-  // sample chip using a live glossary object
-  var tmp={enabled:on,baseUrl:base,linkTemplate:tmpl};
-  var saved=PACK.glossary(); PACK.saveGlossary(tmp);
+  var box=document.getElementById("resolved"), st=document.getElementById("gstatus");
+  // resolve using the ACTUAL app resolver (baked dictionary + exact scheme), previewing the form's base
+  var saved=PACK.glossary();
+  PACK.saveGlossary({enabled:on,baseUrl:base,linkTemplate:tmpl});
+  var url = PACK.glossaryUrlFor(term);
   document.getElementById("samplechip").innerHTML = PACK.termChip(term);
-  PACK.saveGlossary(saved); // don't persist until Save clicked
+  PACK.saveGlossary(saved);  // don't persist until Save is clicked
+  if(!on){ box.textContent="(links disabled)"; st.textContent=""; return; }
+  if(url){
+    box.textContent=url;
+    st.innerHTML='<span class="gok">✓ “'+esc(term)+'” is a governed term — it deep-links to the workbench.</span>';
+  } else if(DICT){
+    box.textContent="— “"+term+"” is not a governed term in this glossary —";
+    st.innerHTML='<span class="gwarn">Not one of the '+Object.keys(DICT).length+' governed terms in this source, so its chip stays inert (no broken link). Add it to the glossary export to make it link.</span>';
+  } else if(base){
+    var key=term.replace(/\s+/g,"_");
+    box.textContent=tmpl.replace("{base}",base).replace("{key}",encodeURIComponent(key));
+    st.innerHTML='<span class="gwarn">Resolved via the template (no baked term list for this source).</span>';
+  } else { box.textContent="(set a base URL)"; st.textContent=""; }
 };
 window.save=function(){
   var cfg={ enabled:!!document.getElementById("sw").dataset.on,

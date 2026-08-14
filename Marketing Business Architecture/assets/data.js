@@ -1090,9 +1090,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.51.1";
-window.PACK_CONFIG.built   = "2026-08-14 15:20 SAST";
+window.PACK_CONFIG.version = "v1.51.2";
+window.PACK_CONFIG.built   = "2026-08-14 16:10 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.51.2", date:"2026-08-14 16:10 SAST",
+    note:"Reworked the Glossary settings page to match the baked dictionary. It previously previewed terms via the old {base}?term={key} template and defaulted to a Nedbank sample ('Next Best Action'), which isn't an AGGPSA governed term — so it showed a wrong-format URL while the chip was (correctly) inert. Now the page shows how many governed terms are loaded for the source (AGGPSA: 903), defaults the tester to a real governed term, and resolves via the actual app resolver: a governed term shows a green tick and its exact workbench deep-link with a live chip; a non-governed term (like 'Next Best Action') shows a clear 'not a governed term — stays inert' message with no broken link. Clarified that the governed terms come from the glossary export baked into the source and the Base URL is simply which glossary the links point at (the Link template is only a fallback for sources with no baked term list)." },
   { v:"v1.51.1", date:"2026-08-14 15:20 SAST",
     note:"Wired the AGGPSA Business Glossary Workbench into the app. Baked the full 903-term glossary dictionary (from the deep-links export) into the AGGPSA source and pre-enabled glossary linking. Every governed term now resolves to its EXACT workbench deep link — glossary-workbench.html#glossary={Subject Area}&term={Term} — matching the export byte-for-byte. Term chips (Data Products, Analytics use-cases, Knowledge assets) deep-link to the term; and every element's detail panel now shows an 'Open … in the Glossary Workbench ↗' link whenever that element is a governed term, so any of the 903 terms is one click from the workbench anywhere in the app. Terms not in the glossary render inert (no broken links). Coverage note: the export predates the policy-control consolidation and DMMA work — 683/903 terms match live elements and link today; 220 glossary terms are stale (old pre-consolidation controls); ~600 current elements (374 controls, 132 processes/SOPs, DMMA/steward/etc.) are not yet in the glossary and were exported as a 'terms to add' list for re-sync. Nedbank unaffected." },
   { v:"v1.51.0", date:"2026-08-14 14:30 SAST",

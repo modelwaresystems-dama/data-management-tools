@@ -1089,9 +1089,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.49.1";
-window.PACK_CONFIG.built   = "2026-08-13 08:40 SAST";
+window.PACK_CONFIG.version = "v1.49.2";
+window.PACK_CONFIG.built   = "2026-08-13 09:20 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.49.2", date:"2026-08-13 09:20 SAST",
+    note:"Consolidated the control 'Responsible' roles. The ~22–30 per-domain specialists are replaced by ONE shared Business Data Steward (business Responsible, across every control) plus a small set of Technical Specialists by discipline — Data Management, Security & Privacy, AI & Model, Marketing & CX, and Governance/Risk & Compliance — with each policy domain routed to the appropriate discipline. Every control's Responsible is now 'Business Data Steward + the domain's Technical Specialist'; both are governed shared-capacity roles in the Operating Model and both accrue the control's responsibility load. This flows through the Policy Control RACI, the Operating Model and the graph relationships. Verified: NB 6 Responsible roles (Business Data Steward + 5 disciplines), AGGPSA 5, Business Data Steward Responsible on all controls (NB 510, AGGPSA 374), 0 dangling role FKs, 0 console errors both orgs." },
   { v:"v1.49.1", date:"2026-08-13 08:40 SAST",
     note:"Brought the Operating Model up to date with the Policy & Control roles and responsibilities. Every policy control's RACI now resolves to a real, linkable Operating-Model role: the Accountable owner maps to the existing governed role, and the Responsible specialist (Data Governance Specialist, Model Risk & Validation Lead, Records & Retention Officer, …) is now a governed role in its own right (sheet 20 + Role Allocation), placed under its accountable owner's team as SHARED capacity — shown on the page but adding no phantom FTE and not counted as a vacancy. Each role's 'Responsibility load' column now shows both AI use-cases and the policy controls it is Accountable/Responsible for. Added AccountableRoleID/ResponsibleRoleID foreign keys to the control sheet (176) so the graph explorer links controls↔roles. Verified: all control RACI RoleIDs resolve (AGGPSA 22 specialists, NB 30), 0 dangling references, 0 console errors both orgs." },
   { v:"v1.49.0", date:"2026-08-13 08:02 SAST",

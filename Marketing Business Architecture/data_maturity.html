@@ -39,6 +39,16 @@
   .lvtag{font-size:.62rem;text-transform:uppercase;letter-spacing:.03em;color:var(--faint);background:#eef4f7;border-radius:20px;padding:2px 8px;font-weight:700}
   .rag{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle}
   .rag.Red{background:#dc2626}.rag.Amber{background:#d97706}.rag.Green{background:#16a34a}
+  .scopeflag{font-size:.64rem;font-weight:800;border-radius:20px;padding:2px 8px;white-space:nowrap}
+  .scope-In{background:#dcfce7;color:#166534}.scope-Partial{background:#fef9c3;color:#854d0e}.scope-Out{background:#f1f5f9;color:#64748b}
+  .radarwrap{display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+  .legrow{display:flex;align-items:center;gap:9px;font-size:.82rem;margin-bottom:7px;color:var(--ink)}
+  .legsw{width:24px;height:13px;border-radius:3px;flex-shrink:0}
+  .abbrlist{columns:2;column-gap:16px;font-size:.74rem;margin-top:12px}
+  .abbrlist .ai{break-inside:avoid;margin-bottom:4px;color:#334155;line-height:1.35}
+  .abbrlist .ai.out{color:#94a3b8}
+  .abbrlist .ai b{color:#0e4a5a;font-family:"SF Mono",monospace}
+  tr.outrow td{background:#fbfcfe}
   .mnum{font-variant-numeric:tabular-nums;font-weight:700}
   .barcell{min-width:150px}
   .units{display:flex;gap:12px;flex-wrap:wrap}
@@ -74,12 +84,12 @@
   <div id="body"></div>
 </div>
 
-<script src="assets/data.js?v=1.50.0"></script>
-<script src="assets/model_all.js?v=1.50.0"></script>
-<script src="assets/aggpsa_model_all.js?v=1.50.0"></script>
-<script src="assets/aggpsa_data.js?v=1.50.0"></script>
+<script src="assets/data.js?v=1.50.2"></script>
+<script src="assets/model_all.js?v=1.50.2"></script>
+<script src="assets/aggpsa_model_all.js?v=1.50.2"></script>
+<script src="assets/aggpsa_data.js?v=1.50.2"></script>
 <script src="assets/org_switch.js"></script>
-<script src="assets/model_hydrate.js?v=1.50.0"></script>
+<script src="assets/model_hydrate.js?v=1.50.2"></script>
 <script src="assets/pack.js"></script>
 <script src="assets/model_explorer.js"></script>
 <script>
@@ -112,6 +122,8 @@ function render(){
   var oc = wc? td/wc : 0;
   var gap = tgt-oc;
   var readiness = Math.round(oc/tgt*100);
+  var inScopeAreas = areas.filter(function(a){return a.scopeStatus!=="Out of scope";}).length;
+  var inScopeDeliv = areas.reduce(function(s,a){return s+(a.inScope||0);},0);
   var html='';
 
   // ---- stat tiles ----
@@ -121,10 +133,27 @@ function render(){
     tile(gap.toFixed(1),'Maturity gap','amber')+
     tile(readiness+'%','Governance readiness','red')+
     tile(areas.length,'Knowledge areas','')+
-    tile(totDeliv,'Deliverables assessed','')+
+    tile(inScopeAreas+' / '+areas.length,'Areas in scope','amber')+
+    tile(inScopeDeliv+' / '+totDeliv,'Deliverables in scope','amber')+
     tile(stewards.length,'Business Data Stewards','')+
     tile(totCom,'Steward comments','')+
   '</div>';
+
+  // ---- radar ----
+  html+='<div class="sec"><div class="sec-h"><h2>Knowledge area maturity radar</h2>'+
+    '<span class="hint">current vs Defined (3) target · dashed grey axes = out of scope (not reviewed)</span></div>'+
+    '<div class="sec-b"><div class="radarwrap">'+
+      '<div style="flex:1;min-width:330px;text-align:center">'+buildRadar(areas)+'</div>'+
+      '<div style="flex:1;min-width:230px">'+
+        '<div class="legrow"><span class="legsw" style="background:rgba(220,38,38,.25);border:2px solid #dc2626"></span> Current maturity ('+mlab(oc)+', '+oc.toFixed(1)+')</div>'+
+        '<div class="legrow"><span class="legsw" style="background:rgba(37,99,235,.08);border:1.5px dashed #2f6fed"></span> Target — Defined (3)</div>'+
+        '<div class="legrow"><span class="legsw" style="background:#fff;border:1px dashed #94a3b8"></span> Out of scope — not reviewed</div>'+
+        '<div style="font-size:.8rem;color:var(--mut);margin-top:6px">Only <b>'+inScopeAreas+' of '+areas.length+'</b> areas ('+inScopeDeliv+' of '+totDeliv+' deliverables) were formally in scope; the rest carry a baseline reading but were flagged out of scope.</div>'+
+        '<div class="abbrlist">'+areas.slice().sort(function(a,b){return a.abbr<b.abbr?-1:1;}).map(function(a){
+          return '<div class="ai'+(a.scopeStatus==="Out of scope"?" out":"")+'"><b>'+esc(a.abbr||"")+'</b> — '+esc(a.area)+'</div>';
+        }).join("")+'</div>'+
+      '</div>'+
+    '</div></div></div>';
 
   // ---- readiness / mandate ----
   html+='<div class="readiness"><h2>Governance readiness — a '+gap.toFixed(1)+'-level gap to Defined</h2>'+
@@ -150,17 +179,20 @@ function render(){
   // ---- knowledge area table ----
   var sorted=areas.slice().sort(function(a,b){ return (b.gap-a.gap)||(a.area<b.area?-1:1); });
   html+='<div class="sec"><div class="sec-h"><h2>Maturity by knowledge area → policy domain</h2><span class="hint">click an area for its relationships · click the domain to open its policy</span></div><div class="sec-b" style="overflow-x:auto">'+
-    '<table class="katbl"><thead><tr><th></th><th>Knowledge area</th><th class="hidesm">DMBOK layer</th><th>Governed by</th><th>Current</th><th class="barcell">Progress to target</th><th>Gap</th><th class="hidesm">Deliv.</th><th class="hidesm">Comments</th></tr></thead><tbody>';
+    '<table class="katbl"><thead><tr><th></th><th>Knowledge area</th><th class="hidesm">DMBOK layer</th><th>Governed by</th><th>Scope</th><th>Current</th><th class="barcell">Progress to target</th><th>Gap</th><th class="hidesm">Deliv. (in scope)</th><th class="hidesm">Comments</th></tr></thead><tbody>';
   sorted.forEach(function(a){
-    html+='<tr>'+
+    var out=(a.scopeStatus==="Out of scope");
+    var notAssessed=(a.reviewed===0);
+    html+='<tr'+(out?' class="outrow"':'')+'>'+
       '<td><span class="rag '+esc(a.rag)+'"></span></td>'+
       '<td><span class="kalink" onclick="openEl(\''+esc(a.id)+'\')">'+esc(a.area)+'</span></td>'+
       '<td class="hidesm"><span class="lvtag">'+esc(a.level||"")+'</span></td>'+
       '<td><span class="domlink" onclick="openEl(\''+esc(a.domain)+'\')">'+esc(domName(a.domain))+'</span></td>'+
+      '<td><span class="scopeflag '+scopeClass(a.scopeStatus)+'">'+esc(a.scopeStatus)+'</span>'+(notAssessed?' <span class="scopeflag scope-Out" title="No deliverables assessed">not assessed</span>':'')+'</td>'+
       '<td><span class="mnum">'+(a.current!=null?a.current.toFixed(1):"—")+'</span> <span style="font-size:.72rem;color:var(--mut)">'+esc(mlab(a.current||0))+'</span></td>'+
       '<td class="barcell">'+barHtml(a.current||0,a.target||3,a.rag)+'</td>'+
       '<td><span class="mnum" style="color:#b45309">'+(a.gap!=null?a.gap.toFixed(1):"—")+'</span></td>'+
-      '<td class="hidesm">'+(a.deliverables||0)+'</td>'+
+      '<td class="hidesm">'+(a.deliverables||0)+(a.inScope?' <span style="color:#166534">('+a.inScope+')</span>':'')+'</td>'+
       '<td class="hidesm">'+(a.comments?'<span class="chip">'+a.comments+'</span>':'—')+'</td>'+
     '</tr>';
   });
@@ -194,6 +226,29 @@ function render(){
   wireComments();
 }
 
+function scopeClass(s){ return s==="In scope"?"scope-In":(s==="Partial"?"scope-Partial":"scope-Out"); }
+function buildRadar(A0){
+  var order={"Oversight":0,"Foundation":1,"Lifecycle":2,"Outcome":3};
+  var A=A0.slice().sort(function(a,b){ return ((order[a.level]==null?9:order[a.level])-(order[b.level]==null?9:order[b.level]))||(a.area<b.area?-1:1); });
+  var n=A.length, R=140, cx=215, cy=185, W=430, H=360, maxV=5;
+  function pt(i,v){ var ang=(-90 + i*360/n)*Math.PI/180; var r=(v/maxV)*R; return [cx+r*Math.cos(ang), cy+r*Math.sin(ang)]; }
+  var svg='<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:540px" role="img" aria-label="Knowledge area maturity radar">';
+  for(var k=1;k<=5;k++){ var pts=[]; for(var i=0;i<n;i++){ var p=pt(i,k); pts.push(p[0].toFixed(1)+','+p[1].toFixed(1)); }
+    svg+='<polygon points="'+pts.join(' ')+'" fill="none" stroke="#e8edf4" stroke-width="1"/>'; }
+  for(var k=1;k<=5;k++){ svg+='<text x="'+(cx+4)+'" y="'+(cy-(k/maxV)*R+3).toFixed(1)+'" font-size="8" fill="#b0bacb">'+k+'</text>'; }
+  for(var i=0;i<n;i++){ var e=pt(i,5); var a=A[i]; var out=(a.scopeStatus==="Out of scope");
+    svg+='<line x1="'+cx+'" y1="'+cy+'" x2="'+e[0].toFixed(1)+'" y2="'+e[1].toFixed(1)+'" stroke="'+(out?"#eef2f7":"#d7dfea")+'" stroke-width="1"'+(out?' stroke-dasharray="3 3"':'')+'/>';
+    var lp=pt(i,5.4), anchor=(Math.abs(lp[0]-cx)<10)?"middle":(lp[0]<cx?"end":"start");
+    svg+='<text x="'+lp[0].toFixed(1)+'" y="'+(lp[1]+3).toFixed(1)+'" font-size="9.5" font-weight="700" text-anchor="'+anchor+'" fill="'+(out?"#9aa6ba":"#334155")+'">'+esc(a.abbr||"")+'</text>';
+  }
+  var tp=[]; for(var i=0;i<n;i++){ var p=pt(i,A[i].target||3); tp.push(p[0].toFixed(1)+','+p[1].toFixed(1)); }
+  svg+='<polygon points="'+tp.join(' ')+'" fill="rgba(47,111,237,0.06)" stroke="#2f6fed" stroke-width="1.5" stroke-dasharray="4 3"/>';
+  var cp=[]; for(var i=0;i<n;i++){ var p=pt(i,A[i].current||0); cp.push(p[0].toFixed(1)+','+p[1].toFixed(1)); }
+  svg+='<polygon points="'+cp.join(' ')+'" fill="rgba(220,38,38,0.18)" stroke="#dc2626" stroke-width="2"/>';
+  for(var i=0;i<n;i++){ var p=pt(i,A[i].current||0); svg+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.3" fill="#dc2626"/>'; }
+  svg+='</svg>';
+  return svg;
+}
 function tile(n,l,cls){ return '<div class="s'+(cls?" "+cls:"")+'"><div class="n">'+esc(String(n))+'</div><div class="l">'+esc(l)+'</div></div>'; }
 function jstep(n,h,p){ return '<div class="step"><div class="h"><span class="dot">'+n+'</span>'+esc(h)+'</div><p>'+esc(p)+'</p></div>'; }
 function ragOf(gap){ return gap>=2?"Red":(gap>=1?"Amber":"Green"); }

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Business Architecture — Nedbank Marketing Pack</title>
+<link rel="stylesheet" href="assets/pack.css">
+</head>
+<body>
+<div id="nav"></div>
+<div id="breadcrumb"></div>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div class="eyebrow">Centrepiece</div>
+    <h1 id="arch-title">Marketing Business Architecture</h1>
+    <p class="lede">The capability map is the hero. Each capability is coloured by its <strong>agreed maturity</strong>.
+    Click one to drill into everything it connects to along the chain — the stakeholders and value propositions it serves,
+    the journeys it delivers, the processes and decisions that run it, and its sign-off.</p>
+  </div>
+
+  <div class="stat-row" id="rollup"></div>
+
+  <div class="section" id="vpviz-sec">
+    <h2>Value Proposition</h2>
+    <p class="muted" data-copy="baVpNote">The value the business delivers — independent of how it is delivered. Four value pillars, who benefits, and the core instruments.</p>
+    <div id="vpviz"></div>
+  </div>
+
+  <div class="section">
+    <h2>Business Capability Map</h2>
+    <p class="muted">The business modelled independently of how each capability is delivered — steering &amp; governance, the core value chain, and the enabling &amp; supporting capabilities. Maturity is shown on each core capability.</p>
+    <div id="capmap"></div>
+  </div>
+
+  <div class="section">
+    <h2>Capability map under a value proposition</h2>
+    <p class="muted">Pick a value proposition to see the capabilities that deliver it — laid out under the value-stream stages and heat-coloured. Toggle between <strong>Attention</strong> (New/High/Medium/Low) and <strong>Maturity</strong> (0–5).</p>
+    <div style="margin:6px 0 12px"><label style="font-size:.8rem;font-weight:600;color:var(--mut);margin-right:8px">Value proposition</label>
+      <select id="vpsel" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit"></select></div>
+    <div id="vsheat"></div>
+  </div>
+
+  <div class="section">
+    <h2>All capabilities <span class="muted" style="font-weight:400;font-size:.9rem">— coloured by agreed maturity</span></h2>
+    <div class="legend" id="legend"></div>
+    <div style="margin:10px 0 6px" class="muted" data-copy="baExtNote">Core groups (BA doc §5) and <strong>EXT</strong> extension domains (journey, CX, personalisation, CDP, intelligence, CLV, feedback).</div>
+    <div class="heat" id="heat"></div>
+  </div>
+
+  <div class="section">
+    <h2>Backing matrices</h2>
+    <p class="muted">The source tables the map is built from. Open any to see the full grounded content.</p>
+    <div id="matrices"></div>
+  </div>
+</div>
+
+<script src="assets/data.js"></script>
+<script src="assets/model_all.js"></script>
+<script src="assets/aggpsa_model_all.js"></script>
+<script src="assets/aggpsa_data.js"></script>
+<script src="assets/org_switch.js"></script>
+<script src="assets/model_hydrate.js"></script>
+<script src="assets/pack.js"></script>
+<script src="assets/pack_diagrams.js"></script>
+<script>
+PACK.setWorkbooks([
+  {label:PACK.copyText("baWb1","Marketing Business Architecture .docx"), href:""},
+  {label:"Capability Maturity Model .xlsx", href:""}
+]);
+PACK.renderNav("business_architecture.html");
+(function(){ var t=(window.PACK_CONFIG||{}).archTitle; if(t){ var h=document.getElementById("arch-title"); if(h) h.textContent=t; } })();
+var D = PACK.data(), MAP = PACK.MAP;
+
+/* ---- rich visuals: value proposition + banded capability map ---- */
+(function(){
+  var CFG=window.PACK_CONFIG;
+  if(PACK.renderValueProp) PACK.renderValueProp(document.getElementById("vpviz"), CFG.valueProp);
+  if(PACK.renderCapabilityMap) PACK.renderCapabilityMap(document.getElementById("capmap"), CFG.capabilityMap, function(id){ return PACK.maturityInfo((MAP.CAP[id]||{}).maturity); });
+})();
+
+/* ---- reverse-link helpers ------------------------------------------------ */
+function processesFor(capId){ return D.processes.filter(function(p){return (p.capabilities||[]).indexOf(capId)>=0;}); }
+function journeyStagesFor(capId){
+  var out=[]; D.journeys.forEach(function(j){ j.stages.forEach(function(s){
+    if((s.capabilities||[]).indexOf(capId)>=0) out.push({j:j,s:s}); }); });
+  return out;
+}
+/* expand a thread capability string like "C2–C5, C7–C10, C15" into cap ids */
+function parseCapRange(str){
+  var out={};
+  String(str).split(",").forEach(function(part){
+    part=part.trim().replace(/[–—]/g,"-");
+    var mm=part.match(/^C(\d+)-C(\d+)$/);
+    if(mm){ for(var n=+mm[1];n<=+mm[2];n++) out["C"+n]=1; }
+    else if(/^C\d+$/.test(part)) out[part]=1;
+  });
+  return out;
+}
+function threadsFor(capId){ return D.threads.filter(function(t){ return parseCapRange(t.capabilities)[capId]; }); }
+/* journeys linked to a capability: directly via stages, or via the threads it sits in */
+function journeyIdsFor(capId){
+  var set={}; journeyStagesFor(capId).forEach(function(x){ set[x.j.id]=1; });
+  threadsFor(capId).forEach(function(t){ (t.journeys||[]).forEach(function(j){ set[j]=1; }); });
+  return Object.keys(set);
+}
+function decisionsFor(capId){
+  var set={}; journeyStagesFor(capId).forEach(function(x){ (x.s.decisions||[]).forEach(function(d){set[d]=1;}); });
+  return Object.keys(set);
+}
+function vpsFor(capId){
+  var jids={}; journeyIdsFor(capId).forEach(function(j){jids[j]=1;});
+  return D.valuePropositions.filter(function(v){ return (v.journeys||[]).some(function(j){return jids[j];}); });
+}
+function stakeholdersFor(capId){
+  var set={}; vpsFor(capId).forEach(function(v){ (v.stakeholders||[]).forEach(function(s){set[s]=1;}); });
+  return Object.keys(set);
+}
+
+/* ---- roll-up stats ------------------------------------------------------- */
+function renderRollup(){
+  var ids = D.capabilities.map(function(c){return c.id;});
+  var st = PACK.signoffStats(ids);
+  var rated = D.capabilities.filter(function(c){return PACK.effMaturity(c)!=null;}).length;
+  var avg = (function(){ var vs=D.capabilities.map(PACK.effMaturity).filter(function(v){return v!=null;});
+    return vs.length? (vs.reduce(function(a,b){return a+b;},0)/vs.length).toFixed(1):"—"; })();
+  document.getElementById("rollup").innerHTML =
+    stat(st.agreed+" / "+st.total,"Capabilities agreed")+
+    stat(st.needs,"Marked needs work")+
+    stat(rated+" / "+ids.length,"Maturity rated")+
+    stat(avg,"Average maturity (0–5)");
+}
+function stat(n,k){ return '<div class="stat"><div class="n">'+n+'</div><div class="k">'+k+'</div></div>'; }
+
+/* ---- legend -------------------------------------------------------------- */
+(function(){
+  var sc=window.PACK_CONFIG.maturityScale;
+  var h=sc.map(function(m){return '<span class="sw"><i style="background:'+m.color+'"></i>'+m.v+' '+m.name+'</span>';}).join("");
+  h+='<span class="sw"><i style="background:'+window.PACK_CONFIG.unratedColor+'"></i>Unrated</span>';
+  document.getElementById("legend").innerHTML=h;
+})();
+
+/* ---- heatmap ------------------------------------------------------------- */
+function renderHeat(){
+  document.getElementById("heat").innerHTML = D.capabilities.map(function(c){
+    var m = PACK.maturityInfo(PACK.effMaturity(c));
+    var status = PACK.effStatus(c.id, c.status);
+    return '<div class="htile'+(c.ext?" ext":"")+'" style="background:'+m.color+'" onclick="openCap(\''+c.id+'\')">'+
+      '<div><div class="hid">'+c.id+'</div><div class="hname">'+PACK.esc(c.name)+'</div></div>'+
+      '<div class="hmeta"><span class="mscore">'+(m.v==null?"—":m.v)+' · '+m.name+'</span>'+
+        '<span class="status-pill status-'+(status||"").replace(/\s/g,"-")+'" style="background:rgba(255,255,255,.22);color:#fff">'+(status||"—")+'</span>'+
+      '</div></div>';
+  }).join("");
+}
+
+/* ---- capability drill panel --------------------------------------------- */
+window.openCap = function(capId){
+  var c = MAP.CAP[capId]; if(!c) return;
+  var kids = (c.children||[]).map(function(k){
+    return '<span class="chip cap" style="cursor:default"><span class="id">'+k.id+'</span>'+PACK.esc(k.name)+'</span>';
+  }).join(" ");
+  var procs = processesFor(capId);
+  var jstages = journeyStagesFor(capId);
+  var stageMap={}; jstages.forEach(function(x){ (stageMap[x.j.id]=stageMap[x.j.id]||[]).push(x.s.stage); });
+  var jids = journeyIdsFor(capId);
+  var decs = decisionsFor(capId);
+  var vps = vpsFor(capId);
+  var shs = stakeholdersFor(capId);
+  var thr = threadsFor(capId);
+
+  var jHtml = jids.length ? jids.map(function(jid){
+    var stg = stageMap[jid];
+    return '<div style="margin-bottom:4px">'+PACK.chip(jid)+
+      (stg?' <span class="muted" style="font-size:.8rem">— '+stg.join(", ")+' stage'+(stg.length>1?"s":"")+'</span>':' <span class="muted" style="font-size:.8rem">— via thread</span>')+'</div>';
+  }).join("") : '<span class="muted">—</span>';
+  var thrHtml = thr.length ? thr.map(function(t){return '<span class="pill" style="font-size:.74rem;margin:0 4px 4px 0">'+PACK.esc(t.name)+'</span>';}).join("") : '<span class="muted">—</span>';
+
+  var body =
+    '<div class="def">'+PACK.esc(c.def)+'</div>'+
+    (c.ext?'<span class="pill" style="font-size:.72rem">Extension domain</span>':'')+
+    '<h4>Level 2 / 3 capabilities</h4><div class="chiprow">'+(kids||'<span class="muted">—</span>')+'</div>'+
+    '<h4>Serves stakeholders</h4>'+ (shs.length?PACK.chips(shs):'<span class="muted">—</span>')+
+    '<h4>Delivers value propositions</h4>'+ (vps.length?PACK.chips(vps.map(function(v){return v.id;})):'<span class="muted">—</span>')+
+    '<h4>Delivers journeys</h4>'+ jHtml+
+    '<h4>Run by processes</h4>'+ (procs.length?PACK.chips(procs.map(function(p){return p.id;})):'<span class="muted">—</span>')+
+    '<h4>Governed by decisions</h4>'+ (decs.length?PACK.chips(decs):'<span class="muted">—</span>')+
+    '<h4>Traceability threads</h4><div class="chiprow">'+thrHtml+'</div>'+
+    '<h4>Sign-off &amp; maturity</h4><div id="capsign"></div>';
+  PACK.openPanel(c.id, PACK.esc(c.name), body);
+  PACK.signoffWidget(document.getElementById("capsign"), c.id, {maturity:true, onChange:function(){ renderHeat(); renderRollup(); }});
+};
+
+/* ---- backing matrices ---------------------------------------------------- */
+function matrix(title, inner){ return '<details class="matrix"><summary>'+title+'</summary><div class="body"><div class="tbl-wrap">'+inner+'</div></div></details>'; }
+function th(a){ return '<tr>'+a.map(function(x){return '<th>'+x+'</th>';}).join("")+'</tr>'; }
+function td(a){ return '<tr>'+a.map(function(x){return '<td>'+x+'</td>';}).join("")+'</tr>'; }
+
+(function(){
+  var m="";
+  // Stakeholders
+  m+=matrix("Stakeholder catalog — SH01–SH11 (BA §2)",
+    '<table class="tbl">'+th(["ID","Stakeholder","Members","Value derived","Segment emphasis"])+
+    D.stakeholders.map(function(s){return td(['<span class="mono">'+s.id+'</span>',"<strong>"+PACK.esc(s.name)+"</strong>",PACK.esc(s.members),PACK.esc(s.value),PACK.esc(s.segment)]);}).join("")+'</table>');
+  // VP matrix
+  m+=matrix("Stakeholder → value-proposition matrix — VP01– (BA §3)",
+    '<table class="tbl">'+th(["ID","Group","Generic proposition"].concat(((window.PACK_CONFIG.vpSegments||{}).labels)||["Retail","Commercial","Wealth","Trade"]))+
+    D.valuePropositions.map(function(v){return td(['<span class="mono">'+v.id+'</span>',PACK.esc(v.name||v.group),"<em>"+PACK.esc(v.generic)+"</em>",PACK.esc(v.retail),PACK.esc(v.commercial),PACK.esc(v.wealth),PACK.esc(v.trade)]);}).join("")+'</table>');
+  // VP -> KPI
+  m+=matrix("Value-proposition → KPI matrix — KT1–KT7 (BA §4)",
+    '<table class="tbl">'+th(["ID","Theme","Outcome KPIs"])+
+    D.kpis.map(function(k){return td(['<span class="mono">'+k.id+'</span>',"<strong>"+PACK.esc(k.theme)+"</strong>",k.items.map(PACK.esc).join(", ")]);}).join("")+'</table>');
+  // Capability map
+  m+=matrix("Capability map — C1–C17 (BA §5 + Extension §7)",
+    '<table class="tbl">'+th(["ID","Capability","Definition","Type"])+
+    D.capabilities.map(function(c){return td(['<span class="mono">'+c.id+'</span>',"<strong>"+PACK.esc(c.name)+"</strong>",PACK.esc(c.def),c.ext?'<span class="pill" style="font-size:.68rem">Extension</span>':'Core']);}).join("")+'</table>');
+  // Processes
+  m+=matrix("Capability → process mapping — P1–P8 + PX1–PX8 (BA §6 + Extension §8)",
+    '<table class="tbl">'+th(["ID","Process","Inputs","Outputs","Capabilities","Participants"])+
+    D.processes.map(function(p){return td(['<span class="mono">'+p.id+'</span>',"<strong>"+PACK.esc(p.name)+"</strong>",PACK.esc(p.inputs),PACK.esc(p.outputs),(p.capabilities||[]).join(", "),PACK.esc(p.participants)]);}).join("")+'</table>');
+  // Decisions
+  m+=matrix("Decision model catalog — D1–D10 + DX1–DX8 (BA §7 + Extension §9)",
+    '<table class="tbl">'+th(["ID","Decision","Inputs","Example rule","Outcome","Owner"])+
+    D.decisions.map(function(d){return td(['<span class="mono">'+d.id+'</span>',"<strong>"+PACK.esc(d.name)+"</strong>",PACK.esc(d.inputs),PACK.esc(d.rules),PACK.esc(d.outcome),PACK.esc(d.owner)]);}).join("")+'</table>');
+  // Traceability
+  m+=matrix("End-to-end traceability threads (BA §8)",
+    '<table class="tbl">'+th(["Thread","Stakeholders","Value proposition","Journeys","KPIs","Capabilities","Processes","Decisions"])+
+    D.threads.map(function(t){return td([ "<strong>"+PACK.esc(t.name)+"</strong>",PACK.esc(t.stakeholders),PACK.esc(t.vp),(t.journeys||[]).join(", ")||"—",PACK.esc(t.kpis),PACK.esc(t.capabilities),PACK.esc(t.processes),PACK.esc(t.decisions)]);}).join("")+'</table>');
+  // Segment comparison
+  var sc=D.segmentComparison;
+  if(sc){ m+=matrix("Segment similarities &amp; differences (BA §9)",
+    '<table class="tbl">'+th(["Dimension"].concat(((window.PACK_CONFIG.vpSegments||{}).labels)||["Retail","Commercial","Wealth","Trade Finance"]))+
+    sc.dimensions.map(function(dim){var r=sc.rows[dim];return td(["<strong>"+PACK.esc(dim)+"</strong>",PACK.esc(r.Retail),PACK.esc(r.Commercial),PACK.esc(r.Wealth),PACK.esc(r.Trade)]);}).join("")+'</table>'); }
+  document.getElementById("matrices").innerHTML=m;
+})();
+
+renderHeat(); renderRollup();
+
+/* value-stream capability heat map, driven by a value-proposition selector */
+(function(){
+  var sel = document.getElementById("vpsel");
+  sel.innerHTML = D.valuePropositions.map(function(v){return '<option value="'+v.id+'">'+v.id+' — '+PACK.esc(v.name||v.group)+'</option>';}).join("");
+  var cvp = PACK.ctx().vp;
+  sel.value = (cvp && MAP.VP[cvp]) ? cvp : D.valuePropositions[0].id;
+  function draw(){ PACK.valueStreamHeat(document.getElementById("vsheat"), sel.value, {}); }
+  sel.onchange = draw; draw();
+})();
+
+PACK.renderBreadcrumb("cap");
+PACK.onHash(function(id){ if(PACK.kindOf(id)==="CAP"){ openCap(id.split(".")[0]); } });
+document.body.insertAdjacentHTML("beforeend", PACK.footer());
+</script>
+</body>
+</html>

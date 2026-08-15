@@ -105,7 +105,7 @@
 
   /* ---- AI agents / semantic models / CDP services --------------------- */
   set("aiAgents", recs("15 ·").map(function(r){ var o={id:r.AgentID,name:r.Name,def:r.Definition,useCases:L(r.AIUseCases),dataProducts:L(r.DataProducts),semanticModels:L(r.SemanticModels),hitl:B(r.HITL)}; if(r["HITL Reason"]) o.hitlReason=r["HITL Reason"]; return o; }));
-  set("semanticModels", recs("16 ·").map(function(r){ return {id:r.SemanticModelID,name:r.Name,def:r.Definition,terms:L(r.GovernedTerms)}; }));
+  set("semanticModels", recs("16 ·").map(function(r){ return {id:r.SemanticModelID,name:r.Name,def:r.Definition,terms:L(String(r.GovernedTerms==null?"":r.GovernedTerms).replace(/;/g,","))}; }));
   set("cdpServices", recs("17 ·").map(function(r){ return {id:r.CDPServiceID,name:r.Name,desc:r.Description}; }));
 
   /* ---- domain-first ownership: the Data Domain OWNS its Data Products.

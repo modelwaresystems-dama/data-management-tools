@@ -1090,9 +1090,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.52.1";
-window.PACK_CONFIG.built   = "2026-08-15 14:05 SAST";
+window.PACK_CONFIG.version = "v1.52.2";
+window.PACK_CONFIG.built   = "2026-08-15 15:20 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.52.2", date:"2026-08-15 15:20 SAST",
+    note:"Re-baked the AGGPSA Business Glossary from the updated deep-link export — the dictionary grew from 903 to 1,162 governed terms, now covering the data-product governed terms, schema fields (data elements), Value Propositions, Business Data Stewards and other elements that were previously inert. App-term coverage rose from 209/748 to 388/763 resolving; the Data Products are now effectively fully linked (only one schema field, 'reading_for_meaning' on DP06, remains absent from the export). Also fixed Semantic Model governed-term chips, which used ';' as a separator and so rendered as a single un-matchable compound chip — they are now split into individual terms, each of which deep-links. Remaining un-linked: the 374 Policy Control activity statements (e.g. 'Approve and publish the Data Governance policy'), which are control activities rather than business terms and are intentionally out of the glossary unless you want them added. Verified 0 console errors across both organisations." },
   { v:"v1.52.1", date:"2026-08-15 14:05 SAST",
     note:"Corrected the Navigator (and traceability chain) ordering to match the domain-owns-product hierarchy from v1.52.0: the walk now steps AI Agent → Data Domain → Data Product (Data Domain was previously listed after Data Product). Selecting an AI Agent now surfaces the Data Domains it draws on, and choosing a domain surfaces the Data Products that domain owns — so the numbered levels read Data Domain (12) then Data Product (13), consistent with the Graph tree and the Data Products page. Verified 0 console errors across both organisations." },
   { v:"v1.52.0", date:"2026-08-15 13:10 SAST",

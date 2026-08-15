@@ -841,6 +841,8 @@ window.PACK_CONFIG = {
      role:"Nedbank Marketing Data & AI Business Architecture — the banking engagement", available:true},
     {id:"aggpsa", label:"AGGPSA — Ecosystem Data & Analytics", auth:"none",
      role:"Allan & Gill Gray Philanthropy SA — catalytic ecosystem business architecture", available:true},
+    {id:"modelware", label:"Modelware Systems — Whole-Business", auth:"none",
+     role:"Modelware Systems — Option C whole-business architecture (Training + Advisory + Consulting)", available:true},
     {id:"nedbank_private", label:"Nedbank Private", auth:"github-token",
      role:"The live working content the working group edits / votes / signs off", available:false}
   ],
@@ -1091,9 +1093,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.54.0";
-window.PACK_CONFIG.built   = "2026-08-15 17:35 SAST";
+window.PACK_CONFIG.version = "v1.55.0";
+window.PACK_CONFIG.built   = "2026-08-15 18:50 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.55.0", date:"2026-08-15 18:50 SAST",
+    note:"Added Modelware Systems as a third selectable source alongside Nedbank and AGGPSA — a complete whole-business (Option C) architecture built from the Modelware specification packs. Pick 'Modelware Systems — Whole-Business' in the Source dropdown to switch the entire pack to Modelware content: 10 stakeholders and personas, 10 value propositions, 10 business outcomes with KPIs, 13 value streams and their stages, 8 journeys, 24 capabilities across 5 domains, ~33 processes (preserving the existing 14 BPMN/DMN processes and filling the missing business areas — curriculum, advisory, community, partner, platform, strategy and people), 20 decisions, 37 information concepts, 10 data domains, 10 semantic models, and 15 domain-owned data products consumed (not defined) by 10 AI use cases and 9 agents — plus the physical layer (storage platforms, data assets, applications, evaluation registers) and a governance layer (policy domains, policies, controls, evidence, councils, RACI, risk, records). The data products are domain-first with AI use-cases as consumers, exactly like the other tenants, and the whole spine traces end-to-end through the Navigator, Graph and every register page. Also made the Decisions and Business Process pages default to the first available element rather than a hardcoded id, so they work under any source. Modelware has no baked glossary yet, so term-highlighting stays off for that source (Nedbank and AGGPSA unaffected). Verified 0 console errors across every page in all three organisations." },
   { v:"v1.54.0", date:"2026-08-15 17:35 SAST",
     note:"New Architecture Elements page surfacing the governed registers beneath the business architecture that were previously in the model but not viewable in the app. A single tabbed page (added to the nav after Critical Data) presents: Information Concepts (the conceptual data model — owning capability, steward, system-of-record data product, lifecycle); Data Assets (physical tables/files/streams with product, type & layer, Output-Port vs Internal role, refresh rate, storage platform, PII); Storage Platforms (lakes/warehouses/stores with zone, region, owner and assets-hosted count); Applications (the application landscape — category, type, hosting, lifecycle, criticality and the processes each supports); Evaluation (the AI-assurance layer — evaluation datasets, metrics and plans, with results-logged count); and, for AGGPSA, DMBOK / DMMA (the DAMA-DMBOK knowledge areas with current→target maturity and the DMMA deliverables/evidence artefacts). Tabs show only where the source has data (Nedbank shows five; the DMBOK/DMMA tab is AGGPSA-only). Added hydration for the Application landscape and the evaluation dataset/metric/plan registers. Every element participates in the global term-highlighting. Verified 0 console errors across both organisations." },
   { v:"v1.53.0", date:"2026-08-15 16:40 SAST",

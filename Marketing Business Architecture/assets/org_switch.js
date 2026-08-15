@@ -20,11 +20,16 @@
   W.ACTIVE_MODEL_SHEETS = W.NB_MODEL_SHEETS;
   CFG.activeOrg = "nedbank";
 
-  if(srcId === "aggpsa" && W.ORG && W.ORG.aggpsa){
-    var org = W.ORG.aggpsa, cfg = org.config || {}, gen = org.generic || {};
-    CFG.activeOrg = "aggpsa";
-    // point the hydrator at the AGGPSA model (fall back to Nedbank if missing)
-    W.ACTIVE_MODEL_SHEETS = W.AGGPSA_MODEL_SHEETS || W.NB_MODEL_SHEETS;
+  // resolve which org config + model to apply (default Nedbank)
+  var ORGSEL = null, ORGMODEL = null, ORGID = null;
+  if(srcId === "aggpsa" && W.ORG && W.ORG.aggpsa){ ORGSEL = W.ORG.aggpsa; ORGMODEL = W.AGGPSA_MODEL_SHEETS; ORGID = "aggpsa"; }
+  else if(srcId === "modelware" && W.ORG && W.ORG.modelware){ ORGSEL = W.ORG.modelware; ORGMODEL = W.MODELWARE_MODEL_SHEETS; ORGID = "modelware"; }
+
+  if(ORGSEL){
+    var org = ORGSEL, cfg = org.config || {}, gen = org.generic || {};
+    CFG.activeOrg = ORGID;
+    // point the hydrator at the selected org model (fall back to Nedbank if missing)
+    W.ACTIVE_MODEL_SHEETS = ORGMODEL || W.NB_MODEL_SHEETS;
     // config overrides
     ["client","identity","engagement","publishStatus","vpSegments","archTitle",
      "packName","pageDir","workbooks","copy","ethical","manual","pageTitles",

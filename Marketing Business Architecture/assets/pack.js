@@ -125,6 +125,15 @@
     if(!dict) return false;
     return !!dict[String(term==null?"":term).replace(/\s+/g," ").trim().toLowerCase()];
   };
+  /* Full glossary record for a term: name, subject area, definition, type, deep-link */
+  PACK.glossaryInfo = function(term){
+    var g = PACK.glossary();
+    var dict = (g && g.terms) || (CFG.glossary && CFG.glossary.terms) || null;
+    if(!dict) return null;
+    var d = dict[String(term==null?"":term).replace(/\s+/g," ").trim().toLowerCase()];
+    if(!d) return null;
+    return { name:d[0], area:d[1], def:(d[2]||""), type:(d[3]||""), url:PACK.glossaryUrlFor(term) };
+  };
   /* glossary term chip — deep-links to the exact term in the workbench, else inert */
   PACK.termChip = function(term){
     var url = PACK.glossaryUrlFor(term);
@@ -812,4 +821,145 @@
   });
   window.addEventListener("scroll", closePop, true);
   window.addEventListener("resize", closePop);
+})();
+
+/* ============================================================================
+   Global glossary term-highlighter
+   ---------------------------------------------------------------------------
+   Wherever a governed business term appears in the app's rendered text, wrap it
+   in a clickable chip that opens its definition (and deep-links to the Glossary
+   Workbench). MutationObserver-driven so dynamically-rendered cards, panels and
+   tables are covered too. Physical schema-field attributes (all-lowercase /
+   underscore names) are excluded to keep prose clean; they still deep-link where
+   shown explicitly. Runs on every page (pack.js is loaded everywhere).
+   ========================================================================== */
+(function(){
+  var PACK = window.PACK, CFG = window.PACK_CONFIG;
+  if(!PACK) return;
+  function dict(){ var g=PACK.glossary&&PACK.glossary(); return (g&&g.terms) || (CFG.glossary&&CFG.glossary.terms) || null; }
+  function enabled(){
+    var d=dict(); if(!d) return false;
+    var g=PACK.glossary(); if(g && g.enabled===false) return false;
+    try{ if(window.localStorage.getItem("nbpack.termHighlight")==="off") return false; }catch(e){}
+    return true;
+  }
+
+  var RX=null;
+  function build(){
+    var d=dict(); if(!d) return false;
+    var names=[];
+    for(var k in d){ var name=d[k][0];
+      if(!name || name.length<3) continue;
+      if(/^[a-z0-9_]+$/.test(name)) continue;   // physical schema field / lone lowercase token
+      names.push(name);
+    }
+    if(!names.length) return false;
+    names.sort(function(a,b){ return b.length-a.length; });         // longest first
+    var esc=names.map(function(n){ return n.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); });
+    try{ RX=new RegExp("(?<![\\w])("+esc.join("|")+")(?![\\w])","gi"); }
+    catch(e){ RX=new RegExp("\\b("+esc.join("|")+")\\b","gi"); }
+    return true;
+  }
+
+  var SKIP_TAG={SCRIPT:1,STYLE:1,NOSCRIPT:1,A:1,BUTTON:1,INPUT:1,TEXTAREA:1,SELECT:1,OPTION:1,CODE:1,PRE:1,svg:1,SVG:1};
+  function skipEl(el){
+    if(!el||el.nodeType!==1) return false;
+    if(SKIP_TAG[el.nodeName]) return true;
+    if(el.isContentEditable) return true;
+    var c=el.classList;
+    if(c && (c.contains("gterm")||c.contains("chip")||c.contains("info-dot")||c.contains("mono")||
+             c.contains("pack-pop")||c.contains("sidebar")||c.contains("idlink")||c.contains("relchip")||
+             c.contains("dp-id")||c.contains("rid")||c.contains("id"))) return true;
+    if(el.id==="nav"||el.id==="breadcrumb") return true;
+    return false;
+  }
+  function inSkipped(node){ for(var el=node.parentNode; el&&el.nodeType===1; el=el.parentNode){ if(skipEl(el)) return true; } return false; }
+
+  var seen = (typeof WeakSet!=="undefined") ? new WeakSet() : null;
+  function mark(n){ if(seen) seen.add(n); else n.__gt=1; }
+  function done(n){ return seen?seen.has(n):n.__gt; }
+  var CAP=6000, count=0;   // safety backstop for pathologically dense reference pages
+
+  function highlightNode(tn){
+    if(done(tn)) return;
+    if(count>=CAP){ mark(tn); return; }
+    var text=tn.nodeValue;
+    if(!text || text.length<3 || !/[A-Za-z]/.test(text)){ mark(tn); return; }
+    if(inSkipped(tn)){ mark(tn); return; }
+    RX.lastIndex=0; if(!RX.test(text)){ mark(tn); return; }
+    RX.lastIndex=0;
+    var frag=document.createDocumentFragment(), last=0, m;
+    while((m=RX.exec(text))){
+      count++;
+      var start=m.index, end=start+m[0].length;
+      if(start>last) frag.appendChild(document.createTextNode(text.slice(last,start)));
+      var span=document.createElement("span");
+      span.className="gterm"; span.setAttribute("data-term", m[0]); span.textContent=m[0];
+      if(span.firstChild) mark(span.firstChild);
+      frag.appendChild(span);
+      last=end;
+      if(m[0].length===0){ RX.lastIndex++; }
+    }
+    if(last<text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    var parent=tn.parentNode; if(parent) parent.replaceChild(frag, tn);
+  }
+  function scan(root){
+    if(!RX||!root) return;
+    if(root.nodeType===3){ highlightNode(root); return; }
+    if(root.nodeType!==1 || skipEl(root)) return;
+    var walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var batch=[], n; while((n=walker.nextNode())){ if(!done(n)) batch.push(n); }
+    for(var i=0;i<batch.length;i++) highlightNode(batch[i]);
+  }
+
+  /* ---- definition popover ---- */
+  var pop=null;
+  function ensure(){ if(pop) return pop; pop=document.createElement("div"); pop.className="pack-pop gterm-pop"; pop.style.display="none"; (document.body||document.documentElement).appendChild(pop); return pop; }
+  function close(){ if(pop) pop.style.display="none"; }
+  function openFor(el){
+    var info=PACK.glossaryInfo(el.getAttribute("data-term")); if(!info) return;
+    var p=ensure();
+    p.innerHTML='<div class="pp-t">'+PACK.esc(info.name)+(info.type?' <span class="gt-type">'+PACK.esc(info.type)+'</span>':'')+'</div>'+
+      (info.area?'<div class="pp-area">'+PACK.esc(info.area)+'</div>':'')+
+      '<div class="pp-w">'+PACK.esc(info.def||"No definition recorded for this term yet.")+'</div>'+
+      (info.url?'<a class="pp-more" href="'+PACK.esc(info.url)+'" target="_blank" rel="noopener">Open in the Glossary Workbench &rsaquo;</a>':'');
+    p.style.display="block";
+    var w=Math.min(360,(window.innerWidth||380)-24); p.style.width=w+"px";
+    var r=el.getBoundingClientRect();
+    var left=window.scrollX+r.left, top=window.scrollY+r.bottom+6;
+    if(left+w>window.scrollX+window.innerWidth-12) left=window.scrollX+window.innerWidth-w-12;
+    p.style.left=Math.max(window.scrollX+8,left)+"px"; p.style.top=top+"px";
+  }
+  document.addEventListener("click", function(e){
+    var g=e.target&&e.target.closest&&e.target.closest(".gterm");
+    if(g){ e.preventDefault(); e.stopPropagation(); openFor(g); return; }
+    if(pop&&pop.style.display!=="none"&&!(e.target.closest&&e.target.closest(".gterm-pop"))) close();
+  });
+  window.addEventListener("scroll", close, true);
+  window.addEventListener("resize", close);
+
+  /* ---- observer + init (disconnect while we mutate, to avoid self-trigger) ---- */
+  var obs=null, queued=false, pending=[];
+  function flush(){
+    queued=false; if(obs) obs.disconnect();
+    var items=pending; pending=[];
+    for(var i=0;i<items.length;i++){ try{ scan(items[i]); }catch(e){} }
+    if(obs) obs.observe(document.body,{childList:true,subtree:true});
+  }
+  function enqueue(nd){ pending.push(nd); if(!queued){ queued=true; (window.requestAnimationFrame||function(f){setTimeout(f,50);})(flush); } }
+
+  var started=false;
+  function start(){
+    if(started||!enabled()||!build()) return; started=true;
+    try{ scan(document.body); }catch(e){}
+    obs=new MutationObserver(function(muts){
+      for(var i=0;i<muts.length;i++){ var a=muts[i].addedNodes;
+        for(var j=0;j<a.length;j++){ if(a[j].nodeType===1||a[j].nodeType===3) enqueue(a[j]); } }
+    });
+    obs.observe(document.body,{childList:true,subtree:true});
+    PACK.__gt={obs:obs, rescan:function(){ if(obs)obs.disconnect(); scan(document.body); if(obs)obs.observe(document.body,{childList:true,subtree:true}); }};
+  }
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
+  PACK.setTermHighlight=function(on){ try{ window.localStorage.setItem("nbpack.termHighlight", on?"on":"off"); }catch(e){} if(!on){ location.reload(); } else if(!started){ start(); } };
 })();

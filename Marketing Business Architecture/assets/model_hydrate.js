@@ -175,6 +175,13 @@
   set("aiDecisionLog", recs("75 ·").map(function(r){ return {id:r.DecisionLogID,uc:r.UseCaseID,segment:r.CustomerSegment,output:r.DecisionOutput,override:B(r.HumanOverride),ts:r.Timestamp,evidence:r.EvidenceID}; }));
   set("dataAssets", recs("98 ·").map(function(r){ return {id:r.DataAssetID,dp:r.DataProductID,name:r.AssetName,type:r.AssetType,layer:r.Layer,platform:r.StoragePlatformID,format:r.Format,pii:B(r.PII),owner:r.Owner,port:r.PortRole,refresh:r.RefreshRate}; }));
   set("storagePlatforms", recs("99 ·").map(function(r){ return {id:r.StoragePlatformID,name:r.Name,type:r.PlatformType,zone:r.Zone,region:r.Region,owner:r.Owner,notes:r.Notes}; }));
+  /* ---- application landscape + AI evaluation registers ---------------- */
+  set("applications", recs("168 ·").map(function(r){ return {id:r.AppID,name:r.AppName,category:r.Category,appType:r.AppType,hosting:r.Hosting,lifecycle:r.Lifecycle,owner:r.OwnerRole,criticality:r.Criticality,desc:r.Description}; }));
+  var appProc={}; recs("169 ·").forEach(function(r){ (appProc[r.AppID]=appProc[r.AppID]||[]).push({proc:r.ProcessID,procName:r.ProcessName,role:r.SystemRole}); });
+  G.appProcesses=appProc;
+  set("evalMetrics", recs("76 ·").map(function(r){ return {id:r.EvalMetricID,name:r.MetricName,type:r.MetricType,appliesTo:r.AppliesTo,threshold:r.Threshold,owner:r.OwnerRoleID}; }));
+  set("evalDatasets", recs("77 ·").map(function(r){ return {id:r.EvalDatasetID,name:r.Name,purpose:r.Purpose,source:r.SourceDataProductID,repCheck:r.RepresentativenessCheck,retention:r.RetentionClassID}; }));
+  set("evalPlans", recs("78 ·").map(function(r){ return {id:r.EvalPlanID,useCase:r.UseCaseID,dataset:r.EvalDatasetID,metrics:r.Metrics,passFail:r.PassFailCriteria,reviewer:r.ReviewerRole}; }));
 
   /* ---- Policy-as-Code layer ------------------------------------------- */
   set("policyRules", recs("100 ·").map(function(r){ return {id:r.RuleID,policy:r.PolicyID,ruleType:r.RuleType,nl:r.NaturalLanguageRule,ref:r.MachineRuleRef,severity:r.Severity,effect:r.DecisionEffect}; }));

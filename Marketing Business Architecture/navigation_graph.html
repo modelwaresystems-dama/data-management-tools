@@ -70,7 +70,7 @@
     <p class="lede" style="font-size:.95rem">The full hierarchy, cross-mapped. Expand any node (▶) to drill down.
     <strong>Stakeholder / Persona → Value Proposition → {Business Outcome → KPI · Value Stream → Value Stage}</strong>;
     a Value Stage is delivered through <strong>Customer Journey stages</strong> and enabled by <strong>Capabilities</strong>;
-    Capability → Process → {Step · Decision}; Decision → AI Use-Case → AI Agent → {Data Product → Domain · Semantic Model · Human-in-the-Loop},
+    Capability → Process → {Step · Decision}; Decision → AI Use-Case → AI Agent → {Data Domain → Data Product · Semantic Model · Human-in-the-Loop},
     with <span data-copy="ngIntroCdp">CDP Services supplying the data</span>. Click a node for its explanation and value.</p>
   </div>
 
@@ -251,8 +251,12 @@ function childrenOf(id){
   else if(t==="D"){ aiForDecision(id).forEach(function(u){out.push(u);}); }
   else if(t==="U"){ agentsForUC(id).forEach(function(a){out.push(a);}); cdpForUC(id).forEach(function(c){out.push(c);}); }
   else if(t==="CDP"){ dpForCDP(id).forEach(function(p){out.push(p);}); }
-  else if(t==="AG"){ var ag=agentById(id); (ag.dataProducts||[]).forEach(function(dp){out.push(dp);}); (ag.semanticModels||[]).forEach(function(sm){out.push(sm);}); if(ag.hitl)out.push("HITL::"+ag.id); }
-  else if(t==="DP"){ var dp=PACK.dpById(id); if(dp)out.push(dp.domain); }
+  else if(t==="AG"){ var ag=agentById(id); var seenDm={};
+    (ag.dataProducts||[]).forEach(function(dp){ var dpo=PACK.dpById(dp); var dm=dpo?dpo.domain:null;
+      if(dm){ if(!seenDm[dm]){seenDm[dm]=1;out.push(dm);} } else out.push(dp); });
+    (ag.semanticModels||[]).forEach(function(sm){out.push(sm);}); if(ag.hitl)out.push("HITL::"+ag.id); }
+  else if(t==="DM"){ (D.dataProducts||[]).forEach(function(p){ if(p.domain===id) out.push(p.id); }); }
+  /* DP is a leaf here — the Data Product is OWNED BY its parent Data Domain, not the reverse */
   return out;
 }
 
@@ -393,8 +397,10 @@ function sankeyData(mode, rootSHs, msel){
               procDecisions(pid).forEach(function(did){ if(!keep("dec",did))return; var deo=MAP.D[did]; node("DEC:"+did,"DEC",deo?deo.name:did); edge("PROC:"+pid,"DEC:"+did);
                 aiForDecision(did).forEach(function(u){ if(!keep("ai",u))return; var uo=MAP.AI[u]; node("U:"+u,"U",uo?uo.name:u,"Value "+ucVal(u).toFixed(1)+"/5"); edge("DEC:"+did,"U:"+u);
                   agentsForUC(u).forEach(function(agId){ if(!keep("ag",agId))return; var ago=agentById(agId); node("AG:"+agId,"AG",ago?ago.name:agId); edge("U:"+u,"AG:"+agId);
-                    (ago&&ago.dataProducts?ago.dataProducts:[]).forEach(function(dp){ if(!keep("dp",dp))return; var dpo=PACK.dpById(dp); node("DP:"+dp,"DP",dpo?dpo.name:dp); edge("AG:"+agId,"DP:"+dp);
-                      var dmId=dpo?dpo.domain:null; if(dmId && keep("dm",dmId)){ var dmo=PACK.domainById(dmId); node("DM:"+dmId,"DM",dmo?dmo.name:dmId); edge("DP:"+dp,"DM:"+dmId); }
+                    (ago&&ago.dataProducts?ago.dataProducts:[]).forEach(function(dp){ if(!keep("dp",dp))return; var dpo=PACK.dpById(dp);
+                      var dmId=dpo?dpo.domain:null; var parentKey="AG:"+agId;
+                      if(dmId && keep("dm",dmId)){ var dmo=PACK.domainById(dmId); node("DM:"+dmId,"DM",dmo?dmo.name:dmId); edge("AG:"+agId,"DM:"+dmId); parentKey="DM:"+dmId; }
+                      node("DP:"+dp,"DP",dpo?dpo.name:dp); edge(parentKey,"DP:"+dp);
                     });
                   });
                 });
@@ -440,7 +446,7 @@ function sankeyData(mode, rootSHs, msel){
 var MSEL = {};            // per level: array of chosen ids (a subset); absent = All
 var MLEVELS = [["vp","Value Proposition"],["bo","Business Outcome"],["vs","Value Stream"],["cj","Customer Journey"],
   ["vsg","Value Stage"],["cap","Capability"],["proc","Business Process"],["dec","Decision"],
-  ["ai","AI Use-Case"],["ag","AI Agent"],["dp","Data Product"],["dm","Data Domain"]];
+  ["ai","AI Use-Case"],["ag","AI Agent"],["dm","Data Domain"],["dp","Data Product"]];
 function mselRootSHs(){ var v=document.getElementById("sankeySH").value; return v?[v]:D.stakeholders.map(function(s){return s.id;}); }
 function mselSave(){ try{ localStorage.setItem("nbpack.msel", JSON.stringify(MSEL)); }catch(e){} }
 function mselSeedFromCtx(){ var c=PACK.ctx(); MSEL={}; MLEVELS.forEach(function(L){ if(c[L[0]]) MSEL[L[0]]=[c[L[0]]]; }); mselSave(); }
@@ -461,7 +467,7 @@ function mselLabel(key,id){
 }
 /* options reachable at each level given the kept parents above it */
 function mselReachable(){
-  var keys=["vp","bo","vs","cj","vsg","cap","proc","dec","ai","ag","dp","dm"];
+  var keys=["vp","bo","vs","cj","vsg","cap","proc","dec","ai","ag","dm","dp"];
   var R={}, seen={}; keys.forEach(function(k){ R[k]=[]; seen[k]={}; });
   function add(k,id){ if(id!=null && !seen[k][id]){ seen[k][id]=1; R[k].push(id); } }
   function kept(k,id){ return sankeyKeep(MSEL,k,id); }
@@ -477,8 +483,10 @@ function mselReachable(){
               procDecisions(pid).forEach(function(did){ add("dec",did); if(!kept("dec",did))return;
                 aiForDecision(did).forEach(function(u){ add("ai",u); if(!kept("ai",u))return;
                   agentsForUC(u).forEach(function(agId){ add("ag",agId); if(!kept("ag",agId))return;
-                    var ago=agentById(agId); (ago&&ago.dataProducts?ago.dataProducts:[]).forEach(function(dp){ add("dp",dp); if(!kept("dp",dp))return;
-                      var dpo=PACK.dpById(dp); if(dpo&&dpo.domain) add("dm",dpo.domain);
+                    var ago=agentById(agId); var aprods=(ago&&ago.dataProducts)?ago.dataProducts:[];
+                    var doms={}; aprods.forEach(function(dp){ var dpo=PACK.dpById(dp); if(dpo&&dpo.domain) doms[dpo.domain]=1; });
+                    Object.keys(doms).forEach(function(dm){ add("dm",dm); if(!kept("dm",dm))return;
+                      aprods.forEach(function(dp){ var dpo=PACK.dpById(dp); if(dpo&&dpo.domain===dm) add("dp",dp); });
                     }); }); }); }); }); }); }); }); }); });
   return R;
 }

@@ -644,6 +644,33 @@
     return '<p class="tight muted" style="font-size:.8rem;margin:0 0 6px">'+rules.length+' Critical Data Element quality rules are enforceable clauses of this contract, governed by the Data Quality policy (POL-DQ). The producer commits to them; a breach triggers the stated enforcement.</p>'+
       '<table class="tbl"><tr><th>Critical Data Element</th><th>Quality rule</th><th>Severity</th><th>Enforcement</th><th>Rule ID</th></tr>'+rows+'</table>';
   };
+  // consumer map — AI use-cases that consume this product, with access + criticality
+  PACK.dpConsumersHtml = function(dp){
+    var cons = (dp && dp.consumers) || [];
+    if(!cons.length) return '<div class="muted" style="font-size:.82rem">No AI use-case consumers registered.</div>';
+    function critPill(c){ var m={High:["#fee2e2","#b91c1c"],Medium:["#fef9c3","#854d0e"],Low:["#f1f5f9","#475569"]}; var x=m[c]||m.Low;
+      return '<span style="font-size:.62rem;font-weight:800;border-radius:5px;padding:1px 6px;background:'+x[0]+';color:'+x[1]+'">'+PACK.esc(c)+'</span>'; }
+    var rows = cons.map(function(c){
+      return '<tr><td>'+PACK.chip(c.uc)+'</td>'+
+        '<td>'+critPill(c.crit)+'</td><td class="muted" style="white-space:nowrap">'+PACK.esc(c.need||"—")+'</td>'+
+        '<td class="muted">'+PACK.esc(c.access||"—")+'</td><td class="mono" style="font-size:.72rem">'+PACK.esc(c.contract||"")+'</td></tr>';
+    }).join("");
+    return '<table class="tbl"><tr><th>AI use-case (consumer)</th><th>Criticality</th><th>Timeliness need</th><th>Access mode</th><th>Contract</th></tr>'+rows+'</table>';
+  };
+  // data assets that make up this product — output ports vs internal processing
+  PACK.dpAssetsHtml = function(dpId){
+    var assets = (PACK.data().dataAssets||[]).filter(function(a){return a.dp===dpId;});
+    if(!assets.length) return '';
+    var rows = assets.map(function(a){
+      var isPort = /output/i.test(a.port||"");
+      var portPill = '<span style="font-size:.62rem;font-weight:800;border-radius:5px;padding:1px 6px;background:'+(isPort?"#e0f2fe":"#f1f5f9")+';color:'+(isPort?"#075985":"#475569")+'">'+PACK.esc(a.port||"Internal")+'</span>';
+      return '<tr><td class="mono">'+PACK.esc(a.name)+'</td><td class="muted">'+PACK.esc(a.type)+' · '+PACK.esc(a.layer)+'</td>'+
+        '<td>'+portPill+'</td><td class="muted">'+PACK.esc(a.platform||"—")+'</td><td class="muted" style="white-space:nowrap">'+PACK.esc(a.refresh||"—")+'</td></tr>';
+    }).join("");
+    return '<h4>Data assets &amp; output ports</h4>'+
+      '<p class="muted tight" style="font-size:.8rem;margin:0 0 6px">The physical assets this product is built from. <strong>Output Port</strong> assets are the governed, exposed interface consumers read; <strong>Internal</strong> assets are processing-only.</p>'+
+      '<table class="tbl"><tr><th>Asset</th><th>Type · layer</th><th>Port role</th><th>Platform</th><th>Refresh</th></tr>'+rows+'</table>';
+  };
   PACK.openDataProductPanel = function(dpId){
     var k = PACK.dataContract(dpId); if(!k) return;
     var dp = k.dp, dom = k.domain;
@@ -655,7 +682,8 @@
       '<h4>Contract fundamentals</h4>'+
       '<table class="dc-kv">'+
         row("Data product","<strong>"+PACK.esc(dp.name)+"</strong> <span class=\"mono\" style=\"color:var(--accent)\">"+dp.id+"</span>")+
-        row("Domain", PACK.esc(dom.name||dp.domain))+
+        row("Owning domain", PACK.esc(dom.name||dp.domainName||dp.domain)+' <span class="muted" style="font-size:.72rem">— the domain owns this product</span>')+
+        (dp.productType?row("Product type", PACK.esc(dp.productType)):"")+
         row("Owner", "<strong>"+PACK.esc(dom.owner||"—")+"</strong>")+
         row("Steward", PACK.esc(dom.steward||"—"))+
         row("Status", '<span class="status-pill status-Agreed">Published (Generic)</span>')+
@@ -670,9 +698,17 @@
       '<div class="muted tight" style="font-size:.78rem;margin:'+((PACK.data().contractDQRules||{})[dp.id]?'10px 0 4px':'0 0 4px')+'">'+((PACK.data().contractDQRules||{})[dp.id]?'General clauses':'')+'</div>'+
       '<ul class="dc-list">'+k.quality.map(function(q){return '<li>'+PACK.esc(q)+'</li>';}).join("")+'</ul>'+
       PACK.dqScorecardHtml(dp.id)+
+      '<h4>Pipeline &amp; timeliness</h4>'+
+      '<table class="dc-kv">'+
+        row("Data refresh rate", '<strong>'+PACK.esc(dp.refresh||"—")+'</strong>')+
+        row("Pipeline mode", PACK.esc(dp.pipeline||"—"))+
+        row("Meets consumer timeliness", (dp.meetsTimeliness==="Yes"?'<span class="chip" style="background:#dcfce7;color:#166534;cursor:default">✓ Yes</span>':PACK.esc(dp.meetsTimeliness||"—")))+
+        row("Provisioning", '<span class="muted" style="font-size:.8rem">'+PACK.esc(dp.timelinessSLA||"")+'</span>')+
+      '</table>'+
+      PACK.dpAssetsHtml(dp.id)+
       '<h4>SLA / service levels</h4><table class="dc-kv">'+
-        row("Freshness",PACK.esc(k.sla.freshness||"—"))+row("Latency",PACK.esc(k.sla.latency||"—"))+
-        row("Availability",PACK.esc(k.sla.availability||"—"))+row("Update frequency",PACK.esc(k.sla.frequency||"—"))+
+        row("Freshness",PACK.esc(dp.refresh||k.sla.freshness||"—"))+row("Latency",PACK.esc(k.sla.latency||"—"))+
+        row("Availability",PACK.esc(k.sla.availability||"—"))+row("Update frequency",PACK.esc(dp.refresh||k.sla.frequency||"—"))+
         row("Retention",PACK.esc(k.sla.retention||"—"))+row("Support",PACK.esc(k.sla.support||"—"))+
       '</table>'+
       '<h4>Terms of use</h4><table class="dc-kv">'+
@@ -680,24 +716,36 @@
         row("Restrictions",PACK.esc(k.terms.restrictions))+row("Consent",PACK.esc(k.terms.consent))+
       '</table>'+
       '<h4>Producers (source systems)</h4>'+(k.sources.length?('<div class="chiprow">'+k.sources.map(function(s){return '<span class="chip term off">'+PACK.esc(s)+'</span>';}).join("")+'</div>'):'<span class="muted">—</span>')+
-      '<h4>Consumers</h4>'+
+      '<h4>Consumers <span class="muted" style="font-weight:400;font-size:.78rem">— AI use-cases consume this product; they do not define it</span></h4>'+
         (k.realisesCDP.length?('<div class="chiprow"><span class="lbl">CDP services</span>'+k.realisesCDP.map(function(s){return '<a class="chip proc" href="hyperpersonalisation_cdp.html"><span class="id">'+PACK.esc(s)+'</span></a>';}).join("")+'</div>'):'')+
-        (k.consumersAI.length?('<div class="chiprow"><span class="lbl">AI use-cases</span>'+k.consumersAI.map(function(u){return PACK.chip(u);}).join("")+'</div>'):'')+
+        PACK.dpConsumersHtml(dp)+
       '</div>';
     PACK.openPanel(dp.id, PACK.esc(dp.name)+' — Data Contract', body);
   };
+  // small pill for the pipeline refresh cadence
+  PACK.freshPill = function(refresh, meets){
+    if(!refresh) return "";
+    var fresh = /real-time|near-real/i.test(refresh);
+    var bg = fresh?"#dcfce7":"#e0f2fe", fg = fresh?"#166534":"#075985";
+    var ok = (meets==="Yes"||meets===true);
+    return '<span title="Pipeline provisioned to the strictest consumer timeliness need" '+
+      'style="display:inline-flex;align-items:center;gap:5px;font-size:.66rem;font-weight:800;border-radius:6px;padding:2px 8px;background:'+bg+';color:'+fg+'">'+
+      (ok?'⏱ ':'')+PACK.esc(refresh)+'</span>';
+  };
   /* card with a "view data contract" affordance (opens the panel) */
   PACK.dpCardHtml = function(dp){
-    var dom = PACK.domainById(dp.domain) || {name:dp.domain, owner:"—", steward:"—"};
+    var dom = PACK.domainById(dp.domain) || {name:dp.domainName||dp.domain, owner:"—", steward:"—"};
     var cdpChips = (dp.cdp||[]).map(function(s){ return '<a class="chip proc" href="hyperpersonalisation_cdp.html" onclick="event.stopPropagation()"><span class="id">'+PACK.esc(s)+'</span></a>'; }).join("");
     var aiChips  = (dp.ai||[]).map(function(u){ return PACK.chip(u).replace('<a ','<a onclick="event.stopPropagation()" '); }).join("");
+    var typePill = dp.productType?'<span class="dp-type" style="font-size:.64rem;font-weight:800;letter-spacing:.02em;color:#475569;background:#f1f5f9;border-radius:6px;padding:2px 8px">'+PACK.esc(dp.productType)+'</span>':'';
     return '<div class="dpcard dpcard-click" onclick="PACK.openDataProductPanel(\''+dp.id+'\')">'+
-      '<div class="dp-top"><span class="dp-dom" title="'+PACK.esc(dom.name)+'">'+PACK.esc(dom.name)+'</span><span class="dp-id">'+PACK.esc(dp.id)+'</span></div>'+
+      '<div class="dp-top"><span class="dp-dom" title="Owned by '+PACK.esc(dom.name)+'">'+PACK.esc(dom.name)+'</span><span class="dp-id">'+PACK.esc(dp.id)+'</span></div>'+
       '<div class="dp-name">'+PACK.esc(dp.name)+'</div>'+
       '<p class="dp-desc">'+PACK.esc(dp.desc)+'</p>'+
+      ((typePill||dp.refresh)?'<div class="chiprow" style="gap:6px;margin:2px 0 8px">'+typePill+PACK.freshPill(dp.refresh,dp.meetsTimeliness)+(dp.pipeline?'<span class="muted" style="font-size:.7rem">'+PACK.esc(dp.pipeline)+'</span>':'')+'</div>':'')+
       '<div class="dp-owner"><span>Owner: <b>'+PACK.esc(dom.owner)+'</b></span><span>Steward: <b>'+PACK.esc(dom.steward)+'</b></span></div>'+
       (cdpChips?'<div class="chiprow"><span class="lbl">'+PACK.copyText("dpRealisesCdp","Realises CDP")+'</span>'+cdpChips+'</div>':'')+
-      (aiChips?'<div class="chiprow"><span class="lbl">Serves AI</span>'+aiChips+'</div>':'')+
+      (aiChips?'<div class="chiprow"><span class="lbl">Consumed by</span>'+aiChips+'</div>':'')+
       (dp.terms&&dp.terms.length?PACK.termChips(dp.terms,"Terms"):'')+
       '<div class="dp-view">View data contract ›</div>'+
     '</div>';

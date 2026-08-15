@@ -108,8 +108,29 @@
   set("semanticModels", recs("16 ·").map(function(r){ return {id:r.SemanticModelID,name:r.Name,def:r.Definition,terms:L(r.GovernedTerms)}; }));
   set("cdpServices", recs("17 ·").map(function(r){ return {id:r.CDPServiceID,name:r.Name,desc:r.Description}; }));
 
+  /* ---- domain-first ownership: the Data Domain OWNS its Data Products.
+     The product no longer carries a DomainID foreign key (which used to render
+     the domain "under" the product); its owning domain is derived here from the
+     domain's product list (SSOT) — MECE, one product one domain. -------- */
+  var dpToDom={};                                   // dpid -> owning domain id
+  recs("19 ·").forEach(function(r){ L(r.DataProducts).forEach(function(dp){ dpToDom[dp]=r.DataDomainID; }); });
+
+  /* consumer map (sheet 38): AI use-cases are CONSUMERS of data products,
+     not fields on the product. Group by product. --------------------------- */
+  var dpConsumers={};                               // dpid -> [{uc,purpose,access,crit,need,contract,status}]
+  recs("189 ·").forEach(function(r){ (dpConsumers[r.DataProductID]=dpConsumers[r.DataProductID]||[]).push(
+    {uc:r.AIUseCaseID, purpose:r.ConsumptionPurpose, access:r.AccessMode, crit:r.Criticality,
+     need:r.TimelinessNeed, contract:r.ContractID, status:r.ApprovalStatus}); });
+
   /* ---- data products (merge keep terms) + data contract overlay ------- */
-  var dpD=recs("18 ·").map(function(r){ return {id:r.DataProductID,name:r.Name,domain:r.DomainID,desc:r.Description,cdp:L(r.RealisesCDP),ai:L(r.ServesAIUseCases)}; });
+  var dpD=recs("18 ·").map(function(r){
+    var cons=dpConsumers[r.DataProductID]||[];
+    return {id:r.DataProductID,name:r.Name,domain:dpToDom[r.DataProductID]||"",domainName:r.Domain,
+      desc:r.Description,cdp:L(r.RealisesCDP),
+      ai:cons.map(function(c){return c.uc;}),
+      consumers:cons,
+      productType:r.ProductType, refresh:r.DataRefreshRate, pipeline:r.PipelineMode,
+      timelinessSLA:r.TimelinessSLA, meetsTimeliness:r.MeetsTimeliness}; });
   if(dpD.length) G.dataProducts=mergeKeep(G.dataProducts, dpD, ["terms"]);
   G.dataContracts=G.dataContracts||{};
   recs("18 ·").forEach(function(r){ var b=G.dataContracts[r.DataProductID]||{};
@@ -117,7 +138,7 @@
     G.dataContracts[r.DataProductID]=Object.assign({}, b, {purpose:(r.Description||b.purpose), classification:r.Classification||b.classification, sources:(L(r.Producers).length?L(r.Producers):b.sources), schema:(schema.length?schema:b.schema)}); });
 
   /* ---- data domains / ownership roles --------------------------------- */
-  set("dataDomains", recs("19 ·").map(function(r){ return {id:r.DataDomainID,name:r.Name,owner:r.Owner,steward:r.Steward,def:r.Definition}; }));
+  set("dataDomains", recs("19 ·").map(function(r){ return {id:r.DataDomainID,name:r.Name,owner:r.Owner,steward:r.Steward,def:r.Definition,products:L(r.DataProducts)}; }));
   set("ownershipRoles", recs("20 ·").map(function(r){ return {id:r.RoleID,name:r.RoleName,accountableFor:r.AccountableFor,owns:r.OwnsObjects,collaborators:r.KeyCollaborators}; }));
 
   /* ---- governance layer ----------------------------------------------- */
@@ -152,7 +173,7 @@
   set("modelCards", recs("73 ·").map(function(r){ return {id:r.ModelCardID,uc:r.UseCaseID,use:r.IntendedUse,limits:r.Limitations,metrics:r.Metrics,fairness:r.FairnessNotes,monitoring:r.MonitoringPlanID}; }));
   set("promptRegister", recs("74 ·").map(function(r){ return {id:r.PromptID,agent:r.AgentID,purpose:r.PromptPurpose,version:r.Version,status:r.ApprovalStatus,records:r.RecordsClassID}; }));
   set("aiDecisionLog", recs("75 ·").map(function(r){ return {id:r.DecisionLogID,uc:r.UseCaseID,segment:r.CustomerSegment,output:r.DecisionOutput,override:B(r.HumanOverride),ts:r.Timestamp,evidence:r.EvidenceID}; }));
-  set("dataAssets", recs("98 ·").map(function(r){ return {id:r.DataAssetID,dp:r.DataProductID,name:r.AssetName,type:r.AssetType,layer:r.Layer,platform:r.StoragePlatformID,format:r.Format,pii:B(r.PII),owner:r.Owner}; }));
+  set("dataAssets", recs("98 ·").map(function(r){ return {id:r.DataAssetID,dp:r.DataProductID,name:r.AssetName,type:r.AssetType,layer:r.Layer,platform:r.StoragePlatformID,format:r.Format,pii:B(r.PII),owner:r.Owner,port:r.PortRole,refresh:r.RefreshRate}; }));
   set("storagePlatforms", recs("99 ·").map(function(r){ return {id:r.StoragePlatformID,name:r.Name,type:r.PlatformType,zone:r.Zone,region:r.Region,owner:r.Owner,notes:r.Notes}; }));
 
   /* ---- Policy-as-Code layer ------------------------------------------- */

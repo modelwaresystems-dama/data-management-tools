@@ -83,6 +83,12 @@
   if(Object.keys(jm).length) G.journeyMeta=jm;
   var jvs={}; recs("26 ·").forEach(function(r){ jvs[r.JourneyStageID]=r.ValueStageID; });
   if(Object.keys(jvs).length) G.journeyStageValueStage=jvs;
+  // journey -> the value streams it traverses (many-to-many), so the Navigator
+  // can reach a journey from every value stream it runs through, not just its
+  // single primary stream.
+  var jvsStreams={}; recs("26 ·").forEach(function(r){ if(!r.ValueStreamID) return;
+    (jvsStreams[r.JourneyID]=jvsStreams[r.JourneyID]||[]); if(jvsStreams[r.JourneyID].indexOf(r.ValueStreamID)<0) jvsStreams[r.JourneyID].push(r.ValueStreamID); });
+  if(Object.keys(jvsStreams).length) G.journeyValueStreams=jvsStreams;
   set("cxJourneys", recs("9 ·").map(function(r){ return {id:r.CXJourneyID,crJourney:r.RelatedCRJourneyID,name:r.Name,focus:r.ExperienceFocus,moment:r.MomentOfTruth,touchpoints:r.PrimaryTouchpoints}; }));
 
   /* ---- value propositions (with derived stakeholders[] + journeys[]) --- */

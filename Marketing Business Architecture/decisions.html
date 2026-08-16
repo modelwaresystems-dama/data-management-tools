@@ -146,7 +146,14 @@ function usage(decId){
   var extra = dr ? (dr.supportUseCases||[]).map(function(uid){return MAP.AI[uid];}).filter(Boolean) : [];
   var seen={}, all=[];
   ai.concat(extra).forEach(function(u){ if(u && !seen[u.id]){ seen[u.id]=1; all.push(u); } });
-  return {js:js, ai:all};
+  // business processes that make this decision — a process whose steps carry it,
+  // or that lists it in its process→decision set.
+  var pd = D.processDecisions||{};
+  var stepProcs={}; (D.processSteps||[]).forEach(function(s){ if(s.decision===decId) stepProcs[s.process]=1; });
+  var procs = (D.processes||[]).filter(function(p){
+    return (pd[p.id]||[]).indexOf(decId)>=0 || stepProcs[p.id];
+  });
+  return {js:js, ai:all, procs:procs};
 }
 // Agentic AI decision support — every decision can be supported by an agent,
 // with a human-in-the-loop posture that scales with the decision's stakes.
@@ -346,9 +353,13 @@ window.sel = function(id){
   renderAgentic(id);
   renderCDE(id);
   var u = usage(id);
+  var procChips = u.procs.length ? '<div class="chiprow">'+u.procs.map(function(p){
+      return '<a class="chip" href="business_process.html#'+PACK.esc(p.id)+'"><span class="id">'+PACK.esc(p.id)+'</span>'+PACK.esc(p.name)+'</a>'; }).join("")+'</div>' : '<span class="muted">—</span>';
   document.getElementById("related").innerHTML =
     '<h3 style="margin-top:0">Where this decision is used</h3>'+
-    '<h4 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)">Customer journeys</h4>'+
+    '<h4 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)">Business processes</h4>'+
+    procChips+
+    '<h4 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-top:12px">Customer journeys</h4>'+
     (u.js.length?PACK.chips(u.js.map(function(j){return j.id;})):'<span class="muted">—</span>')+
     '<h4 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-top:12px">AI use-cases</h4>'+
     (u.ai.length?PACK.chips(u.ai.map(function(a){return a.id;})):'<span class="muted">—</span>');

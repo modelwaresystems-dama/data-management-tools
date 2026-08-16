@@ -55,17 +55,20 @@
   var crj=recs("8 ·");
   var journeys=[];
   crj.forEach(function(j){
-    var base=baseJById[j.CRJourneyID]; if(!base) return;            // only journeys that exist in base (the 4 customer LOB journeys)
-    var perName=perById[j.PersonaID]?perById[j.PersonaID].PersonaName:base.persona;
+    var base=baseJById[j.CRJourneyID]||null;                        // base overlay (NB/AGGPSA); may be absent for a new tenant
     var srows=jsRows.filter(function(s){return s.JourneyID===j.CRJourneyID;}).sort(function(a,b){return (N(a.StageNo)||0)-(N(b.StageNo)||0);});
-    var stages=srows.map(function(s,i){ var jsid=s.JourneyStageID, bs=(base.stages||[])[i]||{};
+    // keep only journeys that have a base overlay OR sheet-defined stages (so a new tenant's journeys aren't dropped)
+    if(!base && !srows.length) return;
+    var perName=perById[j.PersonaID]?perById[j.PersonaID].PersonaName:(base?base.persona:j.PersonaID);
+    var baseStages=(base&&base.stages)||[];
+    var stages=srows.map(function(s,i){ var jsid=s.JourneyStageID, bs=baseStages[i]||{};
       return { stage:s.StageName, emotion:N(s.ExperienceScore), touchpoints:s.Touchpoints,
         kpis:(bs.kpis&&bs.kpis.length)?bs.kpis:L(s.StageMetrics),
         capabilities:(capMap[jsid]||bs.capabilities||[]),
         processes:(procMap[jsid]||bs.processes||[]),
         decisions:(bs.decisions||[]) };
     });
-    journeys.push({id:j.CRJourneyID, lob:j.LineOfBusiness, name:j.Name, persona:perName, stages:stages.length?stages:(base.stages||[])});
+    journeys.push({id:j.CRJourneyID, lob:j.LineOfBusiness, name:j.Name, persona:perName, stages:stages.length?stages:baseStages});
   });
   set("journeys", journeys);
 

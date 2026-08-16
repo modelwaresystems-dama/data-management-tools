@@ -52,6 +52,10 @@
   var capMap={}, procMap={};
   recs("28 ·").forEach(function(r){ (capMap[r.JourneyStageID]=capMap[r.JourneyStageID]||[]).push(r.CapabilityID); });
   recs("29 ·").forEach(function(r){ (procMap[r.JourneyStageID]=procMap[r.JourneyStageID]||[]).push(r.ProcessID); });
+  // process -> decisions (from sheet 12), so a stage's decisions can be derived
+  // from the processes it operationalises when no base overlay supplies them.
+  var procDecMap={}; recs("12 ·").forEach(function(r){ procDecMap[r.ProcessID]=L(r.Decisions); });
+  function decsForProcesses(pids){ var seen={},out=[]; (pids||[]).forEach(function(pid){ (procDecMap[pid]||[]).forEach(function(d){ if(d&&!seen[d]){ seen[d]=1; out.push(d); } }); }); return out; }
   var crj=recs("8 ·");
   var journeys=[];
   crj.forEach(function(j){
@@ -62,11 +66,13 @@
     var perName=perById[j.PersonaID]?perById[j.PersonaID].PersonaName:(base?base.persona:j.PersonaID);
     var baseStages=(base&&base.stages)||[];
     var stages=srows.map(function(s,i){ var jsid=s.JourneyStageID, bs=baseStages[i]||{};
+      var stProcs=(procMap[jsid]||bs.processes||[]);
+      var stDecs=(bs.decisions&&bs.decisions.length)?bs.decisions:decsForProcesses(stProcs);
       return { stage:s.StageName, emotion:N(s.ExperienceScore), touchpoints:s.Touchpoints,
         kpis:(bs.kpis&&bs.kpis.length)?bs.kpis:L(s.StageMetrics),
         capabilities:(capMap[jsid]||bs.capabilities||[]),
-        processes:(procMap[jsid]||bs.processes||[]),
-        decisions:(bs.decisions||[]) };
+        processes:stProcs,
+        decisions:stDecs };
     });
     journeys.push({id:j.CRJourneyID, lob:j.LineOfBusiness, name:j.Name, persona:perName, stages:stages.length?stages:baseStages});
   });
@@ -322,6 +328,47 @@
   if(Object.keys(decA).length) G.decisionAssessment=decA;
   var decF={}; recs("161 ·").forEach(function(r){ (decF[r.DecisionID]=decF[r.DecisionID]||[]).push({cde:r.CDEID,name:r.CDEName,tier:r.Criticality,expectation:r.Expectation,dim:r.WorstDimension,measured:r.MeasuredScore,target:r.DimensionTarget,status:r.Status,dp:r.SupplyingDataProduct,dpRag:r.DPScorecardRAG,issue:r.Issue}); });
   if(Object.keys(decF).length) G.decisionCDEFitness=decF;
+
+  /* ---- Business-operations process structure (spec-derived) ---------- */
+  // Core process flow + core actors (business-operations value chain)
+  set("coreProcessFlow", recs("200 ·").map(function(r){ return {seq:N(r.Seq),phase:r.Phase,desc:r.Description,narrative:r.FlowNarrative}; }));
+  set("coreActors", recs("201 ·").map(function(r){ return {id:r.ActorID,actor:r.Actor,type:r.ActorType,role:r.MappedRoleID,responsibility:r.Responsibility}; }));
+  // per-process structural elements, grouped by process id
+  function _group(sheet, key, mapfn){ var o={}; recs(sheet).forEach(function(r){ (o[r[key]]=o[r[key]]||[]).push(mapfn(r)); }); return o; }
+  var _pact=_group("202 ·","ProcessID",function(r){ return {actor:r.Actor,raci:r.RACIRole,type:r.ActorType,role:r.MappedRoleID}; });
+  if(Object.keys(_pact).length) G.processActors=_pact;
+  var _pic=_group("203 ·","ProcessID",function(r){ return {item:r.InformationItem,concept:r.MappedConceptID}; });
+  if(Object.keys(_pic).length) G.processInfoItems=_pic;
+  var _pmf=_group("204 ·","ProcessID",function(r){ return {no:N(r.StepNo),step:r.Step}; });
+  if(Object.keys(_pmf).length) G.processMainFlow=_pmf;
+  var _paf=_group("205 ·","ProcessID",function(r){ return {no:N(r.StepNo),step:r.ExceptionStep}; });
+  if(Object.keys(_paf).length) G.processAltFlow=_paf;
+  var _pbr=_group("206 ·","ProcessID",function(r){ return {rule:r.BusinessRule,ruleId:r.MappedRuleID}; });
+  if(Object.keys(_pbr).length) G.processBusinessRules=_pbr;
+  var _pev={}; recs("207 ·").forEach(function(r){ _pev[r.ProcessID]=r.Output; });
+  if(Object.keys(_pev).length) G.processEvidence=_pev;
+  var _psr={}; recs("208 ·").forEach(function(r){ _psr[r.ProcessID]=r.SystemRequirement; });
+  if(Object.keys(_psr).length) G.processSystemReq=_psr;
+  set("businessRuleRegister", recs("209 ·").map(function(r){ return {id:r.RuleID,rule:r.Rule,requirement:r.Requirement}; }));
+  set("processCatalogue", recs("210 ·").map(function(r){ return {id:r.ProcessID,specId:r.SpecID,name:r.Name,phase:r.Phase,owner:r.Owner,trigger:r.Trigger}; }));
+  var _pca={}; recs("210 ·").forEach(function(r){ _pca[r.ProcessID]={phase:r.Phase,owner:r.Owner,trigger:r.Trigger,specId:r.SpecID}; });
+  if(Object.keys(_pca).length) G.processMeta=_pca;
+
+  /* ---- Operational Business Policies + Policy Controls (Guidelines/Tips) ---- */
+  set("businessPolicies", recs("211 ·").map(function(r){ return {id:r.PolicyID,name:r.Name,area:r.Area,owner:r.OwnerRole,purpose:r.Purpose}; }));
+  set("businessPolicyControls", recs("212 ·").map(function(r){ return {id:r.ControlID,policy:r.PolicyID,policyName:r.PolicyName,name:r.ControlName,objective:r.Objective,guideline:r.Guideline,tip:r.Tip,rule:r.BusinessRuleID,requirement:r.RuleRequirement,decision:r.GovernsDecisionID,decisionName:r.DecisionName,processes:L(r.Processes),owner:r.OwnerRole,evidence:r.Evidence}; }));
+  // by-decision and by-process indexes for cross-linking on other pages
+  var _ctlByDec={}, _ctlByProc={};
+  recs("212 ·").forEach(function(r){
+    if(r.GovernsDecisionID) _ctlByDec[r.GovernsDecisionID]=r.ControlID;
+    L(r.Processes).forEach(function(p){ (_ctlByProc[p]=_ctlByProc[p]||[]).push(r.ControlID); });
+  });
+  if(Object.keys(_ctlByDec).length) G.controlByDecision=_ctlByDec;
+  if(Object.keys(_ctlByProc).length) G.controlsByProcess=_ctlByProc;
+  // business-rule -> decision + control cross-reference
+  set("ruleDecisionControl", recs("213 ·").map(function(r){ return {rule:r.BusinessRuleID,ruleText:r.Rule,decision:r.DecisionID,decisionName:r.DecisionName,control:r.ControlID,policy:r.PolicyID}; }));
+  var _rdc={}; recs("213 ·").forEach(function(r){ _rdc[r.BusinessRuleID]={decision:r.DecisionID,decisionName:r.DecisionName,control:r.ControlID,policy:r.PolicyID}; });
+  if(Object.keys(_rdc).length) G.ruleDecisionControlByRule=_rdc;
 
   W.NB_HYDRATED=true; try{ W.PACK && (W.PACK._hydrated=true); }catch(e){}
 })();

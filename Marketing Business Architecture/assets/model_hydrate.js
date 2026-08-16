@@ -356,6 +356,12 @@
   var _psr={}; recs("208 ·").forEach(function(r){ _psr[r.ProcessID]=r.SystemRequirement; });
   if(Object.keys(_psr).length) G.processSystemReq=_psr;
   set("businessRuleRegister", recs("209 ·").map(function(r){ return {id:r.RuleID,rule:r.Rule,requirement:r.Requirement}; }));
+  // Business Outcome -> Value Stream (framework spine link), so a process resolves
+  // upstream to the outcomes it serves via Process→Capability→ValueStream→Outcome.
+  var _ovs={}, _vso={}; recs("214 ·").forEach(function(r){
+    (_ovs[r.OutcomeID]=_ovs[r.OutcomeID]||[]).push(r.ValueStreamID);
+    (_vso[r.ValueStreamID]=_vso[r.ValueStreamID]||[]).push(r.OutcomeID); });
+  if(Object.keys(_ovs).length){ G.outcomeValueStreams=_ovs; G.valueStreamOutcomes=_vso; }
   set("processCatalogue", recs("210 ·").map(function(r){ return {id:r.ProcessID,specId:r.SpecID,name:r.Name,phase:r.Phase,owner:r.Owner,trigger:r.Trigger}; }));
   var _pca={}; recs("210 ·").forEach(function(r){ _pca[r.ProcessID]={phase:r.Phase,owner:r.Owner,trigger:r.Trigger,specId:r.SpecID}; });
   if(Object.keys(_pca).length) G.processMeta=_pca;

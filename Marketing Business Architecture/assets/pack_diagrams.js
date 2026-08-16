@@ -169,35 +169,25 @@
   // Human (H) and Data-Support (DS) steps stay in their department (business
   // operations) lane; HITL decision gateways go to the Human review lane.
   var BPMN_AI_TYPES={A:1,AIS:1,AIE:1};
-  // Departments (actors) the steps can belong to. The step text usually names the
-  // actor ("Marketing identifies…", "Admin generates invoice…", "Sales confirms…"),
-  // which lets a cross-functional process show a lane per department even though
-  // the process carries a single owning RoleLane.
+  // Detect the actor a step names ("Marketing identifies…", "Admin generates…").
   var BPMN_DEPT_KW=[["marketing","Marketing"],["sales","Sales"],["admin","Admin"],
     ["management","Management"],["trainer","Trainer"],["finance","Finance"],["power bi","Power BI"],
     ["coach","Career Coach"],["curriculum","Curriculum"],["content qa","Content QA"],["partner","Partner"]];
-  function stepDept(s){
+  function bpmnDetectDept(s){
     var t=(s.name||"").toLowerCase(), best=null, bi=1e9;
     BPMN_DEPT_KW.forEach(function(kw){ var p=t.indexOf(kw[0]); if(p>=0&&p<bi){bi=p;best=kw[1];} });
-    return best || s.lane || "Business operations";
+    return best;
   }
-  function stepLaneKey(s){
-    if(BPMN_AI_TYPES[s.execType||""]) return "__ai";
-    return "dept:"+stepDept(s);
-  }
-  // Build the swimlane list for a specific process: one lane per department that
-  // performs a business-operations step, then AI / Automation, then Human review.
-  function bpmnLanesFor(steps){
-    var order=[], seen={}, shade=["#eef4fb","#e9f0f9"], si=0;
-    steps.forEach(function(s){
-      if(BPMN_AI_TYPES[s.execType||""]) return;
-      var d=stepDept(s);
-      if(!seen[d]){ seen[d]=1; order.push({key:"dept:"+d,name:d,fill:shade[si++%2],kind:"dept"}); }
-    });
-    if(!order.length) order.push({key:"dept:Business operations",name:"Business operations",fill:"#eef4fb",kind:"dept"});
-    order.push({key:"__ai",name:"AI / Automation",fill:"#f2ecfb",kind:"ai"});
-    order.push({key:"__human",name:"Human review & approval",fill:"#fff7ec",kind:"human"});
-    return order;
+  // Normalise an actor / role-lane name to a canonical department label.
+  var BPMN_DEPT_NORM={"trainers":"Trainer","trainer":"Trainer","power bi / reporting":"Power BI","power bi":"Power BI",
+    "administration":"Admin","admin":"Admin","management":"Management","chief executive officer":"Management",
+    "sales":"Sales","marketing":"Marketing","finance":"Finance","content qa":"Content QA","curriculum":"Curriculum",
+    "partner":"Partner","partner channel manager":"Partner","career coach":"Career Coach","coach":"Career Coach",
+    "data":"Data","strategy":"Strategy","social":"Social","platform":"Platform","digital media":"Digital"};
+  function bpmnNormDept(name){
+    var t=(name||"").trim().toLowerCase();
+    if(BPMN_DEPT_NORM[t]) return BPMN_DEPT_NORM[t];
+    return name ? name.replace(/\b\w/g,function(c){return c.toUpperCase();}) : "Business operations";
   }
   /* ---- DMN Decision Requirements Diagram (SVG) --------------------------- */
   PACK.renderDMN = function(host, dr, opts){
@@ -275,10 +265,32 @@
     steps=(steps||[]).slice().sort(function(a,b){return a.seq-b.seq;});
     if(!steps.length){ host.innerHTML='<p class="muted">No step-level flow recorded for this process.</p>'; return; }
     opts=opts||{};
-    var LANES=bpmnLanesFor(steps);
-    var leftW=150, colW=172, laneH=88, topPad=30, nodeW=132, nodeH=46, startGap=48;
+    // ---- swimlanes from the FULL actor map (every touchpoint), not just the
+    // actors named in step text. Internal actors (Responsible first, then
+    // Supporting) each get a lane; external / system actors become touchpoints. --
+    var actors=opts.actors||[];
+    var deptOrder=[], deptSeen={};
+    function addDept(name){ var d=bpmnNormDept(name); if(d && !deptSeen[d]){ deptSeen[d]=1; deptOrder.push(d); } }
+    actors.filter(function(a){return a.type==="Internal"&&a.raci==="Responsible";}).forEach(function(a){addDept(a.actor);});
+    actors.filter(function(a){return a.type==="Internal"&&a.raci!=="Responsible";}).forEach(function(a){addDept(a.actor);});
+    // include any actor a step names but the map didn't list (safety)
+    steps.forEach(function(s){ if(BPMN_AI_TYPES[s.execType||""])return; var d=bpmnDetectDept(s); if(d)addDept(d); else addDept(s.lane); });
+    if(!deptOrder.length) deptOrder.push("Business operations");
+    var responsibleDept=deptOrder[0], laneSet={}; deptOrder.forEach(function(d){laneSet[d]=1;});
+    function laneKeyOf(s){
+      if(BPMN_AI_TYPES[s.execType||""]) return "__ai";
+      var d=bpmnDetectDept(s); if(!(d&&laneSet[d])){ var rl=bpmnNormDept(s.lane||""); d=laneSet[rl]?rl:responsibleDept; }
+      return "dept:"+d;
+    }
+    var laneHasStep={}; steps.forEach(function(s){ laneHasStep[laneKeyOf(s)]=1; });
+    var shade=["#eef4fb","#e9f0f9"];
+    var LANES=deptOrder.map(function(d,i){ return {key:"dept:"+d,name:d,fill:shade[i%2],kind:"dept",empty:!laneHasStep["dept:"+d]}; });
+    LANES.push({key:"__ai",name:"AI / Automation",fill:"#f2ecfb",kind:"ai",empty:!laneHasStep["__ai"]});
+    LANES.push({key:"__human",name:"Human review & approval",fill:"#fff7ec",kind:"human"});
+    var externals=[], exSeen={};
+    actors.filter(function(a){return a.type!=="Internal";}).forEach(function(a){ if(!exSeen[a.actor]){exSeen[a.actor]=1; externals.push(a);} });
+    var leftW=150, colW=172, laneH=84, topPad=30, nodeW=132, nodeH=46, startGap=48;
     var laneIdx={}; LANES.forEach(function(l,i){laneIdx[l.key]=i;});
-    function laneY(key){ return (key in laneIdx) ? key : "dept:Business operations"; }
     var n=steps.length;
     var W=leftW+startGap+(n+1)*colW, H=topPad+LANES.length*laneH+16;
     function cx(i){ return leftW+startGap+colW*i+colW/2; }
@@ -292,11 +304,13 @@
       parts.push('<rect x="0" y="'+y+'" width="'+leftW+'" height="'+laneH+'" fill="'+(l.kind==="ai"?"#4c2f7a":(l.kind==="human"?"#8a5a1a":"#16305a"))+'"/>');
       var ll=wrap2(l.name, 15);
       parts.push('<text x="'+(leftW/2)+'" y="'+(y+laneH/2)+'" fill="#fff" font-size="10.5" font-weight="700" text-anchor="middle"><tspan x="'+(leftW/2)+'" dy="'+(ll.length>1?-4:3)+'">'+svgEsc(ll[0])+'</tspan>'+(ll[1]?'<tspan x="'+(leftW/2)+'" dy="13">'+svgEsc(ll[1])+'</tspan>':'')+'</text>');
+      // a participating actor with no performed step is a supporting touchpoint
+      if(l.empty && l.kind==="dept") parts.push('<text x="'+(leftW+14)+'" y="'+(y+laneH/2+3)+'" font-size="9" font-style="italic" fill="#8595a8">Supports · consulted (no performed step)</text>');
     });
     parts.push('<rect x="0" y="'+topPad+'" width="'+W+'" height="'+(LANES.length*laneH)+'" fill="none" stroke="#c9d6e6"/>');
     parts.push('<text x="'+leftW+'" y="18" fill="#16305a" font-size="12" font-weight="700">'+svgEsc((opts.title||"Process")+" — BPMN 2.0 lifecycle")+'</text>');
     // flow: start -> nodes (with gateways on decision steps) -> end
-    var startX=leftW+22, startY=ly(stepLaneKey(steps[0]));
+    var startX=leftW+22, startY=ly(laneKeyOf(steps[0]));
     var prevX=startX, prevY=startY;
     function connector(x1,y1,x2,y2,label,color){
       var midx=(x1+x2)/2;
@@ -309,7 +323,7 @@
     parts.push('<circle cx="'+startX+'" cy="'+startY+'" r="13" fill="#fff" stroke="#2f6a3f" stroke-width="2"/>');
     parts.push('<text x="'+startX+'" y="'+(startY+26)+'" font-size="8.5" fill="#5b6b7f" text-anchor="middle">start</text>');
     steps.forEach(function(s,i){
-      var x=cx(i), y=ly(stepLaneKey(s));
+      var x=cx(i), y=ly(laneKeyOf(s));
       // connector from prev to this node's left edge
       connector(prevX, prevY, x-nodeW/2, y);
       // node — coloured by execution type (H / A / AIS / AIE / DS)
@@ -329,8 +343,19 @@
       if(s.decision){
         var gx=x+nodeW/2+(colW-nodeW)/2, gy=s.hitl?ly("__human"):y, r=13;
         connector(prevX, prevY, gx-r, gy);
+        // clickable → the decision's DMN. Input-data + knowledge annotations
+        // sit just above the gateway so the decision's inputs & knowledge show
+        // at the point the process makes it.
+        parts.push('<a href="decisions.html#'+svgEsc(s.decision)+'"><title>'+svgEsc(s.decision+(s.decisionInput?" · inputs: "+s.decisionInput:""))+'</title>');
+        if(s.decisionInput){
+          var dtxt=wrap2(s.decisionInput,26);
+          parts.push('<rect x="'+(gx-46)+'" y="'+(gy-r-30)+'" width="92" height="21" rx="10.5" fill="#eef1f4" stroke="#9aa8b8" stroke-width="0.9"/>');
+          parts.push('<text x="'+gx+'" y="'+(gy-r-16)+'" font-size="6.6" fill="#3a4a5c" text-anchor="middle">'+svgEsc((dtxt[0]||"").slice(0,22))+'</text>');
+          parts.push('<line x1="'+gx+'" y1="'+(gy-r-9)+'" x2="'+gx+'" y2="'+(gy-r)+'" stroke="#9aa8b8" stroke-width="0.8" stroke-dasharray="2 2"/>');
+        }
         parts.push('<path d="M '+gx+' '+(gy-r)+' L '+(gx+r)+' '+gy+' L '+gx+' '+(gy+r)+' L '+(gx-r)+' '+gy+' Z" fill="#fdf1cf" stroke="#c99700" stroke-width="1.4"/>');
         parts.push('<text x="'+gx+'" y="'+(gy+1)+'" font-size="8" fill="#8a6d1a" text-anchor="middle" font-weight="700">'+svgEsc(s.decision)+'</text>');
+        parts.push('</a>');
         if(s.hitl) parts.push('<text x="'+gx+'" y="'+(gy+r+10)+'" font-size="7.5" fill="#b91c1c" text-anchor="middle" font-weight="700">HITL</text>');
         prevX=gx+r; prevY=gy;
       }
@@ -341,7 +366,18 @@
     parts.push('<circle cx="'+endX+'" cy="'+endY+'" r="13" fill="#fff" stroke="#2f6a3f" stroke-width="3"/>');
     parts.push('<text x="'+endX+'" y="'+(endY+26)+'" font-size="8.5" fill="#5b6b7f" text-anchor="middle">end</text>');
     parts.push('</svg>');
+    // external / system touchpoints the process interacts with (message flows)
+    var tpBand="";
+    if(externals.length){
+      tpBand='<div style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:.78rem">'+
+        '<span style="font-weight:700;color:#475569">External / system touchpoints:</span>'+
+        externals.map(function(a){ var sys=a.type==="System";
+          return '<span style="display:inline-flex;align-items:center;gap:5px;background:'+(sys?"#e2e8f0":"#fef3c7")+';color:'+(sys?"#334155":"#92400e")+';border-radius:20px;padding:3px 11px">'+
+            '<b style="font-size:.6rem;text-transform:uppercase;letter-spacing:.03em;opacity:.7">'+(sys?"system":"external")+'</b>'+svgEsc(a.actor)+'</span>'; }).join("")+
+        '</div>';
+    }
     host.innerHTML='<div style="overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:6px">'+parts.join("")+'</div>'+
+      tpBand+
       '<div class="maplegend" style="margin-top:8px"><span>◯ start / end</span><span><i style="background:#e0e7ff;border:1px solid #4f46e5"></i>H · Human</span><span><i style="background:#dcfce7;border:1px solid #16a34a"></i>A · Automated</span><span><i style="background:#fef9c3;border:1px solid #ca8a04"></i>AIS · AI-Supported</span><span><i style="background:#fae8ff;border:1px solid #c026d3"></i>AIE · AI-Executed</span><span><i style="background:#e2e8f0;border:1px solid #64748b"></i>DS · Data Support</span><span><i style="background:#fdf1cf;border:1px solid #c99700"></i>decision gateway</span><span style="color:#b91c1c">HITL = human-in-the-loop</span></div>';
   };
 })();

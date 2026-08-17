@@ -1017,3 +1017,115 @@
   else start();
   PACK.setTermHighlight=function(on){ try{ window.localStorage.setItem("nbpack.termHighlight", on?"on":"off"); }catch(e){} if(!on){ location.reload(); } else if(!started){ start(); } };
 })();
+
+/* ============================================================================
+   Diagram zoom / lightbox — makes every SVG diagram (BPMN, DMN/DRD, capability
+   and value maps, process landscape) clickable to open full-screen with wheel /
+   button zoom and drag-to-pan. Dependency-free; installed once for all pages.
+   ========================================================================== */
+(function(){
+  var PACK=window.PACK; if(!PACK||PACK._dgmZoom) return; PACK._dgmZoom=true;
+  function ready(fn){ if(document.body) fn(); else document.addEventListener("DOMContentLoaded",fn); }
+  ready(function(){
+    var st=document.createElement("style");
+    st.textContent=
+      ".dgm-badge{position:absolute;top:8px;right:10px;z-index:6;display:inline-flex;gap:5px;align-items:center;"+
+      "background:#16305a;color:#fff;border:none;border-radius:16px;padding:4px 11px;font-size:.72rem;font-weight:700;"+
+      "cursor:pointer;opacity:.82;box-shadow:0 1px 4px rgba(0,0,0,.2)}.dgm-badge:hover{opacity:1}"+
+      ".dgm-modal{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.9);display:none;flex-direction:column}"+
+      ".dgm-modal.open{display:flex}.dgm-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;color:#fff;flex-wrap:wrap}"+
+      ".dgm-bar .t{font-weight:700;font-size:.95rem;margin-right:auto;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
+      ".dgm-btn{background:#243b63;color:#fff;border:1px solid #3a527e;border-radius:8px;padding:6px 11px;font-size:.85rem;cursor:pointer;font-weight:600}"+
+      ".dgm-btn:hover{background:#2f4a78}.dgm-hint{color:#9fb2cf;font-size:.75rem;margin-right:8px}"+
+      ".dgm-stage{flex:1;overflow:hidden;position:relative;cursor:grab;touch-action:none}.dgm-stage.grabbing{cursor:grabbing}"+
+      ".dgm-canvas{position:absolute;left:0;top:0;transform-origin:0 0}"+
+      ".dgm-canvas svg{display:block;background:#fff;border-radius:8px;box-shadow:0 6px 30px rgba(0,0,0,.4)}";
+    document.head.appendChild(st);
+
+    var modal=document.createElement("div"); modal.className="dgm-modal";
+    modal.innerHTML='<div class="dgm-bar"><span class="t"></span>'+
+      '<span class="dgm-hint">scroll to zoom · drag to pan</span>'+
+      '<button class="dgm-btn" data-a="out">&#8722;</button>'+
+      '<button class="dgm-btn" data-a="in">&#43;</button>'+
+      '<button class="dgm-btn" data-a="fit">Fit</button>'+
+      '<button class="dgm-btn" data-a="reset">100%</button>'+
+      '<button class="dgm-btn" data-a="close">&#10005; Close</button></div>'+
+      '<div class="dgm-stage"><div class="dgm-canvas"></div></div>';
+    document.body.appendChild(modal);
+    var stage=modal.querySelector(".dgm-stage"), canvas=modal.querySelector(".dgm-canvas"), titleEl=modal.querySelector(".t");
+    var scale=1, tx=0, ty=0, baseW=800, baseH=400;
+    function apply(){ canvas.style.transform="translate("+tx+"px,"+ty+"px) scale("+scale+")"; }
+    function fit(){ var sw=stage.clientWidth-48, sh=stage.clientHeight-48;
+      scale=Math.min(sw/baseW, sh/baseH); if(!isFinite(scale)||scale<=0)scale=1;
+      tx=(stage.clientWidth-baseW*scale)/2; ty=(stage.clientHeight-baseH*scale)/2; apply(); }
+    function zoomAt(f,cx,cy){ var ns=Math.max(0.1,Math.min(10,scale*f)), k=ns/scale;
+      tx=cx-(cx-tx)*k; ty=cy-(cy-ty)*k; scale=ns; apply(); }
+    function svgTitle(svg){ var t=[].slice.call(svg.querySelectorAll("text")).filter(function(x){return /lifecycle|—|–| → /.test(x.textContent);})[0];
+      return t?t.textContent:(svg.querySelector("text")?svg.querySelector("text").textContent:"Diagram"); }
+    function open(svg){
+      if(!svg) return;
+      baseW=parseFloat(svg.getAttribute("width"))||(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||800;
+      baseH=parseFloat(svg.getAttribute("height"))||(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.height)||400;
+      var clone=svg.cloneNode(true);
+      clone.setAttribute("width",baseW); clone.setAttribute("height",baseH); clone.style.pointerEvents="none";
+      canvas.innerHTML=""; canvas.appendChild(clone);
+      titleEl.textContent=svgTitle(svg);
+      modal.classList.add("open"); fit();
+    }
+    function close(){ modal.classList.remove("open"); canvas.innerHTML=""; }
+    modal.addEventListener("click", function(e){
+      var b=e.target.closest(".dgm-btn"); if(!b){ if(e.target===modal||e.target===stage) close(); return; }
+      var a=b.getAttribute("data-a");
+      if(a==="close") close();
+      else if(a==="in") zoomAt(1.25, stage.clientWidth/2, stage.clientHeight/2);
+      else if(a==="out") zoomAt(0.8, stage.clientWidth/2, stage.clientHeight/2);
+      else if(a==="fit") fit();
+      else if(a==="reset"){ scale=1; tx=(stage.clientWidth-baseW)/2; ty=24; apply(); }
+    });
+    stage.addEventListener("wheel", function(e){ e.preventDefault(); var r=stage.getBoundingClientRect();
+      zoomAt(e.deltaY<0?1.12:0.89, e.clientX-r.left, e.clientY-r.top); }, {passive:false});
+    var drag=false, sx=0, sy=0;
+    stage.addEventListener("pointerdown", function(e){ drag=true; stage.classList.add("grabbing"); sx=e.clientX-tx; sy=e.clientY-ty; try{stage.setPointerCapture(e.pointerId);}catch(_){}}); 
+    stage.addEventListener("pointermove", function(e){ if(!drag)return; tx=e.clientX-sx; ty=e.clientY-sy; apply(); });
+    stage.addEventListener("pointerup", function(){ drag=false; stage.classList.remove("grabbing"); });
+    stage.addEventListener("pointercancel", function(){ drag=false; stage.classList.remove("grabbing"); });
+    document.addEventListener("keydown", function(e){ if(e.key==="Escape"&&modal.classList.contains("open")) close(); });
+
+    function tag(svg){
+      if(svg.__dgm) return;
+      if(svg.closest(".dgm-canvas")) return;     // don't re-badge the enlarged clone
+      var vb=svg.getAttribute("viewBox"); if(!vb) return;
+      var w=parseFloat(svg.getAttribute("width"))||(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||0;
+      if(w<320) return;                          // skip small inline icon svgs
+      svg.__dgm=true; svg.style.cursor="zoom-in";
+      var host=svg.parentElement, mount=host;
+      if(host){ var cs=getComputedStyle(host); if(/(auto|scroll)/.test((cs.overflowX||"")+(cs.overflow||""))) mount=host.parentElement||host; }
+      if(mount && !mount.querySelector(":scope > .dgm-badge")){
+        if(getComputedStyle(mount).position==="static") mount.style.position="relative";
+        var badge=document.createElement("button"); badge.className="dgm-badge"; badge.type="button"; badge.innerHTML="&#10530; Expand";
+        badge.addEventListener("click", function(e){ e.preventDefault(); e.stopPropagation();
+          open(mount.querySelector("svg")||svg); });
+        mount.appendChild(badge);
+      }
+    }
+    function scan(root){ try{ (root||document).querySelectorAll("svg").forEach(tag); }catch(_){} }
+    document.addEventListener("click", function(e){
+      if(modal.classList.contains("open")) return;
+      if(e.target.closest(".dgm-badge")) return;
+      var svg=e.target.closest("svg"); if(!svg||!svg.__dgm) return;
+      if(e.target.closest("a")) return;          // preserve in-diagram links
+      open(svg);
+    });
+    var mo=new MutationObserver(function(muts){ muts.forEach(function(m){ if(m.addedNodes) m.addedNodes.forEach(function(n){
+      if(n.nodeType===1){ if(n.tagName&&n.tagName.toLowerCase()==="svg") tag(n); else if(n.querySelectorAll) scan(n); } }); }); });
+    mo.observe(document.body,{childList:true,subtree:true});
+    // scan now and again after late renders — tag() re-attempts safely (it does not
+    // mark an svg until it qualifies), so diagrams drawn outside the observer window
+    // (some pages render on their own load handler) are still picked up.
+    scan(document);
+    window.addEventListener("load", function(){ scan(document); });
+    setTimeout(function(){ scan(document); }, 400);
+    setTimeout(function(){ scan(document); }, 1400);
+    PACK.rescanDiagrams=function(){ scan(document); };
+  });
+})();

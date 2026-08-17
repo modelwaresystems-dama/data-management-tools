@@ -1095,9 +1095,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.66.0";
-window.PACK_CONFIG.built   = "2026-08-16 23:30 SAST";
+window.PACK_CONFIG.version = "v1.67.0";
+window.PACK_CONFIG.built   = "2026-08-17 00:20 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.67.0", date:"2026-08-17 00:20 SAST",
+    note:"Every diagram is now zoomable, so nothing has to be read squashed in-page. Each SVG diagram across the pack — the BPMN process flows, the DMN decision-requirement diagrams, the capability and value maps, the journey timelines — carries an 'Expand' control (and is itself clickable) that opens it full-screen in a lightbox with the diagram title, scroll-to-zoom, +/− and Fit/100% buttons, and drag-to-pan; Esc or Close (or clicking the backdrop) returns to the page. In-diagram links (a decision box linking to its DMN, for example) still work — only non-link clicks open the viewer. The feature is global and dependency-free, added once in the shared script and picked up automatically by any diagram on any page, including late-rendered ones. No change to any diagram's content or data." },
   { v:"v1.66.0", date:"2026-08-16 23:30 SAST",
     note:"The whole SIPOC now aligns with the process steps, not just its process column. For every Modelware process the five SIPOC bands are derived from the process's own step-level model instead of inheriting placeholder values from the baseline: Inputs are the process's Required Information (the concepts its steps consume); Outputs are the concept end-states the steps produce plus the process's evidence output (for Create and Maintain Student Group: Student Group (Scheduled), Certificate (Issued), Course (Designed), and the unique scheduled training record); and Suppliers and Customers are split from the process actor map by information flow — an actor that receives the process's output (detected where a step makes something available / delivered / issued / reported to it, or an external customer/student/learner party) is a Customer, and the remaining feeding actors are Suppliers. So Create and Maintain Student Group now shows Suppliers Management and Trainers, Customers Sales and Marketing (the functions step 5 makes the student group available to), instead of the previous Consent / Market-triggers / Propensity-list placeholders. Nedbank and AGGPSA keep their curated SIPOC stakeholder chips unchanged. Verified across all three sources with no functional errors." },
   { v:"v1.65.0", date:"2026-08-16 22:40 SAST",

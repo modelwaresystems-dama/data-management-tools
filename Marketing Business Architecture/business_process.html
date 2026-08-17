@@ -235,7 +235,7 @@
         </div>
         <div class="section" style="margin-top:20px">
           <h3 style="margin:0 0 4px">Lifecycle — BPMN 2.0 swimlane</h3>
-          <p class="muted tight" style="margin:0 0 12px">The same steps as a governed flow — one lane per <strong>department / actor</strong> that performs the work, plus an <strong>AI / Automation</strong> lane (Automated, AI-Supported and AI-Executed steps) and a <strong>Human review &amp; approval</strong> lane — with decision gateways (human-in-the-loop decisions drop into the review lane).</p>
+          <p class="muted tight" style="margin:0 0 12px">The same steps as a governed flow — one lane per <strong>department / actor</strong> that performs the human work, an <strong>AI / Automation</strong> lane for everything the system / AI performs (Automated, AI-Supported, AI-Executed and Data-Support steps), and an <strong>AI Steward</strong> lane where each human-in-the-loop decision is reviewed by its <strong>accountable role</strong> before the flow hands back. Decisions render as business-rule tasks with an XOR gateway.</p>
           <div id="bpmn"></div>
         </div>
         <div class="section" style="margin-top:16px">
@@ -500,7 +500,7 @@ function renderGate(id){
   function gc(cls,label,val,sub){ return '<div class="gc '+cls+'"><div class="gl">'+esc(label)+'</div><div class="gv">'+esc(val)+(sub?'<div class="sub">'+esc(sub)+'</div>':'')+'</div></div>'; }
   host.innerHTML =
     gc("","Trigger", meta.trigger||"—")+
-    gc("","Flow", steps.length+" step"+(steps.length===1?"":"s")+" · "+(Object.keys(xts).join(" / ")||"—"), "BPMN swimlane below, by department / AI / human review.")+
+    gc("","Flow", steps.length+" step"+(steps.length===1?"":"s")+" · "+(Object.keys(xts).join(" / ")||"—"), "BPMN swimlane below, by department / AI / AI Steward.")+
     gc("","Pre-condition → post-condition", (pre||"—")+"  →  "+(post||"—"))+
     gc("dec","Decision changed", decs.length?(decs.length+" governed decision"+(decs.length===1?"":"s")+": "+decs.join(", ")):"None", decs.length?"Modelled as DMN with input data, rule set and owner.":"No in-flow decision.")+
     gc("airole","Where AI acts", aiRole, aiSub)+
@@ -590,10 +590,13 @@ window.sel = function(id){
   renderProcDecisions(id);
   renderSteps(id);
   if(PACK.renderBPMN){
-    // decision name + outcome for the inline business-rule task and gateway branches
+    // decision name + outcome + the accountable role that owns any HITL review
+    var _ROLE={}; (D.ownershipRoles||[]).forEach(function(r){ _ROLE[r.id]=r.name; });
     var _decInfo={}; STEPS.filter(function(s){return s.process===id&&s.decision;}).forEach(function(s){
       var m=MAP.D[s.decision]||{}, dr=DR_BY[s.decision]||{};
-      _decInfo[s.decision]={name:(m.name||dr.name||s.decision), outcome:(m.outcome||dr.impact||"")};
+      var owner=m.owner||dr.owner||s.accountable||s.responsible||"";
+      _decInfo[s.decision]={name:(m.name||dr.name||s.decision), outcome:(m.outcome||dr.impact||""),
+        ownerRole:(_ROLE[owner]||owner)};
     });
     // alternate / exception flows → boundary events on the BPMN
     var _alt=(P_AF[id]||[]).slice().sort(function(a,b){return a.no-b.no;});

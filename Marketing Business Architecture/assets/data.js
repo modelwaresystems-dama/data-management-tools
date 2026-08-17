@@ -1095,9 +1095,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.67.0";
-window.PACK_CONFIG.built   = "2026-08-17 00:20 SAST";
+window.PACK_CONFIG.version = "v1.68.0";
+window.PACK_CONFIG.built   = "2026-08-17 01:20 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.68.0", date:"2026-08-17 01:20 SAST",
+    note:"Reworked the BPMN swimlane model across EVERY process (not one diagram) so the lanes reflect who really performs each step. Previously most steps — including AI-supported and data-support ones — collapsed into a single department lane. Now: (1) one lane per department / actor that performs the human (H) work, so a flow touched by more than one party shows a lane each instead of everything stacked in one; (2) a single AI / Automation lane for everything the system or AI performs — Automated, AI-Supported, AI-Executed and Data-Support steps; and (3) an AI Steward lane that appears whenever the flow has a human-in-the-loop decision. Each HITL decision now drops into the AI Steward lane, is labelled with the accountable role that performs the review (resolved from the decision's owner — e.g. Capture Marketing Contact shows 'HITL review · Marketing Director', and the lane header names that role), and the flow then hands back up to the department / AI lane for the next step. So Capture Marketing Contact renders as Marketing (human capture) → AI / Automation (campaign match, propensity, eligibility) → AI Steward · Marketing Director (the two governed outreach decisions) rather than one crowded Marketing lane. Empty lanes are still dropped, and the change applies to Modelware, Nedbank and AGGPSA. Verified with no functional errors." },
   { v:"v1.67.0", date:"2026-08-17 00:20 SAST",
     note:"Every diagram is now zoomable, so nothing has to be read squashed in-page. Each SVG diagram across the pack — the BPMN process flows, the DMN decision-requirement diagrams, the capability and value maps, the journey timelines — carries an 'Expand' control (and is itself clickable) that opens it full-screen in a lightbox with the diagram title, scroll-to-zoom, +/− and Fit/100% buttons, and drag-to-pan; Esc or Close (or clicking the backdrop) returns to the page. In-diagram links (a decision box linking to its DMN, for example) still work — only non-link clicks open the viewer. The feature is global and dependency-free, added once in the shared script and picked up automatically by any diagram on any page, including late-rendered ones. No change to any diagram's content or data." },
   { v:"v1.66.0", date:"2026-08-16 23:30 SAST",

@@ -169,7 +169,10 @@
   // performed by a PERSON with AI assistance, so they stay in the department
   // lane (badged AIS); Human (H) and Data-Support (DS) stay there too. HITL
   // decision gateways drop into the Human review lane.
-  var BPMN_AI_TYPES={A:1,AIE:1};
+  // Everything the system / AI performs (Automated, AI-Supported, AI-Executed and
+  // Data-Support) belongs in the AI / Automation lane; only Human (H) steps sit in a
+  // department lane.
+  var BPMN_AI_TYPES={A:1,AIS:1,AIE:1,DS:1};
   // Detect the actor a step names ("Marketing identifies…", "Admin generates…").
   var BPMN_DEPT_KW=[["marketing","Marketing"],["sales","Sales"],["admin","Admin"],
     ["management","Management"],["trainer","Trainer"],["finance","Finance"],["power bi","Power BI"],
@@ -283,14 +286,21 @@
       return "dept:"+d;
     }
     var laneHasStep={}; steps.forEach(function(s){ laneHasStep[laneKeyOf(s)]=1; });
-    // Decisions render INLINE in the flow (a business-rule task + an XOR gateway) in
-    // the SAME lane as the step that makes them — matching BPMN convention — so there
-    // is no separate "human review" lane; HITL is shown as a tag on the decision task.
-    // Empty lanes are still dropped.
+    var decInfo=opts.decInfo||{};
+    // Lane model (top → bottom): one lane per DEPARTMENT / ACTOR that performs human (H)
+    // work; then an AI / Automation lane for everything the system / AI performs; then,
+    // when the flow reaches a human-in-the-loop decision, an AI Steward lane where that
+    // decision is reviewed by the accountable role before the flow hands back. Empty
+    // lanes are dropped.
     var shade=["#eef4fb","#e9f0f9"], si=0;
     var LANES=candOrder.filter(function(d){return laneHasStep["dept:"+d];})
       .map(function(d){ return {key:"dept:"+d,name:d,fill:shade[(si++)%2],kind:"dept"}; });
     if(laneHasStep["__ai"]) LANES.push({key:"__ai",name:"AI / Automation",fill:"#f2ecfb",kind:"ai"});
+    var hasHitl=steps.some(function(s){return s.decision&&s.hitl;});
+    if(hasHitl){
+      var stwRoles=[]; steps.forEach(function(s){ if(s.decision&&s.hitl){ var r=(decInfo[s.decision]||{}).ownerRole; if(r&&stwRoles.indexOf(r)<0)stwRoles.push(r);} });
+      LANES.push({key:"__steward",name:(stwRoles.length===1?("AI Steward — "+stwRoles[0]):"AI Steward"),fill:"#fff7ec",kind:"steward"});
+    }
     // supporting / consulted internal actors that perform no step → a caption,
     // not an empty lane. Plus external / system touchpoints.
     var supporting=candOrder.filter(function(d){return !laneHasStep["dept:"+d];});
@@ -298,7 +308,6 @@
       if(!laneHasStep["dept:"+d] && supporting.indexOf(d)<0) supporting.push(d); });
     var externals=[], exSeen={};
     actors.filter(function(a){return a.type!=="Internal";}).forEach(function(a){ if(!exSeen[a.actor]){exSeen[a.actor]=1; externals.push(a);} });
-    var decInfo=opts.decInfo||{};
     var altFlows=(opts.altFlows||[]).filter(Boolean).map(function(a){ return (a&&a.step!=null)?a.step:a; });
     // decision outcome → gateway branch labels ("Live / online / self-study" → 3)
     function branchLabels(s){
@@ -333,7 +342,7 @@
     LANES.forEach(function(l,i){
       var y=topPad+i*laneH;
       parts.push('<rect x="0" y="'+y+'" width="'+W+'" height="'+laneH+'" fill="'+l.fill+'"/>');
-      parts.push('<rect x="0" y="'+y+'" width="'+leftW+'" height="'+laneH+'" fill="'+(l.kind==="ai"?"#4c2f7a":"#16305a")+'"/>');
+      parts.push('<rect x="0" y="'+y+'" width="'+leftW+'" height="'+laneH+'" fill="'+(l.kind==="ai"?"#4c2f7a":(l.kind==="steward"?"#8a5a1a":"#16305a"))+'"/>');
       var ll=wrap2(l.name, 15);
       parts.push('<text x="'+(leftW/2)+'" y="'+(y+laneH/2)+'" fill="#fff" font-size="10.5" font-weight="700" text-anchor="middle"><tspan x="'+(leftW/2)+'" dy="'+(ll.length>1?-4:3)+'">'+svgEsc(ll[0])+'</tspan>'+(ll[1]?'<tspan x="'+(leftW/2)+'" dy="13">'+svgEsc(ll[1])+'</tspan>':'')+'</text>');
     });
@@ -377,8 +386,10 @@
       prevX=x+nodeW/2; prevY=y; cur=x+nodeW/2;
 
       if(s.decision){
-        // ---- inline business-rule (decision) task, in the step's own lane ----
-        var dx=cur+colGap+decW/2, dyy=y;
+        // ---- business-rule (decision) task. A human-in-the-loop decision is reviewed
+        // in the AI Steward lane by the accountable role; otherwise it stays in the
+        // step's own lane. The flow hands back to the next step's lane afterwards. ----
+        var dx=cur+colGap+decW/2, dyy=(s.hitl?ly("__steward"):y);
         connector(prevX,prevY, dx-decW/2, dyy);
         var di=decInfo[s.decision]||{};
         parts.push('<a href="decisions.html#'+svgEsc(s.decision)+'"><title>'+svgEsc(s.decision+(di.name?" · "+di.name:"")+(s.decisionInput?" · inputs: "+s.decisionInput:""))+'</title>');
@@ -397,7 +408,13 @@
         parts.push('<text x="'+(gi+21)+'" y="'+(gj+9)+'" font-size="8" fill="#8a6d1a" font-weight="800" font-family="monospace">'+svgEsc(s.decision)+'</text>');
         var dn=wrap2(di.name||"Decision",22);
         parts.push('<text x="'+dx+'" y="'+(dyy+7)+'" font-size="9" fill="#5b4708" text-anchor="middle" font-weight="600"><tspan x="'+dx+'" dy="0">'+svgEsc(dn[0])+'</tspan>'+(dn[1]?'<tspan x="'+dx+'" dy="10">'+svgEsc(dn[1])+'</tspan>':'')+'</text>');
-        if(s.hitl) parts.push('<rect x="'+(dx+decW/2-31)+'" y="'+(dyy-decH/2-9)+'" width="31" height="13" rx="6.5" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.8"/><text x="'+(dx+decW/2-15.5)+'" y="'+(dyy-decH/2+1)+'" font-size="7.5" fill="#b91c1c" text-anchor="middle" font-weight="700">HITL</text>');
+        if(s.hitl){
+          parts.push('<rect x="'+(dx+decW/2-31)+'" y="'+(dyy-decH/2-9)+'" width="31" height="13" rx="6.5" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.8"/><text x="'+(dx+decW/2-15.5)+'" y="'+(dyy-decH/2+1)+'" font-size="7.5" fill="#b91c1c" text-anchor="middle" font-weight="700">HITL</text>');
+          // the accountable role that performs the human-in-the-loop review
+          var role=(di.ownerRole||di.owner||"Accountable role");
+          var rl=wrap2("HITL review · "+role, 26);
+          parts.push('<text x="'+dx+'" y="'+(dyy+decH/2+12)+'" font-size="7.8" fill="#7a4d0a" text-anchor="middle" font-weight="700">'+svgEsc(rl[0])+'</text>'+(rl[1]?'<text x="'+dx+'" y="'+(dyy+decH/2+22)+'" font-size="7.8" fill="#7a4d0a" text-anchor="middle" font-weight="700">'+svgEsc(rl[1])+'</text>':''));
+        }
         parts.push('</a>');
         prevX=dx+decW/2; prevY=dyy; cur=dx+decW/2;
 

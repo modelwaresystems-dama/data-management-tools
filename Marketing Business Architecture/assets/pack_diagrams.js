@@ -316,7 +316,7 @@
       var arr=raw.split(/\s*\/\s*/).map(function(t){return t.trim();}).filter(Boolean);
       return arr.length?arr.slice(0,4):["outcome"];
     }
-    var maxExtra=0; steps.forEach(function(s){ if(s.decision){ var b=branchLabels(s); if(b.length-1>maxExtra)maxExtra=b.length-1; } });
+    var maxOut=1; steps.forEach(function(s){ if(s.decision){ var b=branchLabels(s); if(b.length>maxOut)maxOut=b.length; } });
 
     var leftW=150, laneH=124, topPad=30, nodeW=132, nodeH=44, startGap=40;
     var colGap=34, decW=126, decH=46, gwR=14;
@@ -324,16 +324,18 @@
     function laneKeyOfSafe(s){ var k=laneKeyOf(s); return (k in laneIdx)?k:LANES[0].key; }
     function ly(key){ var k=(key in laneIdx)?key:LANES[0].key; return topPad+laneIdx[k]*laneH+laneH/2; }
     var poolBottom=topPad+LANES.length*laneH;
-    var branchBand = maxExtra>0 ? (maxExtra*22+16) : 0;
+    var branchBand = (maxOut>1) ? ((maxOut-1)*60+48) : 0;   // room for terminal / off-ramp end events + 2-line captions
     var startX=leftW+22;
     // measure flow width by simulating the cursor
     var mcur=startX+18;
     steps.forEach(function(s){ mcur += colGap+nodeW; if(s.decision){ mcur += colGap+decW + colGap+gwR*2; } });
     mcur += colGap+30;
+    // reserve the terminal outcome end-event column when the flow ends on a decision
+    if(steps[steps.length-1] && steps[steps.length-1].decision) mcur += 120;
     // exception band + its width
     var exBandH = altFlows.length ? 74 : 0;
     var exW=8; altFlows.forEach(function(af){ exW += 30 + Math.min(210, Math.max(80, (af+"").length*5.4+40)); });
-    var W=Math.max(mcur+30, exW+16) + (maxExtra>0?190:0), H=poolBottom+branchBand+exBandH+16;
+    var W=Math.max(mcur+30, exW+16) + (maxOut>1?70:0), H=poolBottom+branchBand+exBandH+16;
     function ly0(){ return ly(laneKeyOfSafe(steps[0])); }
 
     var parts=[];
@@ -361,9 +363,9 @@
     parts.push('<text x="'+startX+'" y="'+(startY+26)+'" font-size="8.5" fill="#5b6b7f" text-anchor="middle">start</text>');
 
     var XC={H:{f:"#e0e7ff",s:"#4f46e5"},A:{f:"#dcfce7",s:"#16a34a"},AIS:{f:"#fef9c3",s:"#ca8a04"},AIE:{f:"#fae8ff",s:"#c026d3"},DS:{f:"#e2e8f0",s:"#64748b"}};
-    var prevX=startX+13, prevY=startY, cur=startX+18, pendingLabel=null;
+    var prevX=startX+13, prevY=startY, cur=startX+18, pendingLabel=null, flowEnded=false;
 
-    steps.forEach(function(s){
+    steps.forEach(function(s, stepIdx){
       var y=ly(laneKeyOfSafe(s));
       var x=cur+colGap+nodeW/2;
       connector(prevX, prevY, x-nodeW/2, y, pendingLabel); pendingLabel=null;
@@ -418,27 +420,65 @@
         parts.push('</a>');
         prevX=dx+decW/2; prevY=dyy; cur=dx+decW/2;
 
-        // ---- XOR gateway with outcome branches ----
+        // ---- XOR gateway. Every outcome must terminate properly: an alternate /
+        // negative outcome ends in a message end event (notify the requesting party);
+        // a positive outcome that closes the flow ends in a message end event that
+        // creates the result and notifies. Only a NON-terminal positive outcome
+        // continues to the next step. ----
         var gx=cur+colGap+gwR, gy=dyy;
         connector(prevX,prevY, gx-gwR-2, gy);
         parts.push('<path d="M '+gx+' '+(gy-gwR)+' L '+(gx+gwR)+' '+gy+' L '+gx+' '+(gy+gwR)+' L '+(gx-gwR)+' '+gy+' Z" fill="#fff" stroke="#c99700" stroke-width="1.6"/>');
         parts.push('<text x="'+gx+'" y="'+(gy+4)+'" font-size="13" fill="#c99700" text-anchor="middle" font-weight="800">&#215;</text>');
         var bl=branchLabels(s);
-        for(var bi=1; bi<bl.length; bi++){
-          var byy=poolBottom + bi*22 - 6, pw=Math.max(52, bl[bi].length*5.6+14);
-          parts.push('<path d="M '+gx+' '+(gy+gwR)+' V '+byy+' H '+(gx+58)+'" fill="none" stroke="#b6892a" stroke-width="1.1" stroke-dasharray="4 2"/>');
-          parts.push('<path d="M '+(gx+52)+' '+(byy-4)+' L '+(gx+58)+' '+byy+' L '+(gx+52)+' '+(byy+4)+' Z" fill="#b6892a"/>');
-          parts.push('<rect x="'+(gx+58)+'" y="'+(byy-8)+'" width="'+pw+'" height="16" rx="8" fill="#fdf6e3" stroke="#c99700" stroke-width="0.9"/>');
-          parts.push('<text x="'+(gx+58+pw/2)+'" y="'+(byy+3)+'" font-size="7.6" fill="#8a6d1a" text-anchor="middle" font-weight="600">'+svgEsc(bl[bi].slice(0,24))+'</text>');
+        var isLastStep=(stepIdx===steps.length-1);
+        var endR=13, exGap=54, oX=gx+exGap+endR;
+        // message end event (circle + envelope) + outcome and the specific action it
+        // triggers — taken from the decision's outcome handler (create <artefact> ·
+        // notify <party>), falling back to polarity if no handler is supplied.
+        var decHandlers=(decInfo[s.decision]||{}).handlers||{};
+        function msgEnd(ox,oy,label){
+          var h=decHandlers[label];
+          var neg=h ? !h.pos : /\b(declin|reject|suppress|ineligib|unqualif|hold|retir|deny|defer|withdraw|exit|fail|cancel|clos|remov|block|no)\w*/i.test(label);
+          var col=neg?"#b45309":"#2f6a3f";
+          parts.push('<circle cx="'+ox+'" cy="'+oy+'" r="'+endR+'" fill="#fff" stroke="'+col+'" stroke-width="2.6"/>');
+          parts.push('<rect x="'+(ox-6)+'" y="'+(oy-4)+'" width="12" height="8" fill="none" stroke="'+col+'" stroke-width="0.9"/><path d="M '+(ox-6)+' '+(oy-4)+' L '+ox+' '+(oy+1.5)+' L '+(ox+6)+' '+(oy-4)+'" fill="none" stroke="'+col+'" stroke-width="0.9"/>');
+          var act=h ? h.act : (neg?"notify requester":"create & notify");
+          var cl=wrap2(label,15), al=wrap2(act,22);
+          parts.push('<text x="'+ox+'" y="'+(oy+endR+11)+'" font-size="8" fill="#33424f" text-anchor="middle" font-weight="700">'+svgEsc(cl[0])+'</text>');
+          parts.push('<text x="'+ox+'" y="'+(oy+endR+20)+'" font-size="7" fill="#5b6b7f" text-anchor="middle">'+svgEsc(al[0])+'</text>'+(al[1]?'<text x="'+ox+'" y="'+(oy+endR+28)+'" font-size="7" fill="#5b6b7f" text-anchor="middle">'+svgEsc(al[1])+'</text>':''));
         }
-        pendingLabel=bl[0];
-        prevX=gx+gwR; prevY=gy; cur=gx+gwR;
+        if(isLastStep){
+          // terminal decision — EVERY outcome ends in its own message end event
+          connector(gx+gwR, gy, oX-endR, gy, bl[0]);
+          msgEnd(oX, gy, bl[0]);
+          for(var bi=1; bi<bl.length; bi++){
+            var oy=gy+bi*60;
+            parts.push('<path d="M '+gx+' '+(gy+gwR)+' V '+oy+' H '+(oX-endR)+'" fill="none" stroke="#b6892a" stroke-width="1.2" stroke-dasharray="4 2"/>');
+            parts.push('<path d="M '+(oX-endR-6)+' '+(oy-4)+' L '+(oX-endR)+' '+oy+' L '+(oX-endR-6)+' '+(oy+4)+' Z" fill="#b6892a"/>');
+            parts.push('<text x="'+(gx+16)+'" y="'+((gy+oy)/2-2)+'" font-size="7.6" fill="#8a6d1a" font-weight="700">'+svgEsc(bl[bi])+'</text>');
+            msgEnd(oX, oy, bl[bi]);
+          }
+          flowEnded=true;
+          prevX=oX+endR; prevY=gy; cur=oX+endR;
+        } else {
+          // mid-flow — primary continues; alternate (off-ramp) outcomes end below pool
+          pendingLabel=bl[0];
+          for(var bj=1; bj<bl.length; bj++){
+            var byy=poolBottom + bj*60 - 4;
+            parts.push('<path d="M '+gx+' '+(gy+gwR)+' V '+byy+' H '+(gx+exGap)+'" fill="none" stroke="#b6892a" stroke-width="1.1" stroke-dasharray="4 2"/>');
+            parts.push('<text x="'+(gx+10)+'" y="'+(byy-3)+'" font-size="7.4" fill="#8a6d1a" font-weight="700">'+svgEsc(bl[bj])+'</text>');
+            msgEnd(gx+exGap+endR, byy, bl[bj]);
+          }
+          prevX=gx+gwR; prevY=gy; cur=gx+gwR;
+        }
       }
     });
-    var endX=cur+colGap+13, endY=prevY;
-    connector(prevX, prevY, endX-13, endY, pendingLabel);
-    parts.push('<circle cx="'+endX+'" cy="'+endY+'" r="13" fill="#fff" stroke="#2f6a3f" stroke-width="3"/>');
-    parts.push('<text x="'+endX+'" y="'+(endY+26)+'" font-size="8.5" fill="#5b6b7f" text-anchor="middle">end</text>');
+    if(!flowEnded){
+      var endX=cur+colGap+13, endY=prevY;
+      connector(prevX, prevY, endX-13, endY, pendingLabel);
+      parts.push('<circle cx="'+endX+'" cy="'+endY+'" r="13" fill="#fff" stroke="#2f6a3f" stroke-width="3"/>');
+      parts.push('<text x="'+endX+'" y="'+(endY+26)+'" font-size="8.5" fill="#5b6b7f" text-anchor="middle">end</text>');
+    }
 
     // ---- exception & alternate-flow band (boundary error events under the pool) ----
     if(altFlows.length){
@@ -472,6 +512,6 @@
     }
     host.innerHTML='<div style="overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:6px">'+parts.join("")+'</div>'+
       tpBand+
-      '<div class="maplegend" style="margin-top:8px"><span>◯ start / end</span><span><i style="background:#e0e7ff;border:1px solid #4f46e5"></i>H · Human</span><span><i style="background:#dcfce7;border:1px solid #16a34a"></i>A · Automated</span><span><i style="background:#fef9c3;border:1px solid #ca8a04"></i>AIS · AI-Supported</span><span><i style="background:#fae8ff;border:1px solid #c026d3"></i>AIE · AI-Executed</span><span><i style="background:#e2e8f0;border:1px solid #64748b"></i>DS · Data Support</span><span><i style="background:#fdf6e3;border:1px solid #c99700"></i>decision (business rule) + × gateway</span><span><i style="background:#fff;border:1px solid #b91c1c;border-radius:50%"></i>exception / boundary event</span><span style="color:#b91c1c">HITL = human-in-the-loop</span></div>';
+      '<div class="maplegend" style="margin-top:8px"><span>◯ start / end</span><span><i style="background:#e0e7ff;border:1px solid #4f46e5"></i>H · Human</span><span><i style="background:#dcfce7;border:1px solid #16a34a"></i>A · Automated</span><span><i style="background:#fef9c3;border:1px solid #ca8a04"></i>AIS · AI-Supported</span><span><i style="background:#fae8ff;border:1px solid #c026d3"></i>AIE · AI-Executed</span><span><i style="background:#e2e8f0;border:1px solid #64748b"></i>DS · Data Support</span><span><i style="background:#fdf6e3;border:1px solid #c99700"></i>decision (business rule) + × gateway</span><span><i style="background:#fff;border:1px solid #b91c1c;border-radius:50%"></i>exception / boundary event</span><span><i style="background:#fff;border:2px solid #2f6a3f;border-radius:50%"></i>message end (create / notify)</span><span style="color:#b91c1c">HITL = human-in-the-loop</span></div>';
   };
 })();

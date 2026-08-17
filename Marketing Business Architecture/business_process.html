@@ -270,6 +270,7 @@
 <script src="assets/aggpsa_data.js"></script>
 <script src="assets/modelware_model_all.js"></script>
 <script src="assets/modelware_data.js"></script>
+<script src="assets/decision_handlers.js"></script>
 <script src="assets/org_switch.js"></script>
 <script src="assets/model_hydrate.js"></script>
 <script src="assets/pack.js"></script>
@@ -592,11 +593,31 @@ window.sel = function(id){
   if(PACK.renderBPMN){
     // decision name + outcome + the accountable role that owns any HITL review
     var _ROLE={}; (D.ownershipRoles||[]).forEach(function(r){ _ROLE[r.id]=r.name; });
+    // the process's real parties (for outcome handlers): SIPOC customer = who
+    // receives / requested the result; supplier = who fed the request.
+    var _SIP=(PACK.deriveSIPOC?PACK.deriveSIPOC(id,p):null) || (D.processSIPOC||{})[id] || {};
+    function _pname(list){ if(!list||!list.length)return ""; var x=list[0]; return (x&&(x.actor||x.l||x.name))||x||""; }
+    var _cust=_pname(_SIP.customers), _sup=_pname(_SIP.suppliers);
+    var _HANDLERS=(window.DECISION_HANDLERS&&window.DECISION_HANDLERS[(window.PACK_CONFIG||{}).activeOrg])||{};
+    function _isNeg(o){ return /\b(declin|reject|suppress|ineligib|unqualif|hold|retir|deny|defer|withdraw|exit|fail|cancel|clos|remov|block|no)\w*/i.test(o); }
+    function _handlersFor(decId, outcomeStr){
+      var outs=(outcomeStr||"").split(/\s*\/\s*/).map(function(t){return t.trim();}).filter(Boolean);
+      var map={}; outs.forEach(function(o){
+        var ov=(_HANDLERS[decId]||{})[o]||{}, neg=_isNeg(o);
+        var party=ov.notify || _cust || _sup || (neg?"the requester":"the recipient");
+        var act = neg
+          ? ("notify "+party+(ov.note?(" · "+ov.note):" · declined"))
+          : ((ov.create?("create "+ov.create+" · "):"create record · ")+"notify "+party);
+        map[o]={pos:!neg, act:act};
+      });
+      return map;
+    }
     var _decInfo={}; STEPS.filter(function(s){return s.process===id&&s.decision;}).forEach(function(s){
       var m=MAP.D[s.decision]||{}, dr=DR_BY[s.decision]||{};
       var owner=m.owner||dr.owner||s.accountable||s.responsible||"";
-      _decInfo[s.decision]={name:(m.name||dr.name||s.decision), outcome:(m.outcome||dr.impact||""),
-        ownerRole:(_ROLE[owner]||owner)};
+      var outcome=(m.outcome||dr.impact||"");
+      _decInfo[s.decision]={name:(m.name||dr.name||s.decision), outcome:outcome,
+        ownerRole:(_ROLE[owner]||owner), handlers:_handlersFor(s.decision, outcome)};
     });
     // alternate / exception flows → boundary events on the BPMN
     var _alt=(P_AF[id]||[]).slice().sort(function(a,b){return a.no-b.no;});

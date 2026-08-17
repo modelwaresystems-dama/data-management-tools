@@ -521,22 +521,76 @@
     var prev=(host&&host._vsOpts)||{}; PACK.valueStreamHeat(host, vpId, Object.assign({}, prev, {mode:mode})); };
 
   /* ---- SIPOC renderer ------------------------------------------------------ */
+  /* ---- SIPOC ------------------------------------------------------------------
+     For processes that carry a step-level model (Modelware spec processes with a
+     processActors map), the SIPOC is DERIVED from the process's own steps so every
+     band aligns with the Main Flow: suppliers/customers from the actor map (split by
+     who feeds the process vs. who receives its outputs), inputs from the Required
+     Information, outputs from the concept end-states + evidence the steps produce.
+     Processes with a curated baked SIPOC (Nedbank / AGGPSA) keep it. --------------- */
+  function _reEsc(t){ return (t||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }
+  PACK.deriveSIPOC = function(procId, p){
+    var pa=(D.processActors||{})[procId]; if(!pa||!pa.length) return null;
+    var steps=(D.processSteps||[]).filter(function(s){return s.process===procId;}).sort(function(a,b){return a.seq-b.seq;});
+    var infoItems=(D.processInfoItems||{})[procId]||[];
+    // ---- inputs: the Required Information the steps consume ----
+    var inputs=[], iSeen={};
+    infoItems.forEach(function(x){ var l=x.item||x.concept; if(l&&!iSeen[l]){iSeen[l]=1; inputs.push(l);} });
+    // ---- outputs: distinct concept end-states + the process's evidence output ----
+    var outputs=[], oSeen={};
+    steps.forEach(function(s){ (s.outConcepts||[]).forEach(function(c){ if(!c)return;
+      var l=c+(s.toState?" ("+s.toState+")":""); if(!oSeen[l]){oSeen[l]=1; outputs.push(l);} }); });
+    var ev=(D.processEvidence||{})[procId]; if(ev && !oSeen[ev]){ oSeen[ev]=1; outputs.push(ev); }
+    // ---- suppliers vs customers, split from the actor map by information flow ----
+    var deliver=/(available|deliver|provide|provided|issue|issued|publish|notif|inform|hand[ -]?over|route|sent|report|link|for use by|for sales|for marketing)/i;
+    function isRecipient(a){
+      if(a.type==="External" && /custom|client|student|learner|applicant|benefici|public|attendee|participant|delegate/i.test(a.actor)) return true;
+      var re=new RegExp("\\b"+_reEsc((a.actor||"").toLowerCase())+"\\b");
+      return steps.some(function(st){ var t=((st.name||"")+" "+(st.post||"")).toLowerCase(); return re.test(t)&&deliver.test(t); });
+    }
+    var suppliers=[], customers=[];
+    pa.forEach(function(a){
+      if(isRecipient(a)) customers.push(a);
+      else if(a.raci==="Responsible") { /* performer — shown in the Process band */ }
+      else suppliers.push(a);
+    });
+    // fallbacks so no band is empty
+    if(!customers.length) customers=pa.filter(function(a){return a.type==="External";});
+    if(!customers.length) customers=pa.filter(function(a){return a.raci==="Responsible";});
+    if(!suppliers.length) suppliers=pa.filter(function(a){return a.type==="System"||a.type==="External";});
+    if(!suppliers.length) suppliers=pa.filter(function(a){return a.raci==="Responsible";});
+    return {suppliers:suppliers, inputs:inputs, outputs:outputs, customers:customers, derived:true};
+  };
   PACK.renderSIPOC = function(host, procId){
-    var p = PACK.MAP.P[procId]; var s = (D.processSIPOC||{})[procId];
-    if(!p || !s){ host.innerHTML='<p class="muted">Select a process.</p>'; return; }
-    function party(x){ return x.sh ? PACK.chip(x.sh, x.l) : '<span class="chip term off">'+PACK.esc(x.l)+'</span>'; }
+    var p = PACK.MAP.P[procId];
+    if(!p){ host.innerHTML='<p class="muted">Select a process.</p>'; return; }
+    var baked = (D.processSIPOC||{})[procId];
+    var s = PACK.deriveSIPOC(procId, p) || baked;
+    if(!s){ host.innerHTML='<p class="muted">Select a process.</p>'; return; }
+    function party(x){
+      if(x.sh) return PACK.chip(x.sh, x.l);              // baked stakeholder chip
+      var nm=x.actor||x.l||x;                            // derived actor
+      var tag=(x.type&&x.type!=="Internal")?'<b style="font-size:.58rem;text-transform:uppercase;letter-spacing:.03em;opacity:.65;margin-right:4px">'+PACK.esc(x.type)+'</b>':'';
+      return '<span class="chip term off">'+tag+PACK.esc(nm)+'</span>';
+    }
+    // PROCESS steps: use the process's actual Main Flow (sheet 204) when present so
+    // the SIPOC always matches the "Main Flow · Process Steps" section.
+    var _mf=(D.processMainFlow||{})[procId];
+    var stepLabels = (_mf&&_mf.length)
+      ? _mf.slice().sort(function(a,b){return a.no-b.no;}).map(function(x){return x.step;})
+      : (s.steps||[]);
     var bands = [
-      {k:"SUPPLIERS", cls:"sup", body:'<div class="chiprow">'+s.suppliers.map(party).join("")+'</div>'},
-      {k:"INPUTS",    cls:"inp", body:'<div class="siw">'+s.inputs.map(function(i){return '<span class="sitag">'+PACK.esc(i)+'</span>';}).join("")+'</div>'},
-      {k:"PROCESS",   cls:"prc", body:'<div class="steps">'+'<span class="stp start">'+PACK.esc(p.name)+'</span>'+s.steps.map(function(st,i){return '<span class="stp">'+(i+1)+'. '+PACK.esc(st)+'</span>';}).join("")+'</div>'},
-      {k:"OUTPUTS",   cls:"out", body:'<div class="siw">'+s.outputs.map(function(o){return '<span class="sitag">'+PACK.esc(o)+'</span>';}).join("")+'</div>'},
-      {k:"CUSTOMERS", cls:"cus", body:'<div class="chiprow">'+s.customers.map(party).join("")+'</div>'}
+      {k:"SUPPLIERS", cls:"sup", body:'<div class="chiprow">'+(s.suppliers||[]).map(party).join("")+'</div>'},
+      {k:"INPUTS",    cls:"inp", body:'<div class="siw">'+(s.inputs||[]).map(function(i){return '<span class="sitag">'+PACK.esc(i)+'</span>';}).join("")+'</div>'},
+      {k:"PROCESS",   cls:"prc", body:'<div class="steps">'+'<span class="stp start">'+PACK.esc(p.name)+'</span>'+stepLabels.map(function(st,i){return '<span class="stp">'+(i+1)+'. '+PACK.esc(st)+'</span>';}).join("")+'</div>'},
+      {k:"OUTPUTS",   cls:"out", body:'<div class="siw">'+(s.outputs||[]).map(function(o){return '<span class="sitag">'+PACK.esc(o)+'</span>';}).join("")+'</div>'},
+      {k:"CUSTOMERS", cls:"cus", body:'<div class="chiprow">'+(s.customers||[]).map(party).join("")+'</div>'}
     ];
     var cross = '<div class="sipoc-cross"><span class="lbl">Capabilities</span>'+PACK.chips(p.capabilities||[]).replace(/^<div class="chiprow">|<\/div>$/g,"")+'</div>';
     host.innerHTML = '<div class="sipoc">'+bands.map(function(b){
       return '<div class="sipoc-band"><div class="sipoc-k '+b.cls+'">'+b.k+'</div><div class="sipoc-b">'+b.body+'</div></div>';
     }).join("")+'</div>'+
-      '<div class="sipoc-meta"><span class="muted">Participants:</span> '+PACK.esc(p.participants)+'</div>'+cross;
+      '<div class="sipoc-meta"><span class="muted">Participants:</span> '+PACK.esc(p.participants||"—")+'</div>'+cross;
   };
 
   /* ---- Decision table (DMN-style) ----------------------------------------- */

@@ -164,11 +164,12 @@
     var cut=s.lastIndexOf(" ",max); if(cut<8) cut=max;
     var a=s.slice(0,cut), b=s.slice(cut).trim();
     if(b.length>max) b=b.slice(0,max-1)+"…"; return [a,b]; }
-  // Execution types that belong in the AI / Automation lane (not a department):
-  //   A = Automated, AIS = AI-Supported, AIE = AI-Executed.
-  // Human (H) and Data-Support (DS) steps stay in their department (business
-  // operations) lane; HITL decision gateways go to the Human review lane.
-  var BPMN_AI_TYPES={A:1,AIS:1,AIE:1};
+  // Only fully-automated work goes in the AI / Automation lane: A = Automated,
+  // AIE = AI-Executed (agent acts autonomously). AI-Supported (AIS) steps are
+  // performed by a PERSON with AI assistance, so they stay in the department
+  // lane (badged AIS); Human (H) and Data-Support (DS) stay there too. HITL
+  // decision gateways drop into the Human review lane.
+  var BPMN_AI_TYPES={A:1,AIE:1};
   // Detect the actor a step names ("Marketing identifies…", "Admin generates…").
   var BPMN_DEPT_KW=[["marketing","Marketing"],["sales","Sales"],["admin","Admin"],
     ["management","Management"],["trainer","Trainer"],["finance","Finance"],["power bi","Power BI"],
@@ -265,119 +266,195 @@
     steps=(steps||[]).slice().sort(function(a,b){return a.seq-b.seq;});
     if(!steps.length){ host.innerHTML='<p class="muted">No step-level flow recorded for this process.</p>'; return; }
     opts=opts||{};
-    // ---- swimlanes from the FULL actor map (every touchpoint), not just the
-    // actors named in step text. Internal actors (Responsible first, then
-    // Supporting) each get a lane; external / system actors become touchpoints. --
+    var conceptNames=opts.conceptNames||{};
     var actors=opts.actors||[];
-    var deptOrder=[], deptSeen={};
-    function addDept(name){ var d=bpmnNormDept(name); if(d && !deptSeen[d]){ deptSeen[d]=1; deptOrder.push(d); } }
-    actors.filter(function(a){return a.type==="Internal"&&a.raci==="Responsible";}).forEach(function(a){addDept(a.actor);});
-    actors.filter(function(a){return a.type==="Internal"&&a.raci!=="Responsible";}).forEach(function(a){addDept(a.actor);});
-    // include any actor a step names but the map didn't list (safety)
-    steps.forEach(function(s){ if(BPMN_AI_TYPES[s.execType||""])return; var d=bpmnDetectDept(s); if(d)addDept(d); else addDept(s.lane); });
-    if(!deptOrder.length) deptOrder.push("Business operations");
-    var responsibleDept=deptOrder[0], laneSet={}; deptOrder.forEach(function(d){laneSet[d]=1;});
+    // candidate department order: actors from the map (Responsible first), then
+    // any actor a step names. We only KEEP a lane if it actually performs a step.
+    var candOrder=[], candSeen={};
+    function addCand(name){ var d=bpmnNormDept(name); if(d && !candSeen[d]){ candSeen[d]=1; candOrder.push(d); } }
+    actors.filter(function(a){return a.type==="Internal"&&a.raci==="Responsible";}).forEach(function(a){addCand(a.actor);});
+    actors.filter(function(a){return a.type==="Internal"&&a.raci!=="Responsible";}).forEach(function(a){addCand(a.actor);});
+    steps.forEach(function(s){ if(BPMN_AI_TYPES[s.execType||""])return; var d=bpmnDetectDept(s); if(d)addCand(d); else addCand(s.lane); });
+    if(!candOrder.length) candOrder.push("Business operations");
+    var responsibleDept=candOrder[0], candSet={}; candOrder.forEach(function(d){candSet[d]=1;});
     function laneKeyOf(s){
       if(BPMN_AI_TYPES[s.execType||""]) return "__ai";
-      var d=bpmnDetectDept(s); if(!(d&&laneSet[d])){ var rl=bpmnNormDept(s.lane||""); d=laneSet[rl]?rl:responsibleDept; }
+      var d=bpmnDetectDept(s); if(!(d&&candSet[d])){ var rl=bpmnNormDept(s.lane||""); d=candSet[rl]?rl:responsibleDept; }
       return "dept:"+d;
     }
     var laneHasStep={}; steps.forEach(function(s){ laneHasStep[laneKeyOf(s)]=1; });
-    var shade=["#eef4fb","#e9f0f9"];
-    var LANES=deptOrder.map(function(d,i){ return {key:"dept:"+d,name:d,fill:shade[i%2],kind:"dept",empty:!laneHasStep["dept:"+d]}; });
-    LANES.push({key:"__ai",name:"AI / Automation",fill:"#f2ecfb",kind:"ai",empty:!laneHasStep["__ai"]});
-    LANES.push({key:"__human",name:"Human review & approval",fill:"#fff7ec",kind:"human"});
+    // Decisions render INLINE in the flow (a business-rule task + an XOR gateway) in
+    // the SAME lane as the step that makes them — matching BPMN convention — so there
+    // is no separate "human review" lane; HITL is shown as a tag on the decision task.
+    // Empty lanes are still dropped.
+    var shade=["#eef4fb","#e9f0f9"], si=0;
+    var LANES=candOrder.filter(function(d){return laneHasStep["dept:"+d];})
+      .map(function(d){ return {key:"dept:"+d,name:d,fill:shade[(si++)%2],kind:"dept"}; });
+    if(laneHasStep["__ai"]) LANES.push({key:"__ai",name:"AI / Automation",fill:"#f2ecfb",kind:"ai"});
+    // supporting / consulted internal actors that perform no step → a caption,
+    // not an empty lane. Plus external / system touchpoints.
+    var supporting=candOrder.filter(function(d){return !laneHasStep["dept:"+d];});
+    actors.filter(function(a){return a.type==="Internal";}).forEach(function(a){ var d=bpmnNormDept(a.actor);
+      if(!laneHasStep["dept:"+d] && supporting.indexOf(d)<0) supporting.push(d); });
     var externals=[], exSeen={};
     actors.filter(function(a){return a.type!=="Internal";}).forEach(function(a){ if(!exSeen[a.actor]){exSeen[a.actor]=1; externals.push(a);} });
-    var leftW=150, colW=172, laneH=84, topPad=30, nodeW=132, nodeH=46, startGap=48;
+    var decInfo=opts.decInfo||{};
+    var altFlows=(opts.altFlows||[]).filter(Boolean).map(function(a){ return (a&&a.step!=null)?a.step:a; });
+    // decision outcome → gateway branch labels ("Live / online / self-study" → 3)
+    function branchLabels(s){
+      var di=decInfo[s.decision]||{};
+      var raw=(di.outcome||"").toString();
+      var arr=raw.split(/\s*\/\s*/).map(function(t){return t.trim();}).filter(Boolean);
+      return arr.length?arr.slice(0,4):["outcome"];
+    }
+    var maxExtra=0; steps.forEach(function(s){ if(s.decision){ var b=branchLabels(s); if(b.length-1>maxExtra)maxExtra=b.length-1; } });
+
+    var leftW=150, laneH=124, topPad=30, nodeW=132, nodeH=44, startGap=40;
+    var colGap=34, decW=126, decH=46, gwR=14;
     var laneIdx={}; LANES.forEach(function(l,i){laneIdx[l.key]=i;});
-    var n=steps.length;
-    var W=leftW+startGap+(n+1)*colW, H=topPad+LANES.length*laneH+16;
-    function cx(i){ return leftW+startGap+colW*i+colW/2; }
+    function laneKeyOfSafe(s){ var k=laneKeyOf(s); return (k in laneIdx)?k:LANES[0].key; }
     function ly(key){ var k=(key in laneIdx)?key:LANES[0].key; return topPad+laneIdx[k]*laneH+laneH/2; }
+    var poolBottom=topPad+LANES.length*laneH;
+    var branchBand = maxExtra>0 ? (maxExtra*22+16) : 0;
+    var startX=leftW+22;
+    // measure flow width by simulating the cursor
+    var mcur=startX+18;
+    steps.forEach(function(s){ mcur += colGap+nodeW; if(s.decision){ mcur += colGap+decW + colGap+gwR*2; } });
+    mcur += colGap+30;
+    // exception band + its width
+    var exBandH = altFlows.length ? 74 : 0;
+    var exW=8; altFlows.forEach(function(af){ exW += 30 + Math.min(210, Math.max(80, (af+"").length*5.4+40)); });
+    var W=Math.max(mcur+30, exW+16) + (maxExtra>0?190:0), H=poolBottom+branchBand+exBandH+16;
+    function ly0(){ return ly(laneKeyOfSafe(steps[0])); }
+
     var parts=[];
     parts.push('<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" font-family="system-ui,Segoe UI,Roboto,sans-serif">');
-    // lane bands + labels (department lanes, then AI/Automation, then Human review)
+    // lane bands + labels (department lanes, then AI / Automation)
     LANES.forEach(function(l,i){
       var y=topPad+i*laneH;
       parts.push('<rect x="0" y="'+y+'" width="'+W+'" height="'+laneH+'" fill="'+l.fill+'"/>');
-      parts.push('<rect x="0" y="'+y+'" width="'+leftW+'" height="'+laneH+'" fill="'+(l.kind==="ai"?"#4c2f7a":(l.kind==="human"?"#8a5a1a":"#16305a"))+'"/>');
+      parts.push('<rect x="0" y="'+y+'" width="'+leftW+'" height="'+laneH+'" fill="'+(l.kind==="ai"?"#4c2f7a":"#16305a")+'"/>');
       var ll=wrap2(l.name, 15);
       parts.push('<text x="'+(leftW/2)+'" y="'+(y+laneH/2)+'" fill="#fff" font-size="10.5" font-weight="700" text-anchor="middle"><tspan x="'+(leftW/2)+'" dy="'+(ll.length>1?-4:3)+'">'+svgEsc(ll[0])+'</tspan>'+(ll[1]?'<tspan x="'+(leftW/2)+'" dy="13">'+svgEsc(ll[1])+'</tspan>':'')+'</text>');
-      // a participating actor with no performed step is a supporting touchpoint
-      if(l.empty && l.kind==="dept") parts.push('<text x="'+(leftW+14)+'" y="'+(y+laneH/2+3)+'" font-size="9" font-style="italic" fill="#8595a8">Supports · consulted (no performed step)</text>');
     });
     parts.push('<rect x="0" y="'+topPad+'" width="'+W+'" height="'+(LANES.length*laneH)+'" fill="none" stroke="#c9d6e6"/>');
     parts.push('<text x="'+leftW+'" y="18" fill="#16305a" font-size="12" font-weight="700">'+svgEsc((opts.title||"Process")+" — BPMN 2.0 lifecycle")+'</text>');
-    // flow: start -> nodes (with gateways on decision steps) -> end
-    var startX=leftW+22, startY=ly(laneKeyOf(steps[0]));
-    var prevX=startX, prevY=startY;
+
     function connector(x1,y1,x2,y2,label,color){
       var midx=(x1+x2)/2;
       parts.push('<path d="M '+x1+' '+y1+' H '+midx+' V '+y2+' H '+x2+'" fill="none" stroke="'+(color||"#5b6b7f")+'" stroke-width="1.4"/>');
-      // arrowhead
       parts.push('<path d="M '+(x2-6)+' '+(y2-4)+' L '+x2+' '+y2+' L '+(x2-6)+' '+(y2+4)+' Z" fill="'+(color||"#5b6b7f")+'"/>');
-      if(label) parts.push('<text x="'+midx+'" y="'+((y1+y2)/2-4)+'" fill="#2f6a3f" font-size="9" text-anchor="middle">'+svgEsc(label)+'</text>');
+      if(label){ var lw=(label+"").length*4.9+8; parts.push('<rect x="'+(midx-lw/2)+'" y="'+((y1+y2)/2-14)+'" width="'+lw+'" height="12" rx="6" fill="#fff" opacity="0.9"/><text x="'+midx+'" y="'+((y1+y2)/2-5)+'" fill="#2f6a3f" font-size="8.5" text-anchor="middle" font-weight="700">'+svgEsc(label)+'</text>'); }
     }
-    // start event
+
+    var startY=ly0();
     parts.push('<circle cx="'+startX+'" cy="'+startY+'" r="13" fill="#fff" stroke="#2f6a3f" stroke-width="2"/>');
     parts.push('<text x="'+startX+'" y="'+(startY+26)+'" font-size="8.5" fill="#5b6b7f" text-anchor="middle">start</text>');
-    steps.forEach(function(s,i){
-      var x=cx(i), y=ly(laneKeyOf(s));
-      // connector from prev to this node's left edge
-      connector(prevX, prevY, x-nodeW/2, y);
-      // node — coloured by execution type (H / A / AIS / AIE / DS)
-      var XC={H:{f:"#e0e7ff",s:"#4f46e5"},A:{f:"#dcfce7",s:"#16a34a"},AIS:{f:"#fef9c3",s:"#ca8a04"},AIE:{f:"#fae8ff",s:"#c026d3"},DS:{f:"#e2e8f0",s:"#64748b"}};
+
+    var XC={H:{f:"#e0e7ff",s:"#4f46e5"},A:{f:"#dcfce7",s:"#16a34a"},AIS:{f:"#fef9c3",s:"#ca8a04"},AIE:{f:"#fae8ff",s:"#c026d3"},DS:{f:"#e2e8f0",s:"#64748b"}};
+    var prevX=startX+13, prevY=startY, cur=startX+18, pendingLabel=null;
+
+    steps.forEach(function(s){
+      var y=ly(laneKeyOfSafe(s));
+      var x=cur+colGap+nodeW/2;
+      connector(prevX, prevY, x-nodeW/2, y, pendingLabel); pendingLabel=null;
       var xt=s.execType||"", xc=XC[xt]||{f:"#ffffff",s:"#2e5c8a"};
-      var fill=xc.f, stroke=xc.s;
-      parts.push('<rect x="'+(x-nodeW/2)+'" y="'+(y-nodeH/2)+'" width="'+nodeW+'" height="'+nodeH+'" rx="8" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.6"/>');
-      if(xt) parts.push('<rect x="'+(x-20)+'" y="'+(y-nodeH/2-11)+'" width="40" height="14" rx="7" fill="#fff" stroke="'+stroke+'" stroke-width="0.9"/><text x="'+x+'" y="'+(y-nodeH/2-1)+'" font-size="8" fill="'+stroke+'" text-anchor="middle" font-weight="800">'+svgEsc(xt)+'</text>');
+      parts.push('<rect x="'+(x-nodeW/2)+'" y="'+(y-nodeH/2)+'" width="'+nodeW+'" height="'+nodeH+'" rx="8" fill="'+xc.f+'" stroke="'+xc.s+'" stroke-width="1.6"/>');
+      if(xt) parts.push('<rect x="'+(x-20)+'" y="'+(y-nodeH/2-11)+'" width="40" height="14" rx="7" fill="#fff" stroke="'+xc.s+'" stroke-width="0.9"/><text x="'+x+'" y="'+(y-nodeH/2-1)+'" font-size="8" fill="'+xc.s+'" text-anchor="middle" font-weight="800">'+svgEsc(xt)+'</text>');
       var lines=wrap2(s.name,20);
       parts.push('<text x="'+x+'" y="'+y+'" font-size="9.5" fill="#233" text-anchor="middle"><tspan x="'+x+'" dy="'+(lines.length>1?-3:2)+'">'+svgEsc(lines[0])+'</tspan>'+(lines[1]?'<tspan x="'+x+'" dy="12">'+svgEsc(lines[1])+'</tspan>':'')+'</text>');
       parts.push('<text x="'+(x-nodeW/2+4)+'" y="'+(y-nodeH/2+11)+'" font-size="7.5" fill="#8595a8" font-family="monospace">'+svgEsc(s.id)+'</text>');
-      prevX=x+nodeW/2; prevY=y;
-      // decision gateway in the half-column gap. A human-in-the-loop (HITL)
-      // decision is made / approved by a person, so its gateway belongs in the
-      // "Human review & approval" lane — it drops out of the AI/ops lane and the
-      // flow hands back up to the next step.
+      var conceptNm = conceptNames[s.concept] || s.concept;
+      if(conceptNm){
+        var doW=118, doH=22, dox=x-doW/2, doy=y+nodeH/2+9, fold=8;
+        parts.push('<path d="M '+dox+' '+doy+' h '+(doW-fold)+' l '+fold+' '+fold+' v '+(doH-fold)+' h -'+doW+' Z" fill="#eef4fb" stroke="#9db6d6" stroke-width="1"/>');
+        parts.push('<path d="M '+(dox+doW-fold)+' '+doy+' v '+fold+' h '+fold+'" fill="none" stroke="#9db6d6" stroke-width="1"/>');
+        parts.push('<line x1="'+x+'" y1="'+(y+nodeH/2)+'" x2="'+x+'" y2="'+doy+'" stroke="#9db6d6" stroke-width="1" stroke-dasharray="3 2"/>');
+        var cl=wrap2(conceptNm,22);
+        parts.push('<text x="'+x+'" y="'+(doy+(s.crud?9:13))+'" font-size="8" fill="#1e3a5f" text-anchor="middle" font-weight="600">'+svgEsc(cl[0].slice(0,24))+'</text>');
+        if(s.crud) parts.push('<text x="'+x+'" y="'+(doy+doH-4)+'" font-size="7" fill="#5b6b7f" text-anchor="middle">'+svgEsc(s.crud)+(s.toState?' → '+svgEsc(s.toState):'')+'</text>');
+      }
+      prevX=x+nodeW/2; prevY=y; cur=x+nodeW/2;
+
       if(s.decision){
-        var gx=x+nodeW/2+(colW-nodeW)/2, gy=s.hitl?ly("__human"):y, r=13;
-        connector(prevX, prevY, gx-r, gy);
-        // clickable → the decision's DMN. Input-data + knowledge annotations
-        // sit just above the gateway so the decision's inputs & knowledge show
-        // at the point the process makes it.
-        parts.push('<a href="decisions.html#'+svgEsc(s.decision)+'"><title>'+svgEsc(s.decision+(s.decisionInput?" · inputs: "+s.decisionInput:""))+'</title>');
+        // ---- inline business-rule (decision) task, in the step's own lane ----
+        var dx=cur+colGap+decW/2, dyy=y;
+        connector(prevX,prevY, dx-decW/2, dyy);
+        var di=decInfo[s.decision]||{};
+        parts.push('<a href="decisions.html#'+svgEsc(s.decision)+'"><title>'+svgEsc(s.decision+(di.name?" · "+di.name:"")+(s.decisionInput?" · inputs: "+s.decisionInput:""))+'</title>');
         if(s.decisionInput){
-          var dtxt=wrap2(s.decisionInput,26);
-          parts.push('<rect x="'+(gx-46)+'" y="'+(gy-r-30)+'" width="92" height="21" rx="10.5" fill="#eef1f4" stroke="#9aa8b8" stroke-width="0.9"/>');
-          parts.push('<text x="'+gx+'" y="'+(gy-r-16)+'" font-size="6.6" fill="#3a4a5c" text-anchor="middle">'+svgEsc((dtxt[0]||"").slice(0,22))+'</text>');
-          parts.push('<line x1="'+gx+'" y1="'+(gy-r-9)+'" x2="'+gx+'" y2="'+(gy-r)+'" stroke="#9aa8b8" stroke-width="0.8" stroke-dasharray="2 2"/>');
+          var dtxt=wrap2(s.decisionInput,30);
+          parts.push('<rect x="'+(dx-54)+'" y="'+(dyy-decH/2-23)+'" width="108" height="18" rx="9" fill="#eef1f4" stroke="#9aa8b8" stroke-width="0.9"/>');
+          parts.push('<text x="'+dx+'" y="'+(dyy-decH/2-11)+'" font-size="6.6" fill="#3a4a5c" text-anchor="middle">'+svgEsc((dtxt[0]||"").slice(0,28))+'</text>');
+          parts.push('<line x1="'+dx+'" y1="'+(dyy-decH/2-5)+'" x2="'+dx+'" y2="'+(dyy-decH/2)+'" stroke="#9aa8b8" stroke-width="0.8" stroke-dasharray="2 2"/>');
         }
-        parts.push('<path d="M '+gx+' '+(gy-r)+' L '+(gx+r)+' '+gy+' L '+gx+' '+(gy+r)+' L '+(gx-r)+' '+gy+' Z" fill="#fdf1cf" stroke="#c99700" stroke-width="1.4"/>');
-        parts.push('<text x="'+gx+'" y="'+(gy+1)+'" font-size="8" fill="#8a6d1a" text-anchor="middle" font-weight="700">'+svgEsc(s.decision)+'</text>');
+        parts.push('<rect x="'+(dx-decW/2)+'" y="'+(dyy-decH/2)+'" width="'+decW+'" height="'+decH+'" rx="8" fill="#fdf6e3" stroke="#c99700" stroke-width="1.7"/>');
+        // 3×3 decision-table grid icon (marks this as a business-rule task)
+        var gi=dx-decW/2+7, gj=dyy-decH/2+7;
+        parts.push('<rect x="'+gi+'" y="'+gj+'" width="15" height="12" fill="#fff" stroke="#c99700" stroke-width="1"/>');
+        parts.push('<line x1="'+gi+'" y1="'+(gj+4)+'" x2="'+(gi+15)+'" y2="'+(gj+4)+'" stroke="#c99700" stroke-width="0.7"/><line x1="'+gi+'" y1="'+(gj+8)+'" x2="'+(gi+15)+'" y2="'+(gj+8)+'" stroke="#c99700" stroke-width="0.7"/>');
+        parts.push('<line x1="'+(gi+5)+'" y1="'+gj+'" x2="'+(gi+5)+'" y2="'+(gj+12)+'" stroke="#c99700" stroke-width="0.7"/><line x1="'+(gi+10)+'" y1="'+gj+'" x2="'+(gi+10)+'" y2="'+(gj+12)+'" stroke="#c99700" stroke-width="0.7"/>');
+        parts.push('<text x="'+(gi+21)+'" y="'+(gj+9)+'" font-size="8" fill="#8a6d1a" font-weight="800" font-family="monospace">'+svgEsc(s.decision)+'</text>');
+        var dn=wrap2(di.name||"Decision",22);
+        parts.push('<text x="'+dx+'" y="'+(dyy+7)+'" font-size="9" fill="#5b4708" text-anchor="middle" font-weight="600"><tspan x="'+dx+'" dy="0">'+svgEsc(dn[0])+'</tspan>'+(dn[1]?'<tspan x="'+dx+'" dy="10">'+svgEsc(dn[1])+'</tspan>':'')+'</text>');
+        if(s.hitl) parts.push('<rect x="'+(dx+decW/2-31)+'" y="'+(dyy-decH/2-9)+'" width="31" height="13" rx="6.5" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.8"/><text x="'+(dx+decW/2-15.5)+'" y="'+(dyy-decH/2+1)+'" font-size="7.5" fill="#b91c1c" text-anchor="middle" font-weight="700">HITL</text>');
         parts.push('</a>');
-        if(s.hitl) parts.push('<text x="'+gx+'" y="'+(gy+r+10)+'" font-size="7.5" fill="#b91c1c" text-anchor="middle" font-weight="700">HITL</text>');
-        prevX=gx+r; prevY=gy;
+        prevX=dx+decW/2; prevY=dyy; cur=dx+decW/2;
+
+        // ---- XOR gateway with outcome branches ----
+        var gx=cur+colGap+gwR, gy=dyy;
+        connector(prevX,prevY, gx-gwR-2, gy);
+        parts.push('<path d="M '+gx+' '+(gy-gwR)+' L '+(gx+gwR)+' '+gy+' L '+gx+' '+(gy+gwR)+' L '+(gx-gwR)+' '+gy+' Z" fill="#fff" stroke="#c99700" stroke-width="1.6"/>');
+        parts.push('<text x="'+gx+'" y="'+(gy+4)+'" font-size="13" fill="#c99700" text-anchor="middle" font-weight="800">&#215;</text>');
+        var bl=branchLabels(s);
+        for(var bi=1; bi<bl.length; bi++){
+          var byy=poolBottom + bi*22 - 6, pw=Math.max(52, bl[bi].length*5.6+14);
+          parts.push('<path d="M '+gx+' '+(gy+gwR)+' V '+byy+' H '+(gx+58)+'" fill="none" stroke="#b6892a" stroke-width="1.1" stroke-dasharray="4 2"/>');
+          parts.push('<path d="M '+(gx+52)+' '+(byy-4)+' L '+(gx+58)+' '+byy+' L '+(gx+52)+' '+(byy+4)+' Z" fill="#b6892a"/>');
+          parts.push('<rect x="'+(gx+58)+'" y="'+(byy-8)+'" width="'+pw+'" height="16" rx="8" fill="#fdf6e3" stroke="#c99700" stroke-width="0.9"/>');
+          parts.push('<text x="'+(gx+58+pw/2)+'" y="'+(byy+3)+'" font-size="7.6" fill="#8a6d1a" text-anchor="middle" font-weight="600">'+svgEsc(bl[bi].slice(0,24))+'</text>');
+        }
+        pendingLabel=bl[0];
+        prevX=gx+gwR; prevY=gy; cur=gx+gwR;
       }
     });
-    // end event
-    var endX=prevX+34, endY=prevY;
-    connector(prevX, prevY, endX-13, endY);
+    var endX=cur+colGap+13, endY=prevY;
+    connector(prevX, prevY, endX-13, endY, pendingLabel);
     parts.push('<circle cx="'+endX+'" cy="'+endY+'" r="13" fill="#fff" stroke="#2f6a3f" stroke-width="3"/>');
     parts.push('<text x="'+endX+'" y="'+(endY+26)+'" font-size="8.5" fill="#5b6b7f" text-anchor="middle">end</text>');
+
+    // ---- exception & alternate-flow band (boundary error events under the pool) ----
+    if(altFlows.length){
+      var eby=poolBottom+branchBand+16;
+      parts.push('<line x1="0" y1="'+(eby-8)+'" x2="'+W+'" y2="'+(eby-8)+'" stroke="#e6c9c9" stroke-width="1" stroke-dasharray="3 3"/>');
+      parts.push('<text x="2" y="'+(eby+3)+'" font-size="9.5" fill="#b91c1c" font-weight="700">Exception &amp; alternate flows (boundary events)</text>');
+      var exX=8, ery=eby+30;
+      altFlows.forEach(function(af){
+        var lbl=(af+""), w=Math.min(210, Math.max(80, lbl.length*5.4+40));
+        parts.push('<circle cx="'+(exX+13)+'" cy="'+ery+'" r="11" fill="#fff" stroke="#b91c1c" stroke-width="1.5"/>');
+        parts.push('<circle cx="'+(exX+13)+'" cy="'+ery+'" r="8.4" fill="none" stroke="#b91c1c" stroke-width="0.7"/>');
+        parts.push('<path d="M '+(exX+8.5)+' '+(ery+3)+' l 3 -6 l 2.5 3.4 l 3 -5.4" fill="none" stroke="#b91c1c" stroke-width="1.3"/>');
+        var el=wrap2(lbl,26);
+        parts.push('<text x="'+(exX+28)+'" y="'+(ery-2)+'" font-size="8" fill="#7f1d1d"><tspan x="'+(exX+28)+'" dy="0">'+svgEsc(el[0])+'</tspan>'+(el[1]?'<tspan x="'+(exX+28)+'" dy="10">'+svgEsc(el[1])+'</tspan>':'')+'</text>');
+        exX += 30 + w;
+      });
+    }
     parts.push('</svg>');
-    // external / system touchpoints the process interacts with (message flows)
+    // supporting / consulted actors (no performed step) + external / system
+    // touchpoints — shown compactly as pills, NOT as empty swimlanes.
     var tpBand="";
-    if(externals.length){
+    var pills=supporting.map(function(d){
+        return '<span style="display:inline-flex;align-items:center;gap:5px;background:#eef2f7;color:#475569;border-radius:20px;padding:3px 11px">'+
+          '<b style="font-size:.6rem;text-transform:uppercase;letter-spacing:.03em;opacity:.7">supports</b>'+svgEsc(d)+'</span>'; })
+      .concat(externals.map(function(a){ var sys=a.type==="System";
+        return '<span style="display:inline-flex;align-items:center;gap:5px;background:'+(sys?"#e2e8f0":"#fef3c7")+';color:'+(sys?"#334155":"#92400e")+';border-radius:20px;padding:3px 11px">'+
+          '<b style="font-size:.6rem;text-transform:uppercase;letter-spacing:.03em;opacity:.7">'+(sys?"system":"external")+'</b>'+svgEsc(a.actor)+'</span>'; }));
+    if(pills.length){
       tpBand='<div style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:.78rem">'+
-        '<span style="font-weight:700;color:#475569">External / system touchpoints:</span>'+
-        externals.map(function(a){ var sys=a.type==="System";
-          return '<span style="display:inline-flex;align-items:center;gap:5px;background:'+(sys?"#e2e8f0":"#fef3c7")+';color:'+(sys?"#334155":"#92400e")+';border-radius:20px;padding:3px 11px">'+
-            '<b style="font-size:.6rem;text-transform:uppercase;letter-spacing:.03em;opacity:.7">'+(sys?"system":"external")+'</b>'+svgEsc(a.actor)+'</span>'; }).join("")+
-        '</div>';
+        '<span style="font-weight:700;color:#475569">Also involved (touchpoints):</span>'+pills.join("")+'</div>';
     }
     host.innerHTML='<div style="overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:6px">'+parts.join("")+'</div>'+
       tpBand+
-      '<div class="maplegend" style="margin-top:8px"><span>◯ start / end</span><span><i style="background:#e0e7ff;border:1px solid #4f46e5"></i>H · Human</span><span><i style="background:#dcfce7;border:1px solid #16a34a"></i>A · Automated</span><span><i style="background:#fef9c3;border:1px solid #ca8a04"></i>AIS · AI-Supported</span><span><i style="background:#fae8ff;border:1px solid #c026d3"></i>AIE · AI-Executed</span><span><i style="background:#e2e8f0;border:1px solid #64748b"></i>DS · Data Support</span><span><i style="background:#fdf1cf;border:1px solid #c99700"></i>decision gateway</span><span style="color:#b91c1c">HITL = human-in-the-loop</span></div>';
+      '<div class="maplegend" style="margin-top:8px"><span>◯ start / end</span><span><i style="background:#e0e7ff;border:1px solid #4f46e5"></i>H · Human</span><span><i style="background:#dcfce7;border:1px solid #16a34a"></i>A · Automated</span><span><i style="background:#fef9c3;border:1px solid #ca8a04"></i>AIS · AI-Supported</span><span><i style="background:#fae8ff;border:1px solid #c026d3"></i>AIE · AI-Executed</span><span><i style="background:#e2e8f0;border:1px solid #64748b"></i>DS · Data Support</span><span><i style="background:#fdf6e3;border:1px solid #c99700"></i>decision (business rule) + × gateway</span><span><i style="background:#fff;border:1px solid #b91c1c;border-radius:50%"></i>exception / boundary event</span><span style="color:#b91c1c">HITL = human-in-the-loop</span></div>';
   };
 })();

@@ -106,6 +106,7 @@
   .spine .seg{flex:0 0 auto;min-width:120px;max-width:220px;position:relative;padding:0 16px 0 0;margin-right:10px}
   .spine .seg:after{content:"›";position:absolute;right:0;top:50%;transform:translateY(-50%);color:var(--accent);font-weight:800;font-size:1.1rem}
   .spine .seg:last-child{padding-right:0;margin-right:0}.spine .seg:last-child:after{content:""}
+  .spine .seg.last{padding-right:0;margin-right:0}.spine .seg.last:after{content:""}
   .spine .lb{font-size:.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-bottom:5px;white-space:nowrap}
   .spine .stk{display:flex;flex-direction:column;gap:4px}
   .spine .sn{display:block;font-size:.76rem;line-height:1.25;background:#f4f7fc;border:1px solid var(--line);border-radius:8px;padding:5px 8px;text-decoration:none;color:var(--ink)}
@@ -455,19 +456,25 @@ function renderSpine(id){
   if(!outList.length && !decs.length){ sec.style.display="none"; return; }
   sec.style.display="";
   function chip(cls,href,id2,name){ var inner='<span class="id">'+esc(id2)+'</span>'+esc(name); return href?'<a class="sn" href="'+href+'">'+inner+'</a>':'<span class="sn">'+inner+'</span>'; }
-  function seg(cls,label,items){ return '<div class="seg '+cls+'"><div class="lb">'+esc(label)+'</div><div class="stk">'+
+  function seg(cls,label,items,isLast){ return '<div class="seg '+cls+(isLast?' last':'')+'"><div class="lb">'+esc(label)+'</div><div class="stk">'+
       (items&&items.length?items.join(""):'<span class="none">—</span>')+'</div></div>'; }
   var conc = D.informationConcepts||[]; var concById={}; conc.forEach(function(c){concById[c.id]=c;});
-  host.innerHTML =
-    seg("up","Business outcome", outList.map(function(o){ var b=BO_BY_ID[o]; return chip("","north_star.html",o,(b?b.name:o)); }))+
-    seg("up","KPI · benefit", kpiList.map(function(k){ return chip("","north_star.html",k,kpiName(k)); }))+
-    seg("up","Value stream", vsList.map(function(v){ return chip("","value_streams.html",v,vsName(v)); }))+
-    seg("up","Capability", caps.map(function(c){ var m=MAP.CAP[c]; return chip("","business_architecture.html",c,(m?m.name:c)); }))+
-    seg("self","Business process", [chip("","",id,p.name)])+
-    seg("dec","Business decision", decs.map(function(dd){ var m=MAP.D[dd]; return chip("","decisions.html#"+dd,dd,(m?m.name:dd)); }))+
-    seg("","Data · concepts", dataItems.slice(0,7).map(function(x){ var m=concById[x.concept]; return chip("","",(x.concept||"data"),(m?m.name:x.item)); }))+
-    seg("ai","AI use-case", Object.keys(aiSet).map(function(u){ var m=MAP.AI[u]; return chip("","ai_usecases.html#"+u,u,(m?m.name:u)); }))+
-    seg("ctl","Control", ctls.map(function(cid){ var c=CTL_BY_ID[cid]; return chip("","business_policies.html#"+(c?c.policy:""),cid,(c?c.name:cid)); }));
+  // build segments as an array so we can drop TRAILING empty segments (no dangling chevrons)
+  var segs = [
+    {cls:"up",  label:"Business outcome", items: outList.map(function(o){ var b=BO_BY_ID[o]; return chip("","north_star.html",o,(b?b.name:o)); })},
+    {cls:"up",  label:"KPI · benefit",    items: kpiList.map(function(k){ return chip("","north_star.html",k,kpiName(k)); })},
+    {cls:"up",  label:"Value stream",     items: vsList.map(function(v){ return chip("","value_streams.html",v,vsName(v)); })},
+    {cls:"up",  label:"Capability",       items: caps.map(function(c){ var m=MAP.CAP[c]; return chip("","business_architecture.html",c,(m?m.name:c)); })},
+    {cls:"self",label:"Business process", items: [chip("","",id,p.name)]},
+    {cls:"dec", label:"Business decision",items: decs.map(function(dd){ var m=MAP.D[dd]; return chip("","decisions.html#"+dd,dd,(m?m.name:dd)); })},
+    {cls:"",    label:"Data · concepts",  items: dataItems.slice(0,7).map(function(x){ var m=concById[x.concept]; return chip("","",(x.concept||"data"),(m?m.name:x.item)); })},
+    {cls:"ai",  label:"AI use-case",      items: Object.keys(aiSet).map(function(u){ var m=MAP.AI[u]; return chip("","ai_usecases.html#"+u,u,(m?m.name:u)); })},
+    {cls:"ctl", label:"Control",          items: ctls.map(function(cid){ var c=CTL_BY_ID[cid]; return chip("","business_policies.html#"+(c?c.policy:""),cid,(c?c.name:cid)); })}
+  ];
+  // find last segment that actually has content; drop everything after it
+  var lastIdx=0; for(var i=0;i<segs.length;i++){ if(segs[i].items && segs[i].items.length) lastIdx=i; }
+  var kept = segs.slice(0, lastIdx+1);
+  host.innerHTML = kept.map(function(sg,ix){ return seg(sg.cls, sg.label, sg.items, ix===kept.length-1); }).join("");
 }
 /* ---- Process definition against the Process Architecture gate ---- */
 function renderGate(id){
@@ -582,7 +589,17 @@ window.sel = function(id){
   renderStructure(id);
   renderProcDecisions(id);
   renderSteps(id);
-  if(PACK.renderBPMN) PACK.renderBPMN(document.getElementById("bpmn"), STEPS.filter(function(s){return s.process===id;}), {title:(p.name||id), actors:(P_ACT[id]||[])});
+  if(PACK.renderBPMN){
+    // decision name + outcome for the inline business-rule task and gateway branches
+    var _decInfo={}; STEPS.filter(function(s){return s.process===id&&s.decision;}).forEach(function(s){
+      var m=MAP.D[s.decision]||{}, dr=DR_BY[s.decision]||{};
+      _decInfo[s.decision]={name:(m.name||dr.name||s.decision), outcome:(m.outcome||dr.impact||"")};
+    });
+    // alternate / exception flows → boundary events on the BPMN
+    var _alt=(P_AF[id]||[]).slice().sort(function(a,b){return a.no-b.no;});
+    PACK.renderBPMN(document.getElementById("bpmn"), STEPS.filter(function(s){return s.process===id;}),
+      {title:(p.name||id), actors:(P_ACT[id]||[]), conceptNames:CONC_NAME, decInfo:_decInfo, altFlows:_alt});
+  }
   try{ history.replaceState(null,"","#"+id); }catch(e){}
   PACK.renderBreadcrumb("proc");
 };

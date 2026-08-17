@@ -309,6 +309,9 @@
     var externals=[], exSeen={};
     actors.filter(function(a){return a.type!=="Internal";}).forEach(function(a){ if(!exSeen[a.actor]){exSeen[a.actor]=1; externals.push(a);} });
     var altFlows=(opts.altFlows||[]).filter(Boolean).map(function(a){ return (a&&a.step!=null)?a.step:a; });
+    // exception / alternate flows get their OWN lane at the foot of the pool, so the
+    // boundary events sit inside a swimlane rather than floating below the diagram.
+    if(altFlows.length) LANES.push({key:"__exception",name:"Exception & alternate flows",fill:"#fdeeee",kind:"exception"});
     // decision outcome → gateway branch labels ("Live / online / self-study" → 3)
     function branchLabels(s){
       var di=decInfo[s.decision]||{};
@@ -318,37 +321,46 @@
     }
     var maxOut=1; steps.forEach(function(s){ if(s.decision){ var b=branchLabels(s); if(b.length>maxOut)maxOut=b.length; } });
 
-    var leftW=150, laneH=124, topPad=30, nodeW=132, nodeH=44, startGap=40;
+    var leftW=150, topPad=30, nodeW=132, nodeH=44, startGap=40;
     var colGap=34, decW=126, decH=46, gwR=14;
+    var BASELANE=124, NODEROW=62, OUTSTEP=60;
     var laneIdx={}; LANES.forEach(function(l,i){laneIdx[l.key]=i;});
     function laneKeyOfSafe(s){ var k=laneKeyOf(s); return (k in laneIdx)?k:LANES[0].key; }
-    function ly(key){ var k=(key in laneIdx)?key:LANES[0].key; return topPad+laneIdx[k]*laneH+laneH/2; }
-    var poolBottom=topPad+LANES.length*laneH;
-    var branchBand = (maxOut>1) ? ((maxOut-1)*60+48) : 0;   // room for terminal / off-ramp end events + 2-line captions
+    // a decision lives in the AI Steward lane when it is HITL, else in its step's lane
+    function decLaneKey(s){ return (s.hitl && ("__steward" in laneIdx)) ? "__steward" : laneKeyOfSafe(s); }
+    // how many end events stack BELOW a gateway in each lane → grow that lane to fit,
+    // so no element is ever drawn outside a swimlane.
+    var laneExtraOut={};
+    steps.forEach(function(s){ if(!s.decision) return; var lk=decLaneKey(s);
+      laneExtraOut[lk]=Math.max(laneExtraOut[lk]||0, Math.max(0, branchLabels(s).length-1)); });
+    // variable lane geometry (each lane tall enough for all of its content)
+    var laneTop={}, laneHt={}, _cy=topPad;
+    LANES.forEach(function(l){ var extra=laneExtraOut[l.key]||0;
+      laneTop[l.key]=_cy; laneHt[l.key]=BASELANE + (extra>0 ? extra*OUTSTEP+16 : 0); _cy+=laneHt[l.key]; });
+    var poolBottom=_cy;
+    function ly(key){ key=(key in laneTop)?key:LANES[0].key; return laneTop[key]+NODEROW; }
+    function ly0(){ return ly(laneKeyOfSafe(steps[0])); }
     var startX=leftW+22;
     // measure flow width by simulating the cursor
     var mcur=startX+18;
     steps.forEach(function(s){ mcur += colGap+nodeW; if(s.decision){ mcur += colGap+decW + colGap+gwR*2; } });
     mcur += colGap+30;
-    // reserve the terminal outcome end-event column when the flow ends on a decision
     if(steps[steps.length-1] && steps[steps.length-1].decision) mcur += 120;
-    // exception band + its width
-    var exBandH = altFlows.length ? 74 : 0;
-    var exW=8; altFlows.forEach(function(af){ exW += 30 + Math.min(210, Math.max(80, (af+"").length*5.4+40)); });
-    var W=Math.max(mcur+30, exW+16) + (maxOut>1?70:0), H=poolBottom+branchBand+exBandH+16;
-    function ly0(){ return ly(laneKeyOfSafe(steps[0])); }
+    // exception-lane row width (events sit inside the lane, after the label band)
+    var exW=leftW+14; altFlows.forEach(function(af){ exW += 30 + Math.min(210, Math.max(80, (af+"").length*5.4+40)); });
+    var W=Math.max(mcur+30, exW+16) + (maxOut>1?70:0), H=poolBottom+16;
 
     var parts=[];
     parts.push('<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" font-family="system-ui,Segoe UI,Roboto,sans-serif">');
-    // lane bands + labels (department lanes, then AI / Automation)
-    LANES.forEach(function(l,i){
-      var y=topPad+i*laneH;
-      parts.push('<rect x="0" y="'+y+'" width="'+W+'" height="'+laneH+'" fill="'+l.fill+'"/>');
-      parts.push('<rect x="0" y="'+y+'" width="'+leftW+'" height="'+laneH+'" fill="'+(l.kind==="ai"?"#4c2f7a":(l.kind==="steward"?"#8a5a1a":"#16305a"))+'"/>');
+    // lane bands + labels (variable height — grows to contain every element)
+    LANES.forEach(function(l){
+      var y=laneTop[l.key], h=laneHt[l.key];
+      parts.push('<rect x="0" y="'+y+'" width="'+W+'" height="'+h+'" fill="'+l.fill+'"/>');
+      parts.push('<rect x="0" y="'+y+'" width="'+leftW+'" height="'+h+'" fill="'+(l.kind==="ai"?"#4c2f7a":(l.kind==="steward"?"#8a5a1a":(l.kind==="exception"?"#9a3d3d":"#16305a")))+'"/>');
       var ll=wrap2(l.name, 15);
-      parts.push('<text x="'+(leftW/2)+'" y="'+(y+laneH/2)+'" fill="#fff" font-size="10.5" font-weight="700" text-anchor="middle"><tspan x="'+(leftW/2)+'" dy="'+(ll.length>1?-4:3)+'">'+svgEsc(ll[0])+'</tspan>'+(ll[1]?'<tspan x="'+(leftW/2)+'" dy="13">'+svgEsc(ll[1])+'</tspan>':'')+'</text>');
+      parts.push('<text x="'+(leftW/2)+'" y="'+(y+h/2)+'" fill="#fff" font-size="10.5" font-weight="700" text-anchor="middle"><tspan x="'+(leftW/2)+'" dy="'+(ll.length>1?-4:3)+'">'+svgEsc(ll[0])+'</tspan>'+(ll[1]?'<tspan x="'+(leftW/2)+'" dy="13">'+svgEsc(ll[1])+'</tspan>':'')+'</text>');
     });
-    parts.push('<rect x="0" y="'+topPad+'" width="'+W+'" height="'+(LANES.length*laneH)+'" fill="none" stroke="#c9d6e6"/>');
+    parts.push('<rect x="0" y="'+topPad+'" width="'+W+'" height="'+(poolBottom-topPad)+'" fill="none" stroke="#c9d6e6"/>');
     parts.push('<text x="'+leftW+'" y="18" fill="#16305a" font-size="12" font-weight="700">'+svgEsc((opts.title||"Process")+" — BPMN 2.0 lifecycle")+'</text>');
 
     function connector(x1,y1,x2,y2,label,color){
@@ -438,7 +450,7 @@
         var decHandlers=(decInfo[s.decision]||{}).handlers||{};
         function msgEnd(ox,oy,label){
           var h=decHandlers[label];
-          var neg=h ? !h.pos : /\b(declin|reject|suppress|ineligib|unqualif|hold|retir|deny|defer|withdraw|exit|fail|cancel|clos|remov|block|no)\w*/i.test(label);
+          var neg=h ? !h.pos : /\b(declin|reject|suppress|ineligib|unqualif|hold|retir|deny|defer|withdraw|exit|fail|cancel|clos|remov|block|drop|abandon|discard|no)\w*/i.test(label);
           var col=neg?"#b45309":"#2f6a3f";
           parts.push('<circle cx="'+ox+'" cy="'+oy+'" r="'+endR+'" fill="#fff" stroke="'+col+'" stroke-width="2.6"/>');
           parts.push('<rect x="'+(ox-6)+'" y="'+(oy-4)+'" width="12" height="8" fill="none" stroke="'+col+'" stroke-width="0.9"/><path d="M '+(ox-6)+' '+(oy-4)+' L '+ox+' '+(oy+1.5)+' L '+(ox+6)+' '+(oy-4)+'" fill="none" stroke="'+col+'" stroke-width="0.9"/>');
@@ -452,7 +464,7 @@
           connector(gx+gwR, gy, oX-endR, gy, bl[0]);
           msgEnd(oX, gy, bl[0]);
           for(var bi=1; bi<bl.length; bi++){
-            var oy=gy+bi*60;
+            var oy=gy+bi*OUTSTEP;
             parts.push('<path d="M '+gx+' '+(gy+gwR)+' V '+oy+' H '+(oX-endR)+'" fill="none" stroke="#b6892a" stroke-width="1.2" stroke-dasharray="4 2"/>');
             parts.push('<path d="M '+(oX-endR-6)+' '+(oy-4)+' L '+(oX-endR)+' '+oy+' L '+(oX-endR-6)+' '+(oy+4)+' Z" fill="#b6892a"/>');
             parts.push('<text x="'+(gx+16)+'" y="'+((gy+oy)/2-2)+'" font-size="7.6" fill="#8a6d1a" font-weight="700">'+svgEsc(bl[bi])+'</text>');
@@ -461,10 +473,11 @@
           flowEnded=true;
           prevX=oX+endR; prevY=gy; cur=oX+endR;
         } else {
-          // mid-flow — primary continues; alternate (off-ramp) outcomes end below pool
+          // mid-flow — primary continues; alternate (off-ramp) outcomes end within the
+          // gateway's own lane (never below the pool)
           pendingLabel=bl[0];
           for(var bj=1; bj<bl.length; bj++){
-            var byy=poolBottom + bj*60 - 4;
+            var byy=gy + bj*OUTSTEP;
             parts.push('<path d="M '+gx+' '+(gy+gwR)+' V '+byy+' H '+(gx+exGap)+'" fill="none" stroke="#b6892a" stroke-width="1.1" stroke-dasharray="4 2"/>');
             parts.push('<text x="'+(gx+10)+'" y="'+(byy-3)+'" font-size="7.4" fill="#8a6d1a" font-weight="700">'+svgEsc(bl[bj])+'</text>');
             msgEnd(gx+exGap+endR, byy, bl[bj]);
@@ -480,12 +493,9 @@
       parts.push('<text x="'+endX+'" y="'+(endY+26)+'" font-size="8.5" fill="#5b6b7f" text-anchor="middle">end</text>');
     }
 
-    // ---- exception & alternate-flow band (boundary error events under the pool) ----
-    if(altFlows.length){
-      var eby=poolBottom+branchBand+16;
-      parts.push('<line x1="0" y1="'+(eby-8)+'" x2="'+W+'" y2="'+(eby-8)+'" stroke="#e6c9c9" stroke-width="1" stroke-dasharray="3 3"/>');
-      parts.push('<text x="2" y="'+(eby+3)+'" font-size="9.5" fill="#b91c1c" font-weight="700">Exception &amp; alternate flows (boundary events)</text>');
-      var exX=8, ery=eby+30;
+    // ---- exception / alternate flows — boundary error events INSIDE their own lane ----
+    if(altFlows.length && ("__exception" in laneTop)){
+      var ery=laneTop["__exception"]+laneHt["__exception"]/2, exX=leftW+14;
       altFlows.forEach(function(af){
         var lbl=(af+""), w=Math.min(210, Math.max(80, lbl.length*5.4+40));
         parts.push('<circle cx="'+(exX+13)+'" cy="'+ery+'" r="11" fill="#fff" stroke="#b91c1c" stroke-width="1.5"/>');

@@ -365,6 +365,14 @@
   set("processCatalogue", recs("210 ·").map(function(r){ return {id:r.ProcessID,specId:r.SpecID,name:r.Name,phase:r.Phase,owner:r.Owner,trigger:r.Trigger}; }));
   var _pca={}; recs("210 ·").forEach(function(r){ _pca[r.ProcessID]={phase:r.Phase,owner:r.Owner,trigger:r.Trigger,specId:r.SpecID}; });
   if(Object.keys(_pca).length) G.processMeta=_pca;
+  // decision outcome handlers (what each outcome creates + whom it notifies) — the
+  // BPMN message end events read this so the workbook is the source of truth.
+  var _doh={}; recs("215 ·").forEach(function(r){
+    (_doh[r.DecisionID]=_doh[r.DecisionID]||{})[r.Outcome]={
+      action:r.Action, artefact:r.Artefact, party:r.NotifyParty, note:r.Note,
+      pos:!/^\s*Notify\s*$/i.test(r.Action||"") };
+  });
+  if(Object.keys(_doh).length) G.decisionOutcomeHandlers=_doh;
 
   /* ---- Operational Business Policies + Policy Controls (Guidelines/Tips) ---- */
   set("businessPolicies", recs("211 ·").map(function(r){ return {id:r.PolicyID,name:r.Name,area:r.Area,owner:r.OwnerRole,purpose:r.Purpose}; }));

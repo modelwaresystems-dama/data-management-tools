@@ -235,7 +235,7 @@
         </div>
         <div class="section" style="margin-top:20px">
           <h3 style="margin:0 0 4px">Lifecycle — BPMN 2.0 swimlane</h3>
-          <p class="muted tight" style="margin:0 0 12px">The same steps as a governed flow — one lane per <strong>department / actor</strong> that performs the human work, an <strong>AI / Automation</strong> lane for everything the system / AI performs (Automated, AI-Supported, AI-Executed and Data-Support steps), and an <strong>AI Steward</strong> lane where each human-in-the-loop decision is reviewed by its <strong>accountable role</strong> before the flow hands back. Decisions render as business-rule tasks with an XOR gateway.</p>
+          <p class="muted tight" style="margin:0 0 12px">The same steps as a governed flow — one lane per <strong>department / actor</strong> that performs the human work, an <strong>AI / Automation</strong> lane for everything the system / AI performs (Automated, AI-Supported, AI-Executed and Data-Support steps), and an <strong>AI Steward</strong> lane where each human-in-the-loop decision is reviewed by its <strong>accountable role</strong> before the flow hands back, and an <strong>Exception &amp; alternate flows</strong> lane for the boundary events. Decisions render as business-rule tasks with an XOR gateway, and every outcome ends in a message event (create / notify) — all inside a lane.</p>
           <div id="bpmn"></div>
         </div>
         <div class="section" style="margin-top:16px">
@@ -598,17 +598,26 @@ window.sel = function(id){
     var _SIP=(PACK.deriveSIPOC?PACK.deriveSIPOC(id,p):null) || (D.processSIPOC||{})[id] || {};
     function _pname(list){ if(!list||!list.length)return ""; var x=list[0]; return (x&&(x.actor||x.l||x.name))||x||""; }
     var _cust=_pname(_SIP.customers), _sup=_pname(_SIP.suppliers);
+    // source of truth: the model's DecisionOutcomeHandler sheet (215), hydrated to
+    // D.decisionOutcomeHandlers. Fall back to the authored decision_handlers.js +
+    // SIPOC-derived party for sources / decisions the sheet does not cover.
+    var _DOH=D.decisionOutcomeHandlers||{};
     var _HANDLERS=(window.DECISION_HANDLERS&&window.DECISION_HANDLERS[(window.PACK_CONFIG||{}).activeOrg])||{};
-    function _isNeg(o){ return /\b(declin|reject|suppress|ineligib|unqualif|hold|retir|deny|defer|withdraw|exit|fail|cancel|clos|remov|block|no)\w*/i.test(o); }
+    function _isNeg(o){ return /\b(declin|reject|suppress|ineligib|unqualif|hold|retir|deny|defer|withdraw|exit|fail|cancel|clos|remov|block|drop|abandon|discard|no)\w*/i.test(o); }
     function _handlersFor(decId, outcomeStr){
       var outs=(outcomeStr||"").split(/\s*\/\s*/).map(function(t){return t.trim();}).filter(Boolean);
+      var sheetH=_DOH[decId];
       var map={}; outs.forEach(function(o){
+        if(sheetH && sheetH[o]){ var s=sheetH[o]; var party=s.party||_cust||"the recipient";
+          map[o]={ pos:!!s.pos, act:(s.pos
+            ? ((s.artefact?("create "+s.artefact+" · "):"create record · ")+"notify "+party)
+            : ("notify "+party+(s.note?(" · "+s.note):""))) };
+          return; }
         var ov=(_HANDLERS[decId]||{})[o]||{}, neg=_isNeg(o);
         var party=ov.notify || _cust || _sup || (neg?"the requester":"the recipient");
-        var act = neg
+        map[o]={ pos:!neg, act:(neg
           ? ("notify "+party+(ov.note?(" · "+ov.note):" · declined"))
-          : ((ov.create?("create "+ov.create+" · "):"create record · ")+"notify "+party);
-        map[o]={pos:!neg, act:act};
+          : ((ov.create?("create "+ov.create+" · "):"create record · ")+"notify "+party)) };
       });
       return map;
     }

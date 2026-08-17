@@ -521,6 +521,41 @@
     var prev=(host&&host._vsOpts)||{}; PACK.valueStreamHeat(host, vpId, Object.assign({}, prev, {mode:mode})); };
 
   /* ---- SIPOC renderer ------------------------------------------------------ */
+  /* ---- Process landscape (DERIVED for Modelware) ------------------------------
+     Modelware carries a ProcessCatalogue (phase per process); when present we build
+     the landscape from the org's OWN value chain instead of the baked Nedbank one:
+     a Steering band of the strategy / governance processes, a Core band of the seven
+     operational phases, and an Enabling band of the support processes. Nedbank and
+     AGGPSA keep their baked PACK_CONFIG.processLandscape. ------------------------- */
+  PACK.deriveProcessLandscape = function(){
+    var D=PACK.data(); var cat=D.processCatalogue;
+    if(!cat || !cat.length) return null;                 // only Modelware has it
+    var ai={}; (D.processSteps||[]).forEach(function(s){ if(s.execType==="AIS"||s.execType==="AIE") ai[s.process]=1; });
+    var CORE=["Planning & Setup","Marketing","Sales","Administration","Training","Completion","Follow-up & Operations"];
+    var STEER=["P66","P67","P53","P63","P68"], steerSet={}; STEER.forEach(function(id){steerSet[id]=1;});
+    var byId={}; cat.forEach(function(p){ byId[p.id]=p; });
+    var byPhase={}; cat.forEach(function(p){ (byPhase[p.phase]=byPhase[p.phase]||[]).push(p); });
+    var steering=STEER.map(function(id){ return byId[id]; }).filter(Boolean)
+      .map(function(p){ return {id:p.id,name:p.name}; });
+    var core=CORE.map(function(ph,i){ return {domain:(i+1)+" · "+ph, phase:ph,
+      procs:(byPhase[ph]||[]).map(function(p){ return {id:p.id,name:p.name,ai:!!ai[p.id]}; })}; });
+    var enabling=(byPhase["Enabling & Support"]||[]).filter(function(p){return !steerSet[p.id];})
+      .map(function(p){ return {id:p.id,name:p.name,type:(ai[p.id]?"ai":"support")}; });
+    return {streams:["All"].concat(CORE), steering:steering, core:core, enabling:enabling, derived:true};
+  };
+  /* Landscape tab filter — focus the Core band on one value-chain phase (or All) */
+  PACK.plFilter = function(el){
+    var ph=el.getAttribute("data-ph"), tabs=el.parentElement;
+    var host=tabs.parentElement, cols=[].slice.call(host.querySelectorAll(".core-col"));
+    // only filter when the tab maps to a real column phase (Modelware). For a baked
+    // lifecycle that doesn't map to the columns (Nedbank), leave the band untouched.
+    if(ph!=="All" && !cols.some(function(c){return c.getAttribute("data-ph")===ph;})) return;
+    [].forEach.call(tabs.querySelectorAll(".plt"), function(t){ t.classList.toggle("on", t===el); });
+    var vis=0;
+    cols.forEach(function(c){ var show=(ph==="All" || c.getAttribute("data-ph")===ph); c.style.display=show?"":"none"; if(show)vis++; });
+    var grid=host.querySelector(".core-cols"); if(grid) grid.style.gridTemplateColumns="repeat("+Math.max(1,vis)+",1fr)";
+  };
+
   /* ---- SIPOC ------------------------------------------------------------------
      For processes that carry a step-level model (Modelware spec processes with a
      processActors map), the SIPOC is DERIVED from the process's own steps so every

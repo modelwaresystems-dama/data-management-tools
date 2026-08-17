@@ -130,26 +130,35 @@
     if(!cfg){ host.style.display="none"; return; }
     opts=opts||{};
     host.style.display="";
-    var tabs=(cfg.streams||[]).map(function(s,i){ return '<div class="plt'+(i===0?" on":"")+'">'+esc(s)+'</div>'; }).join("");
+    var tabs=(cfg.streams||[]).map(function(s,i){
+      return '<div class="plt'+(i===0?" on":"")+'" data-ph="'+esc(s)+'" onclick="PACK.plFilter(this)">'+esc(s)+'</div>'; }).join("");
     function procCell(p){
       var cls="capcell"+(p.ai?" aihi":"");
       var badge=p.badge?'<span class="badge">'+esc(p.badge)+'</span>':'';
       var click=(opts.onProc&&p.id)?' style="cursor:pointer" onclick="'+opts.onProc+'(\''+p.id+'\')"':'';
       return '<div class="'+cls+'"'+click+'>'+badge+(p.id?'<span class="cid">'+esc(p.id)+'</span>':'')+esc(p.name)+'</div>';
     }
+    function boxCell(s){   // steering item — string or {id,name} (clickable)
+      if(s && typeof s==="object"){
+        var click=(opts.onProc&&s.id)?' style="cursor:pointer;padding-right:14px" onclick="'+opts.onProc+'(\''+s.id+'\')"':' style="padding-right:14px"';
+        return '<div class="cbox"'+click+'>'+(s.id?'<span class="cid">'+esc(s.id)+'</span>':'')+esc(s.name)+'</div>';
+      }
+      return '<div class="cbox" style="padding-right:14px">'+esc(s)+'</div>';
+    }
     var steer='<div class="band steer"><div class="bhdr">Steering &amp; Governance processes</div>'+
-      '<div class="bbody"><div class="steer-row" style="grid-template-columns:repeat('+Math.min(4,(cfg.steering||[]).length||1)+',1fr)">'+
-      (cfg.steering||[]).map(function(s){return '<div class="cbox" style="padding-right:14px">'+esc(s)+'</div>';}).join("")+'</div></div></div>';
-    var core='<div class="band core"><div class="bhdr">Core processes (aligned to the value-chain capability domains)</div>'+
+      '<div class="bbody"><div class="steer-row" style="grid-template-columns:repeat('+Math.min(5,(cfg.steering||[]).length||1)+',1fr)">'+
+      (cfg.steering||[]).map(boxCell).join("")+'</div></div></div>';
+    var core='<div class="band core"><div class="bhdr">Core processes (aligned to the value-chain phases)</div>'+
       '<div class="bbody"><div class="core-cols" style="grid-template-columns:repeat('+((cfg.core||[]).length||1)+',1fr)">'+
       (cfg.core||[]).map(function(d){
-        return '<div class="core-col"><div class="dttl">'+esc(d.domain)+'</div>'+(d.procs||[]).map(procCell).join("")+'</div>';
+        return '<div class="core-col" data-ph="'+esc(d.phase||d.domain)+'"><div class="dttl">'+esc(d.domain)+'</div>'+(d.procs||[]).map(procCell).join("")+'</div>';
       }).join("")+'</div></div></div>';
-    var enable='<div class="band enable"><div class="bhdr">Enabling &amp; Governance processes</div>'+
+    var enable='<div class="band enable"><div class="bhdr">Enabling &amp; Support processes</div>'+
       '<div class="bbody"><div class="enable-row" style="grid-template-columns:repeat('+Math.min(5,(cfg.enabling||[]).length||1)+',1fr)">'+
       (cfg.enabling||[]).map(function(e){
         var cls=e.type==="ai"?"ai":(e.type==="gov"?"gov":"support");
-        return '<div class="encell '+cls+'">'+esc(e.name)+'</div>';
+        var click=(opts.onProc&&e.id)?' style="cursor:pointer" onclick="'+opts.onProc+'(\''+e.id+'\')"':'';
+        return '<div class="encell '+cls+'"'+click+'>'+(e.id?'<span class="cid" style="opacity:.6">'+esc(e.id)+'</span> ':'')+esc(e.name)+'</div>';
       }).join("")+'</div></div></div>';
     var legend='<div class="maplegend"><span><i style="background:#eaf3e2;border:1px solid #c5dcb0"></i>Core process</span>'+
       '<span><i style="background:#ece3f7;border:1px solid #cdb8ec"></i>AI-assisted step</span>'+

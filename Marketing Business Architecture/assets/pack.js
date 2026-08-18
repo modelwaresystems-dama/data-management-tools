@@ -295,6 +295,11 @@
       '<div class="src-sel"><label>Source</label>'+
         '<select onchange="PACK.setSource(this.value)">'+srcOpts+'</select></div>'+
       '<div class="nav-links">'+links+'</div>'+
+      '<a class="nav-launch" href="lineage_explorer.html" target="_blank" rel="noopener" '+
+        'style="display:flex;align-items:center;gap:8px;margin:10px 10px 2px;padding:9px 12px;border-radius:8px;'+
+        'background:#12325a;color:#fff;font-weight:600;font-size:.82rem;text-decoration:none" '+
+        'title="Open the standalone Lineage &amp; Gap Explorer (reads a FutureState workbook)">'+
+        '⌘ Lineage &amp; Gap Explorer <span style="margin-left:auto;opacity:.7">↗</span></a>'+
       (wb ? '<div class="nav-work"><span class="wl">Workbooks</span>'+wb+'</div>' : '')+
       ver+
     '</div></nav>';
@@ -543,17 +548,45 @@
       .map(function(p){ return {id:p.id,name:p.name,type:(ai[p.id]?"ai":"support")}; });
     return {streams:["All"].concat(CORE), steering:steering, core:core, enabling:enabling, derived:true};
   };
-  /* Landscape tab filter — focus the Core band on one value-chain phase (or All) */
+  /* Process → lifecycle-stage map, derived from the journey model (a process's
+     stages = the StageNames of the journey stages it operationalises). Nedbank's
+     landscape streams ARE those stage names, so its lifecycle tabs become live. */
+  PACK.deriveProcStreams = function(){
+    var S=window.ACTIVE_MODEL_SHEETS||window.NB_MODEL_SHEETS; if(!S) return null;
+    function sheet(pre){ for(var i=0;i<S.length;i++){ if(S[i].name && S[i].name.indexOf(pre)===0) return S[i]; } return null; }
+    var s10=sheet("10 ·"), s29=sheet("29 ·"); if(!s10||!s29) return null;
+    function recs(s){ return s.rows.map(function(r){ var o={}; s.headers.forEach(function(h,i){o[h]=r[i];}); return o; }); }
+    var nm={}; recs(s10).forEach(function(r){ nm[r.JourneyStageID]=r.StageName; });
+    var map={}; recs(s29).forEach(function(r){ var s=nm[r.JourneyStageID]; if(!s)return;
+      (map[r.ProcessID]=map[r.ProcessID]||[]); if(map[r.ProcessID].indexOf(s)<0) map[r.ProcessID].push(s); });
+    return map;
+  };
+  /* Landscape tab filter — two modes:
+       • phase columns (Modelware): show only the chosen value-chain phase column;
+       • lifecycle stage (Nedbank / AGGPSA): highlight the process cells that serve
+         the chosen stage and dim the rest.
+     'All' resets both. A tab that maps to neither is a safe no-op. */
   PACK.plFilter = function(el){
-    var ph=el.getAttribute("data-ph"), tabs=el.parentElement;
-    var host=tabs.parentElement, cols=[].slice.call(host.querySelectorAll(".core-col"));
-    // only filter when the tab maps to a real column phase (Modelware). For a baked
-    // lifecycle that doesn't map to the columns (Nedbank), leave the band untouched.
-    if(ph!=="All" && !cols.some(function(c){return c.getAttribute("data-ph")===ph;})) return;
+    var ph=el.getAttribute("data-ph"), tabs=el.parentElement, host=tabs.parentElement;
+    var cols=[].slice.call(host.querySelectorAll(".core-col"));
+    var coreCells=[].slice.call(host.querySelectorAll(".core-col .capcell"));
+    var colMatch=(ph!=="All") && cols.some(function(c){return c.getAttribute("data-ph")===ph;});
+    var cellMatch=(ph!=="All") && [].slice.call(host.querySelectorAll("[data-streams]"))
+        .some(function(c){return (c.getAttribute("data-streams")||"").split("|").indexOf(ph)>=0;});
+    if(ph!=="All" && !colMatch && !cellMatch) return;
     [].forEach.call(tabs.querySelectorAll(".plt"), function(t){ t.classList.toggle("on", t===el); });
-    var vis=0;
-    cols.forEach(function(c){ var show=(ph==="All" || c.getAttribute("data-ph")===ph); c.style.display=show?"":"none"; if(show)vis++; });
-    var grid=host.querySelector(".core-cols"); if(grid) grid.style.gridTemplateColumns="repeat("+Math.max(1,vis)+",1fr)";
+    var grid=host.querySelector(".core-cols");
+    function clearDim(){ coreCells.forEach(function(c){ c.classList.remove("pl-dim"); }); }
+    function showAllCols(){ cols.forEach(function(c){ c.style.display=""; }); if(grid) grid.style.gridTemplateColumns="repeat("+cols.length+",1fr)"; }
+    if(ph==="All"){ showAllCols(); clearDim(); return; }
+    if(colMatch){                                   // Modelware — one phase column
+      var vis=0; cols.forEach(function(c){ var show=(c.getAttribute("data-ph")===ph); c.style.display=show?"":"none"; if(show)vis++; });
+      if(grid) grid.style.gridTemplateColumns="repeat("+Math.max(1,vis)+",1fr)";
+      clearDim();
+    } else {                                        // Nedbank / AGGPSA — lifecycle stage
+      showAllCols();
+      coreCells.forEach(function(c){ c.classList.toggle("pl-dim", (c.getAttribute("data-streams")||"").split("|").indexOf(ph)<0); });
+    }
   };
 
   /* ---- SIPOC ------------------------------------------------------------------

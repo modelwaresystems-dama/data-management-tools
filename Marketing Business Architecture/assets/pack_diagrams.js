@@ -55,7 +55,10 @@
   /* process landscape extras */
   .pl-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
   .pl-tabs .plt{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 13px;font-size:.84rem;color:var(--mut)}
+  .pl-tabs .plt{cursor:pointer;transition:background .12s,border-color .12s}
   .pl-tabs .plt.on{border-color:var(--accent);color:var(--accent);font-weight:600;background:var(--accent-soft)}
+  .capcell,.cbox,.encell{transition:opacity .15s}
+  .capcell.pl-dim,.cbox.pl-dim,.encell.pl-dim{opacity:.2}
   .capcell.aihi{background:#ece3f7;border-color:#cdb8ec;color:#5b3a8e}
   .capcell .badge{position:absolute;bottom:7px;right:8px;background:#16305a;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:1px 5px}
   `;
@@ -130,18 +133,21 @@
     if(!cfg){ host.style.display="none"; return; }
     opts=opts||{};
     host.style.display="";
-    var tabs=(cfg.streams||[]).map(function(s,i){
+    var _streams=(cfg.streams||[]).slice(); if(_streams[0]!=="All") _streams.unshift("All");
+    var tabs=_streams.map(function(s,i){
       return '<div class="plt'+(i===0?" on":"")+'" data-ph="'+esc(s)+'" onclick="PACK.plFilter(this)">'+esc(s)+'</div>'; }).join("");
+    var PS=opts.procStreams||{};
+    function streamsAttr(p){ var st=(p&&p.streams)||(p&&p.id&&PS[p.id])||[]; return st.length?' data-streams="'+esc(st.join("|"))+'"':''; }
     function procCell(p){
       var cls="capcell"+(p.ai?" aihi":"");
       var badge=p.badge?'<span class="badge">'+esc(p.badge)+'</span>':'';
       var click=(opts.onProc&&p.id)?' style="cursor:pointer" onclick="'+opts.onProc+'(\''+p.id+'\')"':'';
-      return '<div class="'+cls+'"'+click+'>'+badge+(p.id?'<span class="cid">'+esc(p.id)+'</span>':'')+esc(p.name)+'</div>';
+      return '<div class="'+cls+'"'+click+streamsAttr(p)+'>'+badge+(p.id?'<span class="cid">'+esc(p.id)+'</span>':'')+esc(p.name)+'</div>';
     }
     function boxCell(s){   // steering item — string or {id,name} (clickable)
       if(s && typeof s==="object"){
         var click=(opts.onProc&&s.id)?' style="cursor:pointer;padding-right:14px" onclick="'+opts.onProc+'(\''+s.id+'\')"':' style="padding-right:14px"';
-        return '<div class="cbox"'+click+'>'+(s.id?'<span class="cid">'+esc(s.id)+'</span>':'')+esc(s.name)+'</div>';
+        return '<div class="cbox"'+click+streamsAttr(s)+'>'+(s.id?'<span class="cid">'+esc(s.id)+'</span>':'')+esc(s.name)+'</div>';
       }
       return '<div class="cbox" style="padding-right:14px">'+esc(s)+'</div>';
     }
@@ -158,7 +164,7 @@
       (cfg.enabling||[]).map(function(e){
         var cls=e.type==="ai"?"ai":(e.type==="gov"?"gov":"support");
         var click=(opts.onProc&&e.id)?' style="cursor:pointer" onclick="'+opts.onProc+'(\''+e.id+'\')"':'';
-        return '<div class="encell '+cls+'"'+click+'>'+(e.id?'<span class="cid" style="opacity:.6">'+esc(e.id)+'</span> ':'')+esc(e.name)+'</div>';
+        return '<div class="encell '+cls+'"'+click+streamsAttr(e)+'>'+(e.id?'<span class="cid" style="opacity:.6">'+esc(e.id)+'</span> ':'')+esc(e.name)+'</div>';
       }).join("")+'</div></div></div>';
     var legend='<div class="maplegend"><span><i style="background:#eaf3e2;border:1px solid #c5dcb0"></i>Core process</span>'+
       '<span><i style="background:#ece3f7;border:1px solid #cdb8ec"></i>AI-assisted step</span>'+

@@ -76,7 +76,7 @@
 <body>
 <header>
   <div>
-    <h1>Business Architecture Lineage Explorer <span class="ver" id="appver">v1.8.0</span></h1>
+    <h1>Business Architecture Lineage Explorer <span class="ver" id="appver">v1.9.11</span></h1>
     <div class="sub">Trace any element top&#8595;bottom &amp; bottom&#8593;top &middot; find missing children/parents &middot; pivot the counts</div>
   </div>
   <span id="tenant" style="display:none"></span>
@@ -98,8 +98,8 @@
 
   <div id="view-lineage" class="panel" style="display:none">
     <div class="controls">
-      <div class="fld"><label>Element</label>
-        <input id="lin-search" list="lin-list" type="search" placeholder="Type to find any element…" style="min-width:340px">
+      <div class="fld"><label>Add element(s)</label>
+        <input id="lin-search" list="lin-list" type="search" placeholder="Type to find an element, then pick it to add…" style="min-width:340px">
         <datalist id="lin-list"></datalist>
       </div>
       <div class="fld"><label>Direction</label>
@@ -110,7 +110,9 @@
         </div>
       </div>
       <label class="chk"><input type="checkbox" id="lin-onlypath" checked> Only connected paths</label>
+      <label class="chk"><input type="checkbox" id="lin-crosslinks"> Show cross-tier links</label>
     </div>
+    <div id="lin-chips" style="margin:6px 0 2px"></div>
     <div class="legend" id="lin-legend"></div>
     <div id="lin-graph"><div class="empty">Pick an element above to trace its lineage.</div></div>
     <div class="trace-cols">
@@ -132,6 +134,7 @@
       </div>
       <label class="chk"><input type="checkbox" id="tree-gaps"> Only show elements with gaps</label>
       <label class="chk"><input type="checkbox" id="tree-expand"> Expand all</label>
+      <label class="chk"><input type="checkbox" id="tree-crosslinks"> Show cross-tier links</label>
     </div>
     <div class="hint" id="tree-rule"></div>
     <div class="kpis" id="tree-kpis"></div>
@@ -191,16 +194,16 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
    Full-spine configuration — one config parses all three FutureState workbooks
    (Modelware / Nedbank / AGGPSA share the same numbered-sheet convention).
    ========================================================================== */
-var APP_VERSION="v1.8.0";
+var APP_VERSION="v1.9.11";
 var COLOR = {
   "Stakeholder":"#1f4e79","Value Proposition":"#2e6ba8","Business Outcome":"#2e7d5b",
   "KPI":"#4a9d7f","Value Stream":"#7a5aa8","Value Stage":"#9a6fc0","Capability":"#c07f2e",
   "Process":"#b5651d","Decision":"#c99700","Information Concept":"#2e86c1","AI Use-Case":"#c0392b",
-  "Data Product":"#16794e","Control":"#7a4d0a"
+  "Data Product":"#16794e","Control":"#7a4d0a","Subject Area":"#5b3a8a"
 };
 var ABBR = {"Stakeholder":"SH","Value Proposition":"VP","Business Outcome":"OUT","KPI":"KPI",
   "Value Stream":"VS","Value Stage":"STG","Capability":"CAP","Process":"PROC","Decision":"DEC",
-  "Information Concept":"IC","AI Use-Case":"AI","Data Product":"DP","Control":"CTL"};
+  "Information Concept":"IC","AI Use-Case":"AI","Data Product":"DP","Control":"CTL","Subject Area":"SA"};
 // node sheets (order = left→right tier). {sheet prefix, id column, name column}
 var LEVELS = [
   {t:"Stakeholder",       sheet:"2 · ",  id:"StakeholderID",     name:"Name"},
@@ -210,12 +213,13 @@ var LEVELS = [
   {t:"Value Stream",      sheet:"6 · ",  id:"ValueStreamID",     name:"Name"},
   {t:"Value Stage",       sheet:"7 · ",  id:"ValueStageID",      name:"StageName"},
   {t:"Capability",        sheet:"11 · ", id:"CapabilityID",      name:"Name"},
-  {t:"Process",           sheet:"12 · ", id:"ProcessID",         name:"Name", exemptCol:"ProcessType", exemptVal:"Operational", exemptOf:["Decision"]},
+  {t:"Process",           sheet:"12 · ", id:"ProcessID",         name:"Name"},   // no exemption: every business process is expected to have a Decision
   {t:"Decision",          sheet:"13 · ", id:"DecisionID",        name:"Name"},
-  {t:"Information Concept",sheet:"126 · ",id:"ConceptID",        name:"Name"},
-  {t:"Data Product",      sheet:"18 · ", id:"DataProductID",     name:"Name"},
   {t:"AI Use-Case",       sheet:"14 · ", id:"AIUseCaseID",       name:"Name"},
-  {t:"Control",           sheet:"212 · ",id:"ControlID",         name:"ControlName"}
+  {t:"Control",           sheet:"212 · ",id:"ControlID",         name:"ControlName"},
+  {t:"Data Product",      sheet:"18 · ", id:"DataProductID",     name:"Name"},
+  {t:"Information Concept",sheet:"126 · ",id:"ConceptID",        name:"Name"},
+  {t:"Subject Area",      sheet:"223 · ",id:"SubjectAreaID",     name:"Name"}
 ];
 // edges parent→child. mapSheet: two id columns; or listCol: a delimited column on a node sheet
 var LINKS = [
@@ -230,20 +234,18 @@ var LINKS = [
   {from:"Process",           to:"Decision",          map:"31 · ", a:"ProcessID",         b:"DecisionID"},
   {from:"Decision",          to:"AI Use-Case",       map:"32 · ", a:"DecisionID",        b:"AIUseCaseID"},
   {from:"Capability",        to:"Information Concept",map:"139 · ",a:"CapabilityID",      b:"ConceptID"},
-  // ---- Data Product & Control spine ----
-  {from:"Information Concept",to:"Data Product",     listSheet:"126 · ",listId:"ConceptID",   listCol:"PrimaryDataProductID", listRole:"parent"}, // concept names its primary data product
-  {from:"Data Product",      to:"AI Use-Case",       map:"189 · ",a:"DataProductID",     b:"AIUseCaseID"},
-  {from:"Decision",          to:"Control",           listSheet:"212 · ",listId:"ControlID",   listCol:"GovernsDecisionID",    listRole:"child"},  // control governs a decision
-  {from:"Process",           to:"Control",           listSheet:"212 · ",listId:"ControlID",   listCol:"Processes",            listRole:"child"},  // control applies to processes
-  // ---- a Process's data footprint: bridge Process -> Step -> Concept / Data Product ----
+  // ---- re-pointed data & governance flow: Decision → AI Use-Case → Control → Data Product → Information Concept → Subject Area ----
+  {from:"AI Use-Case",       to:"Control",           map:"221 · ", a:"AIUseCaseID",   b:"ControlID"},        // AI use-case is governed by a control
+  {from:"Decision",          to:"Control",           listSheet:"212 · ",listId:"ControlID", listCol:"GovernsDecisionID", listRole:"child"}, // control governs a decision
+  {from:"Process",           to:"Control",           listSheet:"212 · ",listId:"ControlID", listCol:"Processes",         listRole:"child"}, // control applies to processes
+  {from:"Control",           to:"Data Product",      map:"220 · ", a:"ControlID",     b:"DataProductID"},    // control governs a data product
+  {from:"Data Product",      to:"Information Concept",listSheet:"126 · ",listId:"ConceptID", listCol:"PrimaryDataProductID", listRole:"child"}, // a data product materialises its information concept
+  {from:"Information Concept",to:"Subject Area",      map:"222 · ", a:"ConceptID",     b:"SubjectAreaID"},    // an information concept belongs to a subject area
+  // ---- a Process's / Decision's data footprint (forward links into the concept tier) ----
   {from:"Process", to:"Information Concept", bridgeStep:"133 · ", bridgeOwner:"ProcessID", bridgeStepId:"StepID", leafSheet:"135 · ", leafStepId:"StepID", leafTarget:"ConceptID"},
   {from:"Process", to:"Data Product",        bridgeStep:"133 · ", bridgeOwner:"ProcessID", bridgeStepId:"StepID", leafSheet:"136 · ", leafStepId:"StepID", leafTarget:"DataProductID"},
-  // ---- direct data-usage & data-governance links (populated per-tenant where the maps exist) ----
-  {from:"Process",            to:"Information Concept", map:"217 · ", a:"ProcessID",     b:"ConceptID"},      // a process uses information concepts
-  {from:"Decision",           to:"Information Concept", map:"218 · ", a:"DecisionID",    b:"ConceptID"},      // a decision consumes information concepts
-  {from:"Information Concept", to:"Control",            map:"219 · ", a:"ConceptID",     b:"ControlID"},      // an information concept is governed by a control
-  {from:"Data Product",       to:"Control",            map:"220 · ", a:"DataProductID", b:"ControlID"},      // a data product is governed by a control
-  {from:"AI Use-Case",        to:"Control",            map:"221 · ", a:"AIUseCaseID",   b:"ControlID"}       // an AI use-case is governed by a control
+  {from:"Process",           to:"Information Concept", map:"217 · ", a:"ProcessID",  b:"ConceptID"},          // a process uses information concepts
+  {from:"Decision",          to:"Information Concept", map:"218 · ", a:"DecisionID", b:"ConceptID"}           // a decision consumes information concepts
 ];
 // gap rules: which child types a parent type should have at least one of
 var REQUIRED = {
@@ -301,6 +303,9 @@ function buildModel(wb){
       if(nodes[id]) return;   // ids are globally unique in these models
       var name=tidy(r[L.name]) || id;
       var nd={id:id, name:name, type:L.t};
+      // capture an explicit lifecycle/sequence order if the source sheet provides one (e.g. Value Stage "Sequence")
+      var sqv=[r.Sequence,r.Seq,r.StageSequence,r.Order,r.StepSequence,r.Step].filter(function(x){return x!=null&&x!=="";})[0];
+      var sqn=parseFloat(sqv); if(!isNaN(sqn)) nd.seq=sqn;
       if(L.exemptCol && tidy(r[L.exemptCol])===L.exemptVal){ nd.exemptOf=L.exemptOf; nd.exemptType=tidy(r[L.exemptCol]); }
       nodes[id]=nd;
       byType[L.t].push(id);
@@ -360,11 +365,39 @@ function missingRequired(id){        // returns array of required child-types th
 function isOrphan(id){ return MODEL.nodes[id].type!=="Stakeholder" && pars(id).length===0; }
 function badge(t){ return '<span class="badge" style="background:'+COLOR[t]+'">'+ABBR[t]+'</span>'; }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+// order siblings (same tier) by their real lifecycle Sequence when the model provides one, otherwise by their
+// identifier in natural, number-aware order (P55 < P57 < P68, VS09-2 < VS09-10) — the models assign IDs in definition
+// order, so this reflects "the order" far better than sorting by name alphabetically. Name is only the last tiebreak.
+function sibCmp(a,b){ var na=MODEL.nodes[a], nb=MODEL.nodes[b];
+  if(na.seq!=null && nb.seq!=null && na.seq!==nb.seq) return na.seq-nb.seq;
+  return String(a).localeCompare(String(b),undefined,{numeric:true}) || na.name.localeCompare(nb.name,undefined,{numeric:true}); }
 
 /* ============================================================================
    TAB 1 — Lineage trace
    ========================================================================== */
-var linSel=null, linDir="both";
+var linSel=null, linDir="both", linAnchors=[];   // linAnchors = multi-select; linSel = primary (last-added) anchor
+function setAnchors(arr){
+  // de-dup preserving order
+  var seen={}, out=[]; arr.forEach(function(id){ if(MODEL.nodes[id]&&!seen[id]){ seen[id]=1; out.push(id); } });
+  linAnchors=out; linSel = out.length ? out[out.length-1] : null;
+  renderLineage();
+}
+function addAnchor(id){ if(!MODEL.nodes[id]) return; if(linAnchors.indexOf(id)<0) setAnchors(linAnchors.concat([id])); else setAnchors(linAnchors); }
+function toggleAnchor(id){ var i=linAnchors.indexOf(id); if(i>=0){ var a=linAnchors.slice(); a.splice(i,1); setAnchors(a); } else setAnchors(linAnchors.concat([id])); }
+function clearAnchors(){ setAnchors([]); }
+function renderChips(){
+  var host=document.getElementById("lin-chips"); if(!host) return;
+  if(!linAnchors.length){ host.innerHTML='<span class="hint" style="color:#8496a8">No elements selected — search above or click nodes in the graph to add. Pick several (e.g. an AI Use-Case + a Stakeholder + a Value Stage) to see only what ties them together.</span>'; return; }
+  host.innerHTML = linAnchors.map(function(id){ var n=MODEL.nodes[id];
+    return '<span class="anchor-chip" style="display:inline-flex;align-items:center;gap:6px;margin:2px 5px 2px 0;padding:3px 6px 3px 8px;border-radius:14px;background:#eef3f9;border:1px solid #cfe0f0;font-size:12px;vertical-align:middle">'
+      +badge(n.type)+'<span>'+esc(n.name.length>34?n.name.slice(0,33)+"…":n.name)+'</span>'
+      +'<span class="chip-x" data-id="'+esc(id)+'" title="remove" style="cursor:pointer;color:#7a8aa0;font-weight:700;padding:0 2px">×</span></span>';
+  }).join("")
+   + '<a href="#" id="lin-clear" style="font-size:12px;margin-left:6px">'+(linAnchors.length>1?'clear all':'clear')+'</a>'
+   + (linAnchors.length>1?'<span class="hint" style="color:#8496a8;margin-left:8px">showing only elements connected to all '+linAnchors.length+' selections</span>':'');
+  [].forEach.call(host.querySelectorAll(".chip-x"),function(x){ x.addEventListener("click",function(){ toggleAnchor(this.getAttribute("data-id")); }); });
+  var clr=document.getElementById("lin-clear"); if(clr) clr.addEventListener("click",function(e){ e.preventDefault(); clearAnchors(); });
+}
 function fillLineageList(){
   var dl=document.getElementById("lin-list"), html="";
   Object.keys(MODEL.nodes).sort(function(a,b){ var A=MODEL.nodes[a],B=MODEL.nodes[b];
@@ -404,6 +437,7 @@ function coverageOf(selId){
   var gaps=[];   // {tier, dir, indirect}
   LEVELS.forEach(function(L,t){
     if(t===selT || reached[t]) return;              // on the thread — fine
+    if(!(MODEL.byType[L.t]&&MODEL.byType[L.t].length)) return;  // tier not populated for this tenant — not a gap
     gaps.push({t:t, tier:L.t, dir:(t<selT?"up":"down"), indirect:!!indirect[t]});
   });
   return {reached:reached, gaps:gaps, up:up, down:down};
@@ -419,41 +453,66 @@ function lineageReport(selId){
     if(mr.length) hard.push({n:n,kind:"missing "+mr.join(", ")});
     else if(isOrphan(id)) hard.push({n:n,kind:"orphan (no parent)"});
   });
-  var cg=cov.gaps, nTot=hard.length+cg.length;
+  // split coverage into HARD (not connected at all — a real gap) and SOFT (reachable indirectly — informational)
+  var cgNone = cov.gaps.filter(function(g){ return !g.indirect; });
+  var cgInd  = cov.gaps.filter(function(g){ return  g.indirect; });
+  var nGaps  = hard.length + cgNone.length;   // "gaps" == structural + not-connected  (matches the Excel "Gaps" sheet)
   var chip=function(txt,bg,fg){ return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:'+bg+';color:'+(fg||'#fff')+'">'+txt+'</span>'; };
   var upT=Object.keys(cov.reached).map(Number).filter(function(t){return t<TIER[sel.type];}).length;
   var dnT=Object.keys(cov.reached).map(Number).filter(function(t){return t>TIER[sel.type];}).length;
   var h='<div style="margin:0 0 12px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#fbfcfe;font-size:12.5px;line-height:1.5">';
   h+='<div style="font-weight:700;margin-bottom:4px">'+badge(sel.type)+' '+esc(sel.name)+' <span style="color:#889;font-weight:400">['+esc(selId)+']</span></div>';
   h+='<div style="margin-bottom:6px">Direct thread spans '+chip(upT+' tier'+(upT===1?'':'s')+' up',"#2e6ba8")+' and '+chip(dnT+' tier'+(dnT===1?'':'s')+' down',"#7a5aa8")+' &nbsp; ('+Object.keys(pathSet).length+' elements on the path).</div>';
-  if(nTot===0){
-    h+='<div>'+chip('✓ No gaps',"#e7f6ee","#177245")+' Fully connected on the direct thread — every spine tier is reached and every element has its required parents and children.</div>';
+  // exempt elements on this path (e.g. operational processes that don't require a decision) — explain WHY a tier is absent, so "no gap" is not mysterious
+  var exNodes=Object.keys(pathSet).map(function(id){return MODEL.nodes[id];}).filter(function(nn){return nn.exemptOf&&nn.exemptOf.length;});
+  if(exNodes.length){
+    h+='<div style="margin-bottom:6px;color:#5b6b7d">'+chip('ⓘ exempt',"#eef2f7","#5b6b7d")+' '+exNodes.length+' '+(exNodes.length===1?'element is':'elements are')+' exempt from a required child by design: '+
+       exNodes.slice(0,6).map(function(nn){return badge(nn.type)+' '+esc(nn.name)+' <span style="color:#8898a8">('+esc((nn.exemptType||"exempt"))+' — no '+esc(nn.exemptOf.join("/"))+' required)</span>';}).join(", ")+
+       (exNodes.length>6?' … and '+(exNodes.length-6)+' more':'')+'. If any of these should in fact have that element, they need reclassifying — this is a modelling choice, not an automatic gap.</div>';
+  }
+  if(nGaps===0){
+    h+='<div>'+chip('✓ No gaps',"#e7f6ee","#177245")+' No structural gaps and no disconnected spine tiers on this lineage.</div>';
   } else {
-    h+='<div style="margin-bottom:4px">'+chip('⚠ '+nTot+' gap'+(nTot===1?'':'s')+' on this lineage',"#fdecea","#a5271b")+'</div>';
+    h+='<div style="margin-bottom:4px">'+chip('⚠ '+nGaps+' gap'+(nGaps===1?'':'s')+' on this lineage',"#fdecea","#a5271b")+'</div>';
     if(hard.length){
       h+='<div style="margin:2px 0 1px;font-weight:600;color:#a5271b">Structural ('+hard.length+') — missing a required parent or child:</div><ul style="margin:0 0 4px 16px;padding:0">';
       hard.slice(0,10).forEach(function(g){ h+='<li>'+badge(g.n.type)+' '+esc(g.n.name)+' — <span style="color:#a5271b">'+esc(g.kind)+'</span></li>'; });
       if(hard.length>10) h+='<li>… and '+(hard.length-10)+' more</li>';
       h+='</ul>';
     }
-    if(cg.length){
-      h+='<div style="margin:2px 0 1px;font-weight:600;color:#b5651d">Coverage ('+cg.length+') — spine tiers not on this element’s direct thread:</div><ul style="margin:0 0 0 16px;padding:0">';
-      cg.forEach(function(g){
-        h+='<li><span style="color:'+COLOR[g.tier]+';font-weight:700">'+esc(g.tier)+'</span> — no direct line '+g.dir+'; '+
-           (g.indirect?'<span style="color:#8a6d1a">reachable only indirectly (via a related branch)</span>':'<span style="color:#a5271b;font-weight:600">not connected at all</span>')+'</li>';
-      });
+    if(cgNone.length){
+      h+='<div style="margin:2px 0 1px;font-weight:600;color:#a5271b">Not connected ('+cgNone.length+') — spine tier not reachable at all:</div><ul style="margin:0 0 4px 16px;padding:0">';
+      cgNone.forEach(function(g){ h+='<li><span style="color:'+COLOR[g.tier]+';font-weight:700">'+esc(g.tier)+'</span> — no line '+g.dir+', <span style="color:#a5271b;font-weight:600">not connected at all</span></li>'; });
       h+='</ul>';
     }
+  }
+  // SOFT coverage — informational, NOT counted as a gap (this is what the Excel lists on its separate "Coverage (indirect)" sheet)
+  if(cgInd.length){
+    h+='<div style="margin:6px 0 1px;color:#5b6b7d">ⓘ '+cgInd.length+' tier'+(cgInd.length===1?'':'s')+' reachable only indirectly (via a related branch) — not a gap, just no single clean vertical thread:</div><ul style="margin:0 0 0 16px;padding:0;color:#5b6b7d">';
+    cgInd.forEach(function(g){ h+='<li><span style="color:'+COLOR[g.tier]+';font-weight:700">'+esc(g.tier)+'</span> — reachable '+g.dir+' via a related branch</li>'; });
+    h+='</ul>';
   }
   h+='</div>';
   return h;
 }
 function renderLineage(){
   var host=document.getElementById("lin-graph");
-  if(!linSel){ host.innerHTML='<div class="empty">Pick an element above to trace its lineage.</div>';
+  renderChips();
+  if(!linAnchors.length){ host.innerHTML='<div class="empty">Pick an element above (or click nodes in the graph) to trace its lineage. Select several to see only what connects them.</div>';
     document.getElementById("lin-up").innerHTML=""; document.getElementById("lin-down").innerHTML=""; return; }
   var onlyPath=document.getElementById("lin-onlypath").checked;
-  var keep = onlyPath ? collect(linSel, linDir) : Object.keys(MODEL.nodes);
+  var keep;
+  if(onlyPath){
+    // each anchor's connected set (up/down per Direction); intersect across anchors so only
+    // the elements that tie ALL selections together remain — anchors themselves always kept
+    var sets = linAnchors.map(function(a){ var s={}; collect(a,linDir).forEach(function(x){ s[x]=1; }); return s; });
+    var kk={};
+    Object.keys(sets[0]).forEach(function(x){ if(sets.every(function(s){ return s[x]; })) kk[x]=1; });
+    linAnchors.forEach(function(a){ kk[a]=1; });
+    keep = Object.keys(kk);
+  } else {
+    keep = Object.keys(MODEL.nodes);
+  }
   var keepSet={}; keep.forEach(function(k){ keepSet[k]=1; });
   // layered layout by tier
   var byTier={}; keep.forEach(function(id){ var t=TIER[MODEL.nodes[id].type]; (byTier[t]=byTier[t]||[]).push(id); });
@@ -462,7 +521,7 @@ function renderLineage(){
   var pos={}, maxRows=1;
   allTiers.forEach(function(t){
     if(!byTier[t]) return;
-    byTier[t].sort(function(a,b){ return MODEL.nodes[a].name.localeCompare(MODEL.nodes[b].name); });
+    byTier[t].sort(sibCmp);
     byTier[t].forEach(function(id,i){ pos[id]={x:padX+t*colW, y:padY+i*rowH}; });
     if(byTier[t].length>maxRows) maxRows=byTier[t].length;
   });
@@ -474,50 +533,88 @@ function renderLineage(){
   // column headers + coverage-gap placeholders for empty tiers
   allTiers.forEach(function(t){
     var cx=padX+t*colW+nodeW/2, empty=!(byTier[t]&&byTier[t].length), gap=covGap[t];
-    svg.push('<text x="'+cx+'" y="16" text-anchor="middle" font-size="10" font-weight="700" fill="'+(gap?"#b5651d":(empty?"#9fb0c0":COLOR[LEVELS[t].t]))+'">'+esc(LEVELS[t].t)+(gap?' ⚠':'')+'</text>');
+    // "none" = a real gap (not connected → warn); "indirect" = soft/informational (no warning)
+    var hdrFill = gap==="none" ? "#b5651d" : (empty ? "#9fb0c0" : COLOR[LEVELS[t].t]);
+    svg.push('<text x="'+cx+'" y="16" text-anchor="middle" font-size="10" font-weight="700" fill="'+hdrFill+'">'+esc(LEVELS[t].t)+(gap==="none"?' ⚠':'')+'</text>');
     if(empty){
-      var fill=gap?"#fff7ec":"#f7f9fb", strk=gap?"#e0a44a":"#dbe4ee", lbl=gap?(gap==="indirect"?"coverage gap · indirect":"coverage gap · not connected"):"not on this path", lc=gap?"#b5651d":"#9fb0c0";
+      var fill,strk,lbl,lc;
+      if(gap==="none"){ fill="#fff7ec"; strk="#e0a44a"; lbl="gap · not connected"; lc="#b5651d"; }
+      else if(gap==="indirect"){ fill="#eef4fb"; strk="#bcd2ea"; lbl="via related branch"; lc="#5b6b7d"; }
+      else { fill="#f7f9fb"; strk="#dbe4ee"; lbl="not on this path"; lc="#9fb0c0"; }
       svg.push('<rect x="'+(padX+t*colW)+'" y="'+padY+'" width="'+nodeW+'" height="'+nodeH+'" rx="6" fill="'+fill+'" stroke="'+strk+'" stroke-width="1.2" stroke-dasharray="3 3"/>');
       svg.push('<text x="'+cx+'" y="'+(padY+nodeH/2+3.5)+'" text-anchor="middle" font-size="8" fill="'+lc+'">'+lbl+'</text>');
     }
   });
-  // edges (only within kept set, and touching selection paths)
+  // edges — by default only the clean adjacent-tier flow (hide tier-skipping "shortcut" links,
+  // e.g. Information Concept back to Capability/Process/Decision) unless the user asks to see them
+  var showCross=document.getElementById("lin-crosslinks")&&document.getElementById("lin-crosslinks").checked;
   Object.keys(MODEL.children).forEach(function(p){ if(!keepSet[p])return;
     kids(p).forEach(function(c){ if(!keepSet[c])return;
+      if(!showCross && Math.abs(TIER[MODEL.nodes[c].type]-TIER[MODEL.nodes[p].type])!==1) return;
       var a=pos[p], b=pos[c]; if(!a||!b)return;
       var x1=a.x+nodeW, y1=a.y+nodeH/2, x2=b.x, y2=b.y+nodeH/2, mx=(x1+x2)/2;
       svg.push('<path d="M '+x1+' '+y1+' C '+mx+' '+y1+' '+mx+' '+y2+' '+x2+' '+y2+'" fill="none" stroke="#c2cfdd" stroke-width="1.1"/>');
     });
   });
   // nodes
-  keep.forEach(function(id){ var n=MODEL.nodes[id], p=pos[id]; var sel=(id===linSel);
+  keep.forEach(function(id){ var n=MODEL.nodes[id], p=pos[id]; var sel=(linAnchors.indexOf(id)>=0);
     var miss=missingRequired(id).length>0;
-    svg.push('<g class="lnode" data-id="'+esc(id)+'" style="cursor:pointer">');
+    var full=n.type+" · "+n.name+" ["+id+"]"+(miss?"  ⚠ missing "+missingRequired(id).join(", "):"");
+    svg.push('<g class="lnode" data-id="'+esc(id)+'" data-full="'+esc(full)+'" aria-label="'+esc(full)+'" style="cursor:pointer">');
     svg.push('<rect x="'+p.x+'" y="'+p.y+'" width="'+nodeW+'" height="'+nodeH+'" rx="6" fill="'+(sel?COLOR[n.type]:"#fff")+'" stroke="'+(miss?"#c0392b":COLOR[n.type])+'" stroke-width="'+(sel?2.4:(miss?1.8:1.2))+'"/>');
     svg.push('<text x="'+(p.x+8)+'" y="'+(p.y+nodeH/2+3.5)+'" font-size="9.5" fill="'+(sel?"#fff":"#233")+'">'+esc((n.name.length>26?n.name.slice(0,25)+"…":n.name))+'</text>');
     svg.push('</g>');
   });
   svg.push('</svg>');
-  host.innerHTML=lineageReport(linSel)+'<div style="overflow:auto">'+svg.join("")+'</div>';
-  [].forEach.call(host.querySelectorAll(".lnode"),function(g){ g.addEventListener("click",function(){ setLineage(g.getAttribute("data-id")); }); });
+  host.innerHTML=
+     '<div id="lin-rep" style="max-height:22vh;overflow:auto">'+lineageReport(linSel)+'</div>'
+    +'<div id="lin-scrolltop" style="overflow-x:auto;overflow-y:hidden;height:14px;border:1px solid #e6edf4;border-bottom:none;border-radius:8px 8px 0 0;background:#f4f7fb"><div style="width:'+W+'px;height:1px"></div></div>'
+    +'<div id="lin-scrollbox" style="overflow:auto;height:calc(100vh - 235px);min-height:380px;border:1px solid #e6edf4;border-radius:0 0 8px 8px;background:#fff">'+svg.join("")+'</div>'
+    +'<div class="hint" style="margin-top:4px;color:#8496a8;font-size:11px">↔ drag either scrollbar (top or bottom) to see all tiers · click a node to add/remove it as a filter · tick “Show cross-tier links” to reveal the shortcut relationships</div>';
+  // keep the top scroll proxy and the graph box horizontally in sync so the slider is reachable without scrolling down
+  var _box=document.getElementById("lin-scrollbox"), _top=document.getElementById("lin-scrolltop"), _lock=false;
+  if(_box&&_top){
+    _top.addEventListener("scroll",function(){ if(_lock)return; _lock=true; _box.scrollLeft=_top.scrollLeft; _lock=false; });
+    _box.addEventListener("scroll",function(){ if(_lock)return; _lock=true; _top.scrollLeft=_box.scrollLeft; _lock=false; });
+  }
+  [].forEach.call(host.querySelectorAll(".lnode"),function(g){ g.addEventListener("click",function(){ toggleAnchor(g.getAttribute("data-id")); }); });
+  // instant hover tooltip showing the complete (untruncated) label
+  var _tip=document.getElementById("lin-tip");
+  if(!_tip){ _tip=document.createElement("div"); _tip.id="lin-tip";
+    _tip.style.cssText="position:fixed;z-index:9999;pointer-events:none;display:none;max-width:360px;padding:5px 9px;border-radius:6px;background:#1f2a37;color:#fff;font:12px/1.4 system-ui,Segoe UI,Roboto,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.22)";
+    document.body.appendChild(_tip); }
+  if(_box){
+    var _place=function(ev){
+      var pad=14, tw=_tip.offsetWidth, th=_tip.offsetHeight, vw=window.innerWidth, vh=window.innerHeight;
+      var x=ev.clientX+pad, y=ev.clientY+pad;
+      if(x+tw>vw-6) x=ev.clientX-pad-tw; if(y+th>vh-6) y=ev.clientY-pad-th;
+      _tip.style.left=Math.max(6,x)+"px"; _tip.style.top=Math.max(6,y)+"px";
+    };
+    _box.addEventListener("mousemove",function(ev){
+      var g=ev.target.closest?ev.target.closest(".lnode"):null;
+      if(g){ var f=g.getAttribute("data-full"); if(f){ _tip.textContent=f; _tip.style.display="block"; _place(ev); return; } }
+      _tip.style.display="none";
+    });
+    _box.addEventListener("mouseleave",function(){ _tip.style.display="none"; });
+  }
   // indented traces
-  document.getElementById("lin-up").innerHTML   = (linDir==="down") ? '<p class="hint">Direction set to descendants only.</p>' : traceTree(linSel, pars, {}, true);
-  document.getElementById("lin-down").innerHTML = (linDir==="up")   ? '<p class="hint">Direction set to ancestors only.</p>'   : traceTree(linSel, kids, {}, false);
+  document.getElementById("lin-up").innerHTML   = (linDir==="down") ? '<p class="hint">Direction set to descendants only.</p>' : traceTree(linSel, pars, {}, true, {});
+  document.getElementById("lin-down").innerHTML = (linDir==="up")   ? '<p class="hint">Direction set to ancestors only.</p>'   : traceTree(linSel, kids, {}, false, {});
 }
-function traceTree(id, fn, seen, up){
-  if(seen[id]) return '<ul><li><span class="node"><span class="idm">'+esc(id)+'</span> (already shown)</li></ul>';
-  seen=Object.assign({},seen); seen[id]=1;
-  var n=MODEL.nodes[id], nx=fn(id);
+function traceTree(id, fn, seen, up, gseen){
+  gseen=gseen||{};
+  var n=MODEL.nodes[id];
   var self='<span class="node"><span class="clk" onclick="setLineage(\''+esc(id).replace(/'/g,"")+'\')">'+badge(n.type)+' <span class="nm">'+esc(n.name)+'</span> <span class="idm">'+esc(id)+'</span></span>'
     +(missingRequired(id).length?' <span class="warn">&#9888; missing '+esc(missingRequired(id).join(", "))+'</span>':'')+'</span>';
-  var childHtml=nx.length? '<ul>'+nx.map(function(c){ return '<li>'+traceTree(c, fn, seen, up)+'</li>'; }).join("")+'</ul>' : '';
+  if(seen[id]) return self+' <span class="idm">↺</span>';
+  if(gseen[id]) return self+' <span class="idm" title="expanded above">↗</span>';   // drawn once — reference later hits
+  seen=Object.assign({},seen); seen[id]=1; gseen[id]=1;
+  var nx=fn(id).slice().sort(function(a,b){ var ta=TIER[MODEL.nodes[a].type],tb=TIER[MODEL.nodes[b].type];
+    return (up?(tb-ta):(ta-tb)) || sibCmp(a,b); });   // spine/tier order, then lifecycle sequence
+  var childHtml=nx.length? '<ul>'+nx.map(function(c){ return '<li>'+traceTree(c, fn, seen, up, gseen)+'</li>'; }).join("")+'</ul>' : '';
   return self+childHtml;
 }
-function setLineage(id){
-  linSel=id; var n=MODEL.nodes[id];
-  document.getElementById("lin-search").value = n.type+" · "+n.name+" ["+id+"]";
-  renderLineage();
-}
+function setLineage(id){ addAnchor(id); }   // a click anywhere adds the element to the multi-select filter
 
 /* ============================================================================
    TAB 2 — Tree explorer with gap focus
@@ -558,29 +655,78 @@ function renderTree(){
     '<div class="kpi"><b>'+roots.length+'</b><span>'+esc(rootType)+' roots</span></div>'+
     '<div class="kpi"><b style="color:#c0392b">'+totalGap+'</b><span>'+(treeDir==="down"?"elements missing a required child":"orphan elements")+'</span></div>'+
     Object.keys(typeGap).map(function(t){ return '<div class="kpi"><b style="color:#c0392b">'+typeGap[t]+'</b><span>'+esc(t)+' with gaps</span></div>'; }).join("");
-  function li(id, seen){
-    if(seen[id]) return '<li><span class="node"><span class="idm">'+esc(id)+'</span> ↺ (cycle)</span></li>';
-    seen=Object.assign({},seen); seen[id]=1;
-    var n=MODEL.nodes[id], ch=stepFn(id).slice().sort(function(a,b){return MODEL.nodes[a].name.localeCompare(MODEL.nodes[b].name);});
+  function tierSort(a,b){ var ta=TIER[MODEL.nodes[a].type], tb=TIER[MODEL.nodes[b].type];
+    return (treeDir==="down"?(ta-tb):(tb-ta)) || sibCmp(a,b); }   // spine/tier order (matches the Navigator), then lifecycle sequence
+  var treeCross=document.getElementById("tree-crosslinks")&&document.getElementById("tree-crosslinks").checked;
+  function childrenOf(id){
+    var ch=stepFn(id).slice();
+    // by default follow only the clean adjacent-tier spine (hide tier-skipping shortcut edges, e.g. Process→Control /
+    // Decision→Control) so the same element doesn't appear under several parents at once — matches the graph's default
+    if(!treeCross){
+      var t0=TIER[MODEL.nodes[id].type], dir=(treeDir==="down"?1:-1);
+      var adj=ch.filter(function(c){ return Math.abs(TIER[MODEL.nodes[c].type]-t0)===1; });
+      if(adj.length){ ch=adj; }
+      else {
+        // no child in the very next tier (e.g. an operational process with no Decision) — don't dead-end the drill:
+        // fall through to the NEAREST populated tier in the walk direction so you can still reach the data footprint
+        var byd={};
+        ch.forEach(function(c){ var d=(TIER[MODEL.nodes[c].type]-t0)*dir; if(d>0){ (byd[d]=byd[d]||[]).push(c); } });
+        var ks=Object.keys(byd).map(Number).sort(function(a,b){return a-b;});
+        ch = ks.length? byd[ks[0]] : [];
+      }
+    }
+    ch.sort(tierSort);
     if(onlyGaps) ch=ch.filter(function(c){ return containsGap(c); });
+    return ch;
+  }
+  // LAZY render: each node knows only whether it HAS children; the child <ul> is filled on demand
+  // when the user expands it. Every occurrence of a node is independently expandable down its full
+  // path (so the tree mirrors the Lineage Trace) and nothing is pre-built, so a dense DAG can't blow up.
+  function nodeHtml(id, path){
+    var n=MODEL.nodes[id], cyc=path.indexOf(id)>=0;
+    var hasKids = !cyc && childrenOf(id).length>0;
     var gap=isGap(id);
     var kbt=kidsByType(id), cntTxt=Object.keys(kbt).map(function(t){return kbt[t].length+ABBR[t];}).join(" ");
     var miss=missingRequired(id);
-    var tog = ch.length? '<span class="tog" onclick="var u=this.parentNode.parentNode.querySelector(\'ul\'); if(u){u.style.display=u.style.display===\'none\'?\'\':\'none\'; this.textContent=u.style.display===\'none\'?\'+\':\'–\';}">'+(expand?'–':'+')+'</span>' : '<span class="tog" style="opacity:.25">•</span>';
+    var tog = hasKids? '<span class="tog" data-tog="1">+</span>' : '<span class="tog" style="opacity:.25">'+(cyc?'↺':'•')+'</span>';
+    var exempt=(n.exemptOf&&n.exemptOf.length)?n.exemptOf:null;   // e.g. operational process — decision not required by design
     var node='<span class="node'+(gap?' gap':'')+'">'+tog+badge(n.type)+
       '<span class="clk" onclick="gotoLineage(\''+esc(id).replace(/'/g,"")+'\')"><span class="nm">'+esc(n.name)+'</span></span> <span class="idm">'+esc(id)+'</span>'+
       (cntTxt?' <span class="cnt">'+esc(cntTxt)+'</span>':'')+
+      (exempt?' <span class="cnt" title="'+esc((n.exemptType||"exempt")+" — "+exempt.join("/")+" not required")+'" style="background:#eef2f7;color:#5b6b7d;border-color:#d7dee8">'+esc(n.exemptType||"exempt")+' · no '+esc(exempt.join("/"))+'</span>':'')+
+      (cyc?' <span class="idm" title="already on this branch">↺ cycle</span>':'')+
       (treeDir==="down"&&miss.length?' <span class="warn">&#9888; no '+esc(miss.join(", "))+'</span>':'')+
       (treeDir==="up"&&gap?' <span class="warn">&#9888; orphan</span>':'')+'</span>';
-    var sub= ch.length? '<ul'+(expand?'':' style="display:none"')+'>'+ch.map(function(c){return li(c,seen);}).join("")+'</ul>' : '';
-    return '<li>'+node+sub+'</li>';
+    return '<li data-id="'+esc(id).replace(/"/g,"")+'">'+node+(hasKids?'<ul style="display:none"></ul>':'')+'</li>';
   }
-  var list=roots;
-  if(onlyGaps) list=roots.filter(function(r){ return containsGap(r); });
-  document.getElementById("tree-body").innerHTML = list.length? '<ul>'+list.map(function(r){return li(r,{});}).join("")+'</ul>'
+  function pathOf(node){ var p=[],cur=node.parentElement; while(cur){ if(cur.tagName==="LI"){var d=cur.getAttribute("data-id"); if(d) p.push(d);} cur=cur.parentElement; } return p; }
+  function fillChildren(liEl){
+    var id=liEl.getAttribute("data-id"), ul=liEl.querySelector("ul");
+    if(!ul || ul.getAttribute("data-loaded")) return ul;
+    var path=pathOf(liEl); path.push(id);
+    var ch=childrenOf(id).filter(function(c){ return path.indexOf(c)<0; });   // don't re-descend an ancestor (cycle)
+    ul.innerHTML=ch.map(function(c){ return nodeHtml(c, path); }).join("");
+    ul.setAttribute("data-loaded","1");
+    return ul;
+  }
+  function toggleLi(liEl, forceOpen){
+    var ul=fillChildren(liEl); if(!ul) return false;
+    var open = forceOpen!=null ? forceOpen : (ul.style.display==="none");
+    ul.style.display = open?"":"none";
+    var tog=liEl.querySelector(".node .tog[data-tog]"); if(tog) tog.textContent = open?"–":"+";
+    return open;
+  }
+  var body=document.getElementById("tree-body");
+  var list=roots; if(onlyGaps) list=roots.filter(function(r){ return containsGap(r); });
+  body.innerHTML = list.length? '<ul>'+list.map(function(r){ return nodeHtml(r, []); }).join("")+'</ul>'
     : '<div class="empty">No '+esc(rootType)+(onlyGaps?' with gaps':'')+' found.</div>';
+  body.onclick=function(e){ var t=e.target.closest?e.target.closest(".tog[data-tog]"):null; if(!t)return; e.stopPropagation(); toggleLi(t.closest("li")); };
+  if(expand){   // "Expand all" — open breadth-first up to a bounded node budget so a dense DAG can't overflow
+    var budget=2500, q=[].slice.call(body.querySelectorAll("li"));
+    while(q.length && budget>0){ var el=q.shift(); if(toggleLi(el,true)){ budget--; [].slice.call(el.querySelector("ul").children).forEach(function(k){ q.push(k); }); } }
+  }
 }
-function gotoLineage(id){ switchTab("lineage"); setLineage(id); }
+function gotoLineage(id){ switchTab("lineage"); setAnchors([id]); }   // cross-tab jump starts a fresh single selection
 
 /* ============================================================================
    TAB 3 — Pivot & counts
@@ -729,12 +875,13 @@ function switchTab(t){
 }
 document.querySelectorAll(".tab").forEach(function(x){ x.addEventListener("click",function(){ switchTab(x.getAttribute("data-tab")); }); });
 document.getElementById("lin-dir").addEventListener("click",function(e){ var b=e.target.closest("button"); if(!b)return;
-  [].forEach.call(this.querySelectorAll("button"),function(x){x.classList.remove("on");}); b.classList.add("on"); linDir=b.getAttribute("d"); renderLineage(); });
+  [].forEach.call(this.querySelectorAll("button"),function(x){x.classList.remove("on");}); b.classList.add("on"); linDir=b.getAttribute("data-d"); renderLineage(); });
 document.getElementById("lin-onlypath").addEventListener("change",renderLineage);
-document.getElementById("lin-search").addEventListener("change",function(){ var id=resolveInput(this.value); if(id) setLineage(id); });
+document.getElementById("lin-search").addEventListener("change",function(){ var id=resolveInput(this.value); if(id){ addAnchor(id); this.value=""; } });
+document.getElementById("lin-crosslinks").addEventListener("change",renderLineage);
 document.getElementById("tree-dir").addEventListener("click",function(e){ var b=e.target.closest("button"); if(!b)return;
   [].forEach.call(this.querySelectorAll("button"),function(x){x.classList.remove("on");}); b.classList.add("on"); renderTree(); });
-["tree-root","tree-gaps","tree-expand"].forEach(function(idv){ document.getElementById(idv).addEventListener("change",renderTree); });
+["tree-root","tree-gaps","tree-expand","tree-crosslinks"].forEach(function(idv){ document.getElementById(idv).addEventListener("change",renderTree); });
 ["piv-type","piv-child","piv-filter"].forEach(function(idv){ document.getElementById(idv).addEventListener("change",renderPivot); });
 document.getElementById("piv-search").addEventListener("input",renderPivot);
 document.getElementById("piv-csv").addEventListener("click",pivotCSV);
@@ -750,12 +897,13 @@ document.getElementById("file").addEventListener("change",function(e){
       TENANT=tenantOf(wb); var tn=document.getElementById("tenant"); tn.style.display=""; tn.textContent=TENANT;
       document.getElementById("gap-export").style.display="";
       fillLineageList(); fillTreeRoots(); fillPivot();
-      linSel=null; renderLineage(); renderTree(); renderPivot();
+      linSel=null; linAnchors=[]; renderLineage(); renderTree(); renderPivot();
       switchTab(curTab);
     }catch(err){ alert("Could not read this workbook: "+err.message); console.error(err); }
   };
   rd.readAsArrayBuffer(f);
 });
+var _av=document.getElementById("appver"); if(_av) _av.textContent=APP_VERSION;
 window.setLineage=setLineage; window.gotoLineage=gotoLineage;
 switchTab("lineage");
 </script>

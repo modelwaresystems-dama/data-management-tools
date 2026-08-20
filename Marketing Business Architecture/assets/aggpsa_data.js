@@ -84,6 +84,12 @@ window.ORG.aggpsa = {
     /* rich-visual config: process landscape */
     processLandscape:{
       streams:["Grant Lifecycle","Diagnostic Study","Programme Delivery","Impact & Policy"],
+      /* which lifecycle stream each core process serves (drives the tab filter) */
+      procStreams:{ P1:["Grant Lifecycle"], P2:["Grant Lifecycle"], P3:["Grant Lifecycle"],
+        P4:["Grant Lifecycle"], P5:["Grant Lifecycle"], P15:["Grant Lifecycle"],
+        P6:["Diagnostic Study"], P7:["Diagnostic Study"], P8:["Diagnostic Study"],
+        P9:["Programme Delivery"], P11:["Programme Delivery"], P12:["Programme Delivery"], P13:["Programme Delivery"],
+        P10:["Impact & Policy"], P14:["Impact & Policy"] },
       steering:["Strategy & Theory of Change","Risk & Portfolio Policy","Governance & Compliance","Performance, Portfolio & Assurance"],
       core:[
         {domain:"1 · Diagnose & Evidence",procs:[{id:"P6",name:"Ecosystem Diagnostic Study",ai:true},{id:"P7",name:"AEEI Index Compilation",ai:true},{id:"P8",name:"IMM Data Ingestion & Analysis",ai:true}]},

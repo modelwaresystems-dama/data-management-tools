@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="0b4427f0e993" data-built="21 Aug 2026" data-version="1.14.0">
+<meta name="crm-build" content="6275d67050d2" data-built="21 Aug 2026" data-version="1.17.2">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1012,6 +1012,32 @@ function interactionsForCompany(st, companyId){
   });
 }
 
+/* When email was last brought in, and how far it reached.
+
+   Two different facts, and the gap between them is the useful one. "Brought in
+   at 08:44" says the job ran; "covers mail to 21 Aug" says how current the CRM
+   actually is. A run that pulled nothing still ran, and a run that pulled
+   plenty can still be a week behind the inbox.
+
+   Derived, not stored: interactions imported from mail carry an id derived from
+   the message id (ix_mail_…), so the log already knows this and every past
+   import counts without anybody having recorded a marker at the time. */
+function mailWatermark(st){
+  var out = { ran:null, coversTo:null, count:0, lastRunCount:0 };
+  var runs = {};
+  Object.keys(st.interactions || {}).forEach(function (k){
+    if (k.indexOf("ix_mail_") !== 0) return;
+    var x = st.interactions[k];
+    out.count++;
+    if (!out.ran || String(x.ts) > out.ran) out.ran = String(x.ts);
+    if (!out.coversTo || x.occurredAt > out.coversTo) out.coversTo = x.occurredAt;
+    var day = String(x.ts).slice(0, 16);            // same minute = same import
+    runs[day] = (runs[day] || 0) + 1;
+  });
+  if (out.ran) out.lastRunCount = runs[String(out.ran).slice(0, 16)] || 0;
+  return out;
+}
+
 function lastContact(st, dealId){
   var ix = interactionsFor(st, dealId);
   return ix.length ? ix[0].occurredAt : null;
@@ -1606,7 +1632,10 @@ function triageHash(s){
   return ("00000000" + h1.toString(16)).slice(-8) + ("00000000" + h2.toString(16)).slice(-8);
 }
 
-var TRIAGE_KINDS = { call:1, whatsapp:1, email:1, meeting:1, note:1 };
+/* LinkedIn is its own channel, not a "note". Where a deal came in through
+   LinkedIn and the conversation stayed there, filing it as a note loses the
+   one fact that explains why nothing is in the mailbox. */
+var TRIAGE_KINDS = { call:1, whatsapp:1, linkedin:1, email:1, meeting:1, note:1 };
 
 function userIds(cfg){
   return ((cfg && cfg.users) || []).map(function (u){ return u.id; });
@@ -1732,7 +1761,10 @@ function importTriage(text, st, cfg, ctx){
 
     var kind = triageNorm(r.kind) || "email";
     if (!TRIAGE_KINDS[kind]){
-      out.errors.push(where + ": “" + r.kind + "” is not a kind. Use call, whatsapp, email, meeting or note.");
+      /* Listed from the table itself, so adding a channel never leaves the
+         error message quietly recommending the old set. */
+      out.errors.push(where + ": “" + r.kind + "” is not a kind. Use " +
+        Object.keys(TRIAGE_KINDS).join(", ") + ".");
       return;
     }
     var when = parseDateInput(r.occurredAt, today) || (r.occurredAt || "").slice(0, 10);
@@ -2072,19 +2104,38 @@ function triageCreate(rows, st, cfg, ctx){
        need saying is two rows that disagree — different owner, stage, partner,
        value — because then only one is being honoured, and silence would hide
        which one. */
-    var sig = [r.owner || "", r.stage || "", r.value == null ? "" : String(r.value),
-               r.partner || "", r.currency || "", r.outcome || "",
-               (r.commission === false || r.commissionable === false) ? "nc" : "",
-               r.commissionRate == null ? "" : String(r.commissionRate)].join("|");
+    /* Only what a row actually SAYS counts. The later rows of a catch-up batch
+       are there to be logged, not to redefine the deal, so they carry a company,
+       a deal name and a line and nothing else. Treating those absent fields as
+       disagreement produced an error per row — eleven of them on one batch —
+       for rows that had not contradicted anything. Silence is not dissent. */
+    var says = {};
+    if (r.owner)    says.owner    = triageNorm(r.owner);
+    if (r.stage)    says.stage    = triageNorm(r.stage);
+    if (r.partner)  says.partner  = triageNorm(r.partner);
+    if (r.currency) says.currency = triageNorm(r.currency);
+    if (r.outcome)  says.outcome  = triageNorm(r.outcome);
+    if (r.value != null && r.value !== "")                   says.value = String(r.value);
+    if (r.commissionRate != null && r.commissionRate !== "") says.rate  = String(r.commissionRate);
+    if (r.commission === false || r.commissionable === false) says.commission = "none";
+
     if (seenDeal[dealId]){
-      if (seenDeal[dealId].sig !== sig)
-        out.errors.push("Rows " + seenDeal[dealId].row + " and " + (i+1) + " both describe " +
-          (isIndividual ? person : coName) + " / " + dealName + " but disagree about it. Row " +
-          seenDeal[dealId].row + " is the one being used — make them agree, " +
-          "or the difference is lost.");
+      var first = seenDeal[dealId], clash = [];
+      Object.keys(says).forEach(function (k){
+        if (first.says[k] !== undefined && first.says[k] !== says[k]) clash.push(k);
+      });
+      if (clash.length)
+        out.errors.push("Rows " + first.row + " and " + (i+1) + " both describe " +
+          (isIndividual ? person : coName) + " / " + dealName + " but disagree on " +
+          clash.join(" and ") + ". Row " + first.row + " is the one being used — make them " +
+          "agree, or the difference is lost.");
+      /* Anything the first row did not say, a later row may still supply. */
+      Object.keys(says).forEach(function (k){
+        if (first.says[k] === undefined) first.says[k] = says[k];
+      });
       return;
     }
-    seenDeal[dealId] = { row:i+1, sig:sig };
+    seenDeal[dealId] = { row:i+1, says:says };
 
     /* Who will own it. Never the actor by default: a deal filed to the person
        running the triage sits outside its salesperson's "mine" list and rots
@@ -2515,6 +2566,7 @@ var API = {
   sortEvents:sortEvents, foldEvents:foldEvents,
   openFollowups:openFollowups, followupsFor:followupsFor, openFollowupsFor:openFollowupsFor,
   interactionsFor:interactionsFor, interactionsForCompany:interactionsForCompany,
+  mailWatermark:mailWatermark,
   lastContact:lastContact, openDeals:openDeals, subjectLabel:subjectLabel,
   dealParty:dealParty, money:money, round2:round2,
   invoiceState:invoiceState, invoicesFor:invoicesFor, paymentsFor:paymentsFor,
@@ -3736,9 +3788,51 @@ function band(cls, label, count, rows, emptyText){
   return sec;
 }
 
+/* The email line. Two facts and the distance between them: when the triage last
+   ran, and how far into the mail it reached. Shown on Today because that is the
+   page anyone actually looks at, and because a CRM whose flags are computed from
+   what has been logged is only as trustworthy as the last time anything was.
+
+   It never says the mail is up to date \u2014 it cannot know that. It says when it
+   last ran and what it covered, and lets the reader draw the conclusion. */
+function mailStatusLine(){
+  var w = C.mailWatermark(App.st);
+  if (!w.ran)
+    return h("div", { class:"note", style:"margin:0 0 14px",
+      text:"No email has been brought in yet. Import a triage batch in Settings and this line will say when." });
+
+  var ranDay = String(w.ran).slice(0, 10);
+  var age = C.daysBetween(ranDay, App.today);            // whole days since the run
+  var when = age === 0 ? "today at " + fmtClock(w.ran)
+           : age === 1 ? "yesterday at " + fmtClock(w.ran)
+           : age + " days ago, on " + C.fmtDay(ranDay);
+  var behind = C.daysBetween(w.coversTo, App.today);
+
+  var txt = "Email last brought in " + when +
+            " \u00b7 covers mail to " + C.fmtDay(w.coversTo) +
+            " \u00b7 " + w.count + " conversation" + (w.count === 1 ? "" : "s") + " logged";
+
+  /* Only the run's own age is worth colouring. How far back the newest mail
+     sits is not a fault \u2014 a quiet week is a quiet week \u2014 but a triage that has
+     not run in days means the flags on this page are reading stale ground. */
+  var stale = age >= 3;
+  var line = h("div", { class:"note", style:"margin:0 0 14px" + (stale ? ";color:var(--overdue)" : ""),
+                        title:"Counted from the conversations imported from tagged mail, not from a marker written at the time.",
+                        text:txt });
+  if (stale)
+    line.appendChild(h("div", { style:"color:var(--muted)",
+      text:"Nothing on this page has seen your inbox since then." }));
+  else if (behind >= 3)
+    line.appendChild(h("div", { style:"color:var(--muted)",
+      text:"The newest tagged mail is " + behind + " days old \u2014 either it has been quiet, or it is not being tagged." }));
+  return line;
+}
+
 function viewToday(el){
   var b = C.bands(App.st, App.config, App.today, scopeOpts());
   var cov = C.coverage(App.st, App.config, App.today, scopeOpts());
+
+  el.appendChild(mailStatusLine());
 
   if (b.total === 0){
     el.appendChild(h("div", { class:"empty" },
@@ -3953,7 +4047,7 @@ function nextStepPopover(anchor, deal, contextFollowup, opts){
   return pop;
 }
 
-var KINDS = [["call","Call"],["whatsapp","WhatsApp"],["email","Email"],["meeting","Meeting"],["note","Note"]];
+var KINDS = [["call","Call"],["whatsapp","WhatsApp"],["linkedin","LinkedIn"],["email","Email"],["meeting","Meeting"],["note","Note"]];
 
 function logPopover(anchor, deal, prefill){
   prefill = prefill || {};
@@ -4124,11 +4218,140 @@ function pastePopover(anchor, forceDeal){
   var box = h("div", { style:"width:100%" });
   box.appendChild(h("h4", { text:"Paste a conversation" }));
   var ta = h("textarea", { rows:"7",
-    placeholder:"Paste an email (the From / Date / Subject lines are enough) or an exported WhatsApp chat.",
-    "aria-label":"Paste an email or WhatsApp chat" });
+    placeholder:"Paste an email (the From / Date / Subject lines are enough), or paste a SCREENSHOT of a WhatsApp or LinkedIn chat.",
+    "aria-label":"Paste an email, or a screenshot of a chat" });
   box.appendChild(ta);
   var out = h("div", { class:"note", text:"Nothing is saved until you confirm." });
   box.appendChild(out);
+
+  /* ---- a pasted screenshot ----------------------------------------------
+     WhatsApp on the desktop cannot export a conversation, and LinkedIn will
+     not either, so "paste the exported chat" asked for something that does
+     not exist. A screenshot is what people actually have.
+
+     The app cannot READ it: this is one file with no network access, and
+     carrying an OCR engine would cost fifty times its own size for middling
+     accuracy on chat bubbles. It does not need to. Howard can read it. What
+     the app has to do is stop refusing the paste, hold the picture on screen
+     while he types the one line, and then forget it.
+
+     The image is held as an object URL and revoked when this closes. It is
+     never turned into a data URL, never put in an event, never written to
+     localStorage and never committed. Same rule as the text: what lands is
+     one line. */
+  var shot = { url:null, name:"" };
+  var shotWrap = h("div", { style:"display:none;margin:8px 0" });
+  box.insertBefore(shotWrap, out);
+
+  function dropShot(){
+    if (shot.url){ try { URL.revokeObjectURL(shot.url); } catch (e){} }
+    shot.url = null; shot.name = "";
+    clear(shotWrap); shotWrap.style.display = "none";
+    ta.disabled = false;
+    ta.dispatchEvent(new Event("input"));
+  }
+
+  function takeShot(file){
+    if (!file || String(file.type || "").indexOf("image/") !== 0) return false;
+    if (shot.url){ try { URL.revokeObjectURL(shot.url); } catch (e){} }
+    shot.url = URL.createObjectURL(file);
+    shot.name = file.name || "screenshot";
+    clear(shotWrap);
+    shotWrap.style.display = "";
+    shotWrap.appendChild(h("img", { src:shot.url, alt:"The pasted screenshot",
+      style:"max-width:100%;max-height:320px;display:block;border:1px solid var(--line);border-radius:6px" }));
+    shotWrap.appendChild(h("div", { class:"note", style:"display:flex;gap:8px;align-items:center;margin-top:4px" },
+      h("span", { text:"Read it here and write the one line below." }),
+      h("span", { class:"spacer" }),
+      h("button", { class:"btn btn-sm quiet", type:"button", onclick:dropShot }, "Remove")));
+    shotWrap.appendChild(shotForm());
+    /* Nothing to parse out of a picture, so the text box stops pretending. */
+    ta.value = ""; ta.disabled = true;
+    ta.dispatchEvent(new Event("input"));
+    return true;
+  }
+
+  /* The form stays in THIS popover, under the picture. Handing off to the log
+     form would close the screenshot the moment he needed to read it. */
+  function shotForm(){
+    var wrap = h("div", { style:"margin-top:10px" });
+    if (!forceDeal){
+      wrap.appendChild(h("div", { class:"note", style:"color:var(--overdue)",
+        text:"A picture gives nothing to match on, so open the deal first and paste from there \u2014 " +
+             "otherwise there is no way to know whose conversation this is." }));
+      return wrap;
+    }
+
+    var kind = "whatsapp";
+    var kwrap = h("div", { class:"quick kinds" });
+    var kb = [];
+    [["whatsapp","WhatsApp"],["linkedin","LinkedIn"],["call","Call"],["meeting","Meeting"]].forEach(function (k){
+      var b = h("button", { class:"btn btn-sm" + (k[0] === kind ? " primary" : ""), type:"button",
+        onclick:function (){ kind = k[0];
+          kb.forEach(function (x){ x.classList.toggle("primary", x.dataset.k === kind); }); } }, k[1]);
+      b.dataset.k = k[0]; kb.push(b); kwrap.appendChild(b);
+    });
+    wrap.appendChild(kwrap);
+
+    var when = h("input", { type:"text", value:App.today, "aria-label":"When it happened" });
+    wrap.appendChild(h("label", { class:"fld" }, h("span", { text:"When" }), when));
+    /* A chat screenshot usually shows a clock and no day. Defaulting silently
+       to today would put the interaction on the wrong date, and every quiet-
+       account flag is computed from those dates. */
+    wrap.appendChild(h("div", { class:"note",
+      text:"Screenshots usually show a time and no date. Check this is the day it actually happened." }));
+
+    var people = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
+      .filter(function (c){ return c.companyId === forceDeal.companyId ||
+                                   c.companyId === forceDeal.partnerCompanyId; });
+    var who = h("select", { "aria-label":"Who it was with" });
+    who.appendChild(h("option", { value:"" }, "\u2014 nobody named \u2014"));
+    people.forEach(function (c){ who.appendChild(h("option", { value:c.id }, c.name)); });
+    if (people.length) wrap.appendChild(h("label", { class:"fld" }, h("span", { text:"With" }), who));
+
+    var line = h("input", { type:"text", maxlength:"200",
+      placeholder:"What happened, in one line",
+      "aria-label":"The one line that gets logged" });
+    wrap.appendChild(h("label", { class:"fld" }, h("span", { text:"The line that gets logged" }), line));
+
+    var err = h("div", { class:"note", style:"color:var(--overdue)" });
+    wrap.appendChild(err);
+    wrap.appendChild(h("div", { class:"pop-foot", style:"border-top:0" },
+      h("button", { class:"btn btn-sm quiet", type:"button", onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+      h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+        var day = C.parseDateInput(when.value, App.today);
+        if (!day){ err.textContent = "\u201c" + when.value + "\u201d is not a date I can read."; return; }
+        var txt = String(line.value || "").trim();
+        if (!txt){ err.textContent = "The line is the only thing that gets kept, so it cannot be empty."; return; }
+        emit("interaction.logged", { interactionId:C.uid("ix"), subjectType:"deal",
+          subjectId:forceDeal.id, kind:kind, occurredAt:day, summary:txt.slice(0,200),
+          contactId: who.value || undefined });
+        dropShot();                       // the picture goes now, not later
+        closeLayers(); render(); openDeal(forceDeal.id);
+        toast("Logged \u2014 the screenshot was not kept.");
+      }}, "Log it")));
+    return wrap;
+  }
+
+  function fromClipboard(e){
+    var dt = e.clipboardData || e.dataTransfer;
+    if (!dt) return;
+    var items = dt.items ? Array.prototype.slice.call(dt.items) : [];
+    for (var i = 0; i < items.length; i++){
+      if (items[i].kind === "file" && String(items[i].type || "").indexOf("image/") === 0){
+        var f = items[i].getAsFile();
+        if (f && takeShot(f)){ e.preventDefault(); return; }
+      }
+    }
+    var files = dt.files ? Array.prototype.slice.call(dt.files) : [];
+    for (var j = 0; j < files.length; j++)
+      if (takeShot(files[j])){ e.preventDefault(); return; }
+  }
+
+  ta.addEventListener("paste", fromClipboard);
+  box.addEventListener("paste", fromClipboard);
+  box.addEventListener("dragover", function (e){ e.preventDefault(); });
+  box.addEventListener("drop", function (e){ e.preventDefault(); fromClipboard(e); });
   var act = h("div", { class:"pop-foot", style:"border-top:0" });
   box.appendChild(act);
 
@@ -4183,8 +4406,16 @@ function pastePopover(anchor, forceDeal){
     }
   });
   box.insertBefore(h("div", { class:"note",
-    text:"Parsed in your browser, then thrown away. Only the channel, date, sender, deal link and the one line you type are ever written — never what was said." }), act);
+    text:"Text is parsed in your browser and a screenshot is only shown, never uploaded. Both are thrown away. " +
+         "Only the channel, date, sender, deal link and the one line you type are ever written — never what was said." }), act);
   var pop = openPopover(anchor, box, { width:420 });
+  /* Closing by any route \u2014 Cancel, Escape, the scrim, another popover opening
+     over the top \u2014 releases the picture. An object URL that outlives its
+     popover is the browser still holding the conversation after the app said
+     it had let go. */
+  pop._cleanup = function (){
+    if (shot.url){ try { URL.revokeObjectURL(shot.url); } catch (e){} shot.url = null; }
+  };
   ta.focus();
   return pop;
 }
@@ -4843,7 +5074,7 @@ function editDeal(anchor, d){
   /* The partner, where the work reaches the customer through somebody else.
      The deal stays the customer's — this only records who brought it. */
   var partner = h("select", { "aria-label":"Partner" });
-  partner.appendChild(h("option", { value:"" }, D + " direct, no partner " + D));
+  partner.appendChild(h("option", { value:"" }, "\u2014 direct, no partner \u2014"));
   Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
     .filter(function (c){ return c.id !== d.companyId && !c.isHolder; })
     .sort(function (a,b){

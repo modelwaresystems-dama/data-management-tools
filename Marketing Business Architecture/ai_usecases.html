@@ -133,10 +133,19 @@ try{ if(window.MODELX) MODELX.build(window.ACTIVE_MODEL_SHEETS||window.NB_MODEL_
   try{ PACK.renderBreadcrumb(null); }catch(e){}
 var D = PACK.data(), DRV = D.aiDrivers;
 var phaseColor = {concept:"#94a3b8", pilot:"#2f6fed", production:"#15803d"};
-var state = clone(D.aiUseCases);
+var state = clone(D.aiUseCases).map(ensureScores);
 var filter = "All";
 function clone(x){ return JSON.parse(JSON.stringify(x)); }
-function mean(obj){ var v=Object.keys(obj).map(function(k){return obj[k];}); return v.reduce(function(a,b){return a+b;},0)/v.length; }
+function mean(obj){ if(!obj||typeof obj!=="object"){ return 3; } var v=Object.keys(obj).map(function(k){return obj[k];}); if(!v.length){ return 3; } return v.reduce(function(a,b){return a+(+b||0);},0)/v.length; }
+// A use-case with no scores yet (draft) still renders — defaults to a neutral 3/5 so a
+// single unscored row can never blank the whole tab.
+function ensureScores(u){
+  var vk=DRV.value.map(function(d){return d.key;}), rk=DRV.risk.map(function(d){return d.key;});
+  if(!u.value||typeof u.value!=="object"){ u.value={}; vk.forEach(function(k){u.value[k]=3;}); u._unscored=true; }
+  if(!u.risk||typeof u.risk!=="object"){ u.risk={}; rk.forEach(function(k){u.risk[k]=3;}); u._unscored=true; }
+  if(u.cost==null){ u.cost=2; }
+  return u;
+}
 function valueOf(u){ return mean(u.value); }        // 1..5 (higher better)
 function riskOf(u){ return mean(u.risk); }          // 1..5 (higher = more risk)
 function quadrant(u){
@@ -183,7 +192,7 @@ function renderMatrix(){
   var shown = state.filter(inFilter);
   shown.forEach(function(u){
     var cx=X(riskOf(u)), cy=Y(valueOf(u)), r=6+u.cost*2.6;
-    s+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+phaseColor[u.phase]+'" fill-opacity=".78" stroke="#fff" stroke-width="1.5" style="cursor:pointer" onclick="openUC(\''+u.id+'\')"><title>'+PACK.esc(u.id+" "+u.name)+' — '+quadrant(u).k+'</title></circle>';
+    s+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+(phaseColor[u.phase]||'#94a3b8')+'" fill-opacity=".78" stroke="#fff" stroke-width="1.5" style="cursor:pointer" onclick="openUC(\''+u.id+'\')"><title>'+PACK.esc(u.id+" "+u.name)+' — '+quadrant(u).k+'</title></circle>';
     s+='<text x="'+cx.toFixed(1)+'" y="'+(cy+3).toFixed(1)+'" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff" style="pointer-events:none">'+u.id+'</text>';
   });
   document.getElementById("matrix").innerHTML=s;
@@ -349,7 +358,7 @@ function importCSV(txt){
   renderCards(); renderMatrix(); renderRollup();
 }
 window.exportCSV=exportCSV;
-window.resetScores=function(){ state=clone(D.aiUseCases); document.getElementById("loadnote").textContent="Reset to shipped scores."; renderCards(); renderMatrix(); renderRollup(); };
+window.resetScores=function(){ state=clone(D.aiUseCases).map(ensureScores); document.getElementById("loadnote").textContent="Reset to shipped scores."; renderCards(); renderMatrix(); renderRollup(); };
 
 vt_.addEventListener("input",function(){renderMatrix();renderRollup();renderCards();});
 rt_.addEventListener("input",function(){renderMatrix();renderRollup();renderCards();});

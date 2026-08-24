@@ -1095,9 +1095,11 @@ window.PACK_CONFIG.processLandscape = {
 };
 
 /* ---- version control stamp ---------------------------------------------- */
-window.PACK_CONFIG.version = "v1.87.21";
-window.PACK_CONFIG.built   = "2026-08-19 19:30 SAST";
+window.PACK_CONFIG.version = "v1.87.22";
+window.PACK_CONFIG.built   = "2026-08-19 20:10 SAST";
 window.PACK_CONFIG.changelog = [
+  { v:"v1.87.22", date:"2026-08-19 20:10 SAST",
+    note:"Fixed the AGGPSA Data & Analytics tab (AI Use-Case prioritisation) rendering completely blank. AGGPSA's model carries 21 AI use-cases, but the on-page scoring array only defined starting scores for U01–U18; after hydration the three draft use-cases (U19 Talent journey mapping, U20 IMF/BHAG contribution attribution, U21 Ecosystem dashboard insight & narrative) arrived with no value/risk objects, so the matrix's mean() threw 'Cannot convert undefined or null to object' and the whole tab — matrix, quadrant roll-up and cards — never rendered. Two-part fix: (1) added sensible illustrative starting scores for U19–U21 (tunable on the page like every other use-case); (2) hardened the page so a use-case with no scores yet can never blank the tab again — mean() and the phase colour now fall back to neutral defaults, and any unscored use-case is normalised to a neutral 3/5 starting point on load. AGGPSA now plots all 21 use-cases; Nedbank (18) and Modelware (77) are unaffected and error-free. Presentation-layer fix only — no model or gap changes." },
   { v:"v1.87.21", date:"2026-08-19 19:30 SAST",
     note:"Connected the Modelware Business Glossary to the Modelware pack content, the same way it was done for AGGPSA. Baked the 1,363-term Modelware glossary export (name, subject area, definition, term type + exact Glossary-Workbench deep link) into modelware_data.js as the source's glossary dictionary and switched term-highlighting on for the Modelware source. Every governed term that appears in the pack — process steps, concepts, decisions, controls, data products, etc. — now renders as a live chip that deep-links to the exact term in the Modelware Glossary Workbench (glossary=<Subject Area>&term=<Name>); ungoverned terms stay inert. Verified all 1,363 terms reconstruct to their exact published deep link (0 mismatches). No model or gap changes — Modelware/Nedbank/AGGPSA remain at 0 structural / 0 not-connected gaps; Nedbank and AGGPSA glossaries untouched." },
   { v:"v1.87.20", date:"2026-08-19 18:55 SAST",

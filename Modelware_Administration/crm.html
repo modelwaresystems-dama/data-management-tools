@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="6275d67050d2" data-built="21 Aug 2026" data-version="1.17.2">
+<meta name="crm-build" content="f77a5f0f6076" data-built="24 Aug 2026" data-version="1.25.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -201,6 +201,9 @@ label.fld.chk > input{width:auto;margin:0}
 }
 .empty strong{color:var(--ink);font-weight:600}
 .note{font-size:12px;color:var(--muted);margin-top:6px}
+/* Standing background. Reads as prose, not as data — line breaks kept, because
+   whoever typed them meant them. */
+.prose{font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap}
 
 /* ---------- popover ---------- */
 .pop{
@@ -328,6 +331,49 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 }
 .trust strong{color:var(--ink)}
 .money{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ---------- people picker ---------- */
+.who{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.who-b{
+  display:flex;align-items:center;gap:8px;background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--radius);padding:7px 11px;
+  font:inherit;color:inherit;cursor:pointer;text-align:left
+}
+.who-b:hover{border-color:#C9DBEC}
+.who-b[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.who-b .n{font-size:13px;font-weight:500}
+.who-b .s{font-size:11px;color:var(--muted);font-family:var(--mono)}
+
+/* ---------- company cards (collapsible) ---------- */
+.co-head{
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;width:100%;
+  background:none;border:0;padding:0;margin:0;text-align:left;font:inherit;
+  color:inherit;cursor:pointer
+}
+.co-head:hover .nm,.co-head:focus-visible .nm{color:var(--accent)}
+.co-head .tw{font-size:11px;color:var(--muted);width:10px;flex:0 0 10px}
+.co-head .nm{font-size:14.5px;font-weight:600;letter-spacing:-.01em}
+.co-sum{
+  display:flex;gap:6px 16px;flex-wrap:wrap;align-items:baseline;
+  font-size:12px;margin-top:7px
+}
+.co-sum .q{color:var(--muted)}
+.co-sum b{
+  font-family:var(--mono);font-size:12px;font-weight:600;color:var(--ink);
+  font-variant-numeric:tabular-nums
+}
+.co-sum b.hot{color:var(--overdue)}
+.co-stats{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:0 20px;margin:12px 0
+}
+.co-stats .stat .lab{white-space:nowrap;margin-right:10px}
+.co-stats .stat .v{font-size:13.5px;text-align:right}
+/* Composite values ("2 open · 1 won · 0 lost") are prose, not a figure, and
+   collide with their own label in a narrow column. They get the full width. */
+.co-stats .stat.wide{grid-column:1/-1}
+.co-stats .stat.wide .v{font-size:12.5px;font-weight:500}
+@media (max-width:560px){ .co-stats{grid-template-columns:1fr} }
 
 /* ---------- search ---------- */
 .searchwrap{position:fixed;inset:0;z-index:80;background:rgba(22,32,44,.28);display:flex;justify-content:center;padding-top:12vh}
@@ -927,6 +973,14 @@ function foldEvents(events){
       if (!d.companyId) return;
       var was = d.companyId, now = mergeTarget(was);
       d.companyId = now;
+      if (d.partnerCompanyId) d.partnerCompanyId = mergeTarget(d.partnerCompanyId);
+      /* Merging a customer INTO its own partner leaves the deal as its own
+         partner — a state the edit form refuses outright, arrived at through a
+         door that never checked. It reads as "MasterData / RFQ, via MasterData"
+         and the real customer has vanished. Drop the now-meaningless partner
+         rather than storing nonsense. The merge is only a mark, so undoing it
+         brings the partner straight back on the next fold. */
+      if (d.partnerCompanyId === d.companyId) d.partnerCompanyId = null;
       if (was !== now && !d.contactId && st.companies[now] && st.companies[now].isHolder){
         var from = Object.keys(st.contacts).filter(function (c){ return origCo[c] === was; });
         if (from.length === 1) d.contactId = from[0];
@@ -1010,6 +1064,102 @@ function interactionsForCompany(st, companyId){
     if (a.ix.occurredAt !== b.ix.occurredAt) return a.ix.occurredAt < b.ix.occurredAt ? 1 : -1;
     return a.ix.ts < b.ix.ts ? 1 : -1;
   });
+}
+
+/* Everything the Companies list needs to say about one company without anyone
+   opening it. Computed at render and never stored, same rule as the flags (C11)
+   — a stored summary drifts from the log and nobody notices.
+
+   Three money questions get three separate answers, because collapsing them is
+   how a CRM starts lying: what we have been PAID, what we have invoiced and are
+   still OWED, and what is merely still being SOLD. Only the first is lifetime
+   value. Currencies are never converted or added together (C16), and every deal
+   the arithmetic could not see is counted out loud rather than quietly dropped
+   from a total — a total that silently omits the deals with no amount on them
+   reads as a fact and is a guess.
+
+   On winning: the percentage is the STAGE's, taken from config.json, and it is
+   not a judgement about this customer. C14a settled that deliberately — per-deal
+   odds are where the number becomes a mood. No blended company-level figure is
+   produced either: averaging a 60% ZAR deal against an 85% USD one needs a
+   conversion rate, and inventing one is the same mistake in a different hat. */
+function companySummary(st, cfg, companyId, today){
+  today = today || todayISO();
+  var out = {
+    deals:{ open:0, won:0, lost:0, total:0 },
+    stages:[], received:{}, invoiced:{}, outstanding:{},
+    wonValue:{}, openValue:{},
+    wonNoValue:0, openNoValue:0, wonNoInvoice:0,
+    win:null, winMixed:false,
+    nextClose:null, closePassed:0, noCloseDate:0,
+    engagement:{ total:0, email:0, byKind:{}, last:null, first:null, days:null, asPartner:0 },
+    partnerDeals:0
+  };
+  var add = function (bag, cur, amt){ bag[cur] = round2((bag[cur] || 0) + amt); };
+  var byStage = {};
+
+  Object.keys(st.deals).forEach(function (k){
+    var d = st.deals[k];
+    if (d.companyId !== companyId){
+      if (d.partnerCompanyId === companyId) out.partnerDeals++;
+      return;
+    }
+    out.deals.total++;
+    var cur = d.currency || "ZAR";
+
+    if (d.status === "open"){
+      out.deals.open++;
+      if (d.value == null || isNaN(d.value)) out.openNoValue++; else add(out.openValue, cur, d.value);
+      var sg = byStage[d.stage] || (byStage[d.stage] = {
+        id:d.stage, label:stageLabel(cfg, d.stage), p:stageProb(cfg, d.stage), count:0 });
+      sg.count++;
+      if (!d.expectedCloseDate) out.noCloseDate++;
+      else {
+        if (daysBetween(today, d.expectedCloseDate) < 0) out.closePassed++;
+        if (!out.nextClose || d.expectedCloseDate < out.nextClose) out.nextClose = d.expectedCloseDate;
+      }
+    } else if (d.outcome === "won"){
+      out.deals.won++;
+      if (d.value == null || isNaN(d.value)) out.wonNoValue++; else add(out.wonValue, cur, d.value);
+      if (!invoicesFor(st, d.id).filter(function (i){ return i.status !== "cancelled"; }).length)
+        out.wonNoInvoice++;
+    } else {
+      out.deals.lost++;
+    }
+
+    /* Cash is read off invoices and payments, never off the deal's own value —
+       what was sold and what arrived are different numbers and the gap between
+       them is the thing worth seeing. */
+    invoicesFor(st, d.id).forEach(function (inv){
+      var s = invoiceState(st, inv);
+      if (s.cancelled) return;
+      var ic = inv.currency || "ZAR";
+      add(out.invoiced, ic, s.gross);
+      add(out.received, ic, s.paid);
+      add(out.outstanding, ic, s.balance);
+    });
+  });
+
+  out.stages = Object.keys(byStage).map(function (k){ return byStage[k]; })
+    .sort(function (a, b){ return b.p - a.p; });
+  if (out.stages.length){
+    out.win = out.stages[0];          /* furthest along, not an average */
+    out.winMixed = out.stages.length > 1;
+  }
+
+  interactionsForCompany(st, companyId).forEach(function (r){
+    var e = out.engagement, kind = r.ix.kind || "note";
+    e.total++;
+    e.byKind[kind] = (e.byKind[kind] || 0) + 1;
+    if (kind === "email") e.email++;
+    if (r.asPartner) e.asPartner++;
+    if (!e.last  || r.ix.occurredAt > e.last)  e.last  = r.ix.occurredAt;
+    if (!e.first || r.ix.occurredAt < e.first) e.first = r.ix.occurredAt;
+  });
+  if (out.engagement.last)
+    out.engagement.days = Math.abs(daysBetween(today, out.engagement.last));
+
+  return out;
 }
 
 /* When email was last brought in, and how far it reached.
@@ -1097,14 +1247,14 @@ var FLAG_RULES = {
   "Silent 30d":       "No interaction has been logged on this deal within the configured silent window.",
   "Stalled":          "The deal has sat in the same stage beyond the configured stalled window.",
   "Close date passed":"The deal is open but its expected close date is in the past.",
-  "Not invoiced":     "The deal was won but no invoice has been raised against it.",
+  "No invoice logged":"The deal was won and no invoice has been entered here. One may well exist in the accounting system \u2014 the CRM only knows what has been logged.",
   "Payment overdue":  "An invoice on this deal is past its due date with money still outstanding.",
   "No due date":      "An invoice with money outstanding has no due date, so nothing can call it late."
 };
 var FLAG_TONE = {
   "Never contacted":"warn", "No next step":"warn", "Overdue":"hot",
   "Pushed 3+":"warn", "Silent 30d":"warn", "Stalled":"warn", "Close date passed":"hot",
-  "Not invoiced":"hot", "Payment overdue":"hot", "No due date":"warn"
+  "No invoice logged":"hot", "Payment overdue":"hot", "No due date":"warn"
 };
 function flagRule(name, cfg){
   var t = (cfg && cfg.thresholds) || {};
@@ -1156,7 +1306,7 @@ function computeFlags(st, cfg, today){
     var f = byDeal[d.id] || [];
     var won = d.status === "closed" && d.outcome === "won";
 
-    if (won && !invs.length) f.push("Not invoiced");
+    if (won && !invs.length) f.push("No invoice logged");
     invs.forEach(function (inv){
       var s = invoiceState(st, inv);
       if (s.cancelled || s.balance <= 0) return;
@@ -1328,6 +1478,130 @@ function bands(st, cfg, today, opts){
 
   return { overdue:overdue, dueToday:dueToday, noNextStep:noNextStep,
            total: overdue.length + dueToday.length + noNextStep.length };
+}
+
+/* ---------------- one person, everything ----------------
+
+   The Mine/Team toggle answers "is this mine", which is the question a rep
+   asks. "How is Debbie doing" is a different question and no screen answered
+   it: it needs one named person, and it needs BOTH halves of what they carry.
+
+   Owning a deal and owning the next step on it are not the same thing, and the
+   gap between them is where the real picture lives — Monica owns no deals at
+   all and is carrying three open steps on other people's, so every screen that
+   keys on ownership shows her as having nothing to do. This counts both, in
+   both directions, and never merges currencies (C16). */
+function personReport(st, cfg, userId, today){
+  today = today || todayISO();
+  var u = ((cfg && cfg.users) || []).filter(function (x){ return x.id === userId; })[0] || null;
+  var sellers = salesUsers(cfg);
+  var out = {
+    user: u ? { id:u.id, name:u.name || u.id, role:u.role || "", initials:u.initials || "" }
+            : { id:userId, name:userId, role:"", initials:"" },
+    inRoster: !!u,
+    carriesDeals: !sellers.length || sellers.indexOf(userId) >= 0,
+    deals:{ open:0, won:0, lost:0, list:[] },
+    stages:[], openValue:{}, wonValue:{}, received:{}, invoiced:{}, outstanding:{},
+    commissionEarned:{}, commissionPending:{},
+    openNoValue:0, wonNoValue:0, wonNoInvoice:0, noCloseDate:0, closePassed:0,
+    steps:{ open:0, overdue:0, dueToday:0, later:0, onOthersDeals:[], noDeal:0 },
+    elsewhere:[], noNextStep:[],
+    logged:{ total:0, byKind:{}, last:null, days:null },
+    lastContact:null, quietest:null, flags:{}
+  };
+  var add = function (bag, cur, amt){ bag[cur] = round2((bag[cur] || 0) + amt); };
+  var byStage = {};
+
+  Object.keys(st.deals).forEach(function (k){
+    var d = st.deals[k];
+    if (d.owner !== userId) return;
+    var cur = d.currency || "ZAR";
+    out.deals.list.push(d);
+    if (d.status === "open"){
+      out.deals.open++;
+      if (d.value == null || isNaN(d.value)) out.openNoValue++; else add(out.openValue, cur, d.value);
+      var sg = byStage[d.stage] || (byStage[d.stage] = {
+        id:d.stage, label:stageLabel(cfg, d.stage), p:stageProb(cfg, d.stage), count:0 });
+      sg.count++;
+      if (!d.expectedCloseDate) out.noCloseDate++;
+      else if (daysBetween(today, d.expectedCloseDate) < 0) out.closePassed++;
+      if (!openFollowupsFor(st, d.id).length) out.noNextStep.push(d);
+    } else if (d.outcome === "won"){
+      out.deals.won++;
+      if (d.value == null || isNaN(d.value)) out.wonNoValue++; else add(out.wonValue, cur, d.value);
+      if (!invoicesFor(st, d.id).filter(function (i){ return i.status !== "cancelled"; }).length)
+        out.wonNoInvoice++;
+    } else out.deals.lost++;
+
+    var m = dealMoney(st, d);
+    ["invoiced","paid","outstanding"].forEach(function (kk){
+      Object.keys(m[kk]).forEach(function (c){
+        add(kk === "paid" ? out.received : out[kk], c, m[kk][c]); }); });
+    Object.keys(m.commissionEarned).forEach(function (c){
+      add(out.commissionEarned, c, m.commissionEarned[c]); });
+    Object.keys(m.commissionPending).forEach(function (c){
+      add(out.commissionPending, c, m.commissionPending[c]); });
+
+    (computeFlags(st, cfg, today)[d.id] || []).forEach(function (f){
+      out.flags[f] = (out.flags[f] || 0) + 1; });
+
+    var lc = lastContact(st, d.id);
+    if (lc && (!out.lastContact || lc > out.lastContact)) out.lastContact = lc;
+    if (d.status === "open"){
+      /* Never contacted is quieter than any number of days, and stays quieter
+         than the next never — the first one found keeps the slot, so the answer
+         does not depend on the order deals happen to be stored in. */
+      var age = lc ? Math.abs(daysBetween(today, lc)) : null;
+      if (!out.quietest) out.quietest = { deal:d, days:age };
+      else if (out.quietest.days !== null && (age === null || age > out.quietest.days))
+        out.quietest = { deal:d, days:age };
+    }
+
+    /* somebody else is carrying the next move on this person's deal */
+    openFollowupsFor(st, d.id).forEach(function (f){
+      if (f.owner && f.owner !== userId) out.elsewhere.push({ followup:f, deal:d });
+    });
+  });
+
+  out.stages = Object.keys(byStage).map(function (k){ return byStage[k]; })
+    .sort(function (a, b){ return b.p - a.p; });
+
+  /* What they are actually on the hook for, wherever it sits. */
+  openFollowups(st).forEach(function (f){
+    if (f.owner !== userId) return;
+    out.steps.open++;
+    var late = daysBetween(today, f.dueDate);
+    if (late < 0) out.steps.overdue++; else if (late === 0) out.steps.dueToday++; else out.steps.later++;
+    if (f.subjectType !== "deal"){ out.steps.noDeal++; return; }
+    var d = st.deals[f.subjectId];
+    if (d && d.owner !== userId) out.steps.onOthersDeals.push({ followup:f, deal:d });
+  });
+
+  /* Who typed it in, which is NOT who did the work — one person running the
+     email triage logs the whole team's correspondence under their own name. */
+  Object.keys(st.interactions).forEach(function (k){
+    var x = st.interactions[k];
+    if (x.actor !== userId) return;
+    out.logged.total++;
+    out.logged.byKind[x.kind || "note"] = (out.logged.byKind[x.kind || "note"] || 0) + 1;
+    if (!out.logged.last || x.occurredAt > out.logged.last) out.logged.last = x.occurredAt;
+  });
+  if (out.logged.last) out.logged.days = Math.abs(daysBetween(today, out.logged.last));
+  return out;
+}
+
+/* Everyone worth a page — the roster, plus anyone who owns a deal or a step
+   but is not in config.json, because a person doing work the CRM cannot name
+   is exactly who you must not hide. */
+function peopleWithWork(st, cfg){
+  var seen = {}, order = [];
+  ((cfg && cfg.users) || []).forEach(function (u){ if (!seen[u.id]){ seen[u.id] = true; order.push(u.id); } });
+  Object.keys(st.deals).forEach(function (k){
+    var o = st.deals[k].owner;
+    if (o && !seen[o]){ seen[o] = true; order.push(o); } });
+  openFollowups(st).forEach(function (f){
+    if (f.owner && !seen[f.owner]){ seen[f.owner] = true; order.push(f.owner); } });
+  return order;
 }
 
 /* Coverage line for the empty state — a statement of coverage, not a celebration. */
@@ -1862,6 +2136,42 @@ function importTriage(text, st, cfg, ctx){
         changes.push({ what:"stage", from:stageLabel(cfg, deal.stage), to:stageLabel(cfg, wantStage),
           event:{ id:"ev_dsx_" + stem, type:"deal.stage_changed", actor:actor,
                   payload:{ dealId:deal.id, from:deal.stage, to:wantStage } } });
+    }
+    /* Who carries the deal. The import could already correct a stage and a
+       commission rate but not the owner — and the owner is the field that
+       decides who gets paid, so it was the one most worth being able to fix.
+       "Howard owns the relationship, not Paul" had to be done by hand, which
+       means it does not get done. */
+    if (r.owner){
+      var wantOwner = resolveUser(cfg, r.owner);
+      if (!wantOwner){
+        out.errors.push(where + ": “" + r.owner + "” is not one of: " +
+          userIds(cfg).join(", ") + ".");
+      } else if (wantOwner !== deal.owner){
+        /* Same rule as creating a deal: only a seller carries a commission-
+           earning deal. A row may hand it to anyone by also saying the deal
+           pays nobody — but it has to say so out loud. */
+        var sellers = salesUsers(cfg);
+        var paysNobody = r.commission === false || r.commissionable === false ||
+                         deal.commissionable === false;
+        if (sellers.length && !paysNobody && sellers.indexOf(wantOwner) < 0){
+          out.errors.push(where + ": " + wantOwner + " does not carry commission-earning deals. " +
+            "Either name one of: " + sellers.join(", ") + ", or set “commission” to false.");
+        } else {
+          changes.push({ what:"owner", from:deal.owner, to:wantOwner,
+            event:{ id:"ev_dox_" + stem, type:"deal.updated", actor:actor,
+                    payload:{ dealId:deal.id, owner:wantOwner } } });
+        }
+      }
+    }
+    /* "This one pays nobody" as its own statement, separate from the rate.
+       A blank rate means nobody has set it yet; this means there is nothing
+       to set — and only the second one is safe to leave alone. */
+    if (r.commission === false || r.commissionable === false){
+      if (deal.commissionable !== false)
+        changes.push({ what:"commission", from:"earns commission", to:"pays nobody",
+          event:{ id:"ev_dnc_" + stem, type:"deal.updated", actor:actor,
+                  payload:{ dealId:deal.id, commissionable:false, commissionRate:null } } });
     }
     if (r.commissionRate != null && r.commissionRate !== ""){
       var wantRate = (+r.commissionRate > 1) ? round2(+r.commissionRate) / 100 : +r.commissionRate;
@@ -2566,6 +2876,7 @@ var API = {
   sortEvents:sortEvents, foldEvents:foldEvents,
   openFollowups:openFollowups, followupsFor:followupsFor, openFollowupsFor:openFollowupsFor,
   interactionsFor:interactionsFor, interactionsForCompany:interactionsForCompany,
+  companySummary:companySummary,
   mailWatermark:mailWatermark,
   lastContact:lastContact, openDeals:openDeals, subjectLabel:subjectLabel,
   dealParty:dealParty, money:money, round2:round2,
@@ -2573,6 +2884,7 @@ var API = {
   dealMoney:dealMoney, moneyBook:moneyBook,
   computeFlags:computeFlags, FLAG_RULES:FLAG_RULES, FLAG_TONE:FLAG_TONE, flagRule:flagRule, flagLabel:flagLabel,
   bands:bands, coverage:coverage,
+  personReport:personReport, peopleWithWork:peopleWithWork,
   stageProb:stageProb, stageLabel:stageLabel, forecast:forecast, weekRetro:weekRetro,
   toCSV:toCSV, parseCSV:parseCSV, importCSV:importCSV, exportCSV:exportCSV,
   importTriage:importTriage, triageCreate:triageCreate,
@@ -2688,6 +3000,20 @@ function buildDemo(today){
   ev(30, 10, "howard", "deal.created", { dealId:"d13", companyId:"co2", name:"Depot wifi refresh",
       owner:"howard", stage:"proposal", value:96000, currency:"ZAR", expectedCloseDate:C.addDays(today,-4) });
   ev(4, 15, "howard", "deal.closed", { dealId:"d13", outcome:"won" });
+  /* Won is not paid. The demo has to carry the settlement track or the Money
+     page and every lifetime-value figure on Companies read as empty — and a
+     number that always shows "—" looks broken rather than honest. Deposit
+     settled, balance outstanding and overdue, which also demonstrates that
+     commission is earned only once an invoice is settled in full. */
+  ev(4, 16, "howard", "deal.updated", { dealId:"d13", commissionRate:0.08 });
+  ev(3, 17, "howard", "invoice.raised", { invoiceId:"inv1", dealId:"d13", number:"INV-2041",
+      currency:"ZAR", net:48000, vat:7200, passThrough:0,
+      issuedOn:C.addDays(today,-24), dueDate:C.addDays(today,-4) });
+  ev(2, 12, "howard", "payment.received", { paymentId:"pay1", invoiceId:"inv1", amount:55200,
+      receivedOn:C.addDays(today,-9), reference:"EFT 4471" });
+  ev(2, 18, "howard", "invoice.raised", { invoiceId:"inv2", dealId:"d13", number:"INV-2042",
+      currency:"ZAR", net:48000, vat:7200, passThrough:0,
+      issuedOn:C.addDays(today,-12), dueDate:C.addDays(today,-2) });
   ev(50, 10, "thabo", "deal.created", { dealId:"d14", companyId:"co5", name:"Legacy migration",
       owner:"thabo", stage:"negotiation", value:41000, currency:"USD", expectedCloseDate:C.addDays(today,-10) });
   ev(6, 16, "thabo", "deal.closed", { dealId:"d14", outcome:"lost", reason:"Budget cut" });
@@ -2815,7 +3141,10 @@ var LS = {
   gh:        "crm.github",
   me:        "crm.me",
   scope:     "crm.scope",
-  seenIntro: "crm.seenIntro"
+  seenIntro: "crm.seenIntro",
+  /* Which company cards are open. A view preference, not data — it never
+     reaches the repo, and losing it costs one click. */
+  openCos:   "crm.companies.open"
 };
 /* ---------------- local storage, defensively ----------------
    Three different failures wear the same exception, and they need three
@@ -2974,6 +3303,7 @@ var App = {
   view: "today",
   scope: lsGet(LS.scope, "mine"),
   me: lsGet(LS.me, "howard"),
+  person: null,                           // whose page the People view is showing
   events: [],
   config: null,
   st: null,
@@ -3583,6 +3913,7 @@ var NAV = [
   { id:"pipeline",  label:"Pipeline",  key:"g p" },
   { id:"companies", label:"Companies", key:"g c" },
   { id:"week",      label:"Week",      key:"g w" },
+  { id:"people",    label:"People",    key:"g u" },
   { id:"money",     label:"Money",     key:"g m" },
   { id:"settings",  label:"Settings",  key:"g s" }
 ];
@@ -3682,6 +4013,7 @@ function renderView(el){
   if (App.view === "today") return viewToday(el);
   if (App.view === "pipeline") return viewPipeline(el);
   if (App.view === "companies") return viewCompanies(el);
+  if (App.view === "people") return viewPeople(el);
   if (App.view === "money") return viewMoney(el);
   if (App.view === "week") return viewWeek(el);
   if (App.view === "settings") return viewSettings(el);
@@ -4594,6 +4926,13 @@ function openDeal(dealId){
       h("button", { class:"btn btn-sm", type:"button",
         onclick:function (e){ editDeal(e.currentTarget, d); } }, "Edit"))));
 
+  /* Standing background, above the dated log, because it is the thing you need
+     before any of the events make sense. Shown only when there is something —
+     an empty box on every deal teaches people to stop reading it. */
+  if (d.notes)
+    body.appendChild(h("section", { class:"sec" }, h("h4", { text:"Background" }),
+      h("div", { class:"prose", text:d.notes })));
+
   /* flags — each with its rule on hover */
   var fl = App.flags[d.id] || [];
   if (fl.length){
@@ -5035,6 +5374,56 @@ function editDeal(anchor, d){
   });
   owner.value = d.owner;
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Deal" }), nm));
+
+  /* Where the deal is filed. The fold has always taken companyId here — the
+     dialog simply never offered it, so a person who turned into a company
+     meant starting the deal again and losing everything logged against it.
+     That is not a rare shape: an individual enquiry that becomes a purchase
+     order, or a partner who reopens the entity they had closed. */
+  var filed = h("select", { "aria-label":"Filed under" });
+  Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
+    .sort(function (a,b){ return a.name < b.name ? -1 : 1; })
+    .forEach(function (c){
+      /* Nothing may be filed under its own partner — the two sides of a
+         partner-led deal have to stay two sides. */
+      if (c.id === d.partnerCompanyId && c.id !== d.companyId) return;
+      filed.appendChild(h("option", { value:c.id },
+        c.name + (c.isHolder ? "  (holds individuals)" : ""))); });
+  filed.value = d.companyId;
+  var moveCt = h("input", { type:"checkbox", "aria-label":"Move the contact across too" });
+  moveCt.checked = true;
+  var moveRow = h("label", { class:"fld chk" }, moveCt, h("span", { text:"" }));
+  var filedNote = h("div", { class:"note" });
+  var syncFiled = function (){
+    var to = App.st.companies[filed.value] || {}, from = App.st.companies[d.companyId] || {};
+    var moving = filed.value !== d.companyId;
+    var ct = d.contactId ? App.st.contacts[d.contactId] : null;
+    var canMove = !!(moving && ct && ct.companyId === d.companyId);
+    moveRow.style.display = canMove ? "" : "none";
+    if (canMove) moveRow.lastChild.textContent =
+      "Move " + ct.name + " across to " + to.name + " as well";
+    var msg = "";
+    if (moving){
+      msg = "Everything logged against the deal moves with it — interactions, " +
+            "follow-ups and invoices all stay attached.";
+      var left = Object.keys(App.st.contacts).filter(function (k){
+        return App.st.contacts[k].companyId === d.companyId &&
+               !(canMove && moveCt.checked && k === d.contactId); }).length;
+      /* Said out loud, because the people left behind are the part nobody
+         thinks about until a colleague cannot find them. */
+      if (left) msg += " " + left + " other contact" + (left === 1 ? "" : "s") +
+        " stay" + (left === 1 ? "s" : "") + " at " + from.name + ", to be moved by hand.";
+    }
+    filedNote.textContent = msg;
+    filedNote.style.display = msg ? "" : "none";
+  };
+  filed.addEventListener("change", syncFiled);
+  moveCt.addEventListener("change", syncFiled);
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Filed under" }), filed));
+  box.appendChild(moveRow);
+  box.appendChild(filedNote);
+  syncFiled();
+
   box.appendChild(h("div", { class:"row2" },
     h("label", { class:"fld" }, h("span", { text:"Value" }), val),
     h("label", { class:"fld" }, h("span", { text:"Currency" }), cur)));
@@ -5060,7 +5449,7 @@ function editDeal(anchor, d){
      earner, and a blank rate says "nobody has set this yet" rather than "there
      is nothing to set" — two different problems that want two different
      answers from whoever reads the deal in six weeks. */
-  var noComm = h("input", { type:"checkbox" });
+  var noComm = h("input", { type:"checkbox", "aria-label":"This deal pays no commission" });
   noComm.checked = d.commissionable === false;
   var syncComm = function (){
     rateRow.style.opacity = noComm.checked ? "0.45" : "";
@@ -5085,6 +5474,18 @@ function editDeal(anchor, d){
         c.name + (c.isPartner ? "" : "  (not marked a partner)"))); });
   partner.value = d.partnerCompanyId || "";
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Via partner" }), partner));
+
+  /* Background — the standing facts, as opposed to the dated ones.
+     "She will be doing marketing, sales and some training delivery" is not an
+     interaction: it did not happen on a Tuesday and it does not age. The field
+     has existed on deals since the CSV import was written and no screen has
+     ever shown it, so anything told to us in that shape had nowhere to go and
+     was lost. Interactions remain the record of what happened; this is the
+     record of what is true. */
+  var notes = h("textarea", { rows:"3", "aria-label":"Background",
+    placeholder:"What is standing true about this deal — scope, terms, who does what" });
+  notes.value = d.notes || "";
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Background" }), notes));
 
   if (users().length < 2)
     box.appendChild(h("div", { class:"note", style:"color:var(--overdue)",
@@ -5120,7 +5521,14 @@ function editDeal(anchor, d){
          find it. */
       if (partner.value && App.st.companies[partner.value] && !App.st.companies[partner.value].isPartner)
         emit("company.updated", { companyId:partner.value, isPartner:true });
-      emit("deal.updated", { dealId:d.id, name:nm.value.trim() || d.name,
+      /* The contact moves first, so a re-render never catches a deal already
+         at its new company with its own contact still filed at the old one. */
+      var toCo = filed.value || d.companyId;
+      if (toCo !== d.companyId && moveCt.checked && d.contactId &&
+          App.st.contacts[d.contactId] && App.st.contacts[d.contactId].companyId === d.companyId)
+        emit("contact.updated", { contactId:d.contactId, companyId:toCo });
+      emit("deal.updated", { dealId:d.id, companyId:toCo, notes:notes.value.trim(),
+        name:nm.value.trim() || d.name,
         value: v === "" ? null : +v, currency:cur.value, owner:owner.value,
         contactId: party ? (party.value || null) : d.contactId,
         partnerCompanyId: partner.value || null,
@@ -5301,6 +5709,36 @@ function mergeCompanyPrompt(anchor, co){
           " move across, with everything logged against them. “" + co.name +
           "” then stops appearing. Nothing is deleted and nothing is marked lost." }));
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Keep" }), sel));
+
+  /* Merging a customer into its own partner is the one merge that is almost
+     never meant. It reads as tidying up — two names on one opportunity — and it
+     deletes the customer: the pipeline then lists the people who INTRODUCED the
+     work instead of the people buying it (decision C22). Said before the button,
+     not after, and never as a refusal: sometimes the partner really is the
+     customer, and only Howard knows which. */
+  var warn = h("div", { class:"note", style:"color:var(--overdue);margin-top:8px" });
+  var syncWarn = function (){
+    var into = App.st.companies[sel.value];
+    var viaThem = Object.keys(App.st.deals).filter(function (k){
+      return App.st.deals[k].companyId === co.id &&
+             App.st.deals[k].partnerCompanyId === sel.value; }).length;
+    var msg = "";
+    if (viaThem)
+      msg = "“" + co.name + "” has " + viaThem + " deal" + (viaThem===1?"":"s") +
+            " that come THROUGH " + (into ? into.name : "them") + " as the partner. " +
+            "Merging makes the partner the customer and “" + co.name +
+            "” stops existing. If they are two records of one company, carry on. " +
+            "If one sells to the other, cancel and set “Via partner” on the deal instead.";
+    else if (into && into.isPartner)
+      msg = (into.name) + " is marked a partner. If “" + co.name +
+            "” is the customer they brought in, this folds the customer into the " +
+            "partner and the customer disappears from the pipeline.";
+    warn.textContent = msg;
+    warn.style.display = msg ? "" : "none";
+  };
+  sel.addEventListener("change", syncWarn);
+  box.appendChild(warn);
+  syncWarn();
   box.appendChild(h("div", { class:"pop-foot" },
     h("button", { class:"btn btn-sm quiet", type:"button",
       onclick:function (){ closeLayers("pop"); } }, "Cancel"),
@@ -5316,6 +5754,32 @@ function mergeCompanyPrompt(anchor, co){
             render(); toast("Merge undone.");
           } });
     } }, "Merge")));
+  openPopover(anchor, box);
+}
+
+/* The same standing-background field as a deal carries, on the company. What a
+   partner actually does for us — marketing, sales, delivery, which territory —
+   outlives any one deal, so recording it on the deal alone loses it the day
+   that deal closes. The field has been on the company record all along with no
+   way to see or set it. */
+function companyNotes(anchor, co){
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Background — " + co.name }));
+  var ta = h("textarea", { rows:"4", "aria-label":"Company background",
+    placeholder:"What is standing true about this company — what they do for us, territory, terms" });
+  ta.value = co.notes || "";
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Background" }), ta));
+  box.appendChild(h("div", { class:"note",
+    text:"Standing facts, not events. What happened on a given day belongs in the log." }));
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+      onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      closeLayers("pop");
+      emit("company.updated", { companyId:co.id, notes:ta.value.trim() });
+      render();
+      toast("Background saved for " + co.name + ".");
+    } }, "Save")));
   openPopover(anchor, box);
 }
 
@@ -5381,7 +5845,7 @@ function viewMoney(el){
       var party = C.dealParty(App.st, d);
       gaps.appendChild(h("div", { style:"padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer",
         onclick:(function (id){ return function (){ openDeal(id); }; })(d.id) },
-        h("span", { class:"chip hot", text:"Not invoiced" }),
+        h("span", { class:"chip hot", text:"No invoice logged" }),
         h("span", { text:"  " + party.name + " \u00b7 " + d.name }),
         h("span", { class:"note", text:"  won " + C.fmtDayYear(d.closedAt) })));
     });
@@ -5425,53 +5889,419 @@ function viewMoney(el){
   el.appendChild(com);
 }
 
+/* Money, per currency, never added across them (C16). Returns "—" rather than
+   "0" when there is nothing, because zero and nothing-recorded are different
+   claims and only one of them is safe to make. */
+function curLine(bag){
+  var ks = Object.keys(bag).filter(function (c){ return bag[c]; }).sort();
+  return ks.length ? ks.map(function (c){ return C.fmtMoney(bag[c], c); }).join(" · ") : "—";
+}
+
+/* The one line that stays visible when a card is shut. It has to answer "is
+   this the company I am looking for, and how are we doing with them" without
+   being opened, or collapsing the cards has only made the page shorter and
+   less useful. */
+function companySummaryLine(sum, lastIx){
+  var row = h("div", { class:"co-sum" });
+  function bit(label, value, tone, title){
+    row.appendChild(h("span", { title:title || "" },
+      h("span", { class:"q", text:label + " " }),
+      h("b", { class: tone || "", text:value })));
+  }
+  bit("Lifetime", curLine(sum.received),
+      "", "Cash actually received against invoices, per currency. Not what has been sold.");
+  if (Object.keys(sum.outstanding).filter(function (c){ return sum.outstanding[c]; }).length)
+    bit("Owed", curLine(sum.outstanding), "hot", "Invoiced and not yet paid.");
+  if (sum.deals.open) bit("In play", curLine(sum.openValue), "", "Value on open deals.");
+
+  if (sum.win){
+    /* The stage's number, said as the stage's number. C14a ruled out per-deal
+       odds precisely so that this figure could never be read as a judgement
+       about a particular customer. */
+    bit(sum.winMixed ? "Furthest" : "Chance",
+        sum.win.label + " · " + Math.round(sum.win.p * 100) + "%",
+        "",
+        "The probability set for the " + sum.win.label + " stage in config.json — " +
+        "not an assessment of this customer." +
+        (sum.winMixed ? " Open deals sit at " + sum.stages.length + " different stages." : ""));
+    if (sum.nextClose)
+      bit("Closing", C.fmtDayYear(sum.nextClose),
+          sum.closePassed ? "hot" : "",
+          sum.closePassed ? sum.closePassed + " open deal(s) are past their expected close date."
+                          : "Earliest expected close date on an open deal.");
+    else
+      bit("Closing", "no date", "hot", "No open deal here carries an expected close date.");
+  }
+
+  bit("Logged", sum.engagement.total
+        ? sum.engagement.total + " (" + sum.engagement.email + " email)"
+        : "nothing",
+      sum.engagement.total ? "" : "hot",
+      "Everything logged against this company's deals, by channel.");
+  row.appendChild(h("span", null,
+    h("span", { class:"q", text:"Last contact " }),
+    h("b", { class: (sum.engagement.days != null && sum.engagement.days > 30) ? "hot" : "",
+             text: lastIx ? C.fmtDayYear(lastIx) +
+                            (sum.engagement.days != null ? " · " + sum.engagement.days + "d" : "")
+                          : "never" })));
+  return row;
+}
+
+/* The full picture, once the card is open. Every gap the arithmetic could not
+   see is named here rather than being left out of a total — a figure that
+   silently skips the deals with no amount on them reads as a fact. */
+function companyStats(sum){
+  var wrap = h("div", { class:"co-stats" });
+  function stat(lab, val, tone, title, wide){
+    wrap.appendChild(h("div", { class:"stat" + (wide ? " wide" : ""), title:title || "" },
+      h("span", { class:"lab", text:lab }),
+      h("span", { class:"v " + (tone || ""), text:val })));
+  }
+  stat("Lifetime value", curLine(sum.received), "", "Payments received against invoices.");
+  stat("Invoiced", curLine(sum.invoiced), "");
+  stat("Outstanding", curLine(sum.outstanding),
+       Object.keys(sum.outstanding).some(function (c){ return sum.outstanding[c] > 0; }) ? "hot" : "");
+  stat("Won, by deal value", curLine(sum.wonValue), "",
+       "What the won deals say they were worth — which is not the same as what arrived.");
+  stat("Open deal value", curLine(sum.openValue), "");
+  stat("Deals", sum.deals.open + " open · " + sum.deals.won + " won · " + sum.deals.lost + " lost",
+       "", "", true);
+  stat("Logged", String(sum.engagement.total), "");
+  stat("Emails", String(sum.engagement.email), "");
+
+  var kinds = Object.keys(sum.engagement.byKind).filter(function (k){ return k !== "email"; }).sort();
+  if (kinds.length)
+    wrap.appendChild(h("div", { class:"stat wide" },
+      h("span", { class:"lab", text:"Other channels" }),
+      h("span", { class:"v", style:"font-size:12.5px;font-weight:500",
+        text: kinds.map(function (k){ return sum.engagement.byKind[k] + " " + k; }).join(" · ") })));
+
+  var box = h("div", null, wrap);
+
+  /* What the numbers above could not see. Said in words, because this is
+     exactly the class of thing that turns a total into a lie by omission. */
+  var gaps = [];
+  if (sum.openNoValue)  gaps.push(sum.openNoValue + " open deal" + (sum.openNoValue===1?"":"s") + " with no value recorded");
+  if (sum.wonNoValue)   gaps.push(sum.wonNoValue + " won deal" + (sum.wonNoValue===1?"":"s") + " with no value recorded");
+  if (sum.wonNoInvoice) gaps.push(sum.wonNoInvoice + " won deal" + (sum.wonNoInvoice===1?"":"s") + " with no invoice logged");
+  if (sum.noCloseDate)  gaps.push(sum.noCloseDate + " open deal" + (sum.noCloseDate===1?"":"s") + " with no expected close date");
+  if (sum.closePassed)  gaps.push(sum.closePassed + " past the expected close date");
+  if (gaps.length)
+    box.appendChild(h("div", { class:"note", style:"margin-bottom:10px" },
+      "Not counted above: " + gaps.join(" · ") + "."));
+
+  if (sum.win)
+    box.appendChild(h("div", { class:"note", style:"margin-bottom:10px" },
+      "Chance of winning is the probability set for each stage in config.json — " +
+      (sum.winMixed
+        ? "open deals here sit at " + sum.stages.map(function (s){
+            return s.count + " at " + s.label + " (" + Math.round(s.p*100) + "%)"; }).join(", ") + ". "
+        : sum.win.label + ", " + Math.round(sum.win.p*100) + "%. ") +
+      "It is not a judgement about this customer, and no single blended figure is " +
+      "shown because averaging across currencies would need a conversion rate."));
+
+  if (sum.partnerDeals)
+    box.appendChild(h("div", { class:"note", style:"margin-bottom:10px",
+      text:"Also the partner on " + sum.partnerDeals + " deal" +
+           (sum.partnerDeals===1?"":"s") + " filed under other companies. " +
+           "Those are not counted in the money above — they belong to the customer." }));
+
+  return box;
+}
+
+/* ============================================================
+   PEOPLE — one person, everything
+
+   Mine/Team answers "is this mine". "How is Debbie doing" is a different
+   question, and it needs both halves of what a person carries: the deals they
+   own, AND the next steps they are holding on somebody else's deals. Monica
+   owns no deals and is carrying three of those, so every ownership-keyed
+   screen shows her with nothing to do.
+   ============================================================ */
+
+function personChipLabel(st, cfg, id){
+  var r = C.personReport(st, cfg, id, App.today);
+  var bits = [];
+  if (r.deals.open) bits.push(r.deals.open + " open");
+  if (r.steps.open) bits.push(r.steps.open + " step" + (r.steps.open === 1 ? "" : "s"));
+  return { report:r, sub: bits.join(" · ") || "nothing open" };
+}
+
+function viewPeople(el){
+  var ids = C.peopleWithWork(App.st, App.config);
+  if (!ids.length){
+    el.appendChild(h("div", { class:"empty",
+      text:"No people yet. The roster lives in config.json in the repo." }));
+    return;
+  }
+  if (!App.person || ids.indexOf(App.person) < 0)
+    App.person = ids.indexOf(App.me) >= 0 ? App.me : ids[0];
+
+  /* the picker — everyone, not just sellers, or the people carrying steps on
+     other people's deals stay invisible, which is the whole reason for this page */
+  var pick = h("div", { class:"who" });
+  ids.forEach(function (id){
+    var info = personChipLabel(App.st, App.config, id);
+    var on = id === App.person;
+    var late = info.report.steps.overdue;
+    pick.appendChild(h("button", { class:"who-b" + (on ? " on" : ""), type:"button",
+      "aria-pressed": on ? "true" : "false",
+      onclick:function (){ App.person = id; render(); } },
+      h("span", { class:"chip owner", text:initials(id) }),
+      h("span", null,
+        h("div", { class:"n", text:userName(id) }),
+        h("div", { class:"s", text:info.sub })),
+      late ? h("span", { class:"chip hot", text:late + " late" }) : null));
+  });
+  el.appendChild(pick);
+
+  var r = C.personReport(App.st, App.config, App.person, App.today);
+
+  /* the numbers, under the person's own name — a header pane carrying nothing
+     but a name is a box you learn to scroll past */
+  var stats = h("div", { class:"co-stats" });
+  var stat = function (lab, val, tone, title, wide){
+    stats.appendChild(h("div", { class:"stat" + (wide ? " wide" : ""), title:title || "" },
+      h("span", { class:"lab", text:lab }),
+      h("span", { class:"v " + (tone || ""), text:val }))); };
+  stat("Open deals", String(r.deals.open));
+  stat("Value in play", curLine(r.openValue), "", "Per currency; never added together.");
+  stat("Won", String(r.deals.won));
+  stat("Lost", String(r.deals.lost));
+  stat("Received", curLine(r.received), "", "Cash in against their deals.");
+  stat("Outstanding", curLine(r.outstanding),
+       Object.keys(r.outstanding).some(function (c){ return r.outstanding[c] > 0; }) ? "hot" : "");
+  stat("Commission earned", curLine(r.commissionEarned), "",
+       "Earned only once an invoice is settled in full.");
+  stat("Commission pending", curLine(r.commissionPending), "",
+       "Computed but not yet earned — the invoice is not settled.");
+  stat("Open next steps", r.steps.open + " · " + r.steps.overdue + " overdue · " +
+       r.steps.dueToday + " today", r.steps.overdue ? "hot" : "", "", true);
+  var warn = null;
+  if (!r.inRoster)
+    warn = "Not in config.json. They own work in the CRM and the roster has never heard of them — " +
+           "so they cannot be paid commission and nothing here can name them properly.";
+  else if (!r.carriesDeals && r.deals.list.length)
+    warn = "config.json does not list " + r.user.name + " as sales, yet " + r.deals.list.length +
+           " deal" + (r.deals.list.length===1?"":"s") + " sit here. Either the roster is wrong or " +
+           "the deals are — commission is computed from this.";
+  el.appendChild(h("section", { class:"pane", style:"margin-bottom:14px" },
+    h("div", { style:"display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:2px" },
+      h("h3", { style:"margin:0", text:r.user.name }),
+      r.user.role ? h("span", { class:"note", style:"margin:0", text:r.user.role }) : null),
+    warn ? h("div", { class:"note", style:"color:var(--overdue);margin-bottom:6px", text:warn }) : null,
+    stats,
+    (function (){
+      var gaps = [];
+      if (r.openNoValue)  gaps.push(r.openNoValue + " open deal" + (r.openNoValue===1?"":"s") + " with no value");
+      if (r.wonNoValue)   gaps.push(r.wonNoValue + " won deal" + (r.wonNoValue===1?"":"s") + " with no value");
+      if (r.wonNoInvoice) gaps.push(r.wonNoInvoice + " won and never invoiced");
+      if (r.noCloseDate)  gaps.push(r.noCloseDate + " with no expected close date");
+      if (r.closePassed)  gaps.push(r.closePassed + " past the expected close date");
+      return gaps.length
+        ? h("div", { class:"note", text:"Not counted above: " + gaps.join(" · ") + "." })
+        : null;
+    })()));
+
+  /* what they are on the hook for, wherever it sits */
+  if (r.steps.onOthersDeals.length){
+    var sec = h("section", { class:"pane", style:"margin-bottom:14px" },
+      h("h3", { style:"font-size:13px",
+        text:"Carrying " + r.steps.onOthersDeals.length + " step" +
+             (r.steps.onOthersDeals.length===1?"":"s") + " on other people's deals" }),
+      h("div", { class:"sub",
+        text:"Real work that no ownership-keyed screen shows." }));
+    r.steps.onOthersDeals.forEach(function (x){
+      var late = C.daysBetween(App.today, x.followup.dueDate);
+      sec.appendChild(h("div", { style:"padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer",
+        onclick:(function (id){ return function (){ openDeal(id); }; })(x.deal.id) },
+        h("div", { class:"note",
+          text:C.dealParty(App.st, x.deal).name + " · " + x.deal.name +
+               "  —  owned by " + userName(x.deal.owner) }),
+        h("div", { style:"font-size:13px" + (late < 0 ? ";color:var(--overdue)" : ""),
+          text:C.fmtDay(x.followup.dueDate) + " · " + x.followup.what })));
+    });
+    el.appendChild(sec);
+  }
+  if (r.elsewhere.length){
+    var sec2 = h("section", { class:"pane", style:"margin-bottom:14px" },
+      h("h3", { style:"font-size:13px",
+        text:r.elsewhere.length + " step" + (r.elsewhere.length===1?"":"s") +
+             " on their deals held by someone else" }),
+      h("div", { class:"sub", text:"Their deal, another person's move." }));
+    r.elsewhere.forEach(function (x){
+      sec2.appendChild(h("div", { style:"padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer",
+        onclick:(function (id){ return function (){ openDeal(id); }; })(x.deal.id) },
+        h("div", { class:"note",
+          text:C.dealParty(App.st, x.deal).name + " · " + x.deal.name +
+               "  —  waiting on " + userName(x.followup.owner) }),
+        h("div", { style:"font-size:13px",
+          text:C.fmtDay(x.followup.dueDate) + " · " + x.followup.what })));
+    });
+    el.appendChild(sec2);
+  }
+
+  /* the deals themselves */
+  if (r.deals.list.length){
+    var t = h("table", { class:"tbl" }, h("thead", null, h("tr", null,
+      h("th", { text:"Deal" }), h("th", { text:"Stage" }), h("th", { text:"Next step" }),
+      h("th", { text:"Last contact" }), h("th", { class:"num", text:"Value" }))));
+    var tb = h("tbody");
+    r.deals.list.slice().sort(function (a, b){
+      if (a.status !== b.status) return a.status === "open" ? -1 : 1;
+      return a.name < b.name ? -1 : 1; }).forEach(function (d){
+      var nx = C.openFollowupsFor(App.st, d.id)[0];
+      var late = nx ? C.daysBetween(App.today, nx.dueDate) : null;
+      var lc = C.lastContact(App.st, d.id);
+      tb.appendChild(h("tr", { onclick:(function (id){ return function (){ openDeal(id); }; })(d.id) },
+        h("td", null, h("div", { text:C.dealParty(App.st, d).name + " · " + d.name }), chipsFor(d.id, 3)),
+        h("td", { text: d.status === "open" ? C.stageLabel(App.config, d.stage)
+                                            : (d.outcome === "won" ? "Won" : "Lost") }),
+        h("td", { style: nx ? (late < 0 ? "color:var(--overdue)" : "") : "color:var(--muted)",
+                  text: nx ? C.fmtDay(nx.dueDate) + " · " + nx.what +
+                             (nx.owner && nx.owner !== d.owner ? " · " + userName(nx.owner) : "")
+                           : (d.status === "open" ? "— no next step" : "—") }),
+        h("td", { style: lc ? "" : "color:var(--overdue)",
+                  text: lc ? C.fmtDayYear(lc) : "never" }),
+        h("td", { class:"num", text: d.value == null ? "—" : C.fmtMoney(d.value, d.currency) })));
+    });
+    t.appendChild(tb);
+    el.appendChild(h("section", { class:"pane", style:"margin-bottom:14px" },
+      h("h3", { style:"font-size:13px", text:"Their deals" }), t));
+  } else {
+    el.appendChild(h("div", { class:"empty", style:"margin-bottom:14px" },
+      h("strong", { text:r.user.name + " owns no deals." }),
+      h("div", { style:"margin-top:4px",
+        text: r.steps.open
+          ? "They are carrying " + r.steps.open + " open next step" +
+            (r.steps.open===1?"":"s") + " on other people's, listed above."
+          : "Nothing is filed to them at all." })));
+  }
+
+  /* flags, and the honest caveat about activity */
+  var tail = h("section", { class:"pane" }, h("h3", { style:"font-size:13px", text:"Signals" }));
+  var fk = Object.keys(r.flags).sort();
+  if (fk.length){
+    var ch = h("div", { class:"chips", style:"margin-bottom:8px" });
+    fk.forEach(function (f){
+      ch.appendChild(h("span", { class:"chip " + (C.FLAG_TONE[f] || ""),
+        title:C.flagRule(f, App.config),
+        text:C.flagLabel(f, App.config) + " × " + r.flags[f] })); });
+    tail.appendChild(ch);
+  } else tail.appendChild(h("div", { class:"note", text:"No flags on their deals." }));
+  if (r.quietest)
+    tail.appendChild(h("div", { class:"note",
+      text:"Quietest open deal: " + C.dealParty(App.st, r.quietest.deal).name + " · " +
+           r.quietest.deal.name + " — " +
+           (r.quietest.days === null ? "never contacted" : r.quietest.days + " days") }));
+  /* The number that would be a lie if left unexplained. */
+  tail.appendChild(h("div", { class:"note", style:"margin-top:8px",
+    text:"Logged by " + r.user.name + ": " + r.logged.total +
+         (r.logged.last ? " (last " + C.fmtDayYear(r.logged.last) + ")" : "") +
+         ". This counts who typed it in, not who did the work — one person running " +
+         "the email import logs the whole team's correspondence under their own name." }));
+  el.appendChild(tail);
+}
+
 function viewCompanies(el){
   var q = h("input", { type:"text", placeholder:"Filter companies and contacts", "aria-label":"Filter",
-                       style:"max-width:340px;margin-bottom:14px" });
-  el.appendChild(q);
+                       style:"max-width:340px" });
+  /* Remembered per browser, so the shape of the page survives a reload. Stored
+     as the list of OPEN cards rather than closed ones: shut is the default, and
+     a company added tomorrow should arrive shut like everything else. */
+  var openCards = {};
+  (lsGet(LS.openCos, []) || []).forEach(function (id){ openCards[id] = 1; });
+
+  var allBtn = h("button", { class:"btn btn-sm quiet", type:"button" });
+  var bar = h("div", { style:"display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px" },
+    q, allBtn);
+  el.appendChild(bar);
   var host = h("div");
   el.appendChild(host);
 
   function paint(){
     clear(host);
     var term = q.value.trim().toLowerCase();
+    var shown = 0;
     var cos = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
       .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
-    var any = false;
-    cos.forEach(function (co){
+    var matches = cos.filter(function (co){
+      if (!term) return true;
+      var cts = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
+        .filter(function (c){ return c.companyId === co.id; });
+      var hay = (co.name + " " + co.domain + " " +
+        cts.map(function (c){ return c.name + " " + c.email; }).join(" ")).toLowerCase();
+      return hay.indexOf(term) >= 0;
+    });
+    var any = matches.length > 0;
+    matches.forEach(function (co){
       var deals = Object.keys(App.st.deals).map(function (k){ return App.st.deals[k]; })
         .filter(function (d){ return d.companyId === co.id; });
       var cts = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
         .filter(function (c){ return c.companyId === co.id; });
-      var hay = (co.name + " " + co.domain + " " + cts.map(function(c){ return c.name + " " + c.email; }).join(" ")).toLowerCase();
-      if (term && hay.indexOf(term) < 0) return;
-      any = true;
+      shown++;
 
       var open = deals.filter(function (d){ return d.status === "open"; });
-      var tot = {};
-      open.forEach(function (d){ if (d.value) tot[d.currency||"ZAR"] = (tot[d.currency||"ZAR"]||0) + d.value; });
       var lastIx = null;
       deals.forEach(function (d){ var l = C.lastContact(App.st, d.id); if (l && (!lastIx || l > lastIx)) lastIx = l; });
+      var sum = C.companySummary(App.st, App.config, co.id, App.today);
 
-      var sec = h("section", { class:"pane", style:"margin-bottom:14px" },
-        h("div", { style:"display:flex;align-items:baseline;gap:10px;flex-wrap:wrap" },
-          h("h3", { text:co.name }),
-          co.domain ? h("span", { class:"mono", style:"font-size:11.5px;color:var(--muted)", text:co.domain }) : null,
-          h("span", { class:"spacer" }),
-          h("span", { class:"mono", style:"font-size:12px",
-            text: Object.keys(tot).map(function (c){ return C.fmtMoney(tot[c], c); }).join(" · ") || "—" }),
+      var sec = h("section", { class:"pane", style:"margin-bottom:14px" });
+
+      /* The card is shut until asked. Every company was carrying its deals, its
+         people and a dozen logged interactions open on one page, so finding a
+         customer meant scrolling past everything about all the others. What
+         stays visible is the line that answers "is this the one" — and that
+         line has to be worth reading, or collapsing has simply hidden the page. */
+      /* Filtering to a handful is itself a request to see them. Typed-in
+         expansion is not remembered, so clearing the box returns the page to
+         the shape you left it in rather than to whatever the search did. */
+      var isOpen = !!openCards[co.id] || (!!term && matches.length <= 3);
+      var tw = h("span", { class:"tw", text: isOpen ? "▾" : "▸" });
+      /* NOT `head` — a second `var head` further down this same callback (the
+         "Everything logged" heading) reassigns it, and `var` is function-scoped,
+         so the click handler's closure ended up pointing at that div instead.
+         The body still opened, so it looked fine; only aria-expanded silently
+         stopped tracking, which nobody sees and a screen reader lives on. */
+      var headBtn = h("button", { class:"co-head", type:"button", "aria-expanded": isOpen ? "true" : "false" },
+        tw,
+        h("span", { class:"nm", text:co.name }),
+        co.domain ? h("span", { class:"mono", style:"font-size:11.5px;color:var(--muted)", text:co.domain }) : null,
+        /* Said on the company, because "are we selling TO them or THROUGH
+           them" changes how every deal on this page should be read. */
+        co.isPartner
+          ? h("span", { class:"chip plain", title:"We sell through this partner.", text:"Partner" })
+          : null,
+        sum.deals.open
+          ? h("span", { class:"chip plain",
+              text: sum.deals.open + " open" }) : null,
+        sum.deals.won
+          ? h("span", { class:"chip plain", text: sum.deals.won + " won" }) : null);
+      sec.appendChild(headBtn);
+      sec.appendChild(companySummaryLine(sum, lastIx));
+
+      var bodyEl = h("div", { class:"co-body", style: isOpen ? "" : "display:none" });
+      headBtn.addEventListener("click", function (){
+        isOpen = !isOpen;
+        if (isOpen) openCards[co.id] = 1; else delete openCards[co.id];
+        lsSet(LS.openCos, Object.keys(openCards));
+        headBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        tw.textContent = isOpen ? "▾" : "▸";
+        bodyEl.style.display = isOpen ? "" : "none";
+      });
+      sec.appendChild(bodyEl);
+      bodyEl.appendChild(companyStats(sum));
+
+      bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px" },
           /* Only offered when there is somewhere to merge INTO. A lone company
              cannot be a duplicate of anything. */
           cos.length > 1
-            ? h("button", { class:"btn btn-sm quiet", type:"button",
+            ? h("a", { href:"#", style:"font-size:11.5px",
                 title:"Fold this company into another — for two records of the same customer",
-                onclick:function (e){ e.stopPropagation(); mergeCompanyPrompt(e.currentTarget, co); } },
-                "Merge…")
-            : null),
-        h("div", { class:"note", style:"margin-bottom:10px" },
-          h("span", { text: open.length + " open deal" + (open.length===1?"":"s") + " · " +
-                (lastIx ? "last contact " + C.fmtDayYear(lastIx) : "never contacted") }),
-          h("span", { text:"  ·  " }),
+                onclick:function (e){ e.preventDefault(); mergeCompanyPrompt(e.currentTarget, co); } },
+                "merge…")
+            : null,
+          cos.length > 1 ? h("span", { text:"  ·  " }) : null,
           /* Marking a company a holder is a statement about what it IS, so it
              lives on the company rather than buried in Settings. */
           h("a", { href:"#", style:"font-size:11.5px",
@@ -5483,7 +6313,33 @@ function viewCompanies(el){
                 ? co.name + " is a company again."
                 : co.name + " now holds individuals — its deals are named after the person.");
             } },
-            co.isHolder ? "holds individuals" : "mark as holding individuals")));
+            co.isHolder ? "holds individuals" : "mark as holding individuals"),
+          h("span", { text:"  ·  " }),
+          /* Until now the only way a company became a partner was somebody
+             picking it in the "Via partner" box on a customer's deal. That
+             works for a partner who has already brought something in, and not
+             at all for one still being signed up — which is the point at which
+             you most want the CRM to say what this relationship is. */
+          co.isHolder
+            ? h("span", { style:"font-size:11.5px;color:var(--muted)",
+                text:"a bucket of people cannot be a partner" })
+            : h("a", { href:"#", style:"font-size:11.5px",
+                onclick:function (e){
+                  e.preventDefault();
+                  emit("company.updated", { companyId:co.id, isPartner: !co.isPartner });
+                  render();
+                  toast(co.isPartner
+                    ? co.name + " is no longer marked a partner."
+                    : co.name + " is a partner — deals can now be filed as coming through them.");
+                } },
+                co.isPartner ? "a partner" : "mark as a partner"),
+          h("span", { text:"  ·  " }),
+          h("a", { href:"#", style:"font-size:11.5px",
+            onclick:function (e){ e.preventDefault(); companyNotes(e.currentTarget, co); } },
+            co.notes ? "edit background" : "add background")));
+
+      if (co.notes)
+        bodyEl.appendChild(h("div", { class:"prose", style:"margin-bottom:10px", text:co.notes }));
 
       if (deals.length){
         var t = h("table", { class:"tbl" }, h("thead", null, h("tr", null,
@@ -5518,7 +6374,7 @@ function viewCompanies(el){
               h("td", { class:"num", text:d.value == null ? "—" : C.fmtMoney(d.value, d.currency) })));
           });
         t.appendChild(tb);
-        sec.appendChild(t);
+        bodyEl.appendChild(t);
       }
 
       if (cts.length){
@@ -5531,7 +6387,7 @@ function viewCompanies(el){
               h("a", { href:"mailto:" + c.email }, c.email)) : null,
             c.phone ? h("div", { class:"mono", style:"font-size:11px;color:var(--muted)", text:c.phone }) : null));
         });
-        sec.appendChild(cl);
+        bodyEl.appendChild(cl);
       }
 
       /* Everything logged with this customer, across every deal and every
@@ -5548,7 +6404,7 @@ function viewCompanies(el){
                   " across " + deals.length + " deal" + (deals.length===1?"":"s") +
                   (Object.keys(many).length > 1
                     ? " · " + Object.keys(many).length + " people" : "") }));
-        sec.appendChild(head);
+        bodyEl.appendChild(head);
         var hl = h("div", { style:"margin-top:6px" });
         hist.slice(0, 12).forEach(function (e){
           hl.appendChild(h("div", { style:"padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer",
@@ -5562,12 +6418,63 @@ function viewCompanies(el){
         if (hist.length > 12)
           hl.appendChild(h("div", { class:"note", style:"padding-top:6px",
             text:"…and " + (hist.length - 12) + " older. Open a deal for its full history." }));
-        sec.appendChild(hl);
+        bodyEl.appendChild(hl);
       }
 
       host.appendChild(sec);
     });
     if (!any) host.appendChild(h("div", { class:"empty", text: term ? "Nothing matches that." : "No companies yet." }));
+
+    /* Merged-away records, and the way back.
+
+       A merge is only a MARK — nothing is rewritten, which is exactly what
+       makes it undoable. But the only undo was the one on the toast, so once
+       that faded the decision was permanent in practice while being reversible
+       in principle. Three customers were folded into their own partners and
+       there was no screen that would give them back. */
+    var gone = Object.keys(App.st.mergedCompanies || {})
+      .map(function (k){ return App.st.mergedCompanies[k]; })
+      .filter(function (c){
+        if (!term) return true;
+        return String(c.name).toLowerCase().indexOf(term) >= 0; })
+      .sort(function (a, b){ return a.name < b.name ? -1 : 1; });
+    if (gone.length){
+      var box = h("section", { class:"pane", style:"margin-top:4px" },
+        h("h3", { style:"font-size:13px", text:"Merged away (" + gone.length + ")" }),
+        h("div", { class:"note", style:"margin-bottom:8px",
+          text:"These records were folded into another company. Nothing was deleted — " +
+               "their deals and people moved across, and putting one back returns them." }));
+      gone.forEach(function (c){
+        var into = App.st.companies[c.mergedInto] ||
+                   (App.st.mergedCompanies || {})[c.mergedInto];
+        box.appendChild(h("div", { style:"display:flex;align-items:baseline;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)" },
+          h("span", { style:"font-size:13px", text:c.name }),
+          h("span", { class:"note", text:"into " + (into ? into.name : "a record that is itself merged") }),
+          h("span", { class:"spacer" }),
+          h("a", { href:"#", style:"font-size:11.5px",
+            onclick:(function (id, nm){ return function (e){
+              e.preventDefault();
+              emit("company.unmerged", { fromId:id });
+              render();
+              toast(nm + " is a separate company again.");
+            }; })(c.id, c.name) }, "put back")));
+      });
+      host.appendChild(box);
+    }
+
+    /* The control says what pressing it will DO, not what the page currently
+       is — a button labelled with a state leaves you guessing which way it
+       goes. It opens everything unless everything is already open. */
+    var openHere = matches.filter(function (co){ return openCards[co.id]; }).length;
+    var willOpen = openHere < matches.length;
+    allBtn.textContent = willOpen ? "Expand all" : "Collapse all";
+    allBtn.disabled = !matches.length;
+    allBtn.onclick = function (){
+      matches.forEach(function (co){
+        if (willOpen) openCards[co.id] = 1; else delete openCards[co.id]; });
+      lsSet(LS.openCos, Object.keys(openCards));
+      paint();
+    };
   }
   q.addEventListener("input", paint);
   paint();
@@ -6116,9 +7023,7 @@ function viewSettings(el){
       download("crm-deals-" + App.today + ".csv", C.exportCSV(App.st, App.config, App.today), "text/csv");
     }}, "Export deals as CSV"),
     h("button", { class:"btn", type:"button", onclick:function (){
-      download("crm-events-" + App.today + ".jsonl",
-        C.sortEvents(App.events).map(function (e){ return JSON.stringify(e); }).join("\n") + "\n",
-        "application/x-ndjson");
+      download("crm-events-" + App.today + ".jsonl", eventLogExport(), "application/x-ndjson");
     }}, "Export the raw event log"),
     h("button", { class:"btn", type:"button", onclick:function (e){ pastePopover(e.currentTarget); } },
       "Paste a chat or email to log")));
@@ -6376,9 +7281,36 @@ function switchWorkspace(w){
 
 /* The escape hatch when the browser will not keep anything: get it out of the
    browser entirely, in the format the repo itself uses. */
+/* The event log, with a header line saying what it is.
+
+   The export used to be events alone, which meant anything reading it also
+   needed config.json out of the repo — the roster is what tells our own people
+   from customers and decides who may own a deal. Asking for two files is asking
+   for one of them to be forgotten, so the roster travels inside the file. The
+   header is an ordinary JSON line of an unknown type, and the fold ignores
+   unknown types, so the file still imports as plain events.
+
+   The GitHub token is not in here. App.config is the repo's config.json and
+   App.gh is the credential; they are separate objects and stay that way. The
+   filter is belt and braces in case that ever stops being true. */
+function eventLogExport(){
+  var safeCfg = {};
+  Object.keys(App.config || {}).forEach(function (k){
+    if (/token|secret|pat|password|key$/i.test(k)) return;
+    safeCfg[k] = App.config[k];
+  });
+  var head = { id:"crm-export-header", seq:-1, ts:new Date().toISOString(),
+    actor:"export", type:"crm.export",
+    payload:{ workspace:App.workspace, exportedBy:App.me, exportedOn:App.today,
+              build:buildInfo(), events:(App.events || []).length, config:safeCfg } };
+  return [JSON.stringify(head)]
+    .concat(C.sortEvents(App.events).map(function (e){ return JSON.stringify(e); }))
+    .join("\n") + "\n";
+}
+
 function exportEverything(){
-  var payload = C.sortEvents(App.events).map(function (e){ return JSON.stringify(e); }).join("\n") + "\n";
-  download("crm-" + App.workspace + "-events-" + App.today + ".jsonl", payload, "application/x-ndjson");
+  download("crm-" + App.workspace + "-events-" + App.today + ".jsonl",
+    eventLogExport(), "application/x-ndjson");
   toast(App.events.length + " events exported. Keep this file — it is your whole workspace.");
 }
 
@@ -6457,7 +7389,7 @@ document.addEventListener("keydown", function (e){
 
   if (gPending){
     gPending = false; clearTimeout(gTimer);
-    var map = { t:"today", p:"pipeline", c:"companies", w:"week", s:"settings" };
+    var map = { t:"today", p:"pipeline", c:"companies", w:"week", s:"settings", u:"people" };
     if (map[e.key]){ e.preventDefault(); go(map[e.key]); return; }
   }
   switch (e.key){
@@ -6546,7 +7478,10 @@ globalThis.CRMApp = { App:App, emit:emit, refold:refold, render:render,
                       completeFollowup:completeFollowup, doDefer:doDefer, rowKeys:rowKeys,
                       ghUrl:ghUrl, ghPrefix:ghPrefix, ghRelPath:ghRelPath,
                       testConnection:testConnection, ghExplain:ghExplain,
-                      openDeal:openDeal, deleteDeal:deleteDeal, restoreDeal:restoreDeal };
+                      openDeal:openDeal, deleteDeal:deleteDeal, restoreDeal:restoreDeal,
+                      /* the hand-over file, so the suite can read what actually
+                         leaves the app rather than trusting that it is right */
+                      eventLogExport:eventLogExport };
 globalThis.__test_diag = testConnection;
 globalThis.__test_pull = pullTeam;
 

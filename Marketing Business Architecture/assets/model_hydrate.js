@@ -273,7 +273,7 @@
   var daBy={}; recs("152 ·").forEach(function(r){ daBy[r.DecisionID]={agent:r.AgentID,agentName:r.AgentName,role:r.AdvisoryRole,models:r.AIModels,knowledge:r.KnowledgeManagement,policy:r.BusinessPolicy,hitl:r.HITLRequired}; });
   if(Object.keys(daBy).length) G.decisionAgents=daBy;
   /* ---- Use-Case Assessment: Value/Commercial + Readiness (6 dimensions) ---- */
-  var ucv={}; recs("163 ·").forEach(function(r){ ucv[r.UseCaseID]={uc:r.UseCaseID,name:r.UseCaseName,phase:r.Phase,themeId:r.ValueThemeID,theme:r.ValueTheme,outcome:r.PrimaryOutcomeID,score:N(r.ValueScore),rating:r.CommercialRating,rationale:r.Rationale}; });
+  var ucv={}; recs("163 ·").forEach(function(r){ var outs=(r.OutcomeIDs?String(r.OutcomeIDs).split(","):[r.PrimaryOutcomeID]).map(function(x){return String(x||"").trim();}).filter(Boolean); ucv[r.UseCaseID]={uc:r.UseCaseID,name:r.UseCaseName,phase:r.Phase,themeId:r.ValueThemeID,theme:r.ValueTheme,outcome:r.PrimaryOutcomeID,outcomes:outs,score:N(r.ValueScore),rating:r.CommercialRating,rationale:r.Rationale}; });
   if(Object.keys(ucv).length) G.ucValue=ucv;
   var ucr={}; recs("164 ·").forEach(function(r){ (ucr[r.UseCaseID]=ucr[r.UseCaseID]||[]).push({dim:r.DimensionID,name:r.DimensionName,score:N(r.Score),level:r.MaturityLevel,rag:r.RAG,basis:r.Basis,els:String(r.Elements||"").split(/[;,]/).map(function(s){return s.trim();}).filter(Boolean)}); });
   if(Object.keys(ucr).length) G.ucReadiness=ucr;

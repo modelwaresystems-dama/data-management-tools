@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="974431cd669c" data-built="25 Aug 2026" data-version="1.28.0">
+<meta name="crm-build" content="81b395e2980d" data-built="31 Aug 2026" data-version="1.29.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -92,7 +92,21 @@ a{color:var(--accent)}
 }
 .topbar h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.015em}
 .topbar .sub{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+/* The lens banner. Tinted, not neutral: this is the one piece of chrome that
+   changes what every number on the page means, so it has to be the thing your
+   eye lands on after the title. */
+.lens{
+  display:inline-flex;align-items:center;gap:8px;font-size:12.5px;
+  background:var(--accent-soft,#eef2ff);color:var(--accent,#3b4cca);
+  border:1px solid var(--accent,#3b4cca);border-radius:var(--radius);
+  padding:3px 5px 3px 8px
+}
+.lens .chip.owner{background:var(--accent,#3b4cca);color:#fff}
+.lens .btn{padding:2px 8px;font-size:11.5px}
+@media print{ .lens .btn{display:none} }
 .spacer{margin-left:auto}
+/* The row that turns a person summary into a way into their work. */
+.jump{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px}
 .content{padding:22px;max-width:1180px;width:100%}
 
 /* ---------- controls ---------- */
@@ -3483,6 +3497,18 @@ var App = {
   scope: lsGet(LS.scope, "mine"),
   me: lsGet(LS.me, "howard"),
   person: null,                           // whose page the People view is showing
+  /* The viewing lens. null = your own book. Set to somebody else's id and every
+     ownership-keyed screen — Today, Pipeline, Companies, Week, Money — answers
+     for THEM instead of you.
+
+     Deliberately NOT persisted. A lens that survived a reload would have you
+     opening the app on Monday looking at Debbie's overdue list believing it was
+     yours, which is the exact failure this app exists to prevent. It lasts only
+     as long as the banner saying it is on.
+
+     It never changes App.me. Events are stamped with who you actually are
+     (C2: one writer per file), so reading Debbie's book cannot write as Debbie. */
+  lens: null,
   events: [],
   config: null,
   st: null,
@@ -3579,7 +3605,20 @@ function initials(id){
   if (u && u.initials) return u.initials;
   return String(id||"?").slice(0,2).toUpperCase();
 }
-function scopeOpts(){ return { scope:App.scope, user:App.me }; }
+/* Whose book is on screen. Every read-side filter goes through this; every
+   write-side actor stays App.me. Keeping the two apart is the whole safety
+   property of the lens — grep for lensUser() to see what it reaches. */
+function lensUser(){ return App.lens || App.me; }
+function lensOn(){ return !!App.lens && App.lens !== App.me; }
+function lensFirstName(){ return String(userName(lensUser()) || "").split(" ")[0]; }
+function setLens(id){
+  App.lens = (!id || id === App.me) ? null : id;
+  if (App.lens) App.scope = "mine";   /* "team" through somebody else's lens is
+                                         just "team", and reads as if their name
+                                         were filtering something. */
+  return App.lens;
+}
+function scopeOpts(){ return { scope:App.scope, user:lensUser() }; }
 
 /* ---------------- toasts ---------------- */
 
@@ -4151,6 +4190,11 @@ function renderSidebar(){
   return side;
 }
 
+/* Views that answer "whose?" — these are the ones a lens changes, and the ones
+   that must therefore say so. Settings is absent on purpose: it configures the
+   app, not a book, and lensing it would be meaningless. */
+var LENSED_VIEWS = { today:1, pipeline:1, companies:1, week:1, money:1 };
+
 function renderTopbar(){
   var titles = { today:"Today", pipeline:"Pipeline", companies:"Companies & contacts", money:"Money",
                  week:"Week", settings:"Settings" };
@@ -4160,11 +4204,24 @@ function renderTopbar(){
   if (App.view === "today")
     bar.appendChild(h("span", { class:"sub", text:C.fmtFull(App.today) }));
 
+  /* The lens is loud on purpose. Reading somebody else's overdue list and
+     thinking it is yours is worse than not being able to read it at all, so the
+     banner sits in the title row — not in a corner — and carries its own way out. */
+  if (lensOn() && LENSED_VIEWS[App.view])
+    bar.appendChild(h("span", { class:"lens" },
+      h("span", { class:"chip owner", text:initials(lensUser()) }),
+      h("span", { text:"Viewing " + userName(lensUser()) + "\u2019s work" }),
+      h("button", { class:"btn btn-sm", type:"button",
+                    title:"Go back to your own",
+                    onclick:function (){ setLens(null); render(); } }, "Back to yours")));
+
   bar.appendChild(h("span", { class:"spacer" }));
 
   if (App.view === "today" || App.view === "pipeline" || App.view === "week"){
     var seg = h("div", { class:"seg", role:"group", "aria-label":"Scope" });
-    [["mine","Mine"],["team","Team"]].forEach(function (s){
+    /* Through a lens, "Mine" is a lie — say whose. "Team" is the same list
+       whoever is looking, so it keeps its name. */
+    [["mine", lensOn() ? lensFirstName() + "\u2019s" : "Mine"],["team","Team"]].forEach(function (s){
       var btn = h("button", { type:"button", onclick:function (){
         App.scope = s[0]; lsSet(LS.scope, App.scope); render();
       }}, s[1]);
@@ -4666,7 +4723,7 @@ function quickLog(anchor, opts){
         if (d && !seen[d.id]){ seen[d.id] = 1; out.push({ deal:d, why:"on your list today" }); }
       });
       C.openDeals(App.st)
-        .filter(function (d){ return App.scope === "team" || d.owner === App.me; })
+        .filter(function (d){ return App.scope === "team" || d.owner === lensUser(); })
         .sort(function (a, z){
           var la = C.lastContact(App.st, a.id) || "", lz = C.lastContact(App.st, z.id) || "";
           return lz < la ? -1 : 1;
@@ -4696,7 +4753,7 @@ function quickLog(anchor, opts){
             (r.via ? " · via " + r.via.name : "") +
             (r.why ? " · " + r.why : "") +
             (lc ? " · last contact " + C.fmtDay(lc) : " · never contacted") })),
-        App.scope === "team" || r.deal.owner !== App.me
+        App.scope === "team" || r.deal.owner !== lensUser()
           ? h("span", { class:"chip owner", text:initials(r.deal.owner), title:userName(r.deal.owner) })
           : null);
       row.setAttribute("aria-selected", i === sel ? "true" : "false");
@@ -4955,16 +5012,20 @@ function newDeal(anchor){
   /* A deal belongs to whoever will carry it. If the person filing it does not
      carry deals — the usual case when it comes in off an email tag — nothing is
      preselected, so an owner has to be chosen rather than inherited. */
+  /* Through a lens the natural owner is the person whose book you are working,
+     not you — you are filing this FOR them. It is still a visible dropdown, so
+     the guess is correctable rather than silent. */
   var sellers = C.salesUsers(App.config);
+  var defOwner = lensOn() ? lensUser() : App.me;
   var owner = h("select", { "aria-label":"Owner" });
-  var iSell = !sellers.length || sellers.indexOf(App.me) >= 0;
+  var iSell = !sellers.length || sellers.indexOf(defOwner) >= 0;
   if (!iSell) owner.appendChild(h("option", { value:"" }, "— choose an owner —"));
   users().forEach(function (u){
-    if (sellers.length && sellers.indexOf(u.id) < 0 && u.id !== App.me) return;
+    if (sellers.length && sellers.indexOf(u.id) < 0 && u.id !== App.me && u.id !== defOwner) return;
     owner.appendChild(h("option", { value:u.id },
       userLabel(u.id) + (sellers.length && sellers.indexOf(u.id) < 0 ? "  (does not carry deals)" : "")));
   });
-  owner.value = iSell ? App.me : "";
+  owner.value = iSell ? defOwner : "";
   box.appendChild(h("div", { class:"row2" },
     h("label", { class:"fld" }, h("span", { text:"Stage" }), stage),
     h("label", { class:"fld" }, h("span", { text:"Owner" }), owner)));
@@ -5149,7 +5210,7 @@ function openDeal(dealId){
         h("div", { class:"t2", text:"due " + C.fmtFull(f.dueDate) +
           (late < 0 ? " · " + (-late) + " days late" : late === 0 ? " · today" : "") +
           (f.pushCount ? " · pushed " + f.pushCount + "× · originally " + C.fmtDay(f.originalDue) : "") +
-          (App.scope === "team" || f.owner !== App.me ? " · " + userName(f.owner) : "") })),
+          (App.scope === "team" || f.owner !== lensUser() ? " · " + userName(f.owner) : "") })),
       h("button", { class:"btn btn-sm", type:"button",
         onclick:function (){ completeFollowup(f, null); render(); openDeal(d.id); } }, "Done"),
       h("button", { class:"btn btn-sm", type:"button",
@@ -5810,7 +5871,7 @@ function viewPipeline(el){
     var n = 0;
     for (var k in App.flags) if ((App.flags[k]||[]).indexOf(f) >= 0){
       var d = App.st.deals[k];
-      if (App.scope === "team" || (d && d.owner === App.me)) n++;
+      if (App.scope === "team" || (d && d.owner === lensUser())) n++;
     }
     var b = h("button", { class:"chip filter " + (C.FLAG_TONE[f]||""), type:"button",
       title:C.flagRule(f, App.config),
@@ -5827,7 +5888,7 @@ function viewPipeline(el){
 
   var board = h("div", { class:"board" });
   var deals = C.openDeals(App.st).filter(function (d){
-    if (App.scope !== "team" && d.owner !== App.me) return false;
+    if (App.scope !== "team" && d.owner !== lensUser()) return false;
     if (App.pipeFilter && (App.flags[d.id]||[]).indexOf(App.pipeFilter) < 0) return false;
     return true;
   });
@@ -5866,7 +5927,7 @@ function viewPipeline(el){
   el.appendChild(board);
 
   var closed = Object.keys(App.st.deals).map(function (k){ return App.st.deals[k]; })
-    .filter(function (d){ return d.status !== "open" && (App.scope === "team" || d.owner === App.me); })
+    .filter(function (d){ return d.status !== "open" && (App.scope === "team" || d.owner === lensUser()); })
     .sort(function (a,b){ return a.closedAt < b.closedAt ? 1 : -1; }).slice(0, 12);
   if (closed.length){
     var t = h("table", { class:"tbl" }, h("thead", null, h("tr", null,
@@ -6046,7 +6107,7 @@ function companyNotes(anchor, co){
    are asked on a Friday afternoon, not while working a deal. */
 function viewMoney(el){
   var book = C.moneyBook(App.st, App.config, App.today,
-                         { scope:App.scope, user:App.me });
+                         scopeOpts());
   var bag = function (b){
     var t = Object.keys(b).filter(function (c){ return Math.abs(b[c]) >= 0.005; })
              .map(function (c){ return C.fmtMoney(b[c], c); }).join("  \u00b7  ");
@@ -6054,7 +6115,8 @@ function viewMoney(el){
   };
 
   var top = h("section", { class:"pane", style:"margin-bottom:16px" },
-    h("h3", { text: App.scope === "team" ? "The whole book" : "Your book" }));
+    h("h3", { text: App.scope === "team" ? "The whole book"
+                  : lensOn() ? lensFirstName() + "\u2019s book" : "Your book" }));
   var kv = h("dl", { class:"kv" });
   [["Invoiced", book.invoiced, false],
    ["Paid", book.paid, false],
@@ -6291,8 +6353,11 @@ function viewPeople(el){
       text:"No people yet. The roster lives in config.json in the repo." }));
     return;
   }
+  /* Follow the lens if one is on, so arriving here from the banner shows the
+     person you were already looking at rather than snapping back to you. */
   if (!App.person || ids.indexOf(App.person) < 0)
-    App.person = ids.indexOf(App.me) >= 0 ? App.me : ids[0];
+    App.person = (lensOn() && ids.indexOf(App.lens) >= 0) ? App.lens
+               : (ids.indexOf(App.me) >= 0 ? App.me : ids[0]);
 
   /* the picker — everyone, not just sellers, or the people carrying steps on
      other people's deals stay invisible, which is the whole reason for this page */
@@ -6303,7 +6368,10 @@ function viewPeople(el){
     var late = info.report.steps.overdue;
     pick.appendChild(h("button", { class:"who-b" + (on ? " on" : ""), type:"button",
       "aria-pressed": on ? "true" : "false",
-      onclick:function (){ App.person = id; render(); } },
+      /* Picking a person here IS setting the lens. Two separate notions of
+         "who am I looking at" is one too many, and the second one always ends
+         up disagreeing with the first. */
+      onclick:function (){ App.person = id; setLens(id); render(); } },
       h("span", { class:"chip owner", text:initials(id) }),
       h("span", null,
         h("div", { class:"n", text:userName(id) }),
@@ -6311,6 +6379,29 @@ function viewPeople(el){
       late ? h("span", { class:"chip hot", text:late + " late" }) : null));
   });
   el.appendChild(pick);
+
+  /* The way out of this page and into their actual work. This summary answers
+     "how is Debbie doing"; the moment the answer is "badly", the next question
+     is "show me what she is sitting on", and that lives on Today and Pipeline. */
+  (function (){
+    var isMe = App.person === App.me;
+    var jump = h("div", { class:"jump" },
+      h("span", { class:"note", style:"margin:0",
+        text:(isMe ? "Your" : userName(App.person) + "\u2019s") + " screens:" }));
+    [["today","Today"],["pipeline","Pipeline"],["companies","Companies"],
+     ["week","Week"],["money","Money"]].forEach(function (v){
+      jump.appendChild(h("button", { class:"btn btn-sm", type:"button",
+        title:"Open " + v[1] + " for " + (isMe ? "you" : userName(App.person)),
+        onclick:(function (id, view){ return function (){
+          setLens(id); go(view);
+        }; })(App.person, v[0]) }, v[1]));
+    });
+    if (!isMe)
+      jump.appendChild(h("span", { class:"note", style:"margin:0;flex-basis:100%",
+        text:"You stay signed in as " + userName(App.me) +
+             " \u2014 anything you log or complete is still recorded as yours." }));
+    el.appendChild(jump);
+  })();
 
   var r = C.personReport(App.st, App.config, App.person, App.today);
 
@@ -6473,8 +6564,29 @@ function viewCompanies(el){
   var bar = h("div", { style:"display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px" },
     q, allBtn);
   el.appendChild(bar);
+
+  /* Companies has never had a Mine/Team switch, because a customer is not owned
+     by anybody — deals are. Under a lens that stops being true enough: "show me
+     Debbie's companies" plainly means the companies she has deals at. So the
+     lens narrows the list, says so, and offers the full one back. Without a lens
+     nothing changes and every company shows, as before. */
+  var lensOnly = lensOn();
+  var lensBar = null;
+  if (lensOn()){
+    lensBar = h("div", { class:"note", style:"margin:-6px 0 14px" });
+    el.appendChild(lensBar);
+  }
   var host = h("div");
   el.appendChild(host);
+
+  function companiesFor(userId){
+    var seen = {};
+    Object.keys(App.st.deals).forEach(function (k){
+      var d = App.st.deals[k];
+      if (d.owner === userId && d.companyId) seen[d.companyId] = 1;
+    });
+    return seen;
+  }
 
   function paint(){
     clear(host);
@@ -6482,6 +6594,21 @@ function viewCompanies(el){
     var shown = 0;
     var cos = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
       .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
+    if (lensOn() && lensOnly){
+      var mine = companiesFor(lensUser());
+      cos = cos.filter(function (co){ return mine[co.id]; });
+    }
+    if (lensBar){
+      clear(lensBar);
+      var total = Object.keys(App.st.companies).length;
+      lensBar.appendChild(h("span", { text: lensOnly
+        ? "Showing the " + cos.length + " compan" + (cos.length === 1 ? "y" : "ies") +
+          " " + userName(lensUser()) + " has deals at, of " + total + ". "
+        : "Showing all " + total + " companies, not just " + userName(lensUser()) + "\u2019s. " }));
+      lensBar.appendChild(h("button", { class:"btn btn-sm quiet", type:"button",
+        onclick:function (){ lensOnly = !lensOnly; paint(); } },
+        lensOnly ? "Show all companies" : "Show only " + lensFirstName() + "\u2019s"));
+    }
     var matches = cos.filter(function (co){
       if (!term) return true;
       var cts = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
@@ -6680,7 +6807,10 @@ function viewCompanies(el){
 
       host.appendChild(sec);
     });
-    if (!any) host.appendChild(h("div", { class:"empty", text: term ? "Nothing matches that." : "No companies yet." }));
+    if (!any) host.appendChild(h("div", { class:"empty", text: term ? "Nothing matches that."
+      : (lensOn() && lensOnly) ? userName(lensUser()) + " has no deals at any company yet, so this list is empty. "
+                               + "Use “Show all companies” above to see the full list."
+      : "No companies yet." }));
 
     /* Merged-away records, and the way back.
 
@@ -7791,7 +7921,10 @@ globalThis.CRMApp = { App:App, emit:emit, refold:refold, render:render,
                       openDeal:openDeal, deleteDeal:deleteDeal, restoreDeal:restoreDeal,
                       /* the hand-over file, so the suite can read what actually
                          leaves the app rather than trusting that it is right */
-                      eventLogExport:eventLogExport };
+                      eventLogExport:eventLogExport,
+                      /* the lens: read-side only, so the suite can prove the
+                         write side never picks it up */
+                      setLens:setLens, lensUser:lensUser, lensOn:lensOn };
 globalThis.__test_diag = testConnection;
 globalThis.__test_pull = pullTeam;
 

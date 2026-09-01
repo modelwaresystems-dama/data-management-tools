@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="f77a5f0f6076" data-built="24 Aug 2026" data-version="1.25.0">
+<meta name="crm-build" content="974431cd669c" data-built="25 Aug 2026" data-version="1.28.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -839,6 +839,10 @@ function foldEvents(events){
           dueDate:p.dueDate || null,
           currency:p.currency || "ZAR",
           net:money(p.net), passThrough:money(p.passThrough), vat:money(p.vat),
+          /* null means "whatever the deal says". A number here overrides it for
+             this invoice alone — one deal can bill training that earns
+             commission and books that do not. */
+          commissionRate: p.commissionRate == null ? null : +p.commissionRate,
           note:p.note || "", status:"open", cancelReason:"",
           raisedBy:e.actor, ts:e.ts
         };
@@ -850,6 +854,12 @@ function foldEvents(events){
           ["net","passThrough","vat"].forEach(function (k){
             if (p[k] !== undefined) st.invoices[p.invoiceId][k] = money(p[k]);
           });
+          /* Explicitly, because null is a meaningful value here — it is how an
+             invoice goes back to following the deal, and `assign` would read it
+             as "not supplied" and leave the override in place for ever. */
+          if (p.commissionRate !== undefined)
+            st.invoices[p.invoiceId].commissionRate =
+              p.commissionRate == null ? null : +p.commissionRate;
         }
         break;
       case "invoice.cancelled":
@@ -1359,6 +1369,28 @@ function paymentsFor(st, invoiceId){
     .sort(function (a,b){ return a.receivedOn < b.receivedOn ? 1 : -1; });
 }
 
+/* The rate that actually applies to one invoice.
+
+   Commission is per deal (C21) because that is how it is negotiated. But a deal
+   can bill two different things: MCB's training earns Debbie 20%, and the DMBOKs
+   on the next invoice earn nobody anything — the books are a publisher's, not
+   ours to be paid on. Before this, the only way to say that was to call the whole
+   invoice resale, which is a claim about whose money it is rather than about who
+   gets paid on it. Those are different statements and only one of them was true.
+
+   A deal marked as paying nobody still wins: no invoice on it can invent a
+   commission. Otherwise an invoice's own rate wins over the deal's, and null
+   means "follow the deal", which is how an override is undone. */
+function invoiceRate(deal, inv){
+  if (!deal || deal.commissionable === false)
+    return { rate:null, from:"deal", overridden:false, dealRate:null };
+  var dealRate = deal.commissionRate == null ? null : deal.commissionRate;
+  var own = inv ? inv.commissionRate : null;
+  if (own === undefined || own === null)
+    return { rate:dealRate, from:"deal", overridden:false, dealRate:dealRate };
+  return { rate:own, from:"invoice", overridden: own !== dealRate, dealRate:dealRate };
+}
+
 /* What one deal is worth in cash, per currency, and what its owner has earned. */
 function dealMoney(st, deal){
   /* A deal that earns nobody commission has no rate, whatever is stored on it —
@@ -1370,7 +1402,11 @@ function dealMoney(st, deal){
   var out = { invoiced:{}, paid:{}, outstanding:{}, overdue:{},
               commissionEarned:{}, commissionPending:{},
               rate:rate, owner:deal.owner, invoices:[],
-              noCommission:noComm, hasRate: rate != null };
+              noCommission:noComm, hasRate: rate != null,
+              /* `anyRate` is not the same question as `hasRate`: an invoice can
+                 carry a rate the deal never had, and a screen that gates its
+                 commission totals on the deal alone would hide it. */
+              anyRate:false, anyOverride:false };
   invoicesFor(st, deal.id).forEach(function (inv){
     var s = invoiceState(st, inv);
     out.invoices.push(s);
@@ -1379,8 +1415,12 @@ function dealMoney(st, deal){
     out.invoiced[c]    = round2((out.invoiced[c]    || 0) + s.gross);
     out.paid[c]        = round2((out.paid[c]        || 0) + s.paid);
     out.outstanding[c] = round2((out.outstanding[c] || 0) + s.balance);
-    if (rate != null){
-      var earned = round2(s.commissionBase * rate);
+    var ir = invoiceRate(deal, inv);
+    s.rate = ir.rate; s.rateOverridden = ir.overridden; s.rateFrom = ir.from;
+    if (ir.overridden) out.anyOverride = true;
+    if (ir.rate != null){
+      out.anyRate = true;
+      var earned = round2(s.commissionBase * ir.rate);
       if (s.settled) out.commissionEarned[c] = round2((out.commissionEarned[c] || 0) + earned);
       else           out.commissionPending[c] = round2((out.commissionPending[c] || 0) + earned);
     }
@@ -1421,8 +1461,11 @@ function moneyBook(st, cfg, today, opts){
         book.overdueInvoices.push({ state:s, deal:d,
           daysLate: -daysBetween(today, s.invoice.dueDate) });
       }
-      if (d.commissionRate != null && d.commissionable !== false){
-        var earned = round2(s.commissionBase * d.commissionRate);
+      /* The invoice's own rate where it has one — the book and the deal panel
+         must never disagree about what somebody is owed. */
+      var ir = invoiceRate(d, s.invoice);
+      if (ir.rate != null){
+        var earned = round2(s.commissionBase * ir.rate);
         var bag = s.settled ? book.earnedByUser : book.pendingByUser;
         bag[d.owner] = bag[d.owner] || {};
         bag[d.owner][c] = round2((bag[d.owner][c] || 0) + earned);
@@ -1593,6 +1636,43 @@ function personReport(st, cfg, userId, today){
 /* Everyone worth a page — the roster, plus anyone who owns a deal or a step
    but is not in config.json, because a person doing work the CRM cannot name
    is exactly who you must not hide. */
+/* When a triage batch was last imported, and how big it was.
+
+   The Import & export panel had the same silent failure mode C24 fixed for the
+   email sweep: it looks identical whether a batch went in an hour ago or was
+   never imported at all. That is survivable when there is one file. It is not
+   survivable when there are five that must go in in order, twice each — which
+   is the actual job — because the only way to check was to go and look at a
+   deal and try to remember whether that line had been there before.
+
+   Derived, never stored, for C11's reason: a stored "last import" can drift
+   from what is actually in the log, and then it is worse than nothing. A
+   triage-created interaction carries `ix_mail_` in its id, and the events of
+   one import all share a timestamp because they are committed together. */
+function lastImport(st){
+  var mail = [], newest = null;
+  Object.keys(st.interactions).forEach(function (k){
+    var ix = st.interactions[k];
+    if (String(ix.id || "").indexOf("ix_mail_") !== 0 || !ix.ts) return;
+    mail.push(ix);
+    if (!newest || ix.ts > newest) newest = ix.ts;
+  });
+  if (!newest) return { ever:false, at:null, count:0, actor:"", total:0 };
+  /* A window, not an exact timestamp match. `commitEvents` stamps each event
+     with its own `new Date()`, so a twelve-row import straddles a millisecond
+     boundary and an exact match reports "2 interactions" for it — a number
+     that looks precise and is wrong, which is the worst kind. Five seconds is
+     far longer than a commit loop and far shorter than the gap between the two
+     passes of one batch, which genuinely are separate imports. */
+  var edge = new Date(newest).getTime() - 5000;
+  var burst = mail.filter(function (ix){ return new Date(ix.ts).getTime() >= edge; });
+  return { ever:true, at:newest, count:burst.length, actor:burst[0].actor || "",
+           /* everything the CRM has ever taken from mail, so "6 this time" can
+              be read against "72 in all" rather than floating on its own */
+           total:Object.keys(st.interactions).filter(function (k){
+             return String(st.interactions[k].id || "").indexOf("ix_mail_") === 0; }).length };
+}
+
 function peopleWithWork(st, cfg){
   var seen = {}, order = [];
   ((cfg && cfg.users) || []).forEach(function (u){ if (!seen[u.id]){ seen[u.id] = true; order.push(u.id); } });
@@ -1971,6 +2051,9 @@ function importTriage(text, st, cfg, ctx){
 
   /* what the app already holds, so a second import changes nothing */
   var seenIx = {};
+  /* Companies this batch has already decided to create while re-filing, keyed
+     by normalised name, so a second row naming the same one reuses it. */
+  var refiledCo = {};
   Object.keys(st.interactions || {}).forEach(function (k){ seenIx[k] = st.interactions[k]; });
 
   /* deal lookup: by id, and by "company ␟ deal" */
@@ -2164,6 +2247,80 @@ function importTriage(text, st, cfg, ctx){
         }
       }
     }
+    /* Where the deal is filed (C27, from the import side).
+
+       "Filed under" closed this for one deal at a time in the UI, and that was
+       enough while re-filing was rare. It is not rare: a person enquires from a
+       personal address, lands in the Individual bucket, and only signs off with
+       a company three mails later — which is exactly when a batch is being read
+       and exactly when nobody wants to stop and do it by hand. Worse, the only
+       way to bring a NEW company into existence in the app is to raise a deal
+       against it, so re-filing onto one meant creating a junk deal first.
+
+       The same argument as the owner field, which the comment above makes: a
+       correction that has to be done by hand does not get done. */
+    var holderName = triageNorm(ctx.individualHolder || "Individual");
+    if (r.company && triageNorm(r.company) !== holderName){
+      var curCoName = (st.companies[deal.companyId] || {}).name || "";
+      if (triageNorm(r.company) !== triageNorm(curCoName)){
+        var toCo = null;
+        Object.keys(st.companies).forEach(function (k){
+          if (triageNorm(st.companies[k].name) === triageNorm(r.company)) toCo = st.companies[k]; });
+        /* A company named for the first time earlier in THIS batch is not in
+           `st` yet — without this, two rows re-filing onto one new company
+           would each create their own copy of it. */
+        if (!toCo && refiledCo[triageNorm(r.company)])
+          toCo = { id:refiledCo[triageNorm(r.company)], name:r.company };
+        var toCoId = toCo ? toCo.id : "co_" + triageHash(triageNorm(r.company));
+        /* C22: a company can never be its own partner, so a deal can never be
+           re-filed onto the partner already sitting on it. */
+        if (deal.partnerCompanyId && deal.partnerCompanyId === toCoId){
+          out.errors.push(where + ": “" + r.company + "” is already the partner on this deal, " +
+            "and a company cannot be both the customer and the partner. Move the partner first.");
+        } else {
+          var refileEvents = [];
+          if (!toCo){
+            refileEvents.push({ id:"ev_cox_" + triageHash("co|" + triageNorm(r.company)),
+              type:"company.created", actor:actor,
+              payload:{ companyId:toCoId, name:String(r.company).trim(),
+                        domain:r.domain || "" } });
+            refiledCo[triageNorm(r.company)] = toCoId;
+          }
+          refileEvents.push({ id:"ev_dfx_" + stem, type:"deal.updated", actor:actor,
+            payload:{ dealId:deal.id, companyId:toCoId } });
+          /* The deal's own contact follows it only when the row says so. The
+             people left behind are the part nobody thinks about until a
+             colleague cannot find them, so they are counted out loud. */
+          var movedContact = "";
+          if (r.moveContact && deal.contactId && st.contacts[deal.contactId]){
+            movedContact = st.contacts[deal.contactId].name || "";
+            refileEvents.push({ id:"ev_ctx_" + stem, type:"contact.updated", actor:actor,
+              payload:{ contactId:deal.contactId, companyId:toCoId } });
+          }
+          /* Counting who stays behind only means something when the source is
+             a real company. The Individual bucket holds every private buyer
+             the CRM has ever seen, so "36 other contacts stay at Individual"
+             is noise dressed as a warning. */
+          var fromCo = st.companies[deal.companyId] || {};
+          var leftBehind = 0;
+          if (!fromCo.isHolder){
+            Object.keys(st.contacts).forEach(function (k){
+              var c = st.contacts[k];
+              if (c.companyId === deal.companyId && c.id !== (r.moveContact ? deal.contactId : null))
+                leftBehind++; });
+          }
+          changes.push({ what:"filed under",
+            from: curCoName || "no company", to: String(r.company).trim(),
+            note: (movedContact ? movedContact + " moves across. " : "") +
+                  (leftBehind ? leftBehind + (leftBehind === 1 ? " other contact stays at "
+                                                              : " other contacts stay at ") +
+                                (curCoName || "the old company") + "." : ""),
+            events: refileEvents,
+            event: refileEvents[refileEvents.length - 1] });
+        }
+      }
+    }
+
     /* "This one pays nobody" as its own statement, separate from the rate.
        A blank rate means nobody has set it yet; this means there is nothing
        to set — and only the second one is safe to leave alone. */
@@ -2182,9 +2339,18 @@ function importTriage(text, st, cfg, ctx){
                   payload:{ dealId:deal.id, commissionRate:wantRate } } });
     }
     if (changes.length){
+      /* A change is usually one event, but re-filing is three — create the
+         company, move the deal, move the contact — and they have to stay in
+         that order or the deal points at a company that does not exist yet.
+         `c.events` wins where a change supplies it. */
+      var changeEvents = [];
+      changes.forEach(function (c){
+        if (c.events) changeEvents = changeEvents.concat(c.events);
+        else if (c.event) changeEvents.push(c.event);
+      });
       out.dealChanges.push({ dealId:deal.id, dealName:deal.name,
         company:(st.companies[deal.companyId] || {}).name || "",
-        changes:changes, events:changes.map(function (c){ return c.event; }) });
+        changes:changes, events:changeEvents });
       out.summary.dealChanges += changes.length;
       row.dealChanges = changes;
     }
@@ -2881,10 +3047,10 @@ var API = {
   lastContact:lastContact, openDeals:openDeals, subjectLabel:subjectLabel,
   dealParty:dealParty, money:money, round2:round2,
   invoiceState:invoiceState, invoicesFor:invoicesFor, paymentsFor:paymentsFor,
-  dealMoney:dealMoney, moneyBook:moneyBook,
+  dealMoney:dealMoney, moneyBook:moneyBook, invoiceRate:invoiceRate,
   computeFlags:computeFlags, FLAG_RULES:FLAG_RULES, FLAG_TONE:FLAG_TONE, flagRule:flagRule, flagLabel:flagLabel,
   bands:bands, coverage:coverage,
-  personReport:personReport, peopleWithWork:peopleWithWork,
+  personReport:personReport, peopleWithWork:peopleWithWork, lastImport:lastImport,
   stageProb:stageProb, stageLabel:stageLabel, forecast:forecast, weekRetro:weekRetro,
   toCSV:toCSV, parseCSV:parseCSV, importCSV:importCSV, exportCSV:exportCSV,
   importTriage:importTriage, triageCreate:triageCreate,
@@ -3014,6 +3180,13 @@ function buildDemo(today){
   ev(2, 18, "howard", "invoice.raised", { invoiceId:"inv2", dealId:"d13", number:"INV-2042",
       currency:"ZAR", net:48000, vat:7200, passThrough:0,
       issuedOn:C.addDays(today,-12), dueDate:C.addDays(today,-2) });
+  /* …and a third for the books billed alongside the work, which earn nobody
+     anything on a deal that otherwise pays 8%. Without one in the demo the
+     override exists only in the tests, and nobody discovers a feature that
+     never appears on a screen (convention #17). */
+  ev(2, 19, "howard", "invoice.raised", { invoiceId:"inv3", dealId:"d13", number:"INV-2043",
+      currency:"ZAR", net:6000, vat:900, passThrough:0, commissionRate:0,
+      issuedOn:C.addDays(today,-12), dueDate:C.addDays(today,8) });
   ev(50, 10, "thabo", "deal.created", { dealId:"d14", companyId:"co5", name:"Legacy migration",
       owner:"thabo", stage:"negotiation", value:41000, currency:"USD", expectedCloseDate:C.addDays(today,-10) });
   ev(6, 16, "thabo", "deal.closed", { dealId:"d14", outcome:"lost", reason:"Budget cut" });
@@ -3144,7 +3317,13 @@ var LS = {
   seenIntro: "crm.seenIntro",
   /* Which company cards are open. A view preference, not data — it never
      reaches the repo, and losing it costs one click. */
-  openCos:   "crm.companies.open"
+  openCos:   "crm.companies.open",
+  /* When this browser last took a copy of the log. Deliberately NOT an event:
+     an export is a read, and writing one into an append-only log replicated to
+     every laptop would tell the team something none of them can act on. The
+     cost is that it is per-browser, so the wording must say so — "no export
+     from this browser" is true and "never exported" would not be. */
+  lastExp:   "crm.export.last"
 };
 /* ---------------- local storage, defensively ----------------
    Three different failures wear the same exception, and they need three
@@ -5049,7 +5228,9 @@ function openDeal(dealId){
            "no rate set" is an omission. Printing the same words for both is
            how an omission gets mistaken for a decision and never fixed. */
         text: m.noCommission ? "no commission on this deal"
-            : m.hasRate ? "commission " + pct(m.rate) + " to " + userName(d.owner)
+            : m.hasRate ? "commission " + pct(m.rate) + " to " + userName(d.owner) +
+                          (m.anyOverride ? "  ·  some invoices differ" : "")
+            : m.anyRate ? "commission set per invoice, to " + userName(d.owner)
                         : "no commission rate set" }),
       h("span", { class:"spacer" }),
       h("button", { class:"btn btn-sm", type:"button",
@@ -5078,9 +5259,24 @@ function openDeal(dealId){
                          : (late != null && late < 0) ? "color:var(--overdue);font-weight:600" : "",
                     text: st_.cancelled ? "\u2014" : C.fmtMoney(st_.balance, inv.currency) +
                           (late != null && late < 0 ? "  " + (-late) + "d late" : "") }),
-          h("td", { class:"num", text: !m.hasRate ? "\u2014"
-            : C.fmtMoney(C.round2(st_.commissionBase * m.rate), inv.currency) +
-              (st_.settled ? "  earned" : "  pending") }),
+          /* Per invoice, not per deal. A deal at 20% can carry an invoice at 0%
+             (books we are paid nothing on), and printing 20% of it here would be
+             a number somebody would go looking for in a commission run. Zero is
+             written as a word rather than as money, because "$0.00 pending"
+             reads like an arithmetic result waiting to change. */
+          h("td", { class:"num" },
+            h("div", { text: st_.rate == null ? "\u2014"
+              : st_.rate === 0 ? "nothing"
+              : C.fmtMoney(C.round2(st_.commissionBase * st_.rate), inv.currency) +
+                (st_.settled ? "  earned" : "  pending") }),
+            /* Short, because this is the narrowest column on the panel and a
+               sentence here wrapped to three lines. Both facts still fit: what
+               this invoice pays, and what it would have paid. */
+            st_.rateOverridden
+              ? h("div", { class:"note", text: m.rate == null
+                  ? pct(st_.rate) + " on this invoice"
+                  : pct(st_.rate) + ", not " + pct(m.rate) })
+              : null),
           h("td", null,
             st_.cancelled ? null : h("button", { class:"btn btn-sm quiet", type:"button",
               onclick:(function (i){ return function (e){ paymentPopover(e.currentTarget, d, i); }; })(inv) },
@@ -5106,15 +5302,20 @@ function openDeal(dealId){
       line("Paid", m.paid);
       line("Outstanding", m.outstanding,
            Object.keys(m.outstanding).some(function (c){ return m.outstanding[c] > 0; }));
-      if (m.hasRate){
+      if (m.hasRate || m.anyRate){
         line("Commission earned", m.commissionEarned);
         line("Commission pending", m.commissionPending);
       }
       msec.appendChild(tot);
-      if (m.hasRate)
+      if (m.hasRate || m.anyRate)
         msec.appendChild(h("div", { class:"note",
-          text:"Commission is " + pct(m.rate) + " of the invoice excluding VAT and excluding " +
-               "resale items, earned only once an invoice is settled in full." }));
+          text:(m.hasRate
+                  ? "Commission is " + pct(m.rate) + " of the invoice excluding VAT and excluding resale items"
+                  : "This deal has no rate of its own; commission is set on the invoices that carry one") +
+               ", earned only once an invoice is settled in full." +
+               (m.anyOverride
+                  ? " Where an invoice sets its own rate that rate wins, and those rows say so."
+                  : "") }));
     }
     body.appendChild(msec);
   }
@@ -5233,24 +5434,67 @@ function invoicePopover(anchorEl, d, inv){
     h("label", { class:"fld" }, h("span", { text:"of which resale" }), thru)));
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"VAT" }), vat));
 
+  /* Commission is agreed per deal, but a deal can bill two different things.
+     MCB's training earns Debbie 20% and the DMBOKs on the next invoice earn
+     nobody — the books belong to a publisher. Saying that by calling the whole
+     invoice resale would be a claim about WHOSE MONEY IT IS, which is a
+     different statement and not necessarily a true one. Blank here follows the
+     deal, so an override is deliberate and can be undone. */
+  var dealPays = d.commissionable !== false;
+  var rateIn = h("input", { type:"text", "aria-label":"Commission % on this invoice",
+    placeholder: dealPays && d.commissionRate != null
+      ? "follows the deal — " + pct(d.commissionRate) : "no rate on the deal",
+    value: inv && inv.commissionRate != null
+      ? String(Math.round(inv.commissionRate * 1000) / 10) : "" });
+  rateIn.disabled = !dealPays;
+  var rateRow = h("label", { class:"fld" },
+    h("span", { text:"Commission % on this invoice" }), rateIn);
+  if (dealPays) box.appendChild(rateRow);
+  else box.appendChild(h("div", { class:"note",
+    text:"This deal is marked as paying no commission, so nothing on it earns anything — " +
+         "that is set on the deal, not here." }));
+
+  var effRate = function (){
+    if (!dealPays) return null;
+    var raw = rateIn.value.replace(/[^\d.]/g, "");
+    if (raw === "") return d.commissionRate == null ? null : d.commissionRate;
+    return C.round2(+raw) / 100;
+  };
+
   var explain = h("div", { class:"note" });
   var repaint = function (){
     var n = C.money(net.value), t = C.money(thru.value), v = C.money(vat.value);
     var owed = C.round2(n + v), base = C.round2(n - t);
+    var r = effRate();
+    var own = dealPays && rateIn.value.replace(/[^\d.]/g, "") !== "";
     var bits = ["Customer owes " + C.fmtMoney(owed, cur.value)];
-    if (d.commissionRate != null)
+    if (r == null)
+      bits.push("no commission rate to apply, so nothing is computed");
+    else if (r === 0)
       bits.push("commission base " + C.fmtMoney(base, cur.value) +
-                " \u2192 " + C.fmtMoney(C.round2(base * d.commissionRate), cur.value) +
-                " at " + pct(d.commissionRate) + ", once it is settled in full");
-    else bits.push("no commission rate on this deal, so nothing is computed");
+                " at 0% \u2014 this invoice earns nobody anything" +
+                (own ? ", while the deal stays at " + pct(d.commissionRate) : ""));
+    else
+      bits.push("commission base " + C.fmtMoney(base, cur.value) +
+                " \u2192 " + C.fmtMoney(C.round2(base * r), cur.value) +
+                " at " + pct(r) +
+                (own ? " (this invoice only \u2014 the deal says " + pct(d.commissionRate) + ")" : "") +
+                ", once it is settled in full");
     if (t > n) bits.push("resale is more than the net \u2014 check the split");
     explain.textContent = bits.join(". ") + ".";
   };
-  [net, thru, vat, cur].forEach(function (el){ el.addEventListener("input", repaint); el.addEventListener("change", repaint); });
+  [net, thru, vat, cur, rateIn].forEach(function (el){
+    el.addEventListener("input", repaint); el.addEventListener("change", repaint); });
   repaint();
   box.appendChild(explain);
   box.appendChild(h("div", { class:"note",
-    text:"Resale is the part you collect for somebody else \u2014 books, exam coupons. It is inside the net, and it does not earn commission." }));
+    text:"Leave the commission box empty and this invoice follows the deal. Put 0 in it to say " +
+         "this particular invoice earns nobody anything \u2014 for books, exam vouchers or anything " +
+         "else billed alongside the work." }));
+  box.appendChild(h("div", { class:"note",
+    text:"Resale is different: it is the part you collect for somebody else, sitting inside the net. " +
+         "It shrinks the commission base for everyone. Use it when the money is not really yours; " +
+         "use 0% when the money is yours but nobody earns on it." }));
 
   var foot = h("div", { class:"pop-foot" },
     h("button", { class:"btn btn-sm quiet", type:"button", onclick:function (){ closeLayers("pop"); } }, "Cancel"));
@@ -5267,7 +5511,13 @@ function invoicePopover(anchorEl, d, inv){
       issuedOn: C.parseDateInput(iss.value, App.today) || App.today,
       dueDate: due.value.trim() ? C.parseDateInput(due.value, App.today) : null,
       currency:cur.value, net:C.money(net.value),
-      passThrough:C.money(thru.value), vat:C.money(vat.value)
+      passThrough:C.money(thru.value), vat:C.money(vat.value),
+      /* null puts it back to following the deal — a real value, not "unset" */
+      commissionRate: (function (){
+        if (!dealPays) return null;
+        var raw = rateIn.value.replace(/[^\d.]/g, "");
+        return raw === "" ? null : C.round2(+raw) / 100;
+      })()
     };
     closeLayers("pop");
     if (inv) emit("invoice.updated", Object.assign({ invoiceId:inv.id }, payload));
@@ -5304,9 +5554,15 @@ function paymentPopover(anchorEl, d, inv){
     var bal = C.round2(s.balance - a);
     var msg = bal <= 0 ? "Settles the invoice in full"
                        : C.fmtMoney(bal, inv.currency) + " would still be outstanding";
-    if (d.commissionRate != null){
+    /* The invoice's rate, not the deal's \u2014 this line is the one people read
+       before they press the button, so it is the last place that may disagree
+       with the panel above it. */
+    var payRate = C.invoiceRate(d, inv).rate;
+    if (payRate === 0){
+      msg += bal <= 0 ? " \u2014 nobody earns commission on this invoice" : "";
+    } else if (payRate != null){
       msg += bal <= 0
-        ? " \u2014 " + C.fmtMoney(C.round2(s.commissionBase * d.commissionRate), inv.currency) +
+        ? " \u2014 " + C.fmtMoney(C.round2(s.commissionBase * payRate), inv.currency) +
           " commission becomes earned for " + userName(d.owner)
         : ", so no commission is earned yet";
     }
@@ -5346,8 +5602,9 @@ function paymentPopover(anchorEl, d, inv){
         amount:a, reference:ref.value.trim() });
       render(); openDeal(d.id);
       var now = C.invoiceState(App.st, App.st.invoices[inv.id]);
-      toast(now.settled ? "Settled in full." + (d.commissionRate != null
-              ? " " + C.fmtMoney(C.round2(now.commissionBase * d.commissionRate), inv.currency) +
+      var doneRate = C.invoiceRate(d, App.st.invoices[inv.id]).rate;
+      toast(now.settled ? "Settled in full." + (doneRate
+              ? " " + C.fmtMoney(C.round2(now.commissionBase * doneRate), inv.currency) +
                 " earned by " + userName(d.owner) + "."
               : "")
             : C.fmtMoney(now.balance, inv.currency) + " still outstanding.");
@@ -6917,7 +7174,11 @@ function viewSettings(el){
             h("td", { text: idx === 0 ? dc.company + " · " + dc.dealName : "" }),
             h("td", { text:c.what }),
             h("td", { class:"note", text:c.from }),
-            h("td", { text:"→  " + c.to })));
+            h("td", null,
+              h("div", { text:"→  " + c.to }),
+              /* Re-filing carries consequences the two columns cannot show —
+                 who moves with the deal and who is left where they were. */
+              c.note ? h("div", { class:"note", text:c.note }) : null)));
         });
       });
       tReport.appendChild(h("table", { class:"tbl", style:"margin-top:8px" },
@@ -7018,15 +7279,43 @@ function viewSettings(el){
   });
   if (App.triageText) paintTriage(App.triageText);
 
+  /* Where you are in a run of imports. Five batches that each go in twice is
+     the real job, and without this the only way to check was to open a deal
+     and try to remember whether that line was there before. */
+  var li = C.lastImport(App.st);
+  io.appendChild(h("div", { class:"note", style:"margin-top:10px" },
+    h("div", { style: li.ever ? "" : "color:var(--warn)",
+      text: li.ever
+        ? "Last batch imported: " + li.count + " interaction" + (li.count === 1 ? "" : "s") +
+          " on " + C.fmtDay(String(li.at).slice(0, 10)) + " at " + String(li.at).slice(11, 16) +
+          " UTC, by " + userName(li.actor) + "."
+        : "No triage batch has ever been imported into this workspace." }),
+    li.ever ? h("div", { text: li.total + " interactions in total have come in from mail. " +
+                               "Counted from the log itself, so it cannot drift." }) : null));
+
   io.appendChild(h("div", { style:"margin-top:14px;display:flex;gap:8px;flex-wrap:wrap" },
     h("button", { class:"btn", type:"button", onclick:function (){
       download("crm-deals-" + App.today + ".csv", C.exportCSV(App.st, App.config, App.today), "text/csv");
+      noteExport("deals CSV", null);  render();
     }}, "Export deals as CSV"),
     h("button", { class:"btn", type:"button", onclick:function (){
       download("crm-events-" + App.today + ".jsonl", eventLogExport(), "application/x-ndjson");
+      noteExport("event log", (App.events || []).length); render();
     }}, "Export the raw event log"),
     h("button", { class:"btn", type:"button", onclick:function (e){ pastePopover(e.currentTarget); } },
       "Paste a chat or email to log")));
+
+  /* "From this browser", said plainly. An export is a read, so it leaves no
+     trace in the log — this is remembered on the machine that did it, and
+     saying "never exported" from another laptop would be a lie. */
+  var lx = readExportNote();
+  io.appendChild(h("div", { class:"note", style:"margin-top:8px",
+    text: lx
+      ? "Last export from this browser: " + lx.what + " on " + C.fmtDay(String(lx.at).slice(0, 10)) +
+        " at " + String(lx.at).slice(11, 16) + " UTC" +
+        (lx.events != null ? ", " + lx.events + " events" : "") + "."
+      : "No export from this browser. The log may still have been exported from somewhere else — " +
+        "an export is a read, so it leaves no trace in the record itself." }));
   el.appendChild(io);
 
   /* Deleted deals. A delete you cannot see is indistinguishable from a bug —
@@ -7293,6 +7582,23 @@ function switchWorkspace(w){
    The GitHub token is not in here. App.config is the repo's config.json and
    App.gh is the credential; they are separate objects and stay that way. The
    filter is belt and braces in case that ever stops being true. */
+/* Remembering an export is a convenience, not a record — so a browser that
+   refuses to store it must not take the export down with it. */
+function noteExport(what, events){
+  try {
+    localStorage.setItem(LS.lastExp, JSON.stringify(
+      { what:what, at:new Date().toISOString(), events:events }));
+  } catch (e){}
+}
+function readExportNote(){
+  try {
+    var raw = localStorage.getItem(LS.lastExp);
+    if (!raw) return null;
+    var o = JSON.parse(raw);
+    return (o && o.at) ? o : null;
+  } catch (e){ return null; }
+}
+
 function eventLogExport(){
   var safeCfg = {};
   Object.keys(App.config || {}).forEach(function (k){
@@ -7311,6 +7617,10 @@ function eventLogExport(){
 function exportEverything(){
   download("crm-" + App.workspace + "-events-" + App.today + ".jsonl",
     eventLogExport(), "application/x-ndjson");
+  /* The escape hatch counts as an export too — it is the one people reach for
+     when storage has failed, which is exactly when they later need to know
+     whether they got a copy out. */
+  noteExport("event log", (App.events || []).length);
   toast(App.events.length + " events exported. Keep this file — it is your whole workspace.");
 }
 

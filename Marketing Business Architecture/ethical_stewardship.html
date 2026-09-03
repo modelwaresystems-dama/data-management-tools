@@ -89,6 +89,11 @@
   .stile .ss{font-size:.68rem;color:var(--mut);margin-top:2px}
   .dcount.short{background:#fef3c7;color:#92400e}
   .expired{color:#e11d48;font-weight:700}
+  a.uclink{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+  a.uclink:hover{text-decoration:underline}
+  .focusbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:8px 12px;margin:0 0 12px;font-size:.85rem}
+  .focusbar .fx{cursor:pointer;color:#4338ca;font-weight:700;border:1px solid #c7d2fe;border-radius:8px;padding:2px 9px;background:#fff}
+  .att{font-family:"SF Mono",monospace;font-size:.68rem;color:var(--faint);white-space:nowrap}
   .matwhy{font-size:.78rem;color:var(--mut);margin-top:8px;line-height:1.4}
   .mlv.cur .mn::after{content:" · current"}
   .mlv.approach{border-color:#f59e0b;background:#fffaf0}.mlv.approach .ms{color:#b45309}
@@ -213,7 +218,14 @@ var roles={}; (D.ownershipRoles||[]).forEach(function(r){ roles[r.id]=r.name; })
 function role(id){ if(!id) return '<span class="rmut">—</span>'; return '<span class="rref" title="'+esc(roles[id]||id)+'">'+esc(id)+'</span>'; }
 function ref(id){ return id?'<span class="rref">'+esc(id)+'</span>':'<span class="rmut">—</span>'; }
 function ucName(id){ var u=(D.aiUseCases||[]).find(function(x){return x.id===id;}); return u?u.name:id; }
-function ucRef(id){ return '<span class="rid" title="'+esc(ucName(id))+'">'+esc(id)+'</span>'; }
+/* B1 — every assessment/decision carries an assessor and a date, or reads "not assessed". */
+function att(r){ return (r&&(r.assessedBy||r.assessedOn)) ? '<span class="att">'+esc(r.assessedBy||"—")+(r.assessedOn?' · '+esc(r.assessedOn):"")+'</span>' : '<span class="rmut" title="no assessor or date recorded — not an audit record yet">— not assessed</span>'; }
+/* A4 — an explicit N/A with a reason is a governance position; a blank means nobody looked. */
+function assessedCell(r, text, cls){
+  if(r && r.na){ return '<span class="rpill" style="background:#64748b22;color:#475569" title="'+esc(r.naReason||"ruled out of scope")+'">N/A</span> <span class="rmut">'+esc(r.naReason||"out of scope")+'</span>'; }
+  return cls ? '<span class="'+cls+'">'+esc(text)+'</span>' : esc(text);
+}
+function ucRef(id){ return '<a class="rid uclink" title="Filter every register to '+esc(ucName(id))+'" onclick="esFocus(\''+esc(String(id)).replace(/'/g,"")+'\')">'+esc(id)+'</a>'; }
 
 function verdictPill(v){ v=String(v||""); var c="#64748b";
   if(/^approve/i.test(v) && !/redesign/i.test(v)) c="#16a34a";
@@ -355,8 +367,13 @@ var MAT=[
    next level is marked "approaching" when there is partial evidence toward it. */
 var _mat=(function(){
   var ids=(D.aiUseCases||[]).map(function(u){return u.id;}), n=ids.length;
-  function cov(arr,pred){ var s={}; (arr||[]).forEach(function(r){ if(r.obj && (!pred||pred(r))) s[r.obj]=1; });
-    var c=0; ids.forEach(function(id){ if(s[id]) c++; }); return {c:c, frac:(n? c/n : 0)}; }
+  // N/A-aware coverage: a use case ruled out of scope (row.na) is removed from
+  // both the covered-set and the denominator, so scoping never inflates or
+  // deflates coverage. Arrays without an NA column simply never mark na.
+  function cov(arr,pred){ var s={}, na={};
+    (arr||[]).forEach(function(r){ if(!r.obj) return; if(r.na){ na[r.obj]=1; return; } if(!pred||pred(r)) s[r.obj]=1; });
+    var c=0, denom=0; ids.forEach(function(id){ if(na[id]) return; denom++; if(s[id]) c++; });
+    return {c:c, frac:(denom? c/denom : 0), denom:denom}; }
   var principles=(D.stewardshipPrinciples||[]).length;
   var council=(D.governanceCouncils||[]).some(function(c){return /stewardship/i.test(c.name||"");});
   var dec=cov(D.stewardshipDecisions, function(r){return r.decision;});
@@ -366,23 +383,34 @@ var _mat=(function(){
   var retire=(D.stewardshipRetirement||[]).length;
   var today=Date.now();
   var expired=(D.stewardshipExceptions||[]).filter(function(x){var t=Date.parse(x.expiry);return !isNaN(t)&&t<today;}).length;
+  // Tightened rubric: a lapsed exception or an un-attributed decision is a control
+  // failure, so it blocks "Managed" and above regardless of coverage.
+  var decs=(D.stewardshipDecisions||[]);
+  var decAttr = decs.length>0 && decs.every(function(r){ return r.assessedBy && r.assessedOn; });
   var met=[ true,
             principles>0,
             principles>0 && council,
-            principles>0 && council && n>0 && dec.frac>=1,
-            principles>0 && council && n>0 && dec.frac>=1 && mon.frac>=1,
-            principles>0 && council && n>0 && dec.frac>=1 && mon.frac>=1 && pur.frac>=1 && eq.frac>=1 && retire>0 && expired===0 ];
+            principles>0 && council && n>0 && dec.frac>=1 && expired===0 && decAttr,
+            principles>0 && council && n>0 && dec.frac>=1 && expired===0 && decAttr && mon.frac>=1 && pur.frac>=1,
+            principles>0 && council && n>0 && dec.frac>=1 && expired===0 && decAttr && mon.frac>=1 && pur.frac>=1 && eq.frac>=1 && retire>0 ];
   var cur=0; for(var i=0;i<met.length;i++){ if(met[i]) cur=i; else break; }
-  // partial evidence toward the next level?
-  var toward=[ principles>0, principles>0&&council, dec.frac>0, mon.frac>0||dec.frac>=1, (pur.frac>0||eq.frac>0||retire>0) ];
+  var toward=[ principles>0, principles>0&&council, dec.frac>0, mon.frac>0||pur.frac>0, (eq.frac>0||retire>0) ];
   var approaching = cur<5 && toward[cur];
   var why="";
   if(cur<1) why="No stewardship principles are recorded — the framework is not yet defined in the model.";
   else if(cur<2) why="Principles exist, but no Ethical Stewardship Council is recorded.";
-  else if(cur<3) why="Not yet Managed: "+dec.c+" of "+n+" use cases carry a stewardship decision.";
-  else if(cur<4) why="Not yet Measured: "+mon.c+" of "+n+" use cases have monitoring with a threshold and an alert owner.";
-  else if(cur<5) why="Approaching Stewardship-native: purpose "+pur.c+"/"+n+", equity "+eq.c+"/"+n+", retirement reviews "+retire+", expired exceptions "+expired+".";
-  else why="Stewardship-native: full coverage across purpose, equity, monitoring and retirement, with no expired exceptions.";
+  else if(cur<3){ // find the specific gate blocking Managed
+    if(dec.frac<1) why="Not yet Managed: "+dec.c+" of "+n+" use cases carry a stewardship decision.";
+    else if(expired>0) why="Not yet Managed: "+expired+" exception"+(expired===1?" has":"s have")+" lapsed — an expired exception is an active control failure.";
+    else if(!decAttr) why="Not yet Managed: not every stewardship decision is attributed (assessor and date).";
+    else why="Not yet Managed.";
+  }
+  else if(cur<4){
+    if(mon.frac<1) why="Not yet Measured: "+mon.c+" of "+n+" use cases have monitoring with a threshold and an alert owner.";
+    else why="Not yet Measured: "+pur.c+" of "+n+" use cases have a purpose assessment.";
+  }
+  else if(cur<5) why="Approaching Stewardship-native: equity "+eq.c+"/"+n+", retirement reviews "+retire+".";
+  else why="Stewardship-native: full coverage across purpose, equity, monitoring and retirement, decisions attributed, and no expired exceptions.";
   return {cur:cur, approaching:approaching, why:why};
 })();
 document.getElementById("maturity").innerHTML=MAT.map(function(m,i){
@@ -402,63 +430,70 @@ document.getElementById("maturity").insertAdjacentHTML("afterend",
       mo=idx(D.stewardshipMonitoring);
   function idx(arr){ var m={}; (arr||[]).forEach(function(r){ if(r.obj) m[r.obj]=r; }); return m; }
   var UCS=(D.aiUseCases||[]).slice().sort(function(a,b){return a.id<b.id?-1:1;});
+  // D1 — focus a single use case: click a use-case id to filter every register to it.
+  var focus=null;
+  function F(arr){ return focus ? (arr||[]).filter(function(r){return r.obj===focus;}) : (arr||[]); }
+  function Ft(arr){ return focus ? (arr||[]).filter(function(r){return r.useCase===focus;}) : (arr||[]); }
+  window.esFocus=function(id){ focus=(focus===id?null:id); draw();
+    var sec=document.getElementById("registersSection"); if(sec&&focus) sec.scrollIntoView({behavior:"smooth",block:"start"}); };
 
   var VIEWS={
     bycase:{ label:"Review by use case", plain:true, build:function(){
-      var rows=UCS.map(function(u){
+      var list=focus?UCS.filter(function(u){return u.id===focus;}):UCS;
+      var rows=list.map(function(u){
         var d=sd[u.id]||{}, e=eq[u.id]||{}, a=ar[u.id]||{}, h=ho[u.id]||{}, p=pa[u.id]||{};
         return [ ucRef(u.id), esc(u.name), (p.purpose?'<span class="rmut">'+esc(trunc(p.purpose,60))+'</span>':'<span class="rmut">—</span>'),
                  verdictPill(d.decision||p.decision), riskPill(e.risk), yn(a.consent),
                  (h.harm?'<span class="rmut">'+esc(trunc(h.harm,52))+'</span>':'<span class="rmut">—</span>'), ref(d.evidence) ];
       });
       var counts=summary();
-      return counts + '<div class="rcard rfull" style="margin-top:4px"><h3>Stewardship review — every AI use case<span class="n">'+UCS.length+'</span></h3>'+
+      return counts + '<div class="rcard rfull" style="margin-top:4px"><h3>'+(focus?'Stewardship review — '+esc(focus):'Stewardship review — every AI use case')+'<span class="n">'+list.length+'</span></h3>'+
         table(["Use case","Name","Purpose","Verdict","Equity risk","Consent","Key human harm watched","Evidence"],rows)+'</div>';
     }},
     assess:{ label:"Assessments", build:function(){
-      var pr=(D.purposeAssessments||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), esc(r.purpose), '<span class="rmut">'+esc(r.need)+'</span>', '<span class="rmut">'+esc(r.nonai)+'</span>', verdictPill(r.decision) ]; });
-      var hr=(D.humanOutcomes||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), esc(r.intended), '<span class="rmut">'+esc(r.harm)+'</span>', esc(r.mitig), role(r.owner) ]; });
-      var br=(D.collectiveBenefits||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), '<span class="rmut">'+esc(r.group)+'</span>', esc(r.bank), esc(r.customer), '<span class="rmut">'+esc(r.metric)+'</span>' ]; });
-      var aur=(D.authorityReviews||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), '<span class="rmut">'+esc(r.subject)+'</span>', esc(r.basis), yn(r.consent), '<span class="rmut">'+esc(r.appeal)+'</span>', verdictPill(r.decision) ]; });
-      var er=(D.equityAssessments||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), '<span class="rmut">'+esc(r.segment)+'</span>', esc(r.pos), esc(r.neg), riskPill(r.risk), verdictPill(r.decision) ]; });
-      var sr=(D.sustainabilityAssessments||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), '<span class="rmut">'+esc(r.scale)+'</span>', esc(r.ltRisk), esc(r.trust), '<span class="rmut">'+esc(r.cont)+'</span>' ]; });
-      var cir=(D.communityImpacts||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), '<span class="rmut">'+esc(r.group)+'</span>', esc(r.impact), yn(r.consult), '<span class="rmut">'+esc(r.feedback)+'</span>' ]; });
-      return card("Purpose assessments",(D.purposeAssessments||[]).length,table(["ID","Use case","Purpose","Human need","Non-AI alternative","Decision"],pr),true)+
-             card("Human-outcomes assessments",(D.humanOutcomes||[]).length,table(["ID","Use case","Intended outcome","Potential harm","Mitigation","Owner"],hr),true)+
-             card("Collective-benefit assessments",(D.collectiveBenefits||[]).length,table(["ID","Use case","Beneficiary","Bank benefit","Customer benefit","Evidence metric"],br),true)+
-             card("Authority-to-control reviews",(D.authorityReviews||[]).length,table(["ID","Use case","Data subject","Authority basis","Consent","Appeal route","Decision"],aur),true)+
-             card("Outcome-equity assessments",(D.equityAssessments||[]).length,table(["ID","Use case","Segment","Positive impact","Negative impact","Equity risk","Decision"],er),true)+
-             card("Ethical-sustainability assessments",(D.sustainabilityAssessments||[]).length,table(["ID","Use case","Scale scenario","Long-term risk","Trust impact","Continue criteria"],sr),true)+
-             card("Community / segment impact",(D.communityImpacts||[]).length,table(["ID","Use case","Group","Impact type","Consultation","Feedback mechanism"],cir),true);
+      var pr=F(D.purposeAssessments).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), assessedCell(r,r.purpose), '<span class="rmut">'+esc(r.need)+'</span>', '<span class="rmut">'+esc(r.nonai)+'</span>', verdictPill(r.decision), att(r) ]; });
+      var hr=F(D.humanOutcomes).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), assessedCell(r,r.intended), '<span class="rmut">'+esc(r.harm)+'</span>', esc(r.mitig), role(r.owner), att(r) ]; });
+      var br=F(D.collectiveBenefits).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), assessedCell(r,r.group,"rmut"), esc(r.bank), esc(r.customer), '<span class="rmut">'+esc(r.metric)+'</span>', att(r) ]; });
+      var aur=F(D.authorityReviews).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), assessedCell(r,r.subject,"rmut"), esc(r.basis), yn(r.consent), '<span class="rmut">'+esc(r.appeal)+'</span>', verdictPill(r.decision), att(r) ]; });
+      var er=F(D.equityAssessments).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), assessedCell(r,r.segment,"rmut"), esc(r.pos), esc(r.neg), riskPill(r.risk), verdictPill(r.decision), att(r) ]; });
+      var sr=F(D.sustainabilityAssessments).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), assessedCell(r,r.scale,"rmut"), esc(r.ltRisk), esc(r.trust), '<span class="rmut">'+esc(r.cont)+'</span>', att(r) ]; });
+      var cir=F(D.communityImpacts).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), assessedCell(r,r.group,"rmut"), esc(r.impact), yn(r.consult), '<span class="rmut">'+esc(r.feedback)+'</span>', att(r) ]; });
+      return card("Purpose assessments",F(D.purposeAssessments).length,table(["ID","Use case","Purpose","Human need","Non-AI alternative","Decision","Assessed"],pr),true)+
+             card("Human-outcomes assessments",F(D.humanOutcomes).length,table(["ID","Use case","Intended outcome","Potential harm","Mitigation","Owner","Assessed"],hr),true)+
+             card("Collective-benefit assessments",F(D.collectiveBenefits).length,table(["ID","Use case","Beneficiary","Bank benefit","Customer benefit","Evidence metric","Assessed"],br),true)+
+             card("Authority-to-control reviews",F(D.authorityReviews).length,table(["ID","Use case","Data subject","Authority basis","Consent","Appeal route","Decision","Assessed"],aur),true)+
+             card("Outcome-equity assessments",F(D.equityAssessments).length,table(["ID","Use case","Segment","Positive impact","Negative impact","Equity risk","Decision","Assessed"],er),true)+
+             card("Ethical-sustainability assessments",F(D.sustainabilityAssessments).length,table(["ID","Use case","Scale scenario","Long-term risk","Trust impact","Continue criteria","Assessed"],sr),true)+
+             card("Community / segment impact",F(D.communityImpacts).length,table(["ID","Use case","Group","Impact type","Consultation","Feedback mechanism","Assessed"],cir),true);
     }},
     decide:{ label:"Decisions & evidence", build:function(){
-      var dr=(D.stewardshipDecisions||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), verdictPill(r.decision), '<span class="rmut">'+esc(r.conditions)+'</span>', '<span class="rmut">'+esc(r.forum)+'</span>', ref(r.evidence) ]; });
-      var evr=(D.stewardshipEvidence||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), '<span class="rmut">'+esc(r.type)+'</span>', '<span class="rmut">'+esc(r.repo)+'</span>', statusPill(r.status) ]; });
+      var dr=F(D.stewardshipDecisions).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), verdictPill(r.decision), '<span class="rmut">'+esc(r.conditions)+'</span>', '<span class="rmut">'+esc(r.forum)+'</span>', ref(r.evidence), att(r) ]; });
+      var evr=F(D.stewardshipEvidence).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), '<span class="rmut">'+esc(r.type)+'</span>', '<span class="rmut">'+esc(r.repo)+'</span>', statusPill(r.status) ]; });
       var pp=(D.stewardshipPrinciples||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', esc(r.name), '<span class="rmut">'+esc(r.def)+'</span>', '<span class="rmut">'+esc(r.source)+'</span>', role(r.owner), statusPill(r.status) ]; });
-      return card("Stewardship decisions",(D.stewardshipDecisions||[]).length,table(["ID","Use case","Decision","Conditions","Approver forum","Evidence"],dr),true)+
-             card("Stewardship evidence",(D.stewardshipEvidence||[]).length,table(["ID","Use case","Evidence type","Repository","Review status"],evr),true)+
+      return card("Stewardship decisions",F(D.stewardshipDecisions).length,table(["ID","Use case","Decision","Conditions","Approver forum","Evidence","Approved by"],dr),true)+
+             card("Stewardship evidence",F(D.stewardshipEvidence).length,table(["ID","Use case","Evidence type","Repository","Review status"],evr),true)+
              card("Stewardship principles",(D.stewardshipPrinciples||[]).length,table(["ID","Principle","Definition","Source","Owner","Status"],pp),true);
     }},
     measure:{ label:"Metrics & monitoring", build:function(){
       var mr=(D.stewardshipMetrics||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', esc(r.name), '<span class="rmut">'+esc(r.type)+'</span>', esc(r.def), '<span class="rmut">'+esc(r.target)+'</span>', role(r.owner) ]; });
-      var nr=(D.stewardshipMonitoring||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), ref(r.metric), '<span class="rmut">'+esc(r.threshold)+'</span>', role(r.alertOwner), '<span class="rmut">'+esc(r.action)+'</span>' ]; });
+      var nr=F(D.stewardshipMonitoring).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), ref(r.metric), '<span class="rmut">'+esc(r.threshold)+'</span>', role(r.alertOwner), '<span class="rmut">'+esc(r.action)+'</span>' ]; });
       return card("Stewardship metrics",(D.stewardshipMetrics||[]).length,table(["ID","Metric","Type","Definition","Target","Owner"],mr),true)+
-             card("Stewardship monitoring",(D.stewardshipMonitoring||[]).length,table(["ID","Use case","Metric","Threshold","Alert owner","Action"],nr),true);
+             card("Stewardship monitoring",F(D.stewardshipMonitoring).length,table(["ID","Use case","Metric","Threshold","Alert owner","Action"],nr),true);
     }},
     trace:{ label:"Traceability", plain:true, build:function(){
-      var tr=(D.stewardshipTraceability||[]).map(function(r){ return [ ref(r.stakeholder), ref(r.vp), ref(r.outcome), ucRef(r.useCase), ref(r.dataProduct), ref(r.policy), ref(r.control), ref(r.humanOutcome), ref(r.equity), ref(r.evidence) ]; });
+      var tr=Ft(D.stewardshipTraceability).map(function(r){ return [ ref(r.stakeholder), ref(r.vp), ref(r.outcome), ucRef(r.useCase), ref(r.dataProduct), ref(r.policy), ref(r.control), ref(r.humanOutcome), ref(r.equity), ref(r.evidence) ]; });
       return '<p class="muted" style="margin:0 0 12px">Each value item traced from stakeholder and value proposition all the way to its ethical review evidence — the golden thread with the stewardship layer attached.</p>'+
         '<div class="rcard rfull"><h3>Stewardship traceability<span class="n">'+tr.length+'</span></h3>'+
         table(["Stakeholder","VP","Outcome","Use case","Data product","Policy","Control","Human outcome","Equity","Evidence"],tr)+'</div>';
     }},
     exc:{ label:"Exceptions & retirement", build:function(){
       var _now=Date.now();
-      var xr=(D.stewardshipExceptions||[]).map(function(r){ var t=Date.parse(r.expiry); var exp=!isNaN(t)&&t<_now;
+      var xr=F(D.stewardshipExceptions).map(function(r){ var t=Date.parse(r.expiry); var exp=!isNaN(t)&&t<_now;
         return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), ref(r.principle), esc(r.reason), '<span class="rmut">'+esc(r.approver)+'</span>',
                  '<span class="rref'+(exp?' expired':'')+'">'+esc(r.expiry)+(exp?' ⚠ expired':'')+'</span>', '<span class="rmut">'+esc(r.control)+'</span>' ]; });
-      var rr=(D.stewardshipRetirement||[]).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), '<span class="rmut">'+esc(r.trigger)+'</span>', esc(r.finding), verdictPill(r.decision), ref(r.evidence) ]; });
-      return card("Stewardship exceptions",(D.stewardshipExceptions||[]).length,table(["ID","Use case","Principle","Reason","Approver","Expiry","Compensating control"],xr),true)+
-             card("Retirement / redesign reviews",(D.stewardshipRetirement||[]).length,table(["ID","Use case","Trigger","Finding","Decision","Evidence"],rr),true);
+      var rr=F(D.stewardshipRetirement).map(function(r){ return [ '<span class="rid">'+esc(r.id)+'</span>', ucRef(r.obj), '<span class="rmut">'+esc(r.trigger)+'</span>', esc(r.finding), verdictPill(r.decision), ref(r.evidence) ]; });
+      return card("Stewardship exceptions",F(D.stewardshipExceptions).length,table(["ID","Use case","Principle","Reason","Approver","Expiry","Compensating control"],xr),true)+
+             card("Retirement / redesign reviews",F(D.stewardshipRetirement).length,table(["ID","Use case","Trigger","Finding","Decision","Evidence"],rr),true);
     }}
   };
 
@@ -470,12 +505,14 @@ document.getElementById("maturity").insertAdjacentHTML("afterend",
     var highEq=(D.equityAssessments||[]).filter(function(e){return e.risk==="High";}).length;
     var vuln=(D.authorityReviews||[]).filter(function(a){return /yes/i.test(a.consent);}).length;
     // A full review = a purpose assessment AND a recorded stewardship decision.
-    var full=UCS.filter(function(u){ var p=pa[u.id], d=sd[u.id]; return p&&p.purpose&&d&&d.decision; }).length;
-    var reviewColor=(full>=UCS.length && UCS.length>0)?"#16a34a":"#d97706";
+    // Use cases ruled out of scope (purpose row marked N/A) leave the denominator.
+    var full=UCS.filter(function(u){ var p=pa[u.id], d=sd[u.id]; return p&&p.purpose&&!p.na&&d&&d.decision; }).length;
+    var scope=UCS.filter(function(u){ var p=pa[u.id]; return !(p&&p.na); }).length;
+    var reviewColor=(full>=scope && scope>0)?"#16a34a":"#d97706";
     var today=Date.now();
     var expired=(D.stewardshipExceptions||[]).filter(function(x){ var t=Date.parse(x.expiry); return !isNaN(t)&&t<today; }).length;
     return '<div class="stat-tiles">'+
-      '<div class="stile"><div class="sn" style="color:'+reviewColor+'">'+full+' / '+UCS.length+'</div><div class="sk">Use cases with a full stewardship review</div><div class="ss">purpose assessed and a stewardship verdict recorded</div></div>'+
+      '<div class="stile"><div class="sn" style="color:'+reviewColor+'">'+full+' / '+scope+'</div><div class="sk">Use cases with a full stewardship review</div><div class="ss">purpose assessed and a stewardship verdict recorded'+(scope<UCS.length?' · '+(UCS.length-scope)+' out of scope':'')+'</div></div>'+
       '<div class="stile"><div class="sn" style="color:#d97706">'+cond+'</div><div class="sk">Conditional approvals</div><div class="ss">'+appr+' approve · '+red+' redesign</div></div>'+
       '<div class="stile"><div class="sn" style="color:#e11d48">'+highEq+'</div><div class="sk">High equity-risk use cases</div><div class="ss">under redesign-reason monitoring</div></div>'+
       '<div class="stile"><div class="sn" style="color:'+(expired?"#e11d48":"#16a34a")+'">'+expired+'</div><div class="sk">Exceptions expired</div><div class="ss">past their expiry date — active control failures</div></div>'+
@@ -503,7 +540,8 @@ document.getElementById("maturity").insertAdjacentHTML("afterend",
     var reg=document.getElementById("registers");
     reg.setAttribute("role","tabpanel");
     reg.setAttribute("aria-labelledby","rtab-"+cur);
-    reg.innerHTML=VIEWS[cur].plain ? VIEWS[cur].build() : '<div class="rgrid">'+VIEWS[cur].build()+'</div>';
+    var banner = focus ? '<div class="focusbar">Focused on <strong>'+esc(focus)+' — '+esc(ucName(focus))+'</strong> · every register below is filtered to this use case, and this is its full stewardship thread. <span class="fx" onclick="esFocus(\''+esc(String(focus)).replace(/'/g,"")+'\')">✕ clear</span></div>' : '';
+    reg.innerHTML = banner + (VIEWS[cur].plain ? VIEWS[cur].build() : '<div class="rgrid">'+VIEWS[cur].build()+'</div>');
     var btns=Array.prototype.slice.call(document.querySelectorAll(".rtb"));
     btns.forEach(function(b,ix){
       b.onclick=function(){ cur=b.getAttribute("data-k"); draw(); };

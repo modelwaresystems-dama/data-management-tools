@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="81b395e2980d" data-built="31 Aug 2026" data-version="1.29.0">
+<meta name="crm-build" content="47a2b2fb21a5" data-built="4 Sep 2026" data-version="1.30.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -107,6 +107,19 @@ a{color:var(--accent)}
 .spacer{margin-left:auto}
 /* The row that turns a person summary into a way into their work. */
 .jump{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+/* Invoice lines. The header sits UNDER the rows on purpose: the popover grows
+   downward as lines are added, and a header that scrolls out of the box is a
+   header nobody reads. */
+.lines{display:flex;flex-direction:column;gap:4px;margin:4px 0}
+.line-row,.line-head{display:grid;grid-template-columns:1fr 72px 66px 58px 26px;gap:4px;align-items:center}
+.line-row input{width:100%;min-width:0;padding:4px 6px;font-size:12px}
+.line-head span{font-size:10.5px;color:var(--muted);font-family:var(--mono);text-align:right}
+.line-head span:first-child{text-align:left}
+.line-row .btn{padding:2px 6px;line-height:1}
+@media (max-width:560px){
+  .line-row,.line-head{grid-template-columns:1fr 60px 54px 48px 24px;gap:3px}
+  .line-row input{padding:3px 4px;font-size:11.5px}
+}
 .content{padding:22px;max-width:1180px;width:100%}
 
 /* ---------- controls ---------- */
@@ -625,6 +638,26 @@ function fmtMoney(v, cur){
   var s = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
   return (n < 0 ? "-" : "") + c.sym + "\u00a0" + s;
 }
+/* The same number, to the cent.
+
+   fmtMoney rounds to whole units everywhere, which is right for a pipeline
+   total nobody will ever reconcile. It is wrong for a DOCUMENT: SARB quoted
+   R207,108.70 and the panel said R207 109, and a seventy-cent difference
+   between the CRM and the paperwork the customer is holding is exactly the
+   discrepancy that starts an argument about whether either can be trusted.
+
+   Used for quotes, invoices and invoice lines — the numbers that exist on
+   something somebody else has a copy of. Everything else stays rounded. */
+function fmtMoneyExact(v, cur){
+  if (v == null || v === "" || isNaN(v)) return "\u2014";
+  var c = CUR[cur] || { sym: (cur || "") + " " };
+  var n = round2(+v);
+  var whole = Math.floor(Math.abs(n));
+  var cents = Math.round((Math.abs(n) - whole) * 100);
+  var s = String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+  return (n < 0 ? "-" : "") + c.sym + "\u00a0" + s +
+         (cents ? "." + (cents < 10 ? "0" : "") + cents : "");
+}
 function fmtDay(iso){
   var t = parseISO(iso); if (t === null) return "—";
   var d = new Date(t);
@@ -702,7 +735,7 @@ function money(v){
 
 function foldEvents(events){
   var st = { companies:{}, contacts:{}, deals:{}, followups:{}, interactions:{},
-             invoices:{}, payments:{},
+             invoices:{}, payments:{}, quotes:{},
              clients:{}, lastTs:null, eventCount:0 };
   var ordered = sortEvents(events || []);
 
@@ -846,6 +879,49 @@ function foldEvents(events){
          `net` (excluding VAT), `passThrough` (the books and exam coupons inside
          that net, which are somebody else's revenue) and `vat`. The customer
          owes net + vat; commission is earned on net − passThrough. */
+      /* ---- quotes (F1) ----
+         A quote is its own record, not three fields on the deal, because a deal
+         holds SEVERAL of them: SARB is amending QUO0000944 for the revised
+         Enterprise edition, and Bank of Botswana has September quoted with
+         October to be invoiced separately. Three fields cannot hold two quotes,
+         and the second one would have overwritten the first in silence.
+
+         A quote never carries a rate, an earner or a pass-through. Commission is
+         earned on invoices (C21); a quote is a number we said out loud. */
+      case "quote.issued":
+        st.quotes[p.quoteId] = {
+          id:p.quoteId, dealId:p.dealId, number:p.number || "",
+          issuedOn:p.issuedOn || String(e.ts).slice(0,10),
+          currency:p.currency || "ZAR", amount:money(p.amount),
+          /* issued · accepted · declined · superseded. A superseded quote is
+             never deleted: the point of the record is to be able to see that we
+             quoted R207,108.70 in August and something else in September. */
+          status:p.status || "issued",
+          supersededBy:p.supersededBy || null,
+          note:p.note || "", issuedBy:e.actor, ts:e.ts
+        };
+        break;
+      case "quote.updated":
+        if (st.quotes[p.quoteId]){
+          assign(st.quotes[p.quoteId], p, ["number","issuedOn","currency","status","note"]);
+          if (p.amount !== undefined) st.quotes[p.quoteId].amount = money(p.amount);
+          if (p.supersededBy !== undefined)
+            st.quotes[p.quoteId].supersededBy = p.supersededBy || null;
+        }
+        break;
+      case "quote.accepted":
+        if (st.quotes[p.quoteId]){
+          st.quotes[p.quoteId].status = "accepted";
+          st.quotes[p.quoteId].acceptedOn = p.acceptedOn || String(e.ts).slice(0,10);
+        }
+        break;
+      case "quote.superseded":
+        if (st.quotes[p.quoteId]){
+          st.quotes[p.quoteId].status = "superseded";
+          st.quotes[p.quoteId].supersededBy = p.supersededBy || null;
+        }
+        break;
+
       case "invoice.raised":
         st.invoices[p.invoiceId] = {
           id:p.invoiceId, dealId:p.dealId, number:p.number || "",
@@ -857,6 +933,18 @@ function foldEvents(events){
              this invoice alone — one deal can bill training that earns
              commission and books that do not. */
           commissionRate: p.commissionRate == null ? null : +p.commissionRate,
+          /* F7. Who is paid on this invoice, where that is not the deal owner.
+             FNB: Paul took the enquiry, Debbie quoted and sold it, Monica raised
+             the invoice. The deal really is Debbie's, so re-filing it is the
+             wrong repair — the earner is a fact about the invoice, not the deal.
+             null means "follow the deal owner". */
+          earner: p.earner == null ? null : String(p.earner),
+          /* F1. Which quote this invoice came from, where there was one. */
+          quoteId: p.quoteId == null ? null : String(p.quoteId),
+          /* F6. Absent means the old single-net shape, which must keep folding
+             for ever — the log is append-only and every invoice raised before
+             today has no lines. */
+          lines: normLines(p.lines),
           note:p.note || "", status:"open", cancelReason:"",
           raisedBy:e.actor, ts:e.ts
         };
@@ -870,10 +958,18 @@ function foldEvents(events){
           });
           /* Explicitly, because null is a meaningful value here — it is how an
              invoice goes back to following the deal, and `assign` would read it
-             as "not supplied" and leave the override in place for ever. */
+             as "not supplied" and leave the override in place for ever.
+             The same trap applies to every one of these: `undefined` is "not
+             supplied", `null` is "clear it". */
           if (p.commissionRate !== undefined)
             st.invoices[p.invoiceId].commissionRate =
               p.commissionRate == null ? null : +p.commissionRate;
+          if (p.earner !== undefined)
+            st.invoices[p.invoiceId].earner = p.earner == null ? null : String(p.earner);
+          if (p.quoteId !== undefined)
+            st.invoices[p.invoiceId].quoteId = p.quoteId == null ? null : String(p.quoteId);
+          if (p.lines !== undefined)
+            st.invoices[p.invoiceId].lines = normLines(p.lines);
         }
         break;
       case "invoice.cancelled":
@@ -1020,6 +1116,18 @@ function foldEvents(events){
       delete st.companies[k];
     });
   }
+
+  /* C22 as an invariant of the fold, not a repair that only runs after a merge.
+     Every form already refuses to create a self-partner and the merge pass
+     repaired the one it could create — but a deal that arrives ALREADY broken,
+     from an old log or a hand-written event, folded straight through and read as
+     "MasterData / RFQ, via MasterData" with the real customer nowhere. An
+     invariant that only holds on the paths you remembered is not an invariant. */
+  Object.keys(st.deals).forEach(function (k){
+    if (st.deals[k].partnerCompanyId &&
+        st.deals[k].partnerCompanyId === st.deals[k].companyId)
+      st.deals[k].partnerCompanyId = null;
+  });
 
   st.deletedDeals = {};
   Object.keys(st.deals).forEach(function (k){
@@ -1356,8 +1464,58 @@ function computeFlags(st, cfg, today){
                          payment earns nothing, by ruling
      currencies          never converted, never summed across (C16)
 */
+/* One invoice line (F6). MCB bills $2,150 of training at 20% and $800 of DMBOKs
+   at 0% — one invoice, two rates, which is what the customer actually receives.
+   Before this those had to be forced into two invoices so the rate had somewhere
+   to live, and the CRM then disagreed with the paperwork.
+
+   `commissionRate` here obeys the same three-state rule as everywhere else:
+   a number (0 included — C29 says 0 is a number), or null/absent meaning
+   "follow the invoice", which in turn may follow the deal. */
+function normLines(lines){
+  if (!Array.isArray(lines)) return [];
+  return lines.map(function (l, i){
+    l = l || {};
+    return {
+      id: l.id || ("ln" + i),
+      description: String(l.description || "").slice(0, 200),
+      quantity: l.quantity == null || l.quantity === "" ? null : +l.quantity,
+      unitPrice: l.unitPrice == null || l.unitPrice === "" ? null : money(l.unitPrice),
+      net: money(l.net),
+      /* Somebody else's revenue sitting inside this line. The DMBOK PDF on the
+         SARB quote is a publisher's product; we bill it and pass it on. */
+      passThrough: money(l.passThrough),
+      commissionRate: l.commissionRate == null || l.commissionRate === ""
+                        ? null : +l.commissionRate
+    };
+  });
+}
+
+/* The net an invoice actually carries. With lines, it is the sum of them —
+   derived, never stored twice, so the total on screen can never drift from the
+   lines under it. Without lines it is the invoice's own net, exactly as before. */
+function invoiceNet(inv){
+  if (inv.lines && inv.lines.length)
+    return round2(inv.lines.reduce(function (t, l){ return t + l.net; }, 0));
+  return round2(inv.net);
+}
+function invoicePassThrough(inv){
+  if (inv.lines && inv.lines.length)
+    return round2(inv.lines.reduce(function (t, l){ return t + l.passThrough; }, 0));
+  return round2(inv.passThrough);
+}
+/* A supplied net that disagrees with the lines is a contradiction, not a
+   rounding question. Surface it; do not pick a winner quietly. */
+function invoiceLineMismatch(inv){
+  if (!(inv.lines && inv.lines.length)) return null;
+  if (inv.net == null) return null;
+  var d = round2(invoiceNet(inv) - round2(inv.net));
+  return Math.abs(d) < 0.005 ? null : { stated: round2(inv.net), fromLines: invoiceNet(inv), by: d };
+}
+
 function invoiceState(st, inv){
-  var gross = round2(inv.net + inv.vat);
+  var net = invoiceNet(inv), pt = invoicePassThrough(inv);
+  var gross = round2(net + inv.vat);
   var paid = 0;
   Object.keys(st.payments).forEach(function (k){
     if (st.payments[k].invoiceId === inv.id) paid += st.payments[k].amount; });
@@ -1369,7 +1527,9 @@ function invoiceState(st, inv){
   var settled = !cancelled && gross > 0 && balance <= 0;
   return { invoice:inv, gross:gross, paid:paid, balance: cancelled ? 0 : balance,
            settled:settled, cancelled:cancelled,
-           commissionBase: round2(inv.net - inv.passThrough) };
+           net:net, passThrough:pt,
+           lineMismatch: invoiceLineMismatch(inv),
+           commissionBase: round2(net - pt) };
 }
 
 function invoicesFor(st, dealId){
@@ -1405,6 +1565,94 @@ function invoiceRate(deal, inv){
   return { rate:own, from:"invoice", overridden: own !== dealRate, dealRate:dealRate };
 }
 
+/* The rate that applies to ONE LINE, and the only place precedence is decided.
+
+   The deal panel, the payment prompt and the money book all call this. A
+   commission figure that differs between the screen and the book is worse than
+   either of them being wrong on its own, because then there is no number to
+   argue about — there are two.
+
+   Precedence runs one way only:
+     1. deal.commissionable === false  → 0, always. A line cannot invent a
+        commission on a deal that has ruled one out.
+     2. line.commissionRate, if it is a NUMBER — and 0 is a number (C29).
+     3. invoice.commissionRate, if it is a number.
+     4. deal.commissionRate.
+     5. otherwise blank — nobody has set a rate, which is not 0% (C23).
+   Blank and zero stay different all the way to the screen: one is a question
+   for a human, the other is an answer. */
+function lineRate(deal, inv, line){
+  if (!deal || deal.commissionable === false)
+    return { rate:null, from:"deal", noCommission:true, dealRate:null, invoiceRate:null };
+  var dealRate = deal.commissionRate == null ? null : deal.commissionRate;
+  var invRate  = (inv && inv.commissionRate != null) ? inv.commissionRate : null;
+  var lnRate   = (line && line.commissionRate != null) ? line.commissionRate : null;
+  var rate, from;
+  if (lnRate != null)      { rate = lnRate;  from = "line"; }
+  else if (invRate != null){ rate = invRate; from = "invoice"; }
+  else                     { rate = dealRate; from = "deal"; }
+  return { rate:rate, from:from, noCommission:false,
+           dealRate:dealRate, invoiceRate:invRate,
+           overridden: from !== "deal" && rate !== dealRate };
+}
+
+/* Who is paid on this invoice (F7).
+
+   C21 assumed one earner per deal and FNB broke it: Paul took the enquiry on
+   28 July and handed it to Debbie, who quoted and sold it. The deal is Debbie's
+   and should stay Debbie's, so the earner belongs on the invoice. Null follows
+   the deal owner, which is what almost every invoice does. */
+function invoiceEarner(deal, inv){
+  var dealOwner = deal ? deal.owner : null;
+  var own = inv ? inv.earner : null;
+  if (own == null) return { userId:dealOwner, from:"deal", overridden:false, dealOwner:dealOwner };
+  return { userId:own, from:"invoice", overridden: own !== dealOwner, dealOwner:dealOwner };
+}
+
+/* Every commissionable part of one invoice, each with the rate that reached it.
+   A lineless invoice yields exactly one part carrying the whole net, so the old
+   shape and the new one come out of the same door and every caller downstream
+   stops caring which it was given. */
+function commissionParts(deal, inv, state){
+  if (inv.lines && inv.lines.length){
+    return inv.lines.map(function (l){
+      var r = lineRate(deal, inv, l);
+      var base = round2(l.net - l.passThrough);
+      return { line:l, label:l.description || "Line", base:base, rate:r.rate, from:r.from,
+               overridden:!!r.overridden,
+               commission: r.rate == null ? null : round2(base * r.rate) };
+    });
+  }
+  var ir = invoiceRate(deal, inv);
+  return [{ line:null, label:inv.number || "Invoice", base:state.commissionBase,
+            rate:ir.rate, from:ir.from, overridden:!!ir.overridden,
+            commission: ir.rate == null ? null : round2(state.commissionBase * ir.rate) }];
+}
+
+/* What the whole invoice earns, and for whom. Earned only on FULL settlement
+   (C21) — a partial payment earns nothing, however large. */
+function invoiceCommission(deal, inv, state){
+  var parts = commissionParts(deal, inv, state);
+  var total = null;
+  parts.forEach(function (pt){
+    if (pt.commission == null) return;
+    total = round2((total || 0) + pt.commission);
+  });
+  return { parts:parts, total:total,
+           anyRate: parts.some(function (pt){ return pt.rate != null; }),
+           allBlank: parts.every(function (pt){ return pt.rate == null; }),
+           mixed: parts.length > 1 &&
+                  parts.some(function (pt){ return pt.rate != null; }) &&
+                  parts.some(function (pt){ return pt.rate === 0; }),
+           earner: invoiceEarner(deal, inv) };
+}
+
+function quotesFor(st, dealId){
+  return Object.keys(st.quotes || {}).map(function (k){ return st.quotes[k]; })
+    .filter(function (q){ return q.dealId === dealId; })
+    .sort(function (a,b){ return a.issuedOn < b.issuedOn ? 1 : a.issuedOn > b.issuedOn ? -1 : (a.id < b.id ? 1 : -1); });
+}
+
 /* What one deal is worth in cash, per currency, and what its owner has earned. */
 function dealMoney(st, deal){
   /* A deal that earns nobody commission has no rate, whatever is stored on it —
@@ -1415,8 +1663,10 @@ function dealMoney(st, deal){
   var rate = noComm ? null : deal.commissionRate;
   var out = { invoiced:{}, paid:{}, outstanding:{}, overdue:{},
               commissionEarned:{}, commissionPending:{},
+              earnedByUser:{}, pendingByUser:{},
               rate:rate, owner:deal.owner, invoices:[],
               noCommission:noComm, hasRate: rate != null,
+              anyEarnerOverride:false,
               /* `anyRate` is not the same question as `hasRate`: an invoice can
                  carry a rate the deal never had, and a screen that gates its
                  commission totals on the deal alone would hide it. */
@@ -1429,14 +1679,27 @@ function dealMoney(st, deal){
     out.invoiced[c]    = round2((out.invoiced[c]    || 0) + s.gross);
     out.paid[c]        = round2((out.paid[c]        || 0) + s.paid);
     out.outstanding[c] = round2((out.outstanding[c] || 0) + s.balance);
+    var cm = invoiceCommission(deal, inv, s);
+    s.commission = cm;
+    s.parts = cm.parts;
+    s.earner = cm.earner.userId;
+    s.earnerOverridden = cm.earner.overridden;
+    /* Kept for the callers that only ever asked one question of a whole
+       invoice. With lines they are the invoice-level answer, not a line's. */
     var ir = invoiceRate(deal, inv);
     s.rate = ir.rate; s.rateOverridden = ir.overridden; s.rateFrom = ir.from;
-    if (ir.overridden) out.anyOverride = true;
-    if (ir.rate != null){
+    if (ir.overridden || cm.parts.some(function (pt){ return pt.from === "line"; }))
+      out.anyOverride = true;
+    if (cm.earner.overridden) out.anyEarnerOverride = true;
+    if (cm.total != null){
       out.anyRate = true;
-      var earned = round2(s.commissionBase * ir.rate);
-      if (s.settled) out.commissionEarned[c] = round2((out.commissionEarned[c] || 0) + earned);
-      else           out.commissionPending[c] = round2((out.commissionPending[c] || 0) + earned);
+      var bag = s.settled ? out.commissionEarned : out.commissionPending;
+      bag[c] = round2((bag[c] || 0) + cm.total);
+      /* Per person, because one deal can now pay two of them. */
+      var who = cm.earner.userId;
+      var byBag = s.settled ? out.earnedByUser : out.pendingByUser;
+      byBag[who] = byBag[who] || {};
+      byBag[who][c] = round2((byBag[who][c] || 0) + cm.total);
     }
   });
   return out;
@@ -1456,7 +1719,12 @@ function moneyBook(st, cfg, today, opts){
 
   Object.keys(st.deals).forEach(function (k){
     var d = st.deals[k];
-    if (scope !== "team" && d.owner !== me) return;
+    /* Ownership is not the only way onto this page any more. An invoice can name
+       somebody else as the earner (F7), and a person's own money screen that
+       hid what they are owed — because the deal is filed to a colleague — would
+       be wrong in the one direction that matters. */
+    if (scope !== "team" && d.owner !== me &&
+        !invoicesFor(st, d.id).some(function (iv){ return iv.earner === me; })) return;
     var m = dealMoney(st, d);
     var invs = invoicesFor(st, d.id);
 
@@ -1475,14 +1743,16 @@ function moneyBook(st, cfg, today, opts){
         book.overdueInvoices.push({ state:s, deal:d,
           daysLate: -daysBetween(today, s.invoice.dueDate) });
       }
-      /* The invoice's own rate where it has one — the book and the deal panel
-         must never disagree about what somebody is owed. */
-      var ir = invoiceRate(d, s.invoice);
-      if (ir.rate != null){
-        var earned = round2(s.commissionBase * ir.rate);
+      /* Straight through the same arithmetic the deal panel uses — one function,
+         so the book and the panel cannot disagree about what somebody is owed.
+         Attributed to the EARNER (F7), which is the deal owner unless the
+         invoice names somebody else. */
+      var cm = invoiceCommission(d, s.invoice, s);
+      if (cm.total != null){
+        var who = cm.earner.userId;
         var bag = s.settled ? book.earnedByUser : book.pendingByUser;
-        bag[d.owner] = bag[d.owner] || {};
-        bag[d.owner][c] = round2((bag[d.owner][c] || 0) + earned);
+        bag[who] = bag[who] || {};
+        bag[who][c] = round2((bag[who][c] || 0) + cm.total);
       }
     });
   });
@@ -2462,7 +2732,7 @@ function triageCreate(rows, st, cfg, ctx){
   var today = ctx.today || todayISO();
   var actor = ctx.actor || "howard";
   var out = { events:[], created:[], errors:[], invoices:0 };
-  var created_invoices = 0;
+  var created_invoices = 0, created_quotes = 0, created_payments = 0;
   var stages = (cfg && cfg.stages) || [];
   var firstStage = stages.length ? stages[0].id : "lead";
   var stageById = {}; stages.forEach(function (s){
@@ -2696,9 +2966,53 @@ function triageCreate(rows, st, cfg, ctx){
       out.errors.push("Row " + (i+1) + ": \u201c" + r.outcome + "\u201d is not an outcome. Use won or lost.");
     }
 
+    /* ---- quotes (F1) ----
+       Recorded before the invoices, so an invoice naming a quote number can find
+       it in the same batch. A quote carries no rate and no earner; there is
+       nowhere on this shape to put one, deliberately. */
+    var quoteIdByNumber = {};
+    (Array.isArray(r.quotes) ? r.quotes : []).forEach(function (qv, j){
+      if (!qv) return;
+      var amount = money(qv.amount);
+      if (!(amount > 0)){
+        out.errors.push("Row " + (i+1) + ", quote " + (qv.number || j+1) +
+          ": no amount. A quote with no number in it records nothing anybody can use.");
+        return;
+      }
+      var qkey = dealKey + "\u241f q \u241f" + triageNorm(qv.number || String(j));
+      var qid = "quo_" + triageHash(qkey);
+      if (qv.number) quoteIdByNumber[triageNorm(qv.number)] = qid;
+      var qstatus = triageNorm(qv.status) || "issued";
+      if (["issued","accepted","declined","superseded"].indexOf(qstatus) < 0){
+        out.errors.push("Row " + (i+1) + ", quote " + (qv.number || j+1) + ": \u201c" +
+          qv.status + "\u201d is not a quote status. Use issued, accepted, declined or superseded.");
+        return;
+      }
+      out.events.push({ id:"ev_quo_" + triageHash(qkey), type:"quote.issued", actor:actor,
+        payload:{ quoteId:qid, dealId:dealId, number:String(qv.number || "").trim(),
+                  issuedOn: parseDateInput(qv.issuedOn, today) || today,
+                  currency: qv.currency || r.currency || (cfg && cfg.defaultCurrency) || "ZAR",
+                  amount:amount, status:qstatus } });
+      created_quotes++;
+    });
+
+    var invIdByNumber = {};
     (Array.isArray(r.invoices) ? r.invoices : []).forEach(function (iv, j){
       if (!iv) return;
-      var net = money(iv.net);
+      /* F6: lines, where the batch supplies them. The net is then the SUM of the
+         lines, never a second number to keep in step — the email that produced
+         this row had one invoice on it, and the total on that paper is the total
+         of its lines by construction. */
+      var lines = Array.isArray(iv.lines) ? normLines(iv.lines) : [];
+      var net = lines.length
+        ? round2(lines.reduce(function (t, l){ return t + l.net; }, 0))
+        : money(iv.net);
+      if (lines.length && iv.net != null && Math.abs(round2(money(iv.net) - net)) >= 0.005){
+        out.errors.push("Row " + (i+1) + ", invoice " + (iv.number || j+1) +
+          ": the lines add to " + net + " but the invoice says " + money(iv.net) +
+          ". One of the two is wrong and I will not choose which.");
+        return;
+      }
       /* An invoice with no amount is worse than no invoice: it clears the "Not
          invoiced" flag while telling nobody what is owed, so the gap stops
          nagging without being closed. Refuse it and say why. */
@@ -2708,15 +3022,85 @@ function triageCreate(rows, st, cfg, ctx){
           "Leave it out and let the flag do its job, or supply the amount.");
         return;
       }
+      /* F7: the earner must be a real person or the commission lands nowhere.
+         Unlike the deal owner this one may be anybody on the roster — Monica
+         raises invoices and does not carry deals. */
+      var invEarner = null;
+      if (iv.earner){
+        invEarner = resolveUser(cfg, iv.earner);
+        if (!invEarner){
+          out.errors.push("Row " + (i+1) + ", invoice " + (iv.number || j+1) + ": \u201c" +
+            iv.earner + "\u201d is not on the team, so the commission on it would be " +
+            "earned by nobody. config.json lists: " + userIds(cfg).join(", ") + ".");
+          return;
+        }
+      }
+      var invRate = (iv.commissionRate == null || iv.commissionRate === "") ? null
+                  : (+iv.commissionRate > 1 ? round2(+iv.commissionRate) / 100 : +iv.commissionRate);
+      if (noComm && (invRate != null || lines.some(function (l){ return l.commissionRate != null; }))){
+        out.errors.push("Row " + (i+1) + ", invoice " + (iv.number || j+1) +
+          ": the deal pays no commission and this invoice sets a rate anyway. " +
+          "A deal that has ruled commission out cannot have one invented on an invoice.");
+        return;
+      }
+      var qref = iv.quoteNumber ? quoteIdByNumber[triageNorm(iv.quoteNumber)] : null;
+      if (iv.quoteNumber && !qref){
+        out.errors.push("Row " + (i+1) + ", invoice " + (iv.number || j+1) +
+          ": names quote \u201c" + iv.quoteNumber + "\u201d, which is not in this row's quotes. " +
+          "Add the quote or drop the reference \u2014 a dangling link is worse than none.");
+        return;
+      }
       var ikey = dealKey + "\u241f" + triageNorm(iv.number || String(j));
+      var iid = "inv_" + triageHash(ikey);
+      if (iv.number) invIdByNumber[triageNorm(iv.number)] = { id:iid, currency:
+        iv.currency || r.currency || (cfg && cfg.defaultCurrency) || "ZAR" };
       out.events.push({ id:"ev_inv_" + triageHash(ikey), type:"invoice.raised", actor:actor,
-        payload:{ invoiceId:"inv_" + triageHash(ikey), dealId:dealId,
+        payload:{ invoiceId:iid, dealId:dealId,
                   number:String(iv.number || "").trim(),
                   issuedOn: parseDateInput(iv.issuedOn, today) || today,
                   dueDate: iv.dueDate ? parseDateInput(iv.dueDate, today) : null,
                   currency: iv.currency || r.currency || (cfg && cfg.defaultCurrency) || "ZAR",
-                  net:net, passThrough:money(iv.passThrough), vat:money(iv.vat) } });
+                  net:net,
+                  passThrough: lines.length
+                    ? round2(lines.reduce(function (t, l){ return t + l.passThrough; }, 0))
+                    : money(iv.passThrough),
+                  vat:money(iv.vat),
+                  commissionRate:invRate, earner:invEarner,
+                  quoteId:qref || null, lines:lines } });
       created_invoices++;
+    });
+
+    /* ---- payments (F5) ----
+       The import could not express a payment at all, so every proof of payment
+       was still typed in by hand and the ruling was unreachable. A payment names
+       the invoice it settles: without both the invoice number and an amount
+       there is nothing to record, and guessing which invoice an amount belongs
+       to is how somebody's commission becomes earned by accident. */
+    (Array.isArray(r.payments) ? r.payments : []).forEach(function (pv, j){
+      if (!pv) return;
+      var target = pv.invoiceNumber ? invIdByNumber[triageNorm(pv.invoiceNumber)] : null;
+      if (!target){
+        out.errors.push("Row " + (i+1) + ", payment " + (j+1) + ": " +
+          (pv.invoiceNumber
+            ? "invoice \u201c" + pv.invoiceNumber + "\u201d is not in this row's invoices."
+            : "no invoice number.") +
+          " A payment that cannot name its invoice cannot settle one, and settling is " +
+          "what makes commission earned.");
+        return;
+      }
+      var amt = money(pv.amount);
+      if (!(amt > 0)){
+        out.errors.push("Row " + (i+1) + ", payment " + (j+1) +
+          ": no amount. Record it when the email says how much actually landed.");
+        return;
+      }
+      var pkey = dealKey + "\u241f p \u241f" + triageNorm(pv.invoiceNumber) + "\u241f" +
+                 triageNorm(String(pv.receivedOn || j)) + "\u241f" + amt;
+      out.events.push({ id:"ev_pay_" + triageHash(pkey), type:"payment.received", actor:actor,
+        payload:{ paymentId:"pay_" + triageHash(pkey), invoiceId:target.id,
+                  receivedOn: parseDateInput(pv.receivedOn, today) || today,
+                  amount:amt, reference:String(pv.reference || "").slice(0,120) } });
+      created_payments++;
     });
 
     /* A deal with no first next step is born straight into band three, where it
@@ -2738,9 +3122,21 @@ function triageCreate(rows, st, cfg, ctx){
                   dueDate:due, what:String(ns.what).slice(0,200) } });
 
     out.invoices = created_invoices;
+    out.quotes = created_quotes;
+    out.payments = created_payments;
     out.created.push({ dealId:dealId, rowIndex:i,
                        outcome: (outcome === "won" || outcome === "lost") ? outcome : "",
                        invoices: (Array.isArray(r.invoices) ? r.invoices : []).length,
+                       quotes: (Array.isArray(r.quotes) ? r.quotes : []).length,
+                       payments: (Array.isArray(r.payments) ? r.payments : []).length,
+                       /* Named in the preview, because "who gets paid" is the one
+                          consequence of a batch that money moves on. */
+                       earners: (Array.isArray(r.invoices) ? r.invoices : [])
+                          .map(function (iv){ return iv && iv.earner ? resolveUser(cfg, iv.earner) : null; })
+                          .filter(function (u, ix, all){ return u && all.indexOf(u) === ix; }),
+                       invoiceLines: (Array.isArray(r.invoices) ? r.invoices : [])
+                          .reduce(function (t, iv){
+                            return t + ((iv && Array.isArray(iv.lines)) ? iv.lines.length : 0); }, 0),
                        commissionRate: rate,
                        /* what the preview should call it — the person for a
                           private buyer, the organisation otherwise */
@@ -3051,7 +3447,7 @@ var API = {
   toISO:toISO, todayISO:todayISO, parseISO:parseISO, addDays:addDays, daysBetween:daysBetween,
   dow:dow, isWeekend:isWeekend, skipWeekend:skipWeekend, deferBy:deferBy, startOfWeek:startOfWeek,
   monthKey:monthKey, parseDateInput:parseDateInput,
-  fmtMoney:fmtMoney, fmtDay:fmtDay, fmtDayYear:fmtDayYear, fmtFull:fmtFull, fmtMonth:fmtMonth,
+  fmtMoney:fmtMoney, fmtMoneyExact:fmtMoneyExact, fmtDay:fmtDay, fmtDayYear:fmtDayYear, fmtFull:fmtFull, fmtMonth:fmtMonth,
   relDays:relDays, uid:uid,
   sortEvents:sortEvents, foldEvents:foldEvents,
   openFollowups:openFollowups, followupsFor:followupsFor, openFollowupsFor:openFollowupsFor,
@@ -3062,6 +3458,9 @@ var API = {
   dealParty:dealParty, money:money, round2:round2,
   invoiceState:invoiceState, invoicesFor:invoicesFor, paymentsFor:paymentsFor,
   dealMoney:dealMoney, moneyBook:moneyBook, invoiceRate:invoiceRate,
+  lineRate:lineRate, invoiceEarner:invoiceEarner, commissionParts:commissionParts,
+  invoiceCommission:invoiceCommission, quotesFor:quotesFor, normLines:normLines,
+  invoiceNet:invoiceNet, invoicePassThrough:invoicePassThrough,
   computeFlags:computeFlags, FLAG_RULES:FLAG_RULES, FLAG_TONE:FLAG_TONE, flagRule:flagRule, flagLabel:flagLabel,
   bands:bands, coverage:coverage,
   personReport:personReport, peopleWithWork:peopleWithWork, lastImport:lastImport,
@@ -5278,6 +5677,67 @@ function openDeal(dealId){
     body.appendChild(csec);
   }
 
+  /* ---- quotes (F1) ----
+     Above the money, because a quote comes first and because the question this
+     section answers — "what did we actually say the price was?" — is the one
+     asked when an invoice number is being argued about.
+
+     A deal holds several. SARB is amending QUO0000944; Bank of Botswana has
+     September quoted with October to follow. Superseded ones stay on the list:
+     the whole point of a record is being able to see that we quoted
+     R207,108.70 in August and something else in September. */
+  {
+    var qs = C.quotesFor(App.st, d.id);
+    var qsec = h("section", { class:"sec" });
+    qsec.appendChild(h("div", { style:"display:flex;align-items:baseline;gap:8px;flex-wrap:wrap" },
+      h("h4", { style:"margin:0", text:"Quotes" }),
+      qs.length ? h("span", { class:"note", text: qs.length + " on this deal" }) : null,
+      h("span", { class:"spacer" }),
+      h("button", { class:"btn btn-sm", type:"button",
+        onclick:function (e){ quotePopover(e.currentTarget, d, null); } }, "Add a quote")));
+    if (!qs.length){
+      qsec.appendChild(h("div", { class:"note", style:"margin-top:8px",
+        text:"No quotes recorded. A quote is a number we said out loud — it earns nobody " +
+             "anything until it becomes an invoice." }));
+    } else {
+      var qt = h("tbody");
+      qs.forEach(function (q){
+        var billed = Object.keys(App.st.invoices).filter(function (k){
+          return App.st.invoices[k].quoteId === q.id; })
+          .map(function (k){ return App.st.invoices[k].number || "unnumbered"; });
+        qt.appendChild(h("tr", { onclick:(function (qq){
+            return function (e){ quotePopover(e.currentTarget, d, qq); }; })(q),
+            style:"cursor:pointer" },
+          h("td", null,
+            h("div", { text:(q.number || "(no number)") }),
+            h("div", { class:"note", text:"issued " + C.fmtDay(q.issuedOn) +
+              (billed.length ? " · invoiced as " + billed.join(", ") : "") +
+              (q.supersededBy && App.st.quotes[q.supersededBy]
+                 ? " · replaced by " + (App.st.quotes[q.supersededBy].number || "a later quote")
+                 : "") })),
+          h("td", { class:"num", style: q.status === "superseded" ? "color:var(--muted)" : "",
+                    text:C.fmtMoneyExact(q.amount, q.currency) }),
+          h("td", null, h("span", {
+            class:"chip " + (q.status === "accepted" ? "ok"
+                           : q.status === "superseded" ? "plain"
+                           : q.status === "declined" ? "hot" : "plain"),
+            text:q.status }))));
+      });
+      qsec.appendChild(h("table", { class:"tbl", style:"margin-top:8px" },
+        h("thead", null, h("tr", null,
+          h("th", { text:"Quote" }), h("th", { class:"num", text:"Amount" }),
+          h("th", { text:"Status" }))), qt));
+      /* C16: two quotes in two currencies are two facts, never one sum. */
+      var curs = {};
+      qs.forEach(function (q){ curs[q.currency] = 1; });
+      if (Object.keys(curs).length > 1)
+        qsec.appendChild(h("div", { class:"note",
+          text:"Quoted in " + Object.keys(curs).join(" and ") +
+               ". They are not added together and never will be." }));
+    }
+    body.appendChild(qsec);
+  }
+
   /* ---- money (C20) ---- */
   {
     var m = C.dealMoney(App.st, d);
@@ -5312,32 +5772,46 @@ function openDeal(dealId){
             h("div", { text:(inv.number || "(no number)") + (st_.cancelled ? "  · cancelled" : "") }),
             h("div", { class:"note", text:"issued " + C.fmtDay(inv.issuedOn) +
               (inv.dueDate ? " · due " + C.fmtDay(inv.dueDate) : " · no due date") +
-              (inv.passThrough ? " · incl " + C.fmtMoney(inv.passThrough, inv.currency) + " resale" : "") })),
-          h("td", { class:"num", text:C.fmtMoney(st_.gross, inv.currency) }),
-          h("td", { class:"num", text:C.fmtMoney(st_.paid, inv.currency) }),
+              (st_.passThrough ? " · incl " + C.fmtMoney(st_.passThrough, inv.currency) + " resale" : "") +
+              (inv.quoteId && App.st.quotes[inv.quoteId]
+                 ? " · from " + (App.st.quotes[inv.quoteId].number || "a quote") : "") }),
+            /* Whose money this is, said only when it is not the obvious answer.
+               Printing "earns Debbie" on every one of Debbie's own invoices is
+               noise; printing nothing when it earns somebody else is a mistake. */
+            st_.earnerOverridden
+              ? h("div", { class:"note", style:"color:var(--accent)",
+                           text:"earns " + userName(st_.earner) +
+                                ", not " + userName(d.owner) })
+              : null,
+            st_.lineMismatch
+              ? h("div", { class:"note", style:"color:var(--overdue)",
+                  text:"The lines add to " + C.fmtMoney(st_.lineMismatch.fromLines, inv.currency) +
+                       " but the invoice was saved as " +
+                       C.fmtMoney(st_.lineMismatch.stated, inv.currency) +
+                       ". The lines are being used." })
+              : null,
+            (inv.lines && inv.lines.length)
+              ? h("div", { class:"note", text: inv.lines.length + " line" +
+                  (inv.lines.length === 1 ? "" : "s") + ": " +
+                  inv.lines.map(function (l){ return l.description || "unnamed"; }).join(" · ") })
+              : null),
+          /* Exact, like the quote above it. An invoice is a document the
+             customer is holding a copy of, and R 207 109 sitting under a quote
+             for R 207 108.70 reads as a discrepancy in the CRM rather than as
+             rounding. Pipeline totals stay rounded; documents do not. */
+          h("td", { class:"num", text:C.fmtMoneyExact(st_.gross, inv.currency) }),
+          h("td", { class:"num", text:C.fmtMoneyExact(st_.paid, inv.currency) }),
           h("td", { class:"num",
                     style: st_.cancelled ? "color:var(--muted)"
                          : (late != null && late < 0) ? "color:var(--overdue);font-weight:600" : "",
-                    text: st_.cancelled ? "\u2014" : C.fmtMoney(st_.balance, inv.currency) +
+                    text: st_.cancelled ? "\u2014" : C.fmtMoneyExact(st_.balance, inv.currency) +
                           (late != null && late < 0 ? "  " + (-late) + "d late" : "") }),
           /* Per invoice, not per deal. A deal at 20% can carry an invoice at 0%
              (books we are paid nothing on), and printing 20% of it here would be
              a number somebody would go looking for in a commission run. Zero is
              written as a word rather than as money, because "$0.00 pending"
              reads like an arithmetic result waiting to change. */
-          h("td", { class:"num" },
-            h("div", { text: st_.rate == null ? "\u2014"
-              : st_.rate === 0 ? "nothing"
-              : C.fmtMoney(C.round2(st_.commissionBase * st_.rate), inv.currency) +
-                (st_.settled ? "  earned" : "  pending") }),
-            /* Short, because this is the narrowest column on the panel and a
-               sentence here wrapped to three lines. Both facts still fit: what
-               this invoice pays, and what it would have paid. */
-            st_.rateOverridden
-              ? h("div", { class:"note", text: m.rate == null
-                  ? pct(st_.rate) + " on this invoice"
-                  : pct(st_.rate) + ", not " + pct(m.rate) })
-              : null),
+          h("td", { class:"num" }, commissionCell(d, m, st_)),
           h("td", null,
             st_.cancelled ? null : h("button", { class:"btn btn-sm quiet", type:"button",
               onclick:(function (i){ return function (e){ paymentPopover(e.currentTarget, d, i); }; })(inv) },
@@ -5495,6 +5969,36 @@ function invoicePopover(anchorEl, d, inv){
     h("label", { class:"fld" }, h("span", { text:"of which resale" }), thru)));
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"VAT" }), vat));
 
+  /* Who is paid on this invoice (F7). Almost always the deal owner, so that is
+     what the empty option SAYS rather than leaving it to be inferred — the same
+     move the commission box makes with the deal's rate. FNB is the case that
+     forced it: Paul took the enquiry, Debbie quoted and sold it, and the deal is
+     rightly hers. Re-filing the deal to attribute one invoice would be a lie
+     about the whole relationship. */
+  var earner = h("select", { "aria-label":"Who earns on this invoice" });
+  earner.appendChild(h("option", { value:"" },
+    "\u2014 follows the deal \u2014 " + userName(d.owner)));
+  users().forEach(function (u){
+    earner.appendChild(h("option", { value:u.id }, userLabel(u.id))); });
+  earner.value = inv && inv.earner ? inv.earner : "";
+  box.appendChild(h("label", { class:"fld" },
+    h("span", { text:"Earns commission" }), earner));
+
+  /* Which quote this came from (F1). Only offered when the deal has one —
+     an empty dropdown is a question the screen cannot answer. */
+  var dealQuotes = C.quotesFor(App.st, d.id);
+  var quoteSel = null;
+  if (dealQuotes.length){
+    quoteSel = h("select", { "aria-label":"From quote" });
+    quoteSel.appendChild(h("option", { value:"" }, "\u2014 not from a quote \u2014"));
+    dealQuotes.forEach(function (q){
+      quoteSel.appendChild(h("option", { value:q.id },
+        (q.number || "unnumbered") + "  \u00b7  " + C.fmtMoneyExact(q.amount, q.currency) +
+        (q.status !== "issued" ? "  (" + q.status + ")" : ""))); });
+    quoteSel.value = inv && inv.quoteId ? inv.quoteId : "";
+    box.appendChild(h("label", { class:"fld" }, h("span", { text:"From quote" }), quoteSel));
+  }
+
   /* Commission is agreed per deal, but a deal can bill two different things.
      MCB's training earns Debbie 20% and the DMBOKs on the next invoice earn
      nobody — the books belong to a publisher. Saying that by calling the whole
@@ -5522,30 +6026,160 @@ function invoicePopover(anchorEl, d, inv){
     return C.round2(+raw) / 100;
   };
 
+  /* ---- the lines (F6) ----
+
+     One invoice, several rates. MCB: $2,150 of training at 20% and $800 of
+     DMBOKs at 0%. SARB QUO0000944: course and exam commissionable, the DMBOK PDF
+     a publisher's product earning nothing. Both were being forced into two
+     invoices so the rate had somewhere to live, which made the CRM disagree with
+     the paperwork the customer is holding.
+
+     An invoice with no lines stays exactly as it was — a single net at the
+     invoice rate. Adding the first line is what changes the shape, and from then
+     on the net is the sum of the lines rather than a number you type, because
+     two places to enter the same total is two places for it to drift. */
+  var lines = inv && inv.lines ? inv.lines.map(function (l){
+    return { description:l.description, net:l.net, passThrough:l.passThrough,
+             commissionRate:l.commissionRate };
+  }) : [];
+  var linesHost = h("div", { class:"lines" });
+  var linesNote = h("div", { class:"note" });
+  var addBtn = h("button", { class:"btn btn-sm quiet", type:"button" }, "Add a line");
+
+  function linesTotal(){
+    return { net: C.round2(lines.reduce(function (t,l){ return t + C.money(l.net); }, 0)),
+             thru: C.round2(lines.reduce(function (t,l){ return t + C.money(l.passThrough); }, 0)) };
+  }
+  function paintLines(){
+    clear(linesHost);
+    lines.forEach(function (l, i){
+      var desc = h("input", { type:"text", value:l.description || "",
+        placeholder:"e.g. CDMP course", "aria-label":"Line " + (i+1) + " description" });
+      var lnet = h("input", { type:"text", value: l.net === "" || l.net == null ? "" : String(l.net),
+        placeholder:"0.00", "aria-label":"Line " + (i+1) + " net" });
+      var lthru = h("input", { type:"text",
+        value: l.passThrough === "" || l.passThrough == null ? "" : String(l.passThrough),
+        placeholder:"0.00", "aria-label":"Line " + (i+1) + " resale" });
+      /* Blank follows the invoice, which may itself follow the deal. Typing 0
+         says this line earns nobody — a different statement from saying nothing,
+         and the placeholder names whichever rate it is currently inheriting. */
+      var lrate = h("input", { type:"text",
+        value: l.commissionRate == null ? "" : String(Math.round(l.commissionRate * 1000) / 10),
+        placeholder: "follows", "aria-label":"Line " + (i+1) + " commission %" });
+      var del = h("button", { class:"btn btn-sm quiet", type:"button",
+        "aria-label":"Remove line " + (i+1), onclick:function (){
+          lines.splice(i, 1); paintLines(); repaint(); } }, "\u00d7");
+      desc.addEventListener("input", function (){ l.description = desc.value; });
+      lnet.addEventListener("input", function (){ l.net = lnet.value; repaint(); });
+      lthru.addEventListener("input", function (){ l.passThrough = lthru.value; repaint(); });
+      lrate.addEventListener("input", function (){
+        var raw = lrate.value.replace(/[^\d.]/g, "");
+        l.commissionRate = raw === "" ? null : C.round2(+raw) / 100;
+        repaint();
+      });
+      linesHost.appendChild(h("div", { class:"line-row" }, desc, lnet, lthru, lrate, del));
+    });
+    if (lines.length)
+      linesHost.appendChild(h("div", { class:"line-head" },
+        h("span", { text:"description" }), h("span", { text:"net" }),
+        h("span", { text:"resale" }), h("span", { text:"comm %" }), h("span", { text:"" })));
+    syncTotals();
+  }
+  /* The net follows the lines on EVERY keystroke, not only when a line is added.
+     Typing 800 into the second line and watching the total stay at 2,150 is the
+     kind of stale number somebody copies onto an invoice. */
+  function syncTotals(){
+    net.disabled = lines.length > 0;
+    thru.disabled = lines.length > 0;
+    if (lines.length){
+      var t = linesTotal();
+      net.value = String(t.net); thru.value = String(t.thru);
+    }
+  }
+  addBtn.addEventListener("click", function (){
+    lines.push({ description:"", net:"", passThrough:"", commissionRate:null });
+    paintLines(); repaint();
+  });
+  box.appendChild(h("div", { style:"display:flex;align-items:baseline;gap:8px;margin-top:10px" },
+    h("span", { class:"note", style:"margin:0", text:"Lines" }),
+    h("span", { class:"spacer" }), addBtn));
+  box.appendChild(linesHost);
+  box.appendChild(linesNote);
+
   var explain = h("div", { class:"note" });
   var repaint = function (){
     var n = C.money(net.value), t = C.money(thru.value), v = C.money(vat.value);
     var owed = C.round2(n + v), base = C.round2(n - t);
     var r = effRate();
     var own = dealPays && rateIn.value.replace(/[^\d.]/g, "") !== "";
-    var bits = ["Customer owes " + C.fmtMoney(owed, cur.value)];
-    if (r == null)
+    var bits = ["Customer owes " + C.fmtMoneyExact(owed, cur.value)];
+    /* With lines, the commission is the SUM OF THE LINES and is stated under
+       them. Printing an invoice-level figure here as well produced two different
+       totals one above the other — R41,422 against R37,722 — which is worse than
+       either being wrong on its own, because then there is no number to argue
+       about, there are two. The rate box still applies: it is what a line with
+       no rate of its own inherits. */
+    if (lines.length){
+      bits.push("commission is worked out per line, below" +
+                (own ? " \u2014 lines without their own rate use " + pct(r) : ""));
+    } else if (r == null)
       bits.push("no commission rate to apply, so nothing is computed");
     else if (r === 0)
-      bits.push("commission base " + C.fmtMoney(base, cur.value) +
+      bits.push("commission base " + C.fmtMoneyExact(base, cur.value) +
                 " at 0% \u2014 this invoice earns nobody anything" +
                 (own ? ", while the deal stays at " + pct(d.commissionRate) : ""));
     else
-      bits.push("commission base " + C.fmtMoney(base, cur.value) +
-                " \u2192 " + C.fmtMoney(C.round2(base * r), cur.value) +
+      bits.push("commission base " + C.fmtMoneyExact(base, cur.value) +
+                " \u2192 " + C.fmtMoneyExact(C.round2(base * r), cur.value) +
                 " at " + pct(r) +
                 (own ? " (this invoice only \u2014 the deal says " + pct(d.commissionRate) + ")" : "") +
                 ", once it is settled in full");
     if (t > n) bits.push("resale is more than the net \u2014 check the split");
+    if (earner.value && earner.value !== d.owner)
+      bits.push("earned by " + userName(earner.value) + ", not " + userName(d.owner));
     explain.textContent = bits.join(". ") + ".";
+
+    /* With lines, the invoice-level sentence above is a total and the interesting
+       fact is underneath it: which parts pay and which do not. Say it per line,
+       with zero as a word, so nobody reads a formatted 0.00 as a number that
+       might yet change. */
+    syncTotals();
+    clear(linesNote);
+    if (!lines.length){
+      linesNote.appendChild(h("span", { text:
+        "No lines: this invoice is one net amount at one rate. Add lines when a single " +
+        "invoice bills things that earn different commission \u2014 a course at 20% and a " +
+        "book at nothing, on the paperwork the customer actually receives." }));
+      return;
+    }
+    var tot = linesTotal();
+    var fake = { commissionRate: dealPays && rateIn.value.replace(/[^\d.]/g, "") !== ""
+                   ? C.round2(+rateIn.value.replace(/[^\d.]/g, "")) / 100 : null };
+    var sum = null, anyBlank = false;
+    lines.forEach(function (l){
+      var lr = C.lineRate(d, fake, { commissionRate: l.commissionRate });
+      var base = C.round2(C.money(l.net) - C.money(l.passThrough));
+      if (lr.rate == null) anyBlank = true;
+      else sum = C.round2((sum || 0) + base * lr.rate);
+      linesNote.appendChild(h("div", { text:
+        (l.description || "unnamed line") + " \u00b7 base " + C.fmtMoneyExact(base, cur.value) +
+        " \u00b7 " + (lr.rate === 0 ? "earns nobody anything"
+                   : lr.rate == null ? "no rate anywhere \u2014 nothing computed"
+                   : pct(lr.rate) + " from the " + lr.from +
+                     " \u2192 " + C.fmtMoneyExact(C.round2(base * lr.rate), cur.value)) }));
+    });
+    linesNote.appendChild(h("div", { style:"margin-top:4px", text:
+      "Lines add to " + C.fmtMoneyExact(tot.net, cur.value) +
+      (tot.thru ? " with " + C.fmtMoneyExact(tot.thru, cur.value) + " resale inside it" : "") +
+      " \u00b7 commission " + (sum == null ? "nothing computed" :
+        sum === 0 ? "nothing" : C.fmtMoneyExact(sum, cur.value)) +
+      (anyBlank && sum != null ? " (some lines have no rate)" : "") +
+      ", once it is settled in full." }));
   };
   [net, thru, vat, cur, rateIn].forEach(function (el){
     el.addEventListener("input", repaint); el.addEventListener("change", repaint); });
+  earner.addEventListener("change", repaint);
+  paintLines();
   repaint();
   box.appendChild(explain);
   box.appendChild(h("div", { class:"note",
@@ -5578,8 +6212,23 @@ function invoicePopover(anchorEl, d, inv){
         if (!dealPays) return null;
         var raw = rateIn.value.replace(/[^\d.]/g, "");
         return raw === "" ? null : C.round2(+raw) / 100;
-      })()
+      })(),
+      /* Every one of these is null-not-undefined when cleared, because null is
+         how a field goes back to following the thing above it and `assign` reads
+         undefined as "not supplied" and leaves the old value in place for ever.
+         C29 was bitten by exactly this. */
+      earner: earner.value || null,
+      quoteId: quoteSel ? (quoteSel.value || null) : (inv ? inv.quoteId : null),
+      lines: lines.map(function (l){
+        return { description:l.description || "", net:C.money(l.net),
+                 passThrough:C.money(l.passThrough),
+                 commissionRate: l.commissionRate == null ? null : l.commissionRate };
+      })
     };
+    if (payload.lines.length){
+      payload.net = payload.lines.reduce(function (t,l){ return C.round2(t + l.net); }, 0);
+      payload.passThrough = payload.lines.reduce(function (t,l){ return C.round2(t + l.passThrough); }, 0);
+    }
     closeLayers("pop");
     if (inv) emit("invoice.updated", Object.assign({ invoiceId:inv.id }, payload));
     else     emit("invoice.raised",  Object.assign({ invoiceId:C.uid("inv") }, payload));
@@ -5588,7 +6237,123 @@ function invoicePopover(anchorEl, d, inv){
       (payload.dueDate ? "" : " No due date, so nothing will call it late."));
   } }, inv ? "Save" : "Raise"));
   box.appendChild(foot);
-  openPopover(anchorEl, box);
+  /* Wider than the default: the line editor is five columns and at 280px the
+     rate box was too narrow to show "12.5". openPopover clamps to the viewport,
+     so on a phone this still comes out full-width and centred. */
+  openPopover(anchorEl, box, { width:380 });
+}
+
+/* The commission column on one invoice row.
+
+   Per invoice, not per deal: a deal at 20% can carry an invoice at 0% (books we
+   are paid nothing on), and printing 20% of it here would be a number somebody
+   would go looking for in a commission run.
+
+   Zero is written as a WORD, never as money. "$0.00 pending" reads like an
+   arithmetic result waiting to change; the point is that it never will. Blank is
+   an em dash, because nobody has set a rate and that is a question for a human,
+   not an answer (C23). */
+function commissionCell(deal, m, st_){
+  var cm = st_.commission;
+  var cur = st_.invoice.currency;
+  var box = h("div");
+  var word = function (amount, rate){
+    return rate === 0 ? "nothing"
+         : rate == null ? "\u2014"
+         : C.fmtMoneyExact(amount, cur) + (st_.settled ? "  earned" : "  pending");
+  };
+
+  if (!cm || !cm.parts.length) return box;
+
+  /* One line, or none: the old shape, and still the common one. */
+  if (cm.parts.length === 1){
+    var only = cm.parts[0];
+    box.appendChild(h("div", { text:word(only.commission, only.rate) }));
+    if (only.overridden)
+      box.appendChild(h("div", { class:"note", text: m.rate == null
+        ? pct(only.rate) + " on this invoice"
+        : pct(only.rate) + ", not " + pct(m.rate) }));
+    return box;
+  }
+
+  /* Several lines. Show the total, then each line that differs — because the
+     whole reason for lines is that one invoice pays two different things, and a
+     single total hides exactly the fact the feature exists to record. */
+  box.appendChild(h("div", { text: cm.total == null ? "\u2014"
+    : cm.total === 0 ? "nothing"
+    : C.fmtMoneyExact(cm.total, cur) + (st_.settled ? "  earned" : "  pending") }));
+  cm.parts.forEach(function (pt){
+    box.appendChild(h("div", { class:"note",
+      text: (pt.label || "line") + ": " +
+            (pt.rate === 0 ? "nothing" : pt.rate == null ? "no rate" : pct(pt.rate)) }));
+  });
+  return box;
+}
+
+/* Add or edit one quote (F1). No rate, no earner, no pass-through anywhere on
+   this form — commission is earned on invoices (C21), and a box here would
+   invite somebody to fill it in. */
+function quotePopover(anchorEl, d, q){
+  var box = h("div");
+  box.appendChild(h("h4", { text: q ? "Edit quote" : "Add a quote \u2014 " + d.name }));
+
+  var num = h("input", { type:"text", value: q ? q.number : "",
+    placeholder:"e.g. QUO0000944", "aria-label":"Quote number" });
+  var iss = h("input", { type:"text", value: q ? q.issuedOn : App.today, "aria-label":"Issued" });
+  var cur = h("select", { "aria-label":"Currency" });
+  (App.config.currencies || ["ZAR"]).forEach(function (c){ cur.appendChild(h("option", { value:c }, c)); });
+  cur.value = q ? q.currency : (d.currency || App.config.defaultCurrency || "ZAR");
+  var amt = h("input", { type:"text", value: q ? String(q.amount) : "",
+    placeholder:"0.00", "aria-label":"Amount" });
+  var status = h("select", { "aria-label":"Status" });
+  [["issued","Issued"],["accepted","Accepted"],["declined","Declined"],
+   ["superseded","Superseded"]].forEach(function (o){
+    status.appendChild(h("option", { value:o[0] }, o[1])); });
+  status.value = q ? q.status : "issued";
+
+  var others = C.quotesFor(App.st, d.id).filter(function (x){ return !q || x.id !== q.id; });
+  var sup = h("select", { "aria-label":"Superseded by" });
+  sup.appendChild(h("option", { value:"" }, "\u2014 none \u2014"));
+  others.forEach(function (x){
+    sup.appendChild(h("option", { value:x.id },
+      (x.number || "unnumbered") + " \u00b7 " + C.fmtMoneyExact(x.amount, x.currency))); });
+  sup.value = q && q.supersededBy ? q.supersededBy : "";
+
+  box.appendChild(h("div", { class:"row2" },
+    h("label", { class:"fld" }, h("span", { text:"Quote no." }), num),
+    h("label", { class:"fld" }, h("span", { text:"Currency" }), cur)));
+  box.appendChild(h("div", { class:"row2" },
+    h("label", { class:"fld" }, h("span", { text:"Issued" }), iss),
+    h("label", { class:"fld" }, h("span", { text:"Amount" }), amt)));
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Status" }), status));
+
+  var supRow = h("label", { class:"fld" }, h("span", { text:"Replaced by" }), sup);
+  var syncSup = function (){
+    supRow.style.display = status.value === "superseded" && others.length ? "" : "none"; };
+  status.addEventListener("change", syncSup); syncSup();
+  if (others.length) box.appendChild(supRow);
+
+  box.appendChild(h("div", { class:"note",
+    text:"A quote earns nobody anything. Commission is computed on invoices, so this " +
+         "record is here to say what we quoted and when \u2014 including the version we " +
+         "later replaced, which is the one people argue about." }));
+
+  var foot = h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      var payload = { dealId:d.id, number:num.value.trim(),
+        issuedOn: C.parseDateInput(iss.value, App.today) || App.today,
+        currency:cur.value, amount:C.money(amt.value), status:status.value,
+        supersededBy: status.value === "superseded" ? (sup.value || null) : null };
+      closeLayers("pop");
+      if (q) emit("quote.updated", Object.assign({ quoteId:q.id }, payload));
+      else   emit("quote.issued",  Object.assign({ quoteId:C.uid("quo") }, payload));
+      render(); openDeal(d.id);
+      toast(q ? "Quote updated." : "Quote recorded. It earns nobody anything until it is invoiced.");
+    } }, q ? "Save" : "Add"));
+  box.appendChild(foot);
+  openPopover(anchorEl, box, { width:320 });
 }
 
 function paymentPopover(anchorEl, d, inv){
@@ -5614,17 +6379,26 @@ function paymentPopover(anchorEl, d, inv){
     var a = C.money(amt.value);
     var bal = C.round2(s.balance - a);
     var msg = bal <= 0 ? "Settles the invoice in full"
-                       : C.fmtMoney(bal, inv.currency) + " would still be outstanding";
+                       : C.fmtMoneyExact(bal, inv.currency) + " would still be outstanding";
     /* The invoice's rate, not the deal's \u2014 this line is the one people read
        before they press the button, so it is the last place that may disagree
        with the panel above it. */
-    var payRate = C.invoiceRate(d, inv).rate;
-    if (payRate === 0){
+    var cm = C.invoiceCommission(d, inv, s);
+    var who = cm.earner.userId;
+    if (cm.total === 0 || (cm.anyRate && cm.total === 0)){
       msg += bal <= 0 ? " \u2014 nobody earns commission on this invoice" : "";
-    } else if (payRate != null){
+    } else if (cm.total != null){
       msg += bal <= 0
-        ? " \u2014 " + C.fmtMoney(C.round2(s.commissionBase * payRate), inv.currency) +
-          " commission becomes earned for " + userName(d.owner)
+        ? " \u2014 " + C.fmtMoneyExact(cm.total, inv.currency) +
+          " commission becomes earned for " + userName(who) +
+          /* Spelled out when the invoice carries several rates, because the
+             total on its own is exactly the number somebody would query. */
+          (cm.parts.length > 1
+            ? " (" + cm.parts.map(function (pt){
+                return (pt.label || "line") + " " +
+                       (pt.rate === 0 ? "nothing" : pt.rate == null ? "no rate" : pct(pt.rate));
+              }).join(", ") + ")"
+            : "")
         : ", so no commission is earned yet";
     }
     after.textContent = msg + ".";
@@ -7256,12 +8030,27 @@ function viewSettings(el){
             h("td", { text:c.stage }),
             h("td", { text:c.contact || "—" }),
             h("td", { text:c.nextStep + " · " + C.fmtDay(c.dueDate) +
-                           (c.defaultedNextStep ? "  (default)" : "") })));
+                           (c.defaultedNextStep ? "  (default)" : "") }),
+            /* Money moves on this row, so it is shown before the button and not
+               after it. A batch that quietly raised an invoice and marked it
+               paid would make somebody's commission earned without anybody
+               having read the sentence that did it. */
+            h("td", { text: (function (){
+              var bits = [];
+              if (c.quotes)   bits.push(c.quotes + " quote" + (c.quotes===1?"":"s"));
+              if (c.invoices) bits.push(c.invoices + " invoice" + (c.invoices===1?"":"s") +
+                                        (c.invoiceLines ? " (" + c.invoiceLines + " lines)" : ""));
+              if (c.payments) bits.push(c.payments + " payment" + (c.payments===1?"":"s"));
+              if (c.noCommission) bits.push("pays nobody");
+              if (c.earners && c.earners.length)
+                bits.push("earned by " + c.earners.map(userName).join(", "));
+              return bits.join(" · ") || "—";
+            })() })));
         });
         tReport.appendChild(h("table", { class:"tbl", style:"margin-top:8px" },
           h("thead", null, h("tr", null, h("th", { text:"" }), h("th", { text:"Deal to create" }),
                              h("th", { text:"Stage" }), h("th", { text:"Contact" }),
-                             h("th", { text:"First next step" }))), ub));
+                             h("th", { text:"First next step" }), h("th", { text:"Money" }))), ub));
         tReport.appendChild(h("div", { class:"note",
           text:"Every new deal gets a first next step — one marked (default) was not in the " +
                "file, and a deal without one is invisible until somebody goes looking for it. " +

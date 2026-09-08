@@ -3411,39 +3411,6 @@ function triageCreate(rows, st, cfg, ctx){
     created_payments = fin.records.payments.length;
     money_records    = fin.records;
 
-    /* ---- payments (F5) ----
-       The import could not express a payment at all, so every proof of payment
-       was still typed in by hand and the ruling was unreachable. A payment names
-       the invoice it settles: without both the invoice number and an amount
-       there is nothing to record, and guessing which invoice an amount belongs
-       to is how somebody's commission becomes earned by accident. */
-    (Array.isArray(r.payments) ? r.payments : []).forEach(function (pv, j){
-      if (!pv) return;
-      var target = pv.invoiceNumber ? invIdByNumber[triageNorm(pv.invoiceNumber)] : null;
-      if (!target){
-        out.errors.push("Row " + (i+1) + ", payment " + (j+1) + ": " +
-          (pv.invoiceNumber
-            ? "invoice \u201c" + pv.invoiceNumber + "\u201d is not in this row's invoices."
-            : "no invoice number.") +
-          " A payment that cannot name its invoice cannot settle one, and settling is " +
-          "what makes commission earned.");
-        return;
-      }
-      var amt = money(pv.amount);
-      if (!(amt > 0)){
-        out.errors.push("Row " + (i+1) + ", payment " + (j+1) +
-          ": no amount. Record it when the email says how much actually landed.");
-        return;
-      }
-      var pkey = dealKey + "\u241f p \u241f" + triageNorm(pv.invoiceNumber) + "\u241f" +
-                 triageNorm(String(pv.receivedOn || j)) + "\u241f" + amt;
-      out.events.push({ id:"ev_pay_" + triageHash(pkey), type:"payment.received", actor:actor,
-        payload:{ paymentId:"pay_" + triageHash(pkey), invoiceId:target.id,
-                  receivedOn: parseDateInput(pv.receivedOn, today) || today,
-                  amount:amt, reference:String(pv.reference || "").slice(0,120) } });
-      created_payments++;
-    });
-
     /* A deal with no first next step is born straight into band three, where it
        is invisible until someone goes looking. So one is always created — and
        shown in the preview, so a defaulted one is never a surprise.
@@ -3463,8 +3430,6 @@ function triageCreate(rows, st, cfg, ctx){
                   dueDate:due, what:String(ns.what).slice(0,200) } });
 
     outer.invoices = (outer.invoices || 0) + created_invoices;
-    outer.quotes = (outer.quotes || 0) + created_quotes;
-    outer.payments = (outer.payments || 0) + created_payments;
     outer.created.push({ dealId:dealId, rowIndex:i,
                        outcome: (outcome === "won" || outcome === "lost") ? outcome : "",
                        invoices: created_invoices,

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="47a2b2fb21a5" data-built="4 Sep 2026" data-version="1.30.0">
+<meta name="crm-build" content="0f8813898856" data-built="8 Sep 2026" data-version="1.32.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -107,6 +107,10 @@ a{color:var(--accent)}
 .spacer{margin-left:auto}
 /* The row that turns a person summary into a way into their work. */
 .jump{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+/* Preview section headings. The order they appear in IS the contract:
+   refusals, warnings, will create, will record, already present. */
+.prev-head{margin:14px 0 4px;font-weight:600;font-size:12.5px;
+  text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 /* Invoice lines. The header sits UNDER the rows on purpose: the popover grows
    downward as lines are added, and a header that scrolls out of the box is a
    header nobody reads. */
@@ -735,7 +739,7 @@ function money(v){
 
 function foldEvents(events){
   var st = { companies:{}, contacts:{}, deals:{}, followups:{}, interactions:{},
-             invoices:{}, payments:{}, quotes:{},
+             invoices:{}, payments:{}, quotes:{}, pos:{},
              clients:{}, lastTs:null, eventCount:0 };
   var ordered = sortEvents(events || []);
 
@@ -879,6 +883,50 @@ function foldEvents(events){
          `net` (excluding VAT), `passThrough` (the books and exam coupons inside
          that net, which are somebody else's revenue) and `vat`. The customer
          owes net + vat; commission is earned on net − passThrough. */
+      /* ---- purchase orders (F10) ----
+
+         A PO is the customer's own document, not ours: their commitment to pay,
+         issued on their paperwork, with their number on it. That makes it the
+         thing that arrives BEFORE we have anything to invoice — FNB's FRB741713
+         came through Oracle procurement with "please raise the invoice too", and
+         Belgian Train's PO4523909464 sits on a deal closed won with no invoice
+         at all.
+
+         Until now there was nowhere to put one, so a PO lived inside an
+         interaction summary as a string of digits nobody could search on, and a
+         won deal with a signed PO looked exactly like a won deal with nothing
+         behind it. Those are opposite situations: one needs an invoice raised,
+         the other needs somebody to ask whether we really won it. */
+      case "po.received":
+        st.pos[p.poId] = {
+          id:p.poId, dealId:p.dealId, number:p.number || "",
+          receivedOn:p.receivedOn || String(e.ts).slice(0,10),
+          currency:p.currency || "ZAR",
+          /* Optional. A PO often names an amount, and often does not — it may
+             just authorise a schedule. Null means "not stated on it", which is
+             not zero. */
+          amount: p.amount == null || p.amount === "" ? null : money(p.amount),
+          /* Whose paperwork it is, where that is not the customer themselves —
+             Vodacom's PO for the DMBOKs came through Student Village. */
+          issuedBy:p.issuedBy || "",
+          status:p.status || "open",       // open · invoiced · cancelled
+          note:p.note || "", loggedBy:e.actor, ts:e.ts
+        };
+        break;
+      case "po.updated":
+        if (st.pos[p.poId]){
+          assign(st.pos[p.poId], p, ["number","receivedOn","currency","issuedBy","status","note"]);
+          if (p.amount !== undefined)
+            st.pos[p.poId].amount = p.amount == null || p.amount === "" ? null : money(p.amount);
+        }
+        break;
+      case "po.cancelled":
+        if (st.pos[p.poId]){
+          st.pos[p.poId].status = "cancelled";
+          st.pos[p.poId].cancelReason = p.reason || "";
+        }
+        break;
+
       /* ---- quotes (F1) ----
          A quote is its own record, not three fields on the deal, because a deal
          holds SEVERAL of them: SARB is amending QUO0000944 for the revised
@@ -941,6 +989,10 @@ function foldEvents(events){
           earner: p.earner == null ? null : String(p.earner),
           /* F1. Which quote this invoice came from, where there was one. */
           quoteId: p.quoteId == null ? null : String(p.quoteId),
+          /* F10. And which purchase order it is raised against. WUC's invoice
+             was chased for weeks because nobody could see it already had a PO
+             number on it. */
+          poId: p.poId == null ? null : String(p.poId),
           /* F6. Absent means the old single-net shape, which must keep folding
              for ever — the log is append-only and every invoice raised before
              today has no lines. */
@@ -968,6 +1020,8 @@ function foldEvents(events){
             st.invoices[p.invoiceId].earner = p.earner == null ? null : String(p.earner);
           if (p.quoteId !== undefined)
             st.invoices[p.invoiceId].quoteId = p.quoteId == null ? null : String(p.quoteId);
+          if (p.poId !== undefined)
+            st.invoices[p.invoiceId].poId = p.poId == null ? null : String(p.poId);
           if (p.lines !== undefined)
             st.invoices[p.invoiceId].lines = normLines(p.lines);
         }
@@ -1647,6 +1701,12 @@ function invoiceCommission(deal, inv, state){
            earner: invoiceEarner(deal, inv) };
 }
 
+function posFor(st, dealId){
+  return Object.keys(st.pos || {}).map(function (k){ return st.pos[k]; })
+    .filter(function (o){ return o.dealId === dealId; })
+    .sort(function (a,b){ return a.receivedOn < b.receivedOn ? 1 : a.receivedOn > b.receivedOn ? -1 : (a.id < b.id ? 1 : -1); });
+}
+
 function quotesFor(st, dealId){
   return Object.keys(st.quotes || {}).map(function (k){ return st.quotes[k]; })
     .filter(function (q){ return q.dealId === dealId; })
@@ -1714,7 +1774,24 @@ function moneyBook(st, cfg, today, opts){
   var me = opts.user;
   var book = { invoiced:{}, paid:{}, outstanding:{}, overdue:{},
                earnedByUser:{}, pendingByUser:{}, overdueInvoices:[],
-               undated:[], uninvoicedWon:[] };
+               undated:[], uninvoicedWon:[],
+               /* Split, because they are opposite situations wearing one label.
+                  A won deal with a signed PO needs somebody to raise an invoice.
+                  A won deal with nothing behind it needs somebody to ask whether
+                  we actually won it. Printing both as "won and never invoiced"
+                  put a clerical task and an open question in one list, and the
+                  question is the one that gets scrolled past. */
+               wonWithPO:[], wonWithNothing:[],
+               /* One invoice number, issued once. INV9000392 is in the log
+                  twice — USD 99 and ZAR 99 on one deal — and no screen could
+                  say so. The importer refuses new ones now; this finds the ones
+                  already there. */
+               duplicateNumbers:[],
+               /* Sender matching by domain silently fails for a company with no
+                  domain, and twelve of them were created in one afternoon
+                  without one. Silent is the problem: every one of their threads
+                  comes back "no company in the CRM". */
+               noDomain:[] };
   var add = function (bag, cur, amt){ bag[cur] = round2((bag[cur] || 0) + amt); };
 
   Object.keys(st.deals).forEach(function (k){
@@ -1728,8 +1805,12 @@ function moneyBook(st, cfg, today, opts){
     var m = dealMoney(st, d);
     var invs = invoicesFor(st, d.id);
 
-    if (d.status === "closed" && d.outcome === "won" && !invs.length)
+    if (d.status === "closed" && d.outcome === "won" && !invs.length){
       book.uninvoicedWon.push(d);
+      var openPOs = posFor(st, d.id).filter(function (o){ return o.status !== "cancelled"; });
+      if (openPOs.length) book.wonWithPO.push({ deal:d, pos:openPOs });
+      else                book.wonWithNothing.push(d);
+    }
 
     m.invoices.forEach(function (s){
       if (s.cancelled) return;
@@ -1757,6 +1838,39 @@ function moneyBook(st, cfg, today, opts){
     });
   });
   book.overdueInvoices.sort(function (a,b){ return b.daysLate - a.daysLate; });
+
+  /* Whole-CRM checks, not per-deal ones, so they are computed once outside the
+     loop and are not filtered by scope — a duplicate invoice number is
+     everybody's problem regardless of whose book you are looking at. */
+  var byNumber = {};
+  Object.keys(st.invoices).forEach(function (k){
+    var iv = st.invoices[k];
+    if (!iv.number || iv.status === "cancelled") return;
+    var key = String(iv.number).trim().toLowerCase();
+    (byNumber[key] = byNumber[key] || []).push(iv);
+  });
+  Object.keys(byNumber).forEach(function (key){
+    if (byNumber[key].length < 2) return;
+    book.duplicateNumbers.push({
+      number: byNumber[key][0].number,
+      invoices: byNumber[key].map(function (iv){
+        return { invoice:iv, deal:st.deals[iv.dealId] || null,
+                 company:(st.companies[(st.deals[iv.dealId] || {}).companyId] || {}).name || "",
+                 paid: invoiceState(st, iv).paid };
+      })
+    });
+  });
+
+  Object.keys(st.companies).forEach(function (k){
+    var co = st.companies[k];
+    if (co.merged || co.isHolder) return;          // a person bucket has no domain to have
+    if (co.domain && String(co.domain).trim()) return;
+    var deals = Object.keys(st.deals).filter(function (dk){
+      return st.deals[dk].companyId === co.id; }).length;
+    book.noDomain.push({ company:co, deals:deals });
+  });
+  book.noDomain.sort(function (a,b){ return b.deals - a.deals; });
+
   return book;
 }
 
@@ -2275,6 +2389,78 @@ function triageHash(s){
    one fact that explains why nothing is in the mailbox. */
 var TRIAGE_KINDS = { call:1, whatsapp:1, linkedin:1, email:1, meeting:1, note:1 };
 
+/* ---------------- the batch contract ----------------
+
+   The highest batch version this build understands. A batch written for a newer
+   one is refused WHOLE — importing the half we recognise would be the same
+   silent partial success this contract exists to prevent, only worse, because
+   the person would have no reason to suspect it. */
+var TRIAGE_VERSION = 2;
+
+/* Every field a row may carry, and every field its arrays may carry.
+
+   THE CARDINAL RULE: an unrecognised field refuses its row, naming the field.
+
+   This is the whole reason the allowlists exist rather than a set of readers
+   that quietly take what they know. A `payments[]` array that was dropped on
+   the floor looked exactly like a payment that imported, and the person moved
+   on — silent partial success is the dangerous failure, not rejection. */
+/* Generated by reading what the importer actually consults, not by memory —
+   a field the code reads but the list forgets would refuse every row carrying
+   it, which is a worse failure than the one this list prevents. */
+var TRIAGE_ROW_FIELDS = {
+  dealId:1, company:1, deal:1, owner:1, commission:1, commissionable:1,
+  individual:1, partner:1, partnerDomain:1, partnerContacts:1, domain:1,
+  stage:1, value:1, currency:1, commissionRate:1,
+  expectedClose:1, outcome:1, lostReason:1, moveContact:1,
+  kind:1, occurredAt:1, messageId:1, interactionId:1, summary:1, note:1,
+  contactId:1, contactName:1, contactEmail:1, contactRole:1, contactPhone:1,
+  contacts:1, nextStep:1,
+  quotes:1, purchaseOrders:1, invoices:1, payments:1
+};
+var TRIAGE_CONTACT_FIELDS  = { name:1, email:1, role:1, phone:1 };
+var TRIAGE_NEXTSTEP_FIELDS = { what:1, dueDate:1, owner:1 };
+var TRIAGE_QUOTE_FIELDS    = { number:1, amount:1, currency:1, issuedOn:1, status:1,
+                               note:1, supersededBy:1 };
+var TRIAGE_PO_FIELDS       = { number:1, receivedOn:1, currency:1, amount:1, issuedBy:1,
+                               status:1, note:1 };
+var TRIAGE_INVOICE_FIELDS  = { number:1, issuedOn:1, dueDate:1, currency:1, net:1, vat:1,
+                               passThrough:1, commissionRate:1, earner:1, quoteNumber:1,
+                               poNumber:1, lines:1, note:1 };
+var TRIAGE_LINE_FIELDS     = { description:1, quantity:1, unitPrice:1, net:1,
+                               passThrough:1, commissionRate:1 };
+var TRIAGE_PAYMENT_FIELDS  = { invoiceNumber:1, amount:1, receivedOn:1, reference:1, currency:1 };
+var QUOTE_STATUSES         = { issued:1, accepted:1, superseded:1, expired:1, declined:1 };
+
+/* The names an object carries that the contract does not know about. Returned
+   rather than thrown, so the caller can name every one of them at once instead
+   of making somebody fix them one import at a time. */
+function unknownFields(obj, allow){
+  if (!obj || typeof obj !== "object") return [];
+  return Object.keys(obj).filter(function (k){ return !allow[k]; });
+}
+
+/* Accept both envelopes. The bare array is what every batch written so far
+   looks like, and those must keep loading for ever. */
+function parseTriageBatch(text){
+  var raw;
+  try { raw = (typeof text === "string") ? JSON.parse(text) : text; }
+  catch (e){ return { error:"That is not a valid JSON file: " + (e.message || e) }; }
+  if (Array.isArray(raw)) return { version:1, rows:raw };
+  if (raw && Array.isArray(raw.rows)){
+    var v = raw.version == null ? 1 : +raw.version;
+    if (!isFinite(v)) return { error:"The batch declares a version of “" + raw.version +
+                                     "”, which is not a number." };
+    if (v > TRIAGE_VERSION)
+      return { error:"This batch was written for version " + v + "; this build understands " +
+                     TRIAGE_VERSION + ". Update the app. Nothing was imported." };
+    return { version:v, rows:raw.rows };
+  }
+  if (raw && typeof raw === "object") return { version:1, rows:[raw] };
+  return { error:"That file is not a batch: it holds no rows." };
+}
+
+
 function userIds(cfg){
   return ((cfg && cfg.users) || []).map(function (u){ return u.id; });
 }
@@ -2311,13 +2497,343 @@ function resolveUser(cfg, who){
   return hits.length === 1 ? hits[0].id : null;
 }
 
+/* ============================================================
+   The financial documents on a row — quotes, invoices, payments.
+
+   ONE function, called by both import paths. The arrays used to live only in
+   the create path, so a row that MATCHED an existing deal had its invoices and
+   payments read by nobody and dropped in silence. That is the exact failure the
+   import contract exists to prevent, and it was sitting inside the importer.
+
+   Returns { events, refusals, warnings, records }. It never emits a partial
+   set: if any document on the row is refused, the row's whole financial set is
+   withheld, because half a financial row is worse than none — an invoice
+   without its payment reads as unpaid and chases a customer who has paid.
+   ============================================================ */
+function financialEvents(r, deal, st, cfg, ctx, where){
+  var today = (ctx && ctx.today) || todayISO();
+  var actor = (ctx && ctx.actor) || "howard";
+  var out = { events:[], refusals:[], warnings:[],
+              records:{ purchaseOrders:[], quotes:[], invoices:[], payments:[] } };
+  var dealId = deal.id;
+  var noComm = deal.commissionable === false;
+  var refuse = function (m){ out.refusals.push(where + ": " + m); };
+  var warn   = function (m){ out.warnings.push(where + ": " + m); };
+
+  var purchaseOrders = Array.isArray(r.purchaseOrders) ? r.purchaseOrders : [];
+  var quotes   = Array.isArray(r.quotes)   ? r.quotes   : [];
+  var invoices = Array.isArray(r.invoices) ? r.invoices : [];
+  var payments = Array.isArray(r.payments) ? r.payments : [];
+  if (!purchaseOrders.length && !quotes.length && !invoices.length && !payments.length) return out;
+
+  /* ---- what already exists, so a second import changes nothing ---- */
+  var quoteByNumber = {};                     // scoped to this deal
+  Object.keys(st.quotes || {}).forEach(function (k){
+    var q = st.quotes[k];
+    if (q.dealId === dealId && q.number) quoteByNumber[triageNorm(q.number)] = q;
+  });
+  /* Invoices are keyed GLOBALLY on their number, deliberately. INV9000392
+     existed twice on one deal, once as USD 99 and once as ZAR 99, which no rule
+     should have allowed. An invoice number is a number the business issued once. */
+  var invByNumber = {};
+  Object.keys(st.invoices || {}).forEach(function (k){
+    var iv = st.invoices[k];
+    if (iv.number) invByNumber[triageNorm(iv.number)] = iv;
+  });
+
+  /* ---- purchase orders (F10) ----
+     Recorded first, so an invoice on the same row can name the PO it is raised
+     against. Keyed on number within the deal: a PO number is the customer's, and
+     two customers may legitimately use the same one. */
+  var poByNumber = {};
+  Object.keys(st.pos || {}).forEach(function (k){
+    var o = st.pos[k];
+    if (o.dealId === dealId && o.number) poByNumber[triageNorm(o.number)] = o;
+  });
+  var poIdFor = {};
+  purchaseOrders.forEach(function (ov, j){
+    var label = "purchase order " + (ov && ov.number ? ov.number : j + 1);
+    if (!ov || typeof ov !== "object") return refuse(label + " is not an object.");
+    var un = unknownFields(ov, TRIAGE_PO_FIELDS);
+    if (un.length) return refuse(label + " carries a field I do not understand: " + un.join(", ") + ".");
+    var num = String(ov.number || "").trim();
+    if (!num) return refuse(label + " has no number. A purchase order without its number " +
+      "records nothing anybody can match an invoice to.");
+    /* An amount is optional on a PO — many authorise a schedule rather than a
+       sum. Absent means "not stated", which is not zero, and must survive as
+       null all the way to the panel. */
+    var amount = (ov.amount == null || ov.amount === "") ? null : money(ov.amount);
+    if (amount != null && !ov.currency && !r.currency)
+      return refuse(label + " states an amount but no currency. Currencies are never " +
+        "converted or assumed (C16).");
+    var pcur = ov.currency || r.currency || (cfg && cfg.defaultCurrency) || "ZAR";
+    var existing = poByNumber[triageNorm(num)];
+    var oid = existing ? existing.id : "po_" + triageHash(dealId + "\u241f po \u241f" + triageNorm(num));
+    poIdFor[triageNorm(num)] = oid;
+    var already = existing && existing.amount === amount && existing.currency === pcur &&
+                  existing.issuedBy === String(ov.issuedBy || "");
+    out.records.purchaseOrders.push({ number:num, amount:amount, currency:pcur,
+      issuedBy:String(ov.issuedBy || ""),
+      already:!!already, updating: !!existing && !already });
+    if (already) return;
+    out.events.push({ id:"ev_po_" + triageHash(dealId + "\u241f po \u241f" + triageNorm(num)),
+      type: existing ? "po.updated" : "po.received", actor:actor,
+      payload:{ poId:oid, dealId:dealId, number:num,
+                receivedOn: parseDateInput(ov.receivedOn, today) || today,
+                currency:pcur, amount:amount, issuedBy:String(ov.issuedBy || "") } });
+  });
+
+  /* ---- quotes ---- */
+  var quoteIdFor = {};
+  quotes.forEach(function (qv, j){
+    var label = "quote " + (qv && qv.number ? qv.number : j + 1);
+    if (!qv || typeof qv !== "object") return refuse(label + " is not an object.");
+    var un = unknownFields(qv, TRIAGE_QUOTE_FIELDS);
+    if (un.length) return refuse(label + " carries a field I do not understand: " +
+      un.join(", ") + ". Nothing on this row was imported, because a field I cannot read " +
+      "may be the one that matters.");
+    var amount = money(qv.amount);
+    if (!(amount > 0)) return refuse(label + " has no amount.");
+    if (!qv.currency && !r.currency)
+      return refuse(label + " has an amount but no currency. Currencies are never " +
+        "converted or assumed (C16).");
+    var status = triageNorm(qv.status) || "issued";
+    if (!QUOTE_STATUSES[status])
+      return refuse(label + ": “" + qv.status + "” is not a quote status. Use " +
+        Object.keys(QUOTE_STATUSES).join(", ") + ".");
+    var num = String(qv.number || "").trim();
+    var cur = qv.currency || r.currency || (cfg && cfg.defaultCurrency) || "ZAR";
+    var existing = num ? quoteByNumber[triageNorm(num)] : null;
+    var qid = existing ? existing.id : "quo_" + triageHash(dealId + "\u241f" + triageNorm(num || String(j)));
+    if (num) quoteIdFor[triageNorm(num)] = qid;
+    var already = existing && existing.amount === amount && existing.currency === cur &&
+                  existing.status === status;
+    out.records.quotes.push({ number:num || "(unnumbered)", amount:amount, currency:cur,
+                              status:status, already:!!already, updating: !!existing && !already });
+    if (already) return;
+    out.events.push({ id:"ev_quo_" + triageHash(dealId + "\u241f" + triageNorm(num || String(j))),
+      type: existing ? "quote.updated" : "quote.issued", actor:actor,
+      payload:{ quoteId:qid, dealId:dealId, number:num,
+                issuedOn: parseDateInput(qv.issuedOn, today) || today,
+                currency:cur, amount:amount, status:status } });
+  });
+
+  /* ---- invoices ---- */
+  var invIdFor = {};
+  invoices.forEach(function (iv, j){
+    var label = "invoice " + (iv && iv.number ? iv.number : j + 1);
+    if (!iv || typeof iv !== "object") return refuse(label + " is not an object.");
+    var un = unknownFields(iv, TRIAGE_INVOICE_FIELDS);
+    if (un.length) return refuse(label + " carries a field I do not understand: " + un.join(", ") + ".");
+
+    var lines = [];
+    var lineBad = false;
+    (Array.isArray(iv.lines) ? iv.lines : []).forEach(function (l, li){
+      if (lineBad) return;
+      if (!l || typeof l !== "object"){ lineBad = true; return refuse(label + ", line " + (li+1) + " is not an object."); }
+      var lu = unknownFields(l, TRIAGE_LINE_FIELDS);
+      if (lu.length){ lineBad = true;
+        return refuse(label + ", line " + (li+1) + " carries a field I do not understand: " + lu.join(", ") + "."); }
+      lines.push(l);
+    });
+    if (lineBad) return;
+    lines = normLines(lines);
+
+    var cur = iv.currency || r.currency || (cfg && cfg.defaultCurrency) || "ZAR";
+    var linesNet = round2(lines.reduce(function (t, l){ return t + l.net; }, 0));
+    var statedNet = (iv.net == null || iv.net === "") ? null : money(iv.net);
+    /* Not pedantry. FNB's invoice is in the log at 20,710 where the document
+       says 20,710.87, because a line was keyed as 12,960 instead of 12,960.87.
+       Those 87 cents are a commission base. */
+    if (lines.length && statedNet != null && Math.abs(round2(linesNet - statedNet)) >= 0.005)
+      return refuse(label + ": the lines add to " + linesNet + " but the invoice says " +
+        statedNet + ". One of the two is wrong and I will not choose which.");
+    var net = lines.length ? linesNet : statedNet;
+    if (net == null || !(net > 0))
+      return refuse(label + " has no net amount, so it would clear the Not-invoiced flag " +
+        "while saying nothing was owed.");
+    if (!iv.currency && !r.currency)
+      return refuse(label + " has a net but no currency. Currencies are never converted " +
+        "or assumed (C16).");
+
+    var passThrough = lines.length
+      ? round2(lines.reduce(function (t, l){ return t + l.passThrough; }, 0))
+      : money(iv.passThrough);
+    if (passThrough > net)
+      return refuse(label + ": the resale portion (" + passThrough + ") is more than the net (" +
+        net + "). Resale sits inside the net, not on top of it.");
+
+    var earner = null;
+    if (iv.earner){
+      earner = resolveUser(cfg, iv.earner);
+      if (!earner) return refuse(label + ": “" + iv.earner + "” is not on the team, so the " +
+        "commission would be earned by nobody. config.json lists: " + userIds(cfg).join(", ") + ".");
+    }
+    var invRate = (iv.commissionRate == null || iv.commissionRate === "") ? null
+                : (+iv.commissionRate > 1 ? round2(+iv.commissionRate) / 100 : +iv.commissionRate);
+    if (noComm && (invRate != null || lines.some(function (l){ return l.commissionRate != null; })))
+      return refuse(label + ": the deal pays no commission and this invoice sets a rate anyway. " +
+        "A deal that has ruled commission out cannot have one invented on an invoice.");
+
+    var num = String(iv.number || "").trim();
+    var existing = num ? invByNumber[triageNorm(num)] : null;
+    if (existing && existing.dealId !== dealId)
+      return refuse(label + " already exists on a different deal (" +
+        ((st.companies[(st.deals[existing.dealId]||{}).companyId] || {}).name || "another customer") +
+        "). An invoice number is issued once.");
+    var iid = existing ? existing.id
+            : "inv_" + triageHash(dealId + "\u241f" + triageNorm(num || String(j)));
+    if (num) invIdFor[triageNorm(num)] = { id:iid, currency:cur, net:net, number:num };
+
+    /* A quote reference that matches nothing is a warning, not a refusal — the
+       invoice is still a real invoice, and refusing it would lose a fact over a
+       missing cross-reference. */
+    var poid = null;
+    if (iv.poNumber){
+      poid = poIdFor[triageNorm(iv.poNumber)] ||
+             (poByNumber[triageNorm(iv.poNumber)] || {}).id || null;
+      if (!poid) warn(label + " names purchase order \u201c" + iv.poNumber +
+        "\u201d, which is on neither this row nor this deal. The invoice imported without the link.");
+    }
+    var qid = null;
+    if (iv.quoteNumber){
+      qid = quoteIdFor[triageNorm(iv.quoteNumber)] ||
+            (quoteByNumber[triageNorm(iv.quoteNumber)] || {}).id || null;
+      if (!qid) warn(label + " names quote “" + iv.quoteNumber +
+        "”, which is on neither this row nor this deal. The invoice imported without the link.");
+    }
+
+    /* Name a blank rate as blank. Rendering it as 0% would turn an omission
+       into a decision, and they want opposite responses from a human (C23). */
+    var lr = lineRate(deal, { commissionRate:invRate },
+                      lines.length ? lines[0] : null);
+    if (!noComm && lr.rate == null)
+      warn(label + " has no commission rate anywhere — not on the line, the invoice or the " +
+        "deal. It imports with a blank rate, which is not 0%: nobody has decided yet.");
+
+    var payload = { invoiceId:iid, dealId:dealId, number:num,
+      issuedOn: parseDateInput(iv.issuedOn, today) || today,
+      dueDate: iv.dueDate ? parseDateInput(iv.dueDate, today) : null,
+      currency:cur, net:net, passThrough:passThrough, vat:money(iv.vat),
+      commissionRate:invRate, earner:earner, quoteId:qid, poId:poid, lines:lines };
+    var already = existing && existing.net === net && existing.currency === cur &&
+                  existing.vat === money(iv.vat) && existing.passThrough === passThrough &&
+                  existing.earner === earner && existing.commissionRate === invRate &&
+                  (existing.lines || []).length === lines.length;
+    out.records.invoices.push({ number:num || "(unnumbered)", net:net, currency:cur,
+      vat:money(iv.vat), lines:lines.length, earner:earner, rate:lr.rate,
+      rateFrom:lr.from, noCommission:noComm,
+      already:!!already, updating: !!existing && !already });
+    if (already) return;
+    out.events.push({ id:"ev_inv_" + triageHash(dealId + "\u241f" + triageNorm(num || String(j))),
+      type: existing ? "invoice.updated" : "invoice.raised", actor:actor, payload:payload });
+  });
+
+  /* ---- payments ----
+     The event has existed all along; no row shape reached it, so every proof of
+     payment was still keyed in by hand. A payment settles an invoice, and
+     settling is what makes commission EARNED — so guessing which invoice an
+     amount belongs to is how somebody gets paid by accident. */
+  payments.forEach(function (pv, j){
+    var label = "payment " + (j + 1);
+    if (!pv || typeof pv !== "object") return refuse(label + " is not an object.");
+    var un = unknownFields(pv, TRIAGE_PAYMENT_FIELDS);
+    if (un.length) return refuse(label + " carries a field I do not understand: " + un.join(", ") + ".");
+    if (!pv.invoiceNumber)
+      return refuse(label + " names no invoice. A payment that cannot name its invoice " +
+        "cannot settle one, and settling is what makes commission earned.");
+    var target = invIdFor[triageNorm(pv.invoiceNumber)] ||
+                 (function (){
+                   var iv = invByNumber[triageNorm(pv.invoiceNumber)];
+                   return (iv && iv.dealId === dealId)
+                     ? { id:iv.id, currency:iv.currency, net:iv.net, number:iv.number } : null;
+                 })();
+    if (!target)
+      return refuse(label + ": invoice “" + pv.invoiceNumber + "” is on neither this row nor " +
+        "this deal, so there is nothing for it to settle.");
+    var amt = money(pv.amount);
+    if (!(amt > 0)) return refuse(label + " has no amount.");
+    var when = parseDateInput(pv.receivedOn, today);
+    if (!when) return refuse(label + ": “" + pv.receivedOn + "” is not a date I can read.");
+    if (pv.currency && triageNorm(pv.currency) !== triageNorm(target.currency))
+      warn(label + " is in " + pv.currency + " but invoice " + target.number + " is in " +
+        target.currency + ". It is recorded against the invoice unconverted (C16) — check it.");
+
+    var ref = String(pv.reference || "").slice(0, 120);
+    /* Derived from what the payment IS — the invoice it settles, the amount and
+       the day.
+
+       The REFERENCE is deliberately not part of it. It is a description of the
+       payment, not its identity, and keying on it meant that correcting
+       "PayPal" to "PayPal 0024" minted a SECOND payment of the same 99 against
+       the same invoice. The invoice then read as paid twice, and the only thing
+       standing between that and the event log was a warning that ended
+       "Recorded anyway". Re-emitting the same id with a new reference now
+       updates the payment instead, because the fold is last-write-wins. */
+    var pkey = triageNorm(target.number) + "\u241f" + amt + "\u241f" + when;
+    var pid = "pay_" + triageHash(pkey);
+    var prior = (st.payments || {})[pid];
+    var already = !!prior && prior.reference === ref;
+    var updating = !!prior && !already;
+
+    /* The date is still part of the key, so a corrected DATE would double the
+       payment the same way. That cannot be keyed away — two instalments of the
+       same amount on one invoice are a real thing, and they differ only by
+       date. So it is caught by what it looks like instead: a payment that would
+       take an invoice past its total, when a payment of THAT SAME AMOUNT is
+       already sitting on it, is the same money twice far more often than it is
+       a customer who paid double.
+
+       That case REFUSES. A warning saying "recorded anyway" is how the double
+       got in: it reads as a note about a decision somebody else already made. */
+    var priorPaid = 0, sameAmount = null;
+    Object.keys(st.payments || {}).forEach(function (k){
+      var pay = st.payments[k];
+      if (pay.invoiceId !== target.id || k === pid) return;
+      priorPaid += pay.amount;
+      if (Math.abs(round2(pay.amount - amt)) < 0.005 && !sameAmount) sameAmount = pay;
+    });
+    var over = round2(priorPaid + amt - round2(target.net));
+    if (over > 0.005 && sameAmount)
+      return refuse(label + ": invoice " + target.number + " already carries a payment of " +
+        amt + " received on " + sameAmount.receivedOn +
+        (sameAmount.reference ? " (" + sameAmount.reference + ")" : "") +
+        ". Recording this one would take it to " + round2(priorPaid + amt) +
+        " against a net of " + round2(target.net) + ". If it is the same payment with a " +
+        "corrected date or reference, set the date to " + sameAmount.receivedOn +
+        " so it updates rather than doubles. If it really is a second payment, the " +
+        "invoice total is what needs fixing.");
+    /* A genuine overpayment — a different amount, or nothing like it on the
+       invoice — still warns and still imports. The money did arrive, and a CRM
+       that refuses to record real cash because it disagrees about the total is
+       a CRM people stop using. */
+    if (over > 0.005)
+      warn(label + " takes invoice " + target.number + " to " + round2(priorPaid + amt) +
+        " against a net of " + round2(target.net) + " — " + over + " over. Recorded anyway.");
+
+    out.records.payments.push({ invoice:target.number, amount:amt, currency:target.currency,
+                                receivedOn:when, already:already, updating:updating });
+    if (already) return;
+    out.events.push({ id:"ev_pay_" + triageHash(pkey), type:"payment.received", actor:actor,
+      payload:{ paymentId:pid, invoiceId:target.id, receivedOn:when,
+                amount:amt, reference:ref } });
+  });
+
+  /* All or nothing. An invoice that landed without the payment that settles it
+     reads as unpaid, and somebody chases a customer who has already paid. */
+  if (out.refusals.length){ out.events = []; out.warnings = []; }
+  return out;
+}
+
 function importTriage(text, st, cfg, ctx){
   ctx = ctx || {};
   var today = ctx.today || todayISO();
   var actor = ctx.actor || "howard";
   var out = { events:[], rows:[], unmatched:[], revisions:[], dealChanges:[], errors:[],
+              warnings:[], money:[],
               summary:{ rows:0, logged:0, followups:0, unmatched:0, duplicates:0,
-                        revised:0, contacts:0, dealChanges:0 } };
+                        revised:0, contacts:0, dealChanges:0,
+                        pos:0, quotes:0, invoices:0, payments:0, alreadyMoney:0 } };
   /* our own side, so colleagues on a thread never become customer contacts */
   var ourEmails = {};
   ((cfg && cfg.users) || []).forEach(function (u){
@@ -2327,10 +2843,10 @@ function importTriage(text, st, cfg, ctx){
   Object.keys(st.contacts || {}).forEach(function (k){
     if (st.contacts[k].email) ctByEmail[triageNorm(st.contacts[k].email)] = k; });
 
-  var batch;
-  try { batch = JSON.parse(text); }
-  catch (e){ out.errors.push("That is not a valid JSON file: " + (e.message || e)); return out; }
-  if (!Array.isArray(batch)) batch = [batch];
+  var parsed = parseTriageBatch(text);
+  if (parsed.error){ out.errors.push(parsed.error); return out; }
+  var batch = parsed.rows;
+  out.version = parsed.version;
   out.summary.rows = batch.length;
 
   /* what the app already holds, so a second import changes nothing */
@@ -2397,6 +2913,18 @@ function importTriage(text, st, cfg, ctx){
     var where = "row " + (i + 1) + (r && r.summary ? " (“" + String(r.summary).slice(0, 40) + "…”)" : "");
     if (!r || typeof r !== "object"){ out.errors.push(where + ": not an object."); return; }
 
+    /* The cardinal rule, applied before anything is read: a field I do not
+       understand refuses the row, named. Reading the fields I recognise and
+       discarding the rest is how a payments array vanished without trace. */
+    var unknown = unknownFields(r, TRIAGE_ROW_FIELDS);
+    if (unknown.length){
+      out.errors.push(where + ": I do not understand the field" +
+        (unknown.length === 1 ? " " : "s ") + unknown.join(", ") +
+        ". Nothing from this row was imported \u2014 a field I cannot read may be the one " +
+        "that matters, and half a row is worse than none.");
+      return;
+    }
+
     var bad = checkTriageSummary(r.summary);
     if (bad){ out.errors.push(where + ": " + bad + ". Nothing from this row was imported."); return; }
 
@@ -2422,6 +2950,15 @@ function importTriage(text, st, cfg, ctx){
       triageNorm(r.contactName)  + "␟" + triageNorm(r.deal),
       triageNorm(r.partner)      + "␟" + triageNorm(r.deal)
     ];
+    /* A dealId that does not resolve REFUSES the row. Falling through to name
+       matching would file a typo against whichever customer happened to share
+       a deal name — the wrong customer, silently, with money on the row. */
+    if (r.dealId && !byId[r.dealId]){
+      out.errors.push(where + ": dealId “" + r.dealId + "” is not a deal in this CRM. " +
+        "I will not fall back to matching by name, because a typo would file this against " +
+        "the wrong customer.");
+      return;
+    }
     var deal = (r.dealId && byId[r.dealId]) || null;
     for (var t = 0; !deal && t < dealKeyTries.length; t++){
       if (dealKeyTries[t].charAt(0) !== "␟") deal = byName[dealKeyTries[t]];
@@ -2447,6 +2984,37 @@ function importTriage(text, st, cfg, ctx){
        stayed in the log for good. A thread whose summary has changed is not a
        duplicate, it is a revision — surfaced separately so it is applied on
        purpose, never silently. */
+    /* A duplicate the dedup key cannot catch.
+
+       A row was revised and its messageId updated to a NEWER message in the same
+       thread. The messageId is the dedup key, so both versions imported and
+       Belgian Train's purchase order is in the log twice. Nothing about the key
+       can see that; only the shape of what is being logged can. So: same deal,
+       same kind, within three days, and a summary that is nearly the same line —
+       say so, and let a person decide. */
+    (function (){
+      var norm = triageNorm(r.summary).replace(/[^a-z0-9 ]/g, "");
+      var words = norm.split(/\s+/).filter(Boolean);
+      if (words.length < 4) return;
+      var set = {}; words.forEach(function (w){ set[w] = 1; });
+      Object.keys(st.interactions || {}).forEach(function (k){
+        var x = st.interactions[k];
+        if (x.subjectType !== "deal" || x.subjectId !== deal.id) return;
+        if (triageNorm(x.kind) !== kind) return;
+        if (Math.abs(daysBetween(x.occurredAt, when)) > 3) return;
+        var ow = triageNorm(x.summary).replace(/[^a-z0-9 ]/g, "").split(/\s+/).filter(Boolean);
+        if (!ow.length) return;
+        var hit = 0; ow.forEach(function (w){ if (set[w]) hit++; });
+        var overlap = hit / Math.max(words.length, ow.length);
+        if (overlap < 0.7) return;
+        if (triageNorm(x.summary) === triageNorm(r.summary) && k === ixId) return;  // the plain duplicate, handled below
+        out.warnings.push(where + " looks like something already logged on this deal on " +
+          fmtDay(x.occurredAt) + " — same kind, " + Math.round(overlap * 100) +
+          "% the same words, different message id. If the row was revised and its " +
+          "messageId moved to a newer message in the thread, this will land twice.");
+      });
+    })();
+
     var prev = seenIx[ixId];
     var isRevision = false, sameLine = false;
     if (prev){
@@ -2638,7 +3206,48 @@ function importTriage(text, st, cfg, ctx){
       out.summary.dealChanges += changes.length;
       row.dealChanges = changes;
     }
-    if (sameLine){ out.summary.duplicates++; return; }   // the LINE is already logged
+    /* ---- the money on this row, read BEFORE the duplicate check ----
+       A row whose conversation is already logged may still carry an invoice or
+       a payment that is not. Returning early on the interaction meant a
+       re-imported batch dropped every financial document on it, which is the
+       same silence this contract exists to end — only harder to spot, because
+       the row genuinely was a duplicate in one respect. */
+    var fin = financialEvents(r, deal, st, cfg, ctx, where);
+    if (fin.refusals.length){
+      fin.refusals.forEach(function (m){ out.errors.push(m); });
+      out.errors.push(where + ": nothing from this row was imported, including the " +
+        "conversation \u2014 a financial row that half-lands is worse than one that does not.");
+      return;
+    }
+    fin.warnings.forEach(function (m){ out.warnings.push(m); });
+    if (fin.records.purchaseOrders.length || fin.records.quotes.length ||
+        fin.records.invoices.length || fin.records.payments.length){
+      out.money.push({ where:where, deal:deal.name,
+                       company:(st.companies[deal.companyId] || {}).name || "",
+                       records:fin.records });
+      out.summary.pos      += fin.records.purchaseOrders.filter(function (x){ return !x.already; }).length;
+      out.summary.quotes   += fin.records.quotes.filter(function (x){ return !x.already; }).length;
+      out.summary.invoices += fin.records.invoices.filter(function (x){ return !x.already; }).length;
+      out.summary.payments += fin.records.payments.filter(function (x){ return !x.already; }).length;
+      out.summary.alreadyMoney +=
+        fin.records.purchaseOrders.filter(function (x){ return x.already; }).length +
+        fin.records.quotes.filter(function (x){ return x.already; }).length +
+        fin.records.invoices.filter(function (x){ return x.already; }).length +
+        fin.records.payments.filter(function (x){ return x.already; }).length;
+    }
+    /* F0: won means an invoice exists. A statement, not a block. */
+    if (triageNorm(r.outcome) === "won" && !fin.records.invoices.length &&
+        !invoicesFor(st, deal.id).length)
+      out.warnings.push(where + ": closes won with no invoice \u2014 it will show under " +
+        "\u201cwon and never invoiced\u201d until one is raised.");
+
+    if (sameLine){
+      /* The line is already logged, but its money may not be. */
+      fin.events.forEach(function (e){ out.events.push(e); });
+      out.summary.duplicates++;
+      return;
+    }
+    fin.events.forEach(function (e){ out.events.push(e); });
 
     /* Everyone else on the thread. A company is rarely one person — MetLife is
        Gowri AND Nitin — and a contact who only ever appears in the To line is
@@ -2731,8 +3340,8 @@ function triageCreate(rows, st, cfg, ctx){
   ctx = ctx || {};
   var today = ctx.today || todayISO();
   var actor = ctx.actor || "howard";
-  var out = { events:[], created:[], errors:[], invoices:0 };
-  var created_invoices = 0, created_quotes = 0, created_payments = 0;
+  var outer = { events:[], created:[], errors:[], warnings:[], invoices:0 };
+  var created_invoices = 0, created_quotes = 0, created_payments = 0, money_records = null;
   var stages = (cfg && cfg.stages) || [];
   var firstStage = stages.length ? stages[0].id : "lead";
   var stageById = {}; stages.forEach(function (s){
@@ -2756,6 +3365,24 @@ function triageCreate(rows, st, cfg, ctx){
 
   (rows || []).forEach(function (u, i){
     var r = (u && u.row) || u || {};
+    created_invoices = created_quotes = created_payments = 0; money_records = null;
+    /* Buffered, not pushed. A refusal further down this row — a bad invoice, an
+       earner who is not on the roster — has to take the company, the contact and
+       the deal with it. Pushing as we went left three orphan events behind and a
+       deal that looked created. */
+    var rowEvents = [];
+    var out = { events:rowEvents, created:outer.created, errors:outer.errors,
+                warnings:outer.warnings };
+    /* The cardinal rule again, on this path too. The create path is where the
+       financial arrays first arrived, so it is the one most likely to be handed
+       a field written for a newer build. */
+    var rowUnknown = unknownFields(r, TRIAGE_ROW_FIELDS);
+    if (rowUnknown.length){
+      out.errors.push("Row " + (i+1) + ": I do not understand the field" +
+        (rowUnknown.length === 1 ? " " : "s ") + rowUnknown.join(", ") +
+        ". Nothing from this row was created.");
+      return;
+    }
     var isIndividual = !!r.individual;
     var person = String(r.contactName || "").trim();
     if (isIndividual && !person){
@@ -2966,142 +3593,22 @@ function triageCreate(rows, st, cfg, ctx){
       out.errors.push("Row " + (i+1) + ": \u201c" + r.outcome + "\u201d is not an outcome. Use won or lost.");
     }
 
-    /* ---- quotes (F1) ----
-       Recorded before the invoices, so an invoice naming a quote number can find
-       it in the same batch. A quote carries no rate and no earner; there is
-       nowhere on this shape to put one, deliberately. */
-    var quoteIdByNumber = {};
-    (Array.isArray(r.quotes) ? r.quotes : []).forEach(function (qv, j){
-      if (!qv) return;
-      var amount = money(qv.amount);
-      if (!(amount > 0)){
-        out.errors.push("Row " + (i+1) + ", quote " + (qv.number || j+1) +
-          ": no amount. A quote with no number in it records nothing anybody can use.");
-        return;
-      }
-      var qkey = dealKey + "\u241f q \u241f" + triageNorm(qv.number || String(j));
-      var qid = "quo_" + triageHash(qkey);
-      if (qv.number) quoteIdByNumber[triageNorm(qv.number)] = qid;
-      var qstatus = triageNorm(qv.status) || "issued";
-      if (["issued","accepted","declined","superseded"].indexOf(qstatus) < 0){
-        out.errors.push("Row " + (i+1) + ", quote " + (qv.number || j+1) + ": \u201c" +
-          qv.status + "\u201d is not a quote status. Use issued, accepted, declined or superseded.");
-        return;
-      }
-      out.events.push({ id:"ev_quo_" + triageHash(qkey), type:"quote.issued", actor:actor,
-        payload:{ quoteId:qid, dealId:dealId, number:String(qv.number || "").trim(),
-                  issuedOn: parseDateInput(qv.issuedOn, today) || today,
-                  currency: qv.currency || r.currency || (cfg && cfg.defaultCurrency) || "ZAR",
-                  amount:amount, status:qstatus } });
-      created_quotes++;
-    });
-
-    var invIdByNumber = {};
-    (Array.isArray(r.invoices) ? r.invoices : []).forEach(function (iv, j){
-      if (!iv) return;
-      /* F6: lines, where the batch supplies them. The net is then the SUM of the
-         lines, never a second number to keep in step — the email that produced
-         this row had one invoice on it, and the total on that paper is the total
-         of its lines by construction. */
-      var lines = Array.isArray(iv.lines) ? normLines(iv.lines) : [];
-      var net = lines.length
-        ? round2(lines.reduce(function (t, l){ return t + l.net; }, 0))
-        : money(iv.net);
-      if (lines.length && iv.net != null && Math.abs(round2(money(iv.net) - net)) >= 0.005){
-        out.errors.push("Row " + (i+1) + ", invoice " + (iv.number || j+1) +
-          ": the lines add to " + net + " but the invoice says " + money(iv.net) +
-          ". One of the two is wrong and I will not choose which.");
-        return;
-      }
-      /* An invoice with no amount is worse than no invoice: it clears the "Not
-         invoiced" flag while telling nobody what is owed, so the gap stops
-         nagging without being closed. Refuse it and say why. */
-      if (!(net > 0)){
-        out.errors.push("Row " + (i+1) + ", invoice " + (iv.number || j+1) +
-          ": no net amount, so it would clear the Not-invoiced flag while saying nothing was owed. " +
-          "Leave it out and let the flag do its job, or supply the amount.");
-        return;
-      }
-      /* F7: the earner must be a real person or the commission lands nowhere.
-         Unlike the deal owner this one may be anybody on the roster — Monica
-         raises invoices and does not carry deals. */
-      var invEarner = null;
-      if (iv.earner){
-        invEarner = resolveUser(cfg, iv.earner);
-        if (!invEarner){
-          out.errors.push("Row " + (i+1) + ", invoice " + (iv.number || j+1) + ": \u201c" +
-            iv.earner + "\u201d is not on the team, so the commission on it would be " +
-            "earned by nobody. config.json lists: " + userIds(cfg).join(", ") + ".");
-          return;
-        }
-      }
-      var invRate = (iv.commissionRate == null || iv.commissionRate === "") ? null
-                  : (+iv.commissionRate > 1 ? round2(+iv.commissionRate) / 100 : +iv.commissionRate);
-      if (noComm && (invRate != null || lines.some(function (l){ return l.commissionRate != null; }))){
-        out.errors.push("Row " + (i+1) + ", invoice " + (iv.number || j+1) +
-          ": the deal pays no commission and this invoice sets a rate anyway. " +
-          "A deal that has ruled commission out cannot have one invented on an invoice.");
-        return;
-      }
-      var qref = iv.quoteNumber ? quoteIdByNumber[triageNorm(iv.quoteNumber)] : null;
-      if (iv.quoteNumber && !qref){
-        out.errors.push("Row " + (i+1) + ", invoice " + (iv.number || j+1) +
-          ": names quote \u201c" + iv.quoteNumber + "\u201d, which is not in this row's quotes. " +
-          "Add the quote or drop the reference \u2014 a dangling link is worse than none.");
-        return;
-      }
-      var ikey = dealKey + "\u241f" + triageNorm(iv.number || String(j));
-      var iid = "inv_" + triageHash(ikey);
-      if (iv.number) invIdByNumber[triageNorm(iv.number)] = { id:iid, currency:
-        iv.currency || r.currency || (cfg && cfg.defaultCurrency) || "ZAR" };
-      out.events.push({ id:"ev_inv_" + triageHash(ikey), type:"invoice.raised", actor:actor,
-        payload:{ invoiceId:iid, dealId:dealId,
-                  number:String(iv.number || "").trim(),
-                  issuedOn: parseDateInput(iv.issuedOn, today) || today,
-                  dueDate: iv.dueDate ? parseDateInput(iv.dueDate, today) : null,
-                  currency: iv.currency || r.currency || (cfg && cfg.defaultCurrency) || "ZAR",
-                  net:net,
-                  passThrough: lines.length
-                    ? round2(lines.reduce(function (t, l){ return t + l.passThrough; }, 0))
-                    : money(iv.passThrough),
-                  vat:money(iv.vat),
-                  commissionRate:invRate, earner:invEarner,
-                  quoteId:qref || null, lines:lines } });
-      created_invoices++;
-    });
-
-    /* ---- payments (F5) ----
-       The import could not express a payment at all, so every proof of payment
-       was still typed in by hand and the ruling was unreachable. A payment names
-       the invoice it settles: without both the invoice number and an amount
-       there is nothing to record, and guessing which invoice an amount belongs
-       to is how somebody's commission becomes earned by accident. */
-    (Array.isArray(r.payments) ? r.payments : []).forEach(function (pv, j){
-      if (!pv) return;
-      var target = pv.invoiceNumber ? invIdByNumber[triageNorm(pv.invoiceNumber)] : null;
-      if (!target){
-        out.errors.push("Row " + (i+1) + ", payment " + (j+1) + ": " +
-          (pv.invoiceNumber
-            ? "invoice \u201c" + pv.invoiceNumber + "\u201d is not in this row's invoices."
-            : "no invoice number.") +
-          " A payment that cannot name its invoice cannot settle one, and settling is " +
-          "what makes commission earned.");
-        return;
-      }
-      var amt = money(pv.amount);
-      if (!(amt > 0)){
-        out.errors.push("Row " + (i+1) + ", payment " + (j+1) +
-          ": no amount. Record it when the email says how much actually landed.");
-        return;
-      }
-      var pkey = dealKey + "\u241f p \u241f" + triageNorm(pv.invoiceNumber) + "\u241f" +
-                 triageNorm(String(pv.receivedOn || j)) + "\u241f" + amt;
-      out.events.push({ id:"ev_pay_" + triageHash(pkey), type:"payment.received", actor:actor,
-        payload:{ paymentId:"pay_" + triageHash(pkey), invoiceId:target.id,
-                  receivedOn: parseDateInput(pv.receivedOn, today) || today,
-                  amount:amt, reference:String(pv.reference || "").slice(0,120) } });
-      created_payments++;
-    });
+    /* ---- the money on this row ----
+       The same function the matched path calls. Written twice once, and the two
+       copies disagreed about which fields existed inside a week. */
+    var fin = financialEvents(r, { id:dealId, commissionable: noComm ? false : undefined,
+                                   commissionRate: rate, owner:dealOwner },
+                              st, cfg, ctx, "Row " + (i+1));
+    if (fin.refusals.length){
+      fin.refusals.forEach(function (m){ out.errors.push(m); });
+      return;
+    }
+    fin.warnings.forEach(function (m){ out.warnings.push(m); });
+    fin.events.forEach(function (e){ out.events.push(e); });
+    created_quotes   = fin.records.quotes.length;
+    created_invoices = fin.records.invoices.length;
+    created_payments = fin.records.payments.length;
+    money_records    = fin.records;
 
     /* A deal with no first next step is born straight into band three, where it
        is invisible until someone goes looking. So one is always created — and
@@ -3121,14 +3628,13 @@ function triageCreate(rows, st, cfg, ctx){
                   owner: resolveUser(cfg, ns.owner) || dealOwner,
                   dueDate:due, what:String(ns.what).slice(0,200) } });
 
-    out.invoices = created_invoices;
-    out.quotes = created_quotes;
-    out.payments = created_payments;
-    out.created.push({ dealId:dealId, rowIndex:i,
+    outer.invoices = (outer.invoices || 0) + created_invoices;
+    outer.created.push({ dealId:dealId, rowIndex:i,
                        outcome: (outcome === "won" || outcome === "lost") ? outcome : "",
-                       invoices: (Array.isArray(r.invoices) ? r.invoices : []).length,
-                       quotes: (Array.isArray(r.quotes) ? r.quotes : []).length,
-                       payments: (Array.isArray(r.payments) ? r.payments : []).length,
+                       invoices: created_invoices,
+                       quotes: created_quotes,
+                       payments: created_payments,
+                       money: money_records,
                        /* Named in the preview, because "who gets paid" is the one
                           consequence of a batch that money moves on. */
                        earners: (Array.isArray(r.invoices) ? r.invoices : [])
@@ -3150,9 +3656,11 @@ function triageCreate(rows, st, cfg, ctx){
                        owner:dealOwner,
                        nextStep: ns ? ns.what : "\u2014", dueDate:due,
                        defaultedNextStep: !!ns && !(r.nextStep && r.nextStep.what) });
+    /* Committed only now, once every check on this row has passed. */
+    rowEvents.forEach(function (e){ outer.events.push(e); });
   });
 
-  return out;
+  return outer;
 }
 
 /* Money in a spreadsheet cell. Currencies are never summed (C16), so a deal
@@ -3459,6 +3967,7 @@ var API = {
   invoiceState:invoiceState, invoicesFor:invoicesFor, paymentsFor:paymentsFor,
   dealMoney:dealMoney, moneyBook:moneyBook, invoiceRate:invoiceRate,
   lineRate:lineRate, invoiceEarner:invoiceEarner, commissionParts:commissionParts,
+  posFor:posFor,
   invoiceCommission:invoiceCommission, quotesFor:quotesFor, normLines:normLines,
   invoiceNet:invoiceNet, invoicePassThrough:invoicePassThrough,
   computeFlags:computeFlags, FLAG_RULES:FLAG_RULES, FLAG_TONE:FLAG_TONE, flagRule:flagRule, flagLabel:flagLabel,
@@ -3467,6 +3976,9 @@ var API = {
   stageProb:stageProb, stageLabel:stageLabel, forecast:forecast, weekRetro:weekRetro,
   toCSV:toCSV, parseCSV:parseCSV, importCSV:importCSV, exportCSV:exportCSV,
   importTriage:importTriage, triageCreate:triageCreate,
+  parseTriageBatch:parseTriageBatch, financialEvents:financialEvents,
+  unknownFields:unknownFields, TRIAGE_VERSION:TRIAGE_VERSION,
+  TRIAGE_ROW_FIELDS:TRIAGE_ROW_FIELDS,
   checkTriageSummary:checkTriageSummary, triageHash:triageHash,
   resolveUser:resolveUser, userIds:userIds, salesUsers:salesUsers,
   parseEmailPaste:parseEmailPaste, parsePaste:parsePaste, parseLooseDate:parseLooseDate,
@@ -5677,6 +6189,58 @@ function openDeal(dealId){
     body.appendChild(csec);
   }
 
+  /* ---- purchase orders (F10) ----
+     Above the quotes, because the PO is the customer's commitment and it is the
+     document people ask about when an invoice is late: "did we ever get a PO?"
+     It used to live inside an interaction summary as a string of digits nobody
+     could search on. */
+  {
+    var pos = C.posFor(App.st, d.id);
+    var psec = h("section", { class:"sec" });
+    psec.appendChild(h("div", { style:"display:flex;align-items:baseline;gap:8px;flex-wrap:wrap" },
+      h("h4", { style:"margin:0", text:"Purchase orders" }),
+      pos.length ? h("span", { class:"note", text: pos.length + " on this deal" }) : null,
+      h("span", { class:"spacer" }),
+      h("button", { class:"btn btn-sm", type:"button",
+        onclick:function (e){ poPopover(e.currentTarget, d, null); } }, "Add a PO")));
+    if (!pos.length){
+      psec.appendChild(h("div", { class:"note", style:"margin-top:8px",
+        text: d.status === "closed" && d.outcome === "won" && !C.invoicesFor(App.st, d.id).length
+          ? "Won, no invoice and no purchase order. Nothing on this deal says the customer " +
+            "has committed to pay \u2014 worth asking whether we really won it."
+          : "None recorded. A PO is the customer's own document: their number, their " +
+            "commitment, usually arriving before there is anything to invoice." }));
+    } else {
+      var pt = h("tbody");
+      pos.forEach(function (o){
+        var against = Object.keys(App.st.invoices).filter(function (k){
+          return App.st.invoices[k].poId === o.id; })
+          .map(function (k){ return App.st.invoices[k].number || "unnumbered"; });
+        pt.appendChild(h("tr", { style:"cursor:pointer",
+          onclick:(function (oo){ return function (e){ poPopover(e.currentTarget, d, oo); }; })(o) },
+          h("td", null,
+            h("div", { text:(o.number || "(no number)") +
+                            (o.status === "cancelled" ? "  · cancelled" : "") }),
+            h("div", { class:"note", text:"received " + C.fmtDay(o.receivedOn) +
+              (o.issuedBy ? " · via " + o.issuedBy : "") +
+              (against.length ? " · invoiced as " + against.join(", ")
+                              : o.status === "cancelled" ? "" : " · no invoice raised against it yet") })),
+          h("td", { class:"num", style: o.status === "cancelled" ? "color:var(--muted)" : "",
+                    /* Null is "the PO does not state one", which is not zero and
+                       must not be drawn as money. */
+                    text: o.amount == null ? "\u2014" : C.fmtMoneyExact(o.amount, o.currency) }),
+          h("td", null, h("span", {
+            class:"chip " + (against.length ? "ok" : o.status === "cancelled" ? "plain" : "hot"),
+            text: o.status === "cancelled" ? "cancelled" : against.length ? "invoiced" : "open" }))));
+      });
+      psec.appendChild(h("table", { class:"tbl", style:"margin-top:8px" },
+        h("thead", null, h("tr", null,
+          h("th", { text:"PO" }), h("th", { class:"num", text:"Amount" }),
+          h("th", { text:"Status" }))), pt));
+    }
+    body.appendChild(psec);
+  }
+
   /* ---- quotes (F1) ----
      Above the money, because a quote comes first and because the question this
      section answers — "what did we actually say the price was?" — is the one
@@ -5774,7 +6338,9 @@ function openDeal(dealId){
               (inv.dueDate ? " · due " + C.fmtDay(inv.dueDate) : " · no due date") +
               (st_.passThrough ? " · incl " + C.fmtMoney(st_.passThrough, inv.currency) + " resale" : "") +
               (inv.quoteId && App.st.quotes[inv.quoteId]
-                 ? " · from " + (App.st.quotes[inv.quoteId].number || "a quote") : "") }),
+                 ? " · from " + (App.st.quotes[inv.quoteId].number || "a quote") : "") +
+              (inv.poId && App.st.pos[inv.poId]
+                 ? " · against " + (App.st.pos[inv.poId].number || "a PO") : "") }),
             /* Whose money this is, said only when it is not the obvious answer.
                Printing "earns Debbie" on every one of Debbie's own invoices is
                noise; printing nothing when it earns somebody else is a mistake. */
@@ -5983,6 +6549,22 @@ function invoicePopover(anchorEl, d, inv){
   earner.value = inv && inv.earner ? inv.earner : "";
   box.appendChild(h("label", { class:"fld" },
     h("span", { text:"Earns commission" }), earner));
+
+  /* Which PO this invoice is raised against (F10). Only offered when the deal
+     has one, for the same reason as the quote picker below. */
+  var dealPOs = C.posFor(App.st, d.id).filter(function (o){ return o.status !== "cancelled"; });
+  var poSel = null;
+  if (dealPOs.length){
+    poSel = h("select", { "aria-label":"Against purchase order" });
+    poSel.appendChild(h("option", { value:"" }, "\u2014 no purchase order \u2014"));
+    dealPOs.forEach(function (o){
+      poSel.appendChild(h("option", { value:o.id },
+        (o.number || "unnumbered") +
+        (o.amount == null ? "" : "  \u00b7  " + C.fmtMoneyExact(o.amount, o.currency)))); });
+    poSel.value = inv && inv.poId ? inv.poId : (dealPOs.length === 1 ? dealPOs[0].id : "");
+    box.appendChild(h("label", { class:"fld" },
+      h("span", { text:"Against PO" }), poSel));
+  }
 
   /* Which quote this came from (F1). Only offered when the deal has one —
      an empty dropdown is a question the screen cannot answer. */
@@ -6219,6 +6801,7 @@ function invoicePopover(anchorEl, d, inv){
          C29 was bitten by exactly this. */
       earner: earner.value || null,
       quoteId: quoteSel ? (quoteSel.value || null) : (inv ? inv.quoteId : null),
+      poId: poSel ? (poSel.value || null) : (inv ? inv.poId : null),
       lines: lines.map(function (l){
         return { description:l.description || "", net:C.money(l.net),
                  passThrough:C.money(l.passThrough),
@@ -6288,6 +6871,71 @@ function commissionCell(deal, m, st_){
             (pt.rate === 0 ? "nothing" : pt.rate == null ? "no rate" : pct(pt.rate)) }));
   });
   return box;
+}
+
+/* Add or edit one purchase order (F10).
+
+   No commission anywhere on this form, for the same reason as the quote form: a
+   PO is the customer's promise to pay, not our invoice. Nobody earns on it. */
+function poPopover(anchorEl, d, o){
+  var box = h("div");
+  box.appendChild(h("h4", { text: o ? "Edit purchase order" : "Add a purchase order \u2014 " + d.name }));
+
+  var num = h("input", { type:"text", value: o ? o.number : "",
+    placeholder:"e.g. FRB741713", "aria-label":"PO number" });
+  var got = h("input", { type:"text", value: o ? o.receivedOn : App.today, "aria-label":"Received" });
+  var cur = h("select", { "aria-label":"Currency" });
+  (App.config.currencies || ["ZAR"]).forEach(function (c){ cur.appendChild(h("option", { value:c }, c)); });
+  cur.value = o ? o.currency : (d.currency || App.config.defaultCurrency || "ZAR");
+  var amt = h("input", { type:"text", value: o && o.amount != null ? String(o.amount) : "",
+    placeholder:"blank if the PO does not say", "aria-label":"Amount" });
+  /* Whose paperwork it came on. Vodacom's PO for the DMBOKs arrived through
+     Student Village, and filing it as Vodacom's own loses the partner. */
+  var via = h("input", { type:"text", value: o ? o.issuedBy : "",
+    placeholder:"blank if straight from the customer", "aria-label":"Issued by" });
+
+  box.appendChild(h("div", { class:"row2" },
+    h("label", { class:"fld" }, h("span", { text:"PO number" }), num),
+    h("label", { class:"fld" }, h("span", { text:"Received" }), got)));
+  box.appendChild(h("div", { class:"row2" },
+    h("label", { class:"fld" }, h("span", { text:"Currency" }), cur),
+    h("label", { class:"fld" }, h("span", { text:"Amount" }), amt)));
+  box.appendChild(h("label", { class:"fld" },
+    h("span", { text:"Issued by (if not the customer)" }), via));
+
+  box.appendChild(h("div", { class:"note",
+    text:"A purchase order earns nobody anything \u2014 it is the customer committing to pay, " +
+         "not us billing them. Leave the amount blank if the PO does not state one; blank " +
+         "means “not stated”, which is not zero." }));
+
+  var foot = h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"));
+  if (o)
+    foot.appendChild(h("button", { class:"btn btn-sm danger", type:"button", onclick:function (){
+      closeLayers("pop");
+      emit("po.cancelled", { poId:o.id, reason:"" });
+      render(); openDeal(d.id);
+      toast("Purchase order cancelled. It stops counting as a commitment.");
+    } }, "Cancel PO"));
+  foot.appendChild(h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+    var raw = amt.value.replace(/[^\d.\-]/g, "");
+    var payload = { dealId:d.id, number:num.value.trim(),
+      receivedOn: C.parseDateInput(got.value, App.today) || App.today,
+      currency:cur.value,
+      /* null, not 0 — "the PO does not state an amount" is a fact, and zero
+         would draw as money on the panel. */
+      amount: raw === "" ? null : C.money(raw),
+      issuedBy: via.value.trim() };
+    closeLayers("pop");
+    if (o) emit("po.updated",  Object.assign({ poId:o.id }, payload));
+    else   emit("po.received", Object.assign({ poId:C.uid("po") }, payload));
+    render(); openDeal(d.id);
+    toast(o ? "Purchase order updated."
+            : "Purchase order recorded. Raise an invoice against it when you are ready.");
+  } }, o ? "Save" : "Add"));
+  box.appendChild(foot);
+  openPopover(anchorEl, box, { width:320 });
 }
 
 /* Add or edit one quote (F1). No rate, no earner, no pass-through anywhere on
@@ -6934,13 +7582,35 @@ function viewMoney(el){
     var gaps = h("section", { class:"pane", style:"margin-bottom:16px" },
       h("h3", { text:"Gaps" }),
       h("div", { class:"sub", text:"Not late \u2014 worse. Nothing here can ever become late on its own." }));
-    book.uninvoicedWon.forEach(function (d){
+    /* Two lists, not one. A won deal with a signed PO is a clerical task: raise
+       the invoice, the number is right there. A won deal with nothing behind it
+       is a question about whether we won it at all. They were printed as one
+       label, and the question is the half that gets scrolled past. */
+    book.wonWithPO.forEach(function (x){
+      var party = C.dealParty(App.st, x.deal);
+      gaps.appendChild(h("div", { style:"padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer",
+        onclick:(function (id){ return function (){ openDeal(id); }; })(x.deal.id) },
+        h("span", { class:"chip warn", text:"PO in, invoice out" }),
+        h("span", { text:"  " + party.name + " \u00b7 " + x.deal.name }),
+        /* No "PO PO4523909464". Half these numbers already start with the
+           letters, and the stutter reads as a typo in our own screen. */
+        h("span", { class:"note", text:"  won " + C.fmtDayYear(x.deal.closedAt) +
+          " \u00b7 " + x.pos.map(function (o){
+            var n = o.number || "unnumbered";
+            /* NOT \b — in "PO4523909464" the character after "PO" is a digit,
+               which is a word character, so a word boundary never matches and
+               every real PO number stuttered anyway. */
+            return /^po/i.test(n) ? n : "PO " + n;
+          }).join(", ") + " \u2014 raise the invoice against it" })));
+    });
+    book.wonWithNothing.forEach(function (d){
       var party = C.dealParty(App.st, d);
       gaps.appendChild(h("div", { style:"padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer",
         onclick:(function (id){ return function (){ openDeal(id); }; })(d.id) },
-        h("span", { class:"chip hot", text:"No invoice logged" }),
+        h("span", { class:"chip hot", text:"Won, nothing behind it" }),
         h("span", { text:"  " + party.name + " \u00b7 " + d.name }),
-        h("span", { class:"note", text:"  won " + C.fmtDayYear(d.closedAt) })));
+        h("span", { class:"note", text:"  won " + C.fmtDayYear(d.closedAt) +
+          " \u00b7 no invoice and no purchase order" })));
     });
     book.undated.forEach(function (u){
       var party = C.dealParty(App.st, u.deal);
@@ -6951,6 +7621,55 @@ function viewMoney(el){
         h("span", { class:"note", text:"  " + C.fmtMoney(u.state.balance, u.state.invoice.currency) + " outstanding" })));
     });
     el.appendChild(gaps);
+  }
+
+  /* One invoice number, issued once. These are already in the log — the
+     importer refuses new ones now, but nothing could see the ones that got in
+     before it did. INV9000392 is on one deal twice, as USD 99 and as ZAR 99. */
+  if (book.duplicateNumbers.length){
+    var dup = h("section", { class:"pane", style:"margin-bottom:16px" },
+      h("h3", { text:"Invoice numbers used more than once" }),
+      h("div", { class:"sub",
+        text:"An invoice number is issued once. Two invoices carrying the same one are " +
+             "counted twice in everything above. Open each and cancel the one that " +
+             "should not exist \u2014 cancelling keeps it in the record and stops it counting." }));
+    book.duplicateNumbers.forEach(function (g){
+      var row = h("div", { style:"padding:8px 0;border-bottom:1px solid var(--line)" },
+        h("div", { style:"font-weight:600", text:g.number }));
+      g.invoices.forEach(function (x){
+        row.appendChild(h("div", { class:"note", style:"cursor:pointer;padding:2px 0",
+          onclick:(function (id){ return function (){ if (id) openDeal(id); }; })(x.deal && x.deal.id) },
+          x.company + " \u00b7 " + (x.deal ? x.deal.name : "deal missing") + "  \u2014  " +
+          C.fmtMoneyExact(C.invoiceNet(x.invoice), x.invoice.currency) +
+          (x.paid ? ", " + C.fmtMoneyExact(x.paid, x.invoice.currency) + " paid against it" : ", nothing paid")));
+      });
+      dup.appendChild(row);
+    });
+    el.appendChild(dup);
+  }
+
+  /* A company with no domain cannot be matched by a sender address, and the
+     failure is silent: every thread from them comes back "no company in the
+     CRM" and gets offered as a brand-new deal. Twelve were created in one
+     afternoon without one. */
+  if (book.noDomain.length){
+    var nd = h("section", { class:"pane", style:"margin-bottom:16px" },
+      h("h3", { text: book.noDomain.length + " compan" +
+                      (book.noDomain.length === 1 ? "y has" : "ies have") + " no domain" }),
+      h("div", { class:"sub",
+        text:"Email is matched to a customer by the sender's domain. Without one, every " +
+             "thread from them comes back as a company the CRM has never heard of \u2014 " +
+             "silently, and then gets offered as a new deal." }));
+    var ndList = h("div");
+    book.noDomain.slice(0, 20).forEach(function (x){
+      ndList.appendChild(h("div", { class:"note", style:"padding:3px 0",
+        text: x.company.name + " \u00b7 " + x.deals + " deal" + (x.deals === 1 ? "" : "s") }));
+    });
+    nd.appendChild(ndList);
+    if (book.noDomain.length > 20)
+      nd.appendChild(h("div", { class:"note",
+        text:"…and " + (book.noDomain.length - 20) + " more. Set them on the Companies page." }));
+    el.appendChild(nd);
   }
 
   /* Commission */
@@ -7973,8 +8692,25 @@ function viewSettings(el){
   function paintTriage(text){
     var res = C.importTriage(text, App.st, App.config, { actor:App.me, today:App.today });
     clear(tReport);
-    res.errors.forEach(function (e){
-      tReport.appendChild(h("div", { style:"color:var(--overdue)", text:e })); });
+
+    /* The preview, in the order the contract specifies: refusals, warnings,
+       what will be created, what will be recorded, what is already present.
+       Refusals first because they are the only part that changes what you do
+       next — everything below them describes a batch you may still not want. */
+    if (res.errors.length){
+      tReport.appendChild(h("div", { class:"prev-head", text:
+        res.errors.length + " refus" + (res.errors.length === 1 ? "al" : "als") +
+        " — these rows will not import" }));
+      res.errors.forEach(function (e){
+        tReport.appendChild(h("div", { style:"color:var(--overdue)", text:e })); });
+    }
+    if (res.warnings && res.warnings.length){
+      tReport.appendChild(h("div", { class:"prev-head", text:
+        res.warnings.length + " warning" + (res.warnings.length === 1 ? "" : "s") +
+        " — these rows import as they are" }));
+      res.warnings.forEach(function (w){
+        tReport.appendChild(h("div", { class:"note", style:"color:var(--overdue)", text:w })); });
+    }
 
     if (res.rows.length){
       var tb = h("tbody");
@@ -7996,6 +8732,50 @@ function viewSettings(el){
       tReport.appendChild(h("table", { class:"tbl", style:"margin-top:8px" },
         h("thead", null, h("tr", null, h("th", { text:"Deal" }), h("th", { text:"When" }),
                            h("th", { text:"Summary" }), h("th", { text:"Next step" }))), tb));
+    }
+
+    /* WILL RECORD — the money. Its own block, because this is the part that
+       moves cash and commission, and burying it in a summary line is how a
+       payment gets imported without anybody having read the sentence that did
+       it. Amounts to the cent, never summed across currencies (C16). */
+    if (res.money && res.money.length){
+      tReport.appendChild(h("div", { class:"prev-head", text:"Will record" }));
+      res.money.forEach(function (m){
+        var sec = h("div", { style:"margin:6px 0 10px" },
+          h("div", { style:"font-weight:600", text:m.company + " · " + m.deal }));
+        m.records.purchaseOrders.forEach(function (o){
+          sec.appendChild(h("div", { class:"note", text:
+            "purchase order " + o.number +
+            (o.amount == null ? " · no amount stated" : " · " + C.fmtMoneyExact(o.amount, o.currency)) +
+            (o.issuedBy ? " · via " + o.issuedBy : "") +
+            (o.already ? "  — already present" : o.updating ? "  — updates the existing one" : "") })); });
+        m.records.quotes.forEach(function (q){
+          sec.appendChild(h("div", { class:"note", text:
+            "quote " + q.number + " · " + C.fmtMoneyExact(q.amount, q.currency) +
+            " · " + q.status +
+            (q.already ? "  — already present" : q.updating ? "  — updates the existing one" : "") })); });
+        m.records.invoices.forEach(function (iv){
+          sec.appendChild(h("div", { class:"note", text:
+            "invoice " + iv.number + " · " + C.fmtMoneyExact(iv.net, iv.currency) + " net" +
+            (iv.vat ? " + " + C.fmtMoneyExact(iv.vat, iv.currency) + " VAT" : "") +
+            (iv.lines ? " · " + iv.lines + " line" + (iv.lines === 1 ? "" : "s") : "") +
+            /* Blank named as blank, zero as a word. A currency-formatted zero
+               reads as an arithmetic result waiting to change; it never will. */
+            " · commission " + (iv.noCommission ? "nobody earns on this deal"
+              : iv.rate === 0 ? "nothing"
+              : iv.rate == null ? "no rate set anywhere — blank, which is not 0%"
+              : pct(iv.rate) + " from the " + iv.rateFrom) +
+            (iv.earner ? " · earned by " + userName(iv.earner) : "") +
+            (iv.already ? "  — already present" : iv.updating ? "  — updates the existing one" : "") })); });
+        m.records.payments.forEach(function (pv){
+          sec.appendChild(h("div", { class:"note", text:
+            "payment " + C.fmtMoneyExact(pv.amount, pv.currency) + " against " + pv.invoice +
+            " on " + C.fmtDay(pv.receivedOn) +
+            (pv.already ? "  — already present"
+             : pv.updating ? "  — updates the reference on the payment already there"
+             : "") })); });
+        tReport.appendChild(sec);
+      });
     }
 
     /* Rows with no deal. The app still will not invent one — but it will show
@@ -8075,9 +8855,24 @@ function viewSettings(el){
       }
     }
 
-    if (res.summary.duplicates)
+    /* ALREADY PRESENT — counted, not listed. A second import of the same batch
+       is the common case, not the exception, and a wall of lines saying nothing
+       happened trains people to scroll past the block that says what did. */
+    var already = res.summary.duplicates + (res.summary.alreadyMoney || 0);
+    if (already)
       tReport.appendChild(h("div", { class:"note", style:"margin-top:8px",
-        text:res.summary.duplicates + " already logged, unchanged — skipped." }));
+        text: already + " already present, unchanged — skipped" +
+              (res.summary.alreadyMoney
+                 ? " (" + res.summary.duplicates + " interaction" +
+                   (res.summary.duplicates === 1 ? "" : "s") + ", " +
+                   res.summary.alreadyMoney + " financial document" +
+                   (res.summary.alreadyMoney === 1 ? "" : "s") + ")"
+                 : "") + "." }));
+    if (!res.errors.length && !res.rows.length && !res.unmatched.length &&
+        !res.revisions.length && !(res.money || []).length && already)
+      tReport.appendChild(h("div", { style:"margin-top:6px;font-weight:600",
+        text: res.summary.rows + " row" + (res.summary.rows === 1 ? "" : "s") +
+              ", all already present — nothing to do." }));
 
     /* The batch disagreeing with a deal it matched. Its own section and its own
        button: this changes what a deal IS, which is a bigger act than adding a

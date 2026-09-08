@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="88d6a9afa71f" data-built="8 Sep 2026" data-version="1.31.0">
+<meta name="crm-build" content="7935cd797853" data-built="8 Sep 2026" data-version="1.31.1">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2598,25 +2598,59 @@ function financialEvents(r, deal, st, cfg, ctx, where){
         target.currency + ". It is recorded against the invoice unconverted (C16) — check it.");
 
     var ref = String(pv.reference || "").slice(0, 120);
-    /* Derived from what the payment IS, so the same payment in two batches is
-       one payment. */
-    var pkey = triageNorm(target.number) + "\u241f" + amt + "\u241f" + when + "\u241f" + triageNorm(ref);
-    var pid = "pay_" + triageHash(pkey);
-    var already = !!(st.payments || {})[pid];
+    /* Derived from what the payment IS — the invoice it settles, the amount and
+       the day.
 
-    /* Over-settlement warns and still imports: the money did arrive, and a
-       CRM that refuses to record real cash because it disagrees about the
-       total is a CRM people stop using. */
-    var priorPaid = 0;
+       The REFERENCE is deliberately not part of it. It is a description of the
+       payment, not its identity, and keying on it meant that correcting
+       "PayPal" to "PayPal 0024" minted a SECOND payment of the same 99 against
+       the same invoice. The invoice then read as paid twice, and the only thing
+       standing between that and the event log was a warning that ended
+       "Recorded anyway". Re-emitting the same id with a new reference now
+       updates the payment instead, because the fold is last-write-wins. */
+    var pkey = triageNorm(target.number) + "\u241f" + amt + "\u241f" + when;
+    var pid = "pay_" + triageHash(pkey);
+    var prior = (st.payments || {})[pid];
+    var already = !!prior && prior.reference === ref;
+    var updating = !!prior && !already;
+
+    /* The date is still part of the key, so a corrected DATE would double the
+       payment the same way. That cannot be keyed away — two instalments of the
+       same amount on one invoice are a real thing, and they differ only by
+       date. So it is caught by what it looks like instead: a payment that would
+       take an invoice past its total, when a payment of THAT SAME AMOUNT is
+       already sitting on it, is the same money twice far more often than it is
+       a customer who paid double.
+
+       That case REFUSES. A warning saying "recorded anyway" is how the double
+       got in: it reads as a note about a decision somebody else already made. */
+    var priorPaid = 0, sameAmount = null;
     Object.keys(st.payments || {}).forEach(function (k){
-      if (st.payments[k].invoiceId === target.id && k !== pid) priorPaid += st.payments[k].amount; });
+      var pay = st.payments[k];
+      if (pay.invoiceId !== target.id || k === pid) return;
+      priorPaid += pay.amount;
+      if (Math.abs(round2(pay.amount - amt)) < 0.005 && !sameAmount) sameAmount = pay;
+    });
     var over = round2(priorPaid + amt - round2(target.net));
+    if (over > 0.005 && sameAmount)
+      return refuse(label + ": invoice " + target.number + " already carries a payment of " +
+        amt + " received on " + sameAmount.receivedOn +
+        (sameAmount.reference ? " (" + sameAmount.reference + ")" : "") +
+        ". Recording this one would take it to " + round2(priorPaid + amt) +
+        " against a net of " + round2(target.net) + ". If it is the same payment with a " +
+        "corrected date or reference, set the date to " + sameAmount.receivedOn +
+        " so it updates rather than doubles. If it really is a second payment, the " +
+        "invoice total is what needs fixing.");
+    /* A genuine overpayment — a different amount, or nothing like it on the
+       invoice — still warns and still imports. The money did arrive, and a CRM
+       that refuses to record real cash because it disagrees about the total is
+       a CRM people stop using. */
     if (over > 0.005)
       warn(label + " takes invoice " + target.number + " to " + round2(priorPaid + amt) +
         " against a net of " + round2(target.net) + " — " + over + " over. Recorded anyway.");
 
     out.records.payments.push({ invoice:target.number, amount:amt, currency:target.currency,
-                                receivedOn:when, already:already });
+                                receivedOn:when, already:already, updating:updating });
     if (already) return;
     out.events.push({ id:"ev_pay_" + triageHash(pkey), type:"payment.received", actor:actor,
       payload:{ paymentId:pid, invoiceId:target.id, receivedOn:when,
@@ -8358,7 +8392,9 @@ function viewSettings(el){
           sec.appendChild(h("div", { class:"note", text:
             "payment " + C.fmtMoneyExact(pv.amount, pv.currency) + " against " + pv.invoice +
             " on " + C.fmtDay(pv.receivedOn) +
-            (pv.already ? "  — already present" : "") })); });
+            (pv.already ? "  — already present"
+             : pv.updating ? "  — updates the reference on the payment already there"
+             : "") })); });
         tReport.appendChild(sec);
       });
     }

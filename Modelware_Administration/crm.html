@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="7935cd797853" data-built="8 Sep 2026" data-version="1.31.1">
+<meta name="crm-build" content="0f8813898856" data-built="8 Sep 2026" data-version="1.32.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -739,7 +739,7 @@ function money(v){
 
 function foldEvents(events){
   var st = { companies:{}, contacts:{}, deals:{}, followups:{}, interactions:{},
-             invoices:{}, payments:{}, quotes:{},
+             invoices:{}, payments:{}, quotes:{}, pos:{},
              clients:{}, lastTs:null, eventCount:0 };
   var ordered = sortEvents(events || []);
 
@@ -883,6 +883,50 @@ function foldEvents(events){
          `net` (excluding VAT), `passThrough` (the books and exam coupons inside
          that net, which are somebody else's revenue) and `vat`. The customer
          owes net + vat; commission is earned on net − passThrough. */
+      /* ---- purchase orders (F10) ----
+
+         A PO is the customer's own document, not ours: their commitment to pay,
+         issued on their paperwork, with their number on it. That makes it the
+         thing that arrives BEFORE we have anything to invoice — FNB's FRB741713
+         came through Oracle procurement with "please raise the invoice too", and
+         Belgian Train's PO4523909464 sits on a deal closed won with no invoice
+         at all.
+
+         Until now there was nowhere to put one, so a PO lived inside an
+         interaction summary as a string of digits nobody could search on, and a
+         won deal with a signed PO looked exactly like a won deal with nothing
+         behind it. Those are opposite situations: one needs an invoice raised,
+         the other needs somebody to ask whether we really won it. */
+      case "po.received":
+        st.pos[p.poId] = {
+          id:p.poId, dealId:p.dealId, number:p.number || "",
+          receivedOn:p.receivedOn || String(e.ts).slice(0,10),
+          currency:p.currency || "ZAR",
+          /* Optional. A PO often names an amount, and often does not — it may
+             just authorise a schedule. Null means "not stated on it", which is
+             not zero. */
+          amount: p.amount == null || p.amount === "" ? null : money(p.amount),
+          /* Whose paperwork it is, where that is not the customer themselves —
+             Vodacom's PO for the DMBOKs came through Student Village. */
+          issuedBy:p.issuedBy || "",
+          status:p.status || "open",       // open · invoiced · cancelled
+          note:p.note || "", loggedBy:e.actor, ts:e.ts
+        };
+        break;
+      case "po.updated":
+        if (st.pos[p.poId]){
+          assign(st.pos[p.poId], p, ["number","receivedOn","currency","issuedBy","status","note"]);
+          if (p.amount !== undefined)
+            st.pos[p.poId].amount = p.amount == null || p.amount === "" ? null : money(p.amount);
+        }
+        break;
+      case "po.cancelled":
+        if (st.pos[p.poId]){
+          st.pos[p.poId].status = "cancelled";
+          st.pos[p.poId].cancelReason = p.reason || "";
+        }
+        break;
+
       /* ---- quotes (F1) ----
          A quote is its own record, not three fields on the deal, because a deal
          holds SEVERAL of them: SARB is amending QUO0000944 for the revised
@@ -945,6 +989,10 @@ function foldEvents(events){
           earner: p.earner == null ? null : String(p.earner),
           /* F1. Which quote this invoice came from, where there was one. */
           quoteId: p.quoteId == null ? null : String(p.quoteId),
+          /* F10. And which purchase order it is raised against. WUC's invoice
+             was chased for weeks because nobody could see it already had a PO
+             number on it. */
+          poId: p.poId == null ? null : String(p.poId),
           /* F6. Absent means the old single-net shape, which must keep folding
              for ever — the log is append-only and every invoice raised before
              today has no lines. */
@@ -972,6 +1020,8 @@ function foldEvents(events){
             st.invoices[p.invoiceId].earner = p.earner == null ? null : String(p.earner);
           if (p.quoteId !== undefined)
             st.invoices[p.invoiceId].quoteId = p.quoteId == null ? null : String(p.quoteId);
+          if (p.poId !== undefined)
+            st.invoices[p.invoiceId].poId = p.poId == null ? null : String(p.poId);
           if (p.lines !== undefined)
             st.invoices[p.invoiceId].lines = normLines(p.lines);
         }
@@ -1651,6 +1701,12 @@ function invoiceCommission(deal, inv, state){
            earner: invoiceEarner(deal, inv) };
 }
 
+function posFor(st, dealId){
+  return Object.keys(st.pos || {}).map(function (k){ return st.pos[k]; })
+    .filter(function (o){ return o.dealId === dealId; })
+    .sort(function (a,b){ return a.receivedOn < b.receivedOn ? 1 : a.receivedOn > b.receivedOn ? -1 : (a.id < b.id ? 1 : -1); });
+}
+
 function quotesFor(st, dealId){
   return Object.keys(st.quotes || {}).map(function (k){ return st.quotes[k]; })
     .filter(function (q){ return q.dealId === dealId; })
@@ -1718,7 +1774,24 @@ function moneyBook(st, cfg, today, opts){
   var me = opts.user;
   var book = { invoiced:{}, paid:{}, outstanding:{}, overdue:{},
                earnedByUser:{}, pendingByUser:{}, overdueInvoices:[],
-               undated:[], uninvoicedWon:[] };
+               undated:[], uninvoicedWon:[],
+               /* Split, because they are opposite situations wearing one label.
+                  A won deal with a signed PO needs somebody to raise an invoice.
+                  A won deal with nothing behind it needs somebody to ask whether
+                  we actually won it. Printing both as "won and never invoiced"
+                  put a clerical task and an open question in one list, and the
+                  question is the one that gets scrolled past. */
+               wonWithPO:[], wonWithNothing:[],
+               /* One invoice number, issued once. INV9000392 is in the log
+                  twice — USD 99 and ZAR 99 on one deal — and no screen could
+                  say so. The importer refuses new ones now; this finds the ones
+                  already there. */
+               duplicateNumbers:[],
+               /* Sender matching by domain silently fails for a company with no
+                  domain, and twelve of them were created in one afternoon
+                  without one. Silent is the problem: every one of their threads
+                  comes back "no company in the CRM". */
+               noDomain:[] };
   var add = function (bag, cur, amt){ bag[cur] = round2((bag[cur] || 0) + amt); };
 
   Object.keys(st.deals).forEach(function (k){
@@ -1732,8 +1805,12 @@ function moneyBook(st, cfg, today, opts){
     var m = dealMoney(st, d);
     var invs = invoicesFor(st, d.id);
 
-    if (d.status === "closed" && d.outcome === "won" && !invs.length)
+    if (d.status === "closed" && d.outcome === "won" && !invs.length){
       book.uninvoicedWon.push(d);
+      var openPOs = posFor(st, d.id).filter(function (o){ return o.status !== "cancelled"; });
+      if (openPOs.length) book.wonWithPO.push({ deal:d, pos:openPOs });
+      else                book.wonWithNothing.push(d);
+    }
 
     m.invoices.forEach(function (s){
       if (s.cancelled) return;
@@ -1761,6 +1838,39 @@ function moneyBook(st, cfg, today, opts){
     });
   });
   book.overdueInvoices.sort(function (a,b){ return b.daysLate - a.daysLate; });
+
+  /* Whole-CRM checks, not per-deal ones, so they are computed once outside the
+     loop and are not filtered by scope — a duplicate invoice number is
+     everybody's problem regardless of whose book you are looking at. */
+  var byNumber = {};
+  Object.keys(st.invoices).forEach(function (k){
+    var iv = st.invoices[k];
+    if (!iv.number || iv.status === "cancelled") return;
+    var key = String(iv.number).trim().toLowerCase();
+    (byNumber[key] = byNumber[key] || []).push(iv);
+  });
+  Object.keys(byNumber).forEach(function (key){
+    if (byNumber[key].length < 2) return;
+    book.duplicateNumbers.push({
+      number: byNumber[key][0].number,
+      invoices: byNumber[key].map(function (iv){
+        return { invoice:iv, deal:st.deals[iv.dealId] || null,
+                 company:(st.companies[(st.deals[iv.dealId] || {}).companyId] || {}).name || "",
+                 paid: invoiceState(st, iv).paid };
+      })
+    });
+  });
+
+  Object.keys(st.companies).forEach(function (k){
+    var co = st.companies[k];
+    if (co.merged || co.isHolder) return;          // a person bucket has no domain to have
+    if (co.domain && String(co.domain).trim()) return;
+    var deals = Object.keys(st.deals).filter(function (dk){
+      return st.deals[dk].companyId === co.id; }).length;
+    book.noDomain.push({ company:co, deals:deals });
+  });
+  book.noDomain.sort(function (a,b){ return b.deals - a.deals; });
+
   return book;
 }
 
@@ -2306,15 +2416,17 @@ var TRIAGE_ROW_FIELDS = {
   kind:1, occurredAt:1, messageId:1, interactionId:1, summary:1, note:1,
   contactId:1, contactName:1, contactEmail:1, contactRole:1, contactPhone:1,
   contacts:1, nextStep:1,
-  quotes:1, invoices:1, payments:1
+  quotes:1, purchaseOrders:1, invoices:1, payments:1
 };
 var TRIAGE_CONTACT_FIELDS  = { name:1, email:1, role:1, phone:1 };
 var TRIAGE_NEXTSTEP_FIELDS = { what:1, dueDate:1, owner:1 };
 var TRIAGE_QUOTE_FIELDS    = { number:1, amount:1, currency:1, issuedOn:1, status:1,
                                note:1, supersededBy:1 };
+var TRIAGE_PO_FIELDS       = { number:1, receivedOn:1, currency:1, amount:1, issuedBy:1,
+                               status:1, note:1 };
 var TRIAGE_INVOICE_FIELDS  = { number:1, issuedOn:1, dueDate:1, currency:1, net:1, vat:1,
                                passThrough:1, commissionRate:1, earner:1, quoteNumber:1,
-                               lines:1, note:1 };
+                               poNumber:1, lines:1, note:1 };
 var TRIAGE_LINE_FIELDS     = { description:1, quantity:1, unitPrice:1, net:1,
                                passThrough:1, commissionRate:1 };
 var TRIAGE_PAYMENT_FIELDS  = { invoiceNumber:1, amount:1, receivedOn:1, reference:1, currency:1 };
@@ -2402,16 +2514,17 @@ function financialEvents(r, deal, st, cfg, ctx, where){
   var today = (ctx && ctx.today) || todayISO();
   var actor = (ctx && ctx.actor) || "howard";
   var out = { events:[], refusals:[], warnings:[],
-              records:{ quotes:[], invoices:[], payments:[] } };
+              records:{ purchaseOrders:[], quotes:[], invoices:[], payments:[] } };
   var dealId = deal.id;
   var noComm = deal.commissionable === false;
   var refuse = function (m){ out.refusals.push(where + ": " + m); };
   var warn   = function (m){ out.warnings.push(where + ": " + m); };
 
+  var purchaseOrders = Array.isArray(r.purchaseOrders) ? r.purchaseOrders : [];
   var quotes   = Array.isArray(r.quotes)   ? r.quotes   : [];
   var invoices = Array.isArray(r.invoices) ? r.invoices : [];
   var payments = Array.isArray(r.payments) ? r.payments : [];
-  if (!quotes.length && !invoices.length && !payments.length) return out;
+  if (!purchaseOrders.length && !quotes.length && !invoices.length && !payments.length) return out;
 
   /* ---- what already exists, so a second import changes nothing ---- */
   var quoteByNumber = {};                     // scoped to this deal
@@ -2426,6 +2539,48 @@ function financialEvents(r, deal, st, cfg, ctx, where){
   Object.keys(st.invoices || {}).forEach(function (k){
     var iv = st.invoices[k];
     if (iv.number) invByNumber[triageNorm(iv.number)] = iv;
+  });
+
+  /* ---- purchase orders (F10) ----
+     Recorded first, so an invoice on the same row can name the PO it is raised
+     against. Keyed on number within the deal: a PO number is the customer's, and
+     two customers may legitimately use the same one. */
+  var poByNumber = {};
+  Object.keys(st.pos || {}).forEach(function (k){
+    var o = st.pos[k];
+    if (o.dealId === dealId && o.number) poByNumber[triageNorm(o.number)] = o;
+  });
+  var poIdFor = {};
+  purchaseOrders.forEach(function (ov, j){
+    var label = "purchase order " + (ov && ov.number ? ov.number : j + 1);
+    if (!ov || typeof ov !== "object") return refuse(label + " is not an object.");
+    var un = unknownFields(ov, TRIAGE_PO_FIELDS);
+    if (un.length) return refuse(label + " carries a field I do not understand: " + un.join(", ") + ".");
+    var num = String(ov.number || "").trim();
+    if (!num) return refuse(label + " has no number. A purchase order without its number " +
+      "records nothing anybody can match an invoice to.");
+    /* An amount is optional on a PO — many authorise a schedule rather than a
+       sum. Absent means "not stated", which is not zero, and must survive as
+       null all the way to the panel. */
+    var amount = (ov.amount == null || ov.amount === "") ? null : money(ov.amount);
+    if (amount != null && !ov.currency && !r.currency)
+      return refuse(label + " states an amount but no currency. Currencies are never " +
+        "converted or assumed (C16).");
+    var pcur = ov.currency || r.currency || (cfg && cfg.defaultCurrency) || "ZAR";
+    var existing = poByNumber[triageNorm(num)];
+    var oid = existing ? existing.id : "po_" + triageHash(dealId + "\u241f po \u241f" + triageNorm(num));
+    poIdFor[triageNorm(num)] = oid;
+    var already = existing && existing.amount === amount && existing.currency === pcur &&
+                  existing.issuedBy === String(ov.issuedBy || "");
+    out.records.purchaseOrders.push({ number:num, amount:amount, currency:pcur,
+      issuedBy:String(ov.issuedBy || ""),
+      already:!!already, updating: !!existing && !already });
+    if (already) return;
+    out.events.push({ id:"ev_po_" + triageHash(dealId + "\u241f po \u241f" + triageNorm(num)),
+      type: existing ? "po.updated" : "po.received", actor:actor,
+      payload:{ poId:oid, dealId:dealId, number:num,
+                receivedOn: parseDateInput(ov.receivedOn, today) || today,
+                currency:pcur, amount:amount, issuedBy:String(ov.issuedBy || "") } });
   });
 
   /* ---- quotes ---- */
@@ -2533,6 +2688,13 @@ function financialEvents(r, deal, st, cfg, ctx, where){
     /* A quote reference that matches nothing is a warning, not a refusal — the
        invoice is still a real invoice, and refusing it would lose a fact over a
        missing cross-reference. */
+    var poid = null;
+    if (iv.poNumber){
+      poid = poIdFor[triageNorm(iv.poNumber)] ||
+             (poByNumber[triageNorm(iv.poNumber)] || {}).id || null;
+      if (!poid) warn(label + " names purchase order \u201c" + iv.poNumber +
+        "\u201d, which is on neither this row nor this deal. The invoice imported without the link.");
+    }
     var qid = null;
     if (iv.quoteNumber){
       qid = quoteIdFor[triageNorm(iv.quoteNumber)] ||
@@ -2553,7 +2715,7 @@ function financialEvents(r, deal, st, cfg, ctx, where){
       issuedOn: parseDateInput(iv.issuedOn, today) || today,
       dueDate: iv.dueDate ? parseDateInput(iv.dueDate, today) : null,
       currency:cur, net:net, passThrough:passThrough, vat:money(iv.vat),
-      commissionRate:invRate, earner:earner, quoteId:qid, lines:lines };
+      commissionRate:invRate, earner:earner, quoteId:qid, poId:poid, lines:lines };
     var already = existing && existing.net === net && existing.currency === cur &&
                   existing.vat === money(iv.vat) && existing.passThrough === passThrough &&
                   existing.earner === earner && existing.commissionRate === invRate &&
@@ -2671,7 +2833,7 @@ function importTriage(text, st, cfg, ctx){
               warnings:[], money:[],
               summary:{ rows:0, logged:0, followups:0, unmatched:0, duplicates:0,
                         revised:0, contacts:0, dealChanges:0,
-                        quotes:0, invoices:0, payments:0, alreadyMoney:0 } };
+                        pos:0, quotes:0, invoices:0, payments:0, alreadyMoney:0 } };
   /* our own side, so colleagues on a thread never become customer contacts */
   var ourEmails = {};
   ((cfg && cfg.users) || []).forEach(function (u){
@@ -3058,14 +3220,17 @@ function importTriage(text, st, cfg, ctx){
       return;
     }
     fin.warnings.forEach(function (m){ out.warnings.push(m); });
-    if (fin.records.quotes.length || fin.records.invoices.length || fin.records.payments.length){
+    if (fin.records.purchaseOrders.length || fin.records.quotes.length ||
+        fin.records.invoices.length || fin.records.payments.length){
       out.money.push({ where:where, deal:deal.name,
                        company:(st.companies[deal.companyId] || {}).name || "",
                        records:fin.records });
+      out.summary.pos      += fin.records.purchaseOrders.filter(function (x){ return !x.already; }).length;
       out.summary.quotes   += fin.records.quotes.filter(function (x){ return !x.already; }).length;
       out.summary.invoices += fin.records.invoices.filter(function (x){ return !x.already; }).length;
       out.summary.payments += fin.records.payments.filter(function (x){ return !x.already; }).length;
       out.summary.alreadyMoney +=
+        fin.records.purchaseOrders.filter(function (x){ return x.already; }).length +
         fin.records.quotes.filter(function (x){ return x.already; }).length +
         fin.records.invoices.filter(function (x){ return x.already; }).length +
         fin.records.payments.filter(function (x){ return x.already; }).length;
@@ -3802,6 +3967,7 @@ var API = {
   invoiceState:invoiceState, invoicesFor:invoicesFor, paymentsFor:paymentsFor,
   dealMoney:dealMoney, moneyBook:moneyBook, invoiceRate:invoiceRate,
   lineRate:lineRate, invoiceEarner:invoiceEarner, commissionParts:commissionParts,
+  posFor:posFor,
   invoiceCommission:invoiceCommission, quotesFor:quotesFor, normLines:normLines,
   invoiceNet:invoiceNet, invoicePassThrough:invoicePassThrough,
   computeFlags:computeFlags, FLAG_RULES:FLAG_RULES, FLAG_TONE:FLAG_TONE, flagRule:flagRule, flagLabel:flagLabel,
@@ -6023,6 +6189,58 @@ function openDeal(dealId){
     body.appendChild(csec);
   }
 
+  /* ---- purchase orders (F10) ----
+     Above the quotes, because the PO is the customer's commitment and it is the
+     document people ask about when an invoice is late: "did we ever get a PO?"
+     It used to live inside an interaction summary as a string of digits nobody
+     could search on. */
+  {
+    var pos = C.posFor(App.st, d.id);
+    var psec = h("section", { class:"sec" });
+    psec.appendChild(h("div", { style:"display:flex;align-items:baseline;gap:8px;flex-wrap:wrap" },
+      h("h4", { style:"margin:0", text:"Purchase orders" }),
+      pos.length ? h("span", { class:"note", text: pos.length + " on this deal" }) : null,
+      h("span", { class:"spacer" }),
+      h("button", { class:"btn btn-sm", type:"button",
+        onclick:function (e){ poPopover(e.currentTarget, d, null); } }, "Add a PO")));
+    if (!pos.length){
+      psec.appendChild(h("div", { class:"note", style:"margin-top:8px",
+        text: d.status === "closed" && d.outcome === "won" && !C.invoicesFor(App.st, d.id).length
+          ? "Won, no invoice and no purchase order. Nothing on this deal says the customer " +
+            "has committed to pay \u2014 worth asking whether we really won it."
+          : "None recorded. A PO is the customer's own document: their number, their " +
+            "commitment, usually arriving before there is anything to invoice." }));
+    } else {
+      var pt = h("tbody");
+      pos.forEach(function (o){
+        var against = Object.keys(App.st.invoices).filter(function (k){
+          return App.st.invoices[k].poId === o.id; })
+          .map(function (k){ return App.st.invoices[k].number || "unnumbered"; });
+        pt.appendChild(h("tr", { style:"cursor:pointer",
+          onclick:(function (oo){ return function (e){ poPopover(e.currentTarget, d, oo); }; })(o) },
+          h("td", null,
+            h("div", { text:(o.number || "(no number)") +
+                            (o.status === "cancelled" ? "  · cancelled" : "") }),
+            h("div", { class:"note", text:"received " + C.fmtDay(o.receivedOn) +
+              (o.issuedBy ? " · via " + o.issuedBy : "") +
+              (against.length ? " · invoiced as " + against.join(", ")
+                              : o.status === "cancelled" ? "" : " · no invoice raised against it yet") })),
+          h("td", { class:"num", style: o.status === "cancelled" ? "color:var(--muted)" : "",
+                    /* Null is "the PO does not state one", which is not zero and
+                       must not be drawn as money. */
+                    text: o.amount == null ? "\u2014" : C.fmtMoneyExact(o.amount, o.currency) }),
+          h("td", null, h("span", {
+            class:"chip " + (against.length ? "ok" : o.status === "cancelled" ? "plain" : "hot"),
+            text: o.status === "cancelled" ? "cancelled" : against.length ? "invoiced" : "open" }))));
+      });
+      psec.appendChild(h("table", { class:"tbl", style:"margin-top:8px" },
+        h("thead", null, h("tr", null,
+          h("th", { text:"PO" }), h("th", { class:"num", text:"Amount" }),
+          h("th", { text:"Status" }))), pt));
+    }
+    body.appendChild(psec);
+  }
+
   /* ---- quotes (F1) ----
      Above the money, because a quote comes first and because the question this
      section answers — "what did we actually say the price was?" — is the one
@@ -6120,7 +6338,9 @@ function openDeal(dealId){
               (inv.dueDate ? " · due " + C.fmtDay(inv.dueDate) : " · no due date") +
               (st_.passThrough ? " · incl " + C.fmtMoney(st_.passThrough, inv.currency) + " resale" : "") +
               (inv.quoteId && App.st.quotes[inv.quoteId]
-                 ? " · from " + (App.st.quotes[inv.quoteId].number || "a quote") : "") }),
+                 ? " · from " + (App.st.quotes[inv.quoteId].number || "a quote") : "") +
+              (inv.poId && App.st.pos[inv.poId]
+                 ? " · against " + (App.st.pos[inv.poId].number || "a PO") : "") }),
             /* Whose money this is, said only when it is not the obvious answer.
                Printing "earns Debbie" on every one of Debbie's own invoices is
                noise; printing nothing when it earns somebody else is a mistake. */
@@ -6329,6 +6549,22 @@ function invoicePopover(anchorEl, d, inv){
   earner.value = inv && inv.earner ? inv.earner : "";
   box.appendChild(h("label", { class:"fld" },
     h("span", { text:"Earns commission" }), earner));
+
+  /* Which PO this invoice is raised against (F10). Only offered when the deal
+     has one, for the same reason as the quote picker below. */
+  var dealPOs = C.posFor(App.st, d.id).filter(function (o){ return o.status !== "cancelled"; });
+  var poSel = null;
+  if (dealPOs.length){
+    poSel = h("select", { "aria-label":"Against purchase order" });
+    poSel.appendChild(h("option", { value:"" }, "\u2014 no purchase order \u2014"));
+    dealPOs.forEach(function (o){
+      poSel.appendChild(h("option", { value:o.id },
+        (o.number || "unnumbered") +
+        (o.amount == null ? "" : "  \u00b7  " + C.fmtMoneyExact(o.amount, o.currency)))); });
+    poSel.value = inv && inv.poId ? inv.poId : (dealPOs.length === 1 ? dealPOs[0].id : "");
+    box.appendChild(h("label", { class:"fld" },
+      h("span", { text:"Against PO" }), poSel));
+  }
 
   /* Which quote this came from (F1). Only offered when the deal has one —
      an empty dropdown is a question the screen cannot answer. */
@@ -6565,6 +6801,7 @@ function invoicePopover(anchorEl, d, inv){
          C29 was bitten by exactly this. */
       earner: earner.value || null,
       quoteId: quoteSel ? (quoteSel.value || null) : (inv ? inv.quoteId : null),
+      poId: poSel ? (poSel.value || null) : (inv ? inv.poId : null),
       lines: lines.map(function (l){
         return { description:l.description || "", net:C.money(l.net),
                  passThrough:C.money(l.passThrough),
@@ -6634,6 +6871,71 @@ function commissionCell(deal, m, st_){
             (pt.rate === 0 ? "nothing" : pt.rate == null ? "no rate" : pct(pt.rate)) }));
   });
   return box;
+}
+
+/* Add or edit one purchase order (F10).
+
+   No commission anywhere on this form, for the same reason as the quote form: a
+   PO is the customer's promise to pay, not our invoice. Nobody earns on it. */
+function poPopover(anchorEl, d, o){
+  var box = h("div");
+  box.appendChild(h("h4", { text: o ? "Edit purchase order" : "Add a purchase order \u2014 " + d.name }));
+
+  var num = h("input", { type:"text", value: o ? o.number : "",
+    placeholder:"e.g. FRB741713", "aria-label":"PO number" });
+  var got = h("input", { type:"text", value: o ? o.receivedOn : App.today, "aria-label":"Received" });
+  var cur = h("select", { "aria-label":"Currency" });
+  (App.config.currencies || ["ZAR"]).forEach(function (c){ cur.appendChild(h("option", { value:c }, c)); });
+  cur.value = o ? o.currency : (d.currency || App.config.defaultCurrency || "ZAR");
+  var amt = h("input", { type:"text", value: o && o.amount != null ? String(o.amount) : "",
+    placeholder:"blank if the PO does not say", "aria-label":"Amount" });
+  /* Whose paperwork it came on. Vodacom's PO for the DMBOKs arrived through
+     Student Village, and filing it as Vodacom's own loses the partner. */
+  var via = h("input", { type:"text", value: o ? o.issuedBy : "",
+    placeholder:"blank if straight from the customer", "aria-label":"Issued by" });
+
+  box.appendChild(h("div", { class:"row2" },
+    h("label", { class:"fld" }, h("span", { text:"PO number" }), num),
+    h("label", { class:"fld" }, h("span", { text:"Received" }), got)));
+  box.appendChild(h("div", { class:"row2" },
+    h("label", { class:"fld" }, h("span", { text:"Currency" }), cur),
+    h("label", { class:"fld" }, h("span", { text:"Amount" }), amt)));
+  box.appendChild(h("label", { class:"fld" },
+    h("span", { text:"Issued by (if not the customer)" }), via));
+
+  box.appendChild(h("div", { class:"note",
+    text:"A purchase order earns nobody anything \u2014 it is the customer committing to pay, " +
+         "not us billing them. Leave the amount blank if the PO does not state one; blank " +
+         "means “not stated”, which is not zero." }));
+
+  var foot = h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"));
+  if (o)
+    foot.appendChild(h("button", { class:"btn btn-sm danger", type:"button", onclick:function (){
+      closeLayers("pop");
+      emit("po.cancelled", { poId:o.id, reason:"" });
+      render(); openDeal(d.id);
+      toast("Purchase order cancelled. It stops counting as a commitment.");
+    } }, "Cancel PO"));
+  foot.appendChild(h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+    var raw = amt.value.replace(/[^\d.\-]/g, "");
+    var payload = { dealId:d.id, number:num.value.trim(),
+      receivedOn: C.parseDateInput(got.value, App.today) || App.today,
+      currency:cur.value,
+      /* null, not 0 — "the PO does not state an amount" is a fact, and zero
+         would draw as money on the panel. */
+      amount: raw === "" ? null : C.money(raw),
+      issuedBy: via.value.trim() };
+    closeLayers("pop");
+    if (o) emit("po.updated",  Object.assign({ poId:o.id }, payload));
+    else   emit("po.received", Object.assign({ poId:C.uid("po") }, payload));
+    render(); openDeal(d.id);
+    toast(o ? "Purchase order updated."
+            : "Purchase order recorded. Raise an invoice against it when you are ready.");
+  } }, o ? "Save" : "Add"));
+  box.appendChild(foot);
+  openPopover(anchorEl, box, { width:320 });
 }
 
 /* Add or edit one quote (F1). No rate, no earner, no pass-through anywhere on
@@ -7280,13 +7582,35 @@ function viewMoney(el){
     var gaps = h("section", { class:"pane", style:"margin-bottom:16px" },
       h("h3", { text:"Gaps" }),
       h("div", { class:"sub", text:"Not late \u2014 worse. Nothing here can ever become late on its own." }));
-    book.uninvoicedWon.forEach(function (d){
+    /* Two lists, not one. A won deal with a signed PO is a clerical task: raise
+       the invoice, the number is right there. A won deal with nothing behind it
+       is a question about whether we won it at all. They were printed as one
+       label, and the question is the half that gets scrolled past. */
+    book.wonWithPO.forEach(function (x){
+      var party = C.dealParty(App.st, x.deal);
+      gaps.appendChild(h("div", { style:"padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer",
+        onclick:(function (id){ return function (){ openDeal(id); }; })(x.deal.id) },
+        h("span", { class:"chip warn", text:"PO in, invoice out" }),
+        h("span", { text:"  " + party.name + " \u00b7 " + x.deal.name }),
+        /* No "PO PO4523909464". Half these numbers already start with the
+           letters, and the stutter reads as a typo in our own screen. */
+        h("span", { class:"note", text:"  won " + C.fmtDayYear(x.deal.closedAt) +
+          " \u00b7 " + x.pos.map(function (o){
+            var n = o.number || "unnumbered";
+            /* NOT \b — in "PO4523909464" the character after "PO" is a digit,
+               which is a word character, so a word boundary never matches and
+               every real PO number stuttered anyway. */
+            return /^po/i.test(n) ? n : "PO " + n;
+          }).join(", ") + " \u2014 raise the invoice against it" })));
+    });
+    book.wonWithNothing.forEach(function (d){
       var party = C.dealParty(App.st, d);
       gaps.appendChild(h("div", { style:"padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer",
         onclick:(function (id){ return function (){ openDeal(id); }; })(d.id) },
-        h("span", { class:"chip hot", text:"No invoice logged" }),
+        h("span", { class:"chip hot", text:"Won, nothing behind it" }),
         h("span", { text:"  " + party.name + " \u00b7 " + d.name }),
-        h("span", { class:"note", text:"  won " + C.fmtDayYear(d.closedAt) })));
+        h("span", { class:"note", text:"  won " + C.fmtDayYear(d.closedAt) +
+          " \u00b7 no invoice and no purchase order" })));
     });
     book.undated.forEach(function (u){
       var party = C.dealParty(App.st, u.deal);
@@ -7297,6 +7621,55 @@ function viewMoney(el){
         h("span", { class:"note", text:"  " + C.fmtMoney(u.state.balance, u.state.invoice.currency) + " outstanding" })));
     });
     el.appendChild(gaps);
+  }
+
+  /* One invoice number, issued once. These are already in the log — the
+     importer refuses new ones now, but nothing could see the ones that got in
+     before it did. INV9000392 is on one deal twice, as USD 99 and as ZAR 99. */
+  if (book.duplicateNumbers.length){
+    var dup = h("section", { class:"pane", style:"margin-bottom:16px" },
+      h("h3", { text:"Invoice numbers used more than once" }),
+      h("div", { class:"sub",
+        text:"An invoice number is issued once. Two invoices carrying the same one are " +
+             "counted twice in everything above. Open each and cancel the one that " +
+             "should not exist \u2014 cancelling keeps it in the record and stops it counting." }));
+    book.duplicateNumbers.forEach(function (g){
+      var row = h("div", { style:"padding:8px 0;border-bottom:1px solid var(--line)" },
+        h("div", { style:"font-weight:600", text:g.number }));
+      g.invoices.forEach(function (x){
+        row.appendChild(h("div", { class:"note", style:"cursor:pointer;padding:2px 0",
+          onclick:(function (id){ return function (){ if (id) openDeal(id); }; })(x.deal && x.deal.id) },
+          x.company + " \u00b7 " + (x.deal ? x.deal.name : "deal missing") + "  \u2014  " +
+          C.fmtMoneyExact(C.invoiceNet(x.invoice), x.invoice.currency) +
+          (x.paid ? ", " + C.fmtMoneyExact(x.paid, x.invoice.currency) + " paid against it" : ", nothing paid")));
+      });
+      dup.appendChild(row);
+    });
+    el.appendChild(dup);
+  }
+
+  /* A company with no domain cannot be matched by a sender address, and the
+     failure is silent: every thread from them comes back "no company in the
+     CRM" and gets offered as a brand-new deal. Twelve were created in one
+     afternoon without one. */
+  if (book.noDomain.length){
+    var nd = h("section", { class:"pane", style:"margin-bottom:16px" },
+      h("h3", { text: book.noDomain.length + " compan" +
+                      (book.noDomain.length === 1 ? "y has" : "ies have") + " no domain" }),
+      h("div", { class:"sub",
+        text:"Email is matched to a customer by the sender's domain. Without one, every " +
+             "thread from them comes back as a company the CRM has never heard of \u2014 " +
+             "silently, and then gets offered as a new deal." }));
+    var ndList = h("div");
+    book.noDomain.slice(0, 20).forEach(function (x){
+      ndList.appendChild(h("div", { class:"note", style:"padding:3px 0",
+        text: x.company.name + " \u00b7 " + x.deals + " deal" + (x.deals === 1 ? "" : "s") }));
+    });
+    nd.appendChild(ndList);
+    if (book.noDomain.length > 20)
+      nd.appendChild(h("div", { class:"note",
+        text:"…and " + (book.noDomain.length - 20) + " more. Set them on the Companies page." }));
+    el.appendChild(nd);
   }
 
   /* Commission */
@@ -8370,6 +8743,12 @@ function viewSettings(el){
       res.money.forEach(function (m){
         var sec = h("div", { style:"margin:6px 0 10px" },
           h("div", { style:"font-weight:600", text:m.company + " · " + m.deal }));
+        m.records.purchaseOrders.forEach(function (o){
+          sec.appendChild(h("div", { class:"note", text:
+            "purchase order " + o.number +
+            (o.amount == null ? " · no amount stated" : " · " + C.fmtMoneyExact(o.amount, o.currency)) +
+            (o.issuedBy ? " · via " + o.issuedBy : "") +
+            (o.already ? "  — already present" : o.updating ? "  — updates the existing one" : "") })); });
         m.records.quotes.forEach(function (q){
           sec.appendChild(h("div", { class:"note", text:
             "quote " + q.number + " · " + C.fmtMoneyExact(q.amount, q.currency) +

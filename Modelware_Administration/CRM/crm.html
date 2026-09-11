@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="0f8813898856" data-built="8 Sep 2026" data-version="1.32.0">
+<meta name="crm-build" content="0f8813898856" data-built="8 Sep 2026" data-version="1.33.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -740,6 +740,7 @@ function money(v){
 function foldEvents(events){
   var st = { companies:{}, contacts:{}, deals:{}, followups:{}, interactions:{},
              invoices:{}, payments:{}, quotes:{}, pos:{},
+             creditNotes:{}, refunds:{},
              clients:{}, lastTs:null, eventCount:0 };
   var ordered = sortEvents(events || []);
 
@@ -1042,6 +1043,45 @@ function foldEvents(events){
         break;
       case "payment.removed":                    // keyed in wrong — not a refund
         if (st.payments[p.paymentId]) delete st.payments[p.paymentId];
+        break;
+
+      /* A credit note reverses a sale. It is not a payment and not a discount:
+         the money never came, and the revenue should stop being counted. Kept
+         as its own record because "we credited this" is a fact somebody has to
+         be able to see, not an adjustment silently folded into a total. */
+      case "creditNote.raised":
+        st.creditNotes[p.creditNoteId] = {
+          id:p.creditNoteId, invoiceId:p.invoiceId, dealId:p.dealId,
+          number:p.number || "", issuedOn:p.issuedOn || String(e.ts).slice(0,10),
+          currency:p.currency || "ZAR", net:money(p.net), vat:money(p.vat),
+          reason:p.reason || "", actor:e.actor, ts:e.ts
+        };
+        break;
+      case "creditNote.updated":
+        if (st.creditNotes[p.creditNoteId]){
+          var cnx = st.creditNotes[p.creditNoteId];
+          if (p.net != null) cnx.net = money(p.net);
+          if (p.vat != null) cnx.vat = money(p.vat);
+          if (p.issuedOn) cnx.issuedOn = p.issuedOn;
+          if (p.reason != null) cnx.reason = p.reason || "";
+        }
+        break;
+      case "creditNote.removed":
+        if (st.creditNotes[p.creditNoteId]) delete st.creditNotes[p.creditNoteId];
+        break;
+
+      /* Money going back out. Netted off what the invoice was paid, so an
+         invoice that was settled and then refunded stops reading as settled. */
+      case "refund.paid":
+        st.refunds[p.refundId] = {
+          id:p.refundId, invoiceId:p.invoiceId, dealId:p.dealId,
+          paidOn:p.paidOn || String(e.ts).slice(0,10),
+          amount:money(p.amount), reference:p.reference || "",
+          currency:p.currency || "", actor:e.actor, ts:e.ts
+        };
+        break;
+      case "refund.removed":
+        if (st.refunds[p.refundId]) delete st.refunds[p.refundId];
         break;
 
       case "interaction.logged":
@@ -1568,22 +1608,50 @@ function invoiceLineMismatch(inv){
 }
 
 function invoiceState(st, inv){
-  var net = invoiceNet(inv), pt = invoicePassThrough(inv);
-  var gross = round2(net + inv.vat);
+  var fullNet = invoiceNet(inv), pt = invoicePassThrough(inv);
+
+  /* Credit notes reverse the sale. A credit for the whole net CANCELS the
+     invoice — nothing was sold, so nothing is owed and nothing is earned;
+     dealMoney already drops cancelled invoices, which is how the commission
+     reverses. A partial credit reduces what the invoice is worth and, with it,
+     what it can earn: commission follows revenue, and a credited invoice
+     produced less of it. */
+  var creditedNet = 0, creditedVat = 0, creditCount = 0;
+  Object.keys(st.creditNotes || {}).forEach(function (k){
+    var cn = st.creditNotes[k];
+    if (cn.invoiceId !== inv.id) return;
+    creditedNet += cn.net; creditedVat += cn.vat; creditCount++;
+  });
+  creditedNet = round2(creditedNet); creditedVat = round2(creditedVat);
+  var fullyCredited = creditedNet > 0 && creditedNet >= round2(fullNet) - 0.005;
+
+  var net   = fullyCredited ? 0 : round2(fullNet - creditedNet);
+  var vat   = fullyCredited ? 0 : round2(money(inv.vat) - creditedVat);
+  var gross = round2(net + vat);
+
   var paid = 0;
   Object.keys(st.payments).forEach(function (k){
     if (st.payments[k].invoiceId === inv.id) paid += st.payments[k].amount; });
-  paid = round2(paid);
+  /* A refund is money that came in and went back out again. Netting it off
+     `paid` is what stops a refunded invoice reading as settled. */
+  var refunded = 0;
+  Object.keys(st.refunds || {}).forEach(function (k){
+    if (st.refunds[k].invoiceId === inv.id) refunded += st.refunds[k].amount; });
+  refunded = round2(refunded);
+  paid = round2(paid - refunded);
+
   var balance = round2(gross - paid);
-  var cancelled = inv.status === "cancelled";
+  var cancelled = inv.status === "cancelled" || fullyCredited;
   /* Settled means the balance is gone. A cent over is still settled — customers
      round, and a deal that can never be marked paid is worse than a cent. */
   var settled = !cancelled && gross > 0 && balance <= 0;
   return { invoice:inv, gross:gross, paid:paid, balance: cancelled ? 0 : balance,
            settled:settled, cancelled:cancelled,
-           net:net, passThrough:pt,
+           net:net, fullNet:fullNet, passThrough:pt,
+           credited:creditedNet, creditedVat:creditedVat,
+           creditNotes:creditCount, fullyCredited:fullyCredited, refunded:refunded,
            lineMismatch: invoiceLineMismatch(inv),
-           commissionBase: round2(net - pt) };
+           commissionBase: round2(Math.max(0, net - pt)) };
 }
 
 function invoicesFor(st, dealId){
@@ -1668,10 +1736,20 @@ function invoiceEarner(deal, inv){
    shape and the new one come out of the same door and every caller downstream
    stops caring which it was given. */
 function commissionParts(deal, inv, state){
+  /* A partial credit note reverses part of the sale, so it must reverse part of
+     the earning too. With lines, the reduction is spread across them in
+     proportion: a credit note reverses the invoice, not one chosen line of it.
+     Without this the line path would keep paying commission on money that was
+     credited back, which is the one direction this must never fail in. */
+  var creditFactor = 1;
+  if (state && state.credited > 0){
+    var whole = invoiceNet(inv);
+    creditFactor = whole > 0 ? Math.max(0, round2(state.net) / whole) : 0;
+  }
   if (inv.lines && inv.lines.length){
     return inv.lines.map(function (l){
       var r = lineRate(deal, inv, l);
-      var base = round2(l.net - l.passThrough);
+      var base = round2((l.net - l.passThrough) * creditFactor);
       return { line:l, label:l.description || "Line", base:base, rate:r.rate, from:r.from,
                overridden:!!r.overridden,
                commission: r.rate == null ? null : round2(base * r.rate) };
@@ -2416,7 +2494,12 @@ var TRIAGE_ROW_FIELDS = {
   kind:1, occurredAt:1, messageId:1, interactionId:1, summary:1, note:1,
   contactId:1, contactName:1, contactEmail:1, contactRole:1, contactPhone:1,
   contacts:1, nextStep:1,
-  quotes:1, purchaseOrders:1, invoices:1, payments:1
+  quotes:1, purchaseOrders:1, invoices:1, payments:1,
+  /* A backfill carries documents and no conversation. It says so EXPLICITLY:
+     inferring it from a missing summary would let a genuine triage row that
+     lost its line import in silence as a document row, which is the exact
+     shape of failure this contract exists to prevent. */
+  documentsOnly:1, creditNotes:1, refunds:1
 };
 var TRIAGE_CONTACT_FIELDS  = { name:1, email:1, role:1, phone:1 };
 var TRIAGE_NEXTSTEP_FIELDS = { what:1, dueDate:1, owner:1 };
@@ -2430,6 +2513,9 @@ var TRIAGE_INVOICE_FIELDS  = { number:1, issuedOn:1, dueDate:1, currency:1, net:
 var TRIAGE_LINE_FIELDS     = { description:1, quantity:1, unitPrice:1, net:1,
                                passThrough:1, commissionRate:1 };
 var TRIAGE_PAYMENT_FIELDS  = { invoiceNumber:1, amount:1, receivedOn:1, reference:1, currency:1 };
+var TRIAGE_CREDITNOTE_FIELDS = { number:1, invoiceNumber:1, issuedOn:1, currency:1,
+                                 net:1, vat:1, reason:1, note:1 };
+var TRIAGE_REFUND_FIELDS     = { invoiceNumber:1, amount:1, paidOn:1, reference:1, currency:1, note:1 };
 var QUOTE_STATUSES         = { issued:1, accepted:1, superseded:1, expired:1, declined:1 };
 
 /* The names an object carries that the contract does not know about. Returned
@@ -2514,7 +2600,8 @@ function financialEvents(r, deal, st, cfg, ctx, where){
   var today = (ctx && ctx.today) || todayISO();
   var actor = (ctx && ctx.actor) || "howard";
   var out = { events:[], refusals:[], warnings:[],
-              records:{ purchaseOrders:[], quotes:[], invoices:[], payments:[] } };
+              records:{ purchaseOrders:[], quotes:[], invoices:[], payments:[],
+                        creditNotes:[], refunds:[] } };
   var dealId = deal.id;
   var noComm = deal.commissionable === false;
   var refuse = function (m){ out.refusals.push(where + ": " + m); };
@@ -2524,7 +2611,10 @@ function financialEvents(r, deal, st, cfg, ctx, where){
   var quotes   = Array.isArray(r.quotes)   ? r.quotes   : [];
   var invoices = Array.isArray(r.invoices) ? r.invoices : [];
   var payments = Array.isArray(r.payments) ? r.payments : [];
-  if (!purchaseOrders.length && !quotes.length && !invoices.length && !payments.length) return out;
+  var creditNotes = Array.isArray(r.creditNotes) ? r.creditNotes : [];
+  var refunds  = Array.isArray(r.refunds)  ? r.refunds  : [];
+  if (!purchaseOrders.length && !quotes.length && !invoices.length &&
+      !payments.length && !creditNotes.length && !refunds.length) return out;
 
   /* ---- what already exists, so a second import changes nothing ---- */
   var quoteByNumber = {};                     // scoped to this deal
@@ -2819,6 +2909,97 @@ function financialEvents(r, deal, st, cfg, ctx, where){
                 amount:amt, reference:ref } });
   });
 
+  /* ---- credit notes ----
+     Reversing a sale is the one financial act with no upside for getting it
+     wrong in either direction, so it names its invoice or it refuses, exactly
+     as a payment does. */
+  creditNotes.forEach(function (cv, j){
+    var label = "credit note " + (cv && cv.number ? cv.number : j + 1);
+    if (!cv || typeof cv !== "object") return refuse(label + " is not an object.");
+    var un = unknownFields(cv, TRIAGE_CREDITNOTE_FIELDS);
+    if (un.length) return refuse(label + " carries a field I do not understand: " + un.join(", ") + ".");
+    if (!cv.invoiceNumber)
+      return refuse(label + " names no invoice. A credit note that cannot name what it " +
+        "reverses reverses nothing.");
+    var target = invIdFor[triageNorm(cv.invoiceNumber)] ||
+                 (function (){
+                   var iv = invByNumber[triageNorm(cv.invoiceNumber)];
+                   return (iv && iv.dealId === dealId)
+                     ? { id:iv.id, currency:iv.currency, net:iv.net, number:iv.number } : null;
+                 })();
+    if (!target)
+      return refuse(label + ": invoice \u201c" + cv.invoiceNumber + "\u201d is on neither this row " +
+        "nor this deal, so there is nothing for it to credit.");
+    var cnet = money(cv.net);
+    if (!(cnet > 0)) return refuse(label + " has no net amount.");
+    if (cnet > round2(target.net) + 0.005)
+      return refuse(label + " credits " + cnet + " against an invoice whose net is " +
+        target.net + ". A credit note cannot reverse more than was sold.");
+    var ccur = cv.currency || r.currency || target.currency;
+    if (triageNorm(ccur) !== triageNorm(target.currency))
+      return refuse(label + " is in " + ccur + " but invoice " + target.number + " is in " +
+        target.currency + ". Currencies are never converted (C16).");
+    var cnum = String(cv.number || "").trim();
+    if (!cnum) return refuse(label + " has no number.");
+    var existingCn = null;
+    Object.keys(st.creditNotes || {}).forEach(function (k){
+      if (triageNorm(st.creditNotes[k].number) === triageNorm(cnum)) existingCn = st.creditNotes[k]; });
+    var cid = existingCn ? existingCn.id
+            : "cn_" + triageHash(dealId + "\u241f cn \u241f" + triageNorm(cnum));
+    var full = cnet >= round2(target.net) - 0.005;
+    var alreadyCn = existingCn && existingCn.net === cnet && existingCn.vat === money(cv.vat);
+    out.records.creditNotes.push({ number:cnum, net:cnet, vat:money(cv.vat), currency:ccur,
+      invoice:target.number, full:full, already:!!alreadyCn,
+      updating: !!existingCn && !alreadyCn });
+    if (alreadyCn) return;
+    out.events.push({ id:"ev_cn_" + triageHash(dealId + "\u241f cn \u241f" + triageNorm(cnum)),
+      type: existingCn ? "creditNote.updated" : "creditNote.raised", actor:actor,
+      payload:{ creditNoteId:cid, dealId:dealId, invoiceId:target.id, number:cnum,
+                issuedOn: parseDateInput(cv.issuedOn, today) || today,
+                currency:ccur, net:cnet, vat:money(cv.vat),
+                reason: String(cv.reason || "") } });
+  });
+
+  /* ---- refunds ----
+     Money that came in and went back out. Netted off the invoice's paid total,
+     so a refunded invoice stops reading as settled. */
+  refunds.forEach(function (fv, j){
+    var label = "refund " + (j + 1);
+    if (!fv || typeof fv !== "object") return refuse(label + " is not an object.");
+    var un = unknownFields(fv, TRIAGE_REFUND_FIELDS);
+    if (un.length) return refuse(label + " carries a field I do not understand: " + un.join(", ") + ".");
+    if (!fv.invoiceNumber)
+      return refuse(label + " names no invoice. A refund that cannot name what it reverses " +
+        "cannot be reconciled against anything.");
+    var rt = invIdFor[triageNorm(fv.invoiceNumber)] ||
+             (function (){
+               var iv = invByNumber[triageNorm(fv.invoiceNumber)];
+               return (iv && iv.dealId === dealId)
+                 ? { id:iv.id, currency:iv.currency, net:iv.net, number:iv.number } : null;
+             })();
+    if (!rt)
+      return refuse(label + ": invoice \u201c" + fv.invoiceNumber + "\u201d is on neither this row " +
+        "nor this deal, so there is nothing to refund against.");
+    var famt = money(fv.amount);
+    if (!(famt > 0)) return refuse(label + " has no amount.");
+    var fwhen = parseDateInput(fv.paidOn, today);
+    if (!fwhen) return refuse(label + ": \u201c" + fv.paidOn + "\u201d is not a date I can read.");
+    if (fv.currency && triageNorm(fv.currency) !== triageNorm(rt.currency))
+      warn(label + " is in " + fv.currency + " but invoice " + rt.number + " is in " +
+        rt.currency + ". Recorded against the invoice unconverted (C16) \u2014 check it.");
+    var fkey = triageNorm(rt.number) + "\u241f" + famt + "\u241f" + fwhen;
+    var fid = "ref_" + triageHash(fkey);
+    var priorRef = (st.refunds || {})[fid];
+    var alreadyRef = !!priorRef && priorRef.reference === String(fv.reference || "").slice(0, 120);
+    out.records.refunds.push({ invoice:rt.number, amount:famt, receivedOn:fwhen,
+      currency:rt.currency, already:alreadyRef, updating: !!priorRef && !alreadyRef });
+    if (alreadyRef) return;
+    out.events.push({ id:"ev_ref_" + triageHash(fkey), type:"refund.paid", actor:actor,
+      payload:{ refundId:fid, dealId:dealId, invoiceId:rt.id, amount:famt,
+                paidOn:fwhen, currency:rt.currency,
+                reference: String(fv.reference || "").slice(0, 120) } });
+  });
+
   /* All or nothing. An invoice that landed without the payment that settles it
      reads as unpaid, and somebody chases a customer who has already paid. */
   if (out.refusals.length){ out.events = []; out.warnings = []; }
@@ -2925,19 +3106,43 @@ function importTriage(text, st, cfg, ctx){
       return;
     }
 
-    var bad = checkTriageSummary(r.summary);
+    /* A documents-only row carries paperwork and no conversation: a backfill of
+       quotes, invoices and payments that were never anybody's email. It gets no
+       interaction, so it needs no summary, no kind and no date — but it must SAY
+       so. Inferring it from an absent summary would let a triage row that lost
+       its line through in silence, and a silently half-imported row is the
+       failure this whole contract is built around. */
+    var docsOnly = r.documentsOnly === true;
+    if (docsOnly){
+      if (r.summary || r.kind || r.occurredAt || r.messageId || r.interactionId ||
+          r.nextStep || (Array.isArray(r.contacts) && r.contacts.length))
+        { out.errors.push(where + ": documentsOnly is set, but the row also carries " +
+          "conversation fields. A row is either a logged interaction or a document " +
+          "record \u2014 deciding which for you is how the wrong one gets written."); return; }
+      if (!(Array.isArray(r.quotes) && r.quotes.length) &&
+          !(Array.isArray(r.purchaseOrders) && r.purchaseOrders.length) &&
+          !(Array.isArray(r.invoices) && r.invoices.length) &&
+          !(Array.isArray(r.payments) && r.payments.length) &&
+          !(Array.isArray(r.creditNotes) && r.creditNotes.length) &&
+          !(Array.isArray(r.refunds) && r.refunds.length))
+        { out.errors.push(where + ": documentsOnly is set but the row carries no documents, " +
+          "so it would import nothing at all."); return; }
+    }
+
+    var bad = docsOnly ? null : checkTriageSummary(r.summary);
     if (bad){ out.errors.push(where + ": " + bad + ". Nothing from this row was imported."); return; }
 
     var kind = triageNorm(r.kind) || "email";
-    if (!TRIAGE_KINDS[kind]){
+    if (!docsOnly && !TRIAGE_KINDS[kind]){
       /* Listed from the table itself, so adding a channel never leaves the
          error message quietly recommending the old set. */
       out.errors.push(where + ": “" + r.kind + "” is not a kind. Use " +
         Object.keys(TRIAGE_KINDS).join(", ") + ".");
       return;
     }
-    var when = parseDateInput(r.occurredAt, today) || (r.occurredAt || "").slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(when)){
+    var when = docsOnly ? today
+             : (parseDateInput(r.occurredAt, today) || (r.occurredAt || "").slice(0, 10));
+    if (!docsOnly && !/^\d{4}-\d{2}-\d{2}$/.test(when)){
       out.errors.push(where + ": “" + r.occurredAt + "” is not a date I can read.");
       return;
     }
@@ -2973,7 +3178,17 @@ function importTriage(text, st, cfg, ctx){
       return;
     }
 
-    var key = r.messageId || (r.dealId || deal.id) + "|" + when + "|" + r.summary;
+    /* A documents-only row has no message to key on, so it keys on what it IS:
+       the deal and the documents it carries. Re-importing the same file is then
+       still a no-op, which is the property that matters. */
+    var key = docsOnly
+      ? "docs|" + deal.id + "|" + [].concat(
+          (r.quotes || []).map(function (x){ return "q" + x.number; }),
+          (r.purchaseOrders || []).map(function (x){ return "o" + x.number; }),
+          (r.invoices || []).map(function (x){ return "i" + x.number; }),
+          (r.creditNotes || []).map(function (x){ return "c" + x.number; })
+        ).join(",")
+      : r.messageId || (r.dealId || deal.id) + "|" + when + "|" + r.summary;
     var stem = triageHash(String(key));
     var ixId = r.interactionId || "ix_mail_" + stem;
     /* Already logged — but is it the SAME thing?
@@ -2993,6 +3208,7 @@ function importTriage(text, st, cfg, ctx){
        same kind, within three days, and a summary that is nearly the same line —
        say so, and let a person decide. */
     (function (){
+      if (docsOnly) return;                       // no line to be a near-duplicate of
       var norm = triageNorm(r.summary).replace(/[^a-z0-9 ]/g, "");
       var words = norm.split(/\s+/).filter(Boolean);
       if (words.length < 4) return;
@@ -3041,7 +3257,10 @@ function importTriage(text, st, cfg, ctx){
       payload:{ interactionId:ixId, subjectType:"deal", subjectId:deal.id, kind:kind,
                 occurredAt:when, summary:r.summary,
                 contactId: r.contactId || undefined } };
-    var mine = [ixEvent];
+    /* The whole point: a documents-only row writes its documents and nothing
+       else. No interaction, so nothing about a customer's correspondence is
+       claimed that did not happen. */
+    var mine = docsOnly ? [] : [ixEvent];
 
     /* The row may disagree with the deal it matched. `outcome: "won"` on work
        already delivered is the case that started this: the deal existed, so
@@ -3320,7 +3539,11 @@ function importTriage(text, st, cfg, ctx){
       return;                    // applied deliberately, never with the rest
     }
     mine.forEach(function (e){ out.events.push(e); });
-    out.summary.logged++;
+    /* Count what actually happened. A documents-only row logs no interaction,
+       and a "20 logged" that means nothing was logged is the kind of number
+       somebody later builds a decision on. */
+    if (!docsOnly) out.summary.logged++;
+    else out.summary.documentRows = (out.summary.documentRows || 0) + 1;
     out.rows.push(row);
   });
 
@@ -3979,6 +4202,8 @@ var API = {
   parseTriageBatch:parseTriageBatch, financialEvents:financialEvents,
   unknownFields:unknownFields, TRIAGE_VERSION:TRIAGE_VERSION,
   TRIAGE_ROW_FIELDS:TRIAGE_ROW_FIELDS,
+  TRIAGE_CREDITNOTE_FIELDS:TRIAGE_CREDITNOTE_FIELDS,
+  TRIAGE_REFUND_FIELDS:TRIAGE_REFUND_FIELDS,
   checkTriageSummary:checkTriageSummary, triageHash:triageHash,
   resolveUser:resolveUser, userIds:userIds, salesUsers:salesUsers,
   parseEmailPaste:parseEmailPaste, parsePaste:parsePaste, parseLooseDate:parseLooseDate,

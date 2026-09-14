@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="45d27830edeb" data-built="14 Sep 2026" data-version="1.35.1">
+<meta name="crm-build" content="ef8a7453544c" data-built="14 Sep 2026" data-version="1.36.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -727,7 +727,67 @@ function assign(target, src, keys){
    person is the customer. See dealParty(). */
 var DEAL_FIELDS = ["companyId","name","owner","stage","value","currency",
                    "expectedCloseDate","notes","contactId","commissionRate",
-                   "partnerCompanyId","partnerContactId","commissionable"];
+                   "partnerCompanyId","partnerContactId","commissionable",
+                   "channel","facilitatorRef","endClient"];
+
+/* THE FIVE TRAINING CHANNELS (ruled 2026-09-14 by Howard).
+
+   How a sale reached us. On the DEAL, because the same partner brings a
+   course-week engagement one month and a seat order the next.
+
+   `billsPartner` is the one that matters and the one that overturned an earlier
+   rule. The CRM used to hold that a partner-led deal belongs to the END
+   CUSTOMER: the partner refers, we contract, we invoice the client. That is an
+   INTRODUCER, and it is not how most of this business works. A reseller
+   contracts their own client and pays us — "they present our courses as one of
+   their courses and pay us" — so the end client has no contract with us at all
+   and must not appear in our ageing report owing money they never agreed to pay.
+   On those channels the partner IS the customer, and the end client is a note.
+
+   `earns` is a DEFAULT, never a lock. Paul runs PLUS, Tools & Solutions and
+   Riverdale and earns on them; a partner deal set up directly with an ADP earns
+   nobody anything. Both are possible on any channel, so the channel proposes and
+   the deal disposes — which is also why a blank rate still means "nobody has set
+   one" and never 0% (C23). */
+var CHANNELS = [
+  { id:"1",   label:"Direct — individual",      short:"Direct",
+    who:"A person buying a course for themselves",
+    billsPartner:false, earns:true,  prepaid:true },
+  { id:"2",   label:"Semi-direct — corporate",  short:"Corporate",
+    who:"Several people, one invoice, repeatable",
+    billsPartner:false, earns:true,  prepaid:false },
+  { id:"3",   label:"Seat reseller",            short:"Seats",
+    who:"Sells seats on our online courses; their student pays them, they pay us",
+    billsPartner:true,  earns:true,  prepaid:false },
+  { id:"4",   label:"Course-week reseller",     short:"Course weeks",
+    who:"Sells and sets up delivery; buys course weeks from us",
+    billsPartner:true,  earns:true,  prepaid:false },
+  { id:"5.2", label:"Approved Delivery Partner", short:"ADP",
+    who:"Sells and delivers in their own territory, pays us a royalty",
+    billsPartner:true,  earns:false, prepaid:false },
+  { id:"5.3", label:"Multi-region partner",     short:"Multi-region",
+    who:"Sells our courses across several countries",
+    billsPartner:true,  earns:true,  prepaid:false }
+];
+/* 5.1 is deliberately NOT here. An Individual Trainer facilitates courses WE
+   sold — they are who DELIVERS, not how the work arrived, and folding them into
+   this list would bend the field the way "Individual" got bent into meaning
+   three different things. They ride on facilitatorRef instead. */
+
+/* MWS-PP-2026-001. Normalised to upper case with the surrounding space gone,
+   because a reference that differs only in case is the same agreement and two
+   records pointing at "one" agreement is the thing this field exists to stop. */
+function partnerRef(v){
+  var t = String(v == null ? "" : v).trim().toUpperCase();
+  return t || null;
+}
+
+function channelById(id){
+  if (id == null || id === "") return null;
+  var k = String(id);
+  for (var i = 0; i < CHANNELS.length; i++) if (CHANNELS[i].id === k) return CHANNELS[i];
+  return null;
+}
 
 /* Money is rounded to cents on the way IN, once, so nothing downstream has to
    wonder whether 0.1 + 0.2 has crept into a balance. */
@@ -782,6 +842,17 @@ function foldEvents(events){
              So: a person can have their own record, flagged as a person, and it
              behaves like any other partner everywhere else. */
           isPerson: !!p.isPerson,
+          /* THE JOIN KEY INTO THE PARTNER REGISTER \u2014 MWS-PP-2026-001.
+
+             The Pack Builder already holds the model, the tier, the territory,
+             the royalty and the lifecycle status, keyed on an agreement
+             reference it allocates from a sha-guarded ledger. The CRM stores the
+             reference and nothing else. This is C20 again: the triage skill does
+             not reimplement the fold, it extracts crm-core from the shipped
+             file, because two copies of one rule drift and nobody can tell which
+             is stale. A partner model typed into the CRM and also held in the
+             Builder is that mistake wearing a different hat. */
+          partnerRef: partnerRef(p.partnerRef),
           createdAt:e.ts };
         break;
       case "company.updated":
@@ -796,6 +867,8 @@ function foldEvents(events){
             st.companies[p.companyId].channelForCompanyId =
               p.channelForCompanyId == null ? null : String(p.channelForCompanyId);
           if (p.isPerson !== undefined) st.companies[p.companyId].isPerson = !!p.isPerson;
+          if (p.partnerRef !== undefined)
+            st.companies[p.companyId].partnerRef = partnerRef(p.partnerRef);
         break;
       /* Two records for one customer is not a fact about the business, it is a
          data-entry accident — so this folds one into the other rather than
@@ -816,10 +889,13 @@ function foldEvents(events){
       case "contact.created":
         st.contacts[p.contactId] = { id:p.contactId, companyId:p.companyId || null,
           name:p.name || "(unnamed)", email:p.email || "", phone:p.phone || "",
-          role:p.role || "", createdAt:e.ts };
+          role:p.role || "", partnerRef:partnerRef(p.partnerRef), createdAt:e.ts };
         break;
       case "contact.updated":
-        if (st.contacts[p.contactId]) assign(st.contacts[p.contactId], p, ["companyId","name","email","phone","role"]);
+        if (st.contacts[p.contactId]){
+          assign(st.contacts[p.contactId], p, ["companyId","name","email","phone","role","partnerRef"]);
+          if ("partnerRef" in p) st.contacts[p.contactId].partnerRef = partnerRef(p.partnerRef);
+        }
         break;
 
       case "deal.created":
@@ -852,10 +928,32 @@ function foldEvents(events){
              A deal has at most one of these two. Both set is a contradiction, not
              a richer record — see dealPartner(). */
           partnerContactId:p.partnerContactId || null,
+          /* How this sale reached us. Blank means nobody has set one — which is
+             counted out loud on Money rather than defaulted to something
+             plausible, because a default that looks like a fact is how SARB came
+             to carry a R207,108.70 quote against a deal whose value was null. */
+          channel: channelById(p.channel) ? String(p.channel) : null,
+          /* WHO DELIVERED IT, which is not who sold it. An Individual Trainer is
+             a CDMP Master who facilitates courses we sold, and carries a
+             recoverable investment account — we fund their Master training and
+             recover it as they facilitate. A pointer into the partner register,
+             never a typed name. */
+          facilitatorRef: p.facilitatorRef ? String(p.facilitatorRef).trim() : null,
+          /* On a reseller channel the partner is the customer, so the end client
+             has no record here. Their name is worth keeping as a note — "who is
+             actually in the room" — and it is a note, not an account: nothing is
+             invoiced to it and nothing is chased from it. */
+          endClient: p.endClient ? String(p.endClient).trim() : "",
           /* Not every deal pays commission. A deal the director carries himself
              has no earner, and pretending it does would put money in somebody's
              column that nobody is owed. Default true so nothing existing moves. */
-          commissionable: p.commissionable === false ? false : true,
+          /* The channel PROPOSES; an explicit value on the event disposes. An ADP
+             deal earns nobody anything by default, a reseller deal Paul is
+             running does — but both are possible on either, so this is a default
+             and never a lock. */
+          commissionable: p.commissionable === false ? false
+                        : p.commissionable === true ? true
+                        : (channelById(p.channel) ? channelById(p.channel).earns : true),
           /* Per deal, by ruling. Rates differ by what is being sold, so there is
              no sensible per-person default to inherit. */
           commissionRate: p.commissionRate == null || p.commissionRate === "" ? null : +p.commissionRate,
@@ -866,7 +964,13 @@ function foldEvents(events){
         };
         break;
       case "deal.updated":
-        if (st.deals[p.dealId]) assign(st.deals[p.dealId], p, DEAL_FIELDS);
+        if (st.deals[p.dealId]){
+          assign(st.deals[p.dealId], p, DEAL_FIELDS);
+          /* assign copies whatever the event carried. An unknown channel string
+             must not survive into state as though it meant something. */
+          if ("channel" in p)
+            st.deals[p.dealId].channel = channelById(p.channel) ? String(p.channel) : null;
+        }
         break;
       case "deal.stage_changed":
         if (st.deals[p.dealId]){
@@ -1233,6 +1337,14 @@ function foldEvents(events){
        company wins because it is the older field and the one every screen
        already reads; the person is dropped rather than silently outranking it. */
     if (d.partnerCompanyId && d.partnerContactId) d.partnerContactId = null;
+    /* On a reseller channel THE PARTNER IS THE CUSTOMER (ruled 2026-09-14).
+       They contract their own client and pay us, so there is no third party to
+       name as the introducer — the company on the deal already is the partner.
+       A "via partner" left over from before the channel was set would claim the
+       deal came through somebody else, which on these channels is false. The
+       end client's name is kept as a note, not as an account. */
+    var dch = channelById(d.channel);
+    if (dch && dch.billsPartner){ d.partnerCompanyId = null; d.partnerContactId = null; }
     /* A partner contact filed at the deal's own company is the same mistake
        wearing a different hat: the customer introducing themselves. */
     if (d.partnerContactId){
@@ -1957,8 +2069,19 @@ function moneyBook(st, cfg, today, opts){
                   domain, and twelve of them were created in one afternoon
                   without one. Silent is the problem: every one of their threads
                   comes back "no company in the CRM". */
-               noDomain:[] };
+               noDomain:[],
+               /* Where the money actually came FROM. The whole point of putting
+                  a channel on the deal: a reseller pound and a direct pound are
+                  the same number and a completely different business. Currencies
+                  are never summed across (C16), so each channel carries its own
+                  per-currency bags. `noChannel` is counted OUT LOUD rather than
+                  folded into a default \u2014 a total that silently absorbs the deals
+                  nobody has classified reads as a fact and is a guess. */
+               byChannel:{}, noChannel:[] };
   var add = function (bag, cur, amt){ bag[cur] = round2((bag[cur] || 0) + amt); };
+  var chanBag = function (id){
+    return book.byChannel[id] || (book.byChannel[id] = {
+      id:id, invoiced:{}, paid:{}, outstanding:{}, deals:0, won:0 }); };
 
   Object.keys(st.deals).forEach(function (k){
     var d = st.deals[k];
@@ -1978,12 +2101,21 @@ function moneyBook(st, cfg, today, opts){
       else                book.wonWithNothing.push(d);
     }
 
+    var dch = channelById(d.channel);
+    if (!dch) book.noChannel.push(d);
+    else { var cb = chanBag(dch.id); cb.deals++;
+           if (d.status === "closed" && d.outcome === "won") cb.won++; }
+
     m.invoices.forEach(function (s){
       if (s.cancelled) return;
       var c = s.invoice.currency || "ZAR";
       add(book.invoiced, c, s.gross);
       add(book.paid, c, s.paid);
       add(book.outstanding, c, s.balance);
+      if (dch){
+        var b = chanBag(dch.id);
+        add(b.invoiced, c, s.gross); add(b.paid, c, s.paid); add(b.outstanding, c, s.balance);
+      }
       if (!s.invoice.dueDate && s.balance > 0) book.undated.push({ state:s, deal:d });
       if (s.invoice.dueDate && s.balance > 0 && daysBetween(today, s.invoice.dueDate) < 0){
         add(book.overdue, c, s.balance);
@@ -2584,7 +2716,11 @@ var TRIAGE_ROW_FIELDS = {
   kind:1, occurredAt:1, messageId:1, interactionId:1, summary:1, note:1,
   contactId:1, contactName:1, contactEmail:1, contactRole:1, contactPhone:1,
   contacts:1, nextStep:1,
-  quotes:1, purchaseOrders:1, invoices:1, payments:1
+  quotes:1, purchaseOrders:1, invoices:1, payments:1,
+  /* The five training channels. `channel` is how the sale reached us;
+     `facilitator` is who delivered it, which is a different fact; `endClient`
+     is a note on a reseller row, never an account. */
+  channel:1, facilitator:1, endClient:1, partnerRef:1
 };
 var TRIAGE_CONTACT_FIELDS  = { name:1, email:1, role:1, phone:1 };
 var TRIAGE_NEXTSTEP_FIELDS = { what:1, dueDate:1, owner:1 };
@@ -3380,6 +3516,54 @@ function importTriage(text, st, cfg, ctx){
        re-imported batch dropped every financial document on it, which is the
        same silence this contract exists to end — only harder to spot, because
        the row genuinely was a duplicate in one respect. */
+    /* THE CHANNEL ON A MATCHED ROW.
+
+       The create path resolves this; the matched path did not, which is exactly
+       the shape of the bug that silently dropped the payments array \u2014 a field
+       read on one path and by nobody on the other looks identical to a field
+       nobody sent. A matched row is the NORMAL way a channel arrives, because
+       the deal usually exists before anybody classifies how it came in. */
+    if (r.channel != null && String(r.channel).trim() !== ""){
+      var mch = channelById(String(r.channel).trim());
+      if (!mch){
+        out.errors.push(where + ": channel \u201c" + r.channel + "\u201d is not one of " +
+          CHANNELS.map(function (c){ return c.id; }).join(", ") + ".");
+        return;
+      }
+      var wasCh = deal.channel || null;
+      if (wasCh && wasCh !== mch.id)
+        out.warnings.push(where + ": changes the channel from " + wasCh + " to " + mch.id +
+          ". Which side of the business this revenue came from is not a detail, so it is " +
+          "said out loud rather than applied quietly.");
+      if (wasCh !== mch.id){
+        var pay = { dealId: deal.id, channel: mch.id };
+        if (mch.billsPartner) pay.endClient = String(r.endClient || "").trim();
+        out.events.push({ id:"ev_dch_" + triageHash(deal.id + "\u241f" + mch.id),
+                          type:"deal.updated", actor:actor, payload:pay });
+      }
+    }
+    if (r.facilitator != null && String(r.facilitator).trim() !== ""){
+      /* Named by AGREEMENT REFERENCE, never by a typed name \u2014 the point of the
+         register is that one number means one partner, and two spellings of one
+         person would be two people. */
+      var fref = partnerRef(r.facilitator);
+      var found = null;
+      Object.keys(st.companies).forEach(function (k){
+        if (st.companies[k].partnerRef === fref) found = "co:" + k; });
+      Object.keys(st.contacts).forEach(function (k){
+        if (st.contacts[k].partnerRef === fref) found = "ct:" + k; });
+      if (!found){
+        out.errors.push(where + ": no partner in the CRM carries the agreement reference " +
+          fref + ", so I cannot say who facilitated this. Set the reference on their " +
+          "record first \u2014 guessing from a name is how two spellings become two people.");
+        return;
+      }
+      if (deal.facilitatorRef !== found)
+        out.events.push({ id:"ev_dfac_" + triageHash(deal.id + "\u241f" + fref),
+                          type:"deal.updated", actor:actor,
+                          payload:{ dealId:deal.id, facilitatorRef:found } });
+    }
+
     var fin = financialEvents(r, deal, st, cfg, ctx, where);
     if (fin.refusals.length){
       fin.refusals.forEach(function (m){ out.errors.push(m); });
@@ -3800,11 +3984,35 @@ function triageCreate(rows, st, cfg, ctx){
         "One of those is wrong and I will not choose which.");
       return;
     }
+    /* Resolved here rather than trusted: an unrecognised channel must refuse its
+       row and name itself, the same rule every other unknown field follows.
+       A silently-dropped channel looks exactly like a deal nobody classified. */
+    var rowAt = "Row " + (i+1);
+    var chanId = null, endClientTxt = "";
+    if (r.channel != null && String(r.channel).trim() !== ""){
+      var cch = channelById(String(r.channel).trim());
+      if (!cch){
+        out.errors.push(rowAt + ": channel \u201c" + r.channel + "\u201d is not one of " +
+          CHANNELS.map(function (c){ return c.id; }).join(", ") + ".");
+        return;
+      }
+      chanId = cch.id;
+      if (cch.billsPartner) endClientTxt = String(r.endClient || "").trim();
+      else if (r.endClient)
+        out.warnings.push(rowAt + ": endClient is only kept on a reseller channel, " +
+          "where the partner is the customer. Dropped on channel " + cch.id + ".");
+    } else if (r.endClient){
+      out.warnings.push(rowAt + ": endClient without a channel. Dropped \u2014 " +
+        "it only means something where the partner is the customer.");
+    }
+
     out.events.push({ id:"ev_d_" + triageHash(dealKey), type:"deal.created", actor:actor,
       payload:{ dealId:dealId, companyId:coId, name:dealName, owner:dealOwner,
                 contactId: contactId || undefined,
                 partnerCompanyId: partnerId || undefined,
                 partnerContactId: partnerPersonId || undefined,
+                channel: chanId || undefined,
+                endClient: endClientTxt || undefined,
                 commissionable: noComm ? false : undefined,
                 stage:stage, value:val, commissionRate:rate,
                 currency:r.currency || (cfg && cfg.defaultCurrency) || "ZAR",
@@ -4197,6 +4405,7 @@ var API = {
   lineRate:lineRate, invoiceEarner:invoiceEarner, commissionParts:commissionParts,
   posFor:posFor, dealPartner:dealPartner, dealsBroughtBy:dealsBroughtBy,
   channelsFor:channelsFor, channelsForCompany:channelsForCompany,
+  CHANNELS:CHANNELS, channelById:channelById, partnerRef:partnerRef,
   dealsBroughtByCompany:dealsBroughtByCompany,
   invoiceCommission:invoiceCommission, quotesFor:quotesFor, normLines:normLines,
   invoiceNet:invoiceNet, invoicePassThrough:invoicePassThrough,
@@ -6299,6 +6508,23 @@ function openDeal(dealId){
   fact("Owner", userName(d.owner) +
        (d.commissionable === false ? "  (no commission on this deal)" : ""));
   (function (){
+    var c = C.channelById(d.channel);
+    fact("Channel", c ? c.id + " \u00b7 " + c.label : "not set");
+    if (c && c.billsPartner){
+      /* Said out loud on the deal, because it is the fact that decides who is
+         chased for the money and it is not obvious from the company name. */
+      fact("Billed to", (co.name || "the partner") +
+        " \u2014 they contract their own client and pay us");
+      if (d.endClient) fact("End client", d.endClient + "  (a note, not an account)");
+    }
+    if (d.facilitatorRef){
+      var f = d.facilitatorRef.indexOf("co:") === 0 ? App.st.companies[d.facilitatorRef.slice(3)]
+            : d.facilitatorRef.indexOf("ct:") === 0 ? App.st.contacts[d.facilitatorRef.slice(3)] : null;
+      fact("Facilitated by", f ? (f.name + (f.partnerRef ? "  \u00b7 " + f.partnerRef : ""))
+                               : "a record that is no longer here");
+    }
+  })();
+  (function (){
     var pr = C.dealPartner(App.st, d);
     if (pr.none) return;
     /* Both halves, from one stored fact. "via CyberNas" alone loses that
@@ -7489,6 +7715,26 @@ function editDeal(anchor, d){
 
      One value, two kinds, because a deal has one partner. Options are prefixed
      so the select carries its own key: "co:" a firm, "ct:" a person. */
+  /* THE CHANNEL \u2014 how this sale reached us. First, because it decides what the
+     rest of the form should even be asking: on a reseller channel there is no
+     "via partner" to ask about, since the partner is the customer. */
+  var chan = h("select", { "aria-label":"Channel" });
+  chan.appendChild(h("option", { value:"" }, "\u2014 not set \u2014"));
+  C.CHANNELS.forEach(function (c){
+    chan.appendChild(h("option", { value:c.id }, c.id + "  \u00b7  " + c.label)); });
+  chan.value = d.channel || "";
+  var chanNote = h("div", { class:"note" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Channel" }), chan));
+  box.appendChild(chanNote);
+
+  /* The end client, on a reseller channel only. A note, never an account:
+     nothing is invoiced to it and nobody is chased from it. */
+  var endC = h("input", { type:"text", "aria-label":"End client",
+    placeholder:"Who is actually in the room \u2014 a note, not an account" });
+  endC.value = d.endClient || "";
+  var endWrap = h("label", { class:"fld" }, h("span", { text:"End client" }), endC);
+  box.appendChild(endWrap);
+
   var partner = h("select", { "aria-label":"Partner" });
   partner.appendChild(h("option", { value:"" }, "\u2014 direct, no partner \u2014"));
 
@@ -7551,8 +7797,66 @@ function editDeal(anchor, d){
     }
   };
   partner.addEventListener("change", syncPartner); syncPartner();
-  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Via partner" }), partner));
+  var partnerWrap = h("label", { class:"fld" }, h("span", { text:"Via partner" }), partner);
+  box.appendChild(partnerWrap);
   box.appendChild(partnerNote);
+
+  /* WHO DELIVERED IT \u2014 not who sold it. A corporate course sold by Debbie and
+     facilitated by an Individual Trainer has one channel and one facilitator,
+     and they are different relationships. Without a second field the channel
+     gets bent to carry the trainer, which is exactly how "Individual" came to
+     mean three things. */
+  var facil = h("select", { "aria-label":"Facilitated by" });
+  var facilWrap = h("label", { class:"fld" }, h("span", { text:"Facilitated by" }), facil);
+  var facilNote = h("div", { class:"note" });
+  (function (){
+    facil.appendChild(h("option", { value:"" }, "\u2014 us \u2014"));
+    var pool = [];
+    Object.keys(App.st.companies).forEach(function (k){
+      var c = App.st.companies[k];
+      if (c.merged || c.isHolder) return;
+      if (c.partnerRef || c.isPartner) pool.push({ id:"co:" + c.id, name:c.name, ref:c.partnerRef }); });
+    Object.keys(App.st.contacts).forEach(function (k){
+      var c = App.st.contacts[k];
+      if (c.partnerRef) pool.push({ id:"ct:" + c.id, name:c.name, ref:c.partnerRef }); });
+    pool.sort(function (a,b){ return a.name < b.name ? -1 : 1; })
+      .forEach(function (o){
+        facil.appendChild(h("option", { value:o.id },
+          o.name + (o.ref ? "  \u00b7 " + o.ref : "  (no agreement reference)"))); });
+    facil.value = d.facilitatorRef || "";
+    if (!pool.length)
+      facilNote.textContent = "Nobody is registered as a partner yet, so there is nobody " +
+        "to name here but us. Add an agreement reference to a partner first.";
+  })();
+  box.appendChild(facilWrap);
+  box.appendChild(facilNote);
+
+  /* One handler, because these fields constrain each other and three separate
+     listeners drift apart. */
+  var syncChannel = function (){
+    var c = C.channelById(chan.value);
+    clear(chanNote);
+    endWrap.style.display   = (c && c.billsPartner) ? "" : "none";
+    partnerWrap.style.display = (c && c.billsPartner) ? "none" : "";
+    partnerNote.style.display = (c && c.billsPartner) ? "none" : "";
+    if (!c){
+      chanNote.textContent = "Not set. The Money screen counts these out loud rather " +
+        "than guessing \u2014 a default that looks like a fact is worse than a blank.";
+      return;
+    }
+    var bits = [c.who + "."];
+    if (c.billsPartner)
+      bits.push("On this channel the partner IS the customer \u2014 they contract their own " +
+        "client and pay us \u2014 so the company on this deal should be the partner, and any " +
+        "\u201cvia partner\u201d is dropped.");
+    if (!c.earns)
+      bits.push("Earns nobody commission by default. Tick \u201cEarns commission\u201d below to " +
+        "override that on this deal.");
+    if (c.prepaid)
+      bits.push("Paid before attending.");
+    chanNote.textContent = bits.join(" ");
+  };
+  chan.addEventListener("change", syncChannel); syncChannel();
 
   /* Background — the standing facts, as opposed to the dated ones.
      "She will be doing marketing, sales and some training delivery" is not an
@@ -7617,6 +7921,12 @@ function editDeal(anchor, d){
         /* Both null unless one is chosen — clearing has to reach the fold as
            null, not as an omission. */
         partnerContactId: pCt || null,
+        channel: chan.value || null,
+        facilitatorRef: facil.value || null,
+        /* Only meaningful where the partner is the customer. Kept off every
+           other channel so a stale name cannot sit on a deal that has no end
+           client behind it. */
+        endClient: (C.channelById(chan.value) || {}).billsPartner ? endC.value.trim() : "",
         commissionable: !noComm.checked,
         commissionRate: noComm.checked ? null : (rp === "" ? null : C.round2(+rp) / 100),
         expectedCloseDate: close.value.trim() ? C.parseDateInput(close.value, App.today) : null });
@@ -8207,6 +8517,56 @@ function viewMoney(el){
     });
     el.appendChild(dup);
   }
+
+  /* WHERE THE MONEY CAME FROM. A reseller pound and a direct pound are the same
+     number and a completely different business: one has a partner who contracts
+     their own client, one is ours end to end. Nothing here is added across
+     currencies (C16) and nothing unclassified is quietly absorbed. */
+  (function (){
+    var rows = C.CHANNELS.map(function (c){ return book.byChannel[c.id]; })
+      .filter(function (b){ return b && b.deals; });
+    if (!rows.length && !book.noChannel.length) return;
+    var sec = h("section", { class:"pane", style:"margin-bottom:16px" },
+      h("h3", { text:"Where the money came from" }));
+    if (rows.length){
+      var t = h("table", { class:"tbl" }, h("thead", null, h("tr", null,
+        h("th", { text:"Channel" }), h("th", { class:"num", text:"Deals" }),
+        h("th", { class:"num", text:"Won" }), h("th", { class:"num", text:"Invoiced" }),
+        h("th", { class:"num", text:"Received" }), h("th", { class:"num", text:"Outstanding" }))));
+      var tb = h("tbody");
+      var money = function (bag){
+        var ks = Object.keys(bag);
+        if (!ks.length) return "\u2014";
+        return ks.sort().map(function (c){ return C.fmtMoney(bag[c], c); }).join("  \u00b7  ");
+      };
+      rows.forEach(function (b){
+        var c = C.channelById(b.id) || {};
+        tb.appendChild(h("tr", null,
+          h("td", null,
+            h("div", { text:c.id + "  \u00b7  " + c.label }),
+            c.billsPartner
+              ? h("div", { class:"note", style:"font-size:11.5px",
+                  text:"the partner is the customer" })
+              : null),
+          h("td", { class:"num", text:String(b.deals) }),
+          h("td", { class:"num", text:String(b.won) }),
+          h("td", { class:"num", text:money(b.invoiced) }),
+          h("td", { class:"num", text:money(b.paid) }),
+          h("td", { class:"num", text:money(b.outstanding) })));
+      });
+      t.appendChild(tb); sec.appendChild(t);
+    }
+    if (book.noChannel.length)
+      sec.appendChild(h("div", { class:"note", style:"margin-top:10px" },
+        h("span", { text: book.noChannel.length + " deal" +
+          (book.noChannel.length === 1 ? " has" : "s have") + " no channel set, so " +
+          (book.noChannel.length === 1 ? "it is" : "they are") +
+          " in none of the rows above. Nothing has been guessed on " +
+          (book.noChannel.length === 1 ? "its" : "their") + " behalf \u2014 set the channel " +
+          "on the deal and " + (book.noChannel.length === 1 ? "it appears" : "they appear") +
+          " here." })));
+    el.appendChild(sec);
+  })();
 
   /* A company with no domain cannot be matched by a sender address, and the
      failure is silent: every thread from them comes back "no company in the
@@ -8844,11 +9204,16 @@ function viewCompanies(el){
                + "sales channels, and be picked on anyone else\u2019s deal." }));
         bodyEl.appendChild(act);
         var chans = C.channelsFor(App.st, person.id);
-        bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px",
-          text: "Filed under " + co.name + "." +
+        bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px" },
+          h("span", { text: "Filed under " + co.name + "." +
             (chans.length
               ? "  Sells through " + chans.map(function (c){ return c.name; }).join(", ") + "."
-              : "") }));
+              : "") + "  " }),
+          h("a", { href:"#", style:"font-size:11.5px",
+            title:"The Partner Pack Builder reference — the join key into the register",
+            onclick:(function (pp){ return function (e){
+              e.preventDefault(); partnerRefPopover(e.currentTarget, pp, "contact"); }; })(person) },
+            person.partnerRef || "no agreement reference")));
       }
 
       /* The holder card, while browsing. Its people are not rows here on purpose
@@ -8907,6 +9272,12 @@ function viewCompanies(el){
              person: CyberNas is one of Melissa's sales channels, and she has
              more than one. Without this the deal could say "via CyberNas" and
              nothing anywhere connected it back to her. */
+          co.isHolder ? null : h("span", { text:"  ·  " }),
+          co.isHolder ? null : h("a", { href:"#", style:"font-size:11.5px",
+            title:"The Partner Pack Builder reference — the join key into the register",
+            onclick:(function (c){ return function (e){
+              e.preventDefault(); partnerRefPopover(e.currentTarget, c, "company"); }; })(co) },
+            co.partnerRef || "no agreement reference"),
           co.isHolder ? null : h("span", { text:"  ·  " }),
           co.isHolder ? null : h("a", { href:"#", style:"font-size:11.5px",
             onclick:(function (c){ return function (e){

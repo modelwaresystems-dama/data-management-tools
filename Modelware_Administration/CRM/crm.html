@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="242370434a8d" data-built="14 Sep 2026" data-version="1.33.2">
+<meta name="crm-build" content="aa4968a530a9" data-built="14 Sep 2026" data-version="1.34.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -767,6 +767,21 @@ function foldEvents(events){
              one person; she has more than one channel. Null is the ordinary
              case: a partner who is nobody's channel but their own. */
           channelForContactId: p.channelForContactId == null ? null : String(p.channelForContactId),
+          /* F11b. The channel may belong to a partner who is a PERSON with a
+             record of their own — see isPerson below. */
+          channelForCompanyId: p.channelForCompanyId == null ? null : String(p.channelForCompanyId),
+          /* A partner who trades as themselves.
+
+             The holder exists to stop a PRIVATE BUYER becoming a company — a
+             student buying a CDMP course is not an organisation. That rule was
+             then applied to a business partner who happens to trade under her
+             own name, which is a different thing entirely, and it left her
+             buried as one contact among twelve in a bucket called "Individual"
+             while every other partner had a record of their own.
+
+             So: a person can have their own record, flagged as a person, and it
+             behaves like any other partner everywhere else. */
+          isPerson: !!p.isPerson,
           createdAt:e.ts };
         break;
       case "company.updated":
@@ -777,6 +792,10 @@ function foldEvents(events){
           if (p.channelForContactId !== undefined)
             st.companies[p.companyId].channelForContactId =
               p.channelForContactId == null ? null : String(p.channelForContactId);
+          if (p.channelForCompanyId !== undefined)
+            st.companies[p.companyId].channelForCompanyId =
+              p.channelForCompanyId == null ? null : String(p.channelForCompanyId);
+          if (p.isPerson !== undefined) st.companies[p.companyId].isPerson = !!p.isPerson;
         break;
       /* Two records for one customer is not a fact about the business, it is a
          data-entry accident — so this folds one into the other rather than
@@ -1766,8 +1785,17 @@ function dealPartner(st, deal){
   if (!deal) return { none:true };
   var co = deal.partnerCompanyId ? st.companies[deal.partnerCompanyId] : null;
   var person = deal.partnerContactId ? st.contacts[deal.partnerContactId] : null;
-  var via = null;
-  if (co && co.channelForContactId) via = st.contacts[co.channelForContactId] || null;
+  var via = null, viaName = "";
+  if (co && co.channelForContactId){
+    via = st.contacts[co.channelForContactId] || null;
+    if (via) viaName = via.name;
+  }
+  /* The channel may belong to a partner who has a record of their own. */
+  var viaCo = null;
+  if (co && co.channelForCompanyId){
+    viaCo = st.companies[co.channelForCompanyId] || null;
+    if (viaCo) viaName = viaCo.name;
+  }
   if (!co && !person) return { none:true };
   return {
     none:false,
@@ -1775,8 +1803,10 @@ function dealPartner(st, deal){
     /* The person who brought it, however we got to them — named directly on the
        deal, or standing behind the company that did. */
     person: person || via || null,
-    viaChannel: !!via,
-    label: co ? (via ? co.name + " \u00b7 " + via.name + "\u2019s channel" : co.name)
+    /* …and where that person has a record of their own, it is here. */
+    principal: viaCo || null,
+    viaChannel: !!(via || viaCo),
+    label: co ? (viaName ? co.name + " \u00b7 " + viaName + "\u2019s channel" : co.name)
               : (person ? person.name : "")
   };
 }
@@ -1796,6 +1826,33 @@ function dealsBroughtBy(st, contactId){
     .map(function (d){
       return { deal:d, direct: d.partnerContactId === contactId,
                channel: d.partnerCompanyId ? st.companies[d.partnerCompanyId] : null };
+    });
+}
+
+/* The companies acting as one PARTNER RECORD's sales channels. Once somebody
+   has been made a partner in their own right, this is the one that matters. */
+function channelsForCompany(st, companyId){
+  if (!companyId) return [];
+  return Object.keys(st.companies).map(function (k){ return st.companies[k]; })
+    .filter(function (c){ return c.channelForCompanyId === companyId; })
+    .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
+}
+
+/* Everything a partner record has brought in — its own deals and everything
+   through any channel that belongs to it. */
+function dealsBroughtByCompany(st, companyId){
+  if (!companyId) return [];
+  var channels = {};
+  Object.keys(st.companies).forEach(function (k){
+    if (st.companies[k].channelForCompanyId === companyId) channels[k] = 1; });
+  return Object.keys(st.deals).map(function (k){ return st.deals[k]; })
+    .filter(function (d){
+      return d.partnerCompanyId === companyId ||
+             (d.partnerCompanyId && channels[d.partnerCompanyId]); })
+    .map(function (d){
+      return { deal:d, direct: d.partnerCompanyId === companyId,
+               channel: (d.partnerCompanyId && channels[d.partnerCompanyId])
+                          ? st.companies[d.partnerCompanyId] : null };
     });
 }
 
@@ -4130,7 +4187,8 @@ var API = {
   dealMoney:dealMoney, moneyBook:moneyBook, invoiceRate:invoiceRate,
   lineRate:lineRate, invoiceEarner:invoiceEarner, commissionParts:commissionParts,
   posFor:posFor, dealPartner:dealPartner, dealsBroughtBy:dealsBroughtBy,
-  channelsFor:channelsFor,
+  channelsFor:channelsFor, channelsForCompany:channelsForCompany,
+  dealsBroughtByCompany:dealsBroughtByCompany,
   invoiceCommission:invoiceCommission, quotesFor:quotesFor, normLines:normLines,
   invoiceNet:invoiceNet, invoicePassThrough:invoicePassThrough,
   computeFlags:computeFlags, FLAG_RULES:FLAG_RULES, FLAG_TONE:FLAG_TONE, flagRule:flagRule, flagLabel:flagLabel,
@@ -7793,6 +7851,78 @@ function triageNormLite(x){
   return String(x || "").toLowerCase().replace(/[^a-z0-9@. ]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/* Give a person a record of their own, as a partner (F11b).
+
+   Melissa was onboarded as a partner months ago and was still sitting as one
+   contact among twelve inside the "Individual" holder, because a rule written to
+   stop a STUDENT becoming a company got applied to a business partner who trades
+   under her own name. Every other partner had a record; she had a row in a
+   bucket, and her deal read as belonging to "Individual".
+
+   This is the one action that fixes it: her own record, marked a partner and
+   marked a person, with her contact and her deals moved across. Everything
+   downstream — the partner picker, "via", the channel link — then treats her
+   exactly like MasterData, because she now IS a company record. */
+function promotePartnerPopover(anchorEl, ct){
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Make " + ct.name + " a partner" }));
+
+  var fromCo = App.st.companies[ct.companyId] || {};
+  var theirDeals = Object.keys(App.st.deals).map(function (k){ return App.st.deals[k]; })
+    .filter(function (d){ return d.contactId === ct.id; });
+
+  var nm = h("input", { type:"text", value:ct.name, "aria-label":"Partner name" });
+  box.appendChild(h("label", { class:"fld" },
+    h("span", { text:"Record name" }), nm));
+  var dom = h("input", { type:"text", value:"",
+    placeholder:"e.g. tsalicoglou.com — blank is fine",
+    "aria-label":"Partner domain" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Domain" }), dom));
+
+  box.appendChild(h("div", { class:"note",
+    text:"A domain is what matches their email to them on the next import. " +
+         "Leave it blank if they write from a Gmail address \u2014 a wrong domain is " +
+         "worse than none." }));
+
+  /* Everything that moves, listed. A move that surprises you afterwards is a
+     move you cannot undo with confidence. */
+  var what = h("div", { class:"note", style:"margin-top:8px" });
+  what.appendChild(h("div", { text:"What moves:" }));
+  what.appendChild(h("div", { text:"\u00b7 " + ct.name + " herself, out of " +
+    (fromCo.name || "her current company") }));
+  if (theirDeals.length)
+    theirDeals.forEach(function (d){
+      what.appendChild(h("div", { text:"\u00b7 " + d.name +
+        (d.status === "closed" ? "  (" + (d.outcome === "won" ? "won" : "lost") + ")" : "") })); });
+  else
+    what.appendChild(h("div", { text:"\u00b7 no deals \u2014 she has none filed to her yet" }));
+  what.appendChild(h("div", { style:"margin-top:4px",
+    text:"Everything logged against those deals travels with them. Nothing is deleted, " +
+         "and nobody else in " + (fromCo.name || "that company") + " is touched." }));
+  box.appendChild(what);
+
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      var name = nm.value.trim() || ct.name;
+      var coId = C.uid("co");
+      closeLayers("pop");
+      emit("company.created", { companyId:coId, name:name, domain:dom.value.trim(),
+                                isPartner:true, isPerson:true });
+      /* The contact first, so a re-render never catches a deal already at the
+         new record with its own person still filed at the old one. */
+      emit("contact.updated", { contactId:ct.id, companyId:coId });
+      theirDeals.forEach(function (d){
+        emit("deal.updated", { dealId:d.id, companyId:coId }); });
+      render();
+      toast(name + " is now a partner in their own right" +
+        (theirDeals.length ? ", with " + theirDeals.length + " deal" +
+          (theirDeals.length === 1 ? "" : "s") + " moved across." : "."));
+    } }, "Make them a partner")));
+  openPopover(anchorEl, box, { width:340 });
+}
+
 function channelPopover(anchorEl, co){
   var box = h("div");
   box.appendChild(h("h4", { text:"Whose channel is " + co.name + "?" }));
@@ -7820,19 +7950,37 @@ function channelPopover(anchorEl, co){
       var pco = App.st.companies[c.companyId] || {};
       return triageNormLite(c.name + " " + (c.email || "") + " " + (pco.name || "")).indexOf(term) >= 0;
     };
+    /* Partners with a record of their own come FIRST — once somebody has been
+       made a partner, their record is the thing a channel belongs to, not their
+       contact row. Two ways to say one relationship would drift apart. */
+    var partnerCos = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
+      .filter(function (c){
+        if (c.id === co.id || c.isHolder || c.merged) return false;
+        if (!c.isPartner && !c.isPerson) return false;
+        if (!term) return true;
+        return triageNormLite(c.name + " " + (c.domain || "")).indexOf(term) >= 0;
+      })
+      .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
+    if (partnerCos.length){
+      var g0 = h("optgroup", { label:"Partners" });
+      partnerCos.forEach(function (c){
+        g0.appendChild(h("option", { value:"co:" + c.id },
+          c.name + (c.isPerson ? "  (individual)" : ""))); });
+      sel.appendChild(g0);
+    }
     var indep = pool.filter(function (c){
       return (App.st.companies[c.companyId] || {}).isHolder && hit(c); });
     var atCo  = pool.filter(function (c){
       return !(App.st.companies[c.companyId] || {}).isHolder && hit(c); });
     if (indep.length){
-      var g1 = h("optgroup", { label:"Independents \u2014 they work for themselves" });
-      indep.forEach(function (c){ g1.appendChild(h("option", { value:c.id }, c.name)); });
+      var g1 = h("optgroup", { label:"Independents \u2014 not yet partners in their own right" });
+      indep.forEach(function (c){ g1.appendChild(h("option", { value:"ct:" + c.id }, c.name)); });
       sel.appendChild(g1);
     }
     if (atCo.length){
       var g2 = h("optgroup", { label:"At a company" });
       atCo.forEach(function (c){
-        g2.appendChild(h("option", { value:c.id },
+        g2.appendChild(h("option", { value:"ct:" + c.id },
           c.name + "  \u00b7 " + ((App.st.companies[c.companyId] || {}).name || ""))); });
       sel.appendChild(g2);
     }
@@ -7840,7 +7988,8 @@ function channelPopover(anchorEl, co){
       sel.appendChild(h("option", { value:"", disabled:"disabled" }, "nobody matches \u201c" + filter.value + "\u201d"));
   }
   paintPeople();
-  sel.value = co.channelForContactId || "";
+  sel.value = co.channelForCompanyId ? "co:" + co.channelForCompanyId
+            : co.channelForContactId ? "ct:" + co.channelForContactId : "";
   filter.addEventListener("input", function (){
     var keep = sel.value; paintPeople();
     /* Keep the choice if it survived the filter, so typing does not silently
@@ -7853,18 +8002,29 @@ function channelPopover(anchorEl, co){
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"A sales channel for" }), sel));
 
   var note = h("div", { class:"note" });
+  /* One value, two kinds — "co:" a partner with a record of their own,
+     "ct:" a contact who has not been made one yet. */
+  var pick = function (){
+    var v = sel.value || "";
+    if (v.indexOf("co:") === 0) return { coId:v.slice(3), name:(App.st.companies[v.slice(3)] || {}).name };
+    if (v.indexOf("ct:") === 0) return { ctId:v.slice(3), name:(App.st.contacts[v.slice(3)] || {}).name };
+    return null;
+  };
   var sync = function (){
-    var ct = sel.value ? App.st.contacts[sel.value] : null;
-    if (!ct){
+    var got = pick();
+    if (!got){
       note.textContent = co.name + " brings in its own business. Deals filed through it " +
         "read as \u201cvia " + co.name + "\u201d and nothing more.";
       return;
     }
-    var others = C.channelsFor(App.st, ct.id)
+    var others = (got.ctId ? C.channelsFor(App.st, got.ctId)
+                           : C.channelsForCompany(App.st, got.coId))
       .filter(function (c){ return c.id !== co.id; }).map(function (c){ return c.name; });
     note.textContent = "A deal brought in through " + co.name + " will also read as brought " +
-      "in by " + ct.name + "." +
-      (others.length ? "  " + ct.name + " already has " + others.join(" and ") + "." : "");
+      "in by " + got.name + "." +
+      (others.length ? "  " + got.name + " already has " + others.join(" and ") + "." : "") +
+      (got.ctId ? "  " + got.name + " is still a contact rather than a partner in their own " +
+                  "right \u2014 \u201cmake them a partner\u201d on their card fixes that." : "");
   };
   sel.addEventListener("change", sync); sync();
   box.appendChild(note);
@@ -7878,14 +8038,17 @@ function channelPopover(anchorEl, co){
                   onclick:function (){ closeLayers("pop"); } }, "Cancel"),
     h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
       closeLayers("pop");
-      /* null, not "", so the fold clears it rather than reading it as absent. */
-      emit("company.updated", { companyId:co.id, channelForContactId: sel.value || null });
-      if (sel.value && !co.isPartner)
+      var got = pick();
+      /* Both sent every time, and null where unused — null is how a link is
+         REMOVED, and `assign` reads undefined as "not supplied". */
+      emit("company.updated", { companyId:co.id,
+        channelForCompanyId: got && got.coId ? got.coId : null,
+        channelForContactId: got && got.ctId ? got.ctId : null });
+      if (got && !co.isPartner)
         emit("company.updated", { companyId:co.id, isPartner:true });
       render();
-      toast(sel.value
-        ? co.name + " is now " + (App.st.contacts[sel.value] || {}).name + "\u2019s sales channel."
-        : co.name + " no longer belongs to anybody.");
+      toast(got ? co.name + " is now " + got.name + "\u2019s sales channel."
+                : co.name + " no longer belongs to anybody.");
     } }, "Save")));
   openPopover(anchorEl, box, { width:320 });
 }
@@ -8534,14 +8697,16 @@ function viewCompanies(el){
         co.domain ? h("span", { class:"mono", style:"font-size:11.5px;color:var(--muted)", text:co.domain }) : null,
         /* Said on the company, because "are we selling TO them or THROUGH
            them" changes how every deal on this page should be read. */
-        co.channelForContactId && App.st.contacts[co.channelForContactId]
-          ? h("span", { class:"chip plain",
-              title:"This company is one of " + App.st.contacts[co.channelForContactId].name +
-                    "\u2019s sales channels.",
-              text: App.st.contacts[co.channelForContactId].name + "\u2019s channel" })
-          : null,
+        (function (){
+          var owner = co.channelForCompanyId ? App.st.companies[co.channelForCompanyId]
+                    : co.channelForContactId ? App.st.contacts[co.channelForContactId] : null;
+          return owner ? h("span", { class:"chip plain",
+            title:"This company is one of " + owner.name + "\u2019s sales channels.",
+            text: owner.name + "\u2019s channel" }) : null;
+        })(),
         co.isPartner
-          ? h("span", { class:"chip plain", title:"We sell through this partner.", text:"Partner" })
+          ? h("span", { class:"chip plain", title:"We sell through this partner.",
+              text: co.isPerson ? "Partner · individual" : "Partner" })
           : null,
         sum.deals.open
           ? h("span", { class:"chip plain",
@@ -8613,8 +8778,9 @@ function viewCompanies(el){
             onclick:(function (c){ return function (e){
               e.preventDefault(); channelPopover(e.currentTarget, c); }; })(co) },
             (function (){
-              var ch = co.channelForContactId ? App.st.contacts[co.channelForContactId] : null;
-              return ch ? ch.name + "\u2019s channel" : "whose channel?";
+              var owner = co.channelForCompanyId ? App.st.companies[co.channelForCompanyId]
+                        : co.channelForContactId ? App.st.contacts[co.channelForContactId] : null;
+              return owner ? owner.name + "\u2019s channel" : "whose channel?";
             })()),
           h("span", { text:"  ·  " }),
           h("a", { href:"#", style:"font-size:11.5px",
@@ -8668,7 +8834,18 @@ function viewCompanies(el){
             h("div", { class:"mono", style:"font-size:11px;color:var(--muted)", text:c.role || "" }),
             c.email ? h("div", { style:"font-size:11.5px" },
               h("a", { href:"mailto:" + c.email }, c.email)) : null,
-            c.phone ? h("div", { class:"mono", style:"font-size:11px;color:var(--muted)", text:c.phone }) : null));
+            c.phone ? h("div", { class:"mono", style:"font-size:11px;color:var(--muted)", text:c.phone }) : null,
+            /* Offered on people in the HOLDER, because that is where somebody
+               who trades as themselves ends up by default and where being one
+               row among twelve is wrong. Not offered at a real company: a
+               person there already has a record — their employer's. */
+            co.isHolder
+              ? h("div", { style:"margin-top:5px" },
+                  h("a", { href:"#", style:"font-size:11.5px",
+                    onclick:(function (cc){ return function (e){
+                      e.preventDefault(); promotePartnerPopover(e.currentTarget, cc); }; })(c) },
+                    "make them a partner"))
+              : null));
         });
         bodyEl.appendChild(cl);
       }

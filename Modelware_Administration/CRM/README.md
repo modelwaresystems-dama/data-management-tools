@@ -6,8 +6,8 @@ alongside other applications without any of the `index.html` files colliding.
 | File | What it is |
 |---|---|
 | `index.html` | Landing page — three cards |
-| `crm.html` | The CRM application, **build 1.33.2** (`242370434a8d`, 14 Sep 2026) |
-| `manual.html` | The staff guide, rebuilt against 1.33.2 |
+| `crm.html` | The CRM application, **build 1.35.0** (`07365d82ba6d`, 14 Sep 2026) |
+| `manual.html` | The staff guide, rebuilt against 1.35.0 |
 | `loose-ends.html` | The six open backfill questions |
 
 `index.html` links to `loose-ends.html` by relative path and probes for it on
@@ -55,24 +55,29 @@ page. Answering twice updates the same file rather than failing.
 
 ---
 
-## Build 1.33.2 — what changed since 1.33.0
+## Build 1.35.0 — what changed since 1.33.2
 
-The file previously here was **1.33.0** (`fe32cb5bad9e`). Two defect fixes on top
-of it, both found by Howard in use:
+**1.34.0 — a person could not be made a partner.** The holder rule (don't turn a
+person into a company) was written to stop a *student buying a course* becoming
+an organisation. It was being applied to a business partner who trades under her
+own name, which is a different thing. A person in the holder can now be given a
+record of their own — marked both *partner* and *person* — taking their deals
+with them and leaving everyone else in the bucket untouched.
 
-**1.33.1 — a private buyer's deal showed the whole Individual bucket.** The deal
-panel listed "everyone at this company", which is right for a real customer and
-nonsense for the holder: twelve independents share one holder record, so all
-twelve of their deals listed all twelve people. A deal filed under a holder now
-shows its own buyer and nobody else. A deal at a real company still lists
-everyone at it, because there they genuinely are colleagues.
+**1.35.0 — the holder is no longer a row; its people are.** The control above
+existed in 1.34.0 and could not be found: it was an 11.5px link at the bottom of
+a stack of contact tiles, inside a card you had to know to open. Somebody looked
+up under M was not under M, because the row was called *Individual*.
 
-**1.33.2 — a person could not be found in the partner and channel pickers.**
-Independents were sorted silently to the top of a flat list, so the list *looked*
-alphabetical and was not — somebody hunted for at the letter M was concluded to
-be absent. Both pickers now split into labelled groups (*Independents* first,
-then *At a company*), and the channel picker has a filter box. A sort nobody can
-see is a sort that lies.
+Companies & contacts now lists each person in a holder **under their own name**,
+in the one alphabetical list, with their own deals, their own logged history and
+their own totals. `companySummary` and `interactionsForCompany` take an optional
+contact id so the arithmetic is theirs and not the bucket's. Their card carries
+**Make ⟨name⟩ a partner** as a button at the top, and their sales channels as a
+chip on the row. One line under the list keeps the holder's own
+*stop holding individuals* toggle reachable.
+
+A control nobody can find is a feature the application does not have.
 
 ## Verification
 
@@ -81,21 +86,11 @@ see is a sort that lies.
 | Suite | Result |
 |---|---|
 | `tests/harness.js` — fold, arithmetic, importer | 1043 passed, 0 failed |
-| `tests/layout.js` — real Chromium, three viewports | 1041 passed, 0 failed |
-| `tests/manual-check.js` — the manual against the app | 187 passed, 0 failed |
+| `tests/layout.js` — real Chromium, three viewports | 1101 passed, 0 failed |
+| `tests/manual-check.js` — the manual against the app | 189 passed, 0 failed |
 | `tests/connection-diagnostic.js` | 10 scenarios, all diagnosed correctly |
 | `tests/pull-failure.js` | 4 passed |
 
 The skill's `selftest.sh` also passes 16/16 against this `crm.html`, which is the
 C20 fold contract holding — `crm_state.js` extracts `<script id="crm-core">` from
 this exact file.
-
-## Two corrections to the previous README
-
-It described **credit note, refund and `documentsOnly` behaviour** and a
-**57-deal regression**. None of that is in the build that was in this folder —
-`creditNote` and `documentsOnly` appear zero times in it. Either that work went
-somewhere else or the note was written ahead of it. Nothing has been removed:
-1.33.2 is 1.33.0 plus the two fixes above.
-
-It also said `loose-ends.html` "is not in this folder yet". It is, and was.

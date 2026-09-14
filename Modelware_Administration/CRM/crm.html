@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="aa4968a530a9" data-built="14 Sep 2026" data-version="1.34.0">
+<meta name="crm-build" content="07365d82ba6d" data-built="14 Sep 2026" data-version="1.35.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1290,14 +1290,21 @@ function interactionsFor(st, subjectId){
    something — but it means the account view was only ever one deal's slice.
    Where several people at one customer are in play (Gowri on the invoice, Nitin
    on the India training) nobody could see the account as a whole. */
-function interactionsForCompany(st, companyId){
+/* `contactId`, when given, narrows this to one person's work inside the company.
+   That is only ever wanted for a HOLDER, where the people sharing the record are
+   not colleagues and their histories must not be poured together. */
+function interactionsForCompany(st, companyId, contactId){
   var mine = {}, via = {};
   Object.keys(st.deals).forEach(function (k){
-    if (st.deals[k].companyId === companyId) mine[k] = st.deals[k];
+    if (st.deals[k].companyId === companyId){
+      if (contactId && st.deals[k].contactId !== contactId) return;
+      mine[k] = st.deals[k];
+    }
     /* A partner's own page has to show the work it brought in, or the only
        record of a reseller relationship is scattered across other companies'
        deals and the partner looks like it has gone quiet when it has not. */
-    else if (st.deals[k].partnerCompanyId === companyId){ mine[k] = st.deals[k]; via[k] = true; }
+    else if (!contactId && st.deals[k].partnerCompanyId === companyId){
+      mine[k] = st.deals[k]; via[k] = true; }
   });
   var out = [];
   Object.keys(st.interactions).forEach(function (k){
@@ -1329,7 +1336,7 @@ function interactionsForCompany(st, companyId){
    odds are where the number becomes a mood. No blended company-level figure is
    produced either: averaging a 60% ZAR deal against an 85% USD one needs a
    conversion rate, and inventing one is the same mistake in a different hat. */
-function companySummary(st, cfg, companyId, today){
+function companySummary(st, cfg, companyId, today, contactId){
   today = today || todayISO();
   var out = {
     deals:{ open:0, won:0, lost:0, total:0 },
@@ -1347,9 +1354,11 @@ function companySummary(st, cfg, companyId, today){
   Object.keys(st.deals).forEach(function (k){
     var d = st.deals[k];
     if (d.companyId !== companyId){
-      if (d.partnerCompanyId === companyId) out.partnerDeals++;
+      if (!contactId && d.partnerCompanyId === companyId) out.partnerDeals++;
       return;
     }
+    /* Scoped to one person inside a holder: their numbers, not the bucket's. */
+    if (contactId && d.contactId !== contactId) return;
     out.deals.total++;
     var cur = d.currency || "ZAR";
 
@@ -1393,7 +1402,7 @@ function companySummary(st, cfg, companyId, today){
     out.winMixed = out.stages.length > 1;
   }
 
-  interactionsForCompany(st, companyId).forEach(function (r){
+  interactionsForCompany(st, companyId, contactId).forEach(function (r){
     var e = out.engagement, kind = r.ix.kind || "note";
     e.total++;
     e.byKind[kind] = (e.byKind[kind] || 0) + 1;
@@ -8632,47 +8641,110 @@ function viewCompanies(el){
     return seen;
   }
 
+  /* Rows, not companies — a holder contributes its people, so "of 47" has to
+     count what the list actually shows or the lens line contradicts the page. */
+  function allRowCount(){
+    var n = 0;
+    Object.keys(App.st.companies).forEach(function (k){
+      var co = App.st.companies[k];
+      if (!co.isHolder){ n++; return; }
+      var inside = Object.keys(App.st.contacts)
+        .filter(function (j){ return App.st.contacts[j].companyId === co.id; }).length;
+      n += inside || 1;
+    });
+    return n;
+  }
+
   function paint(){
     clear(host);
     var term = q.value.trim().toLowerCase();
     var shown = 0;
     var cos = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
       .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
+
+    /* A person who trades as themselves is a counterparty, not a line buried
+       inside a bucket.
+
+       A sole proprietor looked up under M was not under M. The holder was the
+       row, her name appeared nowhere in this list, and the only route to her ran
+       through knowing which bucket to open and then reading twelve contact cards
+       — which is not "looking someone up", it is remembering where you filed
+       them. That is the whole reason a partner could not be made one: the
+       control existed, on a card nobody could find.
+
+       So the holder is no longer a row. Its people ARE the rows, each under
+       their own name, in the one alphabetical list, each with their own deals,
+       their own history and their own arithmetic. The holder keeps its job —
+       stopping a private buyer becoming a company — and loses the one it was
+       never given, hiding people. */
+    var rows = [], holders = [];
+    cos.forEach(function (co){
+      if (!co.isHolder){ rows.push({ co:co, person:null, name:co.name, key:co.id }); return; }
+      var inside = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
+        .filter(function (c){ return c.companyId === co.id; });
+      /* An empty holder still shows, or marking one by mistake is unrecoverable
+         — the row carrying the "holds individuals" toggle would vanish with it. */
+      if (!inside.length){ rows.push({ co:co, person:null, name:co.name, key:co.id }); return; }
+      inside.forEach(function (c){
+        rows.push({ co:co, person:c, name:c.name, key:"p:" + c.id }); });
+      holders.push({ co:co, count:inside.length });
+    });
+    rows.sort(function (a,b){
+      var an = String(a.name || "").toLowerCase(), bn = String(b.name || "").toLowerCase();
+      return an < bn ? -1 : an > bn ? 1 : 0; });
+
     if (lensOn() && lensOnly){
       var mine = companiesFor(lensUser());
-      cos = cos.filter(function (co){ return mine[co.id]; });
+      rows = rows.filter(function (r){
+        if (!r.person) return mine[r.co.id];
+        /* A person's row belongs to whoever owns THEIR deals, not to whoever
+           happens to own somebody else's in the same bucket. */
+        return Object.keys(App.st.deals).some(function (k){
+          var d = App.st.deals[k];
+          return d.contactId === r.person.id && d.owner === lensUser(); });
+      });
     }
     if (lensBar){
       clear(lensBar);
-      var total = Object.keys(App.st.companies).length;
+      var total = allRowCount();
       lensBar.appendChild(h("span", { text: lensOnly
-        ? "Showing the " + cos.length + " compan" + (cos.length === 1 ? "y" : "ies") +
-          " " + userName(lensUser()) + " has deals at, of " + total + ". "
-        : "Showing all " + total + " companies, not just " + userName(lensUser()) + "\u2019s. " }));
+        ? "Showing the " + rows.length + " of " + total +
+          " that " + userName(lensUser()) + " has deals with. "
+        : "Showing all " + total + ", not just " + userName(lensUser()) + "\u2019s. " }));
       lensBar.appendChild(h("button", { class:"btn btn-sm quiet", type:"button",
         onclick:function (){ lensOnly = !lensOnly; paint(); } },
-        lensOnly ? "Show all companies" : "Show only " + lensFirstName() + "\u2019s"));
+        lensOnly ? "Show all companies and people" : "Show only " + lensFirstName() + "\u2019s"));
     }
-    var matches = cos.filter(function (co){
+    var matches = rows.filter(function (r){
       if (!term) return true;
-      var cts = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
-        .filter(function (c){ return c.companyId === co.id; });
-      var hay = (co.name + " " + co.domain + " " +
-        cts.map(function (c){ return c.name + " " + c.email; }).join(" ")).toLowerCase();
-      return hay.indexOf(term) >= 0;
+      var hay;
+      if (r.person)
+        hay = (r.person.name + " " + (r.person.email || "") + " " +
+               (r.person.role || "") + " " + (r.person.phone || ""));
+      else {
+        var cts = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
+          .filter(function (c){ return c.companyId === r.co.id; });
+        hay = (r.co.name + " " + (r.co.domain || "") + " " +
+          cts.map(function (c){ return c.name + " " + c.email; }).join(" "));
+      }
+      return hay.toLowerCase().indexOf(term) >= 0;
     });
     var any = matches.length > 0;
-    matches.forEach(function (co){
+    matches.forEach(function (row){
+      var co = row.co, person = row.person;
       var deals = Object.keys(App.st.deals).map(function (k){ return App.st.deals[k]; })
-        .filter(function (d){ return d.companyId === co.id; });
-      var cts = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
-        .filter(function (c){ return c.companyId === co.id; });
+        .filter(function (d){
+          return person ? d.contactId === person.id : d.companyId === co.id; });
+      var cts = person ? [person]
+        : Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
+            .filter(function (c){ return c.companyId === co.id; });
       shown++;
 
       var open = deals.filter(function (d){ return d.status === "open"; });
       var lastIx = null;
       deals.forEach(function (d){ var l = C.lastContact(App.st, d.id); if (l && (!lastIx || l > lastIx)) lastIx = l; });
-      var sum = C.companySummary(App.st, App.config, co.id, App.today);
+      var sum = C.companySummary(App.st, App.config, co.id, App.today,
+                                 person ? person.id : null);
 
       var sec = h("section", { class:"pane", style:"margin-bottom:14px" });
 
@@ -8684,7 +8756,7 @@ function viewCompanies(el){
       /* Filtering to a handful is itself a request to see them. Typed-in
          expansion is not remembered, so clearing the box returns the page to
          the shape you left it in rather than to whatever the search did. */
-      var isOpen = !!openCards[co.id] || (!!term && matches.length <= 3);
+      var isOpen = !!openCards[row.key] || (!!term && matches.length <= 3);
       var tw = h("span", { class:"tw", text: isOpen ? "▾" : "▸" });
       /* NOT `head` — a second `var head` further down this same callback (the
          "Everything logged" heading) reassigns it, and `var` is function-scoped,
@@ -8693,18 +8765,38 @@ function viewCompanies(el){
          stopped tracking, which nobody sees and a screen reader lives on. */
       var headBtn = h("button", { class:"co-head", type:"button", "aria-expanded": isOpen ? "true" : "false" },
         tw,
-        h("span", { class:"nm", text:co.name }),
-        co.domain ? h("span", { class:"mono", style:"font-size:11.5px;color:var(--muted)", text:co.domain }) : null,
+        h("span", { class:"nm", text:row.name }),
+        person
+          ? (person.email ? h("span", { class:"mono", style:"font-size:11.5px;color:var(--muted)",
+                                        text:person.email }) : null)
+          : (co.domain ? h("span", { class:"mono", style:"font-size:11.5px;color:var(--muted)", text:co.domain }) : null),
+        /* Says out loud that this row is a person filed under the holder with no
+           record of their own yet \u2014 the fact that explains both why they cannot
+           be a partner and what to press about it. */
+        person
+          ? h("span", { class:"chip plain",
+              title:"Filed under " + co.name + ". Open this card to give them a record of their own.",
+              text:"Individual" })
+          : null,
+        /* A person's own channels, on their row. Melissa sells through CyberNas;
+           standing at her name you should see that without opening anything,
+           because it is the reason she is a partner at all. */
+        person ? (function (){
+          var ch = C.channelsFor(App.st, person.id);
+          return ch.length ? h("span", { class:"chip plain",
+            title:"Sells through " + ch.map(function (c){ return c.name; }).join(", ") + ".",
+            text: ch.length === 1 ? "via " + ch[0].name : ch.length + " channels" }) : null;
+        })() : null,
         /* Said on the company, because "are we selling TO them or THROUGH
            them" changes how every deal on this page should be read. */
-        (function (){
+        person ? null : (function (){
           var owner = co.channelForCompanyId ? App.st.companies[co.channelForCompanyId]
                     : co.channelForContactId ? App.st.contacts[co.channelForContactId] : null;
           return owner ? h("span", { class:"chip plain",
             title:"This company is one of " + owner.name + "\u2019s sales channels.",
             text: owner.name + "\u2019s channel" }) : null;
         })(),
-        co.isPartner
+        (!person && co.isPartner)
           ? h("span", { class:"chip plain", title:"We sell through this partner.",
               text: co.isPerson ? "Partner · individual" : "Partner" })
           : null,
@@ -8719,7 +8811,7 @@ function viewCompanies(el){
       var bodyEl = h("div", { class:"co-body", style: isOpen ? "" : "display:none" });
       headBtn.addEventListener("click", function (){
         isOpen = !isOpen;
-        if (isOpen) openCards[co.id] = 1; else delete openCards[co.id];
+        if (isOpen) openCards[row.key] = 1; else delete openCards[row.key];
         lsSet(LS.openCos, Object.keys(openCards));
         headBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
         tw.textContent = isOpen ? "▾" : "▸";
@@ -8728,7 +8820,31 @@ function viewCompanies(el){
       sec.appendChild(bodyEl);
       bodyEl.appendChild(companyStats(sum));
 
-      bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px" },
+      /* THE control, on a person's card, as a button and at the top.
+
+         It existed before this and was a 11.5px link at the bottom of a stack of
+         contact tiles inside a card that had to be found first. A thing you
+         cannot find is a thing the application does not do, whatever the code
+         says \u2014 which is why "make Melissa a partner" was asked four times and
+         four times answered with a mechanism instead of a result. */
+      if (person){
+        var act = h("div", { style:"display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px" },
+          h("button", { class:"btn btn-sm primary", type:"button",
+            onclick:function (e){ promotePartnerPopover(e.currentTarget, person); } },
+            "Make " + String(person.name).split(" ")[0] + " a partner"),
+          h("span", { class:"note",
+            text:"Gives them a record of their own \u2014 so they can be a partner, own "
+               + "sales channels, and be picked on anyone else\u2019s deal." }));
+        bodyEl.appendChild(act);
+        var chans = C.channelsFor(App.st, person.id);
+        bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px",
+          text: "Filed under " + co.name + "." +
+            (chans.length
+              ? "  Sells through " + chans.map(function (c){ return c.name; }).join(", ") + "."
+              : "") }));
+      }
+
+      if (!person) bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px" },
           /* Only offered when there is somewhere to merge INTO. A lone company
              cannot be a duplicate of anything. */
           cos.length > 1
@@ -8758,7 +8874,7 @@ function viewCompanies(el){
              you most want the CRM to say what this relationship is. */
           co.isHolder
             ? h("span", { style:"font-size:11.5px;color:var(--muted)",
-                text:"a bucket of people cannot be a partner" })
+                text:"a bucket of people cannot be a partner \u2014 the people in it can" })
             : h("a", { href:"#", style:"font-size:11.5px",
                 onclick:function (e){
                   e.preventDefault();
@@ -8792,12 +8908,12 @@ function viewCompanies(el){
 
       if (deals.length){
         var t = h("table", { class:"tbl" }, h("thead", null, h("tr", null,
-          h("th", { text: co.isHolder ? "Person · Deal" : "Deal" }),
+          h("th", { text: (co.isHolder && !person) ? "Person \u00b7 Deal" : "Deal" }),
           h("th", { text:"Stage" }), h("th", { text:"Next step" }),
           h("th", { text:"Owner" }), h("th", { class:"num", text:"Value" }))));
         var tb = h("tbody");
         deals.sort(function (a,b){
-            if (co.isHolder){
+            if (co.isHolder && !person){
               var pa = C.dealParty(App.st, a).name, pb = C.dealParty(App.st, b).name;
               if (pa !== pb) return pa < pb ? -1 : 1;
             }
@@ -8808,7 +8924,7 @@ function viewCompanies(el){
             var party = C.dealParty(App.st, d);
             tb.appendChild(h("tr", { onclick:function (){ openDeal(d.id); } },
               h("td", null,
-                co.isHolder
+                (co.isHolder && !person)
                   ? h("div", { class:"note", style:"font-size:11.5px",
                       text: party.isIndividual ? party.name : "(nobody named)" })
                   : null,
@@ -8839,7 +8955,9 @@ function viewCompanies(el){
                who trades as themselves ends up by default and where being one
                row among twelve is wrong. Not offered at a real company: a
                person there already has a record — their employer's. */
-            co.isHolder
+            /* On a person's own card the button is already at the top, where it
+               belongs. This link is what the EMPTY holder still needs. */
+            (co.isHolder && !person)
               ? h("div", { style:"margin-top:5px" },
                   h("a", { href:"#", style:"font-size:11.5px",
                     onclick:(function (cc){ return function (e){
@@ -8853,7 +8971,7 @@ function viewCompanies(el){
       /* Everything logged with this customer, across every deal and every
          person. Without it the account view is one correspondent's slice, and
          "what is going on with MetLife" needs three deals opened in turn. */
-      var hist = C.interactionsForCompany(App.st, co.id);
+      var hist = C.interactionsForCompany(App.st, co.id, person ? person.id : null);
       if (hist.length){
         var many = {};
         hist.forEach(function (e){ if (e.contact) many[e.contact.id] = true; });
@@ -8887,6 +9005,23 @@ function viewCompanies(el){
       : (lensOn() && lensOnly) ? userName(lensUser()) + " has no deals at any company yet, so this list is empty. "
                                + "Use “Show all companies” above to see the full list."
       : "No companies yet." }));
+
+    /* The holder no longer has a row, so the toggle that UNDOES it would have
+       gone with it. It lives here instead: one line, under the list, saying
+       plainly what the holder is doing and how to stop it. */
+    holders.forEach(function (hd){
+      host.appendChild(h("div", { class:"note", style:"margin:2px 0 12px" },
+        h("span", { text: hd.co.name + " holds " + hd.count + " " +
+          (hd.count === 1 ? "person" : "people") + ", each listed above under their own name.  " }),
+        h("a", { href:"#", style:"font-size:11.5px",
+          onclick:(function (c){ return function (e){
+            e.preventDefault();
+            emit("company.updated", { companyId:c.id, isHolder:false });
+            render();
+            toast(c.name + " is a company again \u2014 its people are one record once more.");
+          }; })(hd.co) },
+          "stop holding individuals")));
+    });
 
     /* Merged-away records, and the way back.
 
@@ -8928,13 +9063,13 @@ function viewCompanies(el){
     /* The control says what pressing it will DO, not what the page currently
        is — a button labelled with a state leaves you guessing which way it
        goes. It opens everything unless everything is already open. */
-    var openHere = matches.filter(function (co){ return openCards[co.id]; }).length;
+    var openHere = matches.filter(function (r){ return openCards[r.key]; }).length;
     var willOpen = openHere < matches.length;
     allBtn.textContent = willOpen ? "Expand all" : "Collapse all";
     allBtn.disabled = !matches.length;
     allBtn.onclick = function (){
-      matches.forEach(function (co){
-        if (willOpen) openCards[co.id] = 1; else delete openCards[co.id]; });
+      matches.forEach(function (r){
+        if (willOpen) openCards[r.key] = 1; else delete openCards[r.key]; });
       lsSet(LS.openCos, Object.keys(openCards));
       paint();
     };

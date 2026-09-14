@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="802d19e426a7" data-built="14 Sep 2026" data-version="1.36.1">
+<meta name="crm-build" content="ed4564c86ea1" data-built="14 Sep 2026" data-version="1.37.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -8255,6 +8255,214 @@ function promotePartnerPopover(anchorEl, ct){
    dropdown: the Partner Pack Builder holds all of that, keyed on this reference,
    and a second copy here would drift from it with nobody able to say which was
    stale. C20, applied to partners instead of to the fold. */
+/* ONE form for a company, because six links are not an edit screen.
+
+   Every fact about a company had its own tiny link and its own popover: the
+   name was not editable at all, the domain was not editable at all, and the
+   partner flag, the holder flag, the agreement reference, the channel owner and
+   the background were five separate round trips. Setting up a new partner meant
+   finding five controls in a row of grey 11.5px text and pressing each in turn,
+   and two of the seven facts could not be reached from that row at all.
+
+   Deals have had an Edit button since the first build. Companies never did. */
+function editCompany(anchorEl, co){
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Edit " + co.name }));
+
+  var nm = h("input", { type:"text", value:co.name || "", "aria-label":"Company name" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Name" }), nm));
+
+  var dom = h("input", { type:"text", value:co.domain || "",
+    placeholder:"plustraining.com \u2014 blank is fine",
+    "aria-label":"Domain" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Domain" }), dom));
+  var domNote = h("div", { class:"note",
+    text:"What matches their email to them on the next import. A company with no " +
+         "domain fails to match silently \u2014 every thread from them comes back " +
+         "\u201cno company in the CRM\u201d. A wrong one is worse than a blank one." });
+  box.appendChild(domNote);
+
+  /* --- what this record IS --- */
+  var isPart = h("input", { type:"checkbox", id:"ec-part" });
+  isPart.checked = !!co.isPartner;
+  box.appendChild(h("label", { class:"fld chk" }, isPart,
+    h("span", { text:"We sell through them \u2014 a partner" })));
+
+  var isHold = h("input", { type:"checkbox", id:"ec-hold" });
+  isHold.checked = !!co.isHolder;
+  box.appendChild(h("label", { class:"fld chk" }, isHold,
+    h("span", { text:"This record holds individuals" })));
+  box.appendChild(h("div", { class:"note",
+    text:"A holder is a drawer of private buyers, not a company. Its deals are " +
+         "named after the person, and it can never be a partner itself \u2014 though " +
+         "the people in it can." }));
+
+  /* --- the join key into the register --- */
+  var ref = h("input", { type:"text", value:co.partnerRef || "",
+    placeholder:"MWS-PP-2026-001", "aria-label":"Agreement reference" });
+  var refWrap = h("label", { class:"fld" },
+    h("span", { text:"Agreement reference" }), ref);
+  box.appendChild(refWrap);
+  var refNote = h("div", { class:"note" });
+  box.appendChild(refNote);
+
+  /* --- whose channel this company is --- */
+  var chFilter = h("input", { type:"text", placeholder:"Type a name to narrow the list",
+                              "aria-label":"Filter people" });
+  var chSel = h("select", { "aria-label":"Sales channel for" });
+  var chWrap = h("div", null,
+    h("label", { class:"fld" }, h("span", { text:"Whose channel?" }), chFilter),
+    chSel);
+  box.appendChild(chWrap);
+  var chNote = h("div", { class:"note" });
+  box.appendChild(chNote);
+  /* Says what the link will DO before it is saved. A stored relationship whose
+     consequence you only discover afterwards is a relationship you cannot set
+     with confidence. */
+  var syncChannelNote = function (){
+    var v = chSel.value || "";
+    var got = v.indexOf("co:") === 0
+      ? { coId:v.slice(3), name:(App.st.companies[v.slice(3)] || {}).name }
+      : v.indexOf("ct:") === 0
+      ? { ctId:v.slice(3), name:(App.st.contacts[v.slice(3)] || {}).name }
+      : null;
+    if (!got){
+      chNote.textContent = co.name + " brings in its own business. Deals filed through it " +
+        "read as \u201cvia " + co.name + "\u201d and nothing more.";
+      return;
+    }
+    var others = (got.ctId ? C.channelsFor(App.st, got.ctId)
+                           : C.channelsForCompany(App.st, got.coId))
+      .filter(function (c){ return c.id !== co.id; }).map(function (c){ return c.name; });
+    chNote.textContent = "A deal brought in through " + co.name + " will also read as brought " +
+      "in by " + got.name + "." +
+      (others.length ? "  " + got.name + " already has " + others.join(" and ") + "." : "") +
+      (got.ctId ? "  " + got.name + " is still a contact rather than a partner in their own " +
+                  "right \u2014 \u201cmake them a partner\u201d on their card fixes that." : "");
+  };
+  chSel.addEventListener("change", syncChannelNote);
+
+  function paintChannels(){
+    var term = triageNormLite(chFilter.value);
+    clear(chSel);
+    chSel.appendChild(h("option", { value:"" },
+      "\u2014 nobody\u2019s \u2014 it stands on its own \u2014"));
+    var hit = function (n, extra){
+      if (!term) return true;
+      return triageNormLite(n + " " + (extra || "")).indexOf(term) >= 0;
+    };
+    var people = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
+      .filter(function (c){ return c.companyId !== co.id; })
+      .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
+    var partners = h("optgroup", { label:"Partners" });
+    var indep = h("optgroup", { label:"Independents \u2014 they work for themselves" });
+    var atCo = h("optgroup", { label:"People at a company" });
+    people.forEach(function (c){
+      var pco = App.st.companies[c.companyId] || {};
+      if (!hit(c.name, c.email + " " + (pco.name || ""))) return;
+      var o = h("option", { value:"ct:" + c.id },
+        c.name + (pco.name && !pco.isHolder ? "  \u00b7 " + pco.name : ""));
+      if (c.partnerRef) partners.appendChild(o);
+      else if (pco.isHolder) indep.appendChild(o);
+      else atCo.appendChild(o);
+    });
+    Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
+      .filter(function (c){ return c.id !== co.id && !c.isHolder && !c.merged &&
+                                   (c.isPartner || c.partnerRef) && hit(c.name, c.domain); })
+      .sort(function (a,b){ return a.name < b.name ? -1 : 1; })
+      .forEach(function (c){
+        partners.appendChild(h("option", { value:"co:" + c.id },
+          c.name + (c.partnerRef ? "  \u00b7 " + c.partnerRef : ""))); });
+    if (partners.childNodes.length) chSel.appendChild(partners);
+    if (indep.childNodes.length)    chSel.appendChild(indep);
+    if (atCo.childNodes.length)     chSel.appendChild(atCo);
+    chSel.value = co.channelForCompanyId ? "co:" + co.channelForCompanyId
+                : co.channelForContactId ? "ct:" + co.channelForContactId : "";
+  }
+  chFilter.addEventListener("input", function (){ paintChannels(); syncChannelNote(); });
+  paintChannels(); syncChannelNote();
+
+  /* --- standing background --- */
+  var notes = h("textarea", { rows:"3", "aria-label":"Background",
+    placeholder:"What is standing true about this company \u2014 who they are, how we work together" });
+  notes.value = co.notes || "";
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Background" }), notes));
+
+  var err = h("div", { class:"note", style:"color:var(--overdue)" });
+  box.appendChild(err);
+
+  function check(){
+    clear(refNote); clear(err);
+    var ok2 = true;
+    if (!nm.value.trim()){ err.textContent = "A company needs a name."; ok2 = false; }
+    /* A holder is a drawer of people, so it cannot itself be the thing we sell
+       through. Said here rather than silently unticking one of them. */
+    if (isHold.checked && isPart.checked){
+      err.textContent = "A record cannot both hold individuals and be a partner \u2014 " +
+        "a bucket of people is not who we sell through. The people inside it can " +
+        "each be made a partner in their own right.";
+      ok2 = false;
+    }
+    refWrap.style.display = isHold.checked ? "none" : "";
+    chWrap.style.display  = isHold.checked ? "none" : "";
+    chNote.style.display  = isHold.checked ? "none" : "";
+    var v = String(ref.value || "").trim().toUpperCase();
+    if (v && !isHold.checked){
+      if (!/^MWS-PP-[0-9]{4}-[0-9]+$/.test(v))
+        refNote.textContent = "Not the shape the Partner Pack Builder allocates " +
+          "(MWS-PP-year-number). Saving it is allowed \u2014 it just will not line up " +
+          "with the register.";
+      var clash = null;
+      Object.keys(App.st.companies).forEach(function (k){
+        var c = App.st.companies[k];
+        if (c.id !== co.id && c.partnerRef === v && !c.merged) clash = c.name; });
+      Object.keys(App.st.contacts).forEach(function (k){
+        var c = App.st.contacts[k];
+        if (c.partnerRef === v) clash = c.name; });
+      if (clash){
+        err.textContent = clash + " already carries " + v + ". One agreement belongs " +
+          "to one partner, so one of these is wrong.";
+        ok2 = false;
+      }
+    } else if (!v && !isHold.checked){
+      refNote.textContent = "The number the Partner Pack Builder allocated. It is the " +
+        "join key \u2014 the model, territory, royalty and status stay in the register " +
+        "and are never retyped here.";
+    }
+    return ok2;
+  }
+  [nm, ref].forEach(function (el){ el.addEventListener("input", check); });
+  [isPart, isHold].forEach(function (el){ el.addEventListener("change", check); });
+  check();
+
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      if (!check()) return;
+      var v = String(ref.value || "").trim().toUpperCase();
+      var cv = chSel.value;
+      closeLayers("pop");
+      /* One event, so a half-applied edit is not a state the log can reach.
+         Nulls are explicit because null is how a link is REMOVED and `assign`
+         reads an absent key as "not supplied" \u2014 the trap C29 hit twice. */
+      emit("company.updated", {
+        companyId: co.id,
+        name: nm.value.trim(),
+        domain: dom.value.trim(),
+        notes: notes.value.trim(),
+        isPartner: isHold.checked ? false : isPart.checked,
+        isHolder: isHold.checked,
+        partnerRef: isHold.checked ? null : (v || null),
+        channelForCompanyId: (!isHold.checked && cv.indexOf("co:") === 0) ? cv.slice(3) : null,
+        channelForContactId: (!isHold.checked && cv.indexOf("ct:") === 0) ? cv.slice(3) : null
+      });
+      render();
+      toast(nm.value.trim() + " saved.");
+    } }, "Save")));
+  openPopover(anchorEl, box, { width:380 });
+}
+
 function partnerRefPopover(anchorEl, rec, kind){
   var box = h("div");
   box.appendChild(h("h4", { text:"Agreement reference for " + rec.name }));
@@ -8310,156 +8518,7 @@ function partnerRefPopover(anchorEl, rec, kind){
   openPopover(anchorEl, box, { width:340 });
 }
 
-function channelPopover(anchorEl, co){
-  var box = h("div");
-  box.appendChild(h("h4", { text:"Whose channel is " + co.name + "?" }));
 
-  /* Sixty-odd contacts in one flat select is a list nobody can find anybody in.
-
-     Worse, it LOOKED alphabetical and was not: independents were quietly sorted
-     to the top, so somebody hunting for Melissa scrolled to where the Ms are,
-     found Melani then Mike, and concluded she was missing. She was at the top
-     all along. Two fixes, and both are needed — the groups so the order is
-     visible, and the filter so the list is short. */
-  var filter = h("input", { type:"text", placeholder:"Type a name to narrow the list",
-                            "aria-label":"Filter people" });
-  var sel = h("select", { "aria-label":"Sales channel for", size:"1" });
-  var pool = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
-    .filter(function (c){ return c.companyId !== co.id; })
-    .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
-
-  function paintPeople(){
-    var term = triageNormLite(filter.value);
-    clear(sel);
-    sel.appendChild(h("option", { value:"" }, "\u2014 nobody\u2019s \u2014 it stands on its own \u2014"));
-    var hit = function (c){
-      if (!term) return true;
-      var pco = App.st.companies[c.companyId] || {};
-      return triageNormLite(c.name + " " + (c.email || "") + " " + (pco.name || "")).indexOf(term) >= 0;
-    };
-    /* Partners with a record of their own come FIRST — once somebody has been
-       made a partner, their record is the thing a channel belongs to, not their
-       contact row. Two ways to say one relationship would drift apart. */
-    var partnerCos = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
-      .filter(function (c){
-        if (c.id === co.id || c.isHolder || c.merged) return false;
-        if (!c.isPartner && !c.isPerson) return false;
-        if (!term) return true;
-        return triageNormLite(c.name + " " + (c.domain || "")).indexOf(term) >= 0;
-      })
-      .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
-    if (partnerCos.length){
-      var g0 = h("optgroup", { label:"Partners" });
-      partnerCos.forEach(function (c){
-        g0.appendChild(h("option", { value:"co:" + c.id },
-          c.name + (c.isPerson ? "  (individual)" : ""))); });
-      sel.appendChild(g0);
-    }
-    var indep = pool.filter(function (c){
-      return (App.st.companies[c.companyId] || {}).isHolder && hit(c); });
-    var atCo  = pool.filter(function (c){
-      return !(App.st.companies[c.companyId] || {}).isHolder && hit(c); });
-    if (indep.length){
-      var g1 = h("optgroup", { label:"Independents \u2014 not yet partners in their own right" });
-      indep.forEach(function (c){ g1.appendChild(h("option", { value:"ct:" + c.id }, c.name)); });
-      sel.appendChild(g1);
-    }
-    if (atCo.length){
-      var g2 = h("optgroup", { label:"At a company" });
-      atCo.forEach(function (c){
-        g2.appendChild(h("option", { value:"ct:" + c.id },
-          c.name + "  \u00b7 " + ((App.st.companies[c.companyId] || {}).name || ""))); });
-      sel.appendChild(g2);
-    }
-    if (!indep.length && !atCo.length)
-      sel.appendChild(h("option", { value:"", disabled:"disabled" }, "nobody matches \u201c" + filter.value + "\u201d"));
-  }
-  paintPeople();
-  sel.value = co.channelForCompanyId ? "co:" + co.channelForCompanyId
-            : co.channelForContactId ? "ct:" + co.channelForContactId : "";
-  filter.addEventListener("input", function (){
-    var keep = sel.value; paintPeople();
-    /* Keep the choice if it survived the filter, so typing does not silently
-       undo a selection already made. */
-    sel.value = Array.prototype.some.call(sel.options, function (o){ return o.value === keep; })
-      ? keep : "";
-    sel.dispatchEvent(new Event("change"));
-  });
-  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Filter" }), filter));
-  box.appendChild(h("label", { class:"fld" }, h("span", { text:"A sales channel for" }), sel));
-
-  var note = h("div", { class:"note" });
-  /* One value, two kinds — "co:" a partner with a record of their own,
-     "ct:" a contact who has not been made one yet. */
-  var pick = function (){
-    var v = sel.value || "";
-    if (v.indexOf("co:") === 0) return { coId:v.slice(3), name:(App.st.companies[v.slice(3)] || {}).name };
-    if (v.indexOf("ct:") === 0) return { ctId:v.slice(3), name:(App.st.contacts[v.slice(3)] || {}).name };
-    return null;
-  };
-  var sync = function (){
-    var got = pick();
-    if (!got){
-      note.textContent = co.name + " brings in its own business. Deals filed through it " +
-        "read as \u201cvia " + co.name + "\u201d and nothing more.";
-      return;
-    }
-    var others = (got.ctId ? C.channelsFor(App.st, got.ctId)
-                           : C.channelsForCompany(App.st, got.coId))
-      .filter(function (c){ return c.id !== co.id; }).map(function (c){ return c.name; });
-    note.textContent = "A deal brought in through " + co.name + " will also read as brought " +
-      "in by " + got.name + "." +
-      (others.length ? "  " + got.name + " already has " + others.join(" and ") + "." : "") +
-      (got.ctId ? "  " + got.name + " is still a contact rather than a partner in their own " +
-                  "right \u2014 \u201cmake them a partner\u201d on their card fixes that." : "");
-  };
-  sel.addEventListener("change", sync); sync();
-  box.appendChild(note);
-
-  box.appendChild(h("div", { class:"note",
-    text:"This records who owns the relationship, not who gets paid. Commission is " +
-         "computed on invoices and goes to one of our own people \u2014 a partner never earns it." }));
-
-  box.appendChild(h("div", { class:"pop-foot" },
-    h("button", { class:"btn btn-sm quiet", type:"button",
-                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
-    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
-      closeLayers("pop");
-      var got = pick();
-      /* Both sent every time, and null where unused — null is how a link is
-         REMOVED, and `assign` reads undefined as "not supplied". */
-      emit("company.updated", { companyId:co.id,
-        channelForCompanyId: got && got.coId ? got.coId : null,
-        channelForContactId: got && got.ctId ? got.ctId : null });
-      if (got && !co.isPartner)
-        emit("company.updated", { companyId:co.id, isPartner:true });
-      render();
-      toast(got ? co.name + " is now " + got.name + "\u2019s sales channel."
-                : co.name + " no longer belongs to anybody.");
-    } }, "Save")));
-  openPopover(anchorEl, box, { width:320 });
-}
-
-function companyNotes(anchor, co){
-  var box = h("div");
-  box.appendChild(h("h4", { text:"Background — " + co.name }));
-  var ta = h("textarea", { rows:"4", "aria-label":"Company background",
-    placeholder:"What is standing true about this company — what they do for us, territory, terms" });
-  ta.value = co.notes || "";
-  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Background" }), ta));
-  box.appendChild(h("div", { class:"note",
-    text:"Standing facts, not events. What happened on a given day belongs in the log." }));
-  box.appendChild(h("div", { class:"pop-foot" },
-    h("button", { class:"btn btn-sm quiet", type:"button",
-      onclick:function (){ closeLayers("pop"); } }, "Cancel"),
-    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
-      closeLayers("pop");
-      emit("company.updated", { companyId:co.id, notes:ta.value.trim() });
-      render();
-      toast("Background saved for " + co.name + ".");
-    } }, "Save")));
-  openPopover(anchor, box);
-}
 
 /* Money — the book. Deliberately its own screen rather than more columns on the
    pipeline: selling and collecting are different jobs, often different people,
@@ -9295,70 +9354,33 @@ function viewCompanies(el){
                "person on their own \u2014 with their deals, their history, and the " +
                "button that makes them a partner." }));
 
-      if (!person) bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px" },
-          /* Only offered when there is somewhere to merge INTO. A lone company
-             cannot be a duplicate of anything. */
-          cos.length > 1
-            ? h("a", { href:"#", style:"font-size:11.5px",
-                title:"Fold this company into another — for two records of the same customer",
-                onclick:function (e){ e.preventDefault(); mergeCompanyPrompt(e.currentTarget, co); } },
-                "merge…")
-            : null,
-          cos.length > 1 ? h("span", { text:"  ·  " }) : null,
-          /* Marking a company a holder is a statement about what it IS, so it
-             lives on the company rather than buried in Settings. */
-          h("a", { href:"#", style:"font-size:11.5px",
-            onclick:function (e){
-              e.preventDefault();
-              emit("company.updated", { companyId:co.id, isHolder: !co.isHolder });
-              render();
-              toast(co.isHolder
-                ? co.name + " is a company again."
-                : co.name + " now holds individuals — its deals are named after the person.");
-            } },
-            co.isHolder ? "holds individuals" : "mark as holding individuals"),
-          h("span", { text:"  ·  " }),
-          /* Until now the only way a company became a partner was somebody
-             picking it in the "Via partner" box on a customer's deal. That
-             works for a partner who has already brought something in, and not
-             at all for one still being signed up — which is the point at which
-             you most want the CRM to say what this relationship is. */
-          co.isHolder
-            ? h("span", { style:"font-size:11.5px;color:var(--muted)",
-                text:"a bucket of people cannot be a partner \u2014 the people in it can" })
-            : h("a", { href:"#", style:"font-size:11.5px",
-                onclick:function (e){
-                  e.preventDefault();
-                  emit("company.updated", { companyId:co.id, isPartner: !co.isPartner });
-                  render();
-                  toast(co.isPartner
-                    ? co.name + " is no longer marked a partner."
-                    : co.name + " is a partner — deals can now be filed as coming through them.");
-                } },
-                co.isPartner ? "a partner" : "mark as a partner"),
-          /* Whose channel this company is (F11). A partner firm may belong to a
-             person: CyberNas is one of Melissa's sales channels, and she has
-             more than one. Without this the deal could say "via CyberNas" and
-             nothing anywhere connected it back to her. */
-          co.isHolder ? null : h("span", { text:"  ·  " }),
-          co.isHolder ? null : h("a", { href:"#", style:"font-size:11.5px",
-            title:"The Partner Pack Builder reference — the join key into the register",
+      /* ONE button, where six links used to be.
+
+         Name and domain could not be edited at all from here; the partner flag,
+         the holder flag, the agreement reference, the channel owner and the
+         background were five separate links and five separate dialogs. Setting
+         up a partner meant hunting a row of grey 11.5px text and pressing each
+         in turn. Merge stays separate because it is not an edit \u2014 it folds this
+         record into a different one and needs its own target. */
+      if (!person){
+        var actRow = h("div", { style:"display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px" },
+          h("button", { class:"btn btn-sm", type:"button",
             onclick:(function (c){ return function (e){
-              e.preventDefault(); partnerRefPopover(e.currentTarget, c, "company"); }; })(co) },
-            co.partnerRef || "no agreement reference"),
-          co.isHolder ? null : h("span", { text:"  ·  " }),
-          co.isHolder ? null : h("a", { href:"#", style:"font-size:11.5px",
-            onclick:(function (c){ return function (e){
-              e.preventDefault(); channelPopover(e.currentTarget, c); }; })(co) },
-            (function (){
-              var owner = co.channelForCompanyId ? App.st.companies[co.channelForCompanyId]
-                        : co.channelForContactId ? App.st.contacts[co.channelForContactId] : null;
-              return owner ? owner.name + "\u2019s channel" : "whose channel?";
-            })()),
-          h("span", { text:"  ·  " }),
-          h("a", { href:"#", style:"font-size:11.5px",
-            onclick:function (e){ e.preventDefault(); companyNotes(e.currentTarget, co); } },
-            co.notes ? "edit background" : "add background")));
+              editCompany(e.currentTarget, c); }; })(co) }, "Edit"));
+        /* Only offered when there is somewhere to merge INTO. A lone company
+           cannot be a duplicate of anything. */
+        if (cos.length > 1)
+          actRow.appendChild(h("a", { href:"#", style:"font-size:11.5px",
+            title:"Fold this company into another \u2014 for two records of the same customer",
+            onclick:function (e){ e.preventDefault(); mergeCompanyPrompt(e.currentTarget, co); } },
+            "merge…"));
+        /* The one fact Edit cannot show, said where it matters: a bucket of
+           people is not who we sell through. */
+        if (co.isHolder)
+          actRow.appendChild(h("span", { class:"note",
+            text:"a bucket of people cannot be a partner \u2014 the people in it can" }));
+        bodyEl.appendChild(actRow);
+      }
 
       if (co.notes)
         bodyEl.appendChild(h("div", { class:"prose", style:"margin-bottom:10px", text:co.notes }));

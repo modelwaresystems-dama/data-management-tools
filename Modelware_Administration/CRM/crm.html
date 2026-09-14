@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="fe32cb5bad9e" data-built="14 Sep 2026" data-version="1.33.0">
+<meta name="crm-build" content="242370434a8d" data-built="14 Sep 2026" data-version="1.33.2">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -6357,7 +6357,18 @@ function openDeal(dealId){
         c.phone ? " \u00b7 " + c.phone : ""));
   };
   var allCts = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; });
-  var cts  = allCts.filter(function (c){ return c.companyId === d.companyId; });
+  /* "Everyone at this company" is the right list for a real customer and
+     nonsense for the Individual holder, which is a BUCKET of unrelated private
+     buyers rather than an organisation. Twelve independents shared one holder,
+     so every one of their twelve deals listed all twelve people — Steven's
+     course showed Melissa, Bushra and seven strangers as its contacts.
+
+     A holder shows the deal's own person and nobody else. They have no
+     colleagues here; they just happen to be filed in the same drawer. */
+  var ownCo = App.st.companies[d.companyId] || {};
+  var cts = ownCo.isHolder
+    ? (d.contactId && App.st.contacts[d.contactId] ? [App.st.contacts[d.contactId]] : [])
+    : allCts.filter(function (c){ return c.companyId === d.companyId; });
   var pcts = d.partnerCompanyId
     ? allCts.filter(function (c){ return c.companyId === d.partnerCompanyId; }) : [];
   /* The partner who is a person (F11) has no partner COMPANY to be listed
@@ -6369,8 +6380,8 @@ function openDeal(dealId){
     if (cts.length){
       var list = h("div");
       cts.forEach(function (c){ list.appendChild(contactRow(c)); });
-      if (pcts.length) csec.appendChild(h("div", { class:"note", style:"margin:0 0 2px",
-        text:"At " + ((App.st.companies[d.companyId] || {}).name || "the customer") }));
+      if (pcts.length || partnerPerson) csec.appendChild(h("div", { class:"note", style:"margin:0 0 2px",
+        text: ownCo.isHolder ? "The buyer" : "At " + (ownCo.name || "the customer") }));
       csec.appendChild(list);
     }
     if (pcts.length){
@@ -7427,25 +7438,30 @@ function editDeal(anchor, d){
                      : c.isPartner ? "" : "  (not marked a partner)"))); });
   if (firms.childNodes.length) partner.appendChild(firms);
 
-  /* People, individuals first — they are the ones this was missing for. A
-     contact at the deal's own company is excluded: the customer cannot
-     introduce themselves. */
-  var folk = h("optgroup", { label:"People" });
-  Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
+  /* People, in TWO groups rather than one sorted list. Independents first
+     because they are who this was missing for — but sorting them to the top of
+     a single block made the list look alphabetical when it was not, and a
+     person hunted for at the letter M was concluded to be absent. A contact at
+     the deal's own company is excluded: the customer cannot introduce
+     themselves. */
+  var eligible = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
     .filter(function (c){
       if (c.id === d.contactId) return false;
       var co = App.st.companies[c.companyId] || {};
       return co.isHolder || c.companyId !== d.companyId;
     })
-    .sort(function (a,b){
-      var ah = (App.st.companies[a.companyId] || {}).isHolder ? 0 : 1;
-      var bh = (App.st.companies[b.companyId] || {}).isHolder ? 0 : 1;
-      if (ah !== bh) return ah - bh;
-      return a.name < b.name ? -1 : 1; })
+    .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
+  var indep = h("optgroup", { label:"Independents \u2014 they work for themselves" });
+  eligible.filter(function (c){ return (App.st.companies[c.companyId] || {}).isHolder; })
     .forEach(function (c){
-      var co = App.st.companies[c.companyId] || {};
+      indep.appendChild(h("option", { value:"ct:" + c.id }, c.name)); });
+  if (indep.childNodes.length) partner.appendChild(indep);
+
+  var folk = h("optgroup", { label:"People at a company" });
+  eligible.filter(function (c){ return !(App.st.companies[c.companyId] || {}).isHolder; })
+    .forEach(function (c){
       folk.appendChild(h("option", { value:"ct:" + c.id },
-        c.name + (co.isHolder ? "  (independent)" : "  \u00b7 " + (co.name || "")))); });
+        c.name + "  \u00b7 " + ((App.st.companies[c.companyId] || {}).name || ""))); });
   if (folk.childNodes.length) partner.appendChild(folk);
 
   partner.value = d.partnerCompanyId ? "co:" + d.partnerCompanyId
@@ -7770,26 +7786,70 @@ function mergeCompanyPrompt(anchor, co){
    is one of her channels — "one of", so this is many companies pointing at one
    person, not a pairing. The person stays a person: nothing here turns them
    into a company, which is the repair that would have been wrong. */
+/* Lower-cased and stripped of punctuation, for matching what somebody types
+   against a name. Not triageNorm — that lives in crm-core and is the import
+   side's key function; this is only ever used to filter a picker. */
+function triageNormLite(x){
+  return String(x || "").toLowerCase().replace(/[^a-z0-9@. ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function channelPopover(anchorEl, co){
   var box = h("div");
   box.appendChild(h("h4", { text:"Whose channel is " + co.name + "?" }));
 
-  var sel = h("select", { "aria-label":"Sales channel for" });
-  sel.appendChild(h("option", { value:"" }, "\u2014 nobody\u2019s \u2014 it stands on its own \u2014"));
-  /* Individuals first: an independent is the likely answer, and a contact at
-     the company itself is never one — that would make it its own channel. */
-  Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
+  /* Sixty-odd contacts in one flat select is a list nobody can find anybody in.
+
+     Worse, it LOOKED alphabetical and was not: independents were quietly sorted
+     to the top, so somebody hunting for Melissa scrolled to where the Ms are,
+     found Melani then Mike, and concluded she was missing. She was at the top
+     all along. Two fixes, and both are needed — the groups so the order is
+     visible, and the filter so the list is short. */
+  var filter = h("input", { type:"text", placeholder:"Type a name to narrow the list",
+                            "aria-label":"Filter people" });
+  var sel = h("select", { "aria-label":"Sales channel for", size:"1" });
+  var pool = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
     .filter(function (c){ return c.companyId !== co.id; })
-    .sort(function (a,b){
-      var ah = (App.st.companies[a.companyId] || {}).isHolder ? 0 : 1;
-      var bh = (App.st.companies[b.companyId] || {}).isHolder ? 0 : 1;
-      if (ah !== bh) return ah - bh;
-      return a.name < b.name ? -1 : 1; })
-    .forEach(function (c){
+    .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
+
+  function paintPeople(){
+    var term = triageNormLite(filter.value);
+    clear(sel);
+    sel.appendChild(h("option", { value:"" }, "\u2014 nobody\u2019s \u2014 it stands on its own \u2014"));
+    var hit = function (c){
+      if (!term) return true;
       var pco = App.st.companies[c.companyId] || {};
-      sel.appendChild(h("option", { value:c.id },
-        c.name + (pco.isHolder ? "  (independent)" : "  \u00b7 " + (pco.name || "")))); });
+      return triageNormLite(c.name + " " + (c.email || "") + " " + (pco.name || "")).indexOf(term) >= 0;
+    };
+    var indep = pool.filter(function (c){
+      return (App.st.companies[c.companyId] || {}).isHolder && hit(c); });
+    var atCo  = pool.filter(function (c){
+      return !(App.st.companies[c.companyId] || {}).isHolder && hit(c); });
+    if (indep.length){
+      var g1 = h("optgroup", { label:"Independents \u2014 they work for themselves" });
+      indep.forEach(function (c){ g1.appendChild(h("option", { value:c.id }, c.name)); });
+      sel.appendChild(g1);
+    }
+    if (atCo.length){
+      var g2 = h("optgroup", { label:"At a company" });
+      atCo.forEach(function (c){
+        g2.appendChild(h("option", { value:c.id },
+          c.name + "  \u00b7 " + ((App.st.companies[c.companyId] || {}).name || ""))); });
+      sel.appendChild(g2);
+    }
+    if (!indep.length && !atCo.length)
+      sel.appendChild(h("option", { value:"", disabled:"disabled" }, "nobody matches \u201c" + filter.value + "\u201d"));
+  }
+  paintPeople();
   sel.value = co.channelForContactId || "";
+  filter.addEventListener("input", function (){
+    var keep = sel.value; paintPeople();
+    /* Keep the choice if it survived the filter, so typing does not silently
+       undo a selection already made. */
+    sel.value = Array.prototype.some.call(sel.options, function (o){ return o.value === keep; })
+      ? keep : "";
+    sel.dispatchEvent(new Event("change"));
+  });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Filter" }), filter));
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"A sales channel for" }), sel));
 
   var note = h("div", { class:"note" });

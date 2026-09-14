@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="ef8a7453544c" data-built="14 Sep 2026" data-version="1.36.0">
+<meta name="crm-build" content="802d19e426a7" data-built="14 Sep 2026" data-version="1.36.1">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -5486,7 +5486,14 @@ var NAV = [
   { id:"settings",  label:"Settings",  key:"g s" }
 ];
 
+/* Re-rendering rebuilds the whole page, which loses where you were reading.
+   Toggling "a partner" on a company two-thirds down the list put you back at a
+   different place in a shorter document, which reads as being thrown to the
+   bottom of the screen. The scroll position is restored after the paint, so a
+   control does what it says and nothing else. */
 function render(){
+  var keepY = 0;
+  try { keepY = window.scrollY || document.documentElement.scrollTop || 0; } catch (e){}
   var root = $("#root"); clear(root);
   root.appendChild(renderSidebar());
   var main = h("div", { class:"main" });
@@ -5497,6 +5504,7 @@ function render(){
   renderView(content);
   setSync(App.sync.status, App.sync.detail);
   updateStorageBanner();
+  if (keepY) try { window.scrollTo(0, keepY); } catch (e){}
 }
 
 function renderSidebar(){
@@ -8242,6 +8250,66 @@ function promotePartnerPopover(anchorEl, ct){
   openPopover(anchorEl, box, { width:340 });
 }
 
+/* The agreement reference \u2014 MWS-PP-2026-001 \u2014 and deliberately nothing else
+   about the partnership. Not a model picker, not a royalty box, not a status
+   dropdown: the Partner Pack Builder holds all of that, keyed on this reference,
+   and a second copy here would drift from it with nobody able to say which was
+   stale. C20, applied to partners instead of to the fold. */
+function partnerRefPopover(anchorEl, rec, kind){
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Agreement reference for " + rec.name }));
+  var inp = h("input", { type:"text", value:rec.partnerRef || "",
+    placeholder:"MWS-PP-2026-001", "aria-label":"Agreement reference" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Reference" }), inp));
+  box.appendChild(h("div", { class:"note",
+    text:"The number the Partner Pack Builder allocated when the pack was made. " +
+         "It is the join key \u2014 the model, territory, royalty and lifecycle status " +
+         "stay in the register and are never retyped here. Clear it to unlink." }));
+  var warn = h("div", { class:"note", style:"color:var(--overdue)" });
+  box.appendChild(warn);
+  var check = function (){
+    var v = String(inp.value || "").trim().toUpperCase();
+    clear(warn);
+    if (!v) return;
+    if (!/^MWS-PP-[0-9]{4}-[0-9]+$/.test(v)){
+      warn.textContent = "That is not the shape the Builder allocates " +
+        "(MWS-PP-year-number). Saving it is allowed \u2014 it just will not line up " +
+        "with the register.";
+      return;
+    }
+    /* A reference is never reused across partners. Two records pointing at one
+       agreement is the exact thing this field exists to prevent. */
+    var clash = null;
+    Object.keys(App.st.companies).forEach(function (k){
+      var c = App.st.companies[k];
+      if (c.id !== rec.id && c.partnerRef === v && !c.merged) clash = c.name; });
+    Object.keys(App.st.contacts).forEach(function (k){
+      var c = App.st.contacts[k];
+      if (c.id !== rec.id && c.partnerRef === v) clash = c.name; });
+    if (clash) warn.textContent = clash + " already carries " + v +
+      ". A reference belongs to one agreement, so one of these is wrong.";
+  };
+  inp.addEventListener("input", check); check();
+
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      var v = String(inp.value || "").trim().toUpperCase();
+      closeLayers("pop");
+      if (kind === "contact") emit("contact.updated", { contactId:rec.id, partnerRef: v || null });
+      else {
+        var pay = { companyId:rec.id, partnerRef: v || null };
+        if (v) pay.isPartner = true;
+        emit("company.updated", pay);
+      }
+      render();
+      toast(v ? rec.name + " is linked to " + v + "."
+              : rec.name + " is no longer linked to an agreement.");
+    } }, "Save")));
+  openPopover(anchorEl, box, { width:340 });
+}
+
 function channelPopover(anchorEl, co){
   var box = h("div");
   box.appendChild(h("h4", { text:"Whose channel is " + co.name + "?" }));
@@ -9298,6 +9366,7 @@ function viewCompanies(el){
       if (deals.length){
         var t = h("table", { class:"tbl" }, h("thead", null, h("tr", null,
           h("th", { text: (co.isHolder && !person) ? "Person \u00b7 Deal" : "Deal" }),
+          h("th", { text:"Channel" }),
           h("th", { text:"Stage" }), h("th", { text:"Next step" }),
           h("th", { text:"Owner" }), h("th", { class:"num", text:"Value" }))));
         var tb = h("tbody");
@@ -9318,6 +9387,14 @@ function viewCompanies(el){
                       text: party.isIndividual ? party.name : "(nobody named)" })
                   : null,
                 h("div", { text:d.name }), chipsFor(d.id, 3)),
+              /* Blank says "nobody has set one", and says it in the place you
+                 would go to set it \u2014 the channel lives on the DEAL, so the row
+                 is the way in. */
+              (function (){
+                var cc = C.channelById(d.channel);
+                return h("td", cc ? { title:cc.who } : { style:"color:var(--muted)" },
+                  cc ? cc.short : "not set");
+              })(),
               h("td", { text: d.status === "open" ? C.stageLabel(App.config, d.stage)
                                                   : (d.outcome === "won" ? "Won" : "Lost") }),
               h("td", { style: nx ? (late < 0 ? "color:var(--overdue)" : "") : "color:var(--muted)",

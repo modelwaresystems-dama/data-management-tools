@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="07365d82ba6d" data-built="14 Sep 2026" data-version="1.35.0">
+<meta name="crm-build" content="45d27830edeb" data-built="14 Sep 2026" data-version="1.35.1">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -8641,19 +8641,10 @@ function viewCompanies(el){
     return seen;
   }
 
-  /* Rows, not companies — a holder contributes its people, so "of 47" has to
-     count what the list actually shows or the lens line contradicts the page. */
-  function allRowCount(){
-    var n = 0;
-    Object.keys(App.st.companies).forEach(function (k){
-      var co = App.st.companies[k];
-      if (!co.isHolder){ n++; return; }
-      var inside = Object.keys(App.st.contacts)
-        .filter(function (j){ return App.st.contacts[j].companyId === co.id; }).length;
-      n += inside || 1;
-    });
-    return n;
-  }
+  /* The BROWSING shape: a holder counts as one row, because that is what the
+     unfiltered list shows. Typing expands it, and the lens line is not on screen
+     while you are typing. */
+  function allRowCount(){ return Object.keys(App.st.companies).length; }
 
   function paint(){
     clear(host);
@@ -8662,29 +8653,40 @@ function viewCompanies(el){
     var cos = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
       .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
 
-    /* A person who trades as themselves is a counterparty, not a line buried
-       inside a bucket.
+    /* Reaching one person directly, WITHOUT listing every private buyer.
 
-       A sole proprietor looked up under M was not under M. The holder was the
-       row, her name appeared nowhere in this list, and the only route to her ran
-       through knowing which bucket to open and then reading twelve contact cards
-       — which is not "looking someone up", it is remembering where you filed
-       them. That is the whole reason a partner could not be made one: the
-       control existed, on a card nobody could find.
+       Two opposite mistakes, made one after the other, and the fix is the line
+       between them:
 
-       So the holder is no longer a row. Its people ARE the rows, each under
-       their own name, in the one alphabetical list, each with their own deals,
-       their own history and their own arithmetic. The holder keeps its job —
-       stopping a private buyer becoming a company — and loses the one it was
-       never given, hiding people. */
-    var rows = [], holders = [];
+       · A sole proprietor looked up under M was not under M. The holder was the
+         only row; the route to her ran through knowing which bucket to open and
+         then reading a stack of contact tiles. A control nobody can find is a
+         feature the application does not have.
+
+       · So every person in the holder was given a row — and the list became a
+         register of students. Direct sales to individuals is a SALES CHANNEL,
+         not a roster of accounts. Somebody buying one course is not a
+         counterparty you browse to.
+
+       So: the holder stays ONE row while you are browsing, and its people become
+       rows the moment you TYPE. Searching IS the act of looking somebody up, and
+       that is when a person should be reachable as themselves — with their own
+       deals, their own history, and the button that makes them a partner. */
+    var rows = [], holders = [], searching = !!term;
     cos.forEach(function (co){
       if (!co.isHolder){ rows.push({ co:co, person:null, name:co.name, key:co.id }); return; }
       var inside = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
         .filter(function (c){ return c.companyId === co.id; });
-      /* An empty holder still shows, or marking one by mistake is unrecoverable
-         — the row carrying the "holds individuals" toggle would vanish with it. */
-      if (!inside.length){ rows.push({ co:co, person:null, name:co.name, key:co.id }); return; }
+      /* Browsing, or an empty holder: one row, carrying its own controls. An
+         empty holder must still show or marking one by mistake is unrecoverable. */
+      if (!searching || !inside.length){
+        rows.push({ co:co, person:null, name:co.name, key:co.id, bucketOf:inside.length });
+        return;
+      }
+      /* Typing. The bucket stays findable by its OWN name — but on its own name
+         only, so searching for a person does not also return the drawer they
+         happen to be filed in. */
+      rows.push({ co:co, person:null, name:co.name, key:co.id, selfOnly:true, bucketOf:inside.length });
       inside.forEach(function (c){
         rows.push({ co:co, person:c, name:c.name, key:"p:" + c.id }); });
       holders.push({ co:co, count:inside.length });
@@ -8721,6 +8723,7 @@ function viewCompanies(el){
       if (r.person)
         hay = (r.person.name + " " + (r.person.email || "") + " " +
                (r.person.role || "") + " " + (r.person.phone || ""));
+      else if (r.selfOnly) hay = (r.co.name + " " + (r.co.domain || ""));
       else {
         var cts = Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
           .filter(function (c){ return c.companyId === r.co.id; });
@@ -8777,7 +8780,11 @@ function viewCompanies(el){
           ? h("span", { class:"chip plain",
               title:"Filed under " + co.name + ". Open this card to give them a record of their own.",
               text:"Individual" })
-          : null,
+          : (row.bucketOf
+              ? h("span", { class:"chip plain",
+                  title:"Direct sales to individuals. Type a name in the filter box to open that person on their own.",
+                  text: row.bucketOf + " " + (row.bucketOf === 1 ? "person" : "people") })
+              : null),
         /* A person's own channels, on their row. Melissa sells through CyberNas;
            standing at her name you should see that without opening anything,
            because it is the reason she is a partner at all. */
@@ -8843,6 +8850,17 @@ function viewCompanies(el){
               ? "  Sells through " + chans.map(function (c){ return c.name; }).join(", ") + "."
               : "") }));
       }
+
+      /* The holder card, while browsing. Its people are not rows here on purpose
+         — direct sales to individuals is a sales channel, not a roster of
+         accounts — so the card has to say where they went. */
+      if (!person && co.isHolder && row.bucketOf)
+        bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px",
+          text:"Direct sales to individuals. " + row.bucketOf + " " +
+               (row.bucketOf === 1 ? "person is" : "people are") +
+               " filed here. Type a name in the filter box above to open that " +
+               "person on their own \u2014 with their deals, their history, and the " +
+               "button that makes them a partner." }));
 
       if (!person) bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px" },
           /* Only offered when there is somewhere to merge INTO. A lone company
@@ -9012,7 +9030,9 @@ function viewCompanies(el){
     holders.forEach(function (hd){
       host.appendChild(h("div", { class:"note", style:"margin:2px 0 12px" },
         h("span", { text: hd.co.name + " holds " + hd.count + " " +
-          (hd.count === 1 ? "person" : "people") + ", each listed above under their own name.  " }),
+          (hd.count === 1 ? "person" : "people") + ". While you are filtering they are " +
+          "listed above under their own names; clear the box and they fold back into " +
+          "the one row.  " }),
         h("a", { href:"#", style:"font-size:11.5px",
           onclick:(function (c){ return function (e){
             e.preventDefault();

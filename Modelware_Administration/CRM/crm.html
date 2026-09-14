@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="0f8813898856" data-built="8 Sep 2026" data-version="1.33.0">
+<meta name="crm-build" content="fe32cb5bad9e" data-built="14 Sep 2026" data-version="1.33.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -727,7 +727,7 @@ function assign(target, src, keys){
    person is the customer. See dealParty(). */
 var DEAL_FIELDS = ["companyId","name","owner","stage","value","currency",
                    "expectedCloseDate","notes","contactId","commissionRate",
-                   "partnerCompanyId","commissionable"];
+                   "partnerCompanyId","partnerContactId","commissionable"];
 
 /* Money is rounded to cents on the way IN, once, so nothing downstream has to
    wonder whether 0.1 + 0.2 has crept into a balance. */
@@ -740,7 +740,6 @@ function money(v){
 function foldEvents(events){
   var st = { companies:{}, contacts:{}, deals:{}, followups:{}, interactions:{},
              invoices:{}, payments:{}, quotes:{}, pos:{},
-             creditNotes:{}, refunds:{},
              clients:{}, lastTs:null, eventCount:0 };
   var ordered = sortEvents(events || []);
 
@@ -763,11 +762,21 @@ function foldEvents(events){
              real relationship, so they are not a flag on a deal — but the
              pipeline must not read as though the partner were the buyer. */
           isPartner: !!p.isPartner,
+          /* F11. A company that sells through a particular person — "CyberNas is
+             one of the sales channels for Melissa". Many companies may point at
+             one person; she has more than one channel. Null is the ordinary
+             case: a partner who is nobody's channel but their own. */
+          channelForContactId: p.channelForContactId == null ? null : String(p.channelForContactId),
           createdAt:e.ts };
         break;
       case "company.updated":
         if (st.companies[p.companyId])
           assign(st.companies[p.companyId], p, ["name","domain","notes","isHolder","isPartner"]);
+          /* Explicit, because null is how the link is REMOVED and `assign`
+             reads null as "not supplied" — the same trap C29 hit twice. */
+          if (p.channelForContactId !== undefined)
+            st.companies[p.companyId].channelForContactId =
+              p.channelForContactId == null ? null : String(p.channelForContactId);
         break;
       /* Two records for one customer is not a fact about the business, it is a
          data-entry accident — so this folds one into the other rather than
@@ -811,6 +820,19 @@ function foldEvents(events){
              for the first, and partner contacts stay filed under their own
              employer where they belong. */
           partnerCompanyId:p.partnerCompanyId || null,
+          /* F11. The partner is a PERSON, not a firm.
+
+             Melissa works for herself. She brings us business, which makes her a
+             partner in every sense that matters — but a partner could only be a
+             company, and an individual is filed under the "Individual" holder, so
+             the picker had nothing to offer. The alternative was turning her into
+             a company of her own, which is the exact mistake the holder exists to
+             prevent: she is a person, and a pipeline that says otherwise reads as
+             nonsense.
+
+             A deal has at most one of these two. Both set is a contradiction, not
+             a richer record — see dealPartner(). */
+          partnerContactId:p.partnerContactId || null,
           /* Not every deal pays commission. A deal the director carries himself
              has no earner, and pretending it does would put money in somebody's
              column that nobody is owed. Default true so nothing existing moves. */
@@ -1045,45 +1067,6 @@ function foldEvents(events){
         if (st.payments[p.paymentId]) delete st.payments[p.paymentId];
         break;
 
-      /* A credit note reverses a sale. It is not a payment and not a discount:
-         the money never came, and the revenue should stop being counted. Kept
-         as its own record because "we credited this" is a fact somebody has to
-         be able to see, not an adjustment silently folded into a total. */
-      case "creditNote.raised":
-        st.creditNotes[p.creditNoteId] = {
-          id:p.creditNoteId, invoiceId:p.invoiceId, dealId:p.dealId,
-          number:p.number || "", issuedOn:p.issuedOn || String(e.ts).slice(0,10),
-          currency:p.currency || "ZAR", net:money(p.net), vat:money(p.vat),
-          reason:p.reason || "", actor:e.actor, ts:e.ts
-        };
-        break;
-      case "creditNote.updated":
-        if (st.creditNotes[p.creditNoteId]){
-          var cnx = st.creditNotes[p.creditNoteId];
-          if (p.net != null) cnx.net = money(p.net);
-          if (p.vat != null) cnx.vat = money(p.vat);
-          if (p.issuedOn) cnx.issuedOn = p.issuedOn;
-          if (p.reason != null) cnx.reason = p.reason || "";
-        }
-        break;
-      case "creditNote.removed":
-        if (st.creditNotes[p.creditNoteId]) delete st.creditNotes[p.creditNoteId];
-        break;
-
-      /* Money going back out. Netted off what the invoice was paid, so an
-         invoice that was settled and then refunded stops reading as settled. */
-      case "refund.paid":
-        st.refunds[p.refundId] = {
-          id:p.refundId, invoiceId:p.invoiceId, dealId:p.dealId,
-          paidOn:p.paidOn || String(e.ts).slice(0,10),
-          amount:money(p.amount), reference:p.reference || "",
-          currency:p.currency || "", actor:e.actor, ts:e.ts
-        };
-        break;
-      case "refund.removed":
-        if (st.refunds[p.refundId]) delete st.refunds[p.refundId];
-        break;
-
       case "interaction.logged":
         st.interactions[p.interactionId] = {
           id:p.interactionId, subjectType:p.subjectType, subjectId:p.subjectId,
@@ -1218,9 +1201,27 @@ function foldEvents(events){
      "MasterData / RFQ, via MasterData" with the real customer nowhere. An
      invariant that only holds on the paths you remembered is not an invariant. */
   Object.keys(st.deals).forEach(function (k){
-    if (st.deals[k].partnerCompanyId &&
-        st.deals[k].partnerCompanyId === st.deals[k].companyId)
-      st.deals[k].partnerCompanyId = null;
+    var d = st.deals[k];
+    if (d.partnerCompanyId && d.partnerCompanyId === d.companyId)
+      d.partnerCompanyId = null;
+    /* The same rule, now that a partner can be a person (F11): nobody is their
+       own partner. A deal whose partner contact is the deal's own contact is
+       the individual-shaped version of "MasterData, via MasterData". */
+    if (d.partnerContactId && d.partnerContactId === d.contactId)
+      d.partnerContactId = null;
+    /* And a deal carries at most ONE partner. Both set is a contradiction —
+       two different claims about who brought it — not a richer record. The
+       company wins because it is the older field and the one every screen
+       already reads; the person is dropped rather than silently outranking it. */
+    if (d.partnerCompanyId && d.partnerContactId) d.partnerContactId = null;
+    /* A partner contact filed at the deal's own company is the same mistake
+       wearing a different hat: the customer introducing themselves. */
+    if (d.partnerContactId){
+      var pc = st.contacts[d.partnerContactId];
+      if (!pc) d.partnerContactId = null;
+      else if (pc.companyId === d.companyId && !(st.companies[pc.companyId] || {}).isHolder)
+        d.partnerContactId = null;
+    }
   });
 
   st.deletedDeals = {};
@@ -1608,50 +1609,22 @@ function invoiceLineMismatch(inv){
 }
 
 function invoiceState(st, inv){
-  var fullNet = invoiceNet(inv), pt = invoicePassThrough(inv);
-
-  /* Credit notes reverse the sale. A credit for the whole net CANCELS the
-     invoice — nothing was sold, so nothing is owed and nothing is earned;
-     dealMoney already drops cancelled invoices, which is how the commission
-     reverses. A partial credit reduces what the invoice is worth and, with it,
-     what it can earn: commission follows revenue, and a credited invoice
-     produced less of it. */
-  var creditedNet = 0, creditedVat = 0, creditCount = 0;
-  Object.keys(st.creditNotes || {}).forEach(function (k){
-    var cn = st.creditNotes[k];
-    if (cn.invoiceId !== inv.id) return;
-    creditedNet += cn.net; creditedVat += cn.vat; creditCount++;
-  });
-  creditedNet = round2(creditedNet); creditedVat = round2(creditedVat);
-  var fullyCredited = creditedNet > 0 && creditedNet >= round2(fullNet) - 0.005;
-
-  var net   = fullyCredited ? 0 : round2(fullNet - creditedNet);
-  var vat   = fullyCredited ? 0 : round2(money(inv.vat) - creditedVat);
-  var gross = round2(net + vat);
-
+  var net = invoiceNet(inv), pt = invoicePassThrough(inv);
+  var gross = round2(net + inv.vat);
   var paid = 0;
   Object.keys(st.payments).forEach(function (k){
     if (st.payments[k].invoiceId === inv.id) paid += st.payments[k].amount; });
-  /* A refund is money that came in and went back out again. Netting it off
-     `paid` is what stops a refunded invoice reading as settled. */
-  var refunded = 0;
-  Object.keys(st.refunds || {}).forEach(function (k){
-    if (st.refunds[k].invoiceId === inv.id) refunded += st.refunds[k].amount; });
-  refunded = round2(refunded);
-  paid = round2(paid - refunded);
-
+  paid = round2(paid);
   var balance = round2(gross - paid);
-  var cancelled = inv.status === "cancelled" || fullyCredited;
+  var cancelled = inv.status === "cancelled";
   /* Settled means the balance is gone. A cent over is still settled — customers
      round, and a deal that can never be marked paid is worse than a cent. */
   var settled = !cancelled && gross > 0 && balance <= 0;
   return { invoice:inv, gross:gross, paid:paid, balance: cancelled ? 0 : balance,
            settled:settled, cancelled:cancelled,
-           net:net, fullNet:fullNet, passThrough:pt,
-           credited:creditedNet, creditedVat:creditedVat,
-           creditNotes:creditCount, fullyCredited:fullyCredited, refunded:refunded,
+           net:net, passThrough:pt,
            lineMismatch: invoiceLineMismatch(inv),
-           commissionBase: round2(Math.max(0, net - pt)) };
+           commissionBase: round2(net - pt) };
 }
 
 function invoicesFor(st, dealId){
@@ -1736,20 +1709,10 @@ function invoiceEarner(deal, inv){
    shape and the new one come out of the same door and every caller downstream
    stops caring which it was given. */
 function commissionParts(deal, inv, state){
-  /* A partial credit note reverses part of the sale, so it must reverse part of
-     the earning too. With lines, the reduction is spread across them in
-     proportion: a credit note reverses the invoice, not one chosen line of it.
-     Without this the line path would keep paying commission on money that was
-     credited back, which is the one direction this must never fail in. */
-  var creditFactor = 1;
-  if (state && state.credited > 0){
-    var whole = invoiceNet(inv);
-    creditFactor = whole > 0 ? Math.max(0, round2(state.net) / whole) : 0;
-  }
   if (inv.lines && inv.lines.length){
     return inv.lines.map(function (l){
       var r = lineRate(deal, inv, l);
-      var base = round2((l.net - l.passThrough) * creditFactor);
+      var base = round2(l.net - l.passThrough);
       return { line:l, label:l.description || "Line", base:base, rate:r.rate, from:r.from,
                overridden:!!r.overridden,
                commission: r.rate == null ? null : round2(base * r.rate) };
@@ -1783,6 +1746,65 @@ function posFor(st, dealId){
   return Object.keys(st.pos || {}).map(function (k){ return st.pos[k]; })
     .filter(function (o){ return o.dealId === dealId; })
     .sort(function (a,b){ return a.receivedOn < b.receivedOn ? 1 : a.receivedOn > b.receivedOn ? -1 : (a.id < b.id ? 1 : -1); });
+}
+
+/* Who brought this deal, read as one answer (F11).
+
+   Three shapes, and every screen asking "who brought it" must get the same
+   answer from the same place:
+
+     · a partner COMPANY — the ordinary case, MasterData on the SBSA deal
+     · a partner PERSON — Melissa, who works for herself
+     · a partner company that is somebody's CHANNEL — CyberNas brought it, and
+       CyberNas is Melissa's channel, so the deal is hers too
+
+   The third is the one that used to have nowhere to live. Recording only
+   "via CyberNas" loses that Melissa introduced it; recording only Melissa loses
+   which of her channels delivered it, and she has more than one. So it records
+   both, from one stored fact. */
+function dealPartner(st, deal){
+  if (!deal) return { none:true };
+  var co = deal.partnerCompanyId ? st.companies[deal.partnerCompanyId] : null;
+  var person = deal.partnerContactId ? st.contacts[deal.partnerContactId] : null;
+  var via = null;
+  if (co && co.channelForContactId) via = st.contacts[co.channelForContactId] || null;
+  if (!co && !person) return { none:true };
+  return {
+    none:false,
+    company: co || null,
+    /* The person who brought it, however we got to them — named directly on the
+       deal, or standing behind the company that did. */
+    person: person || via || null,
+    viaChannel: !!via,
+    label: co ? (via ? co.name + " \u00b7 " + via.name + "\u2019s channel" : co.name)
+              : (person ? person.name : "")
+  };
+}
+
+/* Everything one person has brought in, whether directly or through a channel
+   they own. Melissa has no page of her own — she is a customer contact, not one
+   of our people — so this is how her introductions are ever visible at all. */
+function dealsBroughtBy(st, contactId){
+  if (!contactId) return [];
+  var channels = {};
+  Object.keys(st.companies).forEach(function (k){
+    if (st.companies[k].channelForContactId === contactId) channels[k] = 1; });
+  return Object.keys(st.deals).map(function (k){ return st.deals[k]; })
+    .filter(function (d){
+      return d.partnerContactId === contactId ||
+             (d.partnerCompanyId && channels[d.partnerCompanyId]); })
+    .map(function (d){
+      return { deal:d, direct: d.partnerContactId === contactId,
+               channel: d.partnerCompanyId ? st.companies[d.partnerCompanyId] : null };
+    });
+}
+
+/* The companies acting as one person's sales channels. */
+function channelsFor(st, contactId){
+  if (!contactId) return [];
+  return Object.keys(st.companies).map(function (k){ return st.companies[k]; })
+    .filter(function (c){ return c.channelForContactId === contactId; })
+    .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
 }
 
 function quotesFor(st, dealId){
@@ -2489,17 +2511,14 @@ var TRIAGE_VERSION = 2;
 var TRIAGE_ROW_FIELDS = {
   dealId:1, company:1, deal:1, owner:1, commission:1, commissionable:1,
   individual:1, partner:1, partnerDomain:1, partnerContacts:1, domain:1,
+  /* F11: the partner is a person, and the company that is their channel. */
+  partnerPerson:1, partnerPersonEmail:1, channelFor:1,
   stage:1, value:1, currency:1, commissionRate:1,
   expectedClose:1, outcome:1, lostReason:1, moveContact:1,
   kind:1, occurredAt:1, messageId:1, interactionId:1, summary:1, note:1,
   contactId:1, contactName:1, contactEmail:1, contactRole:1, contactPhone:1,
   contacts:1, nextStep:1,
-  quotes:1, purchaseOrders:1, invoices:1, payments:1,
-  /* A backfill carries documents and no conversation. It says so EXPLICITLY:
-     inferring it from a missing summary would let a genuine triage row that
-     lost its line import in silence as a document row, which is the exact
-     shape of failure this contract exists to prevent. */
-  documentsOnly:1, creditNotes:1, refunds:1
+  quotes:1, purchaseOrders:1, invoices:1, payments:1
 };
 var TRIAGE_CONTACT_FIELDS  = { name:1, email:1, role:1, phone:1 };
 var TRIAGE_NEXTSTEP_FIELDS = { what:1, dueDate:1, owner:1 };
@@ -2513,9 +2532,6 @@ var TRIAGE_INVOICE_FIELDS  = { number:1, issuedOn:1, dueDate:1, currency:1, net:
 var TRIAGE_LINE_FIELDS     = { description:1, quantity:1, unitPrice:1, net:1,
                                passThrough:1, commissionRate:1 };
 var TRIAGE_PAYMENT_FIELDS  = { invoiceNumber:1, amount:1, receivedOn:1, reference:1, currency:1 };
-var TRIAGE_CREDITNOTE_FIELDS = { number:1, invoiceNumber:1, issuedOn:1, currency:1,
-                                 net:1, vat:1, reason:1, note:1 };
-var TRIAGE_REFUND_FIELDS     = { invoiceNumber:1, amount:1, paidOn:1, reference:1, currency:1, note:1 };
 var QUOTE_STATUSES         = { issued:1, accepted:1, superseded:1, expired:1, declined:1 };
 
 /* The names an object carries that the contract does not know about. Returned
@@ -2600,8 +2616,7 @@ function financialEvents(r, deal, st, cfg, ctx, where){
   var today = (ctx && ctx.today) || todayISO();
   var actor = (ctx && ctx.actor) || "howard";
   var out = { events:[], refusals:[], warnings:[],
-              records:{ purchaseOrders:[], quotes:[], invoices:[], payments:[],
-                        creditNotes:[], refunds:[] } };
+              records:{ purchaseOrders:[], quotes:[], invoices:[], payments:[] } };
   var dealId = deal.id;
   var noComm = deal.commissionable === false;
   var refuse = function (m){ out.refusals.push(where + ": " + m); };
@@ -2611,10 +2626,7 @@ function financialEvents(r, deal, st, cfg, ctx, where){
   var quotes   = Array.isArray(r.quotes)   ? r.quotes   : [];
   var invoices = Array.isArray(r.invoices) ? r.invoices : [];
   var payments = Array.isArray(r.payments) ? r.payments : [];
-  var creditNotes = Array.isArray(r.creditNotes) ? r.creditNotes : [];
-  var refunds  = Array.isArray(r.refunds)  ? r.refunds  : [];
-  if (!purchaseOrders.length && !quotes.length && !invoices.length &&
-      !payments.length && !creditNotes.length && !refunds.length) return out;
+  if (!purchaseOrders.length && !quotes.length && !invoices.length && !payments.length) return out;
 
   /* ---- what already exists, so a second import changes nothing ---- */
   var quoteByNumber = {};                     // scoped to this deal
@@ -2909,97 +2921,6 @@ function financialEvents(r, deal, st, cfg, ctx, where){
                 amount:amt, reference:ref } });
   });
 
-  /* ---- credit notes ----
-     Reversing a sale is the one financial act with no upside for getting it
-     wrong in either direction, so it names its invoice or it refuses, exactly
-     as a payment does. */
-  creditNotes.forEach(function (cv, j){
-    var label = "credit note " + (cv && cv.number ? cv.number : j + 1);
-    if (!cv || typeof cv !== "object") return refuse(label + " is not an object.");
-    var un = unknownFields(cv, TRIAGE_CREDITNOTE_FIELDS);
-    if (un.length) return refuse(label + " carries a field I do not understand: " + un.join(", ") + ".");
-    if (!cv.invoiceNumber)
-      return refuse(label + " names no invoice. A credit note that cannot name what it " +
-        "reverses reverses nothing.");
-    var target = invIdFor[triageNorm(cv.invoiceNumber)] ||
-                 (function (){
-                   var iv = invByNumber[triageNorm(cv.invoiceNumber)];
-                   return (iv && iv.dealId === dealId)
-                     ? { id:iv.id, currency:iv.currency, net:iv.net, number:iv.number } : null;
-                 })();
-    if (!target)
-      return refuse(label + ": invoice \u201c" + cv.invoiceNumber + "\u201d is on neither this row " +
-        "nor this deal, so there is nothing for it to credit.");
-    var cnet = money(cv.net);
-    if (!(cnet > 0)) return refuse(label + " has no net amount.");
-    if (cnet > round2(target.net) + 0.005)
-      return refuse(label + " credits " + cnet + " against an invoice whose net is " +
-        target.net + ". A credit note cannot reverse more than was sold.");
-    var ccur = cv.currency || r.currency || target.currency;
-    if (triageNorm(ccur) !== triageNorm(target.currency))
-      return refuse(label + " is in " + ccur + " but invoice " + target.number + " is in " +
-        target.currency + ". Currencies are never converted (C16).");
-    var cnum = String(cv.number || "").trim();
-    if (!cnum) return refuse(label + " has no number.");
-    var existingCn = null;
-    Object.keys(st.creditNotes || {}).forEach(function (k){
-      if (triageNorm(st.creditNotes[k].number) === triageNorm(cnum)) existingCn = st.creditNotes[k]; });
-    var cid = existingCn ? existingCn.id
-            : "cn_" + triageHash(dealId + "\u241f cn \u241f" + triageNorm(cnum));
-    var full = cnet >= round2(target.net) - 0.005;
-    var alreadyCn = existingCn && existingCn.net === cnet && existingCn.vat === money(cv.vat);
-    out.records.creditNotes.push({ number:cnum, net:cnet, vat:money(cv.vat), currency:ccur,
-      invoice:target.number, full:full, already:!!alreadyCn,
-      updating: !!existingCn && !alreadyCn });
-    if (alreadyCn) return;
-    out.events.push({ id:"ev_cn_" + triageHash(dealId + "\u241f cn \u241f" + triageNorm(cnum)),
-      type: existingCn ? "creditNote.updated" : "creditNote.raised", actor:actor,
-      payload:{ creditNoteId:cid, dealId:dealId, invoiceId:target.id, number:cnum,
-                issuedOn: parseDateInput(cv.issuedOn, today) || today,
-                currency:ccur, net:cnet, vat:money(cv.vat),
-                reason: String(cv.reason || "") } });
-  });
-
-  /* ---- refunds ----
-     Money that came in and went back out. Netted off the invoice's paid total,
-     so a refunded invoice stops reading as settled. */
-  refunds.forEach(function (fv, j){
-    var label = "refund " + (j + 1);
-    if (!fv || typeof fv !== "object") return refuse(label + " is not an object.");
-    var un = unknownFields(fv, TRIAGE_REFUND_FIELDS);
-    if (un.length) return refuse(label + " carries a field I do not understand: " + un.join(", ") + ".");
-    if (!fv.invoiceNumber)
-      return refuse(label + " names no invoice. A refund that cannot name what it reverses " +
-        "cannot be reconciled against anything.");
-    var rt = invIdFor[triageNorm(fv.invoiceNumber)] ||
-             (function (){
-               var iv = invByNumber[triageNorm(fv.invoiceNumber)];
-               return (iv && iv.dealId === dealId)
-                 ? { id:iv.id, currency:iv.currency, net:iv.net, number:iv.number } : null;
-             })();
-    if (!rt)
-      return refuse(label + ": invoice \u201c" + fv.invoiceNumber + "\u201d is on neither this row " +
-        "nor this deal, so there is nothing to refund against.");
-    var famt = money(fv.amount);
-    if (!(famt > 0)) return refuse(label + " has no amount.");
-    var fwhen = parseDateInput(fv.paidOn, today);
-    if (!fwhen) return refuse(label + ": \u201c" + fv.paidOn + "\u201d is not a date I can read.");
-    if (fv.currency && triageNorm(fv.currency) !== triageNorm(rt.currency))
-      warn(label + " is in " + fv.currency + " but invoice " + rt.number + " is in " +
-        rt.currency + ". Recorded against the invoice unconverted (C16) \u2014 check it.");
-    var fkey = triageNorm(rt.number) + "\u241f" + famt + "\u241f" + fwhen;
-    var fid = "ref_" + triageHash(fkey);
-    var priorRef = (st.refunds || {})[fid];
-    var alreadyRef = !!priorRef && priorRef.reference === String(fv.reference || "").slice(0, 120);
-    out.records.refunds.push({ invoice:rt.number, amount:famt, receivedOn:fwhen,
-      currency:rt.currency, already:alreadyRef, updating: !!priorRef && !alreadyRef });
-    if (alreadyRef) return;
-    out.events.push({ id:"ev_ref_" + triageHash(fkey), type:"refund.paid", actor:actor,
-      payload:{ refundId:fid, dealId:dealId, invoiceId:rt.id, amount:famt,
-                paidOn:fwhen, currency:rt.currency,
-                reference: String(fv.reference || "").slice(0, 120) } });
-  });
-
   /* All or nothing. An invoice that landed without the payment that settles it
      reads as unpaid, and somebody chases a customer who has already paid. */
   if (out.refusals.length){ out.events = []; out.warnings = []; }
@@ -3106,43 +3027,19 @@ function importTriage(text, st, cfg, ctx){
       return;
     }
 
-    /* A documents-only row carries paperwork and no conversation: a backfill of
-       quotes, invoices and payments that were never anybody's email. It gets no
-       interaction, so it needs no summary, no kind and no date — but it must SAY
-       so. Inferring it from an absent summary would let a triage row that lost
-       its line through in silence, and a silently half-imported row is the
-       failure this whole contract is built around. */
-    var docsOnly = r.documentsOnly === true;
-    if (docsOnly){
-      if (r.summary || r.kind || r.occurredAt || r.messageId || r.interactionId ||
-          r.nextStep || (Array.isArray(r.contacts) && r.contacts.length))
-        { out.errors.push(where + ": documentsOnly is set, but the row also carries " +
-          "conversation fields. A row is either a logged interaction or a document " +
-          "record \u2014 deciding which for you is how the wrong one gets written."); return; }
-      if (!(Array.isArray(r.quotes) && r.quotes.length) &&
-          !(Array.isArray(r.purchaseOrders) && r.purchaseOrders.length) &&
-          !(Array.isArray(r.invoices) && r.invoices.length) &&
-          !(Array.isArray(r.payments) && r.payments.length) &&
-          !(Array.isArray(r.creditNotes) && r.creditNotes.length) &&
-          !(Array.isArray(r.refunds) && r.refunds.length))
-        { out.errors.push(where + ": documentsOnly is set but the row carries no documents, " +
-          "so it would import nothing at all."); return; }
-    }
-
-    var bad = docsOnly ? null : checkTriageSummary(r.summary);
+    var bad = checkTriageSummary(r.summary);
     if (bad){ out.errors.push(where + ": " + bad + ". Nothing from this row was imported."); return; }
 
     var kind = triageNorm(r.kind) || "email";
-    if (!docsOnly && !TRIAGE_KINDS[kind]){
+    if (!TRIAGE_KINDS[kind]){
       /* Listed from the table itself, so adding a channel never leaves the
          error message quietly recommending the old set. */
       out.errors.push(where + ": “" + r.kind + "” is not a kind. Use " +
         Object.keys(TRIAGE_KINDS).join(", ") + ".");
       return;
     }
-    var when = docsOnly ? today
-             : (parseDateInput(r.occurredAt, today) || (r.occurredAt || "").slice(0, 10));
-    if (!docsOnly && !/^\d{4}-\d{2}-\d{2}$/.test(when)){
+    var when = parseDateInput(r.occurredAt, today) || (r.occurredAt || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(when)){
       out.errors.push(where + ": “" + r.occurredAt + "” is not a date I can read.");
       return;
     }
@@ -3178,17 +3075,7 @@ function importTriage(text, st, cfg, ctx){
       return;
     }
 
-    /* A documents-only row has no message to key on, so it keys on what it IS:
-       the deal and the documents it carries. Re-importing the same file is then
-       still a no-op, which is the property that matters. */
-    var key = docsOnly
-      ? "docs|" + deal.id + "|" + [].concat(
-          (r.quotes || []).map(function (x){ return "q" + x.number; }),
-          (r.purchaseOrders || []).map(function (x){ return "o" + x.number; }),
-          (r.invoices || []).map(function (x){ return "i" + x.number; }),
-          (r.creditNotes || []).map(function (x){ return "c" + x.number; })
-        ).join(",")
-      : r.messageId || (r.dealId || deal.id) + "|" + when + "|" + r.summary;
+    var key = r.messageId || (r.dealId || deal.id) + "|" + when + "|" + r.summary;
     var stem = triageHash(String(key));
     var ixId = r.interactionId || "ix_mail_" + stem;
     /* Already logged — but is it the SAME thing?
@@ -3208,7 +3095,6 @@ function importTriage(text, st, cfg, ctx){
        same kind, within three days, and a summary that is nearly the same line —
        say so, and let a person decide. */
     (function (){
-      if (docsOnly) return;                       // no line to be a near-duplicate of
       var norm = triageNorm(r.summary).replace(/[^a-z0-9 ]/g, "");
       var words = norm.split(/\s+/).filter(Boolean);
       if (words.length < 4) return;
@@ -3257,10 +3143,7 @@ function importTriage(text, st, cfg, ctx){
       payload:{ interactionId:ixId, subjectType:"deal", subjectId:deal.id, kind:kind,
                 occurredAt:when, summary:r.summary,
                 contactId: r.contactId || undefined } };
-    /* The whole point: a documents-only row writes its documents and nothing
-       else. No interaction, so nothing about a customer's correspondence is
-       claimed that did not happen. */
-    var mine = docsOnly ? [] : [ixEvent];
+    var mine = [ixEvent];
 
     /* The row may disagree with the deal it matched. `outcome: "won"` on work
        already delivered is the case that started this: the deal existed, so
@@ -3539,11 +3422,7 @@ function importTriage(text, st, cfg, ctx){
       return;                    // applied deliberately, never with the rest
     }
     mine.forEach(function (e){ out.events.push(e); });
-    /* Count what actually happened. A documents-only row logs no interaction,
-       and a "20 logged" that means nothing was logged is the kind of number
-       somebody later builds a decision on. */
-    if (!docsOnly) out.summary.logged++;
-    else out.summary.documentRows = (out.summary.documentRows || 0) + 1;
+    out.summary.logged++;
     out.rows.push(row);
   });
 
@@ -3703,6 +3582,65 @@ function triageCreate(rows, st, cfg, ctx){
        needs somebody to point at, or it shows a bank and no name. */
     if (!contactId && partnerContactIds.length) contactId = partnerContactIds[0];
 
+    /* F11: a partner who is a PERSON, not a firm. Melissa works for herself.
+       The person is filed under the holder — never turned into a company of her
+       own, which is the repair the holder exists to prevent. */
+    var partnerPersonId = null;
+    var pPerson = String(r.partnerPerson || "").trim();
+    var pPersonEmail = String(r.partnerPersonEmail || "").trim();
+    if (pPerson || pPersonEmail){
+      if (partnerName){
+        out.errors.push("Row " + (i+1) + ": names both a partner company (" + partnerName +
+          ") and a partner person (" + (pPerson || pPersonEmail) + "). A deal has one partner. " +
+          "If the person sells through that company, set “channelFor” on the company instead.");
+        return;
+      }
+      partnerPersonId = (pPersonEmail && ctByEmail[triageNorm(pPersonEmail)]) ||
+                        ("ct_" + triageHash(triageNorm(pPersonEmail || pPerson)));
+      if (!(pPersonEmail && ctByEmail[triageNorm(pPersonEmail)])){
+        /* She lives in the holder like every other independent. Creating the
+           holder here if it does not exist yet, rather than filing her nowhere. */
+        var hId = holderExisting;
+        if (!hId){
+          hId = "co_" + triageHash(triageNorm(HOLDER));
+          holderExisting = hId;
+          if (!seenCo[hId]){
+            seenCo[hId] = true;
+            out.events.push({ id:"ev_co_" + triageHash(triageNorm(HOLDER)),
+              type:"company.created", actor:actor,
+              payload:{ companyId:hId, name:HOLDER, isHolder:true } });
+          }
+        }
+        out.events.push({ id:"ev_ctp_" + triageHash(partnerPersonId), type:"contact.created",
+          actor:actor,
+          payload:{ contactId:partnerPersonId, companyId:hId,
+                    name: pPerson || pPersonEmail, email:pPersonEmail } });
+      }
+    }
+
+    /* And the company that is somebody's sales channel — "CyberNas is one of
+       the sales channels for Melissa". The person must already exist or be
+       named on this row; inventing one from a channel reference would create a
+       contact nobody typed. */
+    if (r.channelFor && partnerId){
+      var chEmail = triageNorm(String(r.channelFor).trim());
+      var chId = ctByEmail[chEmail] ||
+                 (partnerPersonId && triageNorm(pPersonEmail) === chEmail ? partnerPersonId : null);
+      if (!chId){
+        out.errors.push("Row " + (i+1) + ": “channelFor” names " + r.channelFor +
+          ", who is not a contact in the CRM. Add them first, or name them on this row " +
+          "with “partnerPersonEmail”.");
+        return;
+      }
+      out.events.push({ id:"ev_coch_" + triageHash(partnerId + "\u241f" + chId),
+        type:"company.updated", actor:actor,
+        payload:{ companyId:partnerId, channelForContactId:chId, isPartner:true } });
+    } else if (r.channelFor && !partnerId){
+      out.errors.push("Row " + (i+1) + ": “channelFor” says whose channel a partner company is, " +
+        "but this row names no partner company.");
+      return;
+    }
+
     /* Two private buyers can easily want the same course, so an individual's
        deal is keyed by the PERSON, not by the holder company — otherwise the
        second one silently collides with the first. */
@@ -3800,6 +3738,7 @@ function triageCreate(rows, st, cfg, ctx){
       payload:{ dealId:dealId, companyId:coId, name:dealName, owner:dealOwner,
                 contactId: contactId || undefined,
                 partnerCompanyId: partnerId || undefined,
+                partnerContactId: partnerPersonId || undefined,
                 commissionable: noComm ? false : undefined,
                 stage:stage, value:val, commissionRate:rate,
                 currency:r.currency || (cfg && cfg.defaultCurrency) || "ZAR",
@@ -4190,7 +4129,8 @@ var API = {
   invoiceState:invoiceState, invoicesFor:invoicesFor, paymentsFor:paymentsFor,
   dealMoney:dealMoney, moneyBook:moneyBook, invoiceRate:invoiceRate,
   lineRate:lineRate, invoiceEarner:invoiceEarner, commissionParts:commissionParts,
-  posFor:posFor,
+  posFor:posFor, dealPartner:dealPartner, dealsBroughtBy:dealsBroughtBy,
+  channelsFor:channelsFor,
   invoiceCommission:invoiceCommission, quotesFor:quotesFor, normLines:normLines,
   invoiceNet:invoiceNet, invoicePassThrough:invoicePassThrough,
   computeFlags:computeFlags, FLAG_RULES:FLAG_RULES, FLAG_TONE:FLAG_TONE, flagRule:flagRule, flagLabel:flagLabel,
@@ -4202,8 +4142,6 @@ var API = {
   parseTriageBatch:parseTriageBatch, financialEvents:financialEvents,
   unknownFields:unknownFields, TRIAGE_VERSION:TRIAGE_VERSION,
   TRIAGE_ROW_FIELDS:TRIAGE_ROW_FIELDS,
-  TRIAGE_CREDITNOTE_FIELDS:TRIAGE_CREDITNOTE_FIELDS,
-  TRIAGE_REFUND_FIELDS:TRIAGE_REFUND_FIELDS,
   checkTriageSummary:checkTriageSummary, triageHash:triageHash,
   resolveUser:resolveUser, userIds:userIds, salesUsers:salesUsers,
   parseEmailPaste:parseEmailPaste, parsePaste:parsePaste, parseLooseDate:parseLooseDate,
@@ -6242,9 +6180,9 @@ function openDeal(dealId){
         h("h3", { text:d.name }),
         /* The customer is the headline; the partner sits under it. Reversing
            these two is what makes a pipeline read as a list of resellers. */
-        (d.partnerCompanyId && App.st.companies[d.partnerCompanyId]
+        (!C.dealPartner(App.st, d).none
           ? h("div", { class:"note", style:"margin:2px 0 0",
-              text:"via " + App.st.companies[d.partnerCompanyId].name })
+              text:"via " + C.dealPartner(App.st, d).label })
           : null)),
       h("button", { class:"btn quiet", type:"button", onclick:closePanel, "aria-label":"Close" }, "Close")));
 
@@ -6293,8 +6231,18 @@ function openDeal(dealId){
   fact("Expected close", d.expectedCloseDate ? C.fmtDayYear(d.expectedCloseDate) : "not set");
   fact("Owner", userName(d.owner) +
        (d.commissionable === false ? "  (no commission on this deal)" : ""));
-  if (d.partnerCompanyId && App.st.companies[d.partnerCompanyId])
-    fact("Partner", App.st.companies[d.partnerCompanyId].name);
+  (function (){
+    var pr = C.dealPartner(App.st, d);
+    if (pr.none) return;
+    /* Both halves, from one stored fact. "via CyberNas" alone loses that
+       Melissa introduced it; "Melissa" alone loses which of her channels
+       delivered it, and she has more than one. */
+    fact("Partner", pr.company ? pr.company.name : pr.person.name);
+    if (pr.viaChannel)
+      fact("Brought in by", pr.person.name + " — " + pr.company.name + " is their sales channel");
+    else if (!pr.company && pr.person)
+      fact("Brought in by", pr.person.name + " — independent, not a firm");
+  })();
   fact("In stage since", C.fmtDayYear(d.stageSince) + " · " + Math.abs(C.daysBetween(d.stageSince, App.today)) + " days");
   fact("Created", C.fmtDayYear(d.createdDay));
   body.appendChild(h("section", { class:"sec" }, h("h4", { text:"Deal" }), kv,
@@ -6385,8 +6333,25 @@ function openDeal(dealId){
      precisely the deals that need it most. Which side each person is on is
      said, not left to be inferred from the domain. */
   var contactRow = function (c){
+    /* A person who brings us business is worth saying so about, wherever they
+       appear. Melissa is a customer contact, not one of our people, so she has
+       no page of her own — this line is the only place her introductions are
+       ever visible. */
+    var brought = C.dealsBroughtBy(App.st, c.id);
+    var chans = C.channelsFor(App.st, c.id);
     return h("div", { style:"padding:6px 0;border-bottom:1px solid var(--line)" },
-      h("div", { style:"font-size:13px" }, c.name + (c.role ? " \u00b7 " + c.role : "")),
+      h("div", { style:"font-size:13px" }, c.name + (c.role ? " \u00b7 " + c.role : ""),
+        brought.length
+          ? h("span", { class:"chip plain", style:"margin-left:6px",
+              title: brought.map(function (x){ return x.deal.name; }).join(", "),
+              text:"brought in " + brought.length })
+          : null,
+        chans.length
+          ? h("span", { class:"chip plain", style:"margin-left:6px",
+              title:"Sells through " + chans.map(function (x){ return x.name; }).join(", "),
+              text: chans.length === 1 ? chans[0].name
+                                       : chans.length + " channels" })
+          : null),
       h("div", { class:"t2", style:"font-family:var(--mono);font-size:11.5px;color:var(--muted)" },
         c.email ? h("a", { href:"mailto:" + c.email + "?subject=" + encodeURIComponent(d.name) }, c.email) : "",
         c.phone ? " \u00b7 " + c.phone : ""));
@@ -6395,7 +6360,11 @@ function openDeal(dealId){
   var cts  = allCts.filter(function (c){ return c.companyId === d.companyId; });
   var pcts = d.partnerCompanyId
     ? allCts.filter(function (c){ return c.companyId === d.partnerCompanyId; }) : [];
-  if (cts.length || pcts.length){
+  /* The partner who is a person (F11) has no partner COMPANY to be listed
+     under, so without this the one human being on a deal she introduced would
+     appear nowhere in its contacts. */
+  var partnerPerson = d.partnerContactId ? App.st.contacts[d.partnerContactId] : null;
+  if (cts.length || pcts.length || partnerPerson){
     var csec = h("section", { class:"sec" }, h("h4", { text:"Contacts" }));
     if (cts.length){
       var list = h("div");
@@ -6410,6 +6379,11 @@ function openDeal(dealId){
       csec.appendChild(h("div", { class:"note", style:"margin:10px 0 2px",
         text:"At " + ((App.st.companies[d.partnerCompanyId] || {}).name || "the partner") + ", our partner on this" }));
       csec.appendChild(plist);
+    }
+    if (partnerPerson){
+      csec.appendChild(h("div", { class:"note", style:"margin:10px 0 2px",
+        text:"Brought this in \u2014 independent, not at a firm" }));
+      csec.appendChild(contactRow(partnerPerson));
     }
     body.appendChild(csec);
   }
@@ -7426,19 +7400,76 @@ function editDeal(anchor, d){
     h("span", { text:"This deal pays no commission" })));
 
   /* The partner, where the work reaches the customer through somebody else.
-     The deal stays the customer's — this only records who brought it. */
+     The deal stays the customer's — this only records who brought it.
+
+     A partner may be a FIRM or a PERSON (F11). Melissa works for herself and
+     brings us business; she is a partner in every sense that matters, and the
+     picker used to have nothing to offer for her because it only listed
+     companies and she is filed under the Individual holder. Making her a company
+     of her own is the one repair that is definitely wrong — she is a person, and
+     a pipeline saying otherwise reads as nonsense.
+
+     One value, two kinds, because a deal has one partner. Options are prefixed
+     so the select carries its own key: "co:" a firm, "ct:" a person. */
   var partner = h("select", { "aria-label":"Partner" });
   partner.appendChild(h("option", { value:"" }, "\u2014 direct, no partner \u2014"));
+
+  var firms = h("optgroup", { label:"Companies" });
   Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
     .filter(function (c){ return c.id !== d.companyId && !c.isHolder; })
     .sort(function (a,b){
       if (!!b.isPartner !== !!a.isPartner) return b.isPartner ? 1 : -1;
       return a.name < b.name ? -1 : 1; })
     .forEach(function (c){
-      partner.appendChild(h("option", { value:c.id },
-        c.name + (c.isPartner ? "" : "  (not marked a partner)"))); });
-  partner.value = d.partnerCompanyId || "";
+      var ch = c.channelForContactId ? App.st.contacts[c.channelForContactId] : null;
+      firms.appendChild(h("option", { value:"co:" + c.id },
+        c.name + (ch ? "  \u00b7 " + ch.name + "\u2019s channel"
+                     : c.isPartner ? "" : "  (not marked a partner)"))); });
+  if (firms.childNodes.length) partner.appendChild(firms);
+
+  /* People, individuals first — they are the ones this was missing for. A
+     contact at the deal's own company is excluded: the customer cannot
+     introduce themselves. */
+  var folk = h("optgroup", { label:"People" });
+  Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
+    .filter(function (c){
+      if (c.id === d.contactId) return false;
+      var co = App.st.companies[c.companyId] || {};
+      return co.isHolder || c.companyId !== d.companyId;
+    })
+    .sort(function (a,b){
+      var ah = (App.st.companies[a.companyId] || {}).isHolder ? 0 : 1;
+      var bh = (App.st.companies[b.companyId] || {}).isHolder ? 0 : 1;
+      if (ah !== bh) return ah - bh;
+      return a.name < b.name ? -1 : 1; })
+    .forEach(function (c){
+      var co = App.st.companies[c.companyId] || {};
+      folk.appendChild(h("option", { value:"ct:" + c.id },
+        c.name + (co.isHolder ? "  (independent)" : "  \u00b7 " + (co.name || "")))); });
+  if (folk.childNodes.length) partner.appendChild(folk);
+
+  partner.value = d.partnerCompanyId ? "co:" + d.partnerCompanyId
+                : d.partnerContactId ? "ct:" + d.partnerContactId : "";
+  var partnerNote = h("div", { class:"note" });
+  var syncPartner = function (){
+    clear(partnerNote);
+    var v = partner.value;
+    if (v.indexOf("co:") === 0){
+      var c = App.st.companies[v.slice(3)] || {};
+      var ch = c.channelForContactId ? App.st.contacts[c.channelForContactId] : null;
+      if (ch) partnerNote.textContent = c.name + " is " + ch.name +
+        "\u2019s sales channel, so this deal counts as brought in by " + ch.name + " too.";
+      else if (!c.isPartner) partnerNote.textContent =
+        c.name + " is not marked a partner yet. Saving this marks it as one.";
+    } else if (v.indexOf("ct:") === 0){
+      var ct = App.st.contacts[v.slice(3)] || {};
+      partnerNote.textContent = ct.name + " brought this in personally. " +
+        "They stay a person \u2014 nothing turns them into a company.";
+    }
+  };
+  partner.addEventListener("change", syncPartner); syncPartner();
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Via partner" }), partner));
+  box.appendChild(partnerNote);
 
   /* Background — the standing facts, as opposed to the dated ones.
      "She will be doing marketing, sales and some training delivery" is not an
@@ -7484,8 +7515,11 @@ function editDeal(anchor, d){
       /* Marking a company as a partner is a fact about that company, not about
          this deal, so it is recorded on the company where the next deal can
          find it. */
-      if (partner.value && App.st.companies[partner.value] && !App.st.companies[partner.value].isPartner)
-        emit("company.updated", { companyId:partner.value, isPartner:true });
+      var pv = partner.value;
+      var pCo = pv.indexOf("co:") === 0 ? pv.slice(3) : null;
+      var pCt = pv.indexOf("ct:") === 0 ? pv.slice(3) : null;
+      if (pCo && App.st.companies[pCo] && !App.st.companies[pCo].isPartner)
+        emit("company.updated", { companyId:pCo, isPartner:true });
       /* The contact moves first, so a re-render never catches a deal already
          at its new company with its own contact still filed at the old one. */
       var toCo = filed.value || d.companyId;
@@ -7496,7 +7530,10 @@ function editDeal(anchor, d){
         name:nm.value.trim() || d.name,
         value: v === "" ? null : +v, currency:cur.value, owner:owner.value,
         contactId: party ? (party.value || null) : d.contactId,
-        partnerCompanyId: partner.value || null,
+        partnerCompanyId: pCo || null,
+        /* Both null unless one is chosen — clearing has to reach the fold as
+           null, not as an omission. */
+        partnerContactId: pCt || null,
         commissionable: !noComm.checked,
         commissionRate: noComm.checked ? null : (rp === "" ? null : C.round2(+rp) / 100),
         expectedCloseDate: close.value.trim() ? C.parseDateInput(close.value, App.today) : null });
@@ -7727,6 +7764,72 @@ function mergeCompanyPrompt(anchor, co){
    outlives any one deal, so recording it on the deal alone loses it the day
    that deal closes. The field has been on the company record all along with no
    way to see or set it. */
+/* Whose sales channel this company is (F11).
+
+   A partner firm can belong to a person. Melissa works for herself and CyberNas
+   is one of her channels — "one of", so this is many companies pointing at one
+   person, not a pairing. The person stays a person: nothing here turns them
+   into a company, which is the repair that would have been wrong. */
+function channelPopover(anchorEl, co){
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Whose channel is " + co.name + "?" }));
+
+  var sel = h("select", { "aria-label":"Sales channel for" });
+  sel.appendChild(h("option", { value:"" }, "\u2014 nobody\u2019s \u2014 it stands on its own \u2014"));
+  /* Individuals first: an independent is the likely answer, and a contact at
+     the company itself is never one — that would make it its own channel. */
+  Object.keys(App.st.contacts).map(function (k){ return App.st.contacts[k]; })
+    .filter(function (c){ return c.companyId !== co.id; })
+    .sort(function (a,b){
+      var ah = (App.st.companies[a.companyId] || {}).isHolder ? 0 : 1;
+      var bh = (App.st.companies[b.companyId] || {}).isHolder ? 0 : 1;
+      if (ah !== bh) return ah - bh;
+      return a.name < b.name ? -1 : 1; })
+    .forEach(function (c){
+      var pco = App.st.companies[c.companyId] || {};
+      sel.appendChild(h("option", { value:c.id },
+        c.name + (pco.isHolder ? "  (independent)" : "  \u00b7 " + (pco.name || "")))); });
+  sel.value = co.channelForContactId || "";
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"A sales channel for" }), sel));
+
+  var note = h("div", { class:"note" });
+  var sync = function (){
+    var ct = sel.value ? App.st.contacts[sel.value] : null;
+    if (!ct){
+      note.textContent = co.name + " brings in its own business. Deals filed through it " +
+        "read as \u201cvia " + co.name + "\u201d and nothing more.";
+      return;
+    }
+    var others = C.channelsFor(App.st, ct.id)
+      .filter(function (c){ return c.id !== co.id; }).map(function (c){ return c.name; });
+    note.textContent = "A deal brought in through " + co.name + " will also read as brought " +
+      "in by " + ct.name + "." +
+      (others.length ? "  " + ct.name + " already has " + others.join(" and ") + "." : "");
+  };
+  sel.addEventListener("change", sync); sync();
+  box.appendChild(note);
+
+  box.appendChild(h("div", { class:"note",
+    text:"This records who owns the relationship, not who gets paid. Commission is " +
+         "computed on invoices and goes to one of our own people \u2014 a partner never earns it." }));
+
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      closeLayers("pop");
+      /* null, not "", so the fold clears it rather than reading it as absent. */
+      emit("company.updated", { companyId:co.id, channelForContactId: sel.value || null });
+      if (sel.value && !co.isPartner)
+        emit("company.updated", { companyId:co.id, isPartner:true });
+      render();
+      toast(sel.value
+        ? co.name + " is now " + (App.st.contacts[sel.value] || {}).name + "\u2019s sales channel."
+        : co.name + " no longer belongs to anybody.");
+    } }, "Save")));
+  openPopover(anchorEl, box, { width:320 });
+}
+
 function companyNotes(anchor, co){
   var box = h("div");
   box.appendChild(h("h4", { text:"Background — " + co.name }));
@@ -8371,6 +8474,12 @@ function viewCompanies(el){
         co.domain ? h("span", { class:"mono", style:"font-size:11.5px;color:var(--muted)", text:co.domain }) : null,
         /* Said on the company, because "are we selling TO them or THROUGH
            them" changes how every deal on this page should be read. */
+        co.channelForContactId && App.st.contacts[co.channelForContactId]
+          ? h("span", { class:"chip plain",
+              title:"This company is one of " + App.st.contacts[co.channelForContactId].name +
+                    "\u2019s sales channels.",
+              text: App.st.contacts[co.channelForContactId].name + "\u2019s channel" })
+          : null,
         co.isPartner
           ? h("span", { class:"chip plain", title:"We sell through this partner.", text:"Partner" })
           : null,
@@ -8435,6 +8544,18 @@ function viewCompanies(el){
                     : co.name + " is a partner — deals can now be filed as coming through them.");
                 } },
                 co.isPartner ? "a partner" : "mark as a partner"),
+          /* Whose channel this company is (F11). A partner firm may belong to a
+             person: CyberNas is one of Melissa's sales channels, and she has
+             more than one. Without this the deal could say "via CyberNas" and
+             nothing anywhere connected it back to her. */
+          co.isHolder ? null : h("span", { text:"  ·  " }),
+          co.isHolder ? null : h("a", { href:"#", style:"font-size:11.5px",
+            onclick:(function (c){ return function (e){
+              e.preventDefault(); channelPopover(e.currentTarget, c); }; })(co) },
+            (function (){
+              var ch = co.channelForContactId ? App.st.contacts[co.channelForContactId] : null;
+              return ch ? ch.name + "\u2019s channel" : "whose channel?";
+            })()),
           h("span", { text:"  ·  " }),
           h("a", { href:"#", style:"font-size:11.5px",
             onclick:function (e){ e.preventDefault(); companyNotes(e.currentTarget, co); } },

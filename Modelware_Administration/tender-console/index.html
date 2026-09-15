@@ -63,6 +63,9 @@
   nav.tabs button:hover{color:var(--ink)}
   nav.tabs button.active{color:var(--glacier);border-bottom-color:var(--glacier)}
   nav.tabs button .ct{font-family:var(--fm);font-size:.72rem;color:var(--ink-faint);margin-left:5px}
+  .diag{max-width:1120px;margin:0 auto;padding:6px clamp(14px,3vw,28px);font-family:var(--fm);font-size:.72rem;color:var(--ink-faint);border-top:1px solid var(--line-soft);background:var(--surface-2);overflow-x:auto;white-space:nowrap}
+  .diag b{color:var(--ink-soft);font-weight:600}
+  .diag.warn{background:var(--warn-soft);color:var(--warn)} .diag.warn b{color:var(--warn)}
 
   main{max-width:1120px;margin:0 auto;padding:clamp(16px,3vw,28px);padding-bottom:80px}
   .section{display:none}
@@ -183,6 +186,7 @@
     <button data-tab="bank">Experience Bank <span class="ct" id="ctBank">0</span></button>
     <button data-tab="settings">Settings</button>
   </nav>
+  <div class="diag" id="diag" hidden></div>
 </header>
 
 <main>
@@ -281,8 +285,8 @@
 "use strict";
 (function(){
   /* ---------- constants ---------- */
-  var APP_VERSION="1.0.1";           // bump on every change
-  var APP_BUILD="2026-09-15 12:20 SAST";  // date/time of this build
+  var APP_VERSION="1.0.2";           // bump on every change
+  var APP_BUILD="2026-09-15 14:05 SAST";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -294,7 +298,7 @@
   /* ---------- state ---------- */
   var cfg=loadCfg();
   var data={tenders:[],experience:[],harvest:[]};
-  var sha={}, dirty={}, editingT=null, editingEx=null;
+  var sha={}, dirty={}, editingT=null, editingEx=null, diag={};
 
   /* ---------- utils ---------- */
   function $(id){return document.getElementById(id);}
@@ -341,14 +345,26 @@
 
   /* ---------- load / save data files ---------- */
   function parseFile(key,res){
-    if(res.missing){sha[key]=null;return;}
+    if(res.missing){sha[key]=null;diag[key]={missing:true,count:0};return;}
     sha[key]=res.sha;
     try{
       var obj=JSON.parse(b64dec(res.content));
       if(key==="tenders")data.tenders=obj.tenders||[];
       else if(key==="experience")data.experience=obj.items||[];
       else if(key==="harvest")data.harvest=obj.queue||[];
-    }catch(e){ toast("Could not parse "+FILES[key],true); }
+      var n=key==="tenders"?data.tenders.length:key==="experience"?data.experience.length:data.harvest.length;
+      diag[key]={missing:false,count:n};
+    }catch(e){ diag[key]={missing:false,count:0,err:true}; toast("Could not parse "+FILES[key],true); }
+  }
+  function renderDiag(){
+    var el=$("diag");if(!el)return;
+    if(!configured()){el.hidden=true;return;}
+    function fx(k,label){var d=diag[k];if(!d)return label+" —";if(d.missing)return label+" MISSING";if(d.err)return label+" PARSE-ERR";return label+" "+d.count;}
+    el.hidden=false;
+    el.innerHTML='Reading <b>'+esc(cfg.owner||"?")+"/"+esc(cfg.repo||"?")+"@"+esc(cfg.branch||"main")+'</b> · folder <b>'+esc(cfg.path||"data")+'</b> · '+
+      fx("tenders","tenders")+" · "+fx("experience","bank")+" · "+fx("harvest","harvest");
+    var anyMissing=["tenders","experience","harvest"].some(function(k){return diag[k]&&diag[k].missing;});
+    el.className="diag"+(anyMissing?" warn":"");
   }
   function fileBody(key){
     if(key==="tenders")return JSON.stringify({schemaVersion:1,tenders:data.tenders},null,2);
@@ -361,9 +377,9 @@
     return Promise.all(Object.keys(FILES).map(function(key){
       return ghGet(pathOf(key)).then(function(res){parseFile(key,res);}).catch(function(e){throw e;});
     })).then(function(){
-      dirty={};saveCache();renderAll();setConn("ok","Connected");toast("Synced from GitHub");
+      dirty={};saveCache();renderAll();renderDiag();setConn("ok","Connected");toast("Synced from GitHub");
     }).catch(function(e){
-      setConn("err","Sync failed");toast("Sync failed: "+netMsg(e),true);renderAll();
+      setConn("err","Sync failed");toast("Sync failed: "+netMsg(e),true);renderAll();renderDiag();
     });
   }
   function saveKey(key,msg){
@@ -609,7 +625,7 @@
   $("verTag").textContent="v"+APP_VERSION+" · "+APP_BUILD;
   $("verTag").setAttribute("title","Tender Console v"+APP_VERSION+" — built "+APP_BUILD);
   $("verLine").innerHTML="Tender Console <b>v"+APP_VERSION+"</b> · last updated "+APP_BUILD;
-  loadCache();fillSettings();renderAll();
+  loadCache();fillSettings();renderAll();renderDiag();
   if(configured()){setConn("ok","Connected");pullAll();}
   else{setConn("err","Not connected");toast("Open Settings to connect your data repo");}
 })();

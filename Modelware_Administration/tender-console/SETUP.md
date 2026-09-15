@@ -11,28 +11,31 @@ Two repos, by design: a **public** one to host the app (so GitHub Pages works on
 *(The page is public, but it shows nothing until it's given your token — all data lives in the private repo below.)*
 
 ## 2. Private repo for your data
-1. Create a new **private** repo, e.g. `tender-console-data`.
-2. Add the three seed files under a `data/` folder:
-   - `data/tenders.json`
-   - `data/experience.json`
-   - `data/harvest.json`
-3. Optionally add a `cvs/` folder for base and tailored CVs.
+You can **reuse your existing shared private repo** (`modelwaresystems-dama/modelware_app_storage`) — the app writes only under its own folder, exactly like the CRM (`CRM_Data/`) and partner pack builder. Or create a new private repo. Either way:
+1. Pick a **data folder** for this app, e.g. `tender_console_data`.
+2. Put the three seed files under it:
+   - `<folder>/tenders.json`
+   - `<folder>/experience.json`
+   - `<folder>/harvest.json`
+   *(The zip ships them under `data/` — rename that folder, or drop the files into your chosen folder.)*
+3. Optionally add a `cvs/` area (e.g. `<folder>/cvs/base/`) for base and tailored CVs.
 
 ## 3. Fine-grained personal access token
 GitHub → Settings → Developer settings → **Fine-grained tokens** → Generate new token.
-- **Resource owner:** you.
-- **Repository access:** *Only select repositories* → pick **`tender-console-data`** only.
+- **Resource owner:** the owner of the data repo (e.g. `modelwaresystems-dama`).
+- **Repository access:** *Only select repositories* → pick **just the data repo**.
 - **Permissions:** Repository permissions → **Contents: Read and write**.
 - **Expiry:** set one (e.g. 90 days) and renew when it lapses.
-- Copy the `github_pat_…` value.
+- Copy the `github_pat_…` value. (If you already have a token for `modelware_app_storage` with Contents write, reuse it.)
 
 ## 4. Connect the app
 Open the app → **Settings**:
-- Owner: your GitHub username
-- Private data repository: `tender-console-data`
-- Branch: `main` · Data folder: `data`
+- Owner: the repo owner (your username or `modelwaresystems-dama`)
+- Private data repository: e.g. `modelware_app_storage`
+- Branch: `main` · Data folder: e.g. `tender_console_data`
 - Token: paste the fine-grained token
 - **Save & test connection** — it should report *Connected (private)* and sync your data in.
+  *(If it says a repo is PUBLIC, stop and point it at a private one — your data shouldn't live in a public repo.)*
 
 The token is stored only in your browser's localStorage on that device, and is never written to either repo. On another device, re-enter it once.
 

@@ -49,6 +49,7 @@
   :root[data-theme="dark"] .brand .logo,:root:not([data-theme="light"]) .brand .logo{background:var(--glacier);color:#04121f}
   .brand b{font-family:var(--fd);font-weight:800;letter-spacing:-.01em;font-size:1.05rem}
   .brand .sh{font-family:var(--fm);font-size:.68rem;color:var(--accent);font-weight:600}
+  .brand .ver{font-family:var(--fm);font-size:.62rem;color:var(--ink-faint);border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px;white-space:nowrap}
   .conn{display:flex;align-items:center;gap:7px;font-family:var(--fm);font-size:.74rem;color:var(--ink-soft);background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
   .conn .dot{width:8px;height:8px;border-radius:50%;background:var(--ink-faint)}
   .conn .dot.ok{background:var(--good)}
@@ -170,7 +171,7 @@
   <div class="top-in">
     <div class="brand">
       <span class="logo">TC</span>
-      <div><b>Tender Console</b> &nbsp;<span class="sh">#datasherpa</span></div>
+      <div><b>Tender Console</b> &nbsp;<span class="sh">#datasherpa</span><span class="ver" id="verTag" title="Build version and date"></span></div>
     </div>
     <span class="conn" id="conn"><span class="dot" id="connDot"></span><span id="connText">Not connected</span></span>
     <button class="iconbtn" id="syncBtn" title="Sync now">&#8635;</button>
@@ -222,11 +223,12 @@
     <p class="sub">Connect this app to your <b>private</b> data repository. Your token is stored only in this browser and is never committed.</p>
     <div class="settings-card" style="margin-top:16px">
       <div class="field"><label>GitHub owner (username or org)</label><input type="text" id="setOwner" placeholder="howard-diesel" autocomplete="off"></div>
-      <div class="field"><label>Private data repository name</label><input type="text" id="setRepo" placeholder="tender-console-data" autocomplete="off">
-        <div class="hint">A <b>separate private repo</b> from the one hosting this app. Holds only your data.</div></div>
+      <div class="field"><label>Private data repository name</label><input type="text" id="setRepo" placeholder="modelware_app_storage" autocomplete="off">
+        <div class="hint">Your existing shared private repo (e.g. <code>modelware_app_storage</code>) is fine — the data folder below keeps this app's files apart from the CRM's and partner pack's. Or use a new private repo.</div></div>
       <div class="two">
         <div class="field"><label>Branch</label><input type="text" id="setBranch" placeholder="main" autocomplete="off"></div>
-        <div class="field"><label>Data folder</label><input type="text" id="setPath" placeholder="data" autocomplete="off"></div>
+        <div class="field"><label>Data folder (in the repo)</label><input type="text" id="setPath" placeholder="tender_console_data" autocomplete="off">
+          <div class="hint">All this app's files land under here.</div></div>
       </div>
       <div class="field"><label>Fine-grained personal access token</label><input type="password" id="setToken" placeholder="github_pat_…" autocomplete="off">
         <div class="hint">Scope it to <b>only</b> the data repo, permission <code>Contents: Read and write</code>, with an expiry. Stored in this browser's localStorage.</div></div>
@@ -237,9 +239,10 @@
         <button class="btn danger sm" id="clearCacheBtn">Clear local cache</button>
         <div class="hint">Clears the offline copy in this browser (not your repo). Re-syncs on next load.</div>
       </div>
+      <div class="hint" id="verLine" style="margin-top:16px;border-top:1px solid var(--line-soft);padding-top:12px"></div>
     </div>
     <div class="banner" id="setupBanner">
-      <b>First time?</b> Create a public repo for this app (with GitHub Pages on) and a <b>private</b> repo for data, make a fine-grained token, then fill the fields above. Full steps are in the SETUP guide delivered with this file.
+      <b>First time?</b> Host this app in a public repo (GitHub Pages on), point the data fields at your <b>private</b> repo (your existing shared one, or new) with a per-app folder, make a fine-grained token scoped to that data repo, then fill the fields above. Full steps are in the SETUP guide delivered with this file.
     </div>
   </section>
 </main>
@@ -278,6 +281,8 @@
 "use strict";
 (function(){
   /* ---------- constants ---------- */
+  var APP_VERSION="1.0.1";           // bump on every change
+  var APP_BUILD="2026-09-15 12:20 SAST";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -306,10 +311,17 @@
   var toastT;
   function toast(msg,isErr){var t=$("toast");t.textContent=msg;t.className="toast show"+(isErr?" err":"");clearTimeout(toastT);toastT=setTimeout(function(){t.className="toast";},2600);}
 
-  /* ---------- GitHub API ---------- */
-  function ghHeaders(){return {"Authorization":"Bearer "+cfg.token,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};}
+  /* ---------- GitHub API ----------
+     CORS rule: GitHub's Access-Control-Allow-Headers does NOT include
+     X-GitHub-Api-Version. Sending it makes the browser preflight fail and
+     fetch reject with "Failed to fetch" before any request leaves the
+     machine — looks like a broken token but isn't. Send only Accept,
+     Authorization, and (on writes) Content-Type. */
+  function ghHeaders(write){var h={"Authorization":"Bearer "+cfg.token,"Accept":"application/vnd.github+json"};if(write)h["Content-Type"]="application/json";return h;}
+  function isNetErr(e){return e&&/failed to fetch|networkerror|load failed|network request failed/i.test(e.message||"");}
+  function netMsg(e){return isNetErr(e)?"Network/CORS error — nothing was sent (check connectivity or the repo/owner spelling; this is NOT a token error)":(e&&e.message)||"Unknown error";}
   function ghGet(path){
-    return fetch(API+"/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+encodeURI(path)+"?ref="+encodeURIComponent(cfg.branch||"main"),{headers:ghHeaders()})
+    return fetch(API+"/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+encodeURI(path)+"?ref="+encodeURIComponent(cfg.branch||"main"),{headers:ghHeaders(false)})
       .then(function(r){
         if(r.status===404)return {missing:true};
         if(!r.ok)return r.json().then(function(j){throw new Error((j&&j.message)||("HTTP "+r.status));});
@@ -319,11 +331,11 @@
   function ghPut(path,contentStr,existingSha,message){
     var body={message:message||"Update via Tender Console",content:b64enc(contentStr),branch:cfg.branch||"main"};
     if(existingSha)body.sha=existingSha;
-    return fetch(API+"/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+encodeURI(path),{method:"PUT",headers:ghHeaders(),body:JSON.stringify(body)})
+    return fetch(API+"/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+encodeURI(path),{method:"PUT",headers:ghHeaders(true),body:JSON.stringify(body)})
       .then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error((j&&j.message)||("HTTP "+r.status));});return r.json();});
   }
   function testConn(){
-    return fetch(API+"/repos/"+cfg.owner+"/"+cfg.repo,{headers:ghHeaders()})
+    return fetch(API+"/repos/"+cfg.owner+"/"+cfg.repo,{headers:ghHeaders(false)})
       .then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error((j&&j.message)||("HTTP "+r.status));});return r.json();});
   }
 
@@ -351,7 +363,7 @@
     })).then(function(){
       dirty={};saveCache();renderAll();setConn("ok","Connected");toast("Synced from GitHub");
     }).catch(function(e){
-      setConn("err","Sync failed");toast("Sync failed: "+e.message,true);renderAll();
+      setConn("err","Sync failed");toast("Sync failed: "+netMsg(e),true);renderAll();
     });
   }
   function saveKey(key,msg){
@@ -367,9 +379,9 @@
         // refetch sha then retry once
         return ghGet(pathOf(key)).then(function(r){if(!r.missing)sha[key]=r.sha;return ghPut(pathOf(key),fileBody(key),sha[key],msg);})
           .then(function(res){if(res&&res.content)sha[key]=res.content.sha;dirty[key]=false;saveCache();setConn("ok","Saved to GitHub");})
-          .catch(function(e2){toast("Save failed: "+e2.message,true);});
+          .catch(function(e2){toast("Save failed: "+netMsg(e2),true);});
       }
-      toast("Save failed (kept locally): "+e.message,true);
+      toast("Save failed (kept locally): "+netMsg(e),true);
     });
   }
   function syncDirty(){
@@ -573,15 +585,18 @@
   $("searchBank").addEventListener("input",renderBank);
 
   $("saveSettingsBtn").onclick=function(){
-    cfg.owner=$("setOwner").value.trim();cfg.repo=$("setRepo").value.trim();
-    cfg.branch=$("setBranch").value.trim()||"main";cfg.path=$("setPath").value.trim()||"data";
+    var owner=$("setOwner").value.trim(), repo=$("setRepo").value.trim();
+    // accept an "owner/repo" (or owner\repo) paste in the owner field and split it
+    if(!repo && /[\/\\]/.test(owner)){var parts=owner.split(/[\/\\]/).filter(Boolean);owner=parts[0]||"";repo=parts[1]||"";$("setOwner").value=owner;$("setRepo").value=repo;toast("Split owner/repo for you");}
+    cfg.owner=owner;cfg.repo=repo;
+    cfg.branch=$("setBranch").value.trim()||"main";cfg.path=($("setPath").value.trim()||"data").replace(/^\/+|\/+$/g,"");
     cfg.token=$("setToken").value.trim();saveCfg();
     if(!configured()){toast("Fill owner, repo and token",true);return;}
     setConn("","Testing…");
     testConn().then(function(repo){
-      toast("Connected to "+repo.full_name+(repo.private?" (private)":" (public!)"));
+      toast("Connected to "+repo.full_name+(repo.private?" (private)":" — WARNING: this repo is PUBLIC"));
       return pullAll();
-    }).catch(function(e){setConn("err","Auth failed");toast("Connection failed: "+e.message,true);});
+    }).catch(function(e){setConn("err","Connection failed");toast("Connection failed: "+netMsg(e),true);});
   };
   $("clearCacheBtn").onclick=function(){try{localStorage.removeItem(CACHE_KEY);}catch(e){}toast("Local cache cleared");location.reload();};
   $("syncBtn").onclick=function(){syncDirty();};
@@ -591,6 +606,9 @@
 
   /* ---------- boot ---------- */
   function fillSettings(){$("setOwner").value=cfg.owner||"";$("setRepo").value=cfg.repo||"";$("setBranch").value=cfg.branch||"main";$("setPath").value=cfg.path||"data";$("setToken").value=cfg.token||"";}
+  $("verTag").textContent="v"+APP_VERSION+" · "+APP_BUILD;
+  $("verTag").setAttribute("title","Tender Console v"+APP_VERSION+" — built "+APP_BUILD);
+  $("verLine").innerHTML="Tender Console <b>v"+APP_VERSION+"</b> · last updated "+APP_BUILD;
   loadCache();fillSettings();renderAll();
   if(configured()){setConn("ok","Connected");pullAll();}
   else{setConn("err","Not connected");toast("Open Settings to connect your data repo");}

@@ -1252,11 +1252,23 @@ function rememberFile(id, file){
 function fileUrlFor(e){
   const a = e.versions[0].data.asset;
   if(blobUrls[a.id]) return blobUrls[a.id];
+  if(contentBase && a.file) return joinBase(tidyFolder(e.notebook), a.file);
+  if(a.repo_path && repoReady()) return null;   /* private repo: fetch via ghBlobUrl on demand */
+  return a.file ? joinBase(tidyFolder(e.notebook), a.file) : null;
+}
+/* Resolve an asset to a usable URL, fetching from the configured repo when needed.
+   Caches the blob URL so a thumbnail and a later open share one download. */
+async function resolveAssetUrl(e){
+  const a = e.versions[0].data.asset;
+  if(blobUrls[a.id]) return blobUrls[a.id];
+  if(contentBase && a.file) return joinBase(tidyFolder(e.notebook), a.file);
+  if(a.repo_path && repoReady()){ const u = await ghBlobUrl(a.repo_path); blobUrls[a.id] = u; return u; }
   return a.file ? joinBase(tidyFolder(e.notebook), a.file) : null;
 }
 function linkSource(e){
   const a = e.versions[0].data.asset;
-  return blobUrls[a.id] ? "session" : contentBase ? "base" : "relative";
+  return blobUrls[a.id] ? "session" : contentBase ? "base"
+       : (a.repo_path && repoReady()) ? "repo" : "relative";
 }
 const FILE_TYPES = { png:"infographic", jpg:"infographic", jpeg:"infographic", webp:"infographic",
                      pdf:"slide_deck", mp3:"audio", m4a:"audio", wav:"audio",
@@ -1605,6 +1617,14 @@ const TYPE_META = {
   report:{label:"Report", hue:"#3FA9DE"}, audio:{label:"Audio", hue:"#98A0AC"},
   mind_map:{label:"Mind map", hue:"#43B37A"}
 };
+const thumbObserver = ("IntersectionObserver" in window)
+  ? new IntersectionObserver((entries, obs) => {
+      for(const en of entries){
+        if(en.isIntersecting){ obs.unobserve(en.target);
+          const fn = en.target.__loadThumb; if(fn) fn(); }
+      }
+    }, { rootMargin: "300px" })
+  : null;
 function assetCard(e){
   const s = e.summary, a = e.versions[0].data.asset;
   const meta = TYPE_META[s.type] || {label:s.type, hue:"#98A0AC"};
@@ -1618,20 +1638,33 @@ function assetCard(e){
   del.onclick = ev => { ev.stopPropagation(); deleteDialog([e]); };
   acts.appendChild(mv); acts.appendChild(del); card.appendChild(acts);
 
-  /* A4: an infographic is an image already, so show it. Everything else gets a badge. */
-  if(s.type === "infographic" && (blobUrls[a.id] || (s.present && a.file))){
-    const img = document.createElement("img");
-    img.className = "thumb"; img.alt = "";
-    img.style.objectFit = "cover";
-    img.src = blobUrls[a.id] || joinBase(tidyFolder(e.notebook), a.file);
-    img.onerror = () => { img.replaceWith(typeBadge(meta, s)); };
-    card.appendChild(img);
-  } else if((s.type === "slide_deck" || /\.pdf$/i.test(a.file||"")) && fileUrlFor(e)){
-    const fr = document.createElement("iframe");
-    fr.className = "thumb"; fr.setAttribute("tabindex","-1"); fr.setAttribute("scrolling","no");
-    fr.style.pointerEvents = "none"; fr.style.border = "0";
-    fr.src = fileUrlFor(e) + "#toolbar=0&navpanes=0&view=FitH";
-    card.appendChild(fr);
+  /* A4: infographics and slide decks preview their real file. In private-repo mode the
+     bytes come from GitHub on demand, so fetch lazily — only when the card scrolls into
+     view — and fall back to the badge on any failure. */
+  const isImgThumb = s.type === "infographic" || /\.(png|jpe?g|webp|gif)$/i.test(a.file||"");
+  const isPdfThumb = s.type === "slide_deck" || /\.pdf$/i.test(a.file||"");
+  const canPreview = blobUrls[a.id] || (s.present && a.file) || (a.repo_path && repoReady());
+  if((isImgThumb || isPdfThumb) && canPreview){
+    const holder = typeBadge(meta, s);
+    card.appendChild(holder);
+    let loaded = false;
+    const loadThumb = async () => {
+      if(loaded) return; loaded = true;
+      let url; try { url = await resolveAssetUrl(e); } catch(err){ loaded = false; return; }
+      if(!url){ loaded = false; return; }
+      if(isImgThumb){
+        const img = document.createElement("img");
+        img.className = "thumb"; img.alt = ""; img.style.objectFit = "cover";
+        img.src = url; holder.replaceWith(img);
+      } else {
+        const fr = document.createElement("iframe");
+        fr.className = "thumb"; fr.setAttribute("tabindex","-1"); fr.setAttribute("scrolling","no");
+        fr.style.pointerEvents = "none"; fr.style.border = "0";
+        fr.src = url + "#toolbar=0&navpanes=0&view=FitH"; holder.replaceWith(fr);
+      }
+    };
+    if(thumbObserver){ card.__loadThumb = loadThumb; thumbObserver.observe(card); }
+    else loadThumb();
   } else card.appendChild(typeBadge(meta, s));
 
   const b = document.createElement("div"); b.className = "body";
@@ -1867,6 +1900,7 @@ function openAsset(e){
      <p class="note" style="margin-top:12px">${
         src === "session" ? "Using the copy you imported this session. Browsers block opening it as a link, so it opens here or saves."
       : src === "base" ? "Resolved against your library location: " + escapeHtml(contentBase)
+      : src === "repo" ? "Fetched on demand from " + escapeHtml(repoCfg.owner + "/" + repoCfg.repo) + "."
       : "No library location set, so this link is relative to this page. Set one under <b>Library location</b>."}</p>
      <div class="acts" style="margin-top:14px"><button class="s" data-cancel>Close</button></div>`,
     () => {});

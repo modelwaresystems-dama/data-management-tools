@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="63893563e7ef" data-built="16 Sep 2026" data-version="1.39.0">
+<meta name="crm-build" content="5ef110a11734" data-built="16 Sep 2026" data-version="1.40.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -4797,6 +4797,11 @@ var LS = {
   /* Which company cards are open. A view preference, not data — it never
      reaches the repo, and losing it costs one click. */
   openCos:   "crm.companies.open",
+  /* Which Settings sections are SHUT. Stored as the shut ones, not the open
+     ones, so a section added in a later build arrives open like everything
+     else rather than silently hidden. Same reasoning as openCos storing the
+     open cards: store the exception, never the default. */
+  shutSettings: "crm.settings.shut",
   /* When this browser last took a copy of the log. Deliberately NOT an event:
      an export is a read, and writing one into an append-only log replicated to
      every laptop would tell the team something none of them can act on. The
@@ -9865,7 +9870,85 @@ function viewWeek(el){
    SETTINGS
    ============================================================ */
 
+/* Settings is ten stacked panes and about three screens tall, so finding the one
+   you want is a scroll and a hunt. Collapsing turns the page into a ten-line
+   contents list you can read at a glance.
+
+   Built as a POST-PROCESSOR rather than a different way of constructing a pane:
+   each section is assembled exactly as before, then handed here, which takes its
+   <h3> and its .sub as the header and folds everything after them into a body.
+   Ten call sites change by one word each, and a section added later needs
+   nothing but the same wrapper.
+
+   Sections arrive OPEN. Nothing moves for anyone who liked the page as it was;
+   the state is remembered per browser once you shut something, and "Collapse
+   all" gets the compact view in one press. */
+function collapsibleSection(sec, key, shutSet, onToggle){
+  var h3  = sec.querySelector("h3");
+  if (!h3) return sec;
+  var sub = h3.nextElementSibling &&
+            h3.nextElementSibling.className === "sub" ? h3.nextElementSibling : null;
+
+  var rest = [];
+  var n = sub ? sub.nextSibling : h3.nextSibling;
+  while (n){ var nx = n.nextSibling; rest.push(n); n = nx; }
+  if (!rest.length) return sec;          /* nothing to hide; leave it alone */
+
+  var isOpen = !shutSet[key];
+  var tw   = h("span", { class:"tw", text: isOpen ? "▾" : "▸" });
+  var head = h("button", { class:"co-head", type:"button",
+                           style:"margin-bottom:2px",
+                           "aria-expanded": isOpen ? "true" : "false" },
+    tw, h("span", { class:"nm", text:h3.textContent }));
+  var body = h("div", { style: isOpen ? "" : "display:none" });
+  rest.forEach(function (x){ body.appendChild(x); });
+
+  h3.parentNode.replaceChild(head, h3);
+  if (sub){
+    /* The one-line description belongs to the header, not the body \u2014 it is what
+       tells you whether this is the section you are looking for while it is shut. */
+    head.parentNode.insertBefore(sub, head.nextSibling);
+    sec.insertBefore(body, sub.nextSibling);
+  } else {
+    sec.insertBefore(body, head.nextSibling);
+  }
+
+  head.addEventListener("click", function (){
+    isOpen = !isOpen;
+    if (isOpen) delete shutSet[key]; else shutSet[key] = 1;
+    lsSet(LS.shutSettings, Object.keys(shutSet));
+    head.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    tw.textContent = isOpen ? "▾" : "▸";
+    body.style.display = isOpen ? "" : "none";
+    if (onToggle) onToggle();
+  });
+  return sec;
+}
+
 function viewSettings(el){
+  var shut = {};
+  (lsGet(LS.shutSettings, []) || []).forEach(function (k){ shut[k] = 1; });
+  var sectionKeys = [];
+  var fold = function (sec, key){
+    sectionKeys.push(key);
+    return collapsibleSection(sec, key, shut, syncAllBtn);
+  };
+  var allBtn = h("button", { class:"btn btn-sm quiet", type:"button" });
+  function syncAllBtn(){
+    /* The control says what pressing it will DO, not what the page currently is
+       \u2014 a button labelled with a state leaves you guessing which way it goes. */
+    var openCount = sectionKeys.filter(function (k){ return !shut[k]; }).length;
+    var willShut = openCount > 0;
+    allBtn.textContent = willShut ? "Collapse all" : "Expand all";
+    allBtn.onclick = function (){
+      sectionKeys.forEach(function (k){ if (willShut) shut[k] = 1; else delete shut[k]; });
+      lsSet(LS.shutSettings, Object.keys(shut));
+      render();
+    };
+  }
+  el.appendChild(h("div", { style:"display:flex;justify-content:flex-end;margin-bottom:10px" },
+    allBtn));
+
   /* workspace */
   var ws = h("section", { class:"pane", style:"margin-bottom:16px" },
     h("h3", { text:"Workspace" }),
@@ -9894,7 +9977,7 @@ function viewSettings(el){
     ws.appendChild(h("label", { class:"fld", style:"margin-top:12px;max-width:260px" },
       h("span", { text:"Act as (demo only) — try the Mine / Team toggle" }), who));
   }
-  el.appendChild(ws);
+  el.appendChild(fold(ws, "workspace"));
 
   /* github */
   var gh = h("section", { class:"pane", style:"margin-bottom:16px" },
@@ -10032,7 +10115,7 @@ function viewSettings(el){
   if (f.path) f.path.addEventListener("input", paintLayout);
   paintLayout();
   gh.appendChild(layout);
-  el.appendChild(gh);
+  el.appendChild(fold(gh, "sync"));
 
   /* import / export */
   var io = h("section", { class:"pane", style:"margin-bottom:16px" },
@@ -10481,7 +10564,7 @@ function viewSettings(el){
         (lx.events != null ? ", " + lx.events + " events" : "") + "."
       : "No export from this browser. The log may still have been exported from somewhere else — " +
         "an export is a read, so it leaves no trace in the record itself." }));
-  el.appendChild(io);
+  el.appendChild(fold(io, "import"));
 
   /* Deleted deals. A delete you cannot see is indistinguishable from a bug —
      and since the events are still on disk, hiding the list would be a lie
@@ -10505,7 +10588,7 @@ function viewSettings(el){
     del.appendChild(h("table", { class:"tbl" },
       h("thead", null, h("tr", null, h("th", { text:"Deal" }), h("th", { text:"Deleted" }),
                          h("th", { text:"Reason" }), h("th", { text:"" }))), dtb));
-    el.appendChild(del);
+    el.appendChild(fold(del, "deleted"));
   }
 
   /* storage — the thing you need when it goes wrong */
@@ -10646,7 +10729,7 @@ function viewSettings(el){
            "On a normal web address there will be none; opened from a file, there may be a great deal." }));
   }
   paintStorage();
-  el.appendChild(stor);
+  el.appendChild(fold(stor, "device"));
 
   /* who is on which version — the question you cannot answer by asking people */
   if (App.workspace === "team"){
@@ -10691,7 +10774,7 @@ function viewSettings(el){
         : "Everyone who has opened it is on the same build as you." }));
     vers.appendChild(h("div", { class:"note",
       text:"A row only appears once that person has opened the app while connected to the team workspace." }));
-    el.appendChild(vers);
+    el.appendChild(fold(vers, "versions"));
   }
 
   /* config, read-only */
@@ -10713,16 +10796,21 @@ function viewSettings(el){
          (App.config.currencies||[]).join(", ") + ", never converted into one another." }));
   cfg.appendChild(h("div", { class:"note",
     text:"Team: " + users().map(function (u){ return u.name; }).join(", ") + "." }));
-  el.appendChild(cfg);
+  el.appendChild(fold(cfg, "config"));
 
   /* keyboard reference */
-  el.appendChild(h("section", { class:"pane", style:"margin-top:16px" },
+  el.appendChild(fold(h("section", { class:"pane", style:"margin-top:16px" },
     h("h3", { text:"Keyboard" }),
     h("div", { class:"note", style:"line-height:1.9" },
       h("div", { text:"l  log an interaction — from anywhere   ·   n  new deal   ·   /  search   ·   g then t p c w s  navigate" }),
       h("div", { text:"On a Today row:  d  done   ·   1  tomorrow   ·   3  +3 days   ·   7  +7 days   ·   4  +14 days   ·   e  defer with a typed date" }),
       h("div", { text:"j / k or arrow keys move between rows. Esc closes whatever is open." }),
-      h("div", { text:"Quick-defer keys skip weekends. A date you type lands exactly as typed." }))));
+      h("div", { text:"Quick-defer keys skip weekends. A date you type lands exactly as typed." }))),
+    "keyboard"));
+
+  /* Labelled only now, because the button's label depends on how many sections
+     are open and that is not known until every one of them has been folded. */
+  syncAllBtn();
 }
 
 function switchWorkspace(w){

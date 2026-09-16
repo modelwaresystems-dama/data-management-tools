@@ -315,6 +315,8 @@
   .str-chip{font-size:.76rem;background:var(--surface-2);border:1px solid var(--line-soft);border-radius:7px;padding:3px 8px;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px}
   .str-chip b{font-family:var(--fm);color:var(--ink-faint)}
   .str-chip i{width:8px;height:8px;border-radius:2px;display:inline-block}
+  .notewrap{margin-top:14px;font-size:.83rem;color:var(--ink-soft);background:var(--surface-2);border:1px solid var(--line-soft);border-radius:10px;padding:11px 14px;line-height:1.5}
+  .notewrap b{color:var(--ink)}
   </style>
   <nav class="tabs" id="tabs">
     <button data-tab="console" class="active">Console <span class="ct" id="ctConsole">0</span></button>
@@ -371,6 +373,9 @@
     </div>
     <div class="a-card"><h3>Per-tender fit — three lenses</h3><div id="sfTenderFit"></div></div>
     <div class="a-card"><h3>Behavioural factors</h3><div id="sfBehBars"></div></div>
+    <div class="row" style="margin-top:28px"><div><h2 class="sh">Strengths &amp; the tenders</h2><p class="sub">How your CliftonStrengths relate to what the tenders reward. The talent–skill bridge is indicative (not Gallup-official) — ask to adjust it.</p></div></div>
+    <div class="a-card"><h3>Your talent domains vs what the tenders reward</h3><div id="sfStrDemand"></div></div>
+    <div class="a-card"><h3>Strengths behind the top requirements</h3><div id="sfStrReq"></div></div>
   </section>
 
   <!-- BANK -->
@@ -468,8 +473,8 @@
 "use strict";
 (function(){
   /* ---------- constants ---------- */
-  var APP_VERSION="1.5.0";           // bump on every change
-  var APP_BUILD="2026-09-16 Strengths lens";  // date/time of this build
+  var APP_VERSION="1.6.0";           // bump on every change
+  var APP_BUILD="2026-09-16 Strengths x tenders";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -884,6 +889,45 @@
     // Behaviours
     var behs=sfiaProf.behaviours||[];
     $("sfBehBars").innerHTML=behs.length?behs.map(function(b){return '<div class="hbar w"><div class="hl">'+esc(b.name)+'</div><div class="ht"><i style="width:'+Math.round((b.level||0)/7*100)+'%"></i></div><div class="hv">L'+(b.level||0)+'</div></div>';}).join(""):'<div class="hint">No behavioural factors.</div>';
+    renderStrengthsTenders();
+  }
+  /* ---------- Strengths x tenders ---------- */
+  var CFDOMAIN={
+    DATM:"Strategic Thinking",DTAN:"Strategic Thinking",DBDS:"Strategic Thinking",DAAN:"Strategic Thinking",DATS:"Strategic Thinking",MLNG:"Strategic Thinking",BINT:"Strategic Thinking",DENG:"Strategic Thinking",VISL:"Strategic Thinking",ITSP:"Strategic Thinking",STPL:"Strategic Thinking",ARCH:"Strategic Thinking",IRMG:"Strategic Thinking",EMRG:"Strategic Thinking",RSCH:"Strategic Thinking",INOV:"Strategic Thinking",METL:"Strategic Thinking",AIDE:"Strategic Thinking",BUSA:"Strategic Thinking",REQM:"Strategic Thinking",FEAS:"Strategic Thinking",BSMO:"Strategic Thinking",KNOW:"Strategic Thinking",ANCC:"Strategic Thinking",INCA:"Strategic Thinking",MEAS:"Strategic Thinking",BENM:"Strategic Thinking",INVA:"Strategic Thinking",COMG:"Strategic Thinking",IFDN:"Strategic Thinking",DESN:"Strategic Thinking",SWDN:"Strategic Thinking",ISCO:"Strategic Thinking",
+    GOVN:"Executing",BURM:"Executing",QUMG:"Executing",QUAS:"Executing",PEDP:"Executing",AUDT:"Executing",POMG:"Executing",PGMG:"Executing",PRMG:"Executing",DEMG:"Executing",PROF:"Executing",BPRE:"Executing",PROD:"Executing",DLMG:"Executing",SINT:"Executing",TEST:"Executing",BPTS:"Executing",PORT:"Executing",SCTY:"Executing",ORDI:"Executing",JADN:"Executing",CIPM:"Executing",RMGT:"Executing",DBAD:"Executing",SUST:"Executing",
+    CNSL:"Influencing",TECH:"Influencing",OCEN:"Influencing",OCDV:"Influencing",BPSL:"Influencing",MKTG:"Influencing",SALE:"Influencing",SSUP:"Influencing",ETMG:"Influencing",ETDL:"Influencing",TMCR:"Influencing",TEAC:"Influencing",PDSV:"Influencing",CSOP:"Influencing",LEDA:"Influencing",SUBF:"Influencing",
+    RESC:"Relationship Building",PEMT:"Relationship Building",EEXP:"Relationship Building",OFCL:"Relationship Building",RLMT:"Relationship Building",CSMG:"Relationship Building",WFPL:"Relationship Building",SUPP:"Relationship Building",ITCM:"Relationship Building",SORC:"Relationship Building"
+  };
+  var CFORDER=["Strategic Thinking","Influencing","Executing","Relationship Building"];
+  function cfThemesInDomain(dom,k){var st=sfiaProf.strengths;if(!st||!st.themes)return [];return st.themes.filter(function(t){return t.domain===dom;}).sort(function(a,b){return a.rank-b.rank;}).slice(0,k||2);}
+  function reqCfDomain(r){var c={},first=null;(r.sfia||[]).forEach(function(x){var d=CFDOMAIN[x.code];if(!d)return;if(!first)first=d;c[d]=(c[d]||0)+1;});var best=null,bn=0;Object.keys(c).forEach(function(d){if(c[d]>bn){bn=c[d];best=d;}});return best||first;}
+  function tenderTalent(t){var m={"Strategic Thinking":0,"Influencing":0,"Executing":0,"Relationship Building":0},tot=0;(t.requirements||[]).forEach(function(r){var d=reqCfDomain(r);if(!d)return;var w=wnum(r.weight);if(w<=0)return;m[d]+=w;tot+=w;});return {m:m,tot:tot};}
+  function renderStrengthsTenders(){
+    if(!$("sfStrDemand"))return;
+    var st=sfiaProf.strengths;
+    if(!st||!st.top10Domains||!sfMappedTenders().length){$("sfStrDemand").innerHTML='<div class="hint">Needs a loaded CliftonStrengths profile and mapped tenders.</div>';if($("sfStrReq"))$("sfStrReq").innerHTML="";return;}
+    var sup=st.top10Domains;
+    var supHtml='<div style="font-size:.76rem;color:var(--ink-faint);margin-bottom:6px">Your talent supply (themes in top 10)</div>';
+    CFORDER.forEach(function(d){var c=DOMCOL[d];supHtml+='<div class="dom-row"><span class="dom-dot" style="background:'+c+'"></span><span class="dom-l">'+esc(d)+'</span><span class="dom-bar"><i style="width:'+Math.round((sup[d]||0)/5*100)+'%;background:'+c+'"></i></span><span class="dom-n">'+(sup[d]||0)+'/10</span></div>';});
+    var demHtml="";
+    sfMappedTenders().forEach(function(t){var td=tenderTalent(t);
+      demHtml+='<div style="margin-top:14px"><div style="font-weight:600;font-size:.85rem;margin-bottom:6px">'+esc(t.client||t.id)+' — what it rewards</div>';
+      CFORDER.forEach(function(d){var pct=td.tot?Math.round(td.m[d]/td.tot*100):0;var c=DOMCOL[d];var thin=(sup[d]||0)<=1;
+        demHtml+='<div class="dom-row"><span class="dom-dot" style="background:'+c+'"></span><span class="dom-l">'+esc(d)+(thin&&pct>0?' <span style="color:var(--warn);font-weight:600">▲</span>':'')+'</span><span class="dom-bar"><i style="width:'+pct+'%;background:'+c+'"></i></span><span class="dom-n">'+pct+'%</span></div>';});
+      demHtml+='</div>';});
+    var strong=CFORDER.filter(function(d){return (sup[d]||0)>=3;});
+    var thinDom=CFORDER.filter(function(d){return (sup[d]||0)<=1&&d!=="Executing";});
+    var readHtml='<div class="notewrap">Your fit runs <b>with the grain</b> where the tenders lean on <b>'+strong.join(" &amp; ")+'</b> — your leading talent (data strategy, governance, architecture, advisory). Their <b>'+(thinDom.join(" / ")||"Relationship Building")+'</b>‑flavoured requirements — team, resourcing, references, capability transfer — sit in your <b>thinnest</b> talent domain. That is exactly why those show as your residual soft spots, and why you built <b>KYV structure</b> and lean on partners there rather than innate relationship talent.</div>';
+    $("sfStrDemand").innerHTML='<div class="sf-an-grid"><div>'+supHtml+'</div><div>'+demHtml+'</div></div>'+readHtml;
+    var reqHtml="";
+    sfMappedTenders().forEach(function(t){
+      var reqs=(t.requirements||[]).filter(function(r){return r.sfia&&r.sfia.length;}).slice().sort(function(a,b){return wnum(b.weight)-wnum(a.weight);}).slice(0,6);
+      reqHtml+='<div style="margin-top:12px"><div style="font-weight:600;font-size:.85rem;margin-bottom:6px">'+esc(t.client||t.id)+'</div>';
+      reqs.forEach(function(r){var d=reqCfDomain(r);var c=DOMCOL[d]||"var(--muted)";var th=cfThemesInDomain(d,2);var thin=(sup[d]||0)<=1;
+        var thNames=th.map(function(x){return x.name+" #"+x.rank;}).join(", ");
+        reqHtml+='<div class="reqrow"><div class="rr-w">'+esc(r.weight||"—")+'</div><div class="rr-t">'+esc(r.text||"")+'<div style="margin-top:3px;font-size:.78rem"><span style="color:'+c+';font-weight:600">'+esc(d||"—")+'</span> ← '+esc(thNames||"—")+(thin?' <span style="color:var(--warn)">(your floor)</span>':'')+'</div></div></div>';});
+      reqHtml+='</div>';});
+    $("sfStrReq").innerHTML=reqHtml;
   }
   /* ---------- SFIA profile tab ---------- */
   var LVLNAME={1:"Follow",2:"Assist",3:"Apply",4:"Enable",5:"Ensure/advise",6:"Initiate/influence",7:"Set strategy/inspire"};

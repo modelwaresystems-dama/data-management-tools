@@ -374,7 +374,10 @@
     <div class="a-card"><h3>Per-tender fit — three lenses</h3><div id="sfTenderFit"></div></div>
     <div class="a-card"><h3>Behavioural factors</h3><div id="sfBehBars"></div></div>
     <div class="row" style="margin-top:28px"><div><h2 class="sh">Strengths &amp; the tenders</h2><p class="sub">How your CliftonStrengths relate to what the tenders reward. The talent–skill bridge is indicative (not Gallup-official) — ask to adjust it.</p></div></div>
-    <div class="a-card"><h3>Your talent domains vs what the tenders reward</h3><div id="sfStrDemand"></div></div>
+    <div class="sf-an-grid">
+      <div class="a-card"><h3>CliftonStrengths — talent domains <span class="a-sub">— depth (all 34) and signature (top-10) on one radar</span></h3><div id="sfStrRadar"></div></div>
+      <div class="a-card"><h3>Your talent domains vs what the tenders reward</h3><div id="sfStrDemand"></div></div>
+    </div>
     <div class="a-card"><h3>Strengths behind the top requirements</h3><div id="sfStrReq"></div></div>
   </section>
 
@@ -473,8 +476,8 @@
 "use strict";
 (function(){
   /* ---------- constants ---------- */
-  var APP_VERSION="1.6.0";           // bump on every change
-  var APP_BUILD="2026-09-16 Strengths x tenders";  // date/time of this build
+  var APP_VERSION="1.6.2";           // bump on every change
+  var APP_BUILD="2026-09-16 Strengths radar (overlaid)";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -845,6 +848,7 @@
   }
   function renderSfiaAnalytics(){
     if(!$("sfImprove"))return;
+    renderStrengthsRadar();
     if(!sfiaProf.loaded||!sfMappedTenders().length){
       var msg='<div class="hint">'+(!sfiaProf.loaded?'SFIA profile not loaded — sync first.':'No SFIA-mapped tenders yet — map a tender to populate this analysis.')+'</div>';
       ["sfImprove","sfDemand","sfRadar","sfHist","sfTenderFit","sfBehBars"].forEach(function(id){if($(id))$(id).innerHTML=msg;});
@@ -890,6 +894,47 @@
     var behs=sfiaProf.behaviours||[];
     $("sfBehBars").innerHTML=behs.length?behs.map(function(b){return '<div class="hbar w"><div class="hl">'+esc(b.name)+'</div><div class="ht"><i style="width:'+Math.round((b.level||0)/7*100)+'%"></i></div><div class="hv">L'+(b.level||0)+'</div></div>';}).join(""):'<div class="hint">No behavioural factors.</div>';
     renderStrengthsTenders();
+  }
+  /* ---------- CliftonStrengths radar (standalone, overlaid) ---------- */
+  var CFSHORT={"Strategic Thinking":"Strategic","Influencing":"Influencing","Executing":"Executing","Relationship Building":"Relationship"};
+  function strengthsRadarSVG(axes,series,dotSeries){
+    var n=axes.length,cx=140,cy=140,R=96,W=300,H=284;
+    function pt(i,r){var a=-Math.PI/2+i*2*Math.PI/n;return [cx+r*Math.cos(a),cy+r*Math.sin(a)];}
+    var s='<svg viewBox="-46 0 '+(W+92)+' '+H+'" width="100%" style="max-width:360px;display:block;margin:0 auto" role="img">';
+    [0.34,0.67,1].forEach(function(lv){var p=axes.map(function(_,i){var q=pt(i,R*lv);return q[0].toFixed(1)+','+q[1].toFixed(1);}).join(' ');s+='<polygon points="'+p+'" fill="none" stroke="var(--line)" stroke-width="1"/>';});
+    axes.forEach(function(_,i){var q=pt(i,R);s+='<line x1="'+cx+'" y1="'+cy+'" x2="'+q[0].toFixed(1)+'" y2="'+q[1].toFixed(1)+'" stroke="var(--line)" stroke-width="1"/>';});
+    series.forEach(function(se){
+      var dp=axes.map(function(ax,i){var q=pt(i,R*(se.get(ax.key)||0));return q[0].toFixed(1)+','+q[1].toFixed(1);}).join(' ');
+      s+='<polygon points="'+dp+'" fill="'+se.fill+'" fill-opacity="'+se.fillOpacity+'" stroke="'+se.stroke+'" stroke-width="'+se.strokeWidth+'"'+(se.dash?' stroke-dasharray="'+se.dash+'"':'')+'/>';
+    });
+    var ds=dotSeries||series[0];
+    axes.forEach(function(ax,i){var q=pt(i,R*(ds.get(ax.key)||0));s+='<circle cx="'+q[0].toFixed(1)+'" cy="'+q[1].toFixed(1)+'" r="4.5" fill="'+ax.color+'"/>';});
+    axes.forEach(function(ax,i){var q=pt(i,R+18);var anc=Math.abs(q[0]-cx)<12?'middle':(q[0]<cx?'end':'start');
+      s+='<text x="'+q[0].toFixed(1)+'" y="'+q[1].toFixed(1)+'" text-anchor="'+anc+'" font-size="10.5" font-family="var(--fm)" fill="'+ax.color+'" font-weight="600">'+esc(ax.label)+'</text>';
+      s+='<text x="'+q[0].toFixed(1)+'" y="'+(q[1]+11).toFixed(1)+'" text-anchor="'+anc+'" font-size="8.5" fill="var(--ink-faint)">'+esc(ax.sub)+'</text>';});
+    return s+'</svg>';
+  }
+  function renderStrengthsRadar(){
+    if(!$("sfStrRadar"))return;
+    var st=sfiaProf.strengths;
+    if(!st||!st.themes||!st.themes.length){$("sfStrRadar").innerHTML='<div class="hint">No CliftonStrengths profile loaded — sync first.</div>';return;}
+    var t10=st.top10Domains||{};
+    var all34={},rw={};CFORDER.forEach(function(d){all34[d]=0;rw[d]=0;});
+    st.themes.forEach(function(t){if(all34[t.domain]!=null){all34[t.domain]++;rw[t.domain]+=(35-(t.rank||34));}});
+    var rwMax=Math.max.apply(null,CFORDER.map(function(d){return rw[d];}).concat([1]));
+    var t10Max=Math.max.apply(null,CFORDER.map(function(d){return t10[d]||0;}).concat([1]));
+    var axes=CFORDER.map(function(d){return {key:d,label:CFSHORT[d]||d,color:DOMCOL[d],sub:(t10[d]||0)+"/10 · "+Math.round((rw[d]/rwMax)*100)+"%"};});
+    var depth={name:"depth",get:function(d){return rw[d]/rwMax;},fill:"var(--glacier)",fillOpacity:"0.10",stroke:"var(--glacier)",strokeWidth:"1.4"};
+    var sig={name:"signature",get:function(d){return (t10[d]||0)/t10Max;},fill:"none",fillOpacity:"0",stroke:"var(--ink)",strokeWidth:"2.2"};
+    var lead=st.leadingDomain||CFORDER[0];
+    $("sfStrRadar").innerHTML=strengthsRadarSVG(axes,[depth,sig],depth)+
+      '<div class="imp-sub" style="text-align:center;margin-top:2px">Two reads on one radar · leading with <b>'+esc(lead)+'</b>'+(st.assessed?' · assessed '+esc(st.assessed):'')+'</div>'+
+      '<div class="sf-legend" style="justify-content:center;margin:10px 0 6px">'+
+        '<span><i style="background:var(--glacier);opacity:.45"></i>filled — talent depth (all 34, rank-weighted)</span>'+
+        '<span><i style="background:var(--ink);height:3px;border-radius:0"></i>outline — signature (top-10 spread)</span>'+
+      '</div>'+
+      '<div class="imp-sub" style="text-align:center;margin:0 auto 6px;max-width:360px">Where the bold outline pinches to the centre but the fill still reaches out (Relationship Building), you have the <b>depth</b> but it isn\'t yet a <b>signature</b> strength.</div>'+
+      '<div class="sf-legend" style="justify-content:center;margin:0">'+CFORDER.map(function(d){return '<span><i style="background:'+DOMCOL[d]+'"></i>'+esc(d)+' · '+(t10[d]||0)+'/10 · '+Math.round((rw[d]/rwMax)*100)+'%</span>';}).join("")+'</div>';
   }
   /* ---------- Strengths x tenders ---------- */
   var CFDOMAIN={

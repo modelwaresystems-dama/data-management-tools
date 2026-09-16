@@ -298,6 +298,23 @@
   .hbar .hv{font-family:var(--fm);font-size:.72rem;color:var(--ink-faint);text-align:right}
   .hbar.w{grid-template-columns:138px 1fr 46px}
   .hbar.w .hl{white-space:normal;line-height:1.22;overflow:hidden}
+  .dom-dist{margin-bottom:14px}
+  .dom-row{display:grid;grid-template-columns:15px 160px 1fr 26px;gap:9px;align-items:center;margin-bottom:6px;font-size:.82rem}
+  .dom-dot{width:11px;height:11px;border-radius:3px}
+  .dom-l{color:var(--ink-soft)}
+  .dom-bar{height:14px;background:var(--surface-2);border-radius:999px;overflow:hidden}.dom-bar i{display:block;height:100%;border-radius:999px}
+  .dom-n{font-family:var(--fm);font-size:.74rem;color:var(--ink-faint);text-align:right}
+  .str-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:9px}
+  .str-card{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--glacier);border-radius:10px;padding:10px 12px;box-shadow:var(--shadow)}
+  .str-h{display:flex;align-items:baseline;gap:8px}
+  .str-r{font-family:var(--fm);font-weight:700;font-size:.88rem;color:var(--ink-faint)}
+  .str-n{font-weight:700;font-size:.94rem}
+  .str-d{font-size:.77rem;color:var(--ink-soft);margin:4px 0 6px;line-height:1.4}
+  .str-dom{font-size:.66rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+  .str-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .str-chip{font-size:.76rem;background:var(--surface-2);border:1px solid var(--line-soft);border-radius:7px;padding:3px 8px;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px}
+  .str-chip b{font-family:var(--fm);color:var(--ink-faint)}
+  .str-chip i{width:8px;height:8px;border-radius:2px;display:inline-block}
   </style>
   <nav class="tabs" id="tabs">
     <button data-tab="console" class="active">Console <span class="ct" id="ctConsole">0</span></button>
@@ -370,12 +387,13 @@
 
   <!-- SETTINGS -->
   <section class="section" id="sec-sfia">
-    <div class="row"><div><h2 class="sh">SFIA 9 Profile</h2><p class="sub">Governed skills, generic attributes and behavioural factors — the master profile the fit engine reads.</p></div>
+    <div class="row"><div><h2 class="sh">SFIA 9 Profile</h2><p class="sub">Skills, generic attributes, behavioural factors and CliftonStrengths — the master profile the fit engine reads.</p></div>
     <div class="spacer"></div><button class="btn primary" id="sfSave">Save profile</button></div>
     <div class="sf-master" id="sfMaster"></div>
     <div class="sf-sum" id="sfSum"></div>
     <div id="sfAttrs"></div>
     <div id="sfBehs"></div>
+    <div id="sfStrengths"></div>
     <div id="sfSkills"></div>
   </section>
   <section class="section" id="sec-settings">
@@ -450,8 +468,8 @@
 "use strict";
 (function(){
   /* ---------- constants ---------- */
-  var APP_VERSION="1.4.0";           // bump on every change
-  var APP_BUILD="2026-09-16 SFIA analytics";  // date/time of this build
+  var APP_VERSION="1.5.0";           // bump on every change
+  var APP_BUILD="2026-09-16 Strengths lens";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -524,7 +542,7 @@
       else if(key==="sfiaProfile"){
         sfiaProf={loaded:true,subject:obj.subject||"",generated:obj.generated||"",framework:obj.framework||"SFIA 9",
           schemaVersion:obj.schemaVersion||2,source:obj.source||"",levelNames:obj.levelNames||{},evidence:obj.evidence||{},
-          skills:obj.skills||[],attributes:obj.attributes||[],behaviours:obj.behaviours||[],byCode:{},count:(obj.skills||[]).length};
+          skills:obj.skills||[],attributes:obj.attributes||[],behaviours:obj.behaviours||[],strengths:obj.strengths||null,byCode:{},count:(obj.skills||[]).length};
         sfiaProf.skills.forEach(function(s){if(s&&s.code)sfiaProf.byCode[s.code]=s;});
         n=sfiaProf.count;
       }
@@ -545,7 +563,7 @@
     if(key==="tenders")return JSON.stringify({schemaVersion:1,tenders:data.tenders},null,2);
     if(key==="experience")return JSON.stringify({schemaVersion:1,items:data.experience},null,2);
     if(key==="harvest")return JSON.stringify({schemaVersion:1,queue:data.harvest},null,2);
-    if(key==="sfiaProfile")return JSON.stringify({schemaVersion:sfiaProf.schemaVersion||2,_type:"sfia-profile",subject:sfiaProf.subject,framework:sfiaProf.framework||"SFIA 9",generated:sfiaProf.generated,source:sfiaProf.source,levelNames:sfiaProf.levelNames,evidence:sfiaProf.evidence,skills:sfiaProf.skills,attributes:sfiaProf.attributes,behaviours:sfiaProf.behaviours},null,2);
+    if(key==="sfiaProfile")return JSON.stringify({schemaVersion:sfiaProf.schemaVersion||2,_type:"sfia-profile",subject:sfiaProf.subject,framework:sfiaProf.framework||"SFIA 9",generated:sfiaProf.generated,source:sfiaProf.source,levelNames:sfiaProf.levelNames,evidence:sfiaProf.evidence,skills:sfiaProf.skills,attributes:sfiaProf.attributes,behaviours:sfiaProf.behaviours,strengths:sfiaProf.strengths},null,2);
   }
   function pullAll(){
     if(!configured()){setConn("err","Not connected");return Promise.resolve();}
@@ -872,6 +890,23 @@
   var CATORDER=["Strategy and Architecture","Change and Transformation","Development and Implementation","Delivery and Operation","People and Skills","Relationships and Engagement"];
   var profileDirty=false, editingSk=null;
   function markProfileDirty(){profileDirty=true;dirty["sfiaProfile"]=true;saveCache();renderSfMaster();}
+  var DOMCOL={"Executing":"#7B2D8E","Influencing":"#E97B26","Relationship Building":"#2E77BB","Strategic Thinking":"#00843D"};
+  function renderStrengths(){
+    var el=$("sfStrengths");if(!el)return;
+    var st=sfiaProf.strengths;
+    if(!st||!st.themes||!st.themes.length){el.innerHTML="";return;}
+    var dc=st.top10Domains||{};
+    var order=st.domainOrder||Object.keys(dc);
+    var domBars=order.map(function(dom){var c=DOMCOL[dom]||"var(--glacier)";return '<div class="dom-row"><span class="dom-dot" style="background:'+c+'"></span><span class="dom-l">'+esc(dom)+'</span><span class="dom-bar"><i style="width:'+Math.round((dc[dom]||0)/10*100)+'%;background:'+c+'"></i></span><span class="dom-n">'+(dc[dom]||0)+'</span></div>';}).join("");
+    var top=st.themes.filter(function(t){return t.rank<=10;});
+    var topCards=top.map(function(t){var c=DOMCOL[t.domain]||"var(--glacier)";return '<div class="str-card" style="border-left-color:'+c+'"><div class="str-h"><span class="str-r">#'+t.rank+'</span><span class="str-n">'+esc(t.name)+'</span></div>'+(t.desc?'<div class="str-d">'+esc(t.desc)+'</div>':'')+'<span class="str-dom" style="color:'+c+'">'+esc(t.domain)+'</span></div>';}).join("");
+    var rest=st.themes.filter(function(t){return t.rank>10;});
+    var restList=rest.map(function(t){var c=DOMCOL[t.domain]||"var(--glacier)";return '<span class="str-chip"><b>'+t.rank+'</b> '+esc(t.name)+' <i style="background:'+c+'"></i></span>';}).join("");
+    el.innerHTML='<div class="sf-h">CliftonStrengths <span class="sub">the 4th lens — who you are · leading with '+esc(st.leadingDomain||"")+(st.assessed?' · '+esc(st.assessed):'')+'</span></div>'+
+      '<div style="font-size:.76rem;color:var(--ink-faint);margin-bottom:6px">Domain strength (themes in your top 10)</div><div class="dom-dist">'+domBars+'</div>'+
+      '<div style="font-size:.76rem;color:var(--ink-faint);margin-bottom:7px">Signature themes (top 10)</div><div class="str-grid">'+topCards+'</div>'+
+      (restList?'<details style="margin-top:10px"><summary style="cursor:pointer;font-size:.82rem;color:var(--ink-faint);padding:6px 0">Themes 11–34 (navigate)</summary><div class="str-chips">'+restList+'</div></details>':'');
+  }
   function renderSfMaster(){
     var el=$("sfMaster");if(!el)return;
     el.innerHTML='This is the <b>master SFIA profile</b> the fit engine reads (skills, generic attributes, behavioural factors). '+
@@ -897,7 +932,7 @@
     if(!$("sec-sfia"))return;var ct=$("ctSfia");
     if(!sfiaProf.loaded){if(ct)ct.textContent="—";
       if($("sfSum"))$("sfSum").innerHTML='<div class="empty">SFIA profile not loaded'+(sfiaProf.missing?' — sfia-profile.json is missing from the data folder.':(sfiaProf.err?' — could not read it.':' — connect &amp; sync.'))+'</div>';
-      if($("sfAttrs"))$("sfAttrs").innerHTML="";if($("sfBehs"))$("sfBehs").innerHTML="";if($("sfSkills"))$("sfSkills").innerHTML="";renderSfMaster();return;}
+      if($("sfAttrs"))$("sfAttrs").innerHTML="";if($("sfBehs"))$("sfBehs").innerHTML="";if($("sfStrengths"))$("sfStrengths").innerHTML="";if($("sfSkills"))$("sfSkills").innerHTML="";renderSfMaster();return;}
     renderSfMaster();
     var sk=sfiaProf.skills||[],rated=sk.filter(function(s){return s.band!=="na";});
     if(ct)ct.textContent=rated.length;
@@ -908,6 +943,7 @@
       attrs.map(function(a,i){return '<div class="attr"><div class="an">'+esc(a.name)+'</div><div class="ad">'+esc(a.definition||"")+'</div>'+lvlPicker("attr",i,a.level)+'<div class="lvlname">'+(a.level?("L"+a.level+" · "+LVLNAME[a.level]):"—")+'</div>'+(a.rationale?'<div class="ar">'+esc(a.rationale)+'</div>':'')+'</div>';}).join("")+'</div>';
     $("sfBehs").innerHTML='<div class="sf-h">Behavioural factors <span class="sub">SFIA 9 — click a level to edit</span></div><div class="beh-grid">'+
       behs.map(function(b,i){return '<div class="beh"><div class="bn">'+esc(b.name)+'<span class="blv">'+(b.level?"L"+b.level:"—")+'</span></div>'+(b.rationale?'<div class="br">'+esc(b.rationale)+'</div>':'')+lvlPicker("beh",i,b.level)+'</div>';}).join("")+'</div>';
+    renderStrengths();
     var html='<div class="sf-h">Skills <span class="sub">'+rated.length+' rated of '+sk.length+' · click a skill to edit</span></div>';
     CATORDER.forEach(function(cat){
       var inCat=sk.filter(function(s){return s.category===cat&&s.band!=="na";}).sort(function(a,b){return (b.level||0)-(a.level||0)||a.name.localeCompare(b.name);});

@@ -6,8 +6,8 @@ alongside other applications without any of the `index.html` files colliding.
 | File | What it is |
 |---|---|
 | `index.html` | Landing page — three cards |
-| `crm.html` | The CRM application, **build 1.35.0** (`07365d82ba6d`, 14 Sep 2026) |
-| `manual.html` | The staff guide, rebuilt against 1.35.0 |
+| `crm.html` | The CRM application, **build 1.39.0** (`63893563e7ef`, 16 Sep 2026) |
+| `manual.html` | The staff guide, rebuilt against 1.39.0 |
 | `loose-ends.html` | The six open backfill questions |
 
 `index.html` links to `loose-ends.html` by relative path and probes for it on
@@ -55,29 +55,35 @@ page. Answering twice updates the same file rather than failing.
 
 ---
 
-## Build 1.35.0 — what changed since 1.33.2
+## Build 1.39.0 — what changed since 1.33.2
 
-**1.34.0 — a person could not be made a partner.** The holder rule (don't turn a
-person into a company) was written to stop a *student buying a course* becoming
-an organisation. It was being applied to a business partner who trades under her
-own name, which is a different thing. A person in the holder can now be given a
-record of their own — marked both *partner* and *person* — taking their deals
-with them and leaving everyone else in the bucket untouched.
+**1.34.0 / 1.35.x — a person could not be made a partner, then every student became
+a row.** The holder rule (don't turn a person into a company) was written for
+*private buyers* and was being applied to a sole proprietor. A person in the holder
+can now be given a record of their own. Browsing shows the holder as one row;
+**typing** a name turns that person into their own row with their deals, their
+history and the button that makes them a partner. Searching is the act of looking
+somebody up; browsing is not.
 
-**1.35.0 — the holder is no longer a row; its people are.** The control above
-existed in 1.34.0 and could not be found: it was an 11.5px link at the bottom of
-a stack of contact tiles, inside a card you had to know to open. Somebody looked
-up under M was not under M, because the row was called *Individual*.
+**1.36.0 — the five training channels.** `channel` on the deal, `partnerRef` on the
+partner, `facilitatorRef` for who delivered it. On channels 3, 4, 5.2 and 5.3 **the
+partner is the customer** — they contract their own client and pay us — which
+reverses the old "a partner-led deal belongs to the end customer" rule. The partner
+taxonomy is read from the Partner Pack Builder's register, never held twice.
 
-Companies & contacts now lists each person in a holder **under their own name**,
-in the one alphabetical list, with their own deals, their own logged history and
-their own totals. `companySummary` and `interactionsForCompany` take an optional
-contact id so the arithmetic is theirs and not the bucket's. Their card carries
-**Make ⟨name⟩ a partner** as a button at the top, and their sales channels as a
-chip on the row. One line under the list keeps the holder's own
-*stop holding individuals* toggle reachable.
+**1.37.0 — one Edit form per company.** Name and domain had no control on the
+Companies page at all; five other facts were five separate links. All seven are now
+one form and one Save.
 
-A control nobody can find is a feature the application does not have.
+**1.38.0 — a cancelled invoice can be reinstated.** Cancelling was one-way, and it
+sits in the same dialog as Save. Reinstating brings back the value, the payments and
+the commission; the cancellation stays in the log. Same for a purchase order.
+
+**1.39.0 — a batch can close the step the mail actually did.** Only when the row
+*names* the step by id, only when the mail IS the step, never somebody else's, and
+dated the day the mail went. Every open step it passed over is listed beside it as a
+near miss — because a list of what was ticked off, with no list of what was left,
+reads as though everything is handled.
 
 ## Verification
 
@@ -85,9 +91,9 @@ A control nobody can find is a feature the application does not have.
 
 | Suite | Result |
 |---|---|
-| `tests/harness.js` — fold, arithmetic, importer | 1043 passed, 0 failed |
-| `tests/layout.js` — real Chromium, three viewports | 1101 passed, 0 failed |
-| `tests/manual-check.js` — the manual against the app | 189 passed, 0 failed |
+| `tests/harness.js` — fold, arithmetic, importer | 1134 passed, 0 failed |
+| `tests/layout.js` — real Chromium, three viewports | 1161 passed, 0 failed |
+| `tests/manual-check.js` — the manual against the app | 196 passed, 0 failed |
 | `tests/connection-diagnostic.js` | 10 scenarios, all diagnosed correctly |
 | `tests/pull-failure.js` | 4 passed |
 

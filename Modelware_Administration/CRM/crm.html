@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="c7a663057aad" data-built="15 Sep 2026" data-version="1.38.0">
+<meta name="crm-build" content="63893563e7ef" data-built="16 Sep 2026" data-version="1.39.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2746,7 +2746,11 @@ var TRIAGE_ROW_FIELDS = {
   /* The five training channels. `channel` is how the sale reached us;
      `facilitator` is who delivered it, which is a different fact; `endClient`
      is a note on a reseller row, never an account. */
-  channel:1, facilitator:1, endClient:1, partnerRef:1
+  channel:1, facilitator:1, endClient:1, partnerRef:1,
+  /* The follow-ups this thread actually DID. Ids, from crm_state's openDeals \u2014
+     never a description, because "the schedule one" matches two steps on a busy
+     deal and the wrong one gets closed. */
+  completes:1
 };
 var TRIAGE_CONTACT_FIELDS  = { name:1, email:1, role:1, phone:1 };
 var TRIAGE_NEXTSTEP_FIELDS = { what:1, dueDate:1, owner:1 };
@@ -3161,8 +3165,12 @@ function importTriage(text, st, cfg, ctx){
   var actor = ctx.actor || "howard";
   var out = { events:[], rows:[], unmatched:[], revisions:[], dealChanges:[], errors:[],
               warnings:[], money:[],
+              /* Steps this batch closes, and the ones it deliberately does not.
+                 Both are shown, because a list of what WAS closed with no list of
+                 what was passed over reads as "everything is handled". */
+              completions:[], nearMisses:[],
               summary:{ rows:0, logged:0, followups:0, unmatched:0, duplicates:0,
-                        revised:0, contacts:0, dealChanges:0,
+                        revised:0, contacts:0, dealChanges:0, completed:0, nearMisses:0,
                         pos:0, quotes:0, invoices:0, payments:0, alreadyMoney:0 } };
   /* our own side, so colleagues on a thread never become customer contacts */
   var ourEmails = {};
@@ -3589,6 +3597,87 @@ function importTriage(text, st, cfg, ctx){
                           type:"deal.updated", actor:actor,
                           payload:{ dealId:deal.id, facilitatorRef:found } });
     }
+
+    /* CLOSING A FOLLOW-UP FROM THE MAIL THAT DID IT.
+
+       The whole value of this CRM is the follow-up list (C8), so the way to
+       destroy it is to close steps because "some contact happened". An email to
+       Pieter on the 22nd about parking is contact; it is not "send the revised
+       schedule by the 21st". A rule that cleared steps on any contact would
+       empty the one list the thing is built around, and nobody would notice,
+       because a cleared Today reads exactly like a good week.
+
+       So the batch must NAME the step it did, by id. Everything below is a
+       guard, and each one refuses rather than guesses. */
+    var completionsOk = (function (){
+      var want = r.completes == null ? []
+               : (Array.isArray(r.completes) ? r.completes : [r.completes]);
+      var open = openFollowupsFor(st, deal.id);
+      var closing = {};
+
+      for (var ci = 0; ci < want.length; ci++){
+        var fid = String(want[ci] || "").trim();
+        if (!fid) continue;
+        var f = st.followups[fid];
+        if (!f){
+          out.errors.push(where + ": there is no follow-up " + fid + " in this CRM.");
+          return false;
+        }
+        /* Never close a step on a DIFFERENT deal. An id typed from the wrong
+           line of a worklist is the likeliest mistake here, and it would close
+           somebody else's commitment on a deal this row never mentions. */
+        if (f.subjectType !== "deal" || f.subjectId !== deal.id){
+          out.errors.push(where + ": follow-up " + fid + " belongs to a different deal, " +
+            "so this row cannot close it.");
+          return false;
+        }
+        /* Not yours to close. Follow-ups carry an owner, and a sweep run as one
+           person must not tick off another person's work \u2014 they are the only one
+           who knows whether they did it. */
+        if (f.owner && f.owner !== actor){
+          out.errors.push(where + ": \u201c" + f.what + "\u201d is " + userName_(cfg, f.owner) +
+            "\u2019s step, not yours. Only the person who owns a step can say it is done.");
+          return false;
+        }
+        if (f.status !== "open"){
+          /* Already done is not an error \u2014 a re-imported batch must be a no-op. */
+          out.warnings.push(where + ": \u201c" + f.what + "\u201d was already " + f.status + ".");
+          continue;
+        }
+        closing[fid] = true;
+        /* Completed WHEN THE MAIL WENT, not today. A step done on the 21st and
+           imported on the 30th is not nine days late, and the week retro reads
+           off these dates. */
+        out.events.push({ id:"ev_fudone_" + triageHash(fid + "\u241f" + when),
+                          type:"followup.completed", actor:actor,
+                          payload:{ followupId:fid, completedAt:when } });
+        out.completions.push({ where:where, deal:deal.name, what:f.what,
+                               dueDate:f.dueDate, completedAt:when,
+                               late: daysBetween(when, f.dueDate) });
+        out.summary.completed++;
+      }
+
+      /* THE NEAR MISSES. Contact happened on this deal and these steps were not
+         named \u2014 which is usually right, and is exactly the thing worth seeing
+         in one place rather than hunting for afterwards. Only for steps that are
+         yours and on a deal still open (C7: a step on a closed deal is inert). */
+      if (deal.status === "open")
+        open.forEach(function (f){
+          if (closing[f.id]) return;
+          if (f.owner && f.owner !== actor) return;
+          out.nearMisses.push({ where:where, deal:deal.name, what:f.what,
+                                dueDate:f.dueDate,
+                                late: daysBetween(when, f.dueDate),
+                                summary: r.summary || "" });
+          out.summary.nearMisses++;
+        });
+      return true;
+    })();
+    /* The guard runs inside a function, so its `return` leaves the FUNCTION, not
+       the row. Without this line an error was pushed and the row carried on
+       logging \u2014 half-applied, which is the exact failure the all-or-nothing rule
+       on financial rows exists to prevent. */
+    if (!completionsOk) return;
 
     var fin = financialEvents(r, deal, st, cfg, ctx, where);
     if (fin.refusals.length){
@@ -10184,6 +10273,57 @@ function viewSettings(el){
       tReport.appendChild(h("div", { style:"margin-top:6px;font-weight:600",
         text: res.summary.rows + " row" + (res.summary.rows === 1 ? "" : "s") +
               ", all already present — nothing to do." }));
+
+    /* STEPS THIS BATCH CLOSES, and the ones it passes over. Both, always, and
+       next to each other \u2014 a list of what was ticked off with no list of what
+       was left reads as "everything is handled", which is how a follow-up list
+       quietly empties. */
+    if ((res.completions || []).length){
+      tReport.appendChild(h("div", { style:"margin-top:12px;font-weight:600",
+        text:"Closes " + res.completions.length + " follow-up" +
+             (res.completions.length === 1 ? "" : "s") + ", because the mail is the step:" }));
+      var dt = h("tbody");
+      res.completions.forEach(function (c){
+        dt.appendChild(h("tr", null,
+          h("td", { text:c.deal }),
+          h("td", { text:c.what }),
+          h("td", { class:"note",
+                    text:"due " + C.fmtDay(c.dueDate) + " \u00b7 done " + C.fmtDay(c.completedAt) +
+                         (c.late < 0 ? "  (" + (-c.late) + "d late)" : "") })));
+      });
+      tReport.appendChild(h("table", { class:"tbl", style:"margin-top:6px" },
+        h("thead", null, h("tr", null,
+          h("th", { text:"Deal" }), h("th", { text:"Step" }), h("th", { text:"When" }))), dt));
+      tReport.appendChild(h("div", { class:"note", style:"margin-top:4px",
+        text:"Marked done on the day the mail went, not today \u2014 a step done on the " +
+             "21st and imported on the 30th is not nine days late." }));
+    }
+
+    if ((res.nearMisses || []).length){
+      tReport.appendChild(h("div", { style:"margin-top:12px;font-weight:600",
+        text:"Contact happened, but " + res.nearMisses.length + " step" +
+             (res.nearMisses.length === 1 ? " was" : "s were") +
+             " NOT closed \u2014 check these yourself:" }));
+      var nt = h("tbody");
+      res.nearMisses.forEach(function (c){
+        nt.appendChild(h("tr", null,
+          h("td", { text:c.deal }),
+          h("td", { text:c.what }),
+          h("td", { class:"note",
+                    style: c.late < 0 ? "color:var(--overdue)" : "",
+                    text:"due " + C.fmtDay(c.dueDate) +
+                         (c.late < 0 ? "  \u00b7 " + (-c.late) + "d late" : "") }),
+          h("td", { class:"note", text:c.summary })));
+      });
+      tReport.appendChild(h("table", { class:"tbl", style:"margin-top:6px" },
+        h("thead", null, h("tr", null,
+          h("th", { text:"Deal" }), h("th", { text:"Still open" }),
+          h("th", { text:"Due" }), h("th", { text:"What the mail said" }))), nt));
+      tReport.appendChild(h("div", { class:"note", style:"margin-top:4px",
+        text:"These stay open. An email to somebody is not proof the thing you " +
+             "promised them was done \u2014 read the line beside each one and close it " +
+             "in the app if it was." }));
+    }
 
     /* The batch disagreeing with a deal it matched. Its own section and its own
        button: this changes what a deal IS, which is a bigger act than adding a

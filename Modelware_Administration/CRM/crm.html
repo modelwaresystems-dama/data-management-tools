@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="ed4564c86ea1" data-built="14 Sep 2026" data-version="1.37.0">
+<meta name="crm-build" content="c7a663057aad" data-built="15 Sep 2026" data-version="1.38.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1066,6 +1066,14 @@ function foldEvents(events){
             st.pos[p.poId].amount = p.amount == null || p.amount === "" ? null : money(p.amount);
         }
         break;
+      /* The same door back, for the same reason. A purchase order cancelled by
+         mistake left the deal reading as won with nothing behind it. */
+      case "po.reinstated":
+        if (st.pos[p.poId]){
+          st.pos[p.poId].status = "open";
+          st.pos[p.poId].cancelReason = "";
+        }
+        break;
       case "po.cancelled":
         if (st.pos[p.poId]){
           st.pos[p.poId].status = "cancelled";
@@ -1176,6 +1184,24 @@ function foldEvents(events){
         if (st.invoices[p.invoiceId]){
           st.invoices[p.invoiceId].status = "cancelled";
           st.invoices[p.invoiceId].cancelReason = p.reason || "";
+        }
+        break;
+      /* Cancelling was one-way, and it should not have been.
+
+         A cancelled invoice stops counting towards anything \u2014 not the money
+         owed, not what was received, not the commission, not the duplicate-number
+         check. That is right when the invoice really was withdrawn and wrong the
+         moment somebody presses it by mistake, which they will: it sits next to
+         Save in the same dialog. There was no way back, so a clerical slip became
+         a permanent hole in the books, with the payments still sitting under it.
+
+         The log stays append-only \u2014 this is a second event, not an erasure, and
+         the cancellation is still on disk with whoever made it and when. Same
+         shape as deal.deleted / deal.restored. */
+      case "invoice.reinstated":
+        if (st.invoices[p.invoiceId]){
+          st.invoices[p.invoiceId].status = "open";
+          st.invoices[p.invoiceId].cancelReason = "";
         }
         break;
       case "payment.received":
@@ -6893,6 +6919,14 @@ function openDeal(dealId){
             st_.cancelled ? null : h("button", { class:"btn btn-sm quiet", type:"button",
               onclick:(function (i){ return function (e){ paymentPopover(e.currentTarget, d, i); }; })(inv) },
               "Payment"),
+            /* The way back, on the row that needs it. Cancelling sits next to
+               Save in the same dialog, so it gets pressed by mistake \u2014 and
+               until now that was permanent, with the payments still sitting
+               under an invoice that counted towards nothing. */
+            st_.cancelled ? h("button", { class:"btn btn-sm quiet", type:"button",
+              onclick:(function (i){ return function (e){
+                reinstateInvoicePopover(e.currentTarget, d, i); }; })(inv) },
+              "Reinstate") : null,
             h("button", { class:"btn btn-sm quiet", type:"button",
               onclick:(function (i){ return function (e){ invoicePopover(e.currentTarget, d, i); }; })(inv) },
               "Edit"))));
@@ -7019,6 +7053,65 @@ function pct(rate){
   if (rate == null) return "\u2014";
   var n = rate * 100;
   return (Math.round(n * 10) / 10) + "%";
+}
+
+/* Undoing a cancellation, with the one thing that can go wrong said first.
+
+   A cancelled invoice is excluded from the duplicate-number check, so a number
+   that was freed by cancelling may have been reused since. Bringing the old one
+   back would put two live invoices on one number and no screen would have warned
+   anybody \u2014 which is how INV9000392 came to exist twice. So the check runs
+   before the button, not after. */
+function reinstateInvoicePopover(anchorEl, d, inv){
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Reinstate " + (inv.number || "this invoice") }));
+
+  var st_ = C.invoiceState(App.st, inv);
+  var clash = [];
+  if (inv.number){
+    var key = String(inv.number).trim().toLowerCase();
+    Object.keys(App.st.invoices).forEach(function (k){
+      var other = App.st.invoices[k];
+      if (other.id === inv.id || other.status === "cancelled") return;
+      if (String(other.number || "").trim().toLowerCase() === key){
+        var od = App.st.deals[other.dealId];
+        clash.push((od ? od.name : "another deal") + " \u2014 " +
+          C.fmtMoneyExact(C.invoiceState(App.st, other).gross, other.currency));
+      }
+    });
+  }
+
+  var what = h("div", { class:"note" });
+  what.appendChild(h("div", { text:"What comes back:" }));
+  what.appendChild(h("div", { text:"\u00b7 " + C.fmtMoneyExact(st_.gross, inv.currency) +
+    " owed, and " + C.fmtMoneyExact(st_.paid, inv.currency) + " received against it" }));
+  what.appendChild(h("div", { text:"\u00b7 its balance, its commission, and its place in the " +
+    "duplicate-number check" }));
+  if (inv.cancelReason)
+    what.appendChild(h("div", { text:"\u00b7 it was cancelled saying: " + inv.cancelReason }));
+  what.appendChild(h("div", { style:"margin-top:4px",
+    text:"Nothing is erased either way. The cancellation stays in the log with who " +
+         "made it and when; this is a second event on top of it." }));
+  box.appendChild(what);
+
+  if (clash.length)
+    box.appendChild(h("div", { class:"note", style:"color:var(--overdue)" },
+      h("div", { text:"Number " + inv.number + " is already live on: " + clash.join("; ") + "." }),
+      h("div", { text:"Bringing this one back makes two live invoices on one number. " +
+        "Reinstating is allowed \u2014 it will be listed on Money under duplicates \u2014 but " +
+        "one of the two needs a different number." })));
+
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      closeLayers("pop");
+      emit("invoice.reinstated", { invoiceId:inv.id });
+      render(); openDeal(d.id);
+      toast((inv.number || "The invoice") + " is live again" +
+        (clash.length ? " \u2014 and shares its number with another one." : "."));
+    } }, "Reinstate")));
+  openPopover(anchorEl, box, { width:360 });
 }
 
 function invoicePopover(anchorEl, d, inv){
@@ -7422,7 +7515,17 @@ function poPopover(anchorEl, d, o){
   var foot = h("div", { class:"pop-foot" },
     h("button", { class:"btn btn-sm quiet", type:"button",
                   onclick:function (){ closeLayers("pop"); } }, "Cancel"));
-  if (o)
+  /* Cancelled by mistake is the same dead end an invoice had, on a control that
+     sits in the same dialog as Save. The way back is offered where the damage
+     was done rather than nowhere at all. */
+  if (o && o.status === "cancelled")
+    foot.appendChild(h("button", { class:"btn btn-sm quiet", type:"button", onclick:function (){
+      closeLayers("pop");
+      emit("po.reinstated", { poId:o.id });
+      render(); openDeal(d.id);
+      toast((o.number || "The purchase order") + " counts as a commitment again.");
+    } }, "Reinstate PO"));
+  if (o && o.status !== "cancelled")
     foot.appendChild(h("button", { class:"btn btn-sm danger", type:"button", onclick:function (){
       closeLayers("pop");
       emit("po.cancelled", { poId:o.id, reason:"" });

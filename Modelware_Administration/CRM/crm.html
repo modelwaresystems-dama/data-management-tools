@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="58be5c7f7bb1" data-built="18 Sep 2026" data-version="1.41.0">
+<meta name="crm-build" content="945c710c99ce" data-built="18 Sep 2026" data-version="1.43.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -345,6 +345,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .tbl tbody tr{cursor:pointer}
 .tbl tbody tr:hover{background:#FCFDFE}
 .tbl td.num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.tbl tr.totrow td{border-top:2px solid var(--ink);border-bottom:0;background:#FAFBFC}
 
 /* ---------- week ---------- */
 .halves{display:grid;grid-template-columns:1fr 1fr;gap:18px}
@@ -1861,7 +1862,22 @@ function invoiceState(st, inv){
            settled:settled, cancelled:cancelled,
            net:net, passThrough:pt,
            lineMismatch: invoiceLineMismatch(inv),
-           commissionBase: round2(net - pt) };
+           /* COMMISSION FOLLOWS THE CASH (ruled 2026-09-18 by Howard).
+
+              Shipped on 17 September, credit notes reduced what the customer
+              owed and left the commission base at the invoice's original net.
+              A $10,000 invoice credited $4,000 and settled with $6,000 of cash
+              paid $2,000 of commission \u2014 a third of the money that arrived \u2014
+              and no screen said so. Nobody asked for that; it was simply not
+              thought about when credit notes were built.
+
+              The base is what actually came in: net, less what we collect for
+              somebody else, less what we credited back. Floored at zero,
+              because a credit larger than the invoice earns nobody a negative. */
+           commissionBase: Math.max(0, round2(net - pt - credited)),
+           /* Kept so a screen can say what changed and why, rather than just
+              showing a smaller number than the invoice. */
+           commissionBaseBeforeCredit: round2(net - pt) };
 }
 
 function invoicesFor(st, dealId){
@@ -1947,11 +1963,21 @@ function invoiceEarner(deal, inv){
    stops caring which it was given. */
 function commissionParts(deal, inv, state){
   if (inv.lines && inv.lines.length){
+    /* A credit note answers the INVOICE, not one of its lines \u2014 nothing on it
+       says which. So it comes off each line in proportion to that line's share
+       of the commissionable base. Any other split would be a guess about which
+       part of the work was credited, and the lines can carry different rates,
+       so the guess would move real money between rate bands. */
+    var gross = 0;
+    inv.lines.forEach(function (l){ gross = round2(gross + round2(l.net - l.passThrough)); });
+    var credited = state ? (state.credited || 0) : 0;
+    var keep = gross > 0 ? Math.max(0, round2(gross - credited)) / gross : 1;
     return inv.lines.map(function (l){
       var r = lineRate(deal, inv, l);
-      var base = round2(l.net - l.passThrough);
+      var full = round2(l.net - l.passThrough);
+      var base = credited ? round2(full * keep) : full;
       return { line:l, label:l.description || "Line", base:base, rate:r.rate, from:r.from,
-               overridden:!!r.overridden,
+               overridden:!!r.overridden, baseBeforeCredit:full,
                commission: r.rate == null ? null : round2(base * r.rate) };
     });
   }
@@ -2422,6 +2448,73 @@ function agedDebtors(st, cfg, today){
            rows:live };
 }
 
+/* RECONCILIATION VIEW.
+
+   "Everybody" as one line was a summary, and a summary cannot be reconciled.
+   Balancing to Sage means going down two lists side by side, so this is one
+   row per customer per currency — owners merged, because Sage has no idea
+   which of our salespeople owns the deal and a customer split across two of
+   them must still show as one debtor.
+
+   Built from the SAME rows as the aged book, folded only. The per-company
+   lines therefore sum to the currency total by construction, and cannot drift
+   from the salesperson cut above.
+
+   Undated is carried as its own column rather than dropped. Eleven live
+   invoices have no due date, which is $20,117 of a $57,727 book: leave it out
+   of the aging columns and the row does not add up, which is precisely the
+   thing that makes a reconciliation stall. */
+function debtorsByCompany(st, cfg, today){
+  var book = agedDebtors(st, cfg, today);
+  var AGE = ["current","d30","d60","d90","d120","undated"];
+  var out = {};
+  book.rows.forEach(function (r){
+    var cur = r.currency;
+    if (!out[cur]) out[cur] = { currency:cur, rows:[], byCompany:{},
+      total:0, overdue:0, weighted:0, owed:0, daysOutstanding:0,
+      aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 } };
+    var b = out[cur], row = b.byCompany[r.companyId];
+    if (!row){
+      row = b.byCompany[r.companyId] = { companyId:r.companyId, company:r.company,
+        currency:cur, owners:[], invoiced:0, received:0, credited:0, balance:0,
+        invoices:0, weighted:0, owed:0, daysOutstanding:0, overdue:0,
+        aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 } };
+      b.rows.push(row);
+    }
+    if (r.owner && row.owners.indexOf(r.owner) < 0) row.owners.push(r.owner);
+    row.invoices += r.invoices;
+    row.invoiced = round2(row.invoiced + r.invoiced);
+    row.received = round2(row.received + r.received);
+    row.credited = round2(row.credited + r.credited);
+    row.balance  = round2(row.balance + r.balance);
+    row.overdue  = round2(row.overdue + r.overdue);
+    row.weighted = round2(row.weighted + r.weighted);
+    row.owed     = round2(row.owed + r.owed);
+    AGE.forEach(function (k){ row.aged[k] = round2(row.aged[k] + r.aged[k]); });
+
+    b.total   = round2(b.total + r.balance);
+    b.overdue = round2(b.overdue + r.overdue);
+    b.weighted = round2(b.weighted + r.weighted);
+    b.owed    = round2(b.owed + r.owed);
+    AGE.forEach(function (k){ b.aged[k] = round2(b.aged[k] + r.aged[k]); });
+  });
+  Object.keys(out).forEach(function (cur){
+    var b = out[cur];
+    b.daysOutstanding = b.owed > 0 ? Math.round(b.weighted / b.owed) : 0;
+    b.rows.forEach(function (r){
+      r.daysOutstanding = r.owed > 0 ? Math.round(r.weighted / r.owed) : 0;
+      r.owners.sort();
+    });
+    /* Biggest balance first — the order the differences are worth chasing in. */
+    b.rows.sort(function (a, b2){
+      if (Math.abs(b2.balance - a.balance) > 0.005) return b2.balance - a.balance;
+      return (a.company || "") < (b2.company || "") ? -1 : 1;
+    });
+  });
+  return { today: book.today, byCurrency:out,
+           currencies:Object.keys(out).sort(), grand:book.grand };
+}
+
 /* Every customer who owes something, flat — for anywhere that wants the list
    without the salesperson cut. */
 /* THE SAME ROWS, CUT EITHER WAY.
@@ -2491,6 +2584,72 @@ function groupDebtors(rows, by){
     return String(groups[a].label || "") < String(groups[b].label || "") ? -1 : 1;
   });
   return { by:by, groups:groups, order:order };
+}
+
+/* WHY A CUSTOMER IS NOT ON THE DEBTORS BOOK.
+
+   A debtor is somebody who has been invoiced. SARB carries a quote for
+   R207,108.70 and no invoice, so it owes nothing and is correctly absent \u2014 and
+   that is exactly why its absence reads as a bug. The screen showed eight names
+   and said nothing about the other forty-four.
+
+   Quoted-and-never-invoiced is the gap between the pipeline and the ledger, and
+   it is the one worth naming: work we have priced, the customer has seen, and
+   nobody has billed. It is the single biggest number missing from the book. */
+function quotedNotInvoiced(st, today){
+  today = today || todayISO();
+  var out = [];
+  Object.keys(st.companies).forEach(function (cid){
+    var co = st.companies[cid];
+    if (co.merged) return;
+    var quotes = [], anyInvoice = false;
+    dealsForCompany(st, cid).forEach(function (d){
+      if (invoicesFor(st, d.id).some(function (i){ return i.status !== "cancelled"; }))
+        anyInvoice = true;
+      /* A superseded quote has been replaced by the one that supersedes it, and
+         a declined one is not work anybody is waiting to bill. Counting either
+         would double the gap or invent it. */
+      quotesFor(st, d.id).forEach(function (q){
+        if (q.status === "superseded" || q.status === "declined") return;
+        quotes.push({ quote:q, deal:d });
+      });
+    });
+    if (anyInvoice || !quotes.length) return;
+    var by = {};
+    quotes.forEach(function (r){
+      if (r.quote.amount == null) return;
+      var cur = r.quote.currency || "ZAR";
+      by[cur] = round2((by[cur] || 0) + r.quote.amount);
+    });
+    out.push({ companyId:cid, company:co.name, quotes:quotes,
+               amounts:by, currencies:Object.keys(by).sort() });
+  });
+  /* Biggest single-currency figure first \u2014 never a total across currencies. */
+  out.sort(function (a, b){
+    var big = function (r){
+      var m = 0; r.currencies.forEach(function (c){ m = Math.max(m, r.amounts[c]); }); return m; };
+    return big(b) - big(a);
+  });
+  return out;
+}
+
+/* The head-count that makes an absence readable: of every customer on file, how
+   many owe, how many have priced work nobody billed, and how many are simply
+   square with us. A screen that lists eight names out of fifty-two and explains
+   nothing invites the reader to conclude it is broken. */
+function debtorCoverage(st, today){
+  today = today || todayISO();
+  /* Holders are counted too. "Individual" is a holder AND it owes money —
+     leave it out of the head-count while the aging still lists it and the three
+     groups quietly stop adding up to the whole. */
+  var all = Object.keys(st.companies).filter(function (k){
+    return !st.companies[k].merged; }).length;
+  var owing = {};
+  agedDebtors(st, null, today).rows.forEach(function (r){ owing[r.companyId] = 1; });
+  var quoted = quotedNotInvoiced(st, today).length;
+  var owe = Object.keys(owing).length;
+  return { customers:all, owing:owe, quotedNotInvoiced:quoted,
+           settled: Math.max(0, all - owe - quoted) };
 }
 
 function debtorsBook(st, today){
@@ -5007,6 +5166,8 @@ var API = {
   invoiceState:invoiceState, invoicesFor:invoicesFor, paymentsFor:paymentsFor,
   creditNotesFor:creditNotesFor, creditNoteGross:creditNoteGross,
   customerLedger:customerLedger, debtorsBook:debtorsBook, agedDebtors:agedDebtors,
+  quotedNotInvoiced:quotedNotInvoiced, debtorCoverage:debtorCoverage,
+  debtorsByCompany:debtorsByCompany,
   groupDebtors:groupDebtors,
   dealsForCompany:dealsForCompany,
   dealMoney:dealMoney, moneyBook:moneyBook, invoiceRate:invoiceRate,
@@ -10833,6 +10994,102 @@ function debtorGrouping(){
   return v === "customer" ? "customer" : "person";
 }
 
+/* A debtor is somebody who has been invoiced. SARB has a quote for R207,108.70
+   and no invoice, so it owes nothing and is correctly absent — but a screen
+   that lists eight names out of fifty-two and says nothing about the other
+   forty-four reads as broken rather than as complete. These three pieces make
+   the absence legible: what the eight are out of, where the priced-but-unbilled
+   work is, and a way to reach ANY customer's statement from here rather than
+   going out to search and landing on Companies. */
+function debtorCoverageLine(){
+  var c = C.debtorCoverage(App.st, App.today);
+  var n = function (v, one, many){ return String(v) + " " + (v === 1 ? one : many); };
+  return h("div", { class:"note", style:"margin-bottom:14px" },
+    h("div", { text:"Of " + n(c.customers, "customer", "customers") + " on file: " +
+      n(c.owing, "owes", "owe") + " money, " +
+      (c.quotedNotInvoiced === 1
+        ? "1 has quoted work nobody has invoiced"
+        : String(c.quotedNotInvoiced) + " have quoted work nobody has invoiced") +
+      ", and " + n(c.settled, "has", "have") + " nothing outstanding. " +
+      "Only the first group is a debtor." }));
+}
+
+/* Reaching a non-debtor's statement used to mean the global search, which opens
+   the company on Companies — which is exactly the "it jumps off Debtors"
+   complaint. This stays on the screen and opens the statement in place. */
+function debtorFinder(){
+  var wrap = h("div", { class:"pane", style:"margin-bottom:16px;padding:12px 14px" });
+  var inp = h("input", { type:"text", placeholder:"Find any customer\u2019s statement \u2014 including ones that owe nothing",
+                         "aria-label":"Find any customer\u2019s statement",
+                         style:"width:100%;box-sizing:border-box" });
+  var list = h("div", { style:"margin-top:8px" });
+  var all = Object.keys(App.st.companies).map(function (k){
+    return App.st.companies[k]; }).filter(function (co){ return !co.merged; });
+  function paint(){
+    clear(list);
+    var q = inp.value.trim().toLowerCase();
+    if (!q) return;
+    var hits = all.filter(function (co){
+      return (co.name || "").toLowerCase().indexOf(q) >= 0 ||
+             (co.domain || "").toLowerCase().indexOf(q) >= 0; })
+      .sort(function (a, b){ return (a.name || "") < (b.name || "") ? -1 : 1; })
+      .slice(0, 8);
+    if (!hits.length){
+      list.appendChild(h("div", { class:"note", text:"No customer by that name." }));
+      return;
+    }
+    hits.forEach(function (co){
+      var led = C.customerLedger(App.st, co.id, App.today);
+      var owed = led.currencies.map(function (cur){
+        return C.fmtMoneyExact(led.byCurrency[cur].balance, cur); }).join(" \u00b7 ");
+      list.appendChild(h("div", { style:"margin-top:4px" },
+        h("a", { href:"#", onclick:(function (id){ return function (e){
+            e.preventDefault(); openStatement(id); }; })(co.id) }, co.name || "(unnamed)"),
+        h("span", { class:"k", style:"margin-left:8px",
+          text: owed ? "balance " + owed : "no financial documents on record" })));
+    });
+  }
+  inp.addEventListener("input", paint);
+  wrap.appendChild(inp);
+  wrap.appendChild(list);
+  return wrap;
+}
+
+/* Work we have priced and nobody has billed. Not a debt — it belongs nowhere
+   in the aging — but it is the gap between the pipeline and the ledger, and
+   it is where a missing customer usually turns out to be sitting. */
+function quotedNotInvoicedSection(){
+  var rows = C.quotedNotInvoiced(App.st, App.today);
+  var sec = h("section", { class:"pane", style:"margin-bottom:16px" },
+    h("h3", { text:"Quoted, never invoiced" }),
+    h("div", { class:"sub", text:"Priced work with no invoice against it. These customers " +
+      "owe nothing — there is nothing to owe yet — so they are not in the aging above." }));
+  if (!rows.length){
+    sec.appendChild(h("div", { class:"empty",
+      text:"Every quote on file has an invoice behind it." }));
+    return sec;
+  }
+  var t = h("table", { class:"tbl", style:"margin-top:10px" }, h("thead", null, h("tr", null,
+    h("th", { text:"Customer" }), h("th", { text:"Quotes" }),
+    h("th", { class:"num", text:"Quoted" }))));
+  var tb = h("tbody");
+  rows.forEach(function (r){
+    tb.appendChild(h("tr", null,
+      h("td", null, h("a", { href:"#", onclick:(function (id){ return function (e){
+          e.preventDefault(); openStatement(id); }; })(r.companyId) }, r.company)),
+      h("td", null, h("div", { class:"k",
+        text: r.quotes.map(function (q){
+          return (q.quote.number || "quote") + " \u2014 " + q.deal.name; }).join("; ") })),
+      h("td", { class:"num", style:"font-weight:600",
+        text: r.currencies.length
+          ? r.currencies.map(function (c){ return C.fmtMoneyExact(r.amounts[c], c); }).join(" \u00b7 ")
+          : "\u2014" })));
+  });
+  t.appendChild(tb);
+  sec.appendChild(t);
+  return sec;
+}
+
 function viewDebtors(el){
   var book = C.agedDebtors(App.st, App.config, App.today);
   var by = debtorGrouping();
@@ -10857,6 +11114,9 @@ function viewDebtors(el){
   });
   el.appendChild(seg);
   el.appendChild(head);
+  el.appendChild(debtorCoverageLine());
+  el.appendChild(debtorFinder());
+  el.appendChild(quotedNotInvoicedSection());
 
   if (!book.rows.length){
     el.appendChild(h("div", { class:"empty",
@@ -10932,26 +11192,85 @@ function viewDebtors(el){
     el.appendChild(sec);
   });
 
-  /* Totals per currency, and NO total across them. */
-  var tot = h("section", { class:"pane" }, h("h3", { text:"Everybody" }));
-  book.currencies.forEach(function (cur){
-    var g = book.grand[cur];
-    var t = h("table", { class:"tbl", style:"margin-top:8px" });
-    var hr = h("tr", null, h("th", { text:cur }));
+  /* EVERYBODY \u2014 one line per customer, per currency, so it can be walked
+     down beside the Sage age analysis. Totals per currency and NO total across
+     them. */
+  var agg = C.debtorsByCompany(App.st, App.config, App.today);
+  var tot = h("section", { class:"pane" },
+    h("h3", { text:"Everybody" }),
+    h("div", { class:"sub", text:"One line per customer, owners merged \u2014 the cut that " +
+      "balances against Sage. Columns add across to Total due; each currency adds " +
+      "down to its own total." }));
+
+  agg.currencies.forEach(function (cur){
+    var b = agg.byCurrency[cur];
+    var anyUndated = b.aged.undated > 0.005;
+    var t = h("table", { class:"tbl", style:"margin-top:12px" });
+    var hr = h("tr", null, h("th", { text:cur + " \u2014 customer" }));
     AGE_COLS.forEach(function (c){
       hr.appendChild(h("th", { class:"num", title:c.hint, text:c.label })); });
+    if (anyUndated) hr.appendChild(h("th", { class:"num",
+      title:"On invoices with no due date, so they cannot be aged", text:"Undated" }));
     hr.appendChild(h("th", { class:"num", text:"Total due" }));
-    hr.appendChild(h("th", { class:"num", text:"Days" }));
+    hr.appendChild(h("th", { class:"num", title:"Money-weighted days past due", text:"Days" }));
     t.appendChild(h("thead", null, hr));
-    var cells = [h("td", { text:"All customers" })];
+
+    var tb = h("tbody");
+    b.rows.forEach(function (r){
+      var cells = [h("td", null,
+        h("a", { href:"#", onclick:(function (id){ return function (e){
+            e.preventDefault(); openStatement(id); }; })(r.companyId) }, r.company),
+        r.owners.length > 1
+          ? h("div", { class:"note", style:"font-size:11.5px",
+              text:"split across " + r.owners.map(userName).join(", ") })
+          : null)];
+      AGE_COLS.forEach(function (c){
+        cells.push(h("td", { class:"num",
+          style: (c.k === "d120" || c.k === "d90") && r.aged[c.k] > 0.005
+                 ? "color:var(--overdue);font-weight:600" : "",
+          text: money(r.aged[c.k], cur) })); });
+      if (anyUndated) cells.push(h("td", { class:"num",
+        style: r.aged.undated > 0.005 ? "color:var(--overdue)" : "",
+        text: money(r.aged.undated, cur) }));
+      cells.push(h("td", { class:"num", style:"font-weight:600", text:money(r.balance, cur) }));
+      cells.push(h("td", { class:"num",
+        style: r.daysOutstanding > 60 ? "color:var(--overdue);font-weight:600" : "",
+        text: r.daysOutstanding ? String(r.daysOutstanding) : "\u2014" }));
+      tb.appendChild(agedRow(cells));
+    });
+
+    var g = agg.grand[cur] || b;
+    var tcells = [h("td", { style:"font-weight:600",
+      text:"All " + b.rows.length + " customer" + (b.rows.length === 1 ? "" : "s") })];
     AGE_COLS.forEach(function (c){
-      cells.push(h("td", { class:"num", text:money(g.aged[c.k], cur) })); });
-    cells.push(h("td", { class:"num", style:"font-weight:600", text:money(g.total, cur) }));
-    cells.push(h("td", { class:"num", text:String(g.daysOutstanding) }));
-    t.appendChild(h("tbody", null, agedRow(cells)));
+      tcells.push(h("td", { class:"num", style:"font-weight:600",
+        text:money(b.aged[c.k], cur) })); });
+    if (anyUndated) tcells.push(h("td", { class:"num", style:"font-weight:600",
+      text:money(b.aged.undated, cur) }));
+    tcells.push(h("td", { class:"num", style:"font-weight:700", text:money(b.total, cur) }));
+    tcells.push(h("td", { class:"num", style:"font-weight:600",
+      text:String(b.daysOutstanding) }));
+    tb.appendChild(agedRow(tcells, "totrow"));
+    t.appendChild(tb);
     tot.appendChild(t);
+
+    /* The reconciliation footing: what Sage should show, said in words, plus
+       the one figure that will not tie if the due dates stay blank. */
+    var recon = h("div", { class:"note", style:"margin-top:6px" },
+      h("div", { text:"Sage age analysis for " + cur + " should total " +
+        C.fmtMoneyExact(b.total, cur) + " across " + b.rows.length + " customer" +
+        (b.rows.length === 1 ? "" : "s") + " as at " + C.fmtDayYear(agg.today) + "." }));
+    if (anyUndated) recon.appendChild(h("div", { style:"margin-top:4px;color:var(--overdue)",
+      text:C.fmtMoneyExact(b.aged.undated, cur) + " sits in Undated because those invoices " +
+           "carry no due date. Sage will have aged it into a bucket, so the bucket columns " +
+           "will not tie until those due dates are filled in \u2014 the total still will." }));
+    tot.appendChild(recon);
   });
-  tot.appendChild(h("div", { class:"note", style:"margin-top:8px",
+
+  if (!agg.currencies.length)
+    tot.appendChild(h("div", { class:"empty", text:"Nothing outstanding in any currency." }));
+
+  tot.appendChild(h("div", { class:"note", style:"margin-top:10px",
     text:"Each currency totals on its own line and there is no figure across them. " +
          "Adding dollars to rands produces a number that looks authoritative and " +
          "means nothing \u2014 the same reason the forecast never converts." }));

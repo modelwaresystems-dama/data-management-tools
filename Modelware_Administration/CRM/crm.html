@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="5ef110a11734" data-built="16 Sep 2026" data-version="1.40.0">
+<meta name="crm-build" content="58be5c7f7bb1" data-built="18 Sep 2026" data-version="1.41.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -799,7 +799,7 @@ function money(v){
 
 function foldEvents(events){
   var st = { companies:{}, contacts:{}, deals:{}, followups:{}, interactions:{},
-             invoices:{}, payments:{}, quotes:{}, pos:{},
+             invoices:{}, payments:{}, quotes:{}, pos:{}, creditNotes:{},
              clients:{}, lastTs:null, eventCount:0 };
   var ordered = sortEvents(events || []);
 
@@ -1198,6 +1198,57 @@ function foldEvents(events){
          The log stays append-only \u2014 this is a second event, not an erasure, and
          the cancellation is still on disk with whoever made it and when. Same
          shape as deal.deleted / deal.restored. */
+      /* CREDIT NOTES.
+
+         Cancelling withdraws a document; a credit note ANSWERS one. Once an
+         invoice has reached the customer and been entered in their books,
+         cancelling it in ours leaves the two ledgers disagreeing about a
+         document they are both holding \u2014 the customer's accounts payable still
+         shows it. A credit note is the document that says "we agree this is
+         owed back", and it is what a statement of account has to show.
+
+         It is a DOCUMENT, not an adjustment: it has its own number, its own
+         date, and it stands on the ledger in its own right. `againstInvoiceId`
+         is optional because a credit can answer a relationship rather than one
+         invoice, and forcing a link would make somebody invent one. */
+      case "creditnote.issued":
+        st.creditNotes[p.creditNoteId] = {
+          id:p.creditNoteId, dealId:p.dealId, number:p.number || "",
+          issuedOn:p.issuedOn || String(e.ts).slice(0,10),
+          currency:p.currency || "ZAR",
+          net:money(p.net), vat:money(p.vat),
+          againstInvoiceId: p.againstInvoiceId == null ? null : String(p.againstInvoiceId),
+          reason:p.reason || "", note:p.note || "",
+          status:"open", cancelReason:"",
+          issuedBy:e.actor, ts:e.ts
+        };
+        break;
+      case "creditnote.updated":
+        if (st.creditNotes[p.creditNoteId]){
+          assign(st.creditNotes[p.creditNoteId], p,
+                 ["number","issuedOn","currency","reason","note"]);
+          ["net","vat"].forEach(function (k){
+            if (p[k] !== undefined) st.creditNotes[p.creditNoteId][k] = money(p[k]); });
+          if (p.againstInvoiceId !== undefined)
+            st.creditNotes[p.creditNoteId].againstInvoiceId =
+              p.againstInvoiceId == null ? null : String(p.againstInvoiceId);
+        }
+        break;
+      case "creditnote.cancelled":
+        if (st.creditNotes[p.creditNoteId]){
+          st.creditNotes[p.creditNoteId].status = "cancelled";
+          st.creditNotes[p.creditNoteId].cancelReason = p.reason || "";
+        }
+        break;
+      /* The way back, because cancelling was one-way once and should not have
+         been \u2014 the same door the invoice got. */
+      case "creditnote.reinstated":
+        if (st.creditNotes[p.creditNoteId]){
+          st.creditNotes[p.creditNoteId].status = "open";
+          st.creditNotes[p.creditNoteId].cancelReason = "";
+        }
+        break;
+
       case "invoice.reinstated":
         if (st.invoices[p.invoiceId]){
           st.invoices[p.invoiceId].status = "open";
@@ -1781,12 +1832,32 @@ function invoiceState(st, inv){
   Object.keys(st.payments).forEach(function (k){
     if (st.payments[k].invoiceId === inv.id) paid += st.payments[k].amount; });
   paid = round2(paid);
-  var balance = round2(gross - paid);
+  /* A CREDIT NOTE NAMING THIS INVOICE REDUCES WHAT IS OWED ON IT.
+
+     It has to. A credit note that showed on the statement but left the invoice
+     at its full outstanding amount would put the aged report and the balance in
+     disagreement, and the customer would be chased for money we had already
+     agreed to credit \u2014 which is exactly how a debtors call goes wrong.
+
+     A credit with no invoice named credits the RELATIONSHIP, not a document. It
+     comes off the customer's balance in the ledger and stays out of the ageing,
+     because a credit has no age; the ledger names that gap rather than smearing
+     it across a bucket. */
+  var credited = 0;
+  Object.keys(st.creditNotes || {}).forEach(function (k){
+    var cn = st.creditNotes[k];
+    if (cn.status === "cancelled") return;
+    if (cn.againstInvoiceId !== inv.id) return;
+    credited += round2(round2(cn.net) + round2(cn.vat));
+  });
+  credited = round2(credited);
+  var balance = round2(gross - paid - credited);
   var cancelled = inv.status === "cancelled";
   /* Settled means the balance is gone. A cent over is still settled — customers
      round, and a deal that can never be marked paid is worse than a cent. */
   var settled = !cancelled && gross > 0 && balance <= 0;
-  return { invoice:inv, gross:gross, paid:paid, balance: cancelled ? 0 : balance,
+  return { invoice:inv, gross:gross, paid:paid, credited:credited,
+           balance: cancelled ? 0 : balance,
            settled:settled, cancelled:cancelled,
            net:net, passThrough:pt,
            lineMismatch: invoiceLineMismatch(inv),
@@ -2009,6 +2080,424 @@ function channelsFor(st, contactId){
   return Object.keys(st.companies).map(function (k){ return st.companies[k]; })
     .filter(function (c){ return c.channelForContactId === contactId; })
     .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
+}
+
+function creditNotesFor(st, dealId){
+  return Object.keys(st.creditNotes || {}).map(function (k){ return st.creditNotes[k]; })
+    .filter(function (c){ return c.dealId === dealId; })
+    .sort(function (a,b){ return a.issuedOn < b.issuedOn ? 1 : a.issuedOn > b.issuedOn ? -1 : (a.id < b.id ? 1 : -1); });
+}
+function creditNoteGross(cn){ return round2(round2(cn.net) + round2(cn.vat)); }
+
+/* ============================================================
+   THE CUSTOMER SUB-LEDGER (the debtors book, per customer)
+
+   Documents in this CRM hang off DEALS, because that is how they are raised. A
+   customer does not experience it that way: they hold three invoices across two
+   engagements and want one statement. So this gathers every financial document
+   for a COMPANY and lays it out the way a debtors clerk would.
+
+   Three decisions worth stating, because each was a fork:
+
+   1. ONE LEDGER PER CURRENCY, never one blended one. C16 says currencies are
+      never converted or summed, and a statement is exactly where that rule
+      earns its keep: a customer invoiced in USD and ZAR owes two balances and
+      a single "total outstanding" across them is a number with no meaning.
+      They are separate statements that happen to share a letterhead.
+
+   2. ONLY INVOICES, CREDIT NOTES AND PAYMENTS MOVE THE BALANCE. A quote is an
+      offer and a purchase order is the customer's own commitment to us \u2014 both
+      are documents you want to SEE on a customer's file, neither is a debt.
+      They ride along in `documents` where they can be looked at without
+      polluting what is owed.
+
+   3. AGED BY DUE DATE, NOT ISSUE DATE. "60 days" on a statement means sixty
+      days past when it fell due. An invoice with no due date cannot be aged at
+      all, and is counted out loud rather than dropped into "current", which
+      would read as the reassuring answer.
+   ============================================================ */
+function dealsForCompany(st, companyId){
+  return Object.keys(st.deals).map(function (k){ return st.deals[k]; })
+    .filter(function (d){ return d.companyId === companyId && !d.deleted; });
+}
+
+function customerLedger(st, companyId, today){
+  today = today || todayISO();
+  var out = { companyId:companyId, today:today, currencies:[], byCurrency:{},
+              documents:{ quotes:[], purchaseOrders:[] },
+              anomalies:[], dealCount:0 };
+  var co = st.companies[companyId];
+  if (!co) return out;
+  out.companyName = co.name;
+
+  var bag = function (cur){
+    if (!out.byCurrency[cur]){
+      out.byCurrency[cur] = { currency:cur, entries:[],
+        invoiced:0, credited:0, received:0, balance:0,
+        aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 },
+        oldestDue:null, undatedCount:0, weightedDays:0, owed:0 };
+      out.currencies.push(cur);
+    }
+    return out.byCurrency[cur];
+  };
+
+  dealsForCompany(st, companyId).forEach(function (d){
+    out.dealCount++;
+    quotesFor(st, d.id).forEach(function (q){
+      out.documents.quotes.push({ doc:q, deal:d }); });
+    posFor(st, d.id).forEach(function (o){
+      out.documents.purchaseOrders.push({ doc:o, deal:d }); });
+
+    invoicesFor(st, d.id).forEach(function (inv){
+      /* A cancelled invoice is a withdrawn document. It never reached a balance
+         and must not appear on a statement the customer reads \u2014 but it IS on
+         the file, so it is listed among the documents rather than erased. */
+      var s2 = invoiceState(st, inv);
+      if (s2.cancelled){
+        out.documents.quotes = out.documents.quotes;   /* no-op, kept for shape */
+        out.anomalies.push({ kind:"cancelledInvoice", number:inv.number,
+          deal:d.name, currency:inv.currency,
+          note:"cancelled \u2014 not on the statement" });
+        /* a payment sitting under a cancelled invoice is real money with
+           nowhere to go, and is the kind of thing a statement must not hide */
+        if (s2.paid > 0.005)
+          out.anomalies.push({ kind:"paidButCancelled", number:inv.number,
+            deal:d.name, currency:inv.currency, amount:s2.paid,
+            note:"a payment is sitting under a cancelled invoice" });
+        return;
+      }
+      var b = bag(inv.currency || "ZAR");
+      b.entries.push({ type:"invoice", date:inv.issuedOn, dueDate:inv.dueDate || null,
+                       ref:inv.number || "(no number)", deal:d.name, dealId:d.id,
+                       debit:s2.gross, credit:0, doc:inv, state:s2 });
+      b.invoiced = round2(b.invoiced + s2.gross);
+      if (!inv.dueDate){ b.undatedCount++; }
+
+      paymentsFor(st, inv.id).forEach(function (pay){
+        b.entries.push({ type:"payment", date:pay.receivedOn, dueDate:null,
+                         ref:pay.reference || "payment",
+                         against:inv.number || "(no number)",
+                         deal:d.name, dealId:d.id,
+                         debit:0, credit:round2(pay.amount), doc:pay });
+        b.received = round2(b.received + round2(pay.amount));
+      });
+    });
+
+    creditNotesFor(st, d.id).forEach(function (cn){
+      if (cn.status === "cancelled") return;
+      var b = bag(cn.currency || "ZAR");
+      var g = creditNoteGross(cn);
+      var against = cn.againstInvoiceId ? st.invoices[cn.againstInvoiceId] : null;
+      b.entries.push({ type:"credit", date:cn.issuedOn, dueDate:null,
+                       ref:cn.number || "(no number)",
+                       against: against ? (against.number || "(no number)") : null,
+                       deal:d.name, dealId:d.id,
+                       debit:0, credit:g, doc:cn });
+      b.credited = round2(b.credited + g);
+      /* Allocated credits are already inside the invoice's own balance, so the
+         ageing sees them. Only an UNALLOCATED credit is a gap between the aged
+         columns and the balance. */
+      if (against) b.allocatedCredit = round2((b.allocatedCredit || 0) + g);
+      /* A credit for more than the invoice it answers is either a keying slip
+         or a second credit nobody meant to issue. Said out loud; not blocked,
+         because a credit CAN exceed one invoice when it answers a relationship. */
+      if (against && g > invoiceState(st, against).gross + 0.005)
+        out.anomalies.push({ kind:"creditOverInvoice", number:cn.number,
+          deal:d.name, currency:cn.currency, amount:g,
+          note:"credits more than invoice " + (against.number || "it answers") + " was for" });
+    });
+  });
+
+  /* Chronological, and stable when two documents share a day: invoices before
+     the credits and payments that answer them, so a running balance never dips
+     below zero on a day it was actually settled. */
+  var rank = { invoice:0, credit:1, payment:2 };
+  out.currencies.sort();
+  out.currencies.forEach(function (cur){
+    var b = out.byCurrency[cur];
+    b.entries.sort(function (x, y){
+      if (x.date !== y.date) return x.date < y.date ? -1 : 1;
+      if (rank[x.type] !== rank[y.type]) return rank[x.type] - rank[y.type];
+      return String(x.ref) < String(y.ref) ? -1 : 1;
+    });
+    var run = 0;
+    b.entries.forEach(function (en){
+      run = round2(run + en.debit - en.credit);
+      en.balance = run;
+    });
+    b.balance = run;
+
+    /* AGEING. Each unpaid invoice's own outstanding amount, in the bucket its
+       DUE date puts it in. Credits and unallocated payments are not aged \u2014
+       they reduce the balance without belonging to an age \u2014 so the buckets sum
+       to what is owed on invoices, and the difference is shown rather than
+       smeared across them. */
+    var agedTotal = 0;
+    b.entries.forEach(function (en){
+      if (en.type !== "invoice") return;
+      var owing = en.state.balance;
+      if (owing <= 0.005) return;
+      agedTotal = round2(agedTotal + owing);
+      if (!en.dueDate){ b.aged.undated = round2(b.aged.undated + owing); return; }
+      if (!b.oldestDue || en.dueDate < b.oldestDue) b.oldestDue = en.dueDate;
+      /* The five buckets the accounting system uses, so the two reports can be
+         read side by side: Current (not yet due), then 1-30, 31-60, 61-90 and
+         anything more than 90 days past due. Labelled on screen, because
+         "60 days" means different things in different packages and a column
+         nobody can define is a column nobody trusts. */
+      var late = -daysBetween(today, en.dueDate);       /* +ve once overdue */
+      if (late <= 0)       b.aged.current = round2(b.aged.current + owing);
+      else if (late <= 30) b.aged.d30 = round2(b.aged.d30 + owing);
+      else if (late <= 60) b.aged.d60 = round2(b.aged.d60 + owing);
+      else if (late <= 90) b.aged.d90 = round2(b.aged.d90 + owing);
+      else                 b.aged.d120 = round2(b.aged.d120 + owing);
+      /* DAYS OUTSTANDING, weighted by money. One R200,000 invoice ninety days
+         late and one R200 invoice a day late do not average to 45 days in any
+         sense worth acting on. Weighting by amount answers "how old is the money",
+         which is the number a collections call is made on. */
+      if (late > 0){ b.weightedDays = round2(b.weightedDays + owing * late);
+                     b.owed = round2(b.owed + owing); }
+    });
+    /* Credits and payments not tied to an open invoice leave the aged buckets
+       and the balance disagreeing. Better to name the gap than to hide it in a
+       bucket it does not belong to. */
+    b.agedTotal = agedTotal;
+    b.unallocated = round2(agedTotal - b.balance);
+    b.daysOutstanding = b.owed > 0 ? Math.round(b.weightedDays / b.owed) : 0;
+  });
+
+  out.documents.quotes.sort(function (a,b2){ return a.doc.issuedOn < b2.doc.issuedOn ? 1 : -1; });
+  out.documents.purchaseOrders.sort(function (a,b2){ return a.doc.receivedOn < b2.doc.receivedOn ? 1 : -1; });
+  return out;
+}
+
+/* THE AGED DEBTORS BOOK \u2014 grouped by the person who has to chase it.
+
+   A debtors list nobody owns is a list nobody works. The accounting system\u2019s
+   own report is cut Sales Person \u2192 Currency \u2192 Customer for exactly that reason,
+   and this matches it so the two can be read side by side.
+
+   The salesperson is the DEAL OWNER, not the invoice earner. F7 lets an invoice
+   pay somebody other than the deal owner \u2014 Paul took the FNB enquiry and Debbie
+   sold it \u2014 but chasing is about who owns the relationship, and that is the
+   deal. One customer with deals under two people appears under both, each with
+   only their own invoices, which is what makes the list workable.
+
+   There is no grand total across currencies, deliberately. Adding USD to ZAR
+   produces a number that looks authoritative and means nothing (C16). */
+function agedDebtors(st, cfg, today){
+  today = today || todayISO();
+  var byInvoice = {};        /* ownerId \u241f currency \u241f companyId \u2192 row */
+  var rows = [];
+
+  Object.keys(st.companies).forEach(function (cid){
+    var co = st.companies[cid];
+    if (co.merged) return;
+    dealsForCompany(st, cid).forEach(function (d){
+      var owner = d.owner || "";
+      invoicesFor(st, d.id).forEach(function (inv){
+        var s2 = invoiceState(st, inv);
+        if (s2.cancelled) return;
+        var cur = inv.currency || "ZAR";
+        var key = owner + "\u241f" + cur + "\u241f" + cid;
+        var row = byInvoice[key];
+        if (!row){
+          row = byInvoice[key] = { owner:owner, currency:cur, companyId:cid,
+            company:co.name, invoiced:0, received:0, credited:0, balance:0,
+            aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 },
+            oldestDue:null, weighted:0, owed:0, daysOutstanding:0, invoices:0 };
+          rows.push(row);
+        }
+        row.invoices++;
+        row.invoiced = round2(row.invoiced + s2.gross);
+        row.received = round2(row.received + s2.paid);
+        var owing = s2.balance;
+        if (owing <= 0.005) return;
+        row.balance = round2(row.balance + owing);
+        if (!inv.dueDate){ row.aged.undated = round2(row.aged.undated + owing); return; }
+        if (!row.oldestDue || inv.dueDate < row.oldestDue) row.oldestDue = inv.dueDate;
+        var late = -daysBetween(today, inv.dueDate);
+        if (late <= 0)       row.aged.current = round2(row.aged.current + owing);
+        else if (late <= 30) row.aged.d30 = round2(row.aged.d30 + owing);
+        else if (late <= 60) row.aged.d60 = round2(row.aged.d60 + owing);
+        else if (late <= 90) row.aged.d90 = round2(row.aged.d90 + owing);
+        else                 row.aged.d120 = round2(row.aged.d120 + owing);
+        if (late > 0){ row.weighted = round2(row.weighted + owing * late);
+                       row.owed = round2(row.owed + owing); }
+      });
+      /* Credits reduce what the customer owes even where no invoice is left
+         open to hang them on, so they belong in the balance and nowhere in the
+         ageing \u2014 ageing answers "how old is the debt", and a credit has no age. */
+      creditNotesFor(st, d.id).forEach(function (cn){
+        if (cn.status === "cancelled") return;
+        var cur = cn.currency || "ZAR";
+        var key = (d.owner || "") + "\u241f" + cur + "\u241f" + cid;
+        var row = byInvoice[key];
+        if (!row){
+          row = byInvoice[key] = { owner:d.owner || "", currency:cur, companyId:cid,
+            company:co.name, invoiced:0, received:0, credited:0, balance:0,
+            aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 },
+            oldestDue:null, weighted:0, owed:0, daysOutstanding:0, invoices:0 };
+          rows.push(row);
+        }
+        var g = creditNoteGross(cn);
+        row.credited = round2(row.credited + g);
+        row.balance = round2(row.balance - g);
+      });
+    });
+  });
+
+  rows.forEach(function (r){
+    r.daysOutstanding = r.owed > 0 ? Math.round(r.weighted / r.owed) : 0;
+    r.overdue = round2(r.aged.d30 + r.aged.d60 + r.aged.d90 + r.aged.d120);
+  });
+
+  /* Only people who actually have something to chase. */
+  var live = rows.filter(function (r){ return Math.abs(r.balance) > 0.005; });
+
+  /* Salesperson \u2192 currency \u2192 customers, each level carrying its own totals and
+     its own money-weighted days outstanding. */
+  var people = {}, order = [];
+  live.forEach(function (r){
+    var pk = r.owner || "\u2014";
+    if (!people[pk]){
+      people[pk] = { owner:r.owner, currencies:{}, curOrder:[],
+                     weighted:0, owed:0, daysOutstanding:0 };
+      order.push(pk);
+    }
+    var pp = people[pk];
+    if (!pp.currencies[r.currency]){
+      pp.currencies[r.currency] = { currency:r.currency, rows:[],
+        total:0, overdue:0, weighted:0, owed:0, daysOutstanding:0,
+        aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 } };
+      pp.curOrder.push(r.currency);
+    }
+    var cc = pp.currencies[r.currency];
+    cc.rows.push(r);
+    cc.total = round2(cc.total + r.balance);
+    cc.overdue = round2(cc.overdue + r.overdue);
+    cc.weighted = round2(cc.weighted + r.weighted); cc.owed = round2(cc.owed + r.owed);
+    ["current","d30","d60","d90","d120","undated"].forEach(function (k){
+      cc.aged[k] = round2(cc.aged[k] + r.aged[k]); });
+    pp.weighted = round2(pp.weighted + r.weighted); pp.owed = round2(pp.owed + r.owed);
+  });
+
+  var grand = {};
+  order.forEach(function (pk){
+    var pp = people[pk];
+    pp.daysOutstanding = pp.owed > 0 ? Math.round(pp.weighted / pp.owed) : 0;
+    pp.curOrder.sort();
+    pp.curOrder.forEach(function (cur){
+      var cc = pp.currencies[cur];
+      cc.daysOutstanding = cc.owed > 0 ? Math.round(cc.weighted / cc.owed) : 0;
+      /* biggest debt first \u2014 the order a call list is worked in */
+      cc.rows.sort(function (a,b){ return b.balance - a.balance; });
+      if (!grand[cur]) grand[cur] = { currency:cur, total:0, overdue:0,
+        weighted:0, owed:0, daysOutstanding:0,
+        aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 } };
+      var g = grand[cur];
+      g.total = round2(g.total + cc.total); g.overdue = round2(g.overdue + cc.overdue);
+      g.weighted = round2(g.weighted + cc.weighted); g.owed = round2(g.owed + cc.owed);
+      ["current","d30","d60","d90","d120","undated"].forEach(function (k){
+        g.aged[k] = round2(g.aged[k] + cc.aged[k]); });
+    });
+  });
+  Object.keys(grand).forEach(function (cur){
+    grand[cur].daysOutstanding = grand[cur].owed > 0
+      ? Math.round(grand[cur].weighted / grand[cur].owed) : 0; });
+
+  /* Most owed first, so whoever has the biggest book is at the top. Ranked on
+     the largest single-currency balance, never on a total across currencies. */
+  order.sort(function (a, b){
+    var big = function (pk){
+      var pp = people[pk], m = 0;
+      pp.curOrder.forEach(function (c){ m = Math.max(m, pp.currencies[c].total); });
+      return m;
+    };
+    return big(b) - big(a);
+  });
+
+  return { today:today, people:people, order:order,
+           grand:grand, currencies:Object.keys(grand).sort(),
+           rows:live };
+}
+
+/* Every customer who owes something, flat — for anywhere that wants the list
+   without the salesperson cut. */
+/* THE SAME ROWS, CUT EITHER WAY.
+
+   "Who do I chase" and "what does this customer owe us" are two questions over
+   one set of facts, and which one you want depends on whether you are a
+   salesperson working a call list or a director looking at an account. So the
+   grouping is a view choice, not a different calculation: one row per
+   (owner, currency, customer) either way, nested under whichever key was asked
+   for. Nothing is recomputed, so the two cuts can never disagree.
+
+   `by` is "person" or "customer". */
+function groupDebtors(rows, by){
+  var groups = {}, order = [];
+  var keyOf = function (r){ return by === "customer" ? r.companyId : (r.owner || "\u241f none"); };
+  var labelOf = function (r, cfg2){ return by === "customer" ? r.company : r.owner; };
+
+  rows.forEach(function (r){
+    var gk = keyOf(r);
+    if (!groups[gk]){
+      groups[gk] = { key:gk, by:by, owner:r.owner, companyId:r.companyId,
+                     label: by === "customer" ? r.company : r.owner,
+                     currencies:{}, curOrder:[], weighted:0, owed:0, daysOutstanding:0 };
+      order.push(gk);
+    }
+    var gg = groups[gk];
+    if (!gg.currencies[r.currency]){
+      gg.currencies[r.currency] = { currency:r.currency, rows:[], total:0, overdue:0,
+        weighted:0, owed:0, daysOutstanding:0,
+        aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 } };
+      gg.curOrder.push(r.currency);
+    }
+    var cc = gg.currencies[r.currency];
+    cc.rows.push(r);
+    cc.total = round2(cc.total + r.balance);
+    cc.overdue = round2(cc.overdue + r.overdue);
+    cc.weighted = round2(cc.weighted + r.weighted);
+    cc.owed = round2(cc.owed + r.owed);
+    ["current","d30","d60","d90","d120","undated"].forEach(function (k){
+      cc.aged[k] = round2(cc.aged[k] + r.aged[k]); });
+    gg.weighted = round2(gg.weighted + r.weighted);
+    gg.owed = round2(gg.owed + r.owed);
+  });
+
+  order.forEach(function (gk){
+    var gg = groups[gk];
+    gg.daysOutstanding = gg.owed > 0 ? Math.round(gg.weighted / gg.owed) : 0;
+    gg.curOrder.sort();
+    gg.curOrder.forEach(function (cur){
+      var cc = gg.currencies[cur];
+      cc.daysOutstanding = cc.owed > 0 ? Math.round(cc.weighted / cc.owed) : 0;
+      /* biggest debt first \u2014 the order a call list is worked in */
+      cc.rows.sort(function (a, b){ return b.balance - a.balance; });
+    });
+  });
+
+  /* Ranked on the largest SINGLE-currency balance. Ranking on a total across
+     currencies would sort the list by a number that does not exist. */
+  order.sort(function (a, b){
+    var big = function (gk){
+      var gg = groups[gk], m = 0;
+      gg.curOrder.forEach(function (c){ m = Math.max(m, gg.currencies[c].total); });
+      return m;
+    };
+    var d = big(b) - big(a);
+    if (d) return d;
+    return String(groups[a].label || "") < String(groups[b].label || "") ? -1 : 1;
+  });
+  return { by:by, groups:groups, order:order };
+}
+
+function debtorsBook(st, today){
+  return agedDebtors(st, null, today).rows.slice().sort(function (a, b){
+    if (a.currency !== b.currency) return a.currency < b.currency ? -1 : 1;
+    return b.balance - a.balance;
+  });
 }
 
 function quotesFor(st, dealId){
@@ -4516,6 +5005,10 @@ var API = {
   lastContact:lastContact, openDeals:openDeals, subjectLabel:subjectLabel,
   dealParty:dealParty, money:money, round2:round2,
   invoiceState:invoiceState, invoicesFor:invoicesFor, paymentsFor:paymentsFor,
+  creditNotesFor:creditNotesFor, creditNoteGross:creditNoteGross,
+  customerLedger:customerLedger, debtorsBook:debtorsBook, agedDebtors:agedDebtors,
+  groupDebtors:groupDebtors,
+  dealsForCompany:dealsForCompany,
   dealMoney:dealMoney, moneyBook:moneyBook, invoiceRate:invoiceRate,
   lineRate:lineRate, invoiceEarner:invoiceEarner, commissionParts:commissionParts,
   posFor:posFor, dealPartner:dealPartner, dealsBroughtBy:dealsBroughtBy,
@@ -4802,6 +5295,9 @@ var LS = {
      else rather than silently hidden. Same reasoning as openCos storing the
      open cards: store the exception, never the default. */
   shutSettings: "crm.settings.shut",
+  /* How the debtors book is cut — by the person who chases it, or by the
+     customer who owes it. A view preference; it never reaches the repo. */
+  debtorGroup: "crm.debtors.group",
   /* When this browser last took a copy of the log. Deliberately NOT an event:
      an export is a read, and writing one into an append-only log replicated to
      every laptop would tell the team something none of them can act on. The
@@ -5603,6 +6099,11 @@ var NAV = [
   { id:"week",      label:"Week",      key:"g w" },
   { id:"people",    label:"People",    key:"g u" },
   { id:"money",     label:"Money",     key:"g m" },
+  /* Its own screen rather than a section of Money, because this is a list
+     somebody WORKS \u2014 a call list, cut by whoever has to make the calls \u2014 and a
+     thing you work daily does not live three screens down inside something
+     else. */
+  { id:"debtors",   label:"Debtors",   key:"g d" },
   { id:"settings",  label:"Settings",  key:"g s" }
 ];
 
@@ -5675,7 +6176,7 @@ var LENSED_VIEWS = { today:1, pipeline:1, companies:1, week:1, money:1 };
 
 function renderTopbar(){
   var titles = { today:"Today", pipeline:"Pipeline", companies:"Companies & contacts", money:"Money",
-                 week:"Week", settings:"Settings" };
+                 debtors:"Debtors", week:"Week", settings:"Settings" };
   var bar = h("header", { class:"topbar" },
     h("h2", { text:titles[App.view] || "" }));
 
@@ -5729,6 +6230,7 @@ function renderView(el){
   if (App.view === "companies") return viewCompanies(el);
   if (App.view === "people") return viewPeople(el);
   if (App.view === "money") return viewMoney(el);
+  if (App.view === "debtors") return viewDebtors(el);
   if (App.view === "week") return viewWeek(el);
   if (App.view === "settings") return viewSettings(el);
 }
@@ -6566,6 +7068,230 @@ function openSubject(f){
 
 function closePanel(){ closeLayers("panel"); App.openDealId = null; }
 
+/* THE STATEMENT OF ACCOUNT.
+
+   Devoteam's finance team asked for one before paying, and there was no way to
+   produce it: the documents were spread across deals and nothing gathered them
+   by customer. This is that gathering \u2014 on screen, printable, and copyable as
+   plain text so it can go straight into a reply.
+
+   One statement per CURRENCY. A customer invoiced in dollars and rands owes two
+   balances, and a page showing one blended total would be wrong in a document
+   somebody pays against. */
+function statementText(led, cur){
+  var b = led.byCurrency[cur];
+  var pad = function (v, w, right){
+    v = String(v == null ? "" : v);
+    if (v.length > w) v = v.slice(0, w);
+    var sp = new Array(Math.max(0, w - v.length) + 1).join(" ");
+    return right ? sp + v : v + sp;
+  };
+  var m = function (v){ return v ? C.fmtMoneyExact(v, cur) : ""; };
+  var L = [];
+  L.push("STATEMENT OF ACCOUNT");
+  L.push(led.companyName + "  \u00b7  " + cur);
+  L.push("As at " + C.fmtDayYear(led.today));
+  L.push("");
+  L.push(pad("Date", 12) + pad("Document", 18) + pad("Reference", 22) +
+         pad("Charge", 14, true) + pad("Credit", 14, true) + pad("Balance", 14, true));
+  L.push(new Array(95).join("-"));
+  b.entries.forEach(function (en){
+    var kind = en.type === "invoice" ? "Invoice"
+             : en.type === "credit"  ? "Credit note" : "Payment";
+    var ref = en.ref + (en.against ? " \u2192 " + en.against : "");
+    L.push(pad(C.fmtDayYear(en.date), 12) + pad(kind, 18) + pad(ref, 22) +
+           pad(m(en.debit), 14, true) + pad(m(en.credit), 14, true) +
+           pad(C.fmtMoneyExact(en.balance, cur), 14, true));
+  });
+  L.push(new Array(95).join("-"));
+  L.push(pad("", 52) + pad("BALANCE DUE", 28, true) + "  " + C.fmtMoneyExact(b.balance, cur));
+  L.push("");
+  L.push("Aged");
+  AGE_COLS.forEach(function (c){
+    if (!b.aged[c.k]) return;
+    L.push("  " + pad(c.label, 14) + pad(C.fmtMoneyExact(b.aged[c.k], cur), 16, true) +
+           "   (" + c.hint + ")");
+  });
+  if (b.aged.undated)
+    L.push("  " + pad("Not aged", 14) + pad(C.fmtMoneyExact(b.aged.undated, cur), 16, true) +
+           "   (no due date on the invoice)");
+  return L.join("\n");
+}
+
+function openStatement(companyId){
+  var co = App.st.companies[companyId];
+  if (!co) return;
+  var led = C.customerLedger(App.st, companyId, App.today);
+  closeLayers("panel");
+  var scrim = h("div", { class:"scrim", data:{ kind:"panel" }, onclick:closePanel });
+  var panel = h("aside", { class:"panel", data:{ kind:"panel" }, role:"dialog",
+                           "aria-label":"Statement \u2014 " + co.name, tabindex:"-1" });
+
+  panel.appendChild(h("header", null,
+    h("div", { style:"display:flex;align-items:flex-start;gap:12px" },
+      h("div", { style:"flex:1;min-width:0" },
+        h("div", { class:"cohead", text:"Statement of account" }),
+        h("h3", { text:co.name }),
+        h("div", { class:"note", style:"margin:2px 0 0",
+          text:"As at " + C.fmtDayYear(led.today) + " \u00b7 " + led.dealCount +
+               " deal" + (led.dealCount === 1 ? "" : "s") })),
+      h("button", { class:"btn quiet", type:"button", onclick:closePanel,
+                    "aria-label":"Close" }, "Close"))));
+
+  var body = h("div", { class:"scroll" });
+
+  if (!led.currencies.length){
+    body.appendChild(h("div", { class:"empty",
+      text:"No invoices, credit notes or payments on record for " + co.name + " yet." }));
+  }
+
+  led.currencies.forEach(function (cur){
+    var b = led.byCurrency[cur];
+    var sec = h("section", { class:"sec" },
+      h("h4", { text: led.currencies.length > 1 ? cur + " statement" : "Statement" }));
+
+    var t = h("table", { class:"tbl" }, h("thead", null, h("tr", null,
+      h("th", { text:"Date" }), h("th", { text:"Document" }),
+      h("th", { class:"num", text:"Charge" }), h("th", { class:"num", text:"Credit" }),
+      h("th", { class:"num", text:"Balance" }))));
+    var tb = h("tbody");
+    b.entries.forEach(function (en){
+      var kind = en.type === "invoice" ? "Invoice"
+               : en.type === "credit"  ? "Credit note" : "Payment";
+      tb.appendChild(h("tr", { style:"cursor:pointer",
+          onclick:(function (id){ return function (){ closePanel(); openDeal(id); }; })(en.dealId) },
+        h("td", { text:C.fmtDayYear(en.date) }),
+        h("td", null,
+          h("div", { text:kind + "  " + en.ref }),
+          h("div", { class:"note", style:"font-size:11.5px",
+            text: (en.against ? "against " + en.against + " \u00b7 " : "") + en.deal +
+                  (en.type === "invoice" && en.dueDate
+                     ? " \u00b7 due " + C.fmtDayYear(en.dueDate)
+                     : en.type === "invoice" ? " \u00b7 no due date" : "") })),
+        h("td", { class:"num", text: en.debit ? C.fmtMoneyExact(en.debit, cur) : "" }),
+        h("td", { class:"num", text: en.credit ? C.fmtMoneyExact(en.credit, cur) : "" }),
+        h("td", { class:"num", text:C.fmtMoneyExact(en.balance, cur) })));
+    });
+    t.appendChild(tb);
+    sec.appendChild(t);
+
+    sec.appendChild(h("div", { class:"co-sum", style:"margin-top:10px" },
+      h("span", null, h("span", { class:"k", text:"Charged " }),
+        h("b", { text:C.fmtMoneyExact(b.invoiced, cur) })),
+      b.credited ? h("span", null, h("span", { class:"k", text:"Credited " }),
+        h("b", { text:C.fmtMoneyExact(b.credited, cur) })) : null,
+      h("span", null, h("span", { class:"k", text:"Received " }),
+        h("b", { text:C.fmtMoneyExact(b.received, cur) })),
+      h("span", null, h("span", { class:"k", text:"Balance due " }),
+        h("b", { style: b.balance > 0.005 ? "color:var(--overdue)" : "",
+                 text:C.fmtMoneyExact(b.balance, cur) }))));
+
+    /* the ageing, in the accounting system's own five buckets */
+    var at = h("table", { class:"tbl", style:"margin-top:10px" });
+    var hr = h("tr", null);
+    AGE_COLS.forEach(function (c){
+      hr.appendChild(h("th", { class:"num", title:c.hint, text:c.label })); });
+    if (b.aged.undated) hr.appendChild(h("th", { class:"num", title:"no due date on the invoice",
+                                                 text:"Not aged" }));
+    hr.appendChild(h("th", { class:"num", text:"Days" }));
+    at.appendChild(h("thead", null, hr));
+    var ar = h("tr", null);
+    AGE_COLS.forEach(function (c){
+      ar.appendChild(h("td", { class:"num",
+        style: (c.k === "d120" || c.k === "d90") && b.aged[c.k] > 0.005
+               ? "color:var(--overdue);font-weight:600" : "",
+        text: b.aged[c.k] ? C.fmtMoneyExact(b.aged[c.k], cur) : "\u2014" })); });
+    if (b.aged.undated)
+      ar.appendChild(h("td", { class:"num", style:"color:var(--overdue)",
+        text:C.fmtMoneyExact(b.aged.undated, cur) }));
+    ar.appendChild(h("td", { class:"num", text: b.daysOutstanding ? String(b.daysOutstanding) : "\u2014" }));
+    at.appendChild(h("tbody", null, ar));
+    sec.appendChild(at);
+
+    if (Math.abs(b.unallocated) > 0.005)
+      sec.appendChild(h("div", { class:"note", style:"margin-top:6px;color:var(--overdue)",
+        text:"The aged columns come to " + C.fmtMoneyExact(b.agedTotal, cur) +
+             " and the balance is " + C.fmtMoneyExact(b.balance, cur) + ". The difference is " +
+             "credits or payments not tied to an open invoice \u2014 named here rather than " +
+             "smeared across a bucket they do not belong in." }));
+
+    sec.appendChild(h("div", { style:"margin-top:10px;display:flex;gap:8px;flex-wrap:wrap" },
+      h("button", { class:"btn btn-sm", type:"button",
+        onclick:(function (c2){ return function (){
+          var txt = statementText(led, c2);
+          /* Clipboard access is refused outright on a file:// page in some
+             browsers, and a button that silently does nothing is worse than one
+             that hands you the text to copy yourself. */
+          var done = function (){ toast("Statement copied \u2014 paste it into the reply."); };
+          var fallback = function (){
+            var ta = h("textarea", { style:"position:fixed;left:-9999px;top:0" });
+            ta.value = txt; document.body.appendChild(ta); ta.select();
+            var ok2 = false;
+            try { ok2 = document.execCommand("copy"); } catch (e){}
+            document.body.removeChild(ta);
+            if (ok2) done();
+            else toast("This browser will not let the page copy. Print instead, or " +
+                       "select the table above.");
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText)
+            navigator.clipboard.writeText(txt).then(done, fallback);
+          else fallback();
+        }; })(cur) }, "Copy as text"),
+      h("button", { class:"btn btn-sm quiet", type:"button",
+        onclick:function (){ window.print(); } }, "Print")));
+    body.appendChild(sec);
+  });
+
+  /* EVERYTHING ON FILE that is not a debt. A quote is an offer and a purchase
+     order is their commitment to us: both belong on a customer's file and
+     neither belongs in a balance. */
+  var dq = led.documents.quotes, dp = led.documents.purchaseOrders;
+  if (dq.length || dp.length){
+    var ds = h("section", { class:"sec" },
+      h("h4", { text:"Also on file" }),
+      h("div", { class:"note",
+        text:"Neither of these is a debt \u2014 a quote is an offer and a purchase order " +
+             "is the customer's own commitment \u2014 so they are here and not on the " +
+             "statement above." }));
+    var dt = h("tbody");
+    dp.forEach(function (r){
+      dt.appendChild(h("tr", null,
+        h("td", { text:C.fmtDayYear(r.doc.receivedOn) }),
+        h("td", { text:"Purchase order  " + (r.doc.number || "(no number)") +
+                       (r.doc.status === "cancelled" ? "  \u00b7 cancelled" : "") }),
+        h("td", { class:"note", text:r.deal.name }),
+        h("td", { class:"num", text: r.doc.amount == null ? "not stated"
+                  : C.fmtMoneyExact(r.doc.amount, r.doc.currency) })));
+    });
+    dq.forEach(function (r){
+      dt.appendChild(h("tr", null,
+        h("td", { text:C.fmtDayYear(r.doc.issuedOn) }),
+        h("td", { text:"Quote  " + (r.doc.number || "(no number)") }),
+        h("td", { class:"note", text:r.deal.name }),
+        h("td", { class:"num", text: r.doc.amount == null ? "\u2014"
+                  : C.fmtMoneyExact(r.doc.amount, r.doc.currency) })));
+    });
+    ds.appendChild(h("table", { class:"tbl", style:"margin-top:8px" }, dt));
+    body.appendChild(ds);
+  }
+
+  if (led.anomalies.length){
+    var an = h("section", { class:"sec" },
+      h("h4", { text:"Worth a look before you send this" }));
+    led.anomalies.forEach(function (a){
+      an.appendChild(h("div", { class:"note", style:"padding:4px 0;color:var(--overdue)",
+        text: (a.number || "(no number)") + " \u00b7 " + a.deal + " \u2014 " + a.note +
+              (a.amount ? "  (" + C.fmtMoneyExact(a.amount, a.currency) + ")" : "") }));
+    });
+    body.appendChild(an);
+  }
+
+  panel.appendChild(body);
+  $("#layers").appendChild(scrim);
+  $("#layers").appendChild(panel);
+  panel.focus();
+}
+
 function openDeal(dealId){
   var d = App.st.deals[dealId];
   if (!d) return;
@@ -6950,7 +7676,36 @@ function openDeal(dealId){
                         : "no commission rate set" }),
       h("span", { class:"spacer" }),
       h("button", { class:"btn btn-sm", type:"button",
-        onclick:function (e){ invoicePopover(e.currentTarget, d, null); } }, "Raise invoice")));
+        onclick:function (e){ invoicePopover(e.currentTarget, d, null); } }, "Raise invoice"),
+      h("button", { class:"btn btn-sm quiet", type:"button",
+        title:"Answers an invoice the customer is already holding \u2014 not the same as cancelling it",
+        onclick:function (e){ creditNotePopover(e.currentTarget, d, null); } }, "Credit note")));
+
+    /* Credit notes, listed where the invoices are. A credit the customer holds
+       and the CRM does not show is a statement that will be argued with. */
+    (function (){
+      var cns = C.creditNotesFor(App.st, d.id);
+      if (!cns.length) return;
+      var ct = h("tbody");
+      cns.forEach(function (cn){
+        var inv = cn.againstInvoiceId ? App.st.invoices[cn.againstInvoiceId] : null;
+        ct.appendChild(h("tr", { style:"cursor:pointer",
+            onclick:(function (c2){ return function (e){
+              creditNotePopover(e.currentTarget, d, c2); }; })(cn) },
+          h("td", null,
+            h("div", { text:(cn.number || "(no number)") +
+                            (cn.status === "cancelled" ? "  \u00b7 cancelled" : "") }),
+            h("div", { class:"note", text:C.fmtDay(cn.issuedOn) +
+              (inv ? " \u00b7 against " + (inv.number || "an invoice")
+                   : " \u00b7 against the relationship") +
+              (cn.reason ? " \u00b7 " + cn.reason : "") })),
+          h("td", { class:"num",
+                    style: cn.status === "cancelled" ? "color:var(--muted)" : "",
+                    text:C.fmtMoneyExact(C.creditNoteGross(cn), cn.currency) })));
+      });
+      msec.appendChild(h("h4", { style:"margin-top:14px;font-size:13px", text:"Credit notes" }));
+      msec.appendChild(h("table", { class:"tbl" }, ct));
+    })();
 
     if (!m.invoices.length){
       msec.appendChild(h("div", { class:"note", style:"margin-top:8px",
@@ -7156,6 +7911,127 @@ function pct(rate){
    back would put two live invoices on one number and no screen would have warned
    anybody \u2014 which is how INV9000392 came to exist twice. So the check runs
    before the button, not after. */
+/* Raising a credit note.
+
+   Cancelling withdraws a document; a credit note ANSWERS one. Once an invoice
+   has reached the customer and been entered in their books, cancelling it in
+   ours leaves two ledgers disagreeing about a document they are both holding.
+   The credit note is what a statement of account has to show, and what the
+   customer's own accounts payable expects to see. */
+function creditNotePopover(anchorEl, d, cn){
+  var box = h("div");
+  box.appendChild(h("h4", { text: cn ? "Credit note " + (cn.number || "") : "Raise a credit note" }));
+
+  var live = C.invoicesFor(App.st, d.id)
+    .filter(function (i){ return i.status !== "cancelled"; });
+
+  var num = h("input", { type:"text", value: cn ? cn.number : "",
+    placeholder:"CRN0001", "aria-label":"Credit note number" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Number" }), num));
+
+  var against = h("select", { "aria-label":"Against invoice" });
+  against.appendChild(h("option", { value:"" }, "\u2014 the relationship, not one invoice \u2014"));
+  live.forEach(function (i){
+    var st2 = C.invoiceState(App.st, i);
+    against.appendChild(h("option", { value:i.id },
+      (i.number || "(no number)") + "  \u00b7 " + C.fmtMoneyExact(st2.gross, i.currency) +
+      (st2.balance > 0.005 ? "  \u00b7 " + C.fmtMoneyExact(st2.balance, i.currency) + " outstanding"
+                           : "  \u00b7 settled")));
+  });
+  against.value = cn && cn.againstInvoiceId ? cn.againstInvoiceId : "";
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Against invoice" }), against));
+
+  var iss = h("input", { type:"text", value: cn ? C.fmtDayYear(cn.issuedOn) : C.fmtDayYear(App.today),
+                         "aria-label":"Issued on" });
+  var cur = h("select", { "aria-label":"Currency" });
+  ((App.config && App.config.currencies) || ["ZAR","USD"]).forEach(function (c){
+    cur.appendChild(h("option", { value:c }, c)); });
+  cur.value = cn ? cn.currency : (live[0] ? live[0].currency : (d.currency || "ZAR"));
+  box.appendChild(h("div", { class:"halves" },
+    h("label", { class:"fld" }, h("span", { text:"Issued" }), iss),
+    h("label", { class:"fld" }, h("span", { text:"Currency" }), cur)));
+
+  var net = h("input", { type:"text", value: cn ? String(cn.net) : "", "aria-label":"Net",
+                         placeholder:"0.00" });
+  var vat = h("input", { type:"text", value: cn ? String(cn.vat) : "", "aria-label":"VAT",
+                         placeholder:"0.00" });
+  box.appendChild(h("div", { class:"halves" },
+    h("label", { class:"fld" }, h("span", { text:"Net" }), net),
+    h("label", { class:"fld" }, h("span", { text:"VAT" }), vat)));
+
+  var why = h("input", { type:"text", value: cn ? cn.reason : "", "aria-label":"Reason",
+    placeholder:"Two delegates did not attend" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Reason" }), why));
+
+  var note = h("div", { class:"note" });
+  box.appendChild(note);
+  var num2 = function (el2){
+    var v = String(el2.value || "").replace(/[^0-9.\-]/g, "");
+    return v === "" ? 0 : (isFinite(+v) ? C.round2(+v) : 0);
+  };
+  var sync = function (){
+    clear(note);
+    var g = C.round2(num2(net) + num2(vat));
+    var inv = against.value ? App.st.invoices[against.value] : null;
+    var bits = [];
+    if (g > 0) bits.push("Credits " + C.fmtMoneyExact(g, cur.value) + " to the customer.");
+    if (inv){
+      var st2 = C.invoiceState(App.st, inv);
+      /* Said before it is saved, because this is the number the customer will
+         read on their statement and a surprise here is a phone call. */
+      bits.push("Invoice " + (inv.number || "") + " is " +
+        C.fmtMoneyExact(st2.gross, inv.currency) + " with " +
+        C.fmtMoneyExact(st2.balance, inv.currency) + " outstanding; this leaves " +
+        C.fmtMoneyExact(C.round2(st2.balance - g), inv.currency) + ".");
+      if (g > st2.gross + 0.005)
+        bits.push("That is more than the invoice was for \u2014 allowed, but it will be " +
+                  "flagged on the statement.");
+      if (inv.currency !== cur.value)
+        bits.push("The invoice is in " + inv.currency + " and this credit is in " +
+                  cur.value + ". They will sit on two different statements.");
+    } else {
+      bits.push("With no invoice named this credits the relationship: it comes off " +
+                "the balance and stays out of the ageing, because a credit has no age.");
+    }
+    note.textContent = bits.join("  ");
+  };
+  [net, vat].forEach(function (el2){ el2.addEventListener("input", sync); });
+  [against, cur].forEach(function (el2){ el2.addEventListener("change", sync); });
+  sync();
+
+  var foot = h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"));
+  if (cn && cn.status !== "cancelled")
+    foot.appendChild(h("button", { class:"btn btn-sm danger", type:"button", onclick:function (){
+      closeLayers("pop");
+      emit("creditnote.cancelled", { creditNoteId:cn.id, reason:"" });
+      render(); openDeal(d.id);
+      toast("Credit note cancelled. It stops crediting.");
+    } }, "Cancel credit note"));
+  if (cn && cn.status === "cancelled")
+    foot.appendChild(h("button", { class:"btn btn-sm quiet", type:"button", onclick:function (){
+      closeLayers("pop");
+      emit("creditnote.reinstated", { creditNoteId:cn.id });
+      render(); openDeal(d.id);
+      toast((cn.number || "The credit note") + " credits again.");
+    } }, "Reinstate"));
+  foot.appendChild(h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+    var payload = { dealId:d.id, number:num.value.trim(),
+      issuedOn: C.parseDateInput(iss.value, App.today) || App.today,
+      currency: cur.value, net: num2(net), vat: num2(vat),
+      againstInvoiceId: against.value || null,
+      reason: why.value.trim() };
+    closeLayers("pop");
+    if (cn){ payload.creditNoteId = cn.id; emit("creditnote.updated", payload); }
+    else { payload.creditNoteId = C.uid("cn"); emit("creditnote.issued", payload); }
+    render(); openDeal(d.id);
+    toast(cn ? "Credit note updated." : "Credit note raised.");
+  } }, cn ? "Save" : "Raise credit note"));
+  box.appendChild(foot);
+  openPopover(anchorEl, box, { width:380 });
+}
+
 function reinstateInvoicePopover(anchorEl, d, inv){
   var box = h("div");
   box.appendChild(h("h4", { text:"Reinstate " + (inv.number || "this invoice") }));
@@ -9563,7 +10439,13 @@ function viewCompanies(el){
         var actRow = h("div", { style:"display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px" },
           h("button", { class:"btn btn-sm", type:"button",
             onclick:(function (c){ return function (e){
-              editCompany(e.currentTarget, c); }; })(co) }, "Edit"));
+              editCompany(e.currentTarget, c); }; })(co) }, "Edit"),
+          /* Everything financial we hold for this customer, in one place and in
+             the shape you would send them. The documents hang off deals; the
+             customer does not experience it that way. */
+          h("button", { class:"btn btn-sm quiet", type:"button",
+            onclick:(function (id){ return function (){ openStatement(id); }; })(co.id) },
+            "Statement"));
         /* Only offered when there is somewhere to merge INTO. A lone company
            cannot be a duplicate of anything. */
         if (cos.length > 1)
@@ -9923,6 +10805,157 @@ function collapsibleSection(sec, key, shutSet, onToggle){
     if (onToggle) onToggle();
   });
   return sec;
+}
+
+/* ============================================================
+   DEBTORS \u2014 the aged book, cut by whoever has to chase it
+   ============================================================ */
+
+var AGE_COLS = [
+  { k:"d120",    label:"120+ days", hint:"more than 90 days past due" },
+  { k:"d90",     label:"90 days",   hint:"61\u201390 days past due" },
+  { k:"d60",     label:"60 days",   hint:"31\u201360 days past due" },
+  { k:"d30",     label:"30 days",   hint:"1\u201330 days past due" },
+  { k:"current", label:"Current",   hint:"not yet due" }
+];
+
+function agedRow(cells, cls){
+  var tr = h("tr", cls ? { class:cls } : null);
+  cells.forEach(function (c){ tr.appendChild(c); });
+  return tr;
+}
+
+/* Which way the book is cut. Remembered per browser: a salesperson works it one
+   way every morning and a director the other, and being asked again each time is
+   the kind of small friction that stops a list being worked at all. */
+function debtorGrouping(){
+  var v = lsGet(LS.debtorGroup, "person");
+  return v === "customer" ? "customer" : "person";
+}
+
+function viewDebtors(el){
+  var book = C.agedDebtors(App.st, App.config, App.today);
+  var by = debtorGrouping();
+
+  /* Oldest money first, left to right \u2014 the order the report from the
+     accounting system uses, and the order a call list is worked in. */
+  var head = h("div", { class:"note", style:"margin-bottom:14px" },
+    h("div", { text:"What every customer owes, in the bucket its DUE date puts it in, " +
+      "under the person who owns the deal. Click a customer for their statement." }),
+    h("div", { style:"margin-top:4px",
+      text:"Days is money-weighted: one large invoice ninety days late and one small " +
+           "one a day late do not average to 45 in any sense worth acting on." }));
+  /* "Who do I chase" and "what does this customer owe" are two questions over one
+     set of facts. Same rows either way, nested differently \u2014 nothing is
+     recomputed, so the two cuts can never disagree. */
+  var seg = h("div", { class:"seg", style:"margin-bottom:14px" });
+  [["person","By salesperson"],["customer","By customer"]].forEach(function (o){
+    var btn = h("button", { type:"button", onclick:function (){
+      lsSet(LS.debtorGroup, o[0]); render(); } }, o[1]);
+    btn.setAttribute("aria-pressed", by === o[0] ? "true" : "false");
+    seg.appendChild(btn);
+  });
+  el.appendChild(seg);
+  el.appendChild(head);
+
+  if (!book.rows.length){
+    el.appendChild(h("div", { class:"empty",
+      text:"Nobody owes anything. Every invoice raised has been settled." }));
+    return;
+  }
+
+  var money = function (v, cur){
+    return Math.abs(v) < 0.005 ? "\u2014" : C.fmtMoneyExact(v, cur); };
+
+  var mk = function (rows, cur){
+    var t = h("table", { class:"tbl" });
+    var hr = h("tr", null, h("th", { text: by === "customer" ? "Salesperson" : "Customer" }));
+    AGE_COLS.forEach(function (c){
+      hr.appendChild(h("th", { class:"num", title:c.hint, text:c.label })); });
+    hr.appendChild(h("th", { class:"num", text:"Total due" }));
+    hr.appendChild(h("th", { class:"num", title:"Money-weighted days past due", text:"Days" }));
+    t.appendChild(h("thead", null, hr));
+    var tb = h("tbody");
+    rows.forEach(function (r){
+      var cells = [h("td", null,
+        by === "customer"
+          ? h("span", { text: r.owner ? userName(r.owner) : "nobody" })
+          : h("a", { href:"#", onclick:(function (id){ return function (e){
+              e.preventDefault(); openStatement(id); }; })(r.companyId) }, r.company),
+        r.aged.undated
+          ? h("div", { class:"note", style:"color:var(--overdue);font-size:11.5px",
+              text:money(r.aged.undated, cur) + " on an invoice with no due date, so it " +
+                   "cannot be aged at all" })
+          : null)];
+      AGE_COLS.forEach(function (c){
+        cells.push(h("td", { class:"num",
+          style: (c.k === "d120" || c.k === "d90") && r.aged[c.k] > 0.005
+                 ? "color:var(--overdue);font-weight:600" : "",
+          text: money(r.aged[c.k], cur) })); });
+      cells.push(h("td", { class:"num", style:"font-weight:600", text:money(r.balance, cur) }));
+      cells.push(h("td", { class:"num",
+        style: r.daysOutstanding > 60 ? "color:var(--overdue);font-weight:600" : "",
+        text: r.daysOutstanding ? String(r.daysOutstanding) : "\u2014" }));
+      tb.appendChild(agedRow(cells));
+    });
+    t.appendChild(tb);
+    return t;
+  };
+
+  var grouped = C.groupDebtors(book.rows, by);
+  grouped.order.forEach(function (pk){
+    var pp = grouped.groups[pk];
+    var title = by === "customer"
+      ? (pp.label || "(unnamed customer)")
+      : (pp.owner ? userName(pp.owner) : "Nobody \u2014 these deals have no owner");
+    var sec = h("section", { class:"pane", style:"margin-bottom:16px" },
+      h("h3", null,
+        by === "customer"
+          ? h("a", { href:"#", onclick:(function (id){ return function (e){
+              e.preventDefault(); openStatement(id); }; })(pp.companyId) }, title)
+          : h("span", { text:title })));
+    pp.curOrder.forEach(function (cur){
+      var cc = pp.currencies[cur];
+      sec.appendChild(h("div", { class:"co-sum", style:"margin-top:10px" },
+        h("span", null, h("span", { class:"k", text:cur + " due " }),
+          h("b", { text:C.fmtMoneyExact(cc.total, cur) })),
+        h("span", null, h("span", { class:"k", text:"overdue " }),
+          h("b", { style: cc.overdue > 0.005 ? "color:var(--overdue)" : "",
+                   text:C.fmtMoneyExact(cc.overdue, cur) })),
+        h("span", null, h("span", { class:"k", text:"days " }),
+          h("b", { text:String(cc.daysOutstanding) })),
+        h("span", null,
+          h("span", { class:"k", text: by === "customer" ? "salespeople " : "customers " }),
+          h("b", { text:String(cc.rows.length) }))));
+      sec.appendChild(mk(cc.rows, cur));
+    });
+    el.appendChild(sec);
+  });
+
+  /* Totals per currency, and NO total across them. */
+  var tot = h("section", { class:"pane" }, h("h3", { text:"Everybody" }));
+  book.currencies.forEach(function (cur){
+    var g = book.grand[cur];
+    var t = h("table", { class:"tbl", style:"margin-top:8px" });
+    var hr = h("tr", null, h("th", { text:cur }));
+    AGE_COLS.forEach(function (c){
+      hr.appendChild(h("th", { class:"num", title:c.hint, text:c.label })); });
+    hr.appendChild(h("th", { class:"num", text:"Total due" }));
+    hr.appendChild(h("th", { class:"num", text:"Days" }));
+    t.appendChild(h("thead", null, hr));
+    var cells = [h("td", { text:"All customers" })];
+    AGE_COLS.forEach(function (c){
+      cells.push(h("td", { class:"num", text:money(g.aged[c.k], cur) })); });
+    cells.push(h("td", { class:"num", style:"font-weight:600", text:money(g.total, cur) }));
+    cells.push(h("td", { class:"num", text:String(g.daysOutstanding) }));
+    t.appendChild(h("tbody", null, agedRow(cells)));
+    tot.appendChild(t);
+  });
+  tot.appendChild(h("div", { class:"note", style:"margin-top:8px",
+    text:"Each currency totals on its own line and there is no figure across them. " +
+         "Adding dollars to rands produces a number that looks authoritative and " +
+         "means nothing \u2014 the same reason the forecast never converts." }));
+  el.appendChild(tot);
 }
 
 function viewSettings(el){
@@ -10802,7 +11835,7 @@ function viewSettings(el){
   el.appendChild(fold(h("section", { class:"pane", style:"margin-top:16px" },
     h("h3", { text:"Keyboard" }),
     h("div", { class:"note", style:"line-height:1.9" },
-      h("div", { text:"l  log an interaction — from anywhere   ·   n  new deal   ·   /  search   ·   g then t p c w s  navigate" }),
+      h("div", { text:"l  log an interaction — from anywhere   ·   n  new deal   ·   /  search   ·   g then t p c u w m d s  navigate" }),
       h("div", { text:"On a Today row:  d  done   ·   1  tomorrow   ·   3  +3 days   ·   7  +7 days   ·   4  +14 days   ·   e  defer with a typed date" }),
       h("div", { text:"j / k or arrow keys move between rows. Esc closes whatever is open." }),
       h("div", { text:"Quick-defer keys skip weekends. A date you type lands exactly as typed." }))),
@@ -10952,7 +11985,8 @@ document.addEventListener("keydown", function (e){
 
   if (gPending){
     gPending = false; clearTimeout(gTimer);
-    var map = { t:"today", p:"pipeline", c:"companies", w:"week", s:"settings", u:"people" };
+    var map = { t:"today", p:"pipeline", c:"companies", w:"week", s:"settings",
+                u:"people", m:"money", d:"debtors" };
     if (map[e.key]){ e.preventDefault(); go(map[e.key]); return; }
   }
   switch (e.key){

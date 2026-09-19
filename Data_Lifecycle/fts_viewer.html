@@ -219,6 +219,22 @@
   .rule .rt{font-size:12px;color:var(--ink-faint);margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft)}
   .rule .rt b{color:var(--ink-soft);font-weight:600}
 
+  dialog.gh{border:1px solid var(--line);border-radius:16px;padding:0;background:var(--panel);color:var(--ink);width:min(440px,calc(100vw - 32px));box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  dialog.gh::backdrop{background:rgba(10,14,22,.45)}
+  .ghbody{padding:20px 22px 18px}
+  .ghbody h3{font-size:17px;font-weight:700}
+  .ghbody .intro{font-size:13px;color:var(--ink-soft);margin:8px 0 14px}
+  .ghbody .intro b{color:var(--ink)}
+  .ghbody label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:12px 0 5px}
+  .ghbody input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:13.5px;color:var(--ink);font-family:var(--sans)}
+  .ghbody input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .ghbody .warn{margin-top:14px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px;color:var(--ink-soft)}
+  .ghbody .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+  .btn.danger{color:var(--warn);border-color:var(--warn);background:transparent}
+  .btn.dark{background:var(--ink);border-color:var(--ink);color:var(--ground)}
+  .ghstatus{font-size:12.5px;color:var(--ink-faint);margin-top:8px}
+  .ghstatus.err{color:var(--warn)}
+  .ghstatus.ok{color:var(--accent)}
   footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
   footer .mono{font-size:11px}
   .sr{position:absolute;left:-9999px}
@@ -235,9 +251,9 @@
       <div class="badges" id="metaBadges"></div>
     </div>
     <div class="stamp">
-      <div>Viewer v0.2</div>
-      <div>Built 19 Sep 2026, 16:50 SAST</div>
-      <div>Holds no data. Loads an .fts.json model.</div>
+      <div>Viewer v0.3</div>
+      <div>Built 19 Sep 2026, 17:15 SAST</div>
+      <div>Holds no data. Reads .fts.json models from GitHub or disk.</div>
     </div>
   </header>
 
@@ -245,20 +261,26 @@
     <span class="lab">Loaded models</span>
     <div class="models" id="models"></div>
     <span class="spacer"></span>
+    <button class="btn primary" id="btnGh2">Load from GitHub</button>
+    <button class="btn" id="btnGhSet2">GitHub settings</button>
     <button class="btn" id="btnDir2">Load models folder</button>
     <button class="btn" id="btnLoad2">Add model files</button>
     <button class="btn" id="btnClear">Clear all</button>
   </div>
   <div class="modelnote" id="modelnote" hidden></div>
+  <div class="ghstatus" id="ghstatus" hidden></div>
 
   <div class="drop" id="drop">
     <h2>Load the Data State Transition models</h2>
-    <p>This viewer ships without any model in it. Point it at the <span class="mono">models</span> folder of your private repo and every <span class="mono">.fts.json</span> in it loads: the Global Data Management FTS and each Knowledge Area FTS. You can also drop files here. Nothing is uploaded anywhere; files are read in your browser only, and the loaded set is remembered on this computer.</p>
+    <p>This viewer ships without any model in it. Read the <span class="mono">models</span> folder straight from your private GitHub repository, or point it at the folder on this computer. Every <span class="mono">.fts.json</span> found loads: the Global Data Management FTS and each Knowledge Area FTS. Nothing is uploaded anywhere; the loaded set is remembered in this browser.</p>
     <div class="hint">Expected shape per model: meta, rules, globalStates, subStates, activities, transitions, guards, entry and exit conditions, invariants, KA interactions, governance chain, relationships.</div>
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-      <button class="btn primary" id="btnDir">Load the models folder</button>
+      <button class="btn primary" id="btnGh">Load from GitHub</button>
+      <button class="btn" id="btnGhSet">GitHub settings</button>
+      <button class="btn" id="btnDir">Load the models folder</button>
       <button class="btn" id="btnLoad">Choose model files</button>
     </div>
+    <div class="ghstatus" id="ghstatus0" hidden></div>
     <input type="file" id="file" accept=".json,application/json" multiple>
     <input type="file" id="dir" webkitdirectory directory multiple>
   </div>
@@ -339,8 +361,26 @@
     </section>
   </div>
 
+  <dialog class="gh" id="ghdlg">
+    <form method="dialog" class="ghbody" id="ghform">
+      <h3>Read the models from GitHub</h3>
+      <p class="intro">Point this at the repository holding your <span class="mono">models</span> folder. A private repository needs a token: use a <b>fine-grained</b> token limited to this one repository with <b>Contents: read-only</b>.</p>
+      <label for="ghOwner">Owner</label><input id="ghOwner" autocomplete="off" spellcheck="false">
+      <label for="ghRepo">Repository</label><input id="ghRepo" autocomplete="off" spellcheck="false">
+      <label for="ghBranch">Branch</label><input id="ghBranch" autocomplete="off" spellcheck="false">
+      <label for="ghPath">Folder inside the repo</label><input id="ghPath" autocomplete="off" spellcheck="false">
+      <label for="ghToken" id="ghTokenLab">Token</label><input id="ghToken" type="password" autocomplete="off" placeholder="github_pat_...">
+      <div class="warn">The token stays in this browser and is sent only to api.github.com. Anyone with access to this machine can read it: treat it as a password, and revoke it in GitHub when you are done.</div>
+      <div class="row">
+        <button type="button" class="btn" id="ghCancel">Cancel</button>
+        <button type="button" class="btn danger" id="ghForget">Forget token</button>
+        <button type="button" class="btn dark" id="ghSave">Save and load</button>
+      </div>
+    </form>
+  </dialog>
+
   <footer>
-    <span>Data State Transition Viewer · v0.2 · 19 Sep 2026, 16:50 SAST</span>
+    <span>Data State Transition Viewer · v0.3 · 19 Sep 2026, 17:15 SAST</span>
     <span class="mono" id="footStatus">No model loaded</span>
   </footer>
 </div>
@@ -408,6 +448,70 @@
   function loadCache(){ try{ const raw=localStorage.getItem(CACHE_KEY); if(!raw) return; const arr=JSON.parse(raw); if(Array.isArray(arr)){ arr.forEach(m=>{ if(m&&m.globalStates) MODELS.push(normalise(m)); }); if(MODELS.length){ sortModels(); active=0; M=MODELS[0]; } } }catch(e){} }
   function setActive(i){ if(i<0||i>=MODELS.length) return; active=i; M=MODELS[i]; selected=null; render(); }
   function removeModel(i){ MODELS.splice(i,1); if(!MODELS.length){active=-1;M=null;} else { if(active>=MODELS.length) active=MODELS.length-1; M=MODELS[active]; } selected=null; saveCache(); render(); }
+  // ---------- GitHub ----------
+  const GH_KEY="fts.viewer.github.v1";
+  const GH_DEFAULT={owner:"modelwaresystems-dama",repo:"modelware_app_storage",branch:"main",path:"Data Lifecycle/models",token:""};
+  function ghGet(){ try{ const c=JSON.parse(localStorage.getItem(GH_KEY)||"null"); return Object.assign({},GH_DEFAULT,c||{}); }catch(e){ return Object.assign({},GH_DEFAULT); } }
+  function ghSet(c){ try{ localStorage.setItem(GH_KEY, JSON.stringify(c)); }catch(e){} }
+  function ghStatus(msg,cls){ ["#ghstatus","#ghstatus0"].forEach(id=>{ const el=$(id); if(!el) return; el.hidden=!msg; el.className="ghstatus"+(cls?" "+cls:""); el.textContent=msg||""; }); }
+  function ghExplain(st){
+    if(st===401) return "GitHub rejected the token (401). Check it is a fine-grained token for this repository with Contents: read-only, and that it has not expired.";
+    if(st===403) return "GitHub refused the request (403). The token may not cover this repository, or the API rate limit is exhausted.";
+    if(st===404) return "GitHub could not find that owner, repository, branch or folder (404). For a private repository a 404 also means the token cannot see it.";
+    return "GitHub returned "+st+".";
+  }
+  const dlg=$("#ghdlg");
+  function ghOpen(){
+    const c=ghGet();
+    $("#ghOwner").value=c.owner||""; $("#ghRepo").value=c.repo||""; $("#ghBranch").value=c.branch||"main"; $("#ghPath").value=c.path||"";
+    $("#ghToken").value=""; $("#ghToken").placeholder=c.token?"saved, leave blank to keep":"github_pat_...";
+    $("#ghTokenLab").textContent=c.token?"Token (saved)":"Token";
+    $("#ghForget").hidden=!c.token;
+    dlg.showModal();
+  }
+  $("#btnGhSet").onclick=ghOpen; $("#btnGhSet2").onclick=ghOpen;
+  $("#ghCancel").onclick=()=>dlg.close();
+  $("#ghForget").onclick=()=>{ const c=ghGet(); c.token=""; ghSet(c); $("#ghToken").value=""; $("#ghToken").placeholder="github_pat_..."; $("#ghTokenLab").textContent="Token"; $("#ghForget").hidden=true; ghStatus("Token forgotten. Revoke it in GitHub as well.",""); };
+  $("#ghSave").onclick=()=>{
+    const c=ghGet();
+    c.owner=$("#ghOwner").value.trim(); c.repo=$("#ghRepo").value.trim(); c.branch=$("#ghBranch").value.trim()||"main"; c.path=$("#ghPath").value.trim().replace(/^\/+|\/+$/g,"");
+    const t=$("#ghToken").value.trim(); if(t) c.token=t;
+    ghSet(c); dlg.close(); ghLoad();
+  };
+  $("#btnGh").onclick=()=>ghLoad(); $("#btnGh2").onclick=()=>ghLoad();
+  async function ghLoad(){
+    const c=ghGet();
+    if(!c.owner||!c.repo||!c.path){ ghOpen(); return; }
+    ghStatus("Reading "+c.owner+"/"+c.repo+" ("+c.branch+") "+c.path+" ...","");
+    const headers={"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};
+    if(c.token) headers["Authorization"]="Bearer "+c.token;
+    const url="https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+encodeURIComponent(c.repo)+"/contents/"+c.path.split("/").map(encodeURIComponent).join("/")+"?ref="+encodeURIComponent(c.branch||"main");
+    try{
+      const r=await fetch(url,{headers});
+      if(!r.ok) throw new Error(ghExplain(r.status));
+      const list=await r.json();
+      if(!Array.isArray(list)) throw new Error("That path is a file, not a folder.");
+      const files=list.filter(f=>f.type==="file"&&/\.json$/i.test(f.name));
+      if(!files.length) throw new Error("No .json files in "+c.path+" on "+c.branch+".");
+      let loaded=0, skipped=[];
+      for(const f of files){
+        try{
+          const rr=await fetch(f.url,{headers:Object.assign({},headers,{"Accept":"application/vnd.github.raw+json"})});
+          if(!rr.ok) throw new Error(ghExplain(rr.status));
+          const m=JSON.parse(await rr.text());
+          if(!m.globalStates||!m.transitions) throw new Error("not an FTS model");
+          addModel(normalise(m), f.name); loaded++;
+        }catch(err){ skipped.push(f.name+" ("+err.message+")"); }
+      }
+      if(active<0 && MODELS.length) active=0;
+      sortModels(); M=MODELS[active]||null; selected=null; saveCache(); render();
+      const when=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+      ghStatus("Loaded "+loaded+" model"+(loaded===1?"":"s")+" from GitHub "+c.owner+"/"+c.repo+" at "+when+(skipped.length?". Skipped: "+skipped.join(", "):"."), skipped.length?"err":"ok");
+    }catch(err){
+      ghStatus("Could not load from GitHub. "+err.message, "err"); render();
+    }
+  }
+
   // guards contributed to a transition by OTHER loaded models (federation by stable ID)
   function federatedGuards(trId){
     const out=[];
@@ -723,6 +827,7 @@
 
   loadCache();
   render();
+  { const c=ghGet(); if(c.token && c.owner && c.repo && c.path) ghLoad(); }
 })();
 </script>
 </body>

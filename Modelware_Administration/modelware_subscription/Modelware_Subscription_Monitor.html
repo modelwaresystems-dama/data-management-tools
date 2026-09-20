@@ -1,0 +1,5399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modelware Subscription Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f2efe8; --paper-2:#e9e5db; --card:#fbfaf6; --ink:#23282d; --ink-soft:#5a616a;
+  --line:#d9d3c6; --steel:#2f5d7c; --steel-2:#3f6b8e; --steel-soft:#e5edf3;
+  --good:#3d7a57; --good-soft:#e2f0e8; --warn:#a5722a; --warn-soft:#f6ecd9;
+  --cancel:#9a3b3b; --cancel-soft:#f4e2e0; --review:#7a5aa5; --review-soft:#ece5f5;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  --sans:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --shadow:0 1px 2px rgba(35,40,45,.06),0 2px 8px rgba(35,40,45,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#191d21; --paper-2:#20262b; --card:#232a30; --ink:#e7e9ec; --ink-soft:#a2acb5;
+    --line:#333c44; --steel:#8fbad8; --steel-2:#7aa9cb; --steel-soft:#25333d;
+    --good:#7bc39a; --good-soft:#20342a; --warn:#d8a860; --warn-soft:#33291a;
+    --cancel:#e08c8c; --cancel-soft:#39221f; --review:#bda2e0; --review-soft:#2a2333;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 2px 8px rgba(0,0,0,.25);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-height:1.45;
+  -webkit-font-smoothing:antialiased;font-size:15px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px 96px}
+header.top{padding:26px 0 12px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.title{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-size:23px;font-weight:700;margin:0;letter-spacing:-.2px}
+.badge{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--steel);
+  background:var(--steel-soft);border:1px solid var(--line);padding:2px 8px;border-radius:20px}
+.sub{color:var(--ink-soft);font-size:13px;margin-top:5px}
+.sub code{font-family:var(--mono);font-size:12px}
+.hdr-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* sync chip */
+.sync{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;
+  border:1px solid var(--line);background:var(--card);border-radius:20px;padding:5px 12px;cursor:pointer}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ink-soft);flex:0 0 8px}
+.sync.synced .dot{background:var(--good)} .sync.synced{color:var(--good)}
+.sync.local .dot{background:var(--warn)} .sync.local{color:var(--warn)}
+.sync.error .dot{background:var(--cancel)} .sync.error{color:var(--cancel)}
+.sync.busy .dot{background:var(--steel);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.35}}
+
+/* controls */
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:18px 0 4px}
+.seg{display:inline-flex;background:var(--paper-2);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg button{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink-soft);
+  background:none;border:0;padding:6px 14px;border-radius:7px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--steel);box-shadow:var(--shadow)}
+.grow{flex:1}
+select,input[type=search],input[type=text],input[type=number],input[type=date],textarea{
+  font-family:var(--sans);font-size:13px;color:var(--ink);
+  background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+textarea{resize:vertical;min-height:56px;width:100%}
+.btn{font-family:var(--sans);font-size:13px;font-weight:500;color:#fff;background:var(--steel);
+  border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.ghost{background:var(--card);color:var(--steel);border:1px solid var(--line)}
+.btn.danger{background:var(--card);color:var(--cancel);border:1px solid var(--line)}
+
+/* tabs */
+nav.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:22px 0 20px;flex-wrap:wrap}
+nav.tabs button{font-family:var(--sans);font-size:14px;font-weight:500;color:var(--ink-soft);
+  background:none;border:0;border-bottom:2px solid transparent;padding:10px 14px;cursor:pointer;margin-bottom:-1px}
+nav.tabs button.on{color:var(--steel);border-bottom-color:var(--steel)}
+nav.tabs .pill{display:inline-block;min-width:18px;font-family:var(--mono);font-size:11px;
+  background:var(--review-soft);color:var(--review);border-radius:10px;padding:0 6px;margin-left:6px}
+
+/* kpi */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:8px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+.kpi .lbl{font-size:11.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.kpi .val{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:6px;letter-spacing:-.5px}
+.kpi .note{font-size:11.5px;color:var(--ink-soft);margin-top:3px}
+.kpi.accent .val{color:var(--steel)}
+.kpi.cancel .val{color:var(--cancel)}
+.kpi.good .val{color:var(--good)}
+
+/* table */
+.tablecard{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);margin-top:16px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink-soft);
+  font-weight:600;padding:11px 12px;border-bottom:1px solid var(--line);background:var(--paper-2);cursor:pointer;white-space:nowrap}
+thead th.num,td.num{text-align:right;font-family:var(--mono)}
+thead th.act,td.act{text-align:right;cursor:default}
+tbody td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tbody tr.row:hover{background:var(--paper-2)}
+tbody tr:last-child td{border-bottom:0}
+.vname{font-weight:600;cursor:pointer}
+.vname:hover{color:var(--steel)}
+.vcat{font-size:11.5px;color:var(--ink-soft)}
+.chip{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:500;
+  padding:1px 7px;border-radius:12px;border:1px solid transparent;white-space:nowrap}
+.chip.ent{background:var(--steel-soft);color:var(--steel);border-color:var(--line)}
+.chip.moved{background:var(--warn-soft);color:var(--warn)}
+.chip.active{background:var(--good-soft);color:var(--good)}
+.chip.review{background:var(--review-soft);color:var(--review)}
+.chip.cancel{background:var(--cancel-soft);color:var(--cancel)}
+.chip.vat{background:var(--paper-2);color:var(--ink-soft)}
+.chip.edited{background:var(--steel-soft);color:var(--steel-2)}
+.call{font-weight:600;font-size:12.5px}
+.call.Keep{color:var(--good)} .call.Cancel{color:var(--cancel)} .call.Review{color:var(--review)}
+.iconbtn{border:1px solid var(--line);background:var(--card);color:var(--steel);border-radius:7px;
+  padding:5px 9px;font-size:12px;cursor:pointer;font-weight:500}
+.iconbtn:hover{background:var(--steel-soft)}
+.detail td{background:var(--paper-2);padding:0}
+.detail-inner{padding:14px 16px}
+.hist{width:100%;font-size:12.5px;margin-top:6px}
+.hist th{font-size:10px;padding:5px 8px}
+.hist td{padding:5px 8px;font-family:var(--mono);font-size:12px}
+.hist tr.rf td{color:var(--good)}
+.muted{color:var(--ink-soft)}
+.right{text-align:right}
+
+/* review inbox */
+.rev{display:grid;gap:12px}
+.revcard{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--steel);
+  border-radius:10px;padding:14px 16px;box-shadow:var(--shadow)}
+.revcard.warn{border-left-color:var(--warn)} .revcard.info{border-left-color:var(--steel-2)}
+.revcard h4{margin:0 0 4px;font-size:15px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kind{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+  padding:2px 8px;border-radius:10px;background:var(--paper-2);color:var(--ink-soft)}
+.revcard p{margin:6px 0;font-size:13.5px}
+.evi{font-family:var(--mono);font-size:12px;color:var(--ink-soft);background:var(--paper-2);
+  border-radius:8px;padding:8px 10px;margin-top:8px}
+.actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.actions button{font-family:var(--sans);font-size:12.5px;font-weight:500;border-radius:7px;
+  padding:6px 12px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+.actions button.on{background:var(--good-soft);color:var(--good);border-color:var(--good)}
+.decided{font-size:12px;color:var(--good);font-weight:600;margin-top:8px}
+
+/* cards view */
+.cardgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.cardbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow)}
+.cardbox h3{margin:0 0 2px;font-size:15px}
+.cardbox .ctot{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--steel);margin:6px 0 2px}
+.cardbox ul{list-style:none;margin:10px 0 0;padding:0;font-size:12.5px}
+.cardbox li{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--line)}
+.cardbox li:last-child{border-bottom:0}
+.cardbox li .a{font-family:var(--mono);color:var(--ink-soft)}
+
+/* prose / import */
+.prose{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;box-shadow:var(--shadow);max-width:840px}
+.prose h3{margin-top:22px;font-size:15px}
+.prose h3:first-child{margin-top:0}
+.prose p{font-size:13.5px}
+.recon{width:100%;font-size:13px;margin-top:10px}
+.recon td,.recon th{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left}
+.recon td.num,.recon th.num{text-align:right;font-family:var(--mono)}
+.ok{color:var(--good);font-weight:600}
+.step{display:flex;gap:12px;margin:14px 0}
+.step .n{flex:0 0 26px;height:26px;border-radius:50%;background:var(--steel);color:#fff;
+  font-family:var(--mono);font-size:13px;display:flex;align-items:center;justify-content:center;font-weight:600}
+.step .t{font-size:13.5px}
+
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(20,24,28,.5);display:flex;align-items:flex-start;
+  justify-content:center;padding:40px 16px;overflow:auto;z-index:50}
+.modal{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.28);
+  width:100%;max-width:640px;padding:22px 24px}
+.modal h2{margin:0 0 4px;font-size:18px}
+.modal .mdesc{color:var(--ink-soft);font-size:13px;margin-bottom:16px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field.full{grid-column:1/-1}
+.field label{font-size:11.5px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.3px}
+.field input,.field select,.field textarea{width:100%}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;align-items:center}
+.modal-foot .grow{flex:1}
+.note-box{background:var(--paper-2);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--ink-soft);margin-top:14px}
+
+/* save bar */
+.savebar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);
+  box-shadow:0 -2px 12px rgba(0,0,0,.08);padding:12px 16px;display:none;z-index:40}
+.savebar.show{display:block}
+.savebar .inner{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.savebar .msg{font-size:13.5px;font-weight:500}
+
+/* toast */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);
+  padding:10px 18px;border-radius:10px;font-size:13px;box-shadow:var(--shadow);z-index:60;opacity:0;
+  transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+.toast.err{background:var(--cancel);color:#fff}
+footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="title">
+        <h1>Modelware Subscription Monitor</h1>
+        <span class="badge">Increment 2 · Edit</span>
+      </div>
+      <div class="sub" id="subline"></div>
+    </div>
+    <div class="hdr-actions">
+      <div class="sync local" id="syncchip" title="Data source"><span class="dot"></span><span id="synctxt">Local file</span></div>
+      <button class="btn ghost" id="addBtn">+ Add</button>
+      <button class="btn ghost" id="cfgBtn">⚙ GitHub</button>
+    </div>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="controls">
+    <div class="seg" id="entseg">
+      <button data-ent="ALL" class="on">All entities</button>
+      <button data-ent="MWL">MWL</button>
+      <button data-ent="MWI">MWI</button>
+    </div>
+    <div class="grow"></div>
+    <input type="search" id="q" placeholder="Search vendor…">
+    <select id="fstatus">
+      <option value="">All statuses</option>
+      <option value="active">Active</option>
+      <option value="review">Review</option>
+      <option value="marked-to-cancel">Marked to cancel</option>
+      <option value="cancelling">Cancelling</option>
+      <option value="cancelled">Cancelled</option>
+      <option value="moved">Moved</option>
+    </select>
+    <select id="fcall">
+      <option value="">All calls</option>
+      <option value="Keep">Keep</option>
+      <option value="Cancel">Cancel</option>
+      <option value="Review">Review</option>
+    </select>
+  </div>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="inv" class="on">Inventory</button>
+    <button data-tab="rev">Review inbox <span class="pill" id="revcount">0</span></button>
+    <button data-tab="cards">Cards</button>
+    <button data-tab="import">Import &amp; reconciliation</button>
+  </nav>
+
+  <section id="tab-inv"></section>
+  <section id="tab-rev" class="hide"></section>
+  <section id="tab-cards" class="hide"></section>
+  <section id="tab-import" class="hide"></section>
+
+  <footer>
+    Estimates from actual charges · uncertain items sit in the review inbox · edits commit to the private repo (last-writer-wins).
+  </footer>
+</div>
+
+<div class="savebar" id="savebar"><div class="inner">
+  <span class="msg" id="savemsg"></span>
+  <div class="grow"></div>
+  <button class="btn ghost" id="discardBtn">Discard</button>
+  <button class="btn" id="saveBtn">Save to GitHub</button>
+</div></div>
+
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== BUNDLED DATA (fallback + seed for the private repo) ===== */
+const BUNDLED = {
+ "generated": "2026-09-20",
+ "source_files": [
+  "AccountTransactionsReport MWL.csv (Apr-25 \u2192 Mar-26)",
+  "AccountTransactionsReport MWI.csv (Apr-26 \u2192 Aug-26)"
+ ],
+ "entities": [
+  {
+   "code": "MWL",
+   "ledger": "Subscriptions",
+   "cards": [
+    "Veronica CC",
+    "Howard CC",
+    "Current Account"
+   ]
+  },
+  {
+   "code": "MWI",
+   "ledger": "Subscription fees",
+   "cards": [
+    "Howard Business CC",
+    "Veronica Business CC"
+   ]
+  }
+ ],
+ "subscriptions": [
+  {
+   "key": "mighty_networks",
+   "name": "Mighty Networks",
+   "category": "Community platform",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "annual",
+   "vat": "none",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 4046.05,
+   "last_actual": 35248.93,
+   "buffer_pct": 10,
+   "fwd_annual": 35248.93,
+   "fund_annual": 38773.82,
+   "first_seen": "2025-04-25",
+   "last_seen": "2025-07-28",
+   "n_charges": 5,
+   "n_refunds": 1,
+   "net_refunds": 3160.83,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-04-25",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MIGHTY NETWORKS MIGHTYNETWORKCA None",
+     "gross": 4212.81,
+     "refund": false,
+     "key": "mighty_networks"
+    },
+    {
+     "date": "2025-05-23",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MIGHTY NETWORKS MIGHTYNETWORKCA None",
+     "gross": 4037.59,
+     "refund": false,
+     "key": "mighty_networks"
+    },
+    {
+     "date": "2025-06-23",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MIGHTY NETWORKS MIGHTYNETWORKCA None",
+     "gross": 4046.05,
+     "refund": false,
+     "key": "mighty_networks"
+    },
+    {
+     "date": "2025-07-25",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MIGHTY NETWORKS MIGHTYNETWORKCA None",
+     "gross": 3967.34,
+     "refund": false,
+     "key": "mighty_networks"
+    },
+    {
+     "date": "2025-07-28",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MIGHTY NETWORKS MIGHTYNETWORKCA None",
+     "gross": 35248.93,
+     "refund": false,
+     "key": "mighty_networks"
+    },
+    {
+     "date": "2025-07-28",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MIGHTY NETWORKS PALO ALTO CA None",
+     "gross": 3160.83,
+     "refund": true,
+     "key": "mighty_networks"
+    }
+   ]
+  },
+  {
+   "key": "moodle",
+   "name": "Moodle",
+   "category": "LMS",
+   "entity": "MWI",
+   "card": "Veronica Business CC",
+   "holder": "Veronica",
+   "cadence": "annual",
+   "vat": "confirm",
+   "status": "active",
+   "call": "Keep",
+   "typical": 20492.06,
+   "last_actual": 20492.06,
+   "buffer_pct": 10,
+   "fwd_annual": 20492.06,
+   "fund_annual": 22541.27,
+   "first_seen": "2026-06-03",
+   "last_seen": "2026-06-03",
+   "n_charges": 1,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica Business CC"
+   ],
+   "entities_touched": [
+    "MWI"
+   ],
+   "charges": [
+    {
+     "date": "2026-06-03",
+     "entity": "MWI",
+     "card": "Veronica Business CC",
+     "holder": "Veronica",
+     "desc": "Moodle 61894674167 None",
+     "gross": 20492.06,
+     "refund": false,
+     "key": "moodle"
+    }
+   ]
+  },
+  {
+   "key": "msft_business",
+   "name": "Microsoft 365 (R1,600 line)",
+   "category": "Productivity",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "SA-VAT-15",
+   "status": "active",
+   "call": "Keep",
+   "typical": 1600.2,
+   "last_actual": 1600.2,
+   "buffer_pct": 0,
+   "fwd_annual": 19202.4,
+   "fund_annual": 19202.4,
+   "first_seen": "2025-12-02",
+   "last_seen": "2026-03-03",
+   "n_charges": 4,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-12-02",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0100Y4HHF Dublin None",
+     "gross": 1600.2,
+     "refund": false,
+     "key": "msft_business"
+    },
+    {
+     "date": "2026-01-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0100YDMAZ Dublin None",
+     "gross": 1600.2,
+     "refund": false,
+     "key": "msft_business"
+    },
+    {
+     "date": "2026-02-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0100YMU5J Dublin None",
+     "gross": 1600.2,
+     "refund": false,
+     "key": "msft_business"
+    },
+    {
+     "date": "2026-03-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0100YW8VQ Dublin None",
+     "gross": 1600.2,
+     "refund": false,
+     "key": "msft_business"
+    }
+   ]
+  },
+  {
+   "key": "phantombuster",
+   "name": "Phantombuster",
+   "category": "Automation",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "none",
+   "status": "review",
+   "call": "Cancel",
+   "typical": 1226.63,
+   "last_actual": 1221.42,
+   "buffer_pct": 10,
+   "fwd_annual": 14657.04,
+   "fund_annual": 16122.74,
+   "first_seen": "2025-04-21",
+   "last_seen": "2025-11-21",
+   "n_charges": 8,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-04-21",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Phantombuster Paris None",
+     "gross": 1156.92,
+     "refund": false,
+     "key": "phantombuster"
+    },
+    {
+     "date": "2025-05-21",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Phantombuster Paris None",
+     "gross": 1109.07,
+     "refund": false,
+     "key": "phantombuster"
+    },
+    {
+     "date": "2025-06-21",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Phantombuster Paris None",
+     "gross": 1108.51,
+     "refund": false,
+     "key": "phantombuster"
+    },
+    {
+     "date": "2025-07-21",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Phantombuster Paris None",
+     "gross": 1264.7,
+     "refund": false,
+     "key": "phantombuster"
+    },
+    {
+     "date": "2025-08-21",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Phantombuster Paris None",
+     "gross": 1254.84,
+     "refund": false,
+     "key": "phantombuster"
+    },
+    {
+     "date": "2025-09-21",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Phantombuster Paris None",
+     "gross": 1232.96,
+     "refund": false,
+     "key": "phantombuster"
+    },
+    {
+     "date": "2025-10-21",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Phantombuster Paris None",
+     "gross": 1231.85,
+     "refund": false,
+     "key": "phantombuster"
+    },
+    {
+     "date": "2025-11-21",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Phantombuster Paris None",
+     "gross": 1221.42,
+     "refund": false,
+     "key": "phantombuster"
+    }
+   ]
+  },
+  {
+   "key": "linkedin",
+   "name": "LinkedIn Sales Navigator",
+   "category": "Sales/prospecting",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "annual",
+   "vat": "confirm",
+   "status": "active",
+   "call": "Keep",
+   "typical": 1249.99,
+   "last_actual": 11739.03,
+   "buffer_pct": 10,
+   "fwd_annual": 11739.03,
+   "fund_annual": 12912.93,
+   "first_seen": "2025-04-18",
+   "last_seen": "2026-01-19",
+   "n_charges": 11,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": true,
+   "cards_touched": [
+    "Howard CC",
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-04-18",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "LinkedIn SN P334841653 LINKEDIN.COM None",
+     "gross": 1249.99,
+     "refund": false,
+     "key": "linkedin"
+    },
+    {
+     "date": "2025-05-18",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "LinkedIn SN P382366423 LINKEDIN.COM None",
+     "gross": 1249.99,
+     "refund": false,
+     "key": "linkedin"
+    },
+    {
+     "date": "2025-06-18",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "LinkedIn SN P426727443 LINKEDIN.COM None",
+     "gross": 1249.99,
+     "refund": false,
+     "key": "linkedin"
+    },
+    {
+     "date": "2025-07-18",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "LinkedIn SN P469227473 LINKEDIN.COM None",
+     "gross": 1249.99,
+     "refund": false,
+     "key": "linkedin"
+    },
+    {
+     "date": "2025-08-18",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "LinkedIn SN P510323383 LINKEDIN.COM None",
+     "gross": 1249.99,
+     "refund": false,
+     "key": "linkedin"
+    },
+    {
+     "date": "2025-09-18",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "LinkedIn SN P556735213 LINKEDIN.COM None",
+     "gross": 1249.99,
+     "refund": false,
+     "key": "linkedin"
+    },
+    {
+     "date": "2025-10-18",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "LinkedIn SN P602339383 LINKEDIN.COM None",
+     "gross": 1249.99,
+     "refund": false,
+     "key": "linkedin"
+    },
+    {
+     "date": "2025-11-18",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "LinkedIn SN P648259893 LINKEDIN.COM None",
+     "gross": 1249.99,
+     "refund": false,
+     "key": "linkedin"
+    },
+    {
+     "date": "2025-11-20",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "INT PYMT FEE- 1437.49 LINKEDIN SN P6482 None",
+     "gross": 32.34,
+     "refund": false,
+     "key": "linkedin"
+    },
+    {
+     "date": "2025-12-18",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "LinkedIn SN P998077494 LINKEDIN.COM None",
+     "gross": 1249.99,
+     "refund": false,
+     "key": "linkedin"
+    },
+    {
+     "date": "2026-01-19",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "LinkedIn SN P726692213 LINKEDIN.COM None",
+     "gross": 11739.03,
+     "refund": false,
+     "key": "linkedin"
+    }
+   ]
+  },
+  {
+   "key": "genspark",
+   "name": "Genspark AI",
+   "category": "AI tools",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "none",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 411.97,
+   "last_actual": 429.81,
+   "buffer_pct": 10,
+   "fwd_annual": 5157.72,
+   "fund_annual": 5673.49,
+   "first_seen": "2026-01-28",
+   "last_seen": "2026-03-08",
+   "n_charges": 3,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2026-01-28",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "GENSPARK.AI SINGAPORE None",
+     "gross": 411.97,
+     "refund": false,
+     "key": "genspark"
+    },
+    {
+     "date": "2026-02-26",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "GENSPARK.AI SINGAPORE None",
+     "gross": 327.97,
+     "refund": false,
+     "key": "genspark"
+    },
+    {
+     "date": "2026-03-08",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "GENSPARK.AI SINGAPORE None",
+     "gross": 429.81,
+     "refund": false,
+     "key": "genspark"
+    }
+   ]
+  },
+  {
+   "key": "plus_docs",
+   "name": "Plus Docs",
+   "category": "Docs/AI",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "cadence": "monthly",
+   "vat": "none",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 428.18,
+   "last_actual": 415.72,
+   "buffer_pct": 10,
+   "fwd_annual": 4988.64,
+   "fund_annual": 5487.5,
+   "first_seen": "2026-06-28",
+   "last_seen": "2026-08-28",
+   "n_charges": 3,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Howard Business CC"
+   ],
+   "entities_touched": [
+    "MWI"
+   ],
+   "charges": [
+    {
+     "date": "2026-06-28",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "PLUS DOCS* TRIAL OVER PLUSDOCS.COM DE None",
+     "gross": 428.18,
+     "refund": false,
+     "key": "plus_docs"
+    },
+    {
+     "date": "2026-07-28",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "PLUS DOCS INC. PLUSDOCS.COM DE None",
+     "gross": 436.73,
+     "refund": false,
+     "key": "plus_docs"
+    },
+    {
+     "date": "2026-08-28",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "PLUS DOCS INC. PLUSDOCS.COM DE None",
+     "gross": 415.72,
+     "refund": false,
+     "key": "plus_docs"
+    }
+   ]
+  },
+  {
+   "key": "msft_second",
+   "name": "Microsoft (R409 line)",
+   "category": "Productivity",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "SA-VAT-15",
+   "status": "active",
+   "call": "Keep",
+   "typical": 408.9,
+   "last_actual": 408.9,
+   "buffer_pct": 0,
+   "fwd_annual": 4906.8,
+   "fund_annual": 4906.8,
+   "first_seen": "2025-12-02",
+   "last_seen": "2026-03-03",
+   "n_charges": 4,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-12-02",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0100Y4F2H Dublin None",
+     "gross": 408.9,
+     "refund": false,
+     "key": "msft_second"
+    },
+    {
+     "date": "2026-01-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0100YE92V Microsoft None",
+     "gross": 408.9,
+     "refund": false,
+     "key": "msft_second"
+    },
+    {
+     "date": "2026-02-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0100YMISB Dublin None",
+     "gross": 408.9,
+     "refund": false,
+     "key": "msft_second"
+    },
+    {
+     "date": "2026-03-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0100YWBA7 Microsoft None",
+     "gross": 408.9,
+     "refund": false,
+     "key": "msft_second"
+    }
+   ]
+  },
+  {
+   "key": "google_one",
+   "name": "Google One",
+   "category": "Cloud storage",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "cadence": "monthly",
+   "vat": "confirm",
+   "status": "review",
+   "call": "Review",
+   "typical": 373.9,
+   "last_actual": 373.9,
+   "buffer_pct": 10,
+   "fwd_annual": 4486.8,
+   "fund_annual": 4935.48,
+   "first_seen": "2025-10-30",
+   "last_seen": "2026-08-27",
+   "n_charges": 8,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": true,
+   "cards_touched": [
+    "Howard Business CC",
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWI",
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-10-30",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google One London None",
+     "gross": 373.9,
+     "refund": false,
+     "key": "google_one"
+    },
+    {
+     "date": "2025-11-29",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google One London None",
+     "gross": 373.9,
+     "refund": false,
+     "key": "google_one"
+    },
+    {
+     "date": "2026-01-04",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google One London None",
+     "gross": 304.34,
+     "refund": false,
+     "key": "google_one"
+    },
+    {
+     "date": "2026-04-27",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "Google One London None",
+     "gross": 373.9,
+     "refund": false,
+     "key": "google_one"
+    },
+    {
+     "date": "2026-05-27",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "Google One London None",
+     "gross": 373.9,
+     "refund": false,
+     "key": "google_one"
+    },
+    {
+     "date": "2026-06-27",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "Google One London None",
+     "gross": 373.9,
+     "refund": false,
+     "key": "google_one"
+    },
+    {
+     "date": "2026-07-28",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "GOOGLE *Google One g.co/helppay None",
+     "gross": 429.99,
+     "refund": false,
+     "key": "google_one"
+    },
+    {
+     "date": "2026-08-27",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "Google One London None",
+     "gross": 373.9,
+     "refund": false,
+     "key": "google_one"
+    }
+   ]
+  },
+  {
+   "key": "manus",
+   "name": "Manus AI",
+   "category": "AI tools",
+   "entity": "MWI",
+   "card": "Veronica Business CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "none",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 363.66,
+   "last_actual": 359.33,
+   "buffer_pct": 10,
+   "fwd_annual": 4311.96,
+   "fund_annual": 4743.16,
+   "first_seen": "2026-04-10",
+   "last_seen": "2026-08-27",
+   "n_charges": 6,
+   "n_refunds": 1,
+   "net_refunds": 342.94,
+   "moved": false,
+   "cards_touched": [
+    "Veronica Business CC"
+   ],
+   "entities_touched": [
+    "MWI"
+   ],
+   "charges": [
+    {
+     "date": "2026-04-10",
+     "entity": "MWI",
+     "card": "Veronica Business CC",
+     "holder": "Veronica",
+     "desc": "MANUS AI SINGAPORE None",
+     "gross": 321.87,
+     "refund": false,
+     "key": "manus"
+    },
+    {
+     "date": "2026-05-10",
+     "entity": "MWI",
+     "card": "Veronica Business CC",
+     "holder": "Veronica",
+     "desc": "MANUS AI SINGAPORE None",
+     "gross": 322.03,
+     "refund": false,
+     "key": "manus"
+    },
+    {
+     "date": "2026-06-10",
+     "entity": "MWI",
+     "card": "Veronica Business CC",
+     "holder": "Veronica",
+     "desc": "MANUS AI SINGAPORE None",
+     "gross": 372.06,
+     "refund": false,
+     "key": "manus"
+    },
+    {
+     "date": "2026-07-10",
+     "entity": "MWI",
+     "card": "Veronica Business CC",
+     "holder": "Veronica",
+     "desc": "MANUS AI SINGAPORE None",
+     "gross": 368.89,
+     "refund": false,
+     "key": "manus"
+    },
+    {
+     "date": "2026-08-10",
+     "entity": "MWI",
+     "card": "Veronica Business CC",
+     "holder": "Veronica",
+     "desc": "MANUS AI SINGAPORE None",
+     "gross": 367.99,
+     "refund": false,
+     "key": "manus"
+    },
+    {
+     "date": "2026-08-11",
+     "entity": "MWI",
+     "card": "Veronica Business CC",
+     "holder": "Veronica",
+     "desc": "MANUS AI SINGAPORE None",
+     "gross": 342.94,
+     "refund": true,
+     "key": "manus"
+    },
+    {
+     "date": "2026-08-27",
+     "entity": "MWI",
+     "card": "Veronica Business CC",
+     "holder": "Veronica",
+     "desc": "MANUS AI SINGAPORE None",
+     "gross": 359.33,
+     "refund": false,
+     "key": "manus"
+    }
+   ]
+  },
+  {
+   "key": "claude",
+   "name": "Claude (Anthropic)",
+   "category": "AI tools",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "none",
+   "status": "active",
+   "call": "Keep",
+   "typical": 344.91,
+   "last_actual": 344.91,
+   "buffer_pct": 10,
+   "fwd_annual": 4138.92,
+   "fund_annual": 4552.81,
+   "first_seen": "2026-03-08",
+   "last_seen": "2026-03-08",
+   "n_charges": 1,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2026-03-08",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "CLAUDE.AI SUBSCRIPTION ANTHROPIC.COMCA None",
+     "gross": 344.91,
+     "refund": false,
+     "key": "claude"
+    }
+   ]
+  },
+  {
+   "key": "meetup",
+   "name": "Meetup",
+   "category": "Community",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "cadence": "6-monthly",
+   "vat": "none",
+   "status": "active",
+   "call": "Keep",
+   "typical": 1741.68,
+   "last_actual": 1660.99,
+   "buffer_pct": 10,
+   "fwd_annual": 3321.98,
+   "fund_annual": 3654.18,
+   "first_seen": "2025-08-22",
+   "last_seen": "2026-02-22",
+   "n_charges": 2,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Howard CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-08-22",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "MEETUP ORG SUB 6M MEETUP.COM NY None",
+     "gross": 1822.38,
+     "refund": false,
+     "key": "meetup"
+    },
+    {
+     "date": "2026-02-22",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "MEETUP ORG SUB 6M MEETUP.COM NY None",
+     "gross": 1660.99,
+     "refund": false,
+     "key": "meetup"
+    }
+   ]
+  },
+  {
+   "key": "msft_azure",
+   "name": "Microsoft Azure (metered)",
+   "category": "Cloud/metered",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "SA-VAT-15",
+   "status": "active",
+   "call": "Keep",
+   "typical": 254.7,
+   "last_actual": 213.4,
+   "buffer_pct": 0,
+   "fwd_annual": 2560.8,
+   "fund_annual": 2560.8,
+   "first_seen": "2026-01-20",
+   "last_seen": "2026-03-03",
+   "n_charges": 3,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2026-01-20",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0400XVB83E0400YDublin None",
+     "gross": 254.7,
+     "refund": false,
+     "key": "msft_azure"
+    },
+    {
+     "date": "2026-02-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0400YDIHL Microsoft None",
+     "gross": 268.47,
+     "refund": false,
+     "key": "msft_azure"
+    },
+    {
+     "date": "2026-03-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MSFT E0400YMN10 MSBILL.INFO None",
+     "gross": 213.4,
+     "refund": false,
+     "key": "msft_azure"
+    }
+   ]
+  },
+  {
+   "key": "payfast",
+   "name": "PayFast",
+   "category": "Payments",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "cadence": "monthly",
+   "vat": "confirm",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 200.0,
+   "last_actual": 200.0,
+   "buffer_pct": 0,
+   "fwd_annual": 2400.0,
+   "fund_annual": 2400.0,
+   "first_seen": "2025-08-04",
+   "last_seen": "2025-10-04",
+   "n_charges": 3,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Howard CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-08-04",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PAYFASTRegarding My L Paarl None",
+     "gross": 200.0,
+     "refund": false,
+     "key": "payfast"
+    },
+    {
+     "date": "2025-09-04",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PAYFASTRegarding My L Paarl None",
+     "gross": 200.0,
+     "refund": false,
+     "key": "payfast"
+    },
+    {
+     "date": "2025-10-04",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PAYFASTRegarding My L Paarl None",
+     "gross": 200.0,
+     "refund": false,
+     "key": "payfast"
+    }
+   ]
+  },
+  {
+   "key": "daily_maverick",
+   "name": "Daily Maverick",
+   "category": "News",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "SA-VAT-15",
+   "status": "active",
+   "call": "Keep",
+   "typical": 173.9,
+   "last_actual": 199.99,
+   "buffer_pct": 0,
+   "fwd_annual": 2399.88,
+   "fund_annual": 2399.88,
+   "first_seen": "2025-04-03",
+   "last_seen": "2026-03-03",
+   "n_charges": 12,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-04-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "GOOGLE Daily Maverick g.cohelppay None",
+     "gross": 199.99,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2025-05-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 199.99,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2025-06-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 199.99,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2025-07-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 173.9,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2025-08-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 173.9,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2025-09-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 199.99,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2025-10-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 173.9,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2025-11-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 173.9,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2025-12-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 173.9,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2026-01-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 173.9,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2026-02-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 173.9,
+     "refund": false,
+     "key": "daily_maverick"
+    },
+    {
+     "date": "2026-03-03",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google Daily Maverick London None",
+     "gross": 199.99,
+     "refund": false,
+     "key": "daily_maverick"
+    }
+   ]
+  },
+  {
+   "key": "grammarly",
+   "name": "Grammarly",
+   "category": "Writing",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "cadence": "annual",
+   "vat": "none",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 2208.38,
+   "last_actual": 2208.38,
+   "buffer_pct": 10,
+   "fwd_annual": 2208.38,
+   "fund_annual": 2429.22,
+   "first_seen": "2025-12-01",
+   "last_seen": "2025-12-01",
+   "n_charges": 1,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Howard CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-12-01",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "GRAMMARLY CO9ZH7AO8 GRAMMARLY.COMCA None",
+     "gross": 2208.38,
+     "refund": false,
+     "key": "grammarly"
+    }
+   ]
+  },
+  {
+   "key": "miro",
+   "name": "Miro",
+   "category": "Whiteboard",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "annual",
+   "vat": "none",
+   "status": "active",
+   "call": "Keep",
+   "typical": 2787.15,
+   "last_actual": 2175.57,
+   "buffer_pct": 10,
+   "fwd_annual": 2175.57,
+   "fund_annual": 2393.13,
+   "first_seen": "2025-11-21",
+   "last_seen": "2026-03-21",
+   "n_charges": 2,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": true,
+   "cards_touched": [
+    "Howard CC",
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-11-21",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "MIRO.COM MIRO.COM CA None",
+     "gross": 3398.74,
+     "refund": false,
+     "key": "miro"
+    },
+    {
+     "date": "2026-03-21",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MIRO.COM MIRO.COM CA None",
+     "gross": 2175.57,
+     "refund": false,
+     "key": "miro"
+    }
+   ]
+  },
+  {
+   "key": "mentimeter",
+   "name": "Mentimeter",
+   "category": "Presentation",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "annual",
+   "vat": "none",
+   "status": "active",
+   "call": "Keep",
+   "typical": 2136.22,
+   "last_actual": 2136.22,
+   "buffer_pct": 10,
+   "fwd_annual": 2136.22,
+   "fund_annual": 2349.84,
+   "first_seen": "2025-10-17",
+   "last_seen": "2025-10-17",
+   "n_charges": 1,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-10-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "MENTIMETER BASIC STOCKHOLM None",
+     "gross": 2136.22,
+     "refund": false,
+     "key": "mentimeter"
+    }
+   ]
+  },
+  {
+   "key": "bookmagic",
+   "name": "BookMagic AI",
+   "category": "AI tools",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "cadence": "annual",
+   "vat": "none",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 1981.29,
+   "last_actual": 1981.29,
+   "buffer_pct": 10,
+   "fwd_annual": 1981.29,
+   "fund_annual": 2179.42,
+   "first_seen": "2026-04-02",
+   "last_seen": "2026-04-02",
+   "n_charges": 1,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Howard Business CC"
+   ],
+   "entities_touched": [
+    "MWI"
+   ],
+   "charges": [
+    {
+     "date": "2026-04-02",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "BOOKMAGIC.AI LONDON None",
+     "gross": 1981.29,
+     "refund": false,
+     "key": "bookmagic"
+    }
+   ]
+  },
+  {
+   "key": "github",
+   "name": "GitHub",
+   "category": "Dev tools",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "confirm",
+   "status": "active",
+   "call": "Keep",
+   "typical": 149.83,
+   "last_actual": 149.83,
+   "buffer_pct": 10,
+   "fwd_annual": 1797.96,
+   "fund_annual": 1977.76,
+   "first_seen": "2025-11-10",
+   "last_seen": "2026-03-10",
+   "n_charges": 5,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-11-10",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "GITHUB INC. GITHUB.COM CA None",
+     "gross": 155.21,
+     "refund": false,
+     "key": "github"
+    },
+    {
+     "date": "2025-12-10",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "GITHUB INC. GITHUB.COM CA None",
+     "gross": 152.7,
+     "refund": false,
+     "key": "github"
+    },
+    {
+     "date": "2026-01-10",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "GITHUB INC. GITHUB.COM CA None",
+     "gross": 147.92,
+     "refund": false,
+     "key": "github"
+    },
+    {
+     "date": "2026-02-10",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "GITHUB INC. GITHUB.COM CA None",
+     "gross": 143.47,
+     "refund": false,
+     "key": "github"
+    },
+    {
+     "date": "2026-03-10",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "GITHUB INC. GITHUB.COM CA None",
+     "gross": 149.83,
+     "refund": false,
+     "key": "github"
+    }
+   ]
+  },
+  {
+   "key": "paddle_sociablekit",
+   "name": "Paddle / SociableKit",
+   "category": "Web widget",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "annual",
+   "vat": "confirm",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 1793.98,
+   "last_actual": 1793.98,
+   "buffer_pct": 10,
+   "fwd_annual": 1793.98,
+   "fund_annual": 1973.38,
+   "first_seen": "2025-10-20",
+   "last_seen": "2025-10-20",
+   "n_charges": 1,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-10-20",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "PADDLE.NET SOCIABLEKT London None",
+     "gross": 1793.98,
+     "refund": false,
+     "key": "paddle_sociablekit"
+    }
+   ]
+  },
+  {
+   "key": "nordvpn",
+   "name": "NordVPN",
+   "category": "VPN",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "cadence": "annual",
+   "vat": "none",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 1605.9,
+   "last_actual": 1605.9,
+   "buffer_pct": 10,
+   "fwd_annual": 1605.9,
+   "fund_annual": 1766.49,
+   "first_seen": "2026-08-08",
+   "last_seen": "2026-08-08",
+   "n_charges": 1,
+   "n_refunds": 1,
+   "net_refunds": 1494.96,
+   "moved": false,
+   "cards_touched": [
+    "Howard Business CC"
+   ],
+   "entities_touched": [
+    "MWI"
+   ],
+   "charges": [
+    {
+     "date": "2026-08-08",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "SM.NORD* PRODUCT LONDON None",
+     "gross": 1605.9,
+     "refund": false,
+     "key": "nordvpn"
+    },
+    {
+     "date": "2026-08-12",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "SM.NORD* PRODUCT LONDON None",
+     "gross": 1494.96,
+     "refund": true,
+     "key": "nordvpn"
+    }
+   ]
+  },
+  {
+   "key": "youtube_premium",
+   "name": "YouTube Premium",
+   "category": "Media",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "confirm",
+   "status": "active",
+   "call": "Keep",
+   "typical": 130.43,
+   "last_actual": 130.43,
+   "buffer_pct": 10,
+   "fwd_annual": 1565.16,
+   "fund_annual": 1721.68,
+   "first_seen": "2025-04-17",
+   "last_seen": "2026-03-17",
+   "n_charges": 12,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-04-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 95.64,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2025-05-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 95.64,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2025-06-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 130.43,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2025-07-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 130.43,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2025-08-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 130.43,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2025-09-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 130.43,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2025-10-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 130.43,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2025-11-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 130.43,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2025-12-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 130.43,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2026-01-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 130.43,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2026-02-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 130.43,
+     "refund": false,
+     "key": "youtube_premium"
+    },
+    {
+     "date": "2026-03-17",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Google YouTubePremium London None",
+     "gross": 130.43,
+     "refund": false,
+     "key": "youtube_premium"
+    }
+   ]
+  },
+  {
+   "key": "bnesim",
+   "name": "bneSIM",
+   "category": "Connectivity",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "cadence": "monthly",
+   "vat": "none",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 198.21,
+   "last_actual": 129.67,
+   "buffer_pct": 10,
+   "fwd_annual": 1556.04,
+   "fund_annual": 1711.64,
+   "first_seen": "2026-07-31",
+   "last_seen": "2026-08-10",
+   "n_charges": 3,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Howard Business CC"
+   ],
+   "entities_touched": [
+    "MWI"
+   ],
+   "charges": [
+    {
+     "date": "2026-07-31",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "BILLING@BNESIM.COM KOWLOON None",
+     "gross": 216.43,
+     "refund": false,
+     "key": "bnesim"
+    },
+    {
+     "date": "2026-08-09",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "BILLING@BNESIM.COM KOWLOON None",
+     "gross": 198.21,
+     "refund": false,
+     "key": "bnesim"
+    },
+    {
+     "date": "2026-08-10",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "BILLING@BNESIM.COM KOWLOON None",
+     "gross": 129.67,
+     "refund": false,
+     "key": "bnesim"
+    }
+   ]
+  },
+  {
+   "key": "apple",
+   "name": "Apple / iTunes",
+   "category": "App store/media",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "cadence": "monthly",
+   "vat": "SA-VAT-15",
+   "status": "review",
+   "call": "Review",
+   "typical": 108.69,
+   "last_actual": 108.69,
+   "buffer_pct": 0,
+   "fwd_annual": 1304.28,
+   "fund_annual": 1304.28,
+   "first_seen": "2025-04-08",
+   "last_seen": "2026-03-08",
+   "n_charges": 15,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": true,
+   "cards_touched": [
+    "Howard CC",
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-04-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2025-05-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2025-06-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2025-07-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2025-08-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2025-09-05",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 39.12,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2025-10-02",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 52.17,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2025-10-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2025-11-02",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 52.17,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2025-11-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2025-12-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL CORK None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2026-01-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2026-02-04",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 582.6,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2026-02-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL ITUNES.COM None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    },
+    {
+     "date": "2026-03-08",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "APPLE.COMBILL CORK None",
+     "gross": 108.69,
+     "refund": false,
+     "key": "apple"
+    }
+   ]
+  },
+  {
+   "key": "diamatrix",
+   "name": "DiaMatrix",
+   "category": "Software",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "SA-VAT-15",
+   "status": "review",
+   "call": "Review",
+   "typical": 94.78,
+   "last_actual": 94.78,
+   "buffer_pct": 0,
+   "fwd_annual": 1137.36,
+   "fund_annual": 1137.36,
+   "first_seen": "2025-07-02",
+   "last_seen": "2026-01-01",
+   "n_charges": 4,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-07-02",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Diamatrix Cape Town None",
+     "gross": 94.78,
+     "refund": false,
+     "key": "diamatrix"
+    },
+    {
+     "date": "2025-11-01",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Diamatrix Cape Town None",
+     "gross": 94.78,
+     "refund": false,
+     "key": "diamatrix"
+    },
+    {
+     "date": "2025-12-02",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "DiaMatrix cc Cape Town None",
+     "gross": 94.78,
+     "refund": false,
+     "key": "diamatrix"
+    },
+    {
+     "date": "2026-01-01",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "Diamatrix Cape Town None",
+     "gross": 94.78,
+     "refund": false,
+     "key": "diamatrix"
+    }
+   ]
+  },
+  {
+   "key": "spotify",
+   "name": "Spotify",
+   "category": "Media",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "SA-VAT-15",
+   "status": "active",
+   "call": "Keep",
+   "typical": 82.6,
+   "last_actual": 82.6,
+   "buffer_pct": 0,
+   "fwd_annual": 991.2,
+   "fund_annual": 991.2,
+   "first_seen": "2025-04-06",
+   "last_seen": "2026-03-06",
+   "n_charges": 12,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-04-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 73.9,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2025-05-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 73.9,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2025-06-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 73.9,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2025-07-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 73.9,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2025-08-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 73.9,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2025-09-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 82.6,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2025-10-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 82.6,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2025-11-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 82.6,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2025-12-08",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SPOTIFY STOCKHOLM None",
+     "gross": 82.6,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2026-01-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 82.6,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2026-02-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 82.6,
+     "refund": false,
+     "key": "spotify"
+    },
+    {
+     "date": "2026-03-06",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "SpotifyZA Stockholm None",
+     "gross": 82.6,
+     "refund": false,
+     "key": "spotify"
+    }
+   ]
+  },
+  {
+   "key": "pcloud",
+   "name": "pCloud",
+   "category": "Cloud storage",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "none",
+   "status": "review",
+   "call": "Review",
+   "typical": 89.36,
+   "last_actual": 76.37,
+   "buffer_pct": 10,
+   "fwd_annual": 916.44,
+   "fund_annual": 1008.08,
+   "first_seen": "2025-04-24",
+   "last_seen": "2026-03-24",
+   "n_charges": 12,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": true,
+   "cards_touched": [
+    "Howard CC",
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-04-24",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 95.28,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2025-05-24",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 91.8,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2025-06-24",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 92.51,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2025-07-24",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 90.1,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2025-08-24",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 90.87,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2025-09-24",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 88.98,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2025-10-24",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 89.28,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2025-11-24",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 89.43,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2025-12-24",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 85.6,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2026-01-24",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 72.17,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2026-02-24",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 71.59,
+     "refund": false,
+     "key": "pcloud"
+    },
+    {
+     "date": "2026-03-24",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "PCLOUD.COM BAAR None",
+     "gross": 76.37,
+     "refund": false,
+     "key": "pcloud"
+    }
+   ]
+  },
+  {
+   "key": "medium",
+   "name": "Medium",
+   "category": "Reading",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "cadence": "annual",
+   "vat": "none",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 890.35,
+   "last_actual": 890.35,
+   "buffer_pct": 10,
+   "fwd_annual": 890.35,
+   "fund_annual": 979.39,
+   "first_seen": "2025-11-04",
+   "last_seen": "2025-11-04",
+   "n_charges": 1,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Howard CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-11-04",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "MEDIUM ANNUAL MEDIUM.COM CA None",
+     "gross": 890.35,
+     "refund": false,
+     "key": "medium"
+    }
+   ]
+  },
+  {
+   "key": "dama_international",
+   "name": "DAMA International",
+   "category": "Membership",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "annual",
+   "vat": "none",
+   "status": "active",
+   "call": "Keep",
+   "typical": 878.93,
+   "last_actual": 878.93,
+   "buffer_pct": 10,
+   "fwd_annual": 878.93,
+   "fund_annual": 966.82,
+   "first_seen": "2025-12-04",
+   "last_seen": "2025-12-04",
+   "n_charges": 1,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-12-04",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "DAMA INTERNATIONAL 804-382-5957 WA None",
+     "gross": 878.93,
+     "refund": false,
+     "key": "dama_international"
+    }
+   ]
+  },
+  {
+   "key": "duet_display",
+   "name": "Duet Display",
+   "category": "Software",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "cadence": "annual",
+   "vat": "none",
+   "status": "marked-to-cancel",
+   "call": "Cancel",
+   "typical": 862.6,
+   "last_actual": 862.6,
+   "buffer_pct": 10,
+   "fwd_annual": 862.6,
+   "fund_annual": 948.86,
+   "first_seen": "2025-10-12",
+   "last_seen": "2025-10-12",
+   "n_charges": 1,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Howard CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-10-12",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "DUET AIR DUETDISPLAY.CFL None",
+     "gross": 862.6,
+     "refund": false,
+     "key": "duet_display"
+    }
+   ]
+  },
+  {
+   "key": "timeslive",
+   "name": "TimesLIVE",
+   "category": "News",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "cadence": "monthly",
+   "vat": "SA-VAT-15",
+   "status": "review",
+   "call": "Keep",
+   "typical": 58.26,
+   "last_actual": 58.26,
+   "buffer_pct": 0,
+   "fwd_annual": 699.12,
+   "fund_annual": 699.12,
+   "first_seen": "2025-06-14",
+   "last_seen": "2025-11-14",
+   "n_charges": 6,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-06-14",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "TimesLIVE JOHANNESBURG None",
+     "gross": 20.0,
+     "refund": false,
+     "key": "timeslive"
+    },
+    {
+     "date": "2025-07-14",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "TimesLIVE JOHANNESBURG None",
+     "gross": 58.26,
+     "refund": false,
+     "key": "timeslive"
+    },
+    {
+     "date": "2025-08-14",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "TimesLIVE JOHANNESBURG None",
+     "gross": 58.26,
+     "refund": false,
+     "key": "timeslive"
+    },
+    {
+     "date": "2025-09-14",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "TimesLIVE JOHANNESBURG None",
+     "gross": 58.26,
+     "refund": false,
+     "key": "timeslive"
+    },
+    {
+     "date": "2025-10-14",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "TimesLIVE JOHANNESBURG None",
+     "gross": 58.26,
+     "refund": false,
+     "key": "timeslive"
+    },
+    {
+     "date": "2025-11-14",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "TimesLIVE JOHANNESBURG None",
+     "gross": 58.26,
+     "refund": false,
+     "key": "timeslive"
+    }
+   ]
+  },
+  {
+   "key": "tubebuddy",
+   "name": "TubeBuddy",
+   "category": "YouTube tools",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "cadence": "monthly",
+   "vat": "none",
+   "status": "review",
+   "call": "Cancel",
+   "typical": 40.56,
+   "last_actual": 39.82,
+   "buffer_pct": 10,
+   "fwd_annual": 477.84,
+   "fund_annual": 525.62,
+   "first_seen": "2025-04-19",
+   "last_seen": "2025-11-19",
+   "n_charges": 8,
+   "n_refunds": 6,
+   "net_refunds": 225.42,
+   "moved": false,
+   "cards_touched": [
+    "Howard CC"
+   ],
+   "entities_touched": [
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-04-19",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+     "gross": 43.38,
+     "refund": false,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-05-19",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+     "gross": 41.65,
+     "refund": false,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-06-19",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+     "gross": 36.23,
+     "refund": false,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-07-19",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+     "gross": 41.24,
+     "refund": false,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-08-19",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+     "gross": 40.77,
+     "refund": false,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-09-19",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+     "gross": 40.35,
+     "refund": false,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-10-19",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+     "gross": 40.36,
+     "refund": false,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-11-19",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+     "gross": 39.82,
+     "refund": false,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-11-19",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM 3103421500 CA None",
+     "gross": 37.62,
+     "refund": true,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-11-20",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM 3103421500 CA None",
+     "gross": 37.56,
+     "refund": true,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-11-20",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM 3103421500 CA None",
+     "gross": 37.56,
+     "refund": true,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-11-20",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM 3103421500 CA None",
+     "gross": 37.56,
+     "refund": true,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-11-20",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM 3103421500 CA None",
+     "gross": 37.56,
+     "refund": true,
+     "key": "tubebuddy"
+    },
+    {
+     "date": "2025-11-20",
+     "entity": "MWL",
+     "card": "Howard CC",
+     "holder": "Howard",
+     "desc": "TUBEBUDDYCOM 3103421500 CA None",
+     "gross": 37.56,
+     "refund": true,
+     "key": "tubebuddy"
+    }
+   ]
+  },
+  {
+   "key": "amazon_digital",
+   "name": "Amazon Digital",
+   "category": "Digital goods",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "cadence": "one-off",
+   "vat": "confirm",
+   "status": "review",
+   "call": "Review",
+   "typical": 54.81,
+   "last_actual": 255.22,
+   "buffer_pct": 10,
+   "fwd_annual": 0.0,
+   "fund_annual": 0.0,
+   "first_seen": "2025-04-29",
+   "last_seen": "2026-05-22",
+   "n_charges": 3,
+   "n_refunds": 0,
+   "net_refunds": 0,
+   "moved": false,
+   "cards_touched": [
+    "Howard Business CC",
+    "Veronica CC"
+   ],
+   "entities_touched": [
+    "MWI",
+    "MWL"
+   ],
+   "charges": [
+    {
+     "date": "2025-04-29",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "AMAZON DIGI I98MB7H53 WWW.AMAZON.COWA None",
+     "gross": 54.81,
+     "refund": false,
+     "key": "amazon_digital"
+    },
+    {
+     "date": "2025-05-05",
+     "entity": "MWL",
+     "card": "Veronica CC",
+     "holder": "Veronica",
+     "desc": "AMAZON DIGI NI6NK3MU2 WWW.AMAZON.COWA None",
+     "gross": 47.44,
+     "refund": false,
+     "key": "amazon_digital"
+    },
+    {
+     "date": "2026-05-22",
+     "entity": "MWI",
+     "card": "Howard Business CC",
+     "holder": "Howard",
+     "desc": "AMAZON DIGI Z05QT16H3 WWW.AMAZON.COWA None",
+     "gross": 255.22,
+     "refund": false,
+     "key": "amazon_digital"
+    }
+   ]
+  }
+ ],
+ "charges": [
+  {
+   "date": "2025-04-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "GOOGLE Daily Maverick g.cohelppay None",
+   "gross": 199.99,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2025-04-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 73.9,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2025-04-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-04-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 95.64,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2025-04-18",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "LinkedIn SN P334841653 LINKEDIN.COM None",
+   "gross": 1249.99,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2025-04-19",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+   "gross": 43.38,
+   "refund": false,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-04-21",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Phantombuster Paris None",
+   "gross": 1156.92,
+   "refund": false,
+   "key": "phantombuster"
+  },
+  {
+   "date": "2025-04-24",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 95.28,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2025-04-25",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MIGHTY NETWORKS MIGHTYNETWORKCA None",
+   "gross": 4212.81,
+   "refund": false,
+   "key": "mighty_networks"
+  },
+  {
+   "date": "2025-04-29",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "AMAZON DIGI I98MB7H53 WWW.AMAZON.COWA None",
+   "gross": 54.81,
+   "refund": false,
+   "key": "amazon_digital"
+  },
+  {
+   "date": "2025-04-30",
+   "entity": "MWL",
+   "card": "Current Account",
+   "holder": "-",
+   "desc": "DAILY BREAD ORG MODELWARE SYSTEMS",
+   "gross": 1000.0,
+   "refund": false,
+   "key": "_current_account"
+  },
+  {
+   "date": "2025-05-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 199.99,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2025-05-05",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "AMAZON DIGI NI6NK3MU2 WWW.AMAZON.COWA None",
+   "gross": 47.44,
+   "refund": false,
+   "key": "amazon_digital"
+  },
+  {
+   "date": "2025-05-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 73.9,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2025-05-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-05-17",
+   "entity": "MWL",
+   "card": "Current Account",
+   "holder": "-",
+   "desc": "ANDY PERSONAL ACCOUN MODELWARE SYSTEMS",
+   "gross": 1500.0,
+   "refund": false,
+   "key": "_current_account"
+  },
+  {
+   "date": "2025-05-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 95.64,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2025-05-18",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "LinkedIn SN P382366423 LINKEDIN.COM None",
+   "gross": 1249.99,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2025-05-19",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+   "gross": 41.65,
+   "refund": false,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-05-21",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Phantombuster Paris None",
+   "gross": 1109.07,
+   "refund": false,
+   "key": "phantombuster"
+  },
+  {
+   "date": "2025-05-23",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MIGHTY NETWORKS MIGHTYNETWORKCA None",
+   "gross": 4037.59,
+   "refund": false,
+   "key": "mighty_networks"
+  },
+  {
+   "date": "2025-05-24",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 91.8,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2025-06-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 199.99,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2025-06-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 73.9,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2025-06-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-06-14",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "TimesLIVE JOHANNESBURG None",
+   "gross": 20.0,
+   "refund": false,
+   "key": "timeslive"
+  },
+  {
+   "date": "2025-06-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 130.43,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2025-06-18",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "LinkedIn SN P426727443 LINKEDIN.COM None",
+   "gross": 1249.99,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2025-06-19",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+   "gross": 36.23,
+   "refund": false,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-06-21",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Phantombuster Paris None",
+   "gross": 1108.51,
+   "refund": false,
+   "key": "phantombuster"
+  },
+  {
+   "date": "2025-06-23",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MIGHTY NETWORKS MIGHTYNETWORKCA None",
+   "gross": 4046.05,
+   "refund": false,
+   "key": "mighty_networks"
+  },
+  {
+   "date": "2025-06-24",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 92.51,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2025-07-02",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Diamatrix Cape Town None",
+   "gross": 94.78,
+   "refund": false,
+   "key": "diamatrix"
+  },
+  {
+   "date": "2025-07-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 173.9,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2025-07-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 73.9,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2025-07-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-07-14",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "TimesLIVE JOHANNESBURG None",
+   "gross": 58.26,
+   "refund": false,
+   "key": "timeslive"
+  },
+  {
+   "date": "2025-07-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 130.43,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2025-07-18",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "LinkedIn SN P469227473 LINKEDIN.COM None",
+   "gross": 1249.99,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2025-07-19",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+   "gross": 41.24,
+   "refund": false,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-07-21",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Phantombuster Paris None",
+   "gross": 1264.7,
+   "refund": false,
+   "key": "phantombuster"
+  },
+  {
+   "date": "2025-07-24",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 90.1,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2025-07-25",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MIGHTY NETWORKS MIGHTYNETWORKCA None",
+   "gross": 3967.34,
+   "refund": false,
+   "key": "mighty_networks"
+  },
+  {
+   "date": "2025-07-28",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MIGHTY NETWORKS MIGHTYNETWORKCA None",
+   "gross": 35248.93,
+   "refund": false,
+   "key": "mighty_networks"
+  },
+  {
+   "date": "2025-07-28",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MIGHTY NETWORKS PALO ALTO CA None",
+   "gross": 3160.83,
+   "refund": true,
+   "key": "mighty_networks"
+  },
+  {
+   "date": "2025-08-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 173.9,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2025-08-04",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PAYFASTRegarding My L Paarl None",
+   "gross": 200.0,
+   "refund": false,
+   "key": "payfast"
+  },
+  {
+   "date": "2025-08-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 73.9,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2025-08-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-08-14",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "TimesLIVE JOHANNESBURG None",
+   "gross": 58.26,
+   "refund": false,
+   "key": "timeslive"
+  },
+  {
+   "date": "2025-08-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 130.43,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2025-08-18",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "LinkedIn SN P510323383 LINKEDIN.COM None",
+   "gross": 1249.99,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2025-08-19",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+   "gross": 40.77,
+   "refund": false,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-08-21",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Phantombuster Paris None",
+   "gross": 1254.84,
+   "refund": false,
+   "key": "phantombuster"
+  },
+  {
+   "date": "2025-08-22",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "MEETUP ORG SUB 6M MEETUP.COM NY None",
+   "gross": 1822.38,
+   "refund": false,
+   "key": "meetup"
+  },
+  {
+   "date": "2025-08-24",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 90.87,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2025-08-30",
+   "entity": "MWL",
+   "card": "Current Account",
+   "holder": "-",
+   "desc": "DAILY BREAD ORG MODELWARE SYSTEMS",
+   "gross": 1000.0,
+   "refund": false,
+   "key": "_current_account"
+  },
+  {
+   "date": "2025-08-30",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Canva 04623-33563675 Sydney None",
+   "gross": 782.61,
+   "refund": false,
+   "key": "_unmatched"
+  },
+  {
+   "date": "2025-09-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 199.99,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2025-09-04",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PAYFASTRegarding My L Paarl None",
+   "gross": 200.0,
+   "refund": false,
+   "key": "payfast"
+  },
+  {
+   "date": "2025-09-05",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 39.12,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-09-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 82.6,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2025-09-14",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "TimesLIVE JOHANNESBURG None",
+   "gross": 58.26,
+   "refund": false,
+   "key": "timeslive"
+  },
+  {
+   "date": "2025-09-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 130.43,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2025-09-18",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "LinkedIn SN P556735213 LINKEDIN.COM None",
+   "gross": 1249.99,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2025-09-19",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+   "gross": 40.35,
+   "refund": false,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-09-21",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Phantombuster Paris None",
+   "gross": 1232.96,
+   "refund": false,
+   "key": "phantombuster"
+  },
+  {
+   "date": "2025-09-24",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 88.98,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2025-10-02",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 52.17,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-10-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 173.9,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2025-10-04",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PAYFASTRegarding My L Paarl None",
+   "gross": 200.0,
+   "refund": false,
+   "key": "payfast"
+  },
+  {
+   "date": "2025-10-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 82.6,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2025-10-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-10-12",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "DUET AIR DUETDISPLAY.CFL None",
+   "gross": 862.6,
+   "refund": false,
+   "key": "duet_display"
+  },
+  {
+   "date": "2025-10-14",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "TimesLIVE JOHANNESBURG None",
+   "gross": 58.26,
+   "refund": false,
+   "key": "timeslive"
+  },
+  {
+   "date": "2025-10-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MENTIMETER BASIC STOCKHOLM None",
+   "gross": 2136.22,
+   "refund": false,
+   "key": "mentimeter"
+  },
+  {
+   "date": "2025-10-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 130.43,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2025-10-18",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "LinkedIn SN P602339383 LINKEDIN.COM None",
+   "gross": 1249.99,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2025-10-19",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+   "gross": 40.36,
+   "refund": false,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-10-20",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "PADDLE.NET SOCIABLEKT London None",
+   "gross": 1793.98,
+   "refund": false,
+   "key": "paddle_sociablekit"
+  },
+  {
+   "date": "2025-10-21",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Phantombuster Paris None",
+   "gross": 1231.85,
+   "refund": false,
+   "key": "phantombuster"
+  },
+  {
+   "date": "2025-10-24",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 89.28,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2025-10-30",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google One London None",
+   "gross": 373.9,
+   "refund": false,
+   "key": "google_one"
+  },
+  {
+   "date": "2025-11-01",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Diamatrix Cape Town None",
+   "gross": 94.78,
+   "refund": false,
+   "key": "diamatrix"
+  },
+  {
+   "date": "2025-11-02",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 52.17,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-11-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 173.9,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2025-11-04",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "MEDIUM ANNUAL MEDIUM.COM CA None",
+   "gross": 890.35,
+   "refund": false,
+   "key": "medium"
+  },
+  {
+   "date": "2025-11-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 82.6,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2025-11-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-11-10",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "GITHUB INC. GITHUB.COM CA None",
+   "gross": 155.21,
+   "refund": false,
+   "key": "github"
+  },
+  {
+   "date": "2025-11-14",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "TimesLIVE JOHANNESBURG None",
+   "gross": 58.26,
+   "refund": false,
+   "key": "timeslive"
+  },
+  {
+   "date": "2025-11-17",
+   "entity": "MWL",
+   "card": "Current Account",
+   "holder": "-",
+   "desc": "ANDY PERSONAL ACCOUN MODELWARE SYSTEMS",
+   "gross": 1500.0,
+   "refund": false,
+   "key": "_current_account"
+  },
+  {
+   "date": "2025-11-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 130.43,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2025-11-18",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "LinkedIn SN P648259893 LINKEDIN.COM None",
+   "gross": 1249.99,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2025-11-19",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM TUBEBUDDY.COMCA None",
+   "gross": 39.82,
+   "refund": false,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-11-19",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM 3103421500 CA None",
+   "gross": 37.62,
+   "refund": true,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-11-20",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "INT PYMT FEE- 1437.49 LINKEDIN SN P6482 None",
+   "gross": 32.34,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2025-11-20",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM 3103421500 CA None",
+   "gross": 37.56,
+   "refund": true,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-11-20",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM 3103421500 CA None",
+   "gross": 37.56,
+   "refund": true,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-11-20",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM 3103421500 CA None",
+   "gross": 37.56,
+   "refund": true,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-11-20",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM 3103421500 CA None",
+   "gross": 37.56,
+   "refund": true,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-11-20",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "TUBEBUDDYCOM 3103421500 CA None",
+   "gross": 37.56,
+   "refund": true,
+   "key": "tubebuddy"
+  },
+  {
+   "date": "2025-11-21",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "MIRO.COM MIRO.COM CA None",
+   "gross": 3398.74,
+   "refund": false,
+   "key": "miro"
+  },
+  {
+   "date": "2025-11-21",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Phantombuster Paris None",
+   "gross": 1221.42,
+   "refund": false,
+   "key": "phantombuster"
+  },
+  {
+   "date": "2025-11-24",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 89.43,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2025-11-29",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google One London None",
+   "gross": 373.9,
+   "refund": false,
+   "key": "google_one"
+  },
+  {
+   "date": "2025-12-01",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "GRAMMARLY CO9ZH7AO8 GRAMMARLY.COMCA None",
+   "gross": 2208.38,
+   "refund": false,
+   "key": "grammarly"
+  },
+  {
+   "date": "2025-12-02",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0100Y4HHF Dublin None",
+   "gross": 1600.2,
+   "refund": false,
+   "key": "msft_business"
+  },
+  {
+   "date": "2025-12-02",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0100Y4F2H Dublin None",
+   "gross": 408.9,
+   "refund": false,
+   "key": "msft_second"
+  },
+  {
+   "date": "2025-12-02",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "DiaMatrix cc Cape Town None",
+   "gross": 94.78,
+   "refund": false,
+   "key": "diamatrix"
+  },
+  {
+   "date": "2025-12-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 173.9,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2025-12-04",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "DAMA INTERNATIONAL 804-382-5957 WA None",
+   "gross": 878.93,
+   "refund": false,
+   "key": "dama_international"
+  },
+  {
+   "date": "2025-12-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL CORK None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2025-12-08",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SPOTIFY STOCKHOLM None",
+   "gross": 82.6,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2025-12-10",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "GITHUB INC. GITHUB.COM CA None",
+   "gross": 152.7,
+   "refund": false,
+   "key": "github"
+  },
+  {
+   "date": "2025-12-17",
+   "entity": "MWL",
+   "card": "Current Account",
+   "holder": "-",
+   "desc": "ANDY PERSONAL ACCOUN MODELWARE SYSTEMS",
+   "gross": 1500.0,
+   "refund": false,
+   "key": "_current_account"
+  },
+  {
+   "date": "2025-12-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 130.43,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2025-12-18",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "LinkedIn SN P998077494 LINKEDIN.COM None",
+   "gross": 1249.99,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2025-12-24",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 85.6,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2026-01-01",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Diamatrix Cape Town None",
+   "gross": 94.78,
+   "refund": false,
+   "key": "diamatrix"
+  },
+  {
+   "date": "2026-01-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0100YDMAZ Dublin None",
+   "gross": 1600.2,
+   "refund": false,
+   "key": "msft_business"
+  },
+  {
+   "date": "2026-01-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0100YE92V Microsoft None",
+   "gross": 408.9,
+   "refund": false,
+   "key": "msft_second"
+  },
+  {
+   "date": "2026-01-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 173.9,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2026-01-04",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google One London None",
+   "gross": 304.34,
+   "refund": false,
+   "key": "google_one"
+  },
+  {
+   "date": "2026-01-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 82.6,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2026-01-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2026-01-10",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "GITHUB INC. GITHUB.COM CA None",
+   "gross": 147.92,
+   "refund": false,
+   "key": "github"
+  },
+  {
+   "date": "2026-01-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 130.43,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2026-01-19",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "LinkedIn SN P726692213 LINKEDIN.COM None",
+   "gross": 11739.03,
+   "refund": false,
+   "key": "linkedin"
+  },
+  {
+   "date": "2026-01-20",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0400XVB83E0400YDublin None",
+   "gross": 254.7,
+   "refund": false,
+   "key": "msft_azure"
+  },
+  {
+   "date": "2026-01-24",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 72.17,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2026-01-28",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "GENSPARK.AI SINGAPORE None",
+   "gross": 411.97,
+   "refund": false,
+   "key": "genspark"
+  },
+  {
+   "date": "2026-02-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0100YMU5J Dublin None",
+   "gross": 1600.2,
+   "refund": false,
+   "key": "msft_business"
+  },
+  {
+   "date": "2026-02-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0100YMISB Dublin None",
+   "gross": 408.9,
+   "refund": false,
+   "key": "msft_second"
+  },
+  {
+   "date": "2026-02-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0400YDIHL Microsoft None",
+   "gross": 268.47,
+   "refund": false,
+   "key": "msft_azure"
+  },
+  {
+   "date": "2026-02-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 173.9,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2026-02-04",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 582.6,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2026-02-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 82.6,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2026-02-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL ITUNES.COM None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2026-02-10",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "GITHUB INC. GITHUB.COM CA None",
+   "gross": 143.47,
+   "refund": false,
+   "key": "github"
+  },
+  {
+   "date": "2026-02-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 130.43,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2026-02-22",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "MEETUP ORG SUB 6M MEETUP.COM NY None",
+   "gross": 1660.99,
+   "refund": false,
+   "key": "meetup"
+  },
+  {
+   "date": "2026-02-24",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 71.59,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2026-02-26",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "GENSPARK.AI SINGAPORE None",
+   "gross": 327.97,
+   "refund": false,
+   "key": "genspark"
+  },
+  {
+   "date": "2026-03-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0100YW8VQ Dublin None",
+   "gross": 1600.2,
+   "refund": false,
+   "key": "msft_business"
+  },
+  {
+   "date": "2026-03-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0100YWBA7 Microsoft None",
+   "gross": 408.9,
+   "refund": false,
+   "key": "msft_second"
+  },
+  {
+   "date": "2026-03-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MSFT E0400YMN10 MSBILL.INFO None",
+   "gross": 213.4,
+   "refund": false,
+   "key": "msft_azure"
+  },
+  {
+   "date": "2026-03-03",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google Daily Maverick London None",
+   "gross": 199.99,
+   "refund": false,
+   "key": "daily_maverick"
+  },
+  {
+   "date": "2026-03-06",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "SpotifyZA Stockholm None",
+   "gross": 82.6,
+   "refund": false,
+   "key": "spotify"
+  },
+  {
+   "date": "2026-03-08",
+   "entity": "MWL",
+   "card": "Howard CC",
+   "holder": "Howard",
+   "desc": "APPLE.COMBILL CORK None",
+   "gross": 108.69,
+   "refund": false,
+   "key": "apple"
+  },
+  {
+   "date": "2026-03-08",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "CLAUDE.AI SUBSCRIPTION ANTHROPIC.COMCA None",
+   "gross": 344.91,
+   "refund": false,
+   "key": "claude"
+  },
+  {
+   "date": "2026-03-08",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "GENSPARK.AI SINGAPORE None",
+   "gross": 429.81,
+   "refund": false,
+   "key": "genspark"
+  },
+  {
+   "date": "2026-03-10",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "GITHUB INC. GITHUB.COM CA None",
+   "gross": 149.83,
+   "refund": false,
+   "key": "github"
+  },
+  {
+   "date": "2026-03-17",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "Google YouTubePremium London None",
+   "gross": 130.43,
+   "refund": false,
+   "key": "youtube_premium"
+  },
+  {
+   "date": "2026-03-21",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "MIRO.COM MIRO.COM CA None",
+   "gross": 2175.57,
+   "refund": false,
+   "key": "miro"
+  },
+  {
+   "date": "2026-03-24",
+   "entity": "MWL",
+   "card": "Veronica CC",
+   "holder": "Veronica",
+   "desc": "PCLOUD.COM BAAR None",
+   "gross": 76.37,
+   "refund": false,
+   "key": "pcloud"
+  },
+  {
+   "date": "2026-04-02",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "BOOKMAGIC.AI LONDON None",
+   "gross": 1981.29,
+   "refund": false,
+   "key": "bookmagic"
+  },
+  {
+   "date": "2026-04-10",
+   "entity": "MWI",
+   "card": "Veronica Business CC",
+   "holder": "Veronica",
+   "desc": "MANUS AI SINGAPORE None",
+   "gross": 321.87,
+   "refund": false,
+   "key": "manus"
+  },
+  {
+   "date": "2026-04-27",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "Google One London None",
+   "gross": 373.9,
+   "refund": false,
+   "key": "google_one"
+  },
+  {
+   "date": "2026-05-10",
+   "entity": "MWI",
+   "card": "Veronica Business CC",
+   "holder": "Veronica",
+   "desc": "MANUS AI SINGAPORE None",
+   "gross": 322.03,
+   "refund": false,
+   "key": "manus"
+  },
+  {
+   "date": "2026-05-22",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "AMAZON DIGI Z05QT16H3 WWW.AMAZON.COWA None",
+   "gross": 255.22,
+   "refund": false,
+   "key": "amazon_digital"
+  },
+  {
+   "date": "2026-05-27",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "Google One London None",
+   "gross": 373.9,
+   "refund": false,
+   "key": "google_one"
+  },
+  {
+   "date": "2026-06-03",
+   "entity": "MWI",
+   "card": "Veronica Business CC",
+   "holder": "Veronica",
+   "desc": "Moodle 61894674167 None",
+   "gross": 20492.06,
+   "refund": false,
+   "key": "moodle"
+  },
+  {
+   "date": "2026-06-10",
+   "entity": "MWI",
+   "card": "Veronica Business CC",
+   "holder": "Veronica",
+   "desc": "MANUS AI SINGAPORE None",
+   "gross": 372.06,
+   "refund": false,
+   "key": "manus"
+  },
+  {
+   "date": "2026-06-27",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "Google One London None",
+   "gross": 373.9,
+   "refund": false,
+   "key": "google_one"
+  },
+  {
+   "date": "2026-06-28",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "PLUS DOCS* TRIAL OVER PLUSDOCS.COM DE None",
+   "gross": 428.18,
+   "refund": false,
+   "key": "plus_docs"
+  },
+  {
+   "date": "2026-07-10",
+   "entity": "MWI",
+   "card": "Veronica Business CC",
+   "holder": "Veronica",
+   "desc": "MANUS AI SINGAPORE None",
+   "gross": 368.89,
+   "refund": false,
+   "key": "manus"
+  },
+  {
+   "date": "2026-07-28",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "PLUS DOCS INC. PLUSDOCS.COM DE None",
+   "gross": 436.73,
+   "refund": false,
+   "key": "plus_docs"
+  },
+  {
+   "date": "2026-07-28",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "GOOGLE *Google One g.co/helppay None",
+   "gross": 429.99,
+   "refund": false,
+   "key": "google_one"
+  },
+  {
+   "date": "2026-07-31",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "BILLING@BNESIM.COM KOWLOON None",
+   "gross": 216.43,
+   "refund": false,
+   "key": "bnesim"
+  },
+  {
+   "date": "2026-08-08",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "SM.NORD* PRODUCT LONDON None",
+   "gross": 1605.9,
+   "refund": false,
+   "key": "nordvpn"
+  },
+  {
+   "date": "2026-08-09",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "BILLING@BNESIM.COM KOWLOON None",
+   "gross": 198.21,
+   "refund": false,
+   "key": "bnesim"
+  },
+  {
+   "date": "2026-08-10",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "BILLING@BNESIM.COM KOWLOON None",
+   "gross": 129.67,
+   "refund": false,
+   "key": "bnesim"
+  },
+  {
+   "date": "2026-08-10",
+   "entity": "MWI",
+   "card": "Veronica Business CC",
+   "holder": "Veronica",
+   "desc": "MANUS AI SINGAPORE None",
+   "gross": 367.99,
+   "refund": false,
+   "key": "manus"
+  },
+  {
+   "date": "2026-08-11",
+   "entity": "MWI",
+   "card": "Veronica Business CC",
+   "holder": "Veronica",
+   "desc": "MANUS AI SINGAPORE None",
+   "gross": 342.94,
+   "refund": true,
+   "key": "manus"
+  },
+  {
+   "date": "2026-08-12",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "SM.NORD* PRODUCT LONDON None",
+   "gross": 1494.96,
+   "refund": true,
+   "key": "nordvpn"
+  },
+  {
+   "date": "2026-08-27",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "Google One London None",
+   "gross": 373.9,
+   "refund": false,
+   "key": "google_one"
+  },
+  {
+   "date": "2026-08-27",
+   "entity": "MWI",
+   "card": "Veronica Business CC",
+   "holder": "Veronica",
+   "desc": "MANUS AI SINGAPORE None",
+   "gross": 359.33,
+   "refund": false,
+   "key": "manus"
+  },
+  {
+   "date": "2026-08-28",
+   "entity": "MWI",
+   "card": "Howard Business CC",
+   "holder": "Howard",
+   "desc": "PLUS DOCS INC. PLUSDOCS.COM DE None",
+   "gross": 415.72,
+   "refund": false,
+   "key": "plus_docs"
+  }
+ ],
+ "review": [
+  {
+   "kind": "move",
+   "title": "LinkedIn Sales Navigator moved card/entity",
+   "detail": "Treat as one identity that changed card/entity \u2014 confirm it moved (not cancelled + new).",
+   "evidence": "Charges on: Howard CC, Veronica CC across MWL. First 2025-04-18, last 2026-01-19.",
+   "severity": "warn"
+  },
+  {
+   "kind": "move",
+   "title": "Google One moved card/entity",
+   "detail": "Treat as one identity that changed card/entity \u2014 confirm it moved (not cancelled + new).",
+   "evidence": "Charges on: Howard Business CC, Veronica CC across MWI, MWL. First 2025-10-30, last 2026-08-27.",
+   "severity": "warn"
+  },
+  {
+   "kind": "move",
+   "title": "Miro moved card/entity",
+   "detail": "Treat as one identity that changed card/entity \u2014 confirm it moved (not cancelled + new).",
+   "evidence": "Charges on: Howard CC, Veronica CC across MWL. First 2025-11-21, last 2026-03-21.",
+   "severity": "warn"
+  },
+  {
+   "kind": "move",
+   "title": "Apple / iTunes moved card/entity",
+   "detail": "Treat as one identity that changed card/entity \u2014 confirm it moved (not cancelled + new).",
+   "evidence": "Charges on: Howard CC, Veronica CC across MWL. First 2025-04-08, last 2026-03-08.",
+   "severity": "warn"
+  },
+  {
+   "kind": "move",
+   "title": "pCloud moved card/entity",
+   "detail": "Treat as one identity that changed card/entity \u2014 confirm it moved (not cancelled + new).",
+   "evidence": "Charges on: Howard CC, Veronica CC across MWL. First 2025-04-24, last 2026-03-24.",
+   "severity": "warn"
+  },
+  {
+   "kind": "split",
+   "title": "Microsoft split into 3 lines",
+   "detail": "Bundled MSFT charges split by amount signature (R1,600 line, R409 line, metered Azure). Confirm the split and each line's true product from the invoices.",
+   "evidence": "Microsoft 365 (R1,600 line): last R1600.20; Microsoft (R409 line): last R408.90; Microsoft Azure (metered): last R213.40",
+   "severity": "warn"
+  },
+  {
+   "kind": "verify",
+   "title": "Phantombuster \u2014 active or cancelled?",
+   "detail": "Spec expects last charge ~Nov-25. Last charge in data is 2025-11-21. Confirm whether it is still billing.",
+   "evidence": "8 charges, last 2025-11-21, typical R1226.63.",
+   "severity": "warn"
+  },
+  {
+   "kind": "verify",
+   "title": "PayFast \u2014 active or cancelled?",
+   "detail": "Spec expects last charge ~Oct-25. Last charge in data is 2025-10-04. Confirm whether it is still billing.",
+   "evidence": "3 charges, last 2025-10-04, typical R200.00.",
+   "severity": "warn"
+  },
+  {
+   "kind": "verify",
+   "title": "DiaMatrix \u2014 active or cancelled?",
+   "detail": "Spec expects last charge ~Jan-26. Last charge in data is 2026-01-01. Confirm whether it is still billing.",
+   "evidence": "4 charges, last 2026-01-01, typical R94.78.",
+   "severity": "warn"
+  },
+  {
+   "kind": "verify",
+   "title": "TimesLIVE \u2014 active or cancelled?",
+   "detail": "Spec expects last charge ~Nov-25. Last charge in data is 2025-11-14. Confirm whether it is still billing.",
+   "evidence": "6 charges, last 2025-11-14, typical R58.26.",
+   "severity": "warn"
+  },
+  {
+   "kind": "verify",
+   "title": "TubeBuddy \u2014 active or cancelled?",
+   "detail": "Spec expects last charge ~Nov-25. Last charge in data is 2025-11-19. Confirm whether it is still billing.",
+   "evidence": "8 charges, last 2025-11-19, typical R40.56.",
+   "severity": "warn"
+  },
+  {
+   "kind": "verify",
+   "title": "Amazon Digital \u2014 active or cancelled?",
+   "detail": "Spec expects last charge ~May-25. Last charge in data is 2026-05-22. Confirm whether it is still billing.",
+   "evidence": "3 charges, last 2026-05-22, typical R54.81.",
+   "severity": "warn"
+  },
+  {
+   "kind": "verify",
+   "title": "Mighty Networks \u2014 confirm July charge = annual plan",
+   "detail": "Monthly (~R4,000) stopped after Jul-2025; a R35,248.93 charge on 28/07/2025 (partial refund R3,160.83) looks like an annual plan renewing ~Jul-2026. Confirm it's the annual plan being cancelled.",
+   "evidence": "Monthly charges Apr\u2013Jul 2025, then R35,248.93 annual on 28/07/2025, refund R3,160.83.",
+   "severity": "warn"
+  },
+  {
+   "kind": "nonsub",
+   "title": "MWL Current Account (donation/salary)",
+   "detail": "Tagged non-subscription per decision O6 \u2014 shown as 'other', excluded from the subscription run-rate.",
+   "evidence": "5 line(s), R6500.00 (Daily Bread / Andy personal account).",
+   "severity": "info"
+  },
+  {
+   "kind": "unmatched",
+   "title": "1 unmatched charge(s)",
+   "detail": "Could not match to a known vendor \u2014 promote to a subscription, mark one-off, or exclude.",
+   "evidence": "Canva 04623-33563675 Sydney None",
+   "severity": "warn"
+  },
+  {
+   "kind": "cadence",
+   "title": "Miro cadence looks irregular",
+   "detail": "Two charges detected (R3,398.74 then R2,175.57, ~4 months apart). Spec assumes annual \u2014 confirm cadence and typical amount.",
+   "evidence": "Charges: 2025-11-21 R3398.74, 2026-03-21 R2175.57",
+   "severity": "info"
+  }
+ ],
+ "totals": {
+  "MWL_gross": 130646.55,
+  "MWL_refunds": 3386.25,
+  "MWI_gross": 30197.17,
+  "MWI_refunds": 1837.9,
+  "MWL_current_account": 6500.0
+ }
+};
+
+/* ===== config ===== */
+const CFG_KEY='mws_sub_gh_cfg_v1';
+const DEFAULT_CFG={owner:'modelwaresystems-dama',repo:'modelware_app_storage',
+  branch:'main',folder:'modelware_subscription',token:'',editor:''};
+function loadCfg(){try{return Object.assign({},DEFAULT_CFG,JSON.parse(localStorage.getItem(CFG_KEY)||'{}'));}catch(e){return{...DEFAULT_CFG};}}
+function saveCfg(c){try{localStorage.setItem(CFG_KEY,JSON.stringify(c));}catch(e){}}
+let cfg=loadCfg();
+
+/* ===== model ===== */
+const CADENCE_MULT={monthly:12,quarterly:4,'6-monthly':2,annual:1,'one-off':0};
+const CARDS={MWL:['Veronica CC','Howard CC','Current Account'],MWI:['Howard Business CC','Veronica Business CC']};
+const STATUSES=['active','review','marked-to-cancel','cancelling','cancelled','moved'];
+const CALLS=['Keep','Cancel','Review'];
+const CADENCES=['monthly','quarterly','6-monthly','annual','one-off'];
+const VATS=['SA-VAT-15','none','confirm'];
+const EDIT_FIELDS={next_renewal:'',cancel_url:'',cancel_steps:'',note:'',edited_by:'',edited_at:''};
+
+let LIVE=null, sha=null, dirty={}, path=()=> (cfg.folder?cfg.folder.replace(/\/+$/,'')+'/':'')+'subscription_data.json';
+
+function normalise(d){
+  d=JSON.parse(JSON.stringify(d));
+  (d.subscriptions||[]).forEach((s,i)=>{
+    for(const k in EDIT_FIELDS) if(s[k]===undefined) s[k]=EDIT_FIELDS[k];
+    if(s.id===undefined) s.id=s.key||('sub_'+i);
+  });
+  return d;
+}
+function recompute(s){
+  const mult=CADENCE_MULT[s.cadence]??12;
+  s.fwd_annual=Math.round((s.last_actual||0)*mult*100)/100;
+  s.fund_annual=Math.round(s.fwd_annual*(1+(s.buffer_pct||0)/100)*100)/100;
+}
+
+/* ===== helpers ===== */
+const ZAR=n=>'R'+(n||0).toLocaleString('en-ZA',{minimumFractionDigits:0,maximumFractionDigits:0});
+const ZAR2=n=>'R'+(n||0).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2});
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+function toast(msg,err){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(err?' err':'');
+  setTimeout(()=>t.className='toast',err?4200:2200);}
+
+let state={ent:'ALL',q:'',status:'',call:'',sort:'fwd_annual',dir:-1,tab:'inv',decisions:{},open:{}};
+
+/* ===== GitHub Contents API ===== */
+function ghHeaders(){return{Authorization:'Bearer '+cfg.token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};}
+function b64enc(str){return btoa(unescape(encodeURIComponent(str)));}
+function b64dec(b64){return decodeURIComponent(escape(atob((b64||'').replace(/\n/g,''))));}
+async function ghGet(){
+  const url=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path()}?ref=${encodeURIComponent(cfg.branch)}`;
+  const r=await fetch(url,{headers:ghHeaders()});
+  if(r.status===404) return {missing:true};
+  if(!r.ok) throw new Error('read '+r.status+': '+(await r.text()).slice(0,160));
+  const j=await r.json();
+  return {data:JSON.parse(b64dec(j.content)),sha:j.sha};
+}
+async function ghPut(obj,prevSha,msg){
+  const url=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path()}`;
+  const body={message:msg,content:b64enc(JSON.stringify(obj,null,1)),branch:cfg.branch};
+  if(prevSha) body.sha=prevSha;
+  const r=await fetch(url,{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body)});
+  if(r.status===409||r.status===422){const e=new Error('conflict');e.conflict=true;throw e;}
+  if(!r.ok) throw new Error('write '+r.status+': '+(await r.text()).slice(0,160));
+  return (await r.json()).content.sha;
+}
+function setSync(kind,txt){
+  const c=document.getElementById('syncchip');c.className='sync '+kind;
+  document.getElementById('synctxt').textContent=txt;
+}
+async function boot(){
+  LIVE=normalise(BUNDLED);
+  render();
+  if(cfg.token&&cfg.owner&&cfg.repo){
+    setSync('busy','Connecting…');
+    try{
+      const res=await ghGet();
+      if(res.missing){ setSync('local','Repo empty — seed'); toast('No data file in repo yet — open ⚙ GitHub to seed it.'); }
+      else { LIVE=normalise(res.data); sha=res.sha; setSync('synced','Synced'); render(); }
+    }catch(e){ setSync('error','Connect failed'); toast('GitHub: '+e.message,true); }
+  } else {
+    setSync('local','Local file — not connected');
+  }
+}
+
+/* ===== filtering / kpis ===== */
+function subs(){return LIVE.subscriptions;}
+function subsFiltered(){
+  return subs().filter(s=>{
+    if(state.ent!=='ALL'&&s.entity!==state.ent)return false;
+    if(state.status&&s.status!==state.status)return false;
+    if(state.call&&s.call!==state.call)return false;
+    if(state.q&&!((s.name||'').toLowerCase().includes(state.q)||(s.category||'').toLowerCase().includes(state.q)))return false;
+    return true;
+  }).sort((a,b)=>{let av=a[state.sort],bv=b[state.sort];
+    if(typeof av==='string'){av=av.toLowerCase();bv=(bv||'').toLowerCase();}
+    return (av<bv?-1:av>bv?1:0)*state.dir;});
+}
+function renderKpis(){
+  const box=document.getElementById('kpis');box.innerHTML='';
+  const scope=subs().filter(s=>state.ent==='ALL'||s.entity===state.ent);
+  const runrate=scope.filter(s=>s.call!=='Cancel'&&s.status!=='cancelled'&&s.cadence!=='one-off').reduce((t,s)=>t+s.fwd_annual,0);
+  const cancelSave=scope.filter(s=>s.call==='Cancel').reduce((t,s)=>t+s.fwd_annual,0);
+  const nActive=scope.filter(s=>s.status==='active').length;
+  const nReview=scope.filter(s=>s.status==='review').length;
+  const nCancel=scope.filter(s=>s.status==='marked-to-cancel').length;
+  const openRev=(LIVE.review||[]).filter((r,i)=>!state.decisions[i]).length;
+  [['Kept run-rate','accent',ZAR(runrate),'fwd annual, excl. cancels & current a/c'],
+   ['Cancel candidates','cancel',ZAR(cancelSave),nCancel+' marked to cancel'],
+   ['Active','good',nActive,'billing now'],
+   ['Under review','',nReview,'active/cancelled to confirm'],
+   ['Review inbox','',openRev+' open','of '+(LIVE.review||[]).length+' flagged'],
+   ['Subscriptions','',scope.length,(state.ent==='ALL'?'both entities':state.ent)],
+  ].forEach(([l,cl,v,n])=>{const k=el('div','kpi '+cl);k.appendChild(el('div','lbl',l));
+    k.appendChild(el('div','val',v));k.appendChild(el('div','note',n));box.appendChild(k);});
+}
+
+/* ===== inventory ===== */
+const COLS=[['name','Subscription',''],['entity','Entity · Card',''],['cadence','Cadence',''],
+  ['last_actual','Last actual','num'],['fwd_annual','Fwd annual','num'],
+  ['vat','VAT',''],['status','Status',''],['call','Call',''],['','','act']];
+function statusChip(s){const map={active:'active',review:'review','marked-to-cancel':'cancel',cancelling:'cancel',cancelled:'cancel',moved:'moved'};
+  const lbl={active:'Active',review:'Review','marked-to-cancel':'To cancel',cancelling:'Cancelling',cancelled:'Cancelled',moved:'Moved'};
+  return `<span class="chip ${map[s.status]||'review'}">${lbl[s.status]||s.status}</span>`;}
+function vatChip(v){return `<span class="chip vat">${({'SA-VAT-15':'15%',none:'none',confirm:'confirm'})[v]||v}</span>`;}
+function renderInv(){
+  const sec=document.getElementById('tab-inv');sec.innerHTML='';
+  const card=el('div','tablecard');const tbl=el('table');
+  const thead=el('thead');const tr=el('tr');
+  COLS.forEach(([k,l,cl])=>{const th=el('th',cl,l+(k&&state.sort===k?(state.dir<0?' ▾':' ▴'):''));
+    if(k)th.onclick=()=>{if(state.sort===k)state.dir*=-1;else{state.sort=k;state.dir=(cl==='num'?-1:1);}render();};
+    tr.appendChild(th);});
+  thead.appendChild(tr);tbl.appendChild(thead);
+  const tb=el('tbody');const rows=subsFiltered();
+  rows.forEach(s=>{
+    const tr=el('tr','row');
+    tr.innerHTML=`
+      <td><div class="vname" data-hist="${esc(s.id)}">${esc(s.name)} ${s.moved?'<span class="chip moved" title="Charged on more than one card/entity">moved</span>':''} ${s.edited_by?'<span class="chip edited" title="Edited by '+esc(s.edited_by)+' '+esc(s.edited_at)+'">edited</span>':''}</div><div class="vcat">${esc(s.category)}</div></td>
+      <td><span class="chip ent">${esc(s.entity)}</span> <span class="muted">${esc(s.card)}</span></td>
+      <td>${esc(s.cadence)}</td>
+      <td class="num">${s.last_actual?ZAR2(s.last_actual):'—'}</td>
+      <td class="num"><b>${s.fwd_annual?ZAR(s.fwd_annual):'—'}</b></td>
+      <td>${vatChip(s.vat)}</td>
+      <td>${statusChip(s)}</td>
+      <td><span class="call ${s.call}">${esc(s.call)}</span></td>
+      <td class="act"><button class="iconbtn" data-edit="${esc(s.id)}">Edit</button></td>`;
+    const det=el('tr','detail'+(state.open[s.id]?'':' hide'));
+    const dc=el('td');dc.colSpan=COLS.length;dc.appendChild(chargeHistory(s));det.appendChild(dc);
+    tr.querySelector('[data-hist]').onclick=()=>{state.open[s.id]=det.classList.toggle('hide')?false:true;};
+    tr.querySelector('[data-edit]').onclick=e=>{e.stopPropagation();openEdit(s.id);};
+    tb.appendChild(tr);tb.appendChild(det);
+  });
+  tbl.appendChild(tb);card.appendChild(tbl);
+  if(!rows.length)card.appendChild(el('div','',`<div style="padding:24px;text-align:center" class="muted">No subscriptions match these filters.</div>`));
+  sec.appendChild(card);
+}
+function chargeHistory(s){
+  const w=el('div','detail-inner');
+  w.appendChild(el('div','',`<div style="display:flex;gap:22px;flex-wrap:wrap;font-size:12.5px" class="muted">
+     <span>First <b>${esc(s.first_seen||'—')}</b></span><span>Last <b>${esc(s.last_seen||'—')}</b></span>
+     <span>Charges <b>${s.n_charges||0}</b></span><span>Refunds <b>${s.n_refunds||0}</b>${s.net_refunds?(' ('+ZAR2(s.net_refunds)+')'):''}</span>
+     <span>Typical <b>${ZAR2(s.typical||0)}</b></span><span>Fund (+${s.buffer_pct||0}%) <b>${ZAR(s.fund_annual||0)}</b></span>
+     ${s.next_renewal?`<span>Next renewal <b>${esc(s.next_renewal)}</b></span>`:''}
+     ${s.moved?`<span class="chip moved">on: ${esc((s.cards_touched||[]).join(', '))} · ${esc((s.entities_touched||[]).join(', '))}</span>`:''}
+  </div>`));
+  if(s.note) w.appendChild(el('div','note-box','<b>Note:</b> '+esc(s.note)));
+  if(s.cancel_url||s.cancel_steps) w.appendChild(el('div','note-box',
+    (s.cancel_url?('<b>Cancel:</b> <a href="'+esc(s.cancel_url)+'" target="_blank" rel="noopener">'+esc(s.cancel_url)+'</a> '):'')+(s.cancel_steps?('— '+esc(s.cancel_steps)):'')));
+  const t=el('table','hist');
+  t.innerHTML='<thead><tr><th>Date</th><th>Entity·Card</th><th class="right">Amount</th><th>Bank description</th></tr></thead>';
+  const tb=el('tbody');
+  (s.charges||[]).slice().reverse().forEach(c=>{const tr=el('tr',c.refund?'rf':'');
+    tr.innerHTML=`<td>${esc(c.date)}</td><td>${esc(c.entity)}·${esc(c.card)}</td>
+      <td class="right">${c.refund?'+':''}${ZAR2(c.gross)}</td>
+      <td style="white-space:normal;font-family:var(--sans)">${esc(c.desc)}</td>`;tb.appendChild(tr);});
+  t.appendChild(tb);w.appendChild(t);return w;
+}
+
+/* ===== edit modal ===== */
+function opt(list,cur){return list.map(o=>`<option ${o===cur?'selected':''}>${esc(o)}</option>`).join('');}
+function openEdit(id){
+  const isNew=(id==null);
+  const s=isNew?{id:'sub_'+Date.now(),name:'',category:'',entity:'MWL',card:'Veronica CC',
+    cadence:'monthly',vat:'confirm',status:'active',call:'Review',typical:0,last_actual:0,
+    buffer_pct:0,fwd_annual:0,fund_annual:0,charges:[],n_charges:0,n_refunds:0,...EDIT_FIELDS}
+    :JSON.parse(JSON.stringify(subs().find(x=>x.id===id)));
+  const root=document.getElementById('modalRoot');
+  root.innerHTML=`<div class="modal-bg"><div class="modal">
+    <h2>${isNew?'Add subscription':'Edit subscription'}</h2>
+    <div class="mdesc">${isNew?'Manual enrichment — add a subscription the bank import didn\'t create.':'Change any field. Amounts and cadence recompute the forward annual figure.'}</div>
+    <div class="form-grid">
+      <div class="field full"><label>Vendor / company name</label><input type="text" id="f_name" value="${esc(s.name)}"></div>
+      <div class="field"><label>Category</label><input type="text" id="f_category" value="${esc(s.category)}"></div>
+      <div class="field"><label>Entity (company)</label><select id="f_entity">${opt(['MWL','MWI'],s.entity)}</select></div>
+      <div class="field"><label>Card</label><select id="f_card">${opt(CARDS[s.entity]||[],s.card)}</select></div>
+      <div class="field"><label>Cadence</label><select id="f_cadence">${opt(CADENCES,s.cadence)}</select></div>
+      <div class="field"><label>Last actual (R)</label><input type="number" step="0.01" id="f_last" value="${s.last_actual||0}"></div>
+      <div class="field"><label>Typical (R)</label><input type="number" step="0.01" id="f_typical" value="${s.typical||0}"></div>
+      <div class="field"><label>VAT status</label><select id="f_vat">${opt(VATS,s.vat)}</select></div>
+      <div class="field"><label>Lifecycle status</label><select id="f_status">${opt(STATUSES,s.status)}</select></div>
+      <div class="field"><label>Call</label><select id="f_call">${opt(CALLS,s.call)}</select></div>
+      <div class="field"><label>Next renewal</label><input type="date" id="f_renew" value="${esc(s.next_renewal)}"></div>
+      <div class="field"><label>Cancel URL</label><input type="text" id="f_curl" value="${esc(s.cancel_url)}" placeholder="https://…"></div>
+      <div class="field full"><label>Cancel steps</label><textarea id="f_csteps">${esc(s.cancel_steps)}</textarea></div>
+      <div class="field full"><label>Note</label><textarea id="f_note">${esc(s.note)}</textarea></div>
+    </div>
+    <div id="f_fwd" class="note-box"></div>
+    <div class="modal-foot">
+      ${isNew?'':'<button class="btn danger" id="f_del">Delete</button>'}
+      <div class="grow"></div>
+      <button class="btn ghost" id="f_cancel">Cancel</button>
+      <button class="btn" id="f_save">${isNew?'Add':'Apply'}</button>
+    </div>
+  </div></div>`;
+  const $=x=>document.getElementById(x);
+  function fwdPreview(){const mult=CADENCE_MULT[$('f_cadence').value]??12;
+    const fa=(+$('f_last').value||0)*mult;
+    $('f_fwd').innerHTML=`Forward annual will be <b>${ZAR2(fa)}</b> (last actual × ${mult} for <b>${$('f_cadence').value}</b>). Fund figure keeps the +${s.buffer_pct||0}% buffer.`;}
+  $('f_entity').onchange=()=>{$('f_card').innerHTML=opt(CARDS[$('f_entity').value]||[],'');};
+  $('f_cadence').oninput=fwdPreview;$('f_last').oninput=fwdPreview;fwdPreview();
+  $('f_cancel').onclick=closeModal;
+  $('f_save').onclick=()=>{
+    s.name=$('f_name').value.trim();s.category=$('f_category').value.trim();
+    s.entity=$('f_entity').value;s.card=$('f_card').value;s.cadence=$('f_cadence').value;
+    s.vat=$('f_vat').value;s.status=$('f_status').value;s.call=$('f_call').value;
+    s.last_actual=+$('f_last').value||0;s.typical=+$('f_typical').value||0;
+    s.next_renewal=$('f_renew').value;s.cancel_url=$('f_curl').value.trim();
+    s.cancel_steps=$('f_csteps').value.trim();s.note=$('f_note').value.trim();
+    if(!s.name){toast('Give it a name first.',true);return;}
+    recompute(s);
+    s.edited_by=cfg.editor||'(unnamed editor)';s.edited_at=new Date().toISOString().slice(0,16).replace('T',' ');
+    if(isNew){subs().push(s);} else {const i=subs().findIndex(x=>x.id===id);subs()[i]=s;}
+    dirty[s.id]=true;closeModal();render();markDirty();
+    toast(isNew?'Added — Save to GitHub to commit.':'Applied — Save to GitHub to commit.');
+  };
+  if(!isNew)$('f_del').onclick=()=>{
+    if(!confirm('Remove "'+s.name+'" from the register? (History is kept in git.)'))return;
+    const i=subs().findIndex(x=>x.id===id);subs().splice(i,1);dirty['__del_'+id]=true;
+    closeModal();render();markDirty();toast('Removed — Save to GitHub to commit.');
+  };
+}
+function closeModal(){document.getElementById('modalRoot').innerHTML='';}
+
+/* ===== GitHub config modal ===== */
+function openCfg(){
+  const root=document.getElementById('modalRoot');
+  root.innerHTML=`<div class="modal-bg"><div class="modal">
+    <h2>Connect to the private repo</h2>
+    <div class="mdesc">Point this at the repo holding your <code>modelware_subscription</code> data. A private repo needs a <b>fine-grained</b> token limited to this one repository with <b>Contents: read <u>and write</u></b> (write is needed to save edits).</div>
+    <div class="form-grid">
+      <div class="field"><label>Owner</label><input type="text" id="c_owner" value="${esc(cfg.owner)}"></div>
+      <div class="field"><label>Repository</label><input type="text" id="c_repo" value="${esc(cfg.repo)}"></div>
+      <div class="field"><label>Branch</label><input type="text" id="c_branch" value="${esc(cfg.branch)}"></div>
+      <div class="field"><label>Folder inside the repo</label><input type="text" id="c_folder" value="${esc(cfg.folder)}"></div>
+      <div class="field full"><label>Your name (for the edit audit stamp)</label><input type="text" id="c_editor" value="${esc(cfg.editor)}" placeholder="Howard"></div>
+      <div class="field full"><label>Token</label><input type="password" id="c_token" value="${esc(cfg.token)}" placeholder="github_pat_…" autocomplete="off"></div>
+    </div>
+    <div class="note-box">The token stays in <b>this browser</b> and is sent only to <code>api.github.com</code>. Anyone with access to this machine can read it — treat it as a password, and revoke it in GitHub when you're done. It is never written into the app or any commit.</div>
+    <div class="modal-foot">
+      <button class="btn danger" id="c_forget">Forget token</button>
+      <div class="grow"></div>
+      <button class="btn ghost" id="c_cancel">Cancel</button>
+      <button class="btn" id="c_save">Save &amp; connect</button>
+    </div>
+  </div></div>`;
+  const $=x=>document.getElementById(x);
+  $('c_cancel').onclick=closeModal;
+  $('c_forget').onclick=()=>{cfg.token='';saveCfg(cfg);$('c_token').value='';toast('Token cleared from this browser.');};
+  $('c_save').onclick=async()=>{
+    cfg={owner:$('c_owner').value.trim(),repo:$('c_repo').value.trim(),branch:$('c_branch').value.trim()||'main',
+      folder:$('c_folder').value.trim(),editor:$('c_editor').value.trim(),token:$('c_token').value.trim()};
+    saveCfg(cfg);closeModal();
+    if(!cfg.token){setSync('local','Local file — no token');return;}
+    setSync('busy','Connecting…');
+    try{
+      const res=await ghGet();
+      if(res.missing){
+        if(confirm('No subscription_data.json in that repo/folder yet. Seed it with the current data?')){
+          setSync('busy','Seeding…');sha=await ghPut(LIVE,null,'Seed subscription register');
+          setSync('synced','Synced');toast('Seeded the repo.');
+        } else setSync('local','Repo empty — seed');
+      } else {LIVE=normalise(res.data);sha=res.sha;setSync('synced','Synced');toast('Connected — loaded from GitHub.');}
+      dirty={};markDirty();render();
+    }catch(e){setSync('error','Connect failed');toast('GitHub: '+e.message,true);}
+  };
+}
+
+/* ===== save / dirty ===== */
+function markDirty(){
+  const n=Object.keys(dirty).length;const bar=document.getElementById('savebar');
+  document.getElementById('savemsg').textContent=n?(n+' unsaved change'+(n>1?'s':'')):'';
+  bar.className='savebar'+(n?' show':'');
+  document.getElementById('saveBtn').disabled=!(cfg.token&&cfg.owner);
+}
+async function doSave(){
+  if(!cfg.token){toast('Connect a token first (⚙ GitHub).',true);openCfg();return;}
+  setSync('busy','Saving…');document.getElementById('saveBtn').disabled=true;
+  LIVE.edited={by:cfg.editor||'(unnamed)',at:new Date().toISOString()};
+  const msg='Update subscription register ('+Object.keys(dirty).length+' change(s)) — '+(cfg.editor||'editor');
+  try{
+    sha=await ghPut(LIVE,sha,msg);
+    dirty={};markDirty();setSync('synced','Synced');toast('Saved & committed to GitHub.');
+  }catch(e){
+    if(e.conflict){
+      setSync('error','Conflict');
+      if(confirm('The file changed in GitHub since you loaded it (Veronica may have saved). Reload the latest now? Your unsaved edits will be lost.')){
+        try{const res=await ghGet();LIVE=normalise(res.data);sha=res.sha;dirty={};markDirty();render();setSync('synced','Synced');toast('Reloaded latest from GitHub.');}
+        catch(e2){setSync('error','Reload failed');toast('GitHub: '+e2.message,true);}
+      } else {markDirty();}
+    } else {setSync('error','Save failed');toast('GitHub: '+e.message,true);document.getElementById('saveBtn').disabled=false;}
+  }
+}
+
+/* ===== review / cards / import (unchanged behaviour) ===== */
+function renderRev(){
+  const sec=document.getElementById('tab-rev');sec.innerHTML='';
+  sec.appendChild(el('div','',`<div class="muted" style="font-size:13px;margin-bottom:14px">Every uncertain call from the import lands here with its evidence. Resolving one is a note to yourself; apply the outcome by editing the subscription (Inventory → Edit), which commits with the rest.</div>`));
+  const list=el('div','rev');
+  (LIVE.review||[]).forEach((r,i)=>{
+    const c=el('div','revcard '+(r.severity||'info'));
+    c.innerHTML=`<h4><span class="kind">${esc(r.kind)}</span> ${esc(r.title)}</h4><p>${esc(r.detail)}</p><div class="evi">${esc(r.evidence)}</div>`;
+    const acts=el('div','actions');
+    const opts=r.kind==='move'?['Confirm moved','Split into two','Not sure']
+      :r.kind==='verify'?['Still active','Cancelled','Not sure']
+      :r.kind==='split'?['Confirm split','Needs adjusting','Not sure']
+      :r.kind==='nonsub'?['Exclude','Keep as other','Not sure']
+      :r.kind==='cadence'?['Confirm cadence','Change cadence','Not sure']
+      :['Promote to sub','Mark one-off','Exclude'];
+    opts.forEach(o=>{const b=el('button',state.decisions[i]&&state.decisions[i].choice===o?'on':null,o);
+      b.onclick=()=>{state.decisions[i]={choice:o};render();};acts.appendChild(b);});
+    c.appendChild(acts);
+    if(state.decisions[i])c.appendChild(el('div','decided','✓ '+state.decisions[i].choice));
+    list.appendChild(c);
+  });
+  sec.appendChild(list);
+}
+function renderCards(){
+  const sec=document.getElementById('tab-cards');sec.innerHTML='';
+  sec.appendChild(el('div','',`<div class="muted" style="font-size:13px;margin-bottom:14px">Each card's active forward-annual load — foundation for the cash-flow guardian (increment 3).</div>`));
+  const grid=el('div','cardgrid');const byCard={};
+  subs().forEach(s=>{if(state.ent!=='ALL'&&s.entity!==state.ent)return;(byCard[s.entity+' · '+s.card]=byCard[s.entity+' · '+s.card]||[]).push(s);});
+  Object.entries(byCard).sort((a,b)=>{const f=x=>x[1].filter(s=>s.call!=='Cancel').reduce((t,s)=>t+s.fwd_annual,0);return f(b)-f(a);})
+    .forEach(([key,ss])=>{const tot=ss.filter(s=>s.call!=='Cancel'&&s.cadence!=='one-off').reduce((t,s)=>t+s.fwd_annual,0);
+    const box=el('div','cardbox');box.appendChild(el('h3',null,esc(key)));
+    box.appendChild(el('div','ctot',ZAR(tot)+' <span style="font-size:12px;font-weight:400" class="muted">/yr kept</span>'));
+    box.appendChild(el('div','muted',ss.length+' subscriptions · '+ZAR(tot/12)+'/mo avg'));
+    const ul=el('ul');ss.sort((a,b)=>b.fwd_annual-a.fwd_annual).forEach(s=>{const li=el('li');
+      li.innerHTML=`<span>${esc(s.name)} <span class="call ${s.call}" style="font-size:10px">${s.call==='Cancel'?'✕':''}</span></span><span class="a">${ZAR(s.fwd_annual)}</span>`;ul.appendChild(li);});
+    box.appendChild(ul);grid.appendChild(box);});
+  sec.appendChild(grid);
+}
+function renderImport(){
+  const sec=document.getElementById('tab-import');sec.innerHTML='';const t=LIVE.totals||{};
+  const p=el('div','prose');
+  p.innerHTML=`
+    <h3>How data gets in (hybrid ingestion)</h3>
+    <div class="step"><div class="n">1</div><div class="t"><b>Bank CSV import.</b> Charges auto-grouped by vendor and matched to subscriptions; a charge on a new card matches the same subscription (a <i>move</i>). Bundled vendors (Microsoft) split by amount signature. Unmatched → review inbox.</div></div>
+    <div class="step"><div class="n">2</div><div class="t"><b>Manual enrichment.</b> <span class="muted">(now live)</span> Edit any subscription — entity, card, name, status, cadence, VAT, renewal date, cancel steps, notes. Add subscriptions the import didn't create. Everything commits to the private repo.</div></div>
+    <div class="step"><div class="n">3</div><div class="t"><b>Outlook "Subscription" sweep.</b> <span class="muted">(increment 5)</span> Proposes renewal dates + tax invoices for approval before write.</div></div>
+    <h3>Reconciliation against the bank exports</h3>
+    <table class="recon"><thead><tr><th>Entity</th><th class="num">Payments</th><th class="num">Refunds</th><th class="num">Net</th><th class="num">Bank closing</th><th></th></tr></thead><tbody>
+      <tr><td>MWL <span class="muted">(Apr-25 → Mar-26)</span></td><td class="num">${ZAR2(t.MWL_gross)}</td><td class="num">${ZAR2(t.MWL_refunds)}</td><td class="num">${ZAR2((t.MWL_gross||0)-(t.MWL_refunds||0))}</td><td class="num">R127,260.30</td><td class="ok">✓ ties</td></tr>
+      <tr><td>MWI <span class="muted">(Apr-26 → Aug-26)</span></td><td class="num">${ZAR2(t.MWI_gross)}</td><td class="num">${ZAR2(t.MWI_refunds)}</td><td class="num">${ZAR2((t.MWI_gross||0)-(t.MWI_refunds||0))}</td><td class="num">R28,359.27</td><td class="ok">✓ ties</td></tr>
+    </tbody></table>
+    <p class="muted" style="margin-top:12px">MWL net includes <b>${ZAR2(t.MWL_current_account)}</b> current-account movement (tagged non-subscription, O6).</p>
+    <h3>Storage</h3>
+    <p>Data lives as <code>${esc(path())}</code> in <code>${esc(cfg.owner)}/${esc(cfg.repo)}</code> (branch <code>${esc(cfg.branch)}</code>). Edits commit via the GitHub Contents API using your in-browser token — last-writer-wins, both you and Veronica editing. Open <b>⚙ GitHub</b> to connect or change the target.</p>`;
+  sec.appendChild(p);
+}
+
+/* ===== shell ===== */
+function render(){
+  const stamp=(LIVE.edited&&LIVE.edited.at)?(' · last edit '+LIVE.edited.at.slice(0,10)+(LIVE.edited.by?(' by '+LIVE.edited.by):'')):'';
+  document.getElementById('subline').innerHTML=
+    `${subs().length} subscriptions across MWL &amp; MWI · generated ${esc(LIVE.generated||'')}${stamp}`;
+  document.getElementById('revcount').textContent=(LIVE.review||[]).filter((r,i)=>!state.decisions[i]).length;
+  renderKpis();
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===state.tab));
+  ['inv','rev','cards','import'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hide',t!==state.tab));
+  if(state.tab==='inv')renderInv();if(state.tab==='rev')renderRev();
+  if(state.tab==='cards')renderCards();if(state.tab==='import')renderImport();
+  markDirty();
+}
+document.getElementById('entseg').onclick=e=>{if(e.target.dataset.ent){state.ent=e.target.dataset.ent;
+  document.querySelectorAll('#entseg button').forEach(b=>b.classList.toggle('on',b===e.target));render();}};
+document.getElementById('tabs').onclick=e=>{if(e.target.dataset.tab){state.tab=e.target.dataset.tab;render();}};
+document.getElementById('q').oninput=e=>{state.q=e.target.value.toLowerCase();if(state.tab==='inv')renderInv();renderKpis();};
+document.getElementById('fstatus').onchange=e=>{state.status=e.target.value;render();};
+document.getElementById('fcall').onchange=e=>{state.call=e.target.value;render();};
+document.getElementById('cfgBtn').onclick=openCfg;
+document.getElementById('addBtn').onclick=()=>openEdit(null);
+document.getElementById('saveBtn').onclick=doSave;
+document.getElementById('discardBtn').onclick=()=>{if(confirm('Discard unsaved changes and reload the last loaded data?'))boot();};
+boot();
+</script>
+</body>
+</html>

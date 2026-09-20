@@ -270,7 +270,7 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
 
 <script>
 /* ===== build info ===== */
-const BUILD={version:'2.0.0',built:'2026-09-20 15:28 SAST'};
+const BUILD={version:'2.0.1',built:'2026-09-20 15:46 SAST'};
 /* ===== BUNDLED DATA (fallback + seed for the private repo) ===== */
 const BUNDLED = {
  "generated": "2026-09-20",
@@ -307,8 +307,8 @@ const BUNDLED = {
    "holder": "Veronica",
    "cadence": "annual",
    "vat": "none",
-   "status": "marked-to-cancel",
-   "call": "Cancel",
+   "status": "cancelled",
+   "call": "\u2014",
    "typical": 4046.05,
    "last_actual": 35248.93,
    "buffer_pct": 10,
@@ -5018,7 +5018,8 @@ let cfg=loadCfg();
 const CADENCE_MULT={monthly:12,quarterly:4,'6-monthly':2,annual:1,'one-off':0};
 const CARDS={MWL:['Veronica CC','Howard CC','Current Account'],MWI:['Howard Business CC','Veronica Business CC']};
 const STATUSES=['active','review','marked-to-cancel','cancelling','cancelled','moved'];
-const CALLS=['Keep','Cancel','Review'];
+const CALLS=['—','Keep','Cancel','Review'];  /* '—' = no advisory (Status is the source of truth) */
+const TERMINAL=['cancelling','cancelled'];
 const CADENCES=['monthly','quarterly','6-monthly','annual','one-off'];
 const VATS=['SA-VAT-15','none','confirm'];
 const EDIT_FIELDS={next_renewal:'',cancel_url:'',cancel_steps:'',note:'',edited_by:'',edited_at:''};
@@ -5110,16 +5111,16 @@ function subsFiltered(){
 function renderKpis(){
   const box=document.getElementById('kpis');box.innerHTML='';
   const scope=subs().filter(s=>state.ent==='ALL'||s.entity===state.ent);
-  const runrate=scope.filter(s=>s.call!=='Cancel'&&s.status!=='cancelled'&&s.cadence!=='one-off').reduce((t,s)=>t+s.fwd_annual,0);
-  const cancelSave=scope.filter(s=>s.call==='Cancel').reduce((t,s)=>t+s.fwd_annual,0);
-  const nActive=scope.filter(s=>s.status==='active').length;
+  const KEPT=['active','review','moved'];
+  const runrate=scope.filter(s=>KEPT.includes(s.status)&&s.cadence!=='one-off').reduce((t,s)=>t+s.fwd_annual,0);
+  const candidates=scope.filter(s=>s.status==='marked-to-cancel');
+  const cancelled=scope.filter(s=>s.status==='cancelled'||s.status==='cancelling');
   const nReview=scope.filter(s=>s.status==='review').length;
-  const nCancel=scope.filter(s=>s.status==='marked-to-cancel').length;
   const openRev=(LIVE.review||[]).filter((r,i)=>!state.decisions[i]).length;
-  [['Kept run-rate','accent',ZAR(runrate),'fwd annual, excl. cancels & current a/c'],
-   ['Cancel candidates','cancel',ZAR(cancelSave),nCancel+' marked to cancel'],
-   ['Active','good',nActive,'billing now'],
-   ['Under review','',nReview,'active/cancelled to confirm'],
+  [['Kept run-rate','accent',ZAR(runrate),'fwd annual, still billing, excl. current a/c'],
+   ['To-cancel (candidates)','cancel',ZAR(candidates.reduce((t,s)=>t+s.fwd_annual,0)),candidates.length+' marked to cancel'],
+   ['Cancelled (saved)','good',ZAR(cancelled.reduce((t,s)=>t+s.fwd_annual,0)),cancelled.length+' cancelled/cancelling'],
+   ['Under review','',nReview,'status to confirm'],
    ['Review inbox','',openRev+' open','of '+(LIVE.review||[]).length+' flagged'],
    ['Subscriptions','',scope.length,(state.ent==='ALL'?'both entities':state.ent)],
   ].forEach(([l,cl,v,n])=>{const k=el('div','kpi '+cl);k.appendChild(el('div','lbl',l));
@@ -5153,7 +5154,7 @@ function renderInv(){
       <td class="num"><b>${s.fwd_annual?ZAR(s.fwd_annual):'—'}</b></td>
       <td>${vatChip(s.vat)}</td>
       <td>${statusChip(s)}</td>
-      <td><span class="call ${s.call}">${esc(s.call)}</span></td>
+      <td>${s.call&&s.call!=='—'?`<span class="call ${s.call}">${esc(s.call)}</span>`:'<span class="muted">—</span>'}</td>
       <td class="act"><button class="iconbtn" data-edit="${esc(s.id)}">Edit</button></td>`;
     const det=el('tr','detail'+(state.open[s.id]?'':' hide'));
     const dc=el('td');dc.colSpan=COLS.length;dc.appendChild(chargeHistory(s));det.appendChild(dc);
@@ -5192,7 +5193,7 @@ function opt(list,cur){return list.map(o=>`<option ${o===cur?'selected':''}>${es
 function openEdit(id){
   const isNew=(id==null);
   const s=isNew?{id:'sub_'+Date.now(),name:'',category:'',entity:'MWL',card:'Veronica CC',
-    cadence:'monthly',vat:'confirm',status:'active',call:'Review',typical:0,last_actual:0,
+    cadence:'monthly',vat:'confirm',status:'active',call:'—',typical:0,last_actual:0,
     buffer_pct:0,fwd_annual:0,fund_annual:0,charges:[],n_charges:0,n_refunds:0,...EDIT_FIELDS}
     :JSON.parse(JSON.stringify(subs().find(x=>x.id===id)));
   const root=document.getElementById('modalRoot');
@@ -5209,7 +5210,7 @@ function openEdit(id){
       <div class="field"><label>Typical (R)</label><input type="number" step="0.01" id="f_typical" value="${s.typical||0}"></div>
       <div class="field"><label>VAT status</label><select id="f_vat">${opt(VATS,s.vat)}</select></div>
       <div class="field"><label>Lifecycle status</label><select id="f_status">${opt(STATUSES,s.status)}</select></div>
-      <div class="field"><label>Call</label><select id="f_call">${opt(CALLS,s.call)}</select></div>
+      <div class="field"><label>Call <span class="muted" style="text-transform:none;font-weight:400">(advisory — optional)</span></label><select id="f_call">${opt(CALLS,s.call||'—')}</select></div>
       <div class="field"><label>Next renewal</label><input type="date" id="f_renew" value="${esc(s.next_renewal)}"></div>
       <div class="field"><label>Cancel URL</label><input type="text" id="f_curl" value="${esc(s.cancel_url)}" placeholder="https://…"></div>
       <div class="field full"><label>Cancel steps</label><textarea id="f_csteps">${esc(s.cancel_steps)}</textarea></div>
@@ -5228,12 +5229,15 @@ function openEdit(id){
     const fa=(+$('f_last').value||0)*mult;
     $('f_fwd').innerHTML=`Forward annual will be <b>${ZAR2(fa)}</b> (last actual × ${mult} for <b>${$('f_cadence').value}</b>). Fund figure keeps the +${s.buffer_pct||0}% buffer.`;}
   $('f_entity').onchange=()=>{$('f_card').innerHTML=opt(CARDS[$('f_entity').value]||[],'');};
+  $('f_status').onchange=()=>{if(TERMINAL.includes($('f_status').value)){$('f_call').value='—';$('f_call').disabled=true;}else{$('f_call').disabled=false;}};
+  if(TERMINAL.includes(s.status)){$('f_call').value='—';$('f_call').disabled=true;}
   $('f_cadence').oninput=fwdPreview;$('f_last').oninput=fwdPreview;fwdPreview();
   $('f_cancel').onclick=closeModal;
   $('f_save').onclick=()=>{
     s.name=$('f_name').value.trim();s.category=$('f_category').value.trim();
     s.entity=$('f_entity').value;s.card=$('f_card').value;s.cadence=$('f_cadence').value;
-    s.vat=$('f_vat').value;s.status=$('f_status').value;s.call=$('f_call').value;
+    s.vat=$('f_vat').value;s.status=$('f_status').value;
+    s.call=TERMINAL.includes(s.status)?'—':$('f_call').value;
     s.last_actual=+$('f_last').value||0;s.typical=+$('f_typical').value||0;
     s.next_renewal=$('f_renew').value;s.cancel_url=$('f_curl').value.trim();
     s.cancel_steps=$('f_csteps').value.trim();s.note=$('f_note').value.trim();
@@ -5350,13 +5354,15 @@ function renderCards(){
   sec.appendChild(el('div','',`<div class="muted" style="font-size:13px;margin-bottom:14px">Each card's active forward-annual load — foundation for the cash-flow guardian (increment 3).</div>`));
   const grid=el('div','cardgrid');const byCard={};
   subs().forEach(s=>{if(state.ent!=='ALL'&&s.entity!==state.ent)return;(byCard[s.entity+' · '+s.card]=byCard[s.entity+' · '+s.card]||[]).push(s);});
-  Object.entries(byCard).sort((a,b)=>{const f=x=>x[1].filter(s=>s.call!=='Cancel').reduce((t,s)=>t+s.fwd_annual,0);return f(b)-f(a);})
-    .forEach(([key,ss])=>{const tot=ss.filter(s=>s.call!=='Cancel'&&s.cadence!=='one-off').reduce((t,s)=>t+s.fwd_annual,0);
+  const KEPT=['active','review','moved'];
+  Object.entries(byCard).sort((a,b)=>{const f=x=>x[1].filter(s=>KEPT.includes(s.status)).reduce((t,s)=>t+s.fwd_annual,0);return f(b)-f(a);})
+    .forEach(([key,ss])=>{const tot=ss.filter(s=>KEPT.includes(s.status)&&s.cadence!=='one-off').reduce((t,s)=>t+s.fwd_annual,0);
     const box=el('div','cardbox');box.appendChild(el('h3',null,esc(key)));
     box.appendChild(el('div','ctot',ZAR(tot)+' <span style="font-size:12px;font-weight:400" class="muted">/yr kept</span>'));
     box.appendChild(el('div','muted',ss.length+' subscriptions · '+ZAR(tot/12)+'/mo avg'));
     const ul=el('ul');ss.sort((a,b)=>b.fwd_annual-a.fwd_annual).forEach(s=>{const li=el('li');
-      li.innerHTML=`<span>${esc(s.name)} <span class="call ${s.call}" style="font-size:10px">${s.call==='Cancel'?'✕':''}</span></span><span class="a">${ZAR(s.fwd_annual)}</span>`;ul.appendChild(li);});
+      const term=(s.status==='cancelled'||s.status==='cancelling'||s.status==='marked-to-cancel');
+      li.innerHTML=`<span>${esc(s.name)} ${term?'<span class="call Cancel" style="font-size:10px">✕</span>':''}</span><span class="a" style="${term?'text-decoration:line-through;opacity:.6':''}">${ZAR(s.fwd_annual)}</span>`;ul.appendChild(li);});
     box.appendChild(ul);grid.appendChild(box);});
   sec.appendChild(grid);
 }

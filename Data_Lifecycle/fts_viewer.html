@@ -329,6 +329,15 @@
   .simtrace th{text-align:left;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);padding:6px;border-bottom:1px solid var(--line)}
   .simtrace td{padding:6px;border-bottom:1px solid var(--line-soft);color:var(--ink-soft);vertical-align:top}
   .simtrace td.fired{color:var(--accent);font-weight:600} .simtrace td.blocked{color:var(--warn);font-weight:600}
+  .fbcount{font-family:var(--mono);font-size:10px;background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:1px 6px;margin-left:4px}
+  .fbcount:empty{display:none}
+  .fbbox{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
+  .fbbox .lab{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);flex-basis:100%}
+  .fbbox textarea{flex:1;min-width:220px;min-height:38px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--ink);font-size:12.5px;font-family:var(--sans)}
+  .fbbox select{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:6px;color:var(--ink);font-size:12px}
+  .fbbox .prev{flex-basis:100%;font-size:12px;color:var(--ink-soft)}
+  .fbbox .prev span{display:block;padding:3px 0;border-bottom:1px solid var(--line-soft)}
+  .fbbox .prev b{color:var(--accent);font-family:var(--mono);font-size:10.5px;margin-right:6px}
 </style>
 </head>
 <body>
@@ -341,8 +350,8 @@
       <div class="badges" id="metaBadges"></div>
     </div>
     <div class="stamp">
-      <div>Viewer v0.6</div>
-      <div>Built 20 Sep 2026, 13:37 SAST</div>
+      <div>Viewer v0.6.1</div>
+      <div>Built 20 Sep 2026, 14:24 SAST</div>
       <div>Holds no data. Reads .fts.json models from GitHub or disk.</div>
     </div>
   </header>
@@ -389,6 +398,7 @@
       <button class="tab" role="tab" data-pane="conf" aria-selected="false" data-v3>Conformance</button>
       <button class="tab" role="tab" data-pane="sim" aria-selected="false" data-v3>Simulate</button>
       <button class="tab" role="tab" data-pane="rules" aria-selected="false">Rules</button>
+      <button class="tab" role="tab" data-pane="fb" aria-selected="false">Feedback <span class="fbcount" id="fbCount"></span></button>
     </div>
 
     <!-- CONTRAST -->
@@ -563,6 +573,22 @@
       <div id="edList"></div>
       <h3 style="margin-top:26px;font-size:15px">Naming standard</h3>
       <div id="nameList"></div>
+    </section>
+
+    <!-- FEEDBACK -->
+    <section class="pane" id="pane-fb">
+      <div class="eyebrow">Review feedback</div>
+      <h2>Your feedback on this model</h2>
+      <p class="lede">Every state, transition, permission record and simulation step has a feedback box; anything you write there lands here, tagged with the element, the model version and, for a simulation step, the state vector at the time. You can also add a note on any element from this tab. Download the file and put it in the private repo under <span class="mono">reviews/</span>; the fts-designer skill reads it back into the next model version as review items. Notes stay in this browser until you clear them.</p>
+      <div class="simbox" style="margin-top:16px">
+        <h4>Add feedback on any element</h4>
+        <div class="simrow"><label>Element</label><select id="fbPick"></select></div>
+        <div class="simrow"><label>Verdict</label><select id="fbVerdict"><option>Change</option><option>Question</option><option>Agree</option><option>Defect</option></select></div>
+        <div class="simrow"><label>Note</label><textarea id="fbText" style="flex:1;min-height:60px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--ink);font-size:13px"></textarea></div>
+        <div class="simbtns"><button class="btn primary" id="fbAdd">Save feedback</button></div>
+      </div>
+      <div class="simbtns"><button class="btn" id="fbDlJson">Download feedback (JSON)</button><button class="btn" id="fbDlCsv">Download feedback (CSV)</button><label class="btn" style="cursor:pointer">Import feedback file<input type="file" id="fbImport" accept=".json" hidden></label><button class="btn" id="fbClear">Clear all feedback</button></div>
+      <div id="fbList"></div>
     </section>
 
     <!-- SIMULATE -->
@@ -3160,6 +3186,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     const curTab=$$(".tab").find(t=>t.getAttribute("aria-selected")==="true"); if(curTab && curTab.hidden){ $$(".tab")[0].click(); }
     renderContrast(); renderMap(); renderInspector(); renderTransitions(); renderKA(); renderRules();
     if(v3){ renderLifecycle(); renderVector(); renderGRCA(); renderConf(); simInit(); }
+    renderFeedback();
     if($("#pane-uml").classList.contains("on")) renderUML(); else { $("#umlwrap").innerHTML='<div class="umlmsg">Rendering...</div>'; }
     if($("#pane-simp").classList.contains("on")) renderSimp(); else { $("#simpwrap").innerHTML='<div class="umlmsg">Rendering...</div>'; simp.focus={type:"all"}; }
   }
@@ -3372,7 +3399,8 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
         cell("Controls",ctl,c=>li(c.id,c.name+" · "+(c.outcome||""),'<span class="req">'+esc(c.controlType||"")+'</span>'))+
         '<div class="cell"><h4>Knowledge Area interactions <span class="ct">'+kai.length+'</span></h4>'+(kai.length?'<div class="chips">'+kai.map(k=>'<span class="chip" title="'+esc(k.applicability||"")+': '+esc(k.description||"")+'">'+esc(k.knowledgeArea)+(k.interactionType?' · '+esc(k.interactionType):'')+'</span>').join("")+'</div>':'<div class="none">None recorded.</div>')+'</div>'+
         cell("Composite state",comp,c=>li(c.id,c.name+": "+(c.kaDimensions||"")))+
-      '</div>';
+      '</div>'+fbBox("State", s.id, s.name);
+    fbWire(box);
     box.scrollIntoView({behavior:"smooth",block:"nearest"});
   }
   function cell(title,arr,fn){ return '<div class="cell"><h4>'+esc(title)+' <span class="ct">'+arr.length+'</span></h4>'+(arr.length?'<ul>'+arr.map(fn).join("")+'</ul>':'<div class="none">None recorded.</div>')+'</div>'; }
@@ -3389,7 +3417,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
         '<tr class="detail" data-for="'+esc(t.id)+'" hidden><td colspan="7">'+contractHtml(t)+'</td></tr>';
     }).join("");
     $("#trwrap").innerHTML='<table class="trtable"><thead><tr><th>ID</th><th>Transition</th><th>From → To</th><th>Level</th><th>Optionality</th><th>Trigger event</th><th>Guards</th></tr></thead><tbody>'+rows+'</tbody></table>';
-    $$("#trwrap tr.tr").forEach(r=>r.onclick=()=>{ const d=$('#trwrap tr.detail[data-for="'+CSS.escape(r.dataset.tid)+'"]'); const open=!d.hidden; $$("#trwrap tr.detail").forEach(x=>x.hidden=true); $$("#trwrap tr.tr").forEach(x=>x.classList.remove("open")); if(!open){ d.hidden=false; r.classList.add("open"); } });
+    $$("#trwrap tr.tr").forEach(r=>r.onclick=()=>{ const d=$('#trwrap tr.detail[data-for="'+CSS.escape(r.dataset.tid)+'"]'); const open=!d.hidden; $$("#trwrap tr.detail").forEach(x=>x.hidden=true); $$("#trwrap tr.tr").forEach(x=>x.classList.remove("open")); if(!open){ d.hidden=false; r.classList.add("open"); fbWire(d); } });
   }
   function contractHtml(t){
     const src=stateById(t.source), tgt=stateById(t.target);
@@ -3411,7 +3439,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
         cg("Transition guards",gd,g=>'<li><span class="cid">'+esc(g.id)+'</span><span>'+esc(g.predicate)+(g.fromModel?'<span class="fed">from '+esc(g.fromModel)+'</span>':'')+'</span><span class="scope">'+esc(g.scope||"")+'</span></li>')+
         cg("Entry conditions on target",ec,x=>'<li><span class="cid">'+esc(x.id)+'</span><span>'+esc(x.predicate)+'</span></li>')+
         cg("Authorisation, controls, exceptions, evidence",dr.concat(ctl,ex,ev),x=>'<li><span class="cid">'+esc(x.id)+'</span><span>'+esc(x.name)+(x.holder?' · '+esc(roleName(x.holder)):'')+(x.authority?' · '+esc(x.authority):'')+'</span></li>')+
-      '</div></div>';
+      '</div>'+fbBox("Transition", t.id, t.name)+'</div>';
   }
   function cg(title,arr,fn){ return '<div class="cg"><h5>'+esc(title)+' <b>'+arr.length+'</b></h5>'+(arr.length?'<ul>'+arr.map(fn).join("")+'</ul>':'<div style="font-size:12px;color:var(--ink-faint)">None recorded.</div>')+'</div>'; }
 
@@ -3782,7 +3810,8 @@ function fsmSource(M, opts){
     $("#vecList").innerHTML=M.stateVectors.map(v=>'<div class="compc"><div class="cn">'+esc(v.name)+'</div><div class="cid">'+esc(v.id)+'</div><div class="vec">'+regionsOf().map(r=>'<div><b>'+esc(r.name)+':</b> '+esc(nameOf((v.vector||{})[r.id]||"?"))+'</div>').join("")+'</div><div class="ctx">'+esc(v.legality||"")+'</div><div class="simbtns"><button class="btn" data-loadvec="'+esc(v.id)+'">Simulate from here</button></div></div>').join("")||'<div style="color:var(--ink-faint)">No example vectors.</div>';
     $$("#vecList [data-loadvec]").forEach(b=>b.onclick=()=>{ const v=M.stateVectors.find(x=>x.id===b.dataset.loadvec); if(v){ sim.vec=Object.assign({},v.vector); simLog("load","Loaded configuration "+v.id); $$(".tab").find(t=>t.dataset.pane==="sim").click(); simRender(); } });
     $("#xrgList").innerHTML='<table class="stab"><thead><tr><th>ID</th><th>Constraint</th><th>Transitions</th><th>Requirement</th><th>Expression evaluated by the simulator</th></tr></thead><tbody>'+M.crossRegionConstraints.map(x=>'<tr><td class="mono">'+esc(x.id)+'</td><td><b>'+esc(x.constraint)+'</b></td><td class="mono">'+esc((x.transitions||[]).join(", "))+'</td><td>'+esc(x.requirement||"")+'</td><td class="mono">'+esc(x.expression||"")+'</td></tr>').join("")+'</tbody></table>';
-    $("#prmList").innerHTML='<table class="stab"><thead><tr><th>ID</th><th>Activity</th><th>Context</th><th>Outcome</th><th>Guard</th><th>Authority</th><th>Services</th><th>Evidence</th><th>Effect</th></tr></thead><tbody>'+M.permissionRecords.map(p=>{ const a=M.activities.find(x=>x.id===p.activity); return '<tr><td class="mono">'+esc(p.id)+'</td><td><b>'+esc(a?a.name:p.activity)+'</b></td><td>'+esc(nameOf(p.context))+' <span class="mono">'+esc(p.context)+'</span></td><td><span class="out '+esc(p.outcome)+'">'+esc(p.outcome)+'</span></td><td>'+esc(p.guard||"")+'</td><td>'+esc(p.authority||"")+'</td><td class="mono">'+esc((p.services||[]).join(", "))+'</td><td>'+esc(p.evidence||"")+'</td><td>'+esc(p.effect||"")+'</td></tr>'; }).join("")+'</tbody></table>'+(M.permissionRecords.length?'':'<div style="color:var(--ink-faint)">No permission records in this model.</div>');
+    $("#prmList").innerHTML='<table class="stab"><thead><tr><th>ID</th><th>Activity</th><th>Context</th><th>Outcome</th><th>Guard</th><th>Authority</th><th>Services</th><th>Evidence</th><th>Effect</th></tr></thead><tbody>'+M.permissionRecords.map(p=>{ const a=M.activities.find(x=>x.id===p.activity); return '<tr><td class="mono">'+esc(p.id)+'</td><td><b>'+esc(a?a.name:p.activity)+'</b></td><td>'+esc(nameOf(p.context))+' <span class="mono">'+esc(p.context)+'</span></td><td><span class="out '+esc(p.outcome)+'">'+esc(p.outcome)+'</span></td><td>'+esc(p.guard||"")+'</td><td>'+esc(p.authority||"")+'</td><td class="mono">'+esc((p.services||[]).join(", "))+'</td><td>'+esc(p.evidence||"")+'</td><td>'+esc(p.effect||"")+'</td></tr><tr><td colspan="9" style="padding-top:0">'+fbBox("Permission Record", p.id, p.id+" "+(a?a.name:p.activity)+" in "+nameOf(p.context))+'</td></tr>'; }).join("")+'</tbody></table>'+(M.permissionRecords.length?'':'<div style="color:var(--ink-faint)">No permission records in this model.</div>');
+    fbWire($("#prmList"));
   }
   // ---------- GRCA ----------
   function renderGRCA(){
@@ -3878,7 +3907,8 @@ function fsmSource(M, opts){
       '<div class="verd">'+r.guards.map(x=>'<div class="g '+(x.v?'ok':'no')+'"><span class="m">'+(x.v?'✓':'✗')+'</span><span>'+esc(x.guard.predicate)+'<small>'+esc(x.guard.id)+(x.guard.constraint?' · '+esc(x.guard.constraint):'')+' · '+esc(x.src)+(x.guard.expression?' · '+esc(x.guard.expression):'')+'</small></span></div>').join("")+'</div>'+
       (svc.length?'<div style="margin-top:8px;font-size:12.5px"><b>GRCA applicability:</b> '+svc.map(s=>esc(s.family)+' · '+esc(s.name)).join("; ")+'</div>':'')+
       '<div style="margin-top:8px;font-size:12.5px"><b>Authorisation:</b> '+(r.dr?esc(r.dr.id)+' '+esc(r.dr.name)+(r.dr.holder?' · '+esc(roleName(r.dr.holder)):''):'none required (time- or evidence-triggered)')+'</div>'+
-      '<div class="simbtns">'+(r.eligible?(r.dr?'<button class="btn primary" id="simAuth">Authorise as '+esc(r.dr.id)+' and fire</button><button class="btn" id="simRefuse">Refuse authorisation</button>':'<button class="btn primary" id="simAuth">Fire</button>'):'<button class="btn" id="simBlocked">Record as blocked</button>')+'<button class="btn" id="simCancel">Cancel</button></div></div>';
+      '<div class="simbtns">'+(r.eligible?(r.dr?'<button class="btn primary" id="simAuth">Authorise as '+esc(r.dr.id)+' and fire</button><button class="btn" id="simRefuse">Refuse authorisation</button>':'<button class="btn primary" id="simAuth">Fire</button>'):'<button class="btn" id="simBlocked">Record as blocked</button>')+'<button class="btn" id="simCancel">Cancel</button></div>'+fbBox("Simulation step", t.id, t.name+" at this state vector")+'</div>';
+    fbWire($("#simEval"));
     const gtxt=r.guards.map(x=>x.guard.id+"="+(x.v?"T":"F")).join(" ");
     const auth=$("#simAuth"); if(auth) auth.onclick=()=>{ sim.vec[r.rid]=t.target; simLog("fired", t.id+" "+t.name+" ("+regionCode(r.rid)+": "+nameOf(t.source)+" → "+nameOf(t.target)+")"+(r.dr?" authorised by "+r.dr.id:""), {transition:t.id, guards:gtxt, decisionRight:r.dr?r.dr.id:null, subject:$("#simSubject").value}); $("#simEvalBox").hidden=true; simRender(); };
     const ref=$("#simRefuse"); if(ref) ref.onclick=()=>{ simLog("blocked", t.id+" "+t.name+": eligible but authorisation refused ("+(r.dr?r.dr.id:"")+")", {transition:t.id, guards:gtxt}); $("#simEvalBox").hidden=true; simRender(); };
@@ -3894,6 +3924,68 @@ function fsmSource(M, opts){
   function dl(name, text, type){ const blob=new Blob([text],{type}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500); }
   $("#simDlJson").onclick=()=>dl(((M.meta&&M.meta.modelId)||"fts")+"_trace.json", JSON.stringify({model:M.meta&&M.meta.modelId, modelVersion:M.meta&&M.meta.version, subject:$("#simSubject").value, scenario:sim.scenario&&sim.scenario.id, facts:Object.assign({},SIM_DEFAULT_FACTS,sim.facts), finalVector:sim.vec, trace:sim.trace, exportedAt:new Date().toISOString(), viewer:"0.6"}, null, 1), "application/json");
   $("#simDlCsv").onclick=()=>{ const regs=regionsOf(); const rows=[["#","at","kind","text","transition","decisionRight","guards"].concat(regs.map(r=>regionCode(r.id)))].concat(sim.trace.map((r,i)=>[i+1,r.at,r.kind,r.text,r.transition||"",r.decisionRight||"",r.guards||""].concat(regs.map(x=>r.vector[x.id]||"")))); dl(((M.meta&&M.meta.modelId)||"fts")+"_trace.csv", rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n"), "text/csv"); };
+
+  // ---------- FEEDBACK ----------
+  const FB_KEY="fts.viewer.feedback.v1";
+  let FB=[]; try{ FB=JSON.parse(localStorage.getItem(FB_KEY)||"[]"); if(!Array.isArray(FB)) FB=[]; }catch(e){ FB=[]; }
+  function fbSave(){ try{ localStorage.setItem(FB_KEY, JSON.stringify(FB)); }catch(e){} $("#fbCount").textContent=FB.length?String(FB.length):""; }
+  function fbAdd(elementType, elementId, elementName, note, verdict, context){
+    if(!note||!note.trim()) return false;
+    FB.push({id:"FB-"+String(FB.length+1).padStart(3,"0")+"-"+Date.now().toString(36), at:new Date().toISOString(), model:M&&M.meta?M.meta.modelId:"", modelVersion:M&&M.meta?M.meta.version:"", elementType, elementId, elementName, verdict:verdict||"Change", note:note.trim(), context:context||null, subject:($("#simSubject")?$("#simSubject").value:"")});
+    fbSave(); renderFeedback(); return true;
+  }
+  function fbBox(elementType, elementId, elementName, context){
+    const prev=FB.filter(f=>f.elementId===elementId&&f.elementType===elementType);
+    const key=esc(elementType+"|"+elementId);
+    return '<div class="fbbox" data-fb="'+key+'"><span class="lab">Your feedback on this '+esc(elementType.toLowerCase())+'</span>'+
+      (prev.length?'<div class="prev">'+prev.map(f=>'<span><b>'+esc(f.verdict)+'</b>'+esc(f.note)+' <i style="color:var(--ink-faint)">'+esc(f.at.slice(0,16).replace("T"," "))+'</i></span>').join("")+'</div>':'')+
+      '<select data-fbv><option>Change</option><option>Question</option><option>Agree</option><option>Defect</option></select><textarea data-fbt placeholder="What should change, or what is unclear, about '+esc(elementName)+'?"></textarea><button class="btn" data-fbsave="1">Save</button></div>';
+  }
+  function fbWire(root){
+    (root||document).querySelectorAll(".fbbox[data-fb]").forEach(box=>{
+      const btn=box.querySelector("[data-fbsave]"); if(!btn||btn._wired) return; btn._wired=true;
+      btn.onclick=()=>{ const [type,id]=box.dataset.fb.split("|"); const ta=box.querySelector("[data-fbt]"), sel=box.querySelector("[data-fbv]");
+        const name=(function(){ const st=stateById(id); if(st) return st.name; const t=M.transitions.find(x=>x.id===id); if(t) return t.name; const pr=M.permissionRecords.find(x=>x.id===id); if(pr) return pr.id; const a=M.activities.find(x=>x.id===id); if(a) return a.name; return id; })();
+        const ctx = type==="Simulation step" ? {vector:Object.assign({},sim.vec), facts:Object.assign({},SIM_DEFAULT_FACTS,sim.facts)} : null;
+        if(fbAdd(type,id,name,ta.value,sel.value,ctx)){ ta.value=""; btn.textContent="Saved"; setTimeout(()=>btn.textContent="Save",1200); const prevBox=box.querySelector(".prev"); const line='<span><b>'+esc(sel.value)+'</b>'+esc(FB[FB.length-1].note)+'</span>'; if(prevBox) prevBox.insertAdjacentHTML("beforeend",line); else box.querySelector(".lab").insertAdjacentHTML("afterend",'<div class="prev">'+line+'</div>'); }
+      };
+    });
+  }
+  function renderFeedback(){
+    const pick=$("#fbPick"); if(!pick) return;
+    if(M){
+      const opts=[];
+      (M.regions||[]).forEach(r=>opts.push(["Region",r.id,r.name]));
+      M.globalStates.forEach(g=>{ if(g.kind!=="region") opts.push(["Global State",g.id,g.name]); });
+      M.subStates.forEach(st=>opts.push(["State",st.id,st.name]));
+      M.transitions.forEach(t=>{ if(!isInitial(t)) opts.push(["Transition",t.id,t.name]); });
+      (M.lifecycle&&M.lifecycle.phases||[]).forEach(p=>opts.push(["Lifecycle Phase",p.id,p.name]));
+      M.activities.forEach(a=>opts.push(["Activity",a.id,a.name]));
+      M.crossRegionConstraints.forEach(x=>opts.push(["Cross-Region Constraint",x.id,x.id]));
+      M.stateVectors.forEach(v=>opts.push(["State Vector",v.id,v.name]));
+      M.permissionRecords.forEach(pr=>opts.push(["Permission Record",pr.id,pr.id+" "+pr.activity+" in "+pr.context]));
+      M.services.forEach(sv=>opts.push(["GRCA Service",sv.id,sv.name]));
+      M.decisionRights.forEach(d=>opts.push(["Decision Right",d.id,d.name]));
+      M.guards.forEach(g=>opts.push(["Guard",g.id,g.name||g.id]));
+      M.events.forEach(e=>opts.push(["Event",e.id,e.name]));
+      (M.conformance||[]).forEach(c=>opts.push(["Conformance Clause",c.id,c.title]));
+      M.rules.forEach(r=>opts.push(["Rule",r.id,r.shortName||r.id]));
+      opts.push(["Model",M.meta.modelId||"model","The model as a whole"]);
+      const cur=pick.value;
+      pick.innerHTML=opts.map(o=>'<option value=\''+esc(JSON.stringify(o))+'\'>'+esc(o[0]+" · "+o[1]+" · "+o[2])+'</option>').join("");
+      if([...pick.options].some(o=>o.value===cur)) pick.value=cur;
+    }
+    $("#fbCount").textContent=FB.length?String(FB.length):"";
+    const list=FB.slice().reverse();
+    $("#fbList").innerHTML=list.length?'<table class="stab"><thead><tr><th>ID</th><th>When</th><th>Model</th><th>Element</th><th>Verdict</th><th>Note</th><th>Context</th><th></th></tr></thead><tbody>'+list.map(f=>'<tr><td class="mono">'+esc(f.id)+'</td><td class="mono">'+esc(f.at.slice(0,16).replace("T"," "))+'</td><td class="mono">'+esc(f.model)+' v'+esc(f.modelVersion)+'</td><td><b>'+esc(f.elementType)+'</b> '+esc(f.elementId)+'<br><span style="font-size:11.5px;color:var(--ink-faint)">'+esc(f.elementName)+'</span></td><td><span class="out '+(f.verdict==="Agree"?"Permitted":f.verdict==="Defect"?"Prohibited":"Conditional")+'">'+esc(f.verdict)+'</span></td><td>'+esc(f.note)+'</td><td class="mono" style="font-size:10.5px">'+esc(f.context&&f.context.vector?Object.entries(f.context.vector).map(([k,v])=>k.slice(-2)+"="+String(v).replace(/^STS-/,"")).join(" "):"")+'</td><td><button class="btn" data-fbdel="'+esc(f.id)+'" title="Remove">&times;</button></td></tr>').join("")+'</tbody></table>':'<div style="color:var(--ink-faint);font-size:12.5px;margin-top:12px">No feedback recorded yet.</div>';
+    $$("#fbList [data-fbdel]").forEach(b=>b.onclick=()=>{ FB=FB.filter(f=>f.id!==b.dataset.fbdel); fbSave(); renderFeedback(); });
+  }
+  $("#fbAdd").onclick=()=>{ let o; try{ o=JSON.parse($("#fbPick").value); }catch(e){ return; } if(fbAdd(o[0],o[1],o[2],$("#fbText").value,$("#fbVerdict").value,null)){ $("#fbText").value=""; } };
+  $("#fbClear").onclick=()=>{ if(!FB.length) return; if(!confirm("Remove all "+FB.length+" feedback notes from this browser? Download them first if you want to keep them.")) return; FB=[]; fbSave(); renderFeedback(); };
+  $("#fbDlJson").onclick=()=>dl(((M&&M.meta&&M.meta.modelId)||"fts")+"_feedback.json", JSON.stringify({model:M&&M.meta&&M.meta.modelId, modelVersion:M&&M.meta&&M.meta.version, exportedAt:new Date().toISOString(), viewer:"0.6.1", reviewer:"", items:FB}, null, 1), "application/json");
+  $("#fbDlCsv").onclick=()=>{ const rows=[["id","at","model","modelVersion","elementType","elementId","elementName","verdict","note","vector"]].concat(FB.map(f=>[f.id,f.at,f.model,f.modelVersion,f.elementType,f.elementId,f.elementName,f.verdict,f.note,f.context&&f.context.vector?JSON.stringify(f.context.vector):""])); dl(((M&&M.meta&&M.meta.modelId)||"fts")+"_feedback.csv", rows.map(r=>r.map(v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"').join(",")).join("\n"), "text/csv"); };
+  $("#fbImport").onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); const items=Array.isArray(d)?d:(d.items||[]); const ids=new Set(FB.map(x=>x.id)); items.forEach(it=>{ if(it&&it.id&&!ids.has(it.id)) FB.push(it); }); fbSave(); renderFeedback(); }catch(err){} }; rd.readAsText(f); e.target.value=""; };
+  fbSave();
 
   // ---------- RULES ----------
   function renderRules(){

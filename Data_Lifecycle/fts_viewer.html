@@ -313,7 +313,12 @@
   .simfacts{display:flex;flex-direction:column;gap:4px;margin-top:8px;max-height:260px;overflow:auto}
   .simfacts label{display:flex;gap:8px;align-items:center;font-size:12.5px;font-family:var(--mono)}
   .avail{display:flex;flex-direction:column;gap:8px}
-  .avail .ev{border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+  .avail .rgroup{border:1px solid var(--accent-line);border-radius:12px;padding:10px 12px;background:var(--accent-soft)}
+  .avail .rhead{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}
+  .avail .rhead .rname{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  .avail .rhead .rcur{font-size:12.5px;color:var(--ink-soft)} .avail .rhead .rcur b{color:var(--ink)}
+  .avail .rhead .rn{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint)}
+  .avail .ev{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--panel);margin-top:6px}
   .avail .ev .en{font-weight:650;font-size:13px}
   .avail .ev .en small{font-family:var(--mono);font-weight:400;color:var(--ink-faint);margin-left:6px}
   .avail .ev .trs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
@@ -350,8 +355,8 @@
       <div class="badges" id="metaBadges"></div>
     </div>
     <div class="stamp">
-      <div>Viewer v0.6.1</div>
-      <div>Built 20 Sep 2026, 14:24 SAST</div>
+      <div>Viewer v0.6.3</div>
+      <div>Built 20 Sep 2026, 15:27 SAST</div>
       <div>Holds no data. Reads .fts.json models from GitHub or disk.</div>
     </div>
   </header>
@@ -618,6 +623,11 @@
           </div>
         </div>
         <div class="simcol wide">
+          <div class="simbox">
+            <h4>Simplified FTS with the current state of each region <span class="ct" id="simDiagNote"></span></h4>
+            <div class="simbtns" style="margin:0 0 8px"><button class="btn" data-simdiag="code" aria-pressed="true">Coded labels</button><button class="btn" data-simdiag="full" aria-pressed="false">Full labels</button><button class="btn" data-simdiag="none" aria-pressed="false">No transition labels</button><button class="btn" id="simDiagSvg">Download SVG</button></div>
+            <div id="simDiag" class="umlwrap" style="min-height:120px"><div class="umlmsg">Rendering...</div></div>
+          </div>
           <div class="simbox">
             <h4>Events and transitions available now</h4>
             <div id="simAvail"></div>
@@ -3474,6 +3484,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
 //   hideLoops, hideReadiness, hideInnerInitial, hideNotes
 //   ids        true: append the state ID to the state name
 //   focus      {type:"all"} | {type:"composite", id} | {type:"neighbourhood", id} | {type:"path", id}
+//   highlight  [stateId, ...]  states drawn as "current" (used by the simulator for the active State Vector)
 // returns { src, legend:{transitions:[], activities:[], guards:[], events:[]}, visible:{states:[], transitions:[]} }
 function fsmSource(M, opts){
   opts = Object.assign({direction:"LR", level:"all", contracts:true, labelMode:"full", showEvent:true, showGuard:true, showEffect:true,
@@ -3648,6 +3659,11 @@ function fsmSource(M, opts){
   const ready=M.subStates.filter(s=>s.readiness && drawn(s.id)).map(s=>mid(s.id));
   if(ready.length) L.push("class "+ready.join(",")+" readiness");
   if((f.type==="neighbourhood"||f.type==="path") && f.id){ const rep=visibleRep(f.id); if(rep && drawn(rep)) L.push("class "+mid(rep)+" focus"); }
+  if(Array.isArray(opts.highlight) && opts.highlight.length){
+    L.push("classDef current fill:#0f6e64,stroke:#0a4f48,color:#ffffff,stroke-width:2px");
+    const hl=opts.highlight.map(id=>visibleRep(id)).filter(id=>id && drawn(id)).map(mid);
+    if(hl.length) L.push("class "+hl.join(",")+" current");
+  }
   return {src:L.join("\n"), legend, visible:{states:[...visStates], transitions:edges.map(e=>e.t.id)}};
 }
 
@@ -3872,6 +3888,22 @@ function fsmSource(M, opts){
     return {problems:out, terminal, match};
   }
   function simLog(kind, text, extra){ sim.trace.push(Object.assign({at:new Date().toISOString(), kind, text, vector:Object.assign({},sim.vec)}, extra||{})); }
+  const simDiag={labels:"code", seq:0, lastSvg:""};
+  $$("[data-simdiag]").forEach(b=>b.onclick=()=>{ simDiag.labels=b.dataset.simdiag; $$("[data-simdiag]").forEach(x=>x.setAttribute("aria-pressed", x===b?"true":"false")); renderSimDiagram(); });
+  $("#simDiagSvg").onclick=()=>{ if(simDiag.lastSvg) dl(((M.meta&&M.meta.modelId)||"fts")+"_simulation_state.svg", simDiag.lastSvg, "image/svg+xml"); };
+  async function renderSimDiagram(){
+    if(!isV3()) return; const wrap=$("#simDiag"); if(!wrap) return;
+    if(typeof mermaid==="undefined"){ wrap.innerHTML='<div class="umlerr">The diagram renderer is not available in this copy of the viewer.</div>'; return; }
+    mmInit();
+    const cur=Object.values(sim.vec);
+    const out=fsmSource(M,{direction:"LR", level:"all", contracts:false, labelMode:simDiag.labels==="full"?"full":"code", showGuard:simDiag.labels!=="none", showEvent:simDiag.labels==="full", showEffect:simDiag.labels==="full", hideNotes:true, highlight:cur});
+    let src=out.src; if(simDiag.labels==="none") src=src.replace(/ : [^\n]+$/gm,"");
+    const mySeq=++simDiag.seq;
+    try{ const {svg}=await mermaid.render("simdiag"+mySeq, src); if(mySeq!==simDiag.seq) return; simDiag.lastSvg=svg; wrap.innerHTML='<div class="inner">'+svg+'</div>';
+      const s2=wrap.querySelector("svg"); if(s2){ const vb=(s2.getAttribute("viewBox")||"").split(/\s+/).map(Number); const nat=vb.length===4?vb[2]:1000; const avail=wrap.clientWidth-36; s2.style.width=Math.min(nat,Math.max(avail,300))+"px"; }
+      $("#simDiagNote").textContent=cur.map(id=>nameOf(id)).join(" · ");
+    }catch(err){ wrap.innerHTML='<div class="umlerr">Could not render the diagram.\n'+esc(err&&err.message||err)+'</div>'; }
+  }
   function simInit(){ if(!isV3()) return; if(!Object.keys(sim.vec).length || !regionsOf().every(r=>sim.vec[r.id]&&stateById(sim.vec[r.id]))){ sim.vec=initialVector(); } $("#simSubjectType").textContent=M.meta.subjectType||"Data Asset"; simRender(); }
   function simRender(){
     if(!isV3()) return;
@@ -3884,8 +3916,11 @@ function fsmSource(M, opts){
     $$("#simFacts [data-fact]").forEach(cb=>cb.onchange=()=>{ sim.facts[cb.dataset.fact]=cb.checked; simLog("fact", cb.dataset.fact+" = "+cb.checked); simRender(); });
     // available transitions grouped by event
     const avail=M.transitions.filter(t=>!isInitial(t)).map(evaluateTransition).filter(x=>x.srcActive);
-    const byEv={}; avail.forEach(x=>{ (byEv[x.t.event]=byEv[x.t.event]||[]).push(x); });
-    $("#simAvail").innerHTML=Object.keys(byEv).length?'<div class="avail">'+Object.keys(byEv).map(ev=>{ const e=M.events.find(z=>z.id===ev)||{name:ev}; return '<div class="ev"><div class="en">'+esc(e.name)+'<small>'+esc(ev)+(e.eventType?' · '+esc(e.eventType):'')+'</small></div><div class="trs">'+byEv[ev].map(x=>'<button data-fire="'+esc(x.t.id)+'" class="'+(x.eligible?'':'blocked')+'" title="'+esc(x.t.guardSummary||"")+'">'+esc(x.t.name)+' <span class="mono" style="color:var(--ink-faint)">'+esc(regionCode(x.rid))+': '+esc(nameOf(x.t.source))+' &rarr; '+esc(nameOf(x.t.target))+'</span></button>').join("")+'</div></div>'; }).join("")+'</div>':'<div style="color:var(--ink-faint)">No transition has an active source state. The configuration is terminal or the model has no transitions.</div>';
+    // grouped by region (each region is its own FTS), then by event inside the region
+    const groups=regionsOf().map(r=>{ const inR=avail.filter(x=>x.rid===r.id); const byEv={}; inR.forEach(x=>{ (byEv[x.t.event]=byEv[x.t.event]||[]).push(x); }); const cur=stateById(sim.vec[r.id]); return {r, cur, byEv, n:inR.length}; });
+    $("#simAvail").innerHTML=avail.length?'<div class="avail">'+groups.map(gp=>'<div class="rgroup"><div class="rhead"><span class="rname">'+esc(gp.r.name)+' FTS</span><span class="rcur">now in <b>'+esc(gp.cur?gp.cur.name:"?")+'</b>'+(gp.cur&&gp.cur.terminal?' (terminal)':'')+'</span><span class="rn">'+gp.n+' transition'+(gp.n===1?'':'s')+' available</span></div>'+
+        (gp.n?Object.keys(gp.byEv).map(ev=>{ const e=M.events.find(z=>z.id===ev)||{name:ev}; return '<div class="ev"><div class="en">'+esc(e.name)+'<small>'+esc(ev)+(e.eventType?' · '+esc(e.eventType):'')+'</small></div><div class="trs">'+gp.byEv[ev].map(x=>'<button data-fire="'+esc(x.t.id)+'" class="'+(x.eligible?'':'blocked')+'" title="'+esc(x.t.guardSummary||"")+'">'+esc(x.t.name)+' <span class="mono" style="color:var(--ink-faint)">'+esc(nameOf(x.t.source))+' &rarr; '+esc(nameOf(x.t.target))+'</span></button>').join("")+'</div></div>'; }).join(""):'<div class="none" style="font-size:12px;color:var(--ink-faint);padding:4px 0 6px">'+(gp.cur&&gp.cur.terminal?'Terminal state; this region has ended.':'No transition leaves the current state.')+'</div>')+
+      '</div>').join("")+'</div>':'<div style="color:var(--ink-faint)">No transition has an active source state. The configuration is terminal or the model has no transitions.</div>';
     $$("#simAvail [data-fire]").forEach(b=>b.onclick=()=>simEvaluate(b.dataset.fire));
     // activities permitted now
     const rows=M.activities.map(a=>{ const recs=M.permissionRecords.filter(p=>p.activity===a.id && (Object.values(sim.vec).includes(p.context) || (legal.match&&legal.match.id===p.context))); return {a, recs}; });
@@ -3894,6 +3929,7 @@ function fsmSource(M, opts){
     $("#simTraceCount").textContent=sim.trace.length;
     $("#simTrace").innerHTML=sim.trace.length?'<table class="simtrace"><thead><tr><th>#</th><th>At</th><th>Kind</th><th>What</th><th>Vector after</th></tr></thead><tbody>'+sim.trace.map((r,i)=>'<tr><td>'+(i+1)+'</td><td class="mono">'+esc(r.at.slice(11,19))+'</td><td class="'+esc(r.kind)+'">'+esc(r.kind)+'</td><td>'+esc(r.text)+(r.guards?'<br><span class="mono" style="font-size:10.5px;color:var(--ink-faint)">'+esc(r.guards)+'</span>':'')+'</td><td class="mono">'+esc(regionsOf().map(x=>regionCode(x.id)+"="+String(r.vector[x.id]||"").replace(/^STS-/,"")).join(" "))+'</td></tr>').join("")+'</tbody></table>':'<div style="color:var(--ink-faint);font-size:12.5px">Nothing yet. Fire a transition.</div>';
     $("#simRunScript").hidden=!(sim.scenario&&Array.isArray(sim.scenario.script)&&sim.scenario.script.length);
+    if($("#pane-sim").classList.contains("on")) renderSimDiagram();
   }
   function simEvaluate(tid){
     const t=M.transitions.find(x=>x.id===tid); if(!t) return;
@@ -3982,7 +4018,7 @@ function fsmSource(M, opts){
   }
   $("#fbAdd").onclick=()=>{ let o; try{ o=JSON.parse($("#fbPick").value); }catch(e){ return; } if(fbAdd(o[0],o[1],o[2],$("#fbText").value,$("#fbVerdict").value,null)){ $("#fbText").value=""; } };
   $("#fbClear").onclick=()=>{ if(!FB.length) return; if(!confirm("Remove all "+FB.length+" feedback notes from this browser? Download them first if you want to keep them.")) return; FB=[]; fbSave(); renderFeedback(); };
-  $("#fbDlJson").onclick=()=>dl(((M&&M.meta&&M.meta.modelId)||"fts")+"_feedback.json", JSON.stringify({model:M&&M.meta&&M.meta.modelId, modelVersion:M&&M.meta&&M.meta.version, exportedAt:new Date().toISOString(), viewer:"0.6.1", reviewer:"", items:FB}, null, 1), "application/json");
+  $("#fbDlJson").onclick=()=>dl(((M&&M.meta&&M.meta.modelId)||"fts")+"_feedback.json", JSON.stringify({model:M&&M.meta&&M.meta.modelId, modelVersion:M&&M.meta&&M.meta.version, exportedAt:new Date().toISOString(), viewer:"0.6.3", reviewer:"", items:FB}, null, 1), "application/json");
   $("#fbDlCsv").onclick=()=>{ const rows=[["id","at","model","modelVersion","elementType","elementId","elementName","verdict","note","vector"]].concat(FB.map(f=>[f.id,f.at,f.model,f.modelVersion,f.elementType,f.elementId,f.elementName,f.verdict,f.note,f.context&&f.context.vector?JSON.stringify(f.context.vector):""])); dl(((M&&M.meta&&M.meta.modelId)||"fts")+"_feedback.csv", rows.map(r=>r.map(v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"').join(",")).join("\n"), "text/csv"); };
   $("#fbImport").onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); const items=Array.isArray(d)?d:(d.items||[]); const ids=new Set(FB.map(x=>x.id)); items.forEach(it=>{ if(it&&it.id&&!ids.has(it.id)) FB.push(it); }); fbSave(); renderFeedback(); }catch(err){} }; rd.readAsText(f); e.target.value=""; };
   fbSave();

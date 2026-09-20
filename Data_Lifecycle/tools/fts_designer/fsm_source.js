@@ -11,6 +11,7 @@
 //   hideLoops, hideReadiness, hideInnerInitial, hideNotes
 //   ids        true: append the state ID to the state name
 //   focus      {type:"all"} | {type:"composite", id} | {type:"neighbourhood", id} | {type:"path", id}
+//   highlight  [stateId, ...]  states drawn as "current" (used by the simulator for the active State Vector)
 // returns { src, legend:{transitions:[], activities:[], guards:[], events:[]}, visible:{states:[], transitions:[]} }
 function fsmSource(M, opts){
   opts = Object.assign({direction:"LR", level:"all", contracts:true, labelMode:"full", showEvent:true, showGuard:true, showEffect:true,
@@ -185,6 +186,11 @@ function fsmSource(M, opts){
   const ready=M.subStates.filter(s=>s.readiness && drawn(s.id)).map(s=>mid(s.id));
   if(ready.length) L.push("class "+ready.join(",")+" readiness");
   if((f.type==="neighbourhood"||f.type==="path") && f.id){ const rep=visibleRep(f.id); if(rep && drawn(rep)) L.push("class "+mid(rep)+" focus"); }
+  if(Array.isArray(opts.highlight) && opts.highlight.length){
+    L.push("classDef current fill:#0f6e64,stroke:#0a4f48,color:#ffffff,stroke-width:2px");
+    const hl=opts.highlight.map(id=>visibleRep(id)).filter(id=>id && drawn(id)).map(mid);
+    if(hl.length) L.push("class "+hl.join(",")+" current");
+  }
   return {src:L.join("\n"), legend, visible:{states:[...visStates], transitions:edges.map(e=>e.t.id)}};
 }
 if(typeof module!=="undefined") module.exports={fsmSource};

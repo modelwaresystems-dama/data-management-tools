@@ -126,6 +126,7 @@ function fsmSource(M, opts){
     const parts=[]; if(ec) parts.push("entry / ["+ec+"]"); if(acts) parts.push("do / "+acts+" activities"); if(xc) parts.push("exit / ["+xc+"]"); if(inv) parts.push("{invariant × "+inv+"}");
     if(parts.length) L.push(pad+"note right of "+mid(s.id)+" : "+parts.join("  "));
   }
+  const parallel = !!(M.meta && M.meta.parallelRegions);
   function emit(s, indent){
     const pad="  ".repeat(indent), id=mid(s.id);
     const ch=kidsOf(s.id).filter(c=>drawn(c.id));
@@ -133,9 +134,14 @@ function fsmSource(M, opts){
       L.push(pad+'state "'+name(s)+'" as '+id+" {");
       L.push(pad+"  direction TB");
       if(!opts.hideInnerInitial) edges.filter(e=>e.inner && e.a===s.id).forEach(e=>{ L.push(pad+"  [*] --> "+mid(e.b)+" : "+q(trLabel(e.t))); pushLegendTr(e.t); });
+      if(parallel && s.kind==="region"){
+        // each region is its own machine: initial pseudostate and final states live inside it
+        M.transitions.filter(isInit).forEach(t=>{ const b=visibleRep(t.target); if(b && drawn(b) && (byId(b)||{}).parent===s.id){ L.push(pad+"  [*] --> "+mid(b)); pushLegendTr(t); } });
+      }
       ch.forEach(c=>emit(c, indent+1));
       const desc=new Set(descendants(s.id));
       edges.filter(e=>!e.inner && desc.has(e.a) && desc.has(e.b)).forEach(e=>{ if(!e.done){ L.push(pad+"  "+edge(e)); e.done=true; } });
+      if(parallel && s.kind==="region") ch.filter(c=>c.terminal).forEach(c=>L.push(pad+"  "+mid(c.id)+" --> [*]"));
       L.push(pad+"}");
       note(s, pad);
     }else{
@@ -153,6 +159,15 @@ function fsmSource(M, opts){
   }
   function edge(e){ pushLegendTr(e.t); return mid(e.a)+" --> "+mid(e.b)+" : "+q(trLabel(e.t)); }
 
+  if(parallel){
+    // orthogonal regions: one composite holding concurrent regions separated by --
+    const regs=M.globalStates.filter(g=>drawn(g.id));
+    L.push('state "'+q(opts.protocolName||(M.meta&&M.meta.protocolLabel)||"Formal Data Asset Protocol")+'" as PROTOCOL {');
+    L.push("  direction "+opts.direction);
+    regs.forEach((g,i)=>{ if(i) L.push("  --"); emit(g,1); });
+    L.push("}");
+    edges.filter(e=>!e.inner && !e.done).forEach(e=>{ L.push(edge(e)); e.done=true; });
+  } else {
   // initial pseudostate
   M.transitions.filter(isInit).forEach(t=>{ const b=visibleRep(t.target); if(b && drawn(b)){ L.push("[*] --> "+mid(b)+" : "+q(trLabel(t))); pushLegendTr(t); } });
   // top level
@@ -161,6 +176,7 @@ function fsmSource(M, opts){
   edges.filter(e=>!e.inner && !e.done).forEach(e=>{ L.push(edge(e)); e.done=true; });
   // final
   M.globalStates.filter(g=>g.terminal && drawn(g.id)).forEach(g=>L.push(mid(g.id)+" --> [*]"));
+  }
   // activities legend (for drawn states)
   (M.activities||[]).forEach(a=>{ if(drawn(a.permittedIn) || drawn(visibleRep(a.permittedIn)||"")) legend.activities.push({code:code.act[a.id], id:a.id, name:a.name, state:byId(a.permittedIn)?byId(a.permittedIn).name:a.permittedIn, type:a.activityType||""}); });
   // styling

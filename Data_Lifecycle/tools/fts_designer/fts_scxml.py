@@ -24,7 +24,7 @@ def export(m, out):
         L.append(f'{pad}<state{attrs}>')
         L.append(f'{pad}  <!-- {escape(s["name"])}: {escape(s.get("definition",""))} -->')
         ec = [c for c in m["entryConditions"] if c["appliesTo"]==s["id"]]; xc = [c for c in m["exitConditions"] if c["appliesTo"]==s["id"]]
-        inv = [c for c in m["invariants"] if c["appliesTo"]==s["id"]]; act = [a for a in m["activities"] if a["permittedIn"]==s["id"]]
+        inv = [c for c in m["invariants"] if c["appliesTo"]==s["id"]]; act = [a for a in m["activities"] if a.get("permittedIn")==s["id"]]
         if ec: L.append(f'{pad}  <onentry><!-- entry conditions: ' + "; ".join(escape(c["id"]+" "+c["predicate"]) for c in ec) + ' --></onentry>')
         if inv or act: L.append(f'{pad}  <!-- invariants: ' + "; ".join(escape(c["id"]) for c in inv) + ' | permitted activities: ' + ", ".join(escape(a["name"]) for a in act) + ' -->')
         if xc: L.append(f'{pad}  <onexit><!-- exit conditions: ' + "; ".join(escape(c["id"]+" "+c["predicate"]) for c in xc) + ' --></onexit>')
@@ -36,10 +36,25 @@ def export(m, out):
             L.append(f'{pad}  <transition event={quoteattr(t.get("event") or t["id"])} target={quoteattr(t["target"])}' + (f' cond={quoteattr(cond)}' if cond else "") + f'><!-- {escape(t["name"])}' + (f' on {escape(e["name"])}' if e else "") + f' [{escape(t.get("optionality",""))}] --></transition>')
         for c in ch: emit(c, ind+1)
         L.append(f'{pad}</state>')
-    for gsx in m["globalStates"]: emit(gsx, 1)
-    for gsx in m["globalStates"]:
-        if gsx.get("terminal"): L.append(f'  <final id={quoteattr(gsx["id"]+"_final")}/>')
-    L.append('</scxml>')
+    if m["meta"].get("parallelRegions"):
+        # orthogonal regions: one <parallel> holding a compound <state> per region with its own initial and <final>
+        L[1] = L[1].replace(f'initial={quoteattr(init["target"] if init else "")}', 'initial="PROTOCOL"')
+        L.append('  <parallel id="PROTOCOL">')
+        for r in m["globalStates"]:
+            rinit = next((t for t in m["transitions"] if str(t["source"]).startswith("[") and by.get(t["target"],{}).get("parent")==r["id"]), None)
+            L.append(f'    <state id={quoteattr(r["id"])}' + (f' initial={quoteattr(rinit["target"])}' if rinit else "") + '>')
+            L.append(f'      <!-- region {escape(r["name"])}: {escape(r.get("definition",""))} -->')
+            for c in kids(r["id"]):
+                emit(c, 3)
+                if c.get("terminal"): L.append(f'      <final id={quoteattr(c["id"]+"_final")}/>')
+            L.append('    </state>')
+        L.append('  </parallel>')
+        L.append('</scxml>')
+    else:
+        for gsx in m["globalStates"]: emit(gsx, 1)
+        for gsx in m["globalStates"]:
+            if gsx.get("terminal"): L.append(f'  <final id={quoteattr(gsx["id"]+"_final")}/>')
+        L.append('</scxml>')
     open(out, "w", encoding="utf-8").write("\n".join(L)); return out
 
 if __name__ == "__main__":

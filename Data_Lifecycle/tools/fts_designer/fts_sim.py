@@ -32,7 +32,7 @@ assetProfile attributes, evaluated with no builtins). Precedence: guardOutcomes 
 import json, sys, os, re, argparse, datetime, itertools
 from collections import defaultdict, Counter
 
-VERSION = "0.1"
+VERSION = "0.2"
 
 def now_sast():
     tz = datetime.timezone(datetime.timedelta(hours=2))
@@ -262,6 +262,152 @@ def validate(m):
                     add("Critical", "Legal hold", tid, f"hold state {s} leads directly to destruction {nx}")
     return F, cycles, gadj, fadj, greach, freach
 
+
+# ---------------------------------------------------------------- region mode (schema v0.3, parallelRegions)
+def region_of(m, sid):
+    return m.ss[sid].get("region") or m.ss[sid].get("parent") if sid in m.ss else None
+
+def validate_regions(m):
+    """Validation suite for a model whose Global States are orthogonal regions, each an independent machine."""
+    F = []
+    def add(sev, check, subject, finding, rec=""):
+        F.append({"severity": sev, "check": check, "subject": subject, "finding": finding, "recommendation": rec})
+    M = m.M
+    regions = {r["id"]: r for r in M.get("regions", [])} or {g: {"id": g, "name": m.gs[g]["name"]} for g in m.gs}
+    by_region = defaultdict(list)
+    for s in m.ss.values(): by_region[region_of(m, s["id"])].append(s["id"])
+    adj = defaultdict(list)
+    for t in m.tr.values():
+        if t["source"] != "[Initial]": adj[t["source"]].append((t["target"], t["id"]))
+    # 1 referential integrity
+    for t in m.tr.values():
+        if t["source"] != "[Initial]" and t["source"] not in m.ss: add("Critical", "Referential integrity", t["id"], f"source {t['source']} is not a state")
+        if t["target"] not in m.ss: add("Critical", "Referential integrity", t["id"], f"target {t['target']} is not a state")
+        if t.get("event") and t["event"] not in m.ev: add("High", "Referential integrity", t["id"], f"event {t['event']} is not defined")
+        if not t.get("event"): add("High", "Missing event", t["id"], "transition has no triggering event")
+        if t["source"] != "[Initial]" and region_of(m, t["source"]) != region_of(m, t["target"]):
+            add("Critical", "Region integrity", t["id"], f"source region {region_of(m, t['source'])} differs from target region {region_of(m, t['target'])} (N-009)")
+        dr = t.get("decisionRight")
+        if dr and not any(d["id"] == dr for d in M.get("decisionRights", [])): add("High", "Referential integrity", t["id"], f"decision right {dr} not defined")
+        for svc in t.get("services", []):
+            if not any(x["id"] == svc for x in M.get("services", [])): add("High", "Referential integrity", t["id"], f"service {svc} not defined")
+    for g in m.guards:
+        if g.get("transition") not in m.tr: add("High", "Referential integrity", g["id"], f"guard refers to unknown transition {g.get('transition')}")
+    for x in M.get("crossRegionConstraints", []):
+        for tid in x.get("transitions", []):
+            if tid not in m.tr: add("High", "Referential integrity", x["id"], f"constraint refers to unknown transition {tid}")
+        if x.get("expression"):
+            try: compile(x["expression"], x["id"], "eval")
+            except SyntaxError as e: add("High", "Expression syntax", x["id"], f"expression does not parse: {e}")
+    for p in M.get("permissionRecords", []):
+        if not any(a["id"] == p.get("activity") for a in M.get("activities", [])): add("High", "Referential integrity", p["id"], f"activity {p.get('activity')} not defined")
+        ctx = p.get("context")
+        if ctx not in m.ss and not any(v["id"] == ctx for v in M.get("stateVectors", [])) and ctx not in regions:
+            add("High", "Referential integrity", p["id"], f"context {ctx} is neither a state, a region nor a state vector")
+    # 2 per-region machine checks
+    for rid, sids in by_region.items():
+        r = regions.get(rid, {"name": rid})
+        inits = [s for s in sids if m.ss[s].get("initial")] or ([r["initialState"]] if r.get("initialState") in sids else [])
+        if len(inits) != 1: add("Critical", "Initial state", rid, f"region has {len(inits)} initial states (N-006 requires exactly one active state, so exactly one initial)")
+        terms = [s for s in sids if m.ss[s].get("terminal")]
+        if not terms: add("Info", "Terminal state", rid, "region has no terminal state; it is non-terminating by design (confirm)")
+        if inits:
+            reach = reachable(adj, inits[0])
+            for s in sids:
+                if s not in reach: add("High", "Reachability", s, f"state unreachable from {inits[0]} inside region {r['name']}")
+            for t in m.tr.values():
+                if t["source"] != "[Initial]" and region_of(m, t["source"]) == rid and t["source"] not in reach:
+                    add("High", "Dead transition", t["id"], f"source {t['source']} never reached")
+        for s in sids:
+            if not adj.get(s) and not m.ss[s].get("terminal"): add("High", "Trap state", s, "non-terminal state with no outgoing transition (liveness)")
+            if m.ss[s].get("terminal") and adj.get(s): add("Critical", "Terminal irreversibility", s, f"terminal state has outgoing transitions {[t for _, t in adj[s]]}")
+            if not m.inv_by_state.get(s): add("Medium", "Invariant presence", s, "no invariant (N-007 requires at least one)")
+            if not m.ec_by_state.get(s): add("Low", "Contract", s, "no entry condition")
+            if not m.ss[s].get("terminal") and not m.xc_by_state.get(s): add("Low", "Contract", s, "no exit condition")
+        # non-determinism within the region
+        key = defaultdict(list)
+        for t in m.tr.values():
+            if t["source"] != "[Initial]" and region_of(m, t["source"]) == rid: key[(t["source"], t.get("event"))].append(t["id"])
+        for (src, ev), ids in key.items():
+            if len(ids) > 1: add("High", "Non-determinism", ", ".join(ids), f"{len(ids)} transitions from {src} on event {ev}; guards must be disjoint")
+        # cycles
+        sub = {k: v for k, v in adj.items() if k in sids}
+        for path, tids in elementary_cycles(sub, sids):
+            add("Info", "Cycle", " -> ".join(path + [path[0]]), f"elementary cycle in {r['name']} via {', '.join(tids)}", "Confirm a terminating guard exists so a run cannot livelock.")
+    # 3 transition contracts
+    for t in m.tr.values():
+        if t["source"] == "[Initial]": continue
+        if not m.g_by_tr.get(t["id"]): add("High", "Guard presence", t["id"], "transition without a guard (N-009)")
+        if not t.get("decisionRight") and not m.dr_by_tr.get(t["id"]):
+            add("Low", "Authorization", t["id"], "no Decision Right; acceptable only for a time- or evidence-triggered transition with no material change (N-016)")
+        if not t.get("services"): add("Low", "GRCA applicability", t["id"], "no GRCA service declared; state explicitly that none applies (N-010, N-011)")
+        if not any(e.get("relatesTo") == t["id"] for e in M.get("evidence", [])) and t.get("reversibility", "").startswith("Irreversible"):
+            add("Medium", "Evidence", t["id"], "irreversible transition with no evidence record (N-015, GA-008)")
+        # denial: a failed guard leaves the region in its source state; record once as Info
+    add("Info", "Denial semantics", m.meta.get("modelId"), "a transition whose guard or authorization fails leaves its region in the source state (Prohibited or blocked outcome); no separate denial transitions are modelled", "Catalogue denial reasons if an executable profile needs them.")
+    # 4 destruction safeguards
+    for t in m.tr.values():
+        if m.is_destruction(t["target"]):
+            xs = t.get("crossRegionConstraints", [])
+            if not any(("hold" in x.get("constraint", "").lower()) for x in M.get("crossRegionConstraints", []) if x["id"] in xs):
+                add("Critical", "Legal hold", t["id"], "destruction transition is not constrained by a hold check")
+            if not t.get("decisionRight"): add("Critical", "Authorization", t["id"], "destruction without a Decision Right")
+    # 5 state vectors
+    rids = list(by_region.keys())
+    for v in M.get("stateVectors", []):
+        vec = v.get("vector", {})
+        for rid in rids:
+            if rid not in vec: add("High", "State vector", v["id"], f"no state for region {rid} (N-006)")
+            elif region_of(m, vec[rid]) != rid: add("High", "State vector", v["id"], f"{vec[rid]} is not a state of {rid}")
+        extra = [k for k in vec if k not in rids]
+        if extra: add("Medium", "State vector", v["id"], f"unknown regions {extra}")
+    # initial vector
+    init_vec = {rid: ([s for s in sids if m.ss[s].get("initial")] or [None])[0] for rid, sids in by_region.items()}
+    if not any(all(v.get("vector", {}).get(r) == s for r, s in init_vec.items()) for v in M.get("stateVectors", [])):
+        add("Info", "State vector", "initial", f"initial configuration {init_vec} is not among the example vectors; the walk starts there anyway")
+    # 6 permission coverage: every transition-causing activity has at least one permission record
+    for a in M.get("activities", []):
+        if "Transition-causing" in a.get("effectClass", "") and not any(p.get("activity") == a["id"] for p in M.get("permissionRecords", [])):
+            add("Medium", "Permission records", a["id"], "transition-causing activity has no Permission Record (N-012)")
+    return F, by_region, adj, init_vec
+
+def vector_walk(m, scenario, by_region, adj, init_vec):
+    """Walk the State Vector through a scripted sequence of transitions (scenario['script']), or a
+    default happy path from the initial vector to the terminal configuration. Cross-region guard
+    expressions are evaluated over the current vector (EX, AS, AV, CP = active state IDs) and the
+    scenario's asset facts. Returns the step log."""
+    M = m.M
+    code_of = {r["id"]: r.get("code", r["id"][-2:]) for r in M.get("regions", [])} or {rid: rid[-2:] for rid in by_region}
+    vec = dict(init_vec)
+    facts = dict((scenario or {}).get("assetProfile", {}))
+    script = (scenario or {}).get("script") or ["TR-EX-01", "TR-CP-01", "TR-EX-02", "TR-AS-01", "TR-AS-02", "TR-AV-01", "TR-AV-05", "TR-AS-09", "TR-EX-05", "TR-CP-10"]
+    default_facts = {"hold_active": False, "disposition_control_verified": True, "supersession_use_authorized": False, "use_requires_assurance": True, "material_change": False, "atomic_withdrawal": False, "recipient_acceptance_evidenced": True, "enhanced_monitoring": True, "time_bounded_authority": True, "post_event_review_planned": True}
+    env_facts = {**default_facts, **facts}
+    log = []
+    for tid in script:
+        t = m.tr.get(tid)
+        if not t: log.append({"transition": tid, "result": "unknown transition"}); continue
+        rid = region_of(m, t["target"]); src_active = vec.get(rid) == t["source"]
+        env = {**env_facts, **{code_of[r]: s for r, s in vec.items()}}
+        verdicts = []
+        ok = src_active
+        for g in m.g_by_tr.get(tid, []):
+            if g.get("expression"):
+                v = eval_expression(g["expression"], env); srcv = "expression"
+                if v is None: v, srcv = guard_verdict(g, scenario)[0], "default (expression not evaluable)"
+            else:
+                v, srcv = guard_verdict(g, scenario)
+            verdicts.append({"guard": g["id"], "verdict": v, "source": srcv, "constraint": g.get("constraint")})
+            if not v: ok = False
+        dr = t.get("decisionRight")
+        authorised = ok and (dr is None or (scenario or {}).get("authorizations", {}).get(dr, True))
+        before = dict(vec)
+        if authorised: vec[rid] = t["target"]
+        log.append({"transition": tid, "name": t.get("name"), "region": rid, "sourceActive": src_active, "guards": verdicts, "eligible": ok, "decisionRight": dr, "authorised": authorised,
+                    "vectorBefore": {code_of[r]: s for r, s in before.items()}, "vectorAfter": {code_of[r]: s for r, s in vec.items()}, "result": "fired" if authorised else ("blocked: source not active" if not src_active else "blocked: guard false" if not ok else "blocked: not authorised")})
+    terminal_ok = all(m.ss[s].get("terminal") for r, s in vec.items() if r in ("REG-EX", "REG-CP"))
+    return log, vec, terminal_ok
+
 # ---------------------------------------------------------------- guard evaluation
 def eval_expression(expr, profile):
     try:
@@ -360,7 +506,7 @@ def coverage_run(m, fadj, scenario, loop_bound=1):
     return traces, fired, states_visited, guard_log
 
 # ---------------------------------------------------------------- excel
-def write_xlsx(path, m, F, cycles, traces, fired, states_visited, guard_log, scenario, stamp):
+def write_xlsx(path, m, F, cycles, traces, fired, states_visited, guard_log, scenario, stamp, walk=None):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     wb = Workbook()
@@ -411,6 +557,13 @@ def write_xlsx(path, m, F, cycles, traces, fired, states_visited, guard_log, sce
           [[tr["run"], i+1, s["transition"], s["name"], s["from"], s["to"], s["event"], s["guards"], "yes" if s["passed"] else "no", s["decisionRights"], "yes" if s["authorised"] else "no", tr["note"] if i == len(tr["steps"])-1 else ""]
            for tr in traces for i, s in enumerate(tr["steps"])] + [[tr["run"], 0, "", "", "", "", "", "", "", "", "", tr["note"]] for tr in traces if not tr["steps"]],
           [6, 6, 16, 28, 16, 16, 9, 8, 8, 16, 10, 40])
+    if walk:
+        steps, final, term = walk
+        sheet("Vector Walk", ["Step", "Transition", "Name", "Region", "Source active", "Guards", "Guard verdicts", "Eligible", "Decision right", "Authorised", "Result", "EX", "AS", "AV", "CP"],
+              [[i+1, st["transition"], st.get("name"), st.get("region"), "yes" if st.get("sourceActive") else "no", len(st.get("guards", [])),
+                "; ".join(f"{g['guard']}={'T' if g['verdict'] else 'F'} ({g['source']})" for g in st.get("guards", [])), "yes" if st.get("eligible") else "no", st.get("decisionRight") or "", "yes" if st.get("authorised") else "no", st.get("result"),
+                st.get("vectorAfter", {}).get("EX"), st.get("vectorAfter", {}).get("AS"), st.get("vectorAfter", {}).get("AV"), st.get("vectorAfter", {}).get("CP")] for i, st in enumerate(steps)] + [["", "final vector", "", "", "", "", "", "", "", "", "terminal" if term else "not terminal", final.get("REG-EX"), final.get("REG-AS"), final.get("REG-AV"), final.get("REG-CP")]],
+              [6, 12, 30, 10, 10, 8, 60, 8, 12, 10, 26, 12, 12, 12, 12])
     if scenario:
         sheet("Asset Profile", ["Attribute", "Value"], [[k, json.dumps(v)] for k, v in (scenario.get("assetProfile") or {}).items()], [30, 40])
     wb.save(path)
@@ -424,22 +577,34 @@ def main():
     m = Model(M)
     scenario = json.load(open(a.scenario, encoding="utf-8")) if a.scenario else None
     stamp = now_sast()
-    F, cycles, gadj, fadj, greach, freach = validate(m)
-    traces, fired, visited, guard_log = coverage_run(m, fadj, scenario, a.loop_bound)
+    region_mode = bool(m.meta.get("parallelRegions"))
+    walk = None
+    if region_mode:
+        F, by_region, radj, init_vec = validate_regions(m)
+        cycles = []
+        fadj = defaultdict(list)
+        for t in m.tr.values(): fadj[t["source"]].append((t["target"], t["id"]))
+        traces, fired, visited, guard_log = coverage_run(m, fadj, scenario, a.loop_bound)
+        walk = vector_walk(m, scenario, by_region, radj, init_vec)
+    else:
+        F, cycles, gadj, fadj, greach, freach = validate(m)
+        traces, fired, visited, guard_log = coverage_run(m, fadj, scenario, a.loop_bound)
     os.makedirs(a.out, exist_ok=True)
     base = (m.meta.get("modelId") or "model").lower().replace(" ", "_")
     tag = ("_" + scenario["id"]) if scenario and scenario.get("id") else ""
     rep = {"engine": f"fts_sim.py v{VERSION}", "buildStamp": stamp, "model": m.meta.get("modelId"), "modelVersion": m.meta.get("version"),
            "scenario": scenario.get("id") if scenario else None,
            "findings": F, "cycles": [{"path": p, "transitions": t} for p, t in cycles],
-           "coverage": {"states": len(m.states), "statesVisited": len(visited & set(m.states)), "transitions": len(m.tr), "transitionsFired": len(fired),
+           "coverage": {"states": len(m.ss) if region_mode else len(m.states), "statesVisited": len(visited & set(m.ss if region_mode else m.states)), "transitions": len(m.tr), "transitionsFired": len(fired),
                         "guards": len(m.guards), "guardsTrue": len({g['guard'] for g in guard_log if g['verdict']}), "guardsFalse": len({g['guard'] for g in guard_log if not g['verdict']}),
                         "runs": len(traces)},
-           "traces": traces, "guardLog": guard_log}
+           "traces": traces, "guardLog": guard_log,
+           "vectorWalk": ({"steps": walk[0], "finalVector": walk[1], "terminal": walk[2]} if walk else None)}
     jp = os.path.join(a.out, f"{base}{tag}_sim_report.json"); json.dump(rep, open(jp, "w", encoding="utf-8"), indent=1)
-    xp = os.path.join(a.out, f"{base}{tag}_sim_report.xlsx"); write_xlsx(xp, m, F, cycles, traces, fired, visited, guard_log, scenario, stamp)
+    xp = os.path.join(a.out, f"{base}{tag}_sim_report.xlsx"); write_xlsx(xp, m, F, cycles, traces, fired, visited, guard_log, scenario, stamp, walk)
     c = Counter(f["severity"] for f in F)
     print(f"{m.meta.get('modelId')} v{m.meta.get('version')}  findings: " + ", ".join(f"{k} {c[k]}" for k in ["Critical","High","Medium","Low","Info"] if c[k]))
+    if walk: print(f"vector walk: {sum(1 for st in walk[0] if st['result']=='fired')}/{len(walk[0])} steps fired, final {walk[1]}, terminal={walk[2]}")
     print(f"coverage: states {rep['coverage']['statesVisited']}/{rep['coverage']['states']}, transitions {len(fired)}/{len(m.tr)}, guards TRUE {rep['coverage']['guardsTrue']}/{len(m.guards)} FALSE {rep['coverage']['guardsFalse']}/{len(m.guards)}, runs {len(traces)}")
     print("wrote", jp); print("wrote", xp)
 

@@ -9,3 +9,9 @@ Scripts the fts-designer skill runs. The skill drafts the semantic content of a 
 - `../convert_fts.py workbook.xlsx out.fts.json`: re-import an edited workbook.
 
 Design specs and models are data and live in the private repo, never here.
+
+## fts_sim.py (batch validation and coverage engine, v0.1)
+
+    python fts_sim.py <model.fts.json> [--scenario scenario.json] [--out dir] [--loop-bound 1]
+
+Runs the minimum validation suite (referential integrity, initial and terminal states, reachability at Global and sub-state level, dead transitions and trap states, non-determinism, missing events and missing denial paths, invariant and contract presence, exception applicability, elementary cycles, terminal irreversibility, hold-before-destruction), then a coverage run that fires every reachable transition at least once and evaluates every guard both TRUE and FALSE. Writes `<model>_sim_report.json` and `<model>_sim_report.xlsx` (Run Summary, Validation Findings, State Coverage, Transition Coverage, Guard Verdicts, Cycles, Trace, Asset Profile). A scenario file supplies an asset profile, explicit guard outcomes and a default verdict; a guard or condition may carry an optional `expression` evaluated over the asset profile.

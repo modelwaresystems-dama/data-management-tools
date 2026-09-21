@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="3f11833bd6b4" data-built="21 Sep 2026" data-version="1.44.0">
+<meta name="crm-build" content="2a5b0e0291e8" data-built="21 Sep 2026" data-version="1.45.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -177,6 +177,8 @@ label.fld.chk > input{width:auto;margin:0}
 .item .bar{width:3px;align-self:stretch;border-radius:2px;background:transparent;flex:none;margin:-9px 0 -9px -12px}
 .band-overdue .item .bar{background:var(--overdue)}
 .band-today .item .bar{background:var(--accent)}
+.band-seats .item .bar{background:var(--warn)}
+.band-seats .item.started .bar{background:var(--overdue)}
 .item .body{min-width:0;flex:1}
 .item .t1{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .t1 .co{color:var(--muted);font-weight:400}
@@ -729,7 +731,7 @@ function assign(target, src, keys){
 var DEAL_FIELDS = ["companyId","name","owner","stage","value","currency",
                    "expectedCloseDate","notes","contactId","commissionRate",
                    "partnerCompanyId","partnerContactId","commissionable",
-                   "channel","facilitatorRef","endClient"];
+                   "channel","facilitatorRef","endClient","courseStartsOn"];
 
 /* THE FIVE TRAINING CHANNELS (ruled 2026-09-14 by Howard).
 
@@ -907,6 +909,10 @@ function foldEvents(events){
           currency:p.currency || "ZAR",
           contactId:p.contactId || null,
           expectedCloseDate:p.expectedCloseDate || null,
+          /* The day the delegate walks into the room. Separate from expected
+             close: a direct seat is WON when they book and must be PAID before
+             this date (register B2, 21 Sep 2026). */
+          courseStartsOn:p.courseStartsOn || null,
           notes:p.notes || "",
           /* Some work reaches the customer through somebody else: a reseller, a
              JV partner, a consultancy that owns the relationship. The deal still
@@ -1484,6 +1490,55 @@ function stepsToHandOver(st, dealId, toOwner){
   return openFollowupsFor(st, dealId).filter(function (f){
     return f.subjectType === "deal" && (f.owner || "") !== (toOwner || ""); });
 }
+/* UNPAID SEATS BEFORE THE COURSE (ruled 21 Sep 2026 by Howard, register B2:
+   seven days).
+
+   A direct individual (channel 1) pays before attending. Nothing in the CRM
+   knew when anybody was attending, so the first sign of an unpaid seat was a
+   delegate in the room who had not paid. A deal on a prepaid channel with a
+   course start date shows on Today from UNPAID_SEAT_DAYS before the start,
+   until every live invoice on it is settled \u2014 and keeps showing after the
+   start if it still is not, because that is worse, not resolved.
+
+   "Paid" means at least one live invoice and nothing outstanding on any of
+   them. No invoice at all is the most unpaid a seat can be. Lost and deleted
+   deals are out. */
+var UNPAID_SEAT_DAYS = 7;
+function unpaidSeats(st, cfg, today, opts){
+  today = today || todayISO();
+  opts = opts || {};
+  var within = (cfg && cfg.thresholds && cfg.thresholds.unpaidSeatDays != null)
+    ? +cfg.thresholds.unpaidSeatDays : UNPAID_SEAT_DAYS;
+  var scope = opts.scope === "team" ? "team" : (opts.user ? "mine" : "team");
+  var out = [];
+  Object.keys(st.deals).forEach(function (k){
+    var d = st.deals[k];
+    if (d.deleted || !d.courseStartsOn) return;
+    if (d.status === "closed" && d.outcome === "lost") return;
+    var ch = channelById(d.channel);
+    if (!ch || !ch.prepaid) return;
+    if (scope === "mine" && d.owner !== opts.user) return;
+    var days = daysBetween(today, d.courseStartsOn);
+    if (days === null || days > within) return;
+    var live = invoicesFor(st, d.id).map(function (i){ return invoiceState(st, i); })
+      .filter(function (x){ return !x.cancelled; });
+    var owing = {};
+    live.forEach(function (x){
+      if (x.balance > 0.005){
+        var c = x.invoice.currency || "ZAR";
+        owing[c] = round2((owing[c] || 0) + x.balance);
+      }
+    });
+    var paid = live.length > 0 && !Object.keys(owing).length;
+    if (paid) return;
+    out.push({ deal:d, daysToStart:days, invoiced:live.length > 0, owing:owing,
+               currencies:Object.keys(owing).sort() });
+  });
+  /* Soonest first \u2014 and a course that has already started is soonest of all. */
+  out.sort(function (a, b){ return a.daysToStart - b.daysToStart; });
+  return out;
+}
+
 /* Open steps sitting with somebody other than the deal's owner, however they
    got there — an owner changed before this build, a step created by whoever
    was logging, an import that named the wrong person. The panel says so and
@@ -1783,9 +1838,13 @@ function computeFlags(st, cfg, today){
     invs.forEach(function (inv){
       var s = invoiceState(st, inv);
       if (s.cancelled || s.balance <= 0) return;
-      if (inv.dueDate && daysBetween(today, inv.dueDate) < 0){
+      var ed = effectiveDue(inv);
+      if (ed.date && daysBetween(today, ed.date) < 0){
         if (f.indexOf("Payment overdue") < 0) f.push("Payment overdue");
-      } else if (!inv.dueDate){
+      }
+      /* Still said, even though the terms now age it: the invoice should
+         carry its real date, and a derived one is a stop-gap. */
+      if (!inv.dueDate){
         if (f.indexOf("No due date") < 0) f.push("No due date");
       }
     });
@@ -1852,6 +1911,24 @@ function invoiceLineMismatch(inv){
   if (inv.net == null) return null;
   var d = round2(invoiceNet(inv) - round2(inv.net));
   return Math.abs(d) < 0.005 ? null : { stated: round2(inv.net), fromLines: invoiceNet(inv), by: d };
+}
+
+/* DEFAULT TERMS (ruled 21 Sep 2026 by Howard, register N3: "terms").
+
+   Eleven live invoices carried no due date \u2014 $20,117 of a $57,727 dollar
+   book \u2014 so they sat in no age bucket at all and the Debtors screen could
+   not be read beside Sage. Where an invoice states NO due date, it is treated
+   as due thirty days from issue. Only there: a stated date always wins, and a
+   derived one is never written back to the invoice. Every reader that uses it
+   carries `derived` so the screen can say "on 30-day terms" rather than
+   presenting an inference as a fact. An invoice with no issue date either is
+   still genuinely undated. */
+var DEFAULT_TERMS_DAYS = 30;
+function effectiveDue(inv){
+  if (!inv) return { date:null, derived:false };
+  if (inv.dueDate) return { date:inv.dueDate, derived:false };
+  if (inv.issuedOn) return { date:addDays(inv.issuedOn, DEFAULT_TERMS_DAYS), derived:true };
+  return { date:null, derived:false };
 }
 
 function invoiceState(st, inv){
@@ -2189,7 +2266,8 @@ function customerLedger(st, companyId, today){
       out.byCurrency[cur] = { currency:cur, entries:[],
         invoiced:0, credited:0, received:0, balance:0,
         aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 },
-        oldestDue:null, undatedCount:0, weightedDays:0, owed:0 };
+        oldestDue:null, undatedCount:0, derivedCount:0, derived:0,
+        weightedDays:0, owed:0 };
       out.currencies.push(cur);
     }
     return out.byCurrency[cur];
@@ -2221,11 +2299,14 @@ function customerLedger(st, companyId, today){
         return;
       }
       var b = bag(inv.currency || "ZAR");
-      b.entries.push({ type:"invoice", date:inv.issuedOn, dueDate:inv.dueDate || null,
+      var edL = effectiveDue(inv);
+      b.entries.push({ type:"invoice", date:inv.issuedOn, dueDate:edL.date,
+                       dueDerived:edL.derived,
                        ref:inv.number || "(no number)", deal:d.name, dealId:d.id,
                        debit:s2.gross, credit:0, doc:inv, state:s2 });
       b.invoiced = round2(b.invoiced + s2.gross);
-      if (!inv.dueDate){ b.undatedCount++; }
+      if (!edL.date){ b.undatedCount++; }
+      else if (edL.derived){ b.derivedCount++; }
 
       paymentsFor(st, inv.id).forEach(function (pay){
         b.entries.push({ type:"payment", date:pay.receivedOn, dueDate:null,
@@ -2293,6 +2374,7 @@ function customerLedger(st, companyId, today){
       if (owing <= 0.005) return;
       agedTotal = round2(agedTotal + owing);
       if (!en.dueDate){ b.aged.undated = round2(b.aged.undated + owing); return; }
+      if (en.dueDerived) b.derived = round2(b.derived + owing);
       if (!b.oldestDue || en.dueDate < b.oldestDue) b.oldestDue = en.dueDate;
       /* The five buckets the accounting system uses, so the two reports can be
          read side by side: Current (not yet due), then 1-30, 31-60, 61-90 and
@@ -2358,7 +2440,7 @@ function agedDebtors(st, cfg, today){
         if (!row){
           row = byInvoice[key] = { owner:owner, currency:cur, companyId:cid,
             company:co.name, invoiced:0, received:0, credited:0, balance:0,
-            aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 },
+            aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 }, derived:0,
             oldestDue:null, weighted:0, owed:0, daysOutstanding:0, invoices:0 };
           rows.push(row);
         }
@@ -2368,9 +2450,11 @@ function agedDebtors(st, cfg, today){
         var owing = s2.balance;
         if (owing <= 0.005) return;
         row.balance = round2(row.balance + owing);
-        if (!inv.dueDate){ row.aged.undated = round2(row.aged.undated + owing); return; }
-        if (!row.oldestDue || inv.dueDate < row.oldestDue) row.oldestDue = inv.dueDate;
-        var late = -daysBetween(today, inv.dueDate);
+        var edA = effectiveDue(inv);
+        if (!edA.date){ row.aged.undated = round2(row.aged.undated + owing); return; }
+        if (edA.derived) row.derived = round2(row.derived + owing);
+        if (!row.oldestDue || edA.date < row.oldestDue) row.oldestDue = edA.date;
+        var late = -daysBetween(today, edA.date);
         if (late <= 0)       row.aged.current = round2(row.aged.current + owing);
         else if (late <= 30) row.aged.d30 = round2(row.aged.d30 + owing);
         else if (late <= 60) row.aged.d60 = round2(row.aged.d60 + owing);
@@ -2390,7 +2474,7 @@ function agedDebtors(st, cfg, today){
         if (!row){
           row = byInvoice[key] = { owner:d.owner || "", currency:cur, companyId:cid,
             company:co.name, invoiced:0, received:0, credited:0, balance:0,
-            aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 },
+            aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 }, derived:0,
             oldestDue:null, weighted:0, owed:0, daysOutstanding:0, invoices:0 };
           rows.push(row);
         }
@@ -2422,7 +2506,7 @@ function agedDebtors(st, cfg, today){
     var pp = people[pk];
     if (!pp.currencies[r.currency]){
       pp.currencies[r.currency] = { currency:r.currency, rows:[],
-        total:0, overdue:0, weighted:0, owed:0, daysOutstanding:0,
+        total:0, overdue:0, weighted:0, owed:0, daysOutstanding:0, derived:0,
         aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 } };
       pp.curOrder.push(r.currency);
     }
@@ -2431,6 +2515,7 @@ function agedDebtors(st, cfg, today){
     cc.total = round2(cc.total + r.balance);
     cc.overdue = round2(cc.overdue + r.overdue);
     cc.weighted = round2(cc.weighted + r.weighted); cc.owed = round2(cc.owed + r.owed);
+    cc.derived = round2(cc.derived + r.derived);
     ["current","d30","d60","d90","d120","undated"].forEach(function (k){
       cc.aged[k] = round2(cc.aged[k] + r.aged[k]); });
     pp.weighted = round2(pp.weighted + r.weighted); pp.owed = round2(pp.owed + r.owed);
@@ -2447,11 +2532,12 @@ function agedDebtors(st, cfg, today){
       /* biggest debt first \u2014 the order a call list is worked in */
       cc.rows.sort(function (a,b){ return b.balance - a.balance; });
       if (!grand[cur]) grand[cur] = { currency:cur, total:0, overdue:0,
-        weighted:0, owed:0, daysOutstanding:0,
+        weighted:0, owed:0, daysOutstanding:0, derived:0,
         aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 } };
       var g = grand[cur];
       g.total = round2(g.total + cc.total); g.overdue = round2(g.overdue + cc.overdue);
       g.weighted = round2(g.weighted + cc.weighted); g.owed = round2(g.owed + cc.owed);
+      g.derived = round2(g.derived + cc.derived);
       ["current","d30","d60","d90","d120","undated"].forEach(function (k){
         g.aged[k] = round2(g.aged[k] + cc.aged[k]); });
     });
@@ -2499,13 +2585,13 @@ function debtorsByCompany(st, cfg, today){
   book.rows.forEach(function (r){
     var cur = r.currency;
     if (!out[cur]) out[cur] = { currency:cur, rows:[], byCompany:{},
-      total:0, overdue:0, weighted:0, owed:0, daysOutstanding:0,
+      total:0, overdue:0, weighted:0, owed:0, daysOutstanding:0, derived:0,
       aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 } };
     var b = out[cur], row = b.byCompany[r.companyId];
     if (!row){
       row = b.byCompany[r.companyId] = { companyId:r.companyId, company:r.company,
         currency:cur, owners:[], invoiced:0, received:0, credited:0, balance:0,
-        invoices:0, weighted:0, owed:0, daysOutstanding:0, overdue:0,
+        invoices:0, weighted:0, owed:0, daysOutstanding:0, overdue:0, derived:0,
         aged:{ current:0, d30:0, d60:0, d90:0, d120:0, undated:0 } };
       b.rows.push(row);
     }
@@ -2518,12 +2604,14 @@ function debtorsByCompany(st, cfg, today){
     row.overdue  = round2(row.overdue + r.overdue);
     row.weighted = round2(row.weighted + r.weighted);
     row.owed     = round2(row.owed + r.owed);
+    row.derived  = round2(row.derived + r.derived);
     AGE.forEach(function (k){ row.aged[k] = round2(row.aged[k] + r.aged[k]); });
 
     b.total   = round2(b.total + r.balance);
     b.overdue = round2(b.overdue + r.overdue);
     b.weighted = round2(b.weighted + r.weighted);
     b.owed    = round2(b.owed + r.owed);
+    b.derived = round2(b.derived + r.derived);
     AGE.forEach(function (k){ b.aged[k] = round2(b.aged[k] + r.aged[k]); });
   });
   Object.keys(out).forEach(function (cur){
@@ -2818,11 +2906,14 @@ function moneyBook(st, cfg, today, opts){
         var b = chanBag(dch.id);
         add(b.invoiced, c, s.gross); add(b.paid, c, s.paid); add(b.outstanding, c, s.balance);
       }
-      if (!s.invoice.dueDate && s.balance > 0) book.undated.push({ state:s, deal:d });
-      if (s.invoice.dueDate && s.balance > 0 && daysBetween(today, s.invoice.dueDate) < 0){
+      var edM = effectiveDue(s.invoice);
+      /* Still listed as "no due date" so it gets fixed — but now also aged
+         on the default terms, so it is never silently out of the overdue total. */
+      if (!s.invoice.dueDate && s.balance > 0) book.undated.push({ state:s, deal:d, derivedDue:edM.date });
+      if (edM.date && s.balance > 0 && daysBetween(today, edM.date) < 0){
         add(book.overdue, c, s.balance);
-        book.overdueInvoices.push({ state:s, deal:d,
-          daysLate: -daysBetween(today, s.invoice.dueDate) });
+        book.overdueInvoices.push({ state:s, deal:d, dueDerived:edM.derived,
+          daysLate: -daysBetween(today, edM.date) });
       }
       /* Straight through the same arithmetic the deal panel uses — one function,
          so the book and the panel cannot disagree about what somebody is owed.
@@ -2867,7 +2958,7 @@ function moneyBook(st, cfg, today, opts){
     if (co.domain && String(co.domain).trim()) return;
     var deals = Object.keys(st.deals).filter(function (dk){
       return st.deals[dk].companyId === co.id; }).length;
-    book.noDomain.push({ company:co, deals:deals });
+    book.noDomain.push({ company:co, deals:deals, suggest:suggestDomain(st, cfg, co.id) });
   });
   book.noDomain.sort(function (a,b){ return b.deals - a.deals; });
 
@@ -2875,6 +2966,52 @@ function moneyBook(st, cfg, today, opts){
 }
 
 function round2(n){ return Math.round((+n || 0) * 100) / 100; }
+
+/* A DOMAIN FROM THE EMAILS WE ALREADY HOLD (register N2, 21 Sep 2026:
+   "draft all 36 and let me confirm").
+
+   Thirty-nine companies had no domain, and thirty-six of them had a contact
+   whose address gave it away. This proposes; it never sets. Three things are
+   never proposed, because each would quietly match the wrong mail:
+     - a webmail domain (gmail, outlook\u2026) \u2014 it would claim every private
+       sender in the world for one customer;
+     - our own domain, or any domain on the team roster;
+     - a domain another company already carries \u2014 two companies on one domain
+       means neither matches reliably. Reported as a clash instead. */
+var WEBMAIL = { "gmail.com":1, "googlemail.com":1, "yahoo.com":1, "yahoo.co.uk":1,
+  "hotmail.com":1, "outlook.com":1, "live.com":1, "msn.com":1, "icloud.com":1,
+  "me.com":1, "aol.com":1, "proton.me":1, "protonmail.com":1, "gmx.com":1,
+  "mweb.co.za":1, "telkomsa.net":1, "webmail.co.za":1, "vodamail.co.za":1,
+  "yahoo.co.za":1, "ymail.com":1, "zoho.com":1, "mail.com":1 };
+function emailDomain(e){
+  var m = /@([^@\s>]+)\s*>?\s*$/.exec(String(e || "").trim());
+  return m ? m[1].toLowerCase().replace(/\.+$/, "") : "";
+}
+function suggestDomain(st, cfg, companyId){
+  var ours = { "modelwaresystems.com":1 };
+  ((cfg && cfg.users) || []).forEach(function (u){ var d = emailDomain(u.email); if (d) ours[d] = 1; });
+  var taken = {};
+  Object.keys(st.companies).forEach(function (k){
+    var c = st.companies[k];
+    if (k === companyId || c.merged || !c.domain) return;
+    taken[String(c.domain).trim().toLowerCase()] = c.name;
+  });
+  var tally = {}, from = {};
+  Object.keys(st.contacts).forEach(function (k){
+    var ct = st.contacts[k];
+    if (ct.companyId !== companyId) return;
+    var d = emailDomain(ct.email);
+    if (!d || WEBMAIL[d] || ours[d]) return;
+    tally[d] = (tally[d] || 0) + 1;
+    (from[d] = from[d] || []).push(ct.name);
+  });
+  var ds = Object.keys(tally).sort(function (a, b){
+    return tally[b] - tally[a] || (a < b ? -1 : 1); });
+  if (!ds.length) return null;
+  var best = ds[0];
+  return { domain:best, from:from[best], others:ds.slice(1),
+           clashWith: taken[best] || null };
+}
 
 /* ---------------- the three bands (C5) ---------------- */
 
@@ -5198,6 +5335,9 @@ var API = {
   sortEvents:sortEvents, foldEvents:foldEvents,
   openFollowups:openFollowups, followupsFor:followupsFor, openFollowupsFor:openFollowupsFor,
   stepsToHandOver:stepsToHandOver, strandedSteps:strandedSteps,
+  effectiveDue:effectiveDue, DEFAULT_TERMS_DAYS:DEFAULT_TERMS_DAYS,
+  suggestDomain:suggestDomain, emailDomain:emailDomain,
+  unpaidSeats:unpaidSeats, UNPAID_SEAT_DAYS:UNPAID_SEAT_DAYS,
   interactionsFor:interactionsFor, interactionsForCompany:interactionsForCompany,
   companySummary:companySummary,
   mailWatermark:mailWatermark,
@@ -6583,6 +6723,38 @@ function viewToday(el){
 
   el.appendChild(mailStatusLine());
 
+  /* Money first: a seat that must be paid before a course that is days away.
+     Above the follow-ups, and drawn even when nothing else is due, because
+     "Nothing due" is exactly the wrong thing to read the week somebody is
+     about to sit in a room unpaid. */
+  var seats = C.unpaidSeats(App.st, App.config, App.today, scopeOpts());
+  if (seats.length){
+    var srows = seats.map(function (u){
+      var d = u.deal, party = C.dealParty(App.st, d);
+      var when = u.daysToStart > 1 ? "starts " + C.fmtFull(d.courseStartsOn) + " \u00b7 in " + u.daysToStart + " days"
+               : u.daysToStart === 1 ? "starts tomorrow, " + C.fmtFull(d.courseStartsOn)
+               : u.daysToStart === 0 ? "starts TODAY"
+               : "started " + (-u.daysToStart) + " day" + (u.daysToStart === -1 ? "" : "s") + " ago";
+      var money = !u.invoiced ? "not invoiced"
+        : u.currencies.map(function (c){ return C.fmtMoneyExact(u.owing[c], c); }).join(" \u00b7 ") + " outstanding";
+      return h("div", { class:"item seat" + (u.daysToStart <= 0 ? " started" : ""), role:"listitem", tabindex:"0",
+          data:{ deal:d.id },
+          onclick:(function (id){ return function (){ openDeal(id); }; })(d.id) },
+        h("span", { class:"bar" }),
+        h("div", { class:"body" },
+          h("div", { class:"t1" }, h("span", { class:"co", text:(party.name || "") + " \u2014 " }),
+            h("span", { text:d.name })),
+          h("div", { class:"t2" },
+            h("span", { class: u.daysToStart <= 2 ? "late" : "", text:when }),
+            h("span", { text:" \u00b7 " + money + " \u00b7 " + userName(d.owner) }))));
+    });
+    el.appendChild(band("band-seats", "Unpaid before the course", seats.length, srows, null));
+    el.appendChild(h("div", { class:"note", style:"margin:-4px 0 14px",
+      text:"Direct seats are paid before attending. These start within " +
+           ((App.config.thresholds && App.config.thresholds.unpaidSeatDays) || C.UNPAID_SEAT_DAYS) +
+           " days, or already have, and are not fully paid." }));
+  }
+
   if (b.total === 0){
     el.appendChild(h("div", { class:"empty" },
       h("div", { style:"font-size:15px;margin-bottom:4px" },
@@ -7223,8 +7395,10 @@ function newDeal(anchor){
     h("label", { class:"fld" }, h("span", { text:"Currency" }), cur)));
 
   var close = h("input", { type:"text", placeholder:"e.g. 30 sep", "aria-label":"Expected close" });
+  var starts = h("input", { type:"text", placeholder:"direct seats: e.g. 12 oct", "aria-label":"Course starts" });
   var first = h("input", { type:"text", placeholder:"First next step", "aria-label":"First next step" });
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Expected close" }), close));
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Course starts" }), starts));
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"First next step" }), first));
   var due = h("input", { type:"text", value:C.deferBy(App.today, 7), "aria-label":"First next step due" });
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Due" }), due));
@@ -7241,7 +7415,8 @@ function newDeal(anchor){
     emit("deal.created", { dealId:dealId, companyId:coName ? coId : null,
       name:nm.value.trim() || coName, owner:owner.value, stage:stage.value,
       value: v === "" ? null : +v, currency:cur.value,
-      expectedCloseDate: C.parseDateInput(close.value, App.today) });
+      expectedCloseDate: C.parseDateInput(close.value, App.today),
+      courseStartsOn: starts.value.trim() ? C.parseDateInput(starts.value, App.today) : null });
     var d = C.parseDateInput(due.value, App.today) || C.deferBy(App.today, 7);
     emit("followup.created", { followupId:C.uid("fu"), subjectType:"deal", subjectId:dealId,
       owner:owner.value, dueDate:d, what: first.value.trim() || "Make first contact" });
@@ -7367,7 +7542,8 @@ function openStatement(companyId){
           h("div", { class:"note", style:"font-size:11.5px",
             text: (en.against ? "against " + en.against + " \u00b7 " : "") + en.deal +
                   (en.type === "invoice" && en.dueDate
-                     ? " \u00b7 due " + C.fmtDayYear(en.dueDate)
+                     ? " \u00b7 due " + C.fmtDayYear(en.dueDate) +
+                       (en.dueDerived ? " (" + C.DEFAULT_TERMS_DAYS + " days from issue \u2014 none stated)" : "")
                      : en.type === "invoice" ? " \u00b7 no due date" : "") })),
         h("td", { class:"num", text: en.debit ? C.fmtMoneyExact(en.debit, cur) : "" }),
         h("td", { class:"num", text: en.credit ? C.fmtMoneyExact(en.credit, cur) : "" }),
@@ -7560,6 +7736,9 @@ function openDeal(dealId){
   function fact(k, v){ kv.appendChild(h("dt", { text:k })); kv.appendChild(h("dd", { text:v })); }
   fact("Value", d.value == null ? "—" : C.fmtMoney(d.value, d.currency) + " " + (d.currency||""));
   fact("Expected close", d.expectedCloseDate ? C.fmtDayYear(d.expectedCloseDate) : "not set");
+  if (d.courseStartsOn || (C.channelById(d.channel) || {}).prepaid)
+    fact("Course starts", d.courseStartsOn ? C.fmtDayYear(d.courseStartsOn)
+      : "not set \u2014 without it nobody is warned about an unpaid seat");
   fact("Owner", userName(d.owner) +
        (d.commissionable === false ? "  (no commission on this deal)" : ""));
   (function (){
@@ -7943,12 +8122,16 @@ function openDeal(dealId){
       var mt = h("tbody");
       m.invoices.forEach(function (st_){
         var inv = st_.invoice;
-        var late = inv.dueDate && st_.balance > 0 ? C.daysBetween(App.today, inv.dueDate) : null;
+        var edP = C.effectiveDue(inv);
+        var late = edP.date && st_.balance > 0 ? C.daysBetween(App.today, edP.date) : null;
         mt.appendChild(h("tr", null,
           h("td", null,
             h("div", { text:(inv.number || "(no number)") + (st_.cancelled ? "  · cancelled" : "") }),
             h("div", { class:"note", text:"issued " + C.fmtDay(inv.issuedOn) +
-              (inv.dueDate ? " · due " + C.fmtDay(inv.dueDate) : " · no due date") +
+              (inv.dueDate ? " · due " + C.fmtDay(inv.dueDate)
+                 : edP.date ? " · no due date \u2014 treated as due " + C.fmtDay(edP.date) +
+                              " (" + C.DEFAULT_TERMS_DAYS + " days from issue)"
+                 : " · no due date") +
               (st_.passThrough ? " · incl " + C.fmtMoney(st_.passThrough, inv.currency) + " resale" : "") +
               (inv.quoteId && App.st.quotes[inv.quoteId]
                  ? " · from " + (App.st.quotes[inv.quoteId].number || "a quote") : "") +
@@ -8915,6 +9098,8 @@ function editDeal(anchor, d){
   (App.config.currencies || ["ZAR"]).forEach(function (c){ cur.appendChild(h("option", { value:c }, c)); });
   cur.value = d.currency || "ZAR";
   var close = h("input", { type:"text", value:d.expectedCloseDate || "", placeholder:"e.g. 30 sep", "aria-label":"Expected close" });
+  var starts = h("input", { type:"text", value:d.courseStartsOn || "", placeholder:"e.g. 12 oct",
+                            "aria-label":"Course starts" });
   var owner = h("select", { "aria-label":"Owner" });
   var sellers2 = C.salesUsers(App.config);
   users().forEach(function (u){
@@ -8979,6 +9164,7 @@ function editDeal(anchor, d){
     h("label", { class:"fld" }, h("span", { text:"Value" }), val),
     h("label", { class:"fld" }, h("span", { text:"Currency" }), cur)));
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Expected close" }), close));
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Course starts" }), starts));
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Owner" }), owner));
 
   /* The open steps go with the deal. Listed, not moved blind: each is ticked,
@@ -9117,12 +9303,32 @@ function editDeal(anchor, d){
         c.name + "  \u00b7 " + ((App.st.companies[c.companyId] || {}).name || ""))); });
   if (folk.childNodes.length) partner.appendChild(folk);
 
+  /* A partner firm the CRM has never heard of. Until now the only way to bring
+     a company into existence was to raise a deal against it, so a partner that
+     was not also a customer could not be named at all \u2014 which is why the
+     Comotion deal carried Comotion as its own partner for three weeks after
+     Nexus Data was ruled the partner (register N1). */
+  partner.appendChild(h("option", { value:"new" }, "\uff0b A partner company not in the CRM yet\u2026"));
+  var newPName = h("input", { type:"text", placeholder:"Company name, e.g. Nexus Data",
+                              "aria-label":"New partner company" });
+  var newPDom = h("input", { type:"text", placeholder:"their email domain, if known",
+                             "aria-label":"New partner domain" });
+  var newPWrap = h("div", { class:"newpartner", style:"display:none;margin:4px 0 8px" },
+    h("label", { class:"fld" }, h("span", { text:"New partner" }), newPName),
+    h("label", { class:"fld" }, h("span", { text:"Domain" }), newPDom));
+
   partner.value = d.partnerCompanyId ? "co:" + d.partnerCompanyId
                 : d.partnerContactId ? "ct:" + d.partnerContactId : "";
   var partnerNote = h("div", { class:"note" });
   var syncPartner = function (){
     clear(partnerNote);
     var v = partner.value;
+    newPWrap.style.display = v === "new" ? "" : "none";
+    if (v === "new"){
+      partnerNote.textContent = "Created as a company and marked a partner when you save. " +
+        "If a company of that name already exists, that one is used instead \u2014 never a second copy.";
+      setTimeout(function (){ try { newPName.focus(); } catch (e){} }, 0);
+    }
     if (v.indexOf("co:") === 0){
       var c = App.st.companies[v.slice(3)] || {};
       var ch = c.channelForContactId ? App.st.contacts[c.channelForContactId] : null;
@@ -9139,6 +9345,7 @@ function editDeal(anchor, d){
   partner.addEventListener("change", syncPartner); syncPartner();
   var partnerWrap = h("label", { class:"fld" }, h("span", { text:"Via partner" }), partner);
   box.appendChild(partnerWrap);
+  box.appendChild(newPWrap);
   box.appendChild(partnerNote);
 
   /* WHO DELIVERED IT \u2014 not who sold it. A corporate course sold by Debbie and
@@ -9243,6 +9450,24 @@ function editDeal(anchor, d){
          this deal, so it is recorded on the company where the next deal can
          find it. */
       var pv = partner.value;
+      if (pv === "new"){
+        var npn = newPName.value.trim();
+        if (!npn){ toast("Name the new partner company, or pick one from the list.", "err"); return; }
+        var norm = function (x){ return String(x || "").trim().toLowerCase().replace(/\s+/g, " "); };
+        var hit = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
+          .filter(function (c){ return !c.merged && norm(c.name) === norm(npn); })[0];
+        if (hit && hit.id === d.companyId){
+          toast(hit.name + " is the customer on this deal \u2014 a company cannot be its own partner.", "err");
+          return;
+        }
+        if (hit) pv = "co:" + hit.id;
+        else {
+          var npId = C.uid("co");
+          var npd = newPDom.value.trim().toLowerCase().replace(/^.*@/, "").replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+          emit("company.created", { companyId:npId, name:npn, domain:npd, isPartner:true });
+          pv = "co:" + npId;
+        }
+      }
       var pCo = pv.indexOf("co:") === 0 ? pv.slice(3) : null;
       var pCt = pv.indexOf("ct:") === 0 ? pv.slice(3) : null;
       if (pCo && App.st.companies[pCo] && !App.st.companies[pCo].isPartner)
@@ -9269,7 +9494,8 @@ function editDeal(anchor, d){
         endClient: (C.channelById(chan.value) || {}).billsPartner ? endC.value.trim() : "",
         commissionable: !noComm.checked,
         commissionRate: noComm.checked ? null : (rp === "" ? null : C.round2(+rp) / 100),
-        expectedCloseDate: close.value.trim() ? C.parseDateInput(close.value, App.today) : null });
+        expectedCloseDate: close.value.trim() ? C.parseDateInput(close.value, App.today) : null,
+        courseStartsOn: starts.value.trim() ? C.parseDateInput(starts.value, App.today) : null });
       /* After the deal, so the fold already has the new owner when the steps
          arrive — and a re-render between the two can never show the steps
          stranded under the old one. */
@@ -9919,7 +10145,8 @@ function viewMoney(el){
   if (book.uninvoicedWon.length || book.undated.length){
     var gaps = h("section", { class:"pane", style:"margin-bottom:16px" },
       h("h3", { text:"Gaps" }),
-      h("div", { class:"sub", text:"Not late \u2014 worse. Nothing here can ever become late on its own." }));
+      h("div", { class:"sub", text:"Not late \u2014 worse. A won deal with nothing behind it can never become late " +
+        "on its own; an invoice with no due date is only aged on assumed terms until somebody sets one." }));
     /* Two lists, not one. A won deal with a signed PO is a clerical task: raise
        the invoice, the number is right there. A won deal with nothing behind it
        is a question about whether we won it at all. They were printed as one
@@ -9956,7 +10183,9 @@ function viewMoney(el){
         onclick:(function (id){ return function (){ openDeal(id); }; })(u.deal.id) },
         h("span", { class:"chip warn", text:"No due date" }),
         h("span", { text:"  " + party.name + " \u00b7 " + u.deal.name }),
-        h("span", { class:"note", text:"  " + C.fmtMoney(u.state.balance, u.state.invoice.currency) + " outstanding" })));
+        h("span", { class:"note", text:"  " + C.fmtMoney(u.state.balance, u.state.invoice.currency) + " outstanding" +
+          (u.derivedDue ? " \u00b7 aged as due " + C.fmtDay(u.derivedDue) + ", " +
+                          C.DEFAULT_TERMS_DAYS + " days from issue, until a date is set" : "") })));
     });
     el.appendChild(gaps);
   }
@@ -10048,15 +10277,63 @@ function viewMoney(el){
         text:"Email is matched to a customer by the sender's domain. Without one, every " +
              "thread from them comes back as a company the CRM has never heard of \u2014 " +
              "silently, and then gets offered as a new deal." }));
-    var ndList = h("div");
-    book.noDomain.slice(0, 20).forEach(function (x){
-      ndList.appendChild(h("div", { class:"note", style:"padding:3px 0",
-        text: x.company.name + " \u00b7 " + x.deals + " deal" + (x.deals === 1 ? "" : "s") }));
+    /* Proposed from the contacts' own addresses; ticked where safe, and nothing
+       is written until the button is pressed. A clash is shown and never ticked. */
+    var ndList = h("div", { class:"nodomain-list" });
+    var ticks = [];
+    var withSug = book.noDomain.filter(function (x){ return x.suggest; });
+    var without = book.noDomain.filter(function (x){ return !x.suggest; });
+    withSug.forEach(function (x){
+      var sg = x.suggest;
+      var cb = h("input", { type:"checkbox", "aria-label":"Set " + sg.domain + " on " + x.company.name });
+      cb.checked = !sg.clashWith;
+      if (sg.clashWith) cb.disabled = true;
+      ticks.push({ cb:cb, co:x.company, domain:sg.domain });
+      ndList.appendChild(h("label", { class:"fld chk", style:"margin:3px 0;align-items:flex-start" }, cb,
+        h("span", null,
+          h("strong", { text:x.company.name }),
+          h("span", { class:"k", text:"  \u2192  " }),
+          h("code", { text:sg.domain }),
+          h("span", { class:"note", style:"display:block;margin:1px 0 0",
+            text:"from " + sg.from.slice(0, 3).join(", ") + (sg.from.length > 3 ? " +" + (sg.from.length - 3) : "") +
+                 " \u00b7 " + x.deals + " deal" + (x.deals === 1 ? "" : "s") +
+                 (sg.others.length ? " \u00b7 also seen: " + sg.others.join(", ") : "") }),
+          sg.clashWith ? h("span", { class:"note", style:"display:block;color:var(--overdue)",
+            text:"Already the domain of " + sg.clashWith + " \u2014 two companies on one domain " +
+                 "means neither matches. Not proposed." }) : null)));
     });
-    nd.appendChild(ndList);
-    if (book.noDomain.length > 20)
-      nd.appendChild(h("div", { class:"note",
-        text:"…and " + (book.noDomain.length - 20) + " more. Set them on the Companies page." }));
+    if (withSug.length){
+      var setBtn = h("button", { class:"btn btn-sm primary", type:"button" });
+      var syncBtn = function (){
+        var n = ticks.filter(function (t){ return t.cb.checked; }).length;
+        setBtn.textContent = "Set the " + n + " ticked domain" + (n === 1 ? "" : "s");
+        setBtn.disabled = n === 0;
+      };
+      ticks.forEach(function (t){ t.cb.addEventListener("change", syncBtn); });
+      syncBtn();
+      setBtn.onclick = function (){
+        var done = 0;
+        ticks.forEach(function (t){
+          if (!t.cb.checked) return;
+          emit("company.updated", { companyId:t.co.id, domain:t.domain }); done++;
+        });
+        render();
+        toast("Set " + done + " domain" + (done === 1 ? "" : "s") + ".");
+      };
+      nd.appendChild(h("div", { class:"note", style:"margin:6px 0 4px",
+        text:withSug.length + " of these can be filled from the email addresses of people " +
+             "already filed under them. Untick any that are wrong, then set the rest." }));
+      nd.appendChild(ndList);
+      nd.appendChild(h("div", { style:"margin-top:8px" }, setBtn));
+    }
+    if (without.length){
+      nd.appendChild(h("div", { class:"note", style:"margin-top:10px",
+        text: without.length + " with no usable address on file, so there is nothing to " +
+              "propose \u2014 set " + (without.length === 1 ? "it" : "them") +
+              " on the Companies page: " +
+              without.slice(0, 20).map(function (x){ return x.company.name; }).join(", ") +
+              (without.length > 20 ? " and " + (without.length - 20) + " more" : "") + "." }));
+    }
     el.appendChild(nd);
   }
 
@@ -11251,8 +11528,13 @@ function viewDebtors(el){
               e.preventDefault(); openStatement(id); }; })(r.companyId) }, r.company),
         r.aged.undated
           ? h("div", { class:"note", style:"color:var(--overdue);font-size:11.5px",
-              text:money(r.aged.undated, cur) + " on an invoice with no due date, so it " +
-                   "cannot be aged at all" })
+              text:money(r.aged.undated, cur) + " on an invoice with no due date or issue " +
+                   "date, so it cannot be aged at all" })
+          : null,
+        r.derived > 0.005
+          ? h("div", { class:"note derived", style:"color:var(--warn, #8a6210);font-size:11.5px",
+              text:money(r.derived, cur) + " aged on " + C.DEFAULT_TERMS_DAYS + "-day terms from " +
+                   "issue \u2014 the invoice states no due date" })
           : null)];
       AGE_COLS.forEach(function (c){
         cells.push(h("td", { class:"num",
@@ -11330,6 +11612,10 @@ function viewDebtors(el){
         r.owners.length > 1
           ? h("div", { class:"note", style:"font-size:11.5px",
               text:"split across " + r.owners.map(userName).join(", ") })
+          : null,
+        r.derived > 0.005
+          ? h("div", { class:"note", style:"font-size:11.5px;color:var(--warn)",
+              text:money(r.derived, cur) + " on " + C.DEFAULT_TERMS_DAYS + "-day terms, no due date stated" })
           : null)];
       AGE_COLS.forEach(function (c){
         cells.push(h("td", { class:"num",
@@ -11371,6 +11657,12 @@ function viewDebtors(el){
       text:C.fmtMoneyExact(b.aged.undated, cur) + " sits in Undated because those invoices " +
            "carry no due date. Sage will have aged it into a bucket, so the bucket columns " +
            "will not tie until those due dates are filled in \u2014 the total still will." }));
+    if (b.derived > 0.005) recon.appendChild(h("div", { class:"derived-note",
+        style:"margin-top:4px;color:var(--warn, #8a6210)",
+      text:C.fmtMoneyExact(b.derived, cur) + " is aged on " + C.DEFAULT_TERMS_DAYS +
+           "-day terms from its issue date, because those invoices state no due date. " +
+           "If Sage ages them on different terms the bucket columns will differ by that " +
+           "much \u2014 the total will still tie. Setting the real due dates removes the gap." }));
     tot.appendChild(recon);
   });
 

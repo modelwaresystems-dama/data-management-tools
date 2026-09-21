@@ -28,6 +28,8 @@ Runs the minimum validation suite (referential integrity, initial and terminal s
 ## Knowledge Area FTS (v0.3 schema, orthogonal regions)
 
 - `ka_build.py` compiles a KA spec (regions, states, transitions, events, decision rights, roles, artefacts, activities, services, contributions to the Global protocol, cross-region constraints, state vectors) into `.fts.json`; permission records are derived from the transition-causing activities when the spec gives none. Each region is its own FTS over one managed element (tuple index 6, plus an extras dict: instanceScope, elementKind, conditionsThatMatter, contributesTo, issueSources); a region without a managed element and a transition without a Decision Right are QA warnings.
+- `dmd_spec.py` is the Data Modelling and Design spec v0.1 (Modelling Standards and Plan; Conceptual, Logical and Physical Data Model of a Data Asset, one FTS per level generated from one lifecycle template).
+- `da_spec.py` is the Data Architecture spec v0.1 (Enterprise Data Architecture; Enterprise Data Model; Implementation Roadmap; Architectural Conformance of a Data Asset).
 - `rmd_spec.py` is the Reference and Master Data spec v0.1 (Programme; Master Data Domain; Reference Data Set; Golden Record).
 - `ds_spec.py` is the Data Security (including Data Privacy) spec v0.1 (Policy and Standards; Classification; Protection; Privacy Basis; Security Incident).
 - `mm_spec.py` is the Metadata Management spec v0.1 (Programme; Architecture and Stores; Metadata of a Data Asset).
@@ -41,3 +43,4 @@ Runs the minimum validation suite (referential integrity, initial and terminal s
 - `fts_sim.py <global model> --scenario <file> --ka <ka model> ...` runs a federated scenario: the KA models' contribution guards attach to the Global transitions, KA facts are derived from the KA vectors (`kaVectors` in the scenario, else the initial vectors), and script items `KA-DG:TR-OPM-03` step a KA model's own vector. The Vector Walk sheet shows which KA contributed each guard. The viewer's Simulate tab loads the same scenario, sets the KA vectors and runs the mixed script.
 
 Viewer v0.10: the State map, UML and Simplified tabs carry an FTS selector (Global protocol first, then each loaded Knowledge Area FTS) so a model can be chosen and the Global returned to without leaving the tab.
+Viewer v0.12: on the State map, Simplified and UML tabs each region (or Global State) can be collapsed to a single box and expanded again (chips, expand all / collapse all, or click the region title in the diagram; `fsmSource` option `collapsed`), Full screen for the diagram pane, Ctrl+wheel zoom (plain wheel in full screen) and drag to pan.

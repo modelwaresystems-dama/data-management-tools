@@ -226,7 +226,8 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
     </div>
     <div class="hdr-actions">
       <div class="sync local" id="syncchip" title="Data source"><span class="dot"></span><span id="synctxt">Local file</span></div>
-      <button class="btn" id="importBtn">↥ Import statement</button>
+      <button class="btn" id="importClaudeBtn">↥ Import via Claude</button>
+      <button class="btn ghost" id="importBtn" title="Quick local CSV importer (FNB export only)">Local CSV</button>
       <button class="btn ghost" id="addBtn">+ Add</button>
       <button class="btn ghost" id="cfgBtn">⚙ GitHub</button>
     </div>
@@ -284,7 +285,7 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
 
 <script>
 /* ===== build info ===== */
-const BUILD={version:'2.2.1',built:'2026-09-21 08:59 SAST'};
+const BUILD={version:'2.3.0',built:'2026-09-21 12:04 SAST'};
 /* ===== BUNDLED DATA (fallback + seed for the private repo) ===== */
 const BUNDLED = {
  "generated": "2026-09-20",
@@ -5139,7 +5140,7 @@ async function boot(){
     try{
       const res=await ghGet();
       if(res.missing){ setSync('local','Repo empty — seed'); toast('No data file in repo yet — open ⚙ GitHub to seed it.'); }
-      else { LIVE=normalise(res.data); sha=res.sha; applyOverdueRule(); setSync('synced','Synced'); render(); }
+      else { LIVE=normalise(res.data); sha=res.sha; applyOverdueRule(); setSync('synced','Synced'); render(); checkProposal(true); }
     }catch(e){ setSync('error','Connect failed'); toast('GitHub: '+e.message,true); }
   } else {
     setSync('local','Local file — not connected');
@@ -5365,7 +5366,7 @@ function openCfg(){
           setSync('synced','Synced');toast('Seeded the repo.');
         } else setSync('local','Repo empty — seed');
       } else {LIVE=normalise(res.data);sha=res.sha;setSync('synced','Synced');toast('Connected — loaded from GitHub.');}
-      dirty={};applyOverdueRule();markDirty();render();
+      dirty={};applyOverdueRule();markDirty();render();checkProposal(true);
     }catch(e){setSync('error','Connect failed');toast('GitHub: '+e.message,true);}
   };
 }
@@ -5668,6 +5669,120 @@ function openImport(){
   $('impApply').onclick=()=>{if(result)applyImport(result);};
 }
 
+/* ===== GitHub-Action import proposals (approve-before-write) ===== */
+function folderPath(name){return (cfg.folder?cfg.folder.replace(/\/+$/,'')+'/':'')+name;}
+async function ghGetPath(p){
+  const url=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(p).replace(/%2F/g,'/')}?ref=${encodeURIComponent(cfg.branch)}`;
+  const r=await fetch(url,{headers:ghHeaders()});
+  if(r.status===404) return {missing:true};
+  if(!r.ok) throw new Error('read '+r.status);
+  const j=await r.json();
+  return {raw:b64dec(j.content),sha:j.sha};
+}
+async function ghDeletePath(p,psha,msg){
+  const url=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(p).replace(/%2F/g,'/')}`;
+  const r=await fetch(url,{method:'DELETE',headers:ghHeaders(),body:JSON.stringify({message:msg,sha:psha,branch:cfg.branch})});
+  if(!r.ok&&r.status!==404) throw new Error('delete '+r.status);
+}
+async function ghPutFile(p,b64,msg){
+  let sha0=null; try{const g=await ghGetPath(p); if(!g.missing) sha0=g.sha;}catch(e){}
+  const url=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(p).replace(/%2F/g,'/')}`;
+  const body={message:msg,content:b64,branch:cfg.branch}; if(sha0)body.sha=sha0;
+  const r=await fetch(url,{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body)});
+  if(!r.ok) throw new Error('upload '+r.status+': '+(await r.text()).slice(0,140));
+}
+function abToB64(buf){let bin='';const b=new Uint8Array(buf);const ch=0x8000;
+  for(let i=0;i<b.length;i+=ch)bin+=String.fromCharCode.apply(null,b.subarray(i,i+ch));return btoa(bin);}
+
+let proposal=null;   // {data, sha, report, reportSha}
+async function checkProposal(silent){
+  if(!(cfg.token&&cfg.owner&&cfg.repo))return false;
+  try{
+    const p=await ghGetPath(folderPath('subscription_data.proposed.json'));
+    if(p.missing){proposal=null;renderProposalBanner();if(!silent)toast('No import proposal waiting.');return false;}
+    let rep='',repSha=null;
+    try{const rr=await ghGetPath(folderPath('import_report.md'));if(!rr.missing){rep=rr.raw;repSha=rr.sha;}}catch(e){}
+    proposal={data:JSON.parse(p.raw),sha:p.sha,report:rep,reportSha:repSha};
+    renderProposalBanner();if(!silent)toast('Import proposal loaded.');return true;
+  }catch(e){if(!silent)toast('Check failed: '+e.message,true);return false;}
+}
+function renderProposalBanner(){
+  let b=document.getElementById('propBanner');
+  const host=document.getElementById('kpis');
+  if(!b){b=el('div');b.id='propBanner';host.parentNode.insertBefore(b,host);}
+  if(!proposal){b.innerHTML='';b.style.display='none';return;}
+  const n=(proposal.data.subscriptions||[]).length;
+  b.style.cssText='display:flex;gap:12px;align-items:center;flex-wrap:wrap;border:1px solid var(--steel);background:var(--steel-soft);border-radius:12px;padding:12px 16px;margin:0 0 14px';
+  b.innerHTML=`<span>📥 <b>Import proposal ready</b> — Claude parsed a statement (${n} subscriptions proposed). Approve before it's applied.</span><span style="flex:1"></span>`;
+  const r=el('button','btn','Review proposal');r.onclick=openProposal;b.appendChild(r);
+}
+function openProposal(){
+  const cur=subs().length,prop=(proposal.data.subscriptions||[]).length;
+  document.getElementById('modalRoot').innerHTML=`<div class="modal-bg"><div class="modal" style="max-width:740px">
+    <h2>Import proposal</h2>
+    <div class="mdesc">Claude processed a statement and proposes the register below. Accepting replaces the live data (<b>${cur} → ${prop}</b> subscriptions) and commits it. Nothing changes until you click Accept.</div>
+    <div class="note-box" style="max-height:360px;overflow:auto;white-space:pre-wrap;font-size:12.5px;line-height:1.5">${esc(proposal.report||'(no report supplied)')}</div>
+    <div class="modal-foot">
+      <button class="btn danger" id="pReject">Reject</button>
+      <div class="grow"></div>
+      <button class="btn ghost" id="pCancel">Close</button>
+      <button class="btn" id="pAccept">Accept &amp; apply</button></div>
+  </div></div>`;
+  document.getElementById('pCancel').onclick=closeModal;
+  document.getElementById('pAccept').onclick=acceptProposal;
+  document.getElementById('pReject').onclick=rejectProposal;
+}
+async function acceptProposal(){
+  setSync('busy','Applying…');
+  try{
+    sha=await ghPut(proposal.data,sha,'Accept import proposal — apply to register');
+    try{const p=await ghGetPath(folderPath('subscription_data.proposed.json'));if(!p.missing)await ghDeletePath(folderPath('subscription_data.proposed.json'),p.sha,'Clear applied proposal');}catch(e){}
+    if(proposal.reportSha){try{await ghDeletePath(folderPath('import_report.md'),proposal.reportSha,'Clear applied report');}catch(e){}}
+    LIVE=normalise(proposal.data);proposal=null;dirty={};
+    applyOverdueRule();setSync('synced','Synced');closeModal();renderProposalBanner();render();
+    toast('Proposal applied & committed.');
+  }catch(e){setSync('error','Apply failed');toast('GitHub: '+e.message,true);}
+}
+async function rejectProposal(){
+  if(!confirm('Discard this import proposal? The register is unchanged; the statement stays in processed/.'))return;
+  try{
+    const p=await ghGetPath(folderPath('subscription_data.proposed.json'));if(!p.missing)await ghDeletePath(folderPath('subscription_data.proposed.json'),p.sha,'Reject import proposal');
+    if(proposal.reportSha)await ghDeletePath(folderPath('import_report.md'),proposal.reportSha,'Reject import report');
+  }catch(e){toast('GitHub: '+e.message,true);}
+  proposal=null;closeModal();renderProposalBanner();toast('Proposal rejected.');
+}
+function openImportClaude(){
+  document.getElementById('modalRoot').innerHTML=`<div class="modal-bg"><div class="modal">
+    <h2>Import via Claude</h2>
+    <div class="mdesc">Pick a statement — any FNB export, a USD-account statement, a single-card CSV, or a PDF. It's uploaded to the repo <code>inbox/</code>; a GitHub Action runs Claude to group and match it (SWIFT/reference lines become real vendors), and returns a <b>proposal</b> you approve here. Takes ~2–3 minutes.</div>
+    <input type="file" id="icFile" accept=".csv,.pdf,.txt,text/csv,application/pdf" style="margin:6px 0">
+    <div id="icStatus" class="note-box" style="display:none"></div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="icCheck">Check for proposal</button>
+      <div class="grow"></div>
+      <button class="btn ghost" id="icCancel">Close</button>
+      <button class="btn" id="icUpload" disabled>Upload &amp; run</button></div>
+  </div></div>`;
+  const $=x=>document.getElementById(x);let file=null;
+  $('icCancel').onclick=closeModal;
+  $('icCheck').onclick=async()=>{const ok=await checkProposal(false);if(ok){closeModal();openProposal();}};
+  $('icFile').onchange=e=>{file=e.target.files[0];$('icUpload').disabled=!file;};
+  $('icUpload').onclick=async()=>{
+    if(!file)return;
+    if(!cfg.token){toast('Connect GitHub first (⚙).',true);return;}
+    $('icUpload').disabled=true;$('icStatus').style.display='block';$('icStatus').textContent='Uploading '+file.name+'…';
+    try{
+      const buf=await file.arrayBuffer();
+      await ghPutFile(folderPath('inbox/'+file.name.replace(/[^\w.\- ]+/g,'_')),abToB64(buf),'Add statement to inbox: '+file.name);
+      $('icStatus').innerHTML='Uploaded. The GitHub Action is running (~2–3 min). This will check automatically; you can also close and use “Check for proposal” later.';
+      let tries=0;const poll=async()=>{tries++;const ok=await checkProposal(true);
+        if(ok){$('icStatus').innerHTML='✅ Proposal ready — opening…';setTimeout(()=>{closeModal();openProposal();},600);return;}
+        if(tries<15)setTimeout(poll,20000); else $('icStatus').innerHTML='Still running. Close this and click “Check for proposal” in a minute (watch the repo Actions tab).';};
+      setTimeout(poll,25000);
+    }catch(e){$('icStatus').innerHTML='<span style="color:var(--cancel)">Upload failed: '+esc(e.message)+'</span>';$('icUpload').disabled=false;}
+  };
+}
+
 /* ===== shell ===== */
 function render(){
   const stamp=(LIVE.edited&&LIVE.edited.at)?(' · last edit '+LIVE.edited.at.slice(0,10)+(LIVE.edited.by?(' by '+LIVE.edited.by):'')):'';
@@ -5705,6 +5820,7 @@ buildStatusPanel();updStatusBtn();
 document.getElementById('cfgBtn').onclick=openCfg;
 document.getElementById('addBtn').onclick=()=>openEdit(null);
 document.getElementById('importBtn').onclick=openImport;
+document.getElementById('importClaudeBtn').onclick=openImportClaude;
 document.getElementById('saveBtn').onclick=doSave;
 document.getElementById('discardBtn').onclick=()=>{if(confirm('Discard unsaved changes and reload the last loaded data?'))boot();};
 boot();

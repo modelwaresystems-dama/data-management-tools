@@ -12,6 +12,7 @@
 //   ids        true: append the state ID to the state name
 //   focus      {type:"all"} | {type:"composite", id} | {type:"neighbourhood", id} | {type:"path", id}
 //   highlight  [stateId, ...]  states drawn as "current" (used by the simulator for the active State Vector)
+//   collapsed  [topStateId, ...]  regions or Global States drawn as a single box (their inner states hidden, transitions mapped onto the box)
 // returns { src, legend:{transitions:[], activities:[], guards:[], events:[]}, visible:{states:[], transitions:[]} }
 function fsmSource(M, opts){
   opts = Object.assign({direction:"LR", level:"all", contracts:true, labelMode:"full", showEvent:true, showGuard:true, showEffect:true,
@@ -36,13 +37,15 @@ function fsmSource(M, opts){
 
   // ---- visibility: which states are drawn, and where a hidden state maps to ----
   const maxDepth = opts.level==="global"?0 : opts.level==="sub"?1 : 99;
+  const collapsed = new Set(opts.collapsed||[]);
   function visibleRep(id){                       // the drawn state that represents id
     let s=byId(id); if(!s) return null;
+    const top=topOf(id); if(top && collapsed.has(top)) return top;
     while(s && depthOf(s.id)>maxDepth && s.parent){ s=byId(s.parent); }
     if(s && opts.hideReadiness && s.readiness){ return s.parent? visibleRep(s.parent) : null; }
     return s? s.id : null;
   }
-  let visStates = new Set(all.filter(s=>depthOf(s.id)<=maxDepth && !(opts.hideReadiness&&s.readiness)).map(s=>s.id));
+  let visStates = new Set(all.filter(s=>depthOf(s.id)<=maxDepth && !(opts.hideReadiness&&s.readiness) && !(depthOf(s.id)>0 && collapsed.has(topOf(s.id)))).map(s=>s.id));
   // focus reduces the visible set
   const f = opts.focus||{type:"all"};
   let pathTrs=null, nbRep=null;

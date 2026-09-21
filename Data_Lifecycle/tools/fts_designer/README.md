@@ -28,6 +28,7 @@ Runs the minimum validation suite (referential integrity, initial and terminal s
 ## Knowledge Area FTS (v0.3 schema, orthogonal regions)
 
 - `ka_build.py` compiles a KA spec (regions, states, transitions, events, decision rights, roles, artefacts, activities, services, contributions to the Global protocol, cross-region constraints, state vectors) into `.fts.json`; permission records are derived from the transition-causing activities when the spec gives none. Each region is its own FTS over one managed element (tuple index 6, plus an extras dict: instanceScope, elementKind, conditionsThatMatter, contributesTo, issueSources); a region without a managed element and a transition without a Decision Right are QA warnings.
+- `dso_spec.py` is the Data Storage and Operations spec v0.1 (Database Technology; Database Environment; Stored Instance of a Data Asset; Business Continuity Plan).
 - `dmd_spec.py` is the Data Modelling and Design spec v0.1 (Modelling Standards and Plan; Conceptual, Logical and Physical Data Model of a Data Asset, one FTS per level generated from one lifecycle template).
 - `da_spec.py` is the Data Architecture spec v0.1 (Enterprise Data Architecture; Enterprise Data Model; Implementation Roadmap; Architectural Conformance of a Data Asset).
 - `rmd_spec.py` is the Reference and Master Data spec v0.1 (Programme; Master Data Domain; Reference Data Set; Golden Record).

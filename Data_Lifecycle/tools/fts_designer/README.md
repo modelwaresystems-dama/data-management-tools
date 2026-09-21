@@ -28,8 +28,16 @@ Runs the minimum validation suite (referential integrity, initial and terminal s
 ## Knowledge Area FTS (v0.3 schema, orthogonal regions)
 
 - `ka_build.py` compiles a KA spec (regions, states, transitions, events, decision rights, roles, artefacts, activities, services, contributions to the Global protocol, cross-region constraints, state vectors) into `.fts.json`; permission records are derived from the transition-causing activities when the spec gives none. Each region is its own FTS over one managed element (tuple index 6, plus an extras dict: instanceScope, elementKind, conditionsThatMatter, contributesTo, issueSources); a region without a managed element and a transition without a Decision Right are QA warnings.
+- `rmd_spec.py` is the Reference and Master Data spec v0.1 (Programme; Master Data Domain; Reference Data Set; Golden Record).
 - `ds_spec.py` is the Data Security (including Data Privacy) spec v0.1 (Policy and Standards; Classification; Protection; Privacy Basis; Security Incident).
 - `mm_spec.py` is the Metadata Management spec v0.1 (Programme; Architecture and Stores; Metadata of a Data Asset).
 - `dq_spec.py` is the Data Quality Management spec v0.1 (Programme; PDCA cycle per Data Asset), with `kaCouplings` to the DG issue FTS; same commands with `data_quality.fts.json`.
 - `dg_spec.py` is the Data Governance spec v0.2 (five FTSs from the context diagram: strategy, operating model, readiness, governing instruments, Data Asset issue); run `python dg_spec.py out/` then `python fts_sim.py out/data_governance.fts.json --align global_protocol.fts.json` (checks every contribution targets a real Global transition) and `python protocol_workbook.py`.
 - Contributions are emitted as guards on the Global transition IDs, so the viewer federates them onto the Global model; `meta.factBindings` lets the viewer derive the contribution facts from the KA's State Vector when both models are loaded.
+
+## Review read-back and federated scenarios (21 Sep 2026)
+
+- `fts_readback.py models/<name>.fts.json models/<name>_workbook.xlsx` reads Howard's edits (Decision Rights: name, holder role as ID or name, notes; States: name, definition, invariant; Transitions: name, event, guard summary, decision right; Events; Roles) into `models/<name>_overrides.json`. Rebuild with `python spec/<ka>_spec.py models/ --overrides models/<name>_overrides.json`; the spec stays the source, the overrides carry the review, and the trace of each changed element records `workbook:<sheet>`.
+- `fts_sim.py <global model> --scenario <file> --ka <ka model> ...` runs a federated scenario: the KA models' contribution guards attach to the Global transitions, KA facts are derived from the KA vectors (`kaVectors` in the scenario, else the initial vectors), and script items `KA-DG:TR-OPM-03` step a KA model's own vector. The Vector Walk sheet shows which KA contributed each guard. The viewer's Simulate tab loads the same scenario, sets the KA vectors and runs the mixed script.
+
+Viewer v0.10: the State map, UML and Simplified tabs carry an FTS selector (Global protocol first, then each loaded Knowledge Area FTS) so a model can be chosen and the Global returned to without leaving the tab.

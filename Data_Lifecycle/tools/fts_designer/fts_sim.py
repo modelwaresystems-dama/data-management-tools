@@ -380,7 +380,42 @@ def validate_regions(m):
             add("Medium", "Permission records", a["id"], "transition-causing activity has no Permission Record (N-012)")
     return F, by_region, adj, init_vec
 
-def vector_walk(m, scenario, by_region, adj, init_vec):
+def ka_facts(ka_models, ka_vecs):
+    """Facts derived from the KA models' State Vectors through meta.factBindings (as the viewer does)."""
+    out = {}
+    for km in ka_models:
+        mid = km["meta"].get("modelId"); vec = ka_vecs.get(mid, {})
+        for fact, b in (km["meta"].get("factBindings") or {}).items():
+            out[fact] = vec.get(b.get("region")) in (b.get("states") or [])
+    return out
+
+def ka_initial_vec(km):
+    v = {}
+    for r in km.get("regions", []):
+        init = next((x for x in km["subStates"] if x.get("region") == r["id"] and x.get("initial")), None)
+        if init: v[r["id"]] = init["id"]
+    return v
+
+def ka_step(km, vec, tid, env_facts):
+    """Fire one transition of a KA model against its own vector (source active, own guard expressions over its region codes)."""
+    t = next((x for x in km["transitions"] if x["id"] == tid), None)
+    if not t: return False, "unknown transition", []
+    code_of = {r["id"]: r.get("code") for r in km.get("regions", [])}
+    rid = next((x.get("region") for x in km["subStates"] if x["id"] == t["target"]), None)
+    if vec.get(rid) != t["source"]: return False, "source not active", []
+    env = {**env_facts, **{code_of[r]: sid for r, sid in vec.items() if r in code_of}}
+    verdicts = []
+    ok = True
+    for g in km.get("guards", []):
+        if g.get("transition") != tid or g.get("contribution"): continue
+        if g.get("expression"):
+            v = eval_expression(g["expression"], env)
+            if v is None: v = True
+            verdicts.append({"guard": g["id"], "verdict": v}); ok = ok and v
+    if ok: vec[rid] = t["target"]
+    return ok, ("fired" if ok else "blocked: guard false"), verdicts
+
+def vector_walk(m, scenario, by_region, adj, init_vec, ka_models=None):
     """Walk the State Vector through a scripted sequence of transitions (scenario['script']), or a
     default happy path from the initial vector to the terminal configuration. Cross-region guard
     expressions are evaluated over the current vector (EX, AS, AV, CP = active state IDs) and the
@@ -400,7 +435,17 @@ def vector_walk(m, scenario, by_region, adj, init_vec):
             target = max(vecs, key=lambda v: sum(1 for r, sid in v.get("vector", {}).items() if sid != init_vec.get(r))) if vecs else None
             script = ["__plan__", target["vector"] if target else {}]; planned = True
     default_facts = {"hold_active": False, "disposition_control_verified": True, "supersession_use_authorized": False, "use_requires_assurance": True, "material_change": False, "atomic_withdrawal": False, "recipient_acceptance_evidenced": True, "enhanced_monitoring": True, "time_bounded_authority": True, "post_event_review_planned": True}
-    env_facts = {**default_facts, **facts}
+    ka_models = ka_models or []
+    ka_by_id = {km["meta"].get("modelId"): km for km in ka_models}
+    ka_vecs = {mid: dict(ka_initial_vec(km)) for mid, km in ka_by_id.items()}
+    for mid, v in ((scenario or {}).get("kaVectors") or {}).items():
+        if mid in ka_vecs: ka_vecs[mid].update(v)
+    # federated guards: KA contributions attached to this model's transitions
+    fed = {}
+    for km in ka_models:
+        for g in km.get("guards", []):
+            if g.get("contribution") and g.get("transition") in m.tr: fed.setdefault(g["transition"], []).append({**g, "fromModel": km["meta"].get("knowledgeArea") or km["meta"].get("name")})
+    env_facts = {**default_facts, **ka_facts(ka_models, ka_vecs), **facts}
     log = []
     if planned:
         # breadth-first per region, then interleave: fire any region's next step whose guards pass
@@ -431,19 +476,28 @@ def vector_walk(m, scenario, by_region, adj, init_vec):
             if p: script.extend(p)   # leave blocked steps in the script so the log shows why they block
         vec = dict(init_vec)
     for tid in script:
+        if isinstance(tid, str) and ":" in tid and tid.split(":", 1)[0] in ka_by_id:
+            mid, ktid = tid.split(":", 1); km = ka_by_id[mid]
+            before_k = dict(ka_vecs[mid])
+            ok_k, res_k, vk = ka_step(km, ka_vecs[mid], ktid, env_facts)
+            env_facts = {**default_facts, **ka_facts(ka_models, ka_vecs), **facts}
+            kcode = {r["id"]: r.get("code") for r in km.get("regions", [])}
+            log.append({"transition": tid, "name": next((x["name"] for x in km["transitions"] if x["id"] == ktid), ktid), "region": mid, "sourceActive": res_k != "source not active", "guards": vk, "eligible": ok_k, "decisionRight": next((x.get("decisionRight") for x in km["transitions"] if x["id"] == ktid), None), "authorised": ok_k,
+                        "vectorBefore": {kcode.get(r, r): sid for r, sid in before_k.items()}, "vectorAfter": {kcode.get(r, r): sid for r, sid in ka_vecs[mid].items()}, "result": res_k, "kaModel": mid})
+            continue
         t = m.tr.get(tid)
         if not t: log.append({"transition": tid, "result": "unknown transition"}); continue
         rid = region_of(m, t["target"]); src_active = vec.get(rid) == t["source"]
         env = {**env_facts, **{code_of[r]: s for r, s in vec.items()}}
         verdicts = []
         ok = src_active
-        for g in m.g_by_tr.get(tid, []):
+        for g in list(m.g_by_tr.get(tid, [])) + fed.get(tid, []):
             if g.get("expression"):
                 v = eval_expression(g["expression"], env); srcv = "expression"
                 if v is None: v, srcv = guard_verdict(g, scenario)[0], "default (expression not evaluable)"
             else:
                 v, srcv = guard_verdict(g, scenario)
-            verdicts.append({"guard": g["id"], "verdict": v, "source": srcv, "constraint": g.get("constraint")})
+            verdicts.append({"guard": g["id"], "verdict": v, "source": srcv, "constraint": g.get("constraint"), "contributedBy": g.get("fromModel")})
             if not v: ok = False
         dr = t.get("decisionRight")
         authorised = ok and (dr is None or (scenario or {}).get("authorizations", {}).get(dr, True))
@@ -453,6 +507,7 @@ def vector_walk(m, scenario, by_region, adj, init_vec):
                     "vectorBefore": {code_of[r]: s for r, s in before.items()}, "vectorAfter": {code_of[r]: s for r, s in vec.items()}, "result": "fired" if authorised else ("blocked: source not active" if not src_active else "blocked: guard false" if not ok else "blocked: not authorised")})
     term_regions = [r for r in vec if any(x.get("region", x.get("parent")) == r and x.get("terminal") for x in m.ss.values())]
     terminal_ok = bool(term_regions) and all(m.ss[vec[r]].get("terminal") for r in term_regions)
+    if ka_models: log.append({"transition": "(KA vectors)", "result": json.dumps({mid: {r[-3:] if False else r: sid for r, sid in v.items()} for mid, v in ka_vecs.items()})})
     return log, vec, terminal_ok
 
 # ---------------------------------------------------------------- guard evaluation
@@ -606,11 +661,12 @@ def write_xlsx(path, m, F, cycles, traces, fired, states_visited, guard_log, sce
           [6, 6, 16, 28, 16, 16, 9, 8, 8, 16, 10, 40])
     if walk:
         steps, final, term = walk
-        sheet("Vector Walk", ["Step", "Transition", "Name", "Region", "Source active", "Guards", "Guard verdicts", "Eligible", "Decision right", "Authorised", "Result", "EX", "AS", "AV", "CP"],
+        sheet("Vector Walk", ["Step", "Transition", "Name", "Region / model", "Source active", "Guards", "Guard verdicts", "Eligible", "Decision right", "Authorised", "Result", "EX", "AS", "AV", "CP", "Vector after (KA step)"],
               [[i+1, st["transition"], st.get("name"), st.get("region"), "yes" if st.get("sourceActive") else "no", len(st.get("guards", [])),
-                "; ".join(f"{g['guard']}={'T' if g['verdict'] else 'F'} ({g['source']})" for g in st.get("guards", [])), "yes" if st.get("eligible") else "no", st.get("decisionRight") or "", "yes" if st.get("authorised") else "no", st.get("result"),
-                st.get("vectorAfter", {}).get("EX"), st.get("vectorAfter", {}).get("AS"), st.get("vectorAfter", {}).get("AV"), st.get("vectorAfter", {}).get("CP")] for i, st in enumerate(steps)] + [["", "final vector", "", "", "", "", "", "", "", "", "terminal" if term else "not terminal", final.get("REG-EX"), final.get("REG-AS"), final.get("REG-AV"), final.get("REG-CP")]],
-              [6, 12, 30, 10, 10, 8, 60, 8, 12, 10, 26, 12, 12, 12, 12])
+                "; ".join(f"{g['guard']}={'T' if g.get('verdict') else 'F'}" + (f" ({g['source']})" if g.get('source') else "") + (f" [{g['contributedBy']}]" if g.get('contributedBy') else "") for g in st.get("guards", [])), "yes" if st.get("eligible") else "no", st.get("decisionRight") or "", "yes" if st.get("authorised") else "no", st.get("result"),
+                st.get("vectorAfter", {}).get("EX"), st.get("vectorAfter", {}).get("AS"), st.get("vectorAfter", {}).get("AV"), st.get("vectorAfter", {}).get("CP"),
+                ("; ".join(f"{k}={v}" for k, v in st.get("vectorAfter", {}).items()) if st.get("kaModel") else "")] for i, st in enumerate(steps)] + [["", "final vector", "", "", "", "", "", "", "", "", "terminal" if term else "not terminal", final.get("REG-EX"), final.get("REG-AS"), final.get("REG-AV"), final.get("REG-CP"), ""]],
+              [6, 16, 30, 12, 10, 8, 70, 8, 12, 10, 26, 12, 12, 12, 12, 50])
     if scenario:
         sheet("Asset Profile", ["Attribute", "Value"], [[k, json.dumps(v)] for k, v in (scenario.get("assetProfile") or {}).items()], [30, 40])
     wb.save(path)
@@ -619,6 +675,7 @@ def write_xlsx(path, m, F, cycles, traces, fired, states_visited, guard_log, sce
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("model"); ap.add_argument("--scenario"); ap.add_argument("--out", default="."); ap.add_argument("--loop-bound", type=int, default=1); ap.add_argument("--align", help="the Global model this KA model contributes to; contribution targets are checked against it")
+    ap.add_argument("--ka", action="append", default=[], help="a Knowledge Area model whose contribution guards and fact bindings apply to this model's walk; repeatable. Script items 'KA-XX:TR-...' step that model's vector")
     a = ap.parse_args()
     M = json.load(open(a.model, encoding="utf-8"))
     m = Model(M)
@@ -634,7 +691,8 @@ def main():
         fadj = defaultdict(list)
         for t in m.tr.values(): fadj[t["source"]].append((t["target"], t["id"]))
         traces, fired, visited, guard_log = coverage_run(m, fadj, scenario, a.loop_bound)
-        walk = vector_walk(m, scenario, by_region, radj, init_vec)
+        ka_models = [json.load(open(k, encoding="utf-8")) for k in a.ka]
+        walk = vector_walk(m, scenario, by_region, radj, init_vec, ka_models)
     else:
         F, cycles, gadj, fadj, greach, freach = validate(m)
         traces, fired, visited, guard_log = coverage_run(m, fadj, scenario, a.loop_bound)

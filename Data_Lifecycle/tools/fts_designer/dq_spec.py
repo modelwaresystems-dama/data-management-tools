@@ -10,7 +10,7 @@ Decisions 21 Sep 2026: Non-conforming Quality logs a Data Asset issue in the Dat
 source Data Quality); the assessed level gates the Global Assurance region (assessment, confirmation, suspension,
 expiry); every transition carries a Decision Right (holders drafted, flagged REVIEW).
 
-Usage: python dq_spec.py [out_dir]   -> data_quality.fts.json
+Usage: python dq_spec.py [out_dir] [--overrides spec/data_quality_overrides.json]   -> data_quality.fts.json
 """
 import json, os, sys
 from ka_build import build
@@ -201,10 +201,5 @@ SPEC = {
 }
 
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else "."
-    os.makedirs(out, exist_ok=True)
-    m = build(SPEC)
-    p = os.path.join(out, "data_quality.fts.json")
-    json.dump(m, open(p, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
-    print("wrote", p); print(json.dumps(m["meta"]["counts"])); print("QA", m["meta"]["qaCounts"])
-    for f in m["qaFindings"]: print(" ", f["severity"], f["rule"], f["element"], "|", f["finding"])
+    from ka_build import run_spec
+    run_spec(SPEC, "data_quality.fts.json")

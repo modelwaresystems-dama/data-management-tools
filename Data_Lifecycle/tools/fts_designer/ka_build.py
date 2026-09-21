@@ -24,7 +24,7 @@ A KA spec is a Python dict (see dg_spec.py) with:
   exceptions, evidence as in protocol_build
 Naming QA and relationships follow protocol_build.py.
 """
-import json, re, datetime
+import json, os, re, datetime
 from collections import Counter
 
 STATUS = "Proposed / illustrative"
@@ -43,7 +43,37 @@ def name_qa(kind, name):
         return ("PASS", "Active verb-object.") if VERB_FIRST.match(name) else ("REVIEW", "Expected an active verb-object name.")
     return ("PASS", "")
 
-def build(spec):
+def apply_overrides(m, overrides):
+    """Apply a workbook read-back overrides file (fts_readback.py) to a built model."""
+    applied = []
+    for o in overrides.get("overrides", []):
+        coll = m.get(o["collection"], []); el = next((x for x in coll if x["id"] == o["id"]), None)
+        if not el: continue
+        f = o["field"]; new = o["new"]
+        if f == "invariant":
+            inv = next((i for i in m["invariants"] if i["appliesTo"] == o["id"]), None)
+            if inv: inv["predicate"] = new; inv["trace"] = "workbook:States"
+        elif f == "decisionRight":
+            el[f] = new or None
+        else:
+            el[f] = new
+            if f == "holder" and "REVIEW" in (el.get("notes") or ""): el["notes"] = "Holder set in workbook review " + o.get("at", "")
+        el["trace"] = (el.get("trace", "") + "; workbook:" + o.get("sheet", "")).strip("; ")
+        applied.append(o)
+    m["meta"]["overridesApplied"] = len(applied)
+    if applied:
+        m["meta"]["overridesSource"] = overrides.get("workbook", "")
+        # keep derived text in step with renamed elements
+        names = {x["id"]: x["name"] for c in ("subStates", "decisionRights", "events") for x in m.get(c, [])}
+        for d in m.get("decisionRights", []): d["definition"] = d["name"] + "."
+        for t in m.get("transitions", []):
+            if t.get("guardSummary") is not None: pass
+        for e in m.get("events", []): e["meaning"] = "Triggers " + ", ".join(t["name"] for t in m["transitions"] if t.get("event") == e["id"]) + "."
+        for f in m.get("qaFindings", []):
+            if f.get("rule") == "N-016" and any(a["field"] == "holder" and a["id"] == f.get("element") for a in applied): f["finding"] = "holder set in workbook review"
+    return m
+
+def build(spec, overrides=None):
     stamp = now_sast(); meta = dict(spec["meta"])
     srcs = spec.get("sources", [])
     SRC = meta.get("source", "; ".join(s.get("source", "") for s in srcs))
@@ -155,4 +185,21 @@ def build(spec):
     m["qaFindings"] = qa + spec.get("qaNotes", [])
     m["meta"]["counts"] = {k: len(m[k]) for k in ["regions", "subStates", "transitions", "events", "guards", "crossRegionConstraints", "contributions", "stateVectors", "activities", "artefacts", "roles", "services", "decisionRights", "permissionRecords", "exceptions", "evidence", "invariants", "relationships"]}
     m["meta"]["qaCounts"] = {"warnings": sum(1 for f in m["qaFindings"] if f["severity"] == "warning"), "notes": sum(1 for f in m["qaFindings"] if f["severity"] == "note")}
+    if overrides: m = apply_overrides(m, overrides)
+    return m
+
+def run_spec(spec, filename, argv=None):
+    """Shared CLI for the KA specs: python <ka>_spec.py [out_dir] [--overrides <file>]"""
+    import argparse
+    ap = argparse.ArgumentParser(); ap.add_argument("out", nargs="?", default="."); ap.add_argument("--overrides")
+    a = ap.parse_args(argv)
+    os.makedirs(a.out, exist_ok=True)
+    ov_path = a.overrides or os.path.join(a.out, filename.replace(".fts.json", "_overrides.json"))
+    overrides = json.load(open(ov_path, encoding="utf-8")) if os.path.exists(ov_path) else None
+    m = build(spec, overrides)
+    p = os.path.join(a.out, filename)
+    json.dump(m, open(p, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+    print("wrote", p, ("with %d override(s) from %s" % (m["meta"].get("overridesApplied", 0), ov_path)) if overrides else "")
+    print(json.dumps(m["meta"]["counts"])); print("QA", m["meta"]["qaCounts"])
+    for f in m["qaFindings"]: print(" ", f["severity"], f["rule"], f["element"], "|", f["finding"])
     return m

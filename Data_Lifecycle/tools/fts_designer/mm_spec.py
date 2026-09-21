@@ -13,7 +13,7 @@ material-change trigger for Assurance; metadata quality and security are handled
 cycle and the Data Security FTS (metadata is itself a Data Asset), so this model keeps no quality or security
 states and couples to them instead; every transition carries a Decision Right (holders drafted, REVIEW).
 
-Usage: python mm_spec.py [out_dir]   -> metadata_management.fts.json
+Usage: python mm_spec.py [out_dir] [--overrides spec/metadata_management_overrides.json]   -> metadata_management.fts.json
 """
 import json, os, sys
 from ka_build import build
@@ -208,10 +208,5 @@ SPEC = {
 }
 
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else "."
-    os.makedirs(out, exist_ok=True)
-    m = build(SPEC)
-    p = os.path.join(out, "metadata_management.fts.json")
-    json.dump(m, open(p, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
-    print("wrote", p); print(json.dumps(m["meta"]["counts"])); print("QA", m["meta"]["qaCounts"])
-    for f in m["qaFindings"]: print(" ", f["severity"], f["rule"], f["element"], "|", f["finding"])
+    from ka_build import run_spec
+    run_spec(SPEC, "metadata_management.fts.json")

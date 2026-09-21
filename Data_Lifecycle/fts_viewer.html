@@ -343,6 +343,7 @@
   .fbbox .prev{flex-basis:100%;font-size:12px;color:var(--ink-soft)}
   .fbbox .prev span{display:block;padding:3px 0;border-bottom:1px solid var(--line-soft)}
   .fbbox .prev b{color:var(--accent);font-family:var(--mono);font-size:10.5px;margin-right:6px}
+.ftsSel{font:inherit;font-size:12.5px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);max-width:340px}
 </style>
 </head>
 <body>
@@ -355,8 +356,8 @@
       <div class="badges" id="metaBadges"></div>
     </div>
     <div class="stamp">
-      <div>Viewer v0.8</div>
-      <div>Built 21 Sep 2026, 09:40 SAST</div>
+      <div>Viewer v0.10</div>
+      <div>Built 21 Sep 2026, 10:42 SAST</div>
       <div>Holds no data. Reads .fts.json models from GitHub or disk.</div>
     </div>
   </header>
@@ -439,6 +440,7 @@
       <h2>States, sub-states and transitions</h2>
       <p class="lede">Each large container is a Global State, or, for the Global Data Asset Architecture, an orthogonal State Region: four independent machines that run at the same time. Inside it, the states in sequence. Click any state to open its contract below. Dashed purple arrows are recursive or iterative transitions.</p>
       <div class="maptools">
+        <span class="grp"><span class="lab">FTS</span><select class="ftsSel" data-ftssel="1" title="Choose which loaded FTS to draw; the Global protocol is always listed first"></select></span>
         <div class="legend">
           <span><i></i> sub-state transition</span>
           <span><i class="l"></i> recursive / iterative</span>
@@ -455,6 +457,7 @@
       <h2>The model as a UML state diagram</h2>
       <p class="lede">The same model drawn in standard UML state machine notation: an initial pseudostate, Global States as composite states, sub-states with their entry / do / exit compartments and invariant constraints, and transitions labelled event [guard] / effect. Generated from the loaded model, so it redraws for any FTS. The source is Mermaid, which can be pasted into a document or a Board paper.</p>
       <div class="umltools">
+        <span class="grp"><span class="lab">FTS</span><select class="ftsSel" data-ftssel="1" title="Choose which loaded FTS to draw; the Global protocol is always listed first"></select></span>
         <span class="grp"><span class="lab">Contracts</span><button class="tg" id="umlContractsOn" aria-pressed="true">shown</button><button class="tg" id="umlContractsOff" aria-pressed="false">names only</button></span>
         <span class="grp"><span class="lab">Flow</span><button class="tg" id="umlLR" aria-pressed="true">left to right</button><button class="tg" id="umlTB" aria-pressed="false">top to bottom</button></span>
         <span class="grp"><span class="lab">IDs</span><button class="tg" id="umlIds" aria-pressed="false">show</button></span>
@@ -489,6 +492,7 @@
       <h2>The whole FTS, with the detail you choose</h2>
       <p class="lede">The same state machine with complexity removed so it can be read and traced. Collapse Global States to single boxes or open them one level, replace the full wording on transitions and activities with short codes that a legend explains, hide the contracts, the rework loops or the readiness states, and focus on one composite, one state's neighbourhood, or the path from the start to a chosen state. The UML tab keeps the full notation.</p>
       <div class="umltools">
+        <span class="grp"><span class="lab">FTS</span><select class="ftsSel" data-ftssel="1" title="Choose which loaded FTS to draw; the Global protocol is always listed first"></select></span>
         <span class="grp"><span class="lab">Detail</span><button class="tg" data-simp="level" data-val="global">global only</button><button class="tg" data-simp="level" data-val="sub" aria-pressed="true">sub-states</button><button class="tg" data-simp="level" data-val="all">full</button></span>
         <span class="grp"><span class="lab">Labels</span><button class="tg" data-simp="labelMode" data-val="code" aria-pressed="true">codes</button><button class="tg" data-simp="labelMode" data-val="id">IDs</button><button class="tg" data-simp="labelMode" data-val="full">names</button></span>
         <span class="grp"><span class="lab">Show</span><button class="tg" data-simpt="contracts">contracts</button><button class="tg" data-simpt="showGuard" aria-pressed="true">guard count</button><button class="tg" data-simpt="showEvent" aria-pressed="true">event</button><button class="tg" data-simpt="showEffect" aria-pressed="true">effect</button></span>
@@ -3222,6 +3226,9 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     }).join("");
     box.querySelectorAll(".mpill").forEach(el=>el.addEventListener("click",e=>{ if(e.target.closest("[data-rm]")) return; setActive(Number(el.dataset.i)); }));
     box.querySelectorAll("[data-rm]").forEach(el=>el.addEventListener("click",e=>{ e.stopPropagation(); removeModel(Number(el.dataset.rm)); }));
+    // FTS selectors inside the diagram panes: same choice as the pills, without leaving the tab
+    const order=MODELS.map((m,i)=>i).sort((a,b)=>{ const ga=MODELS[a].meta&&MODELS[a].meta.modelId==="GDA-GLOBAL-PROTOCOL", gb=MODELS[b].meta&&MODELS[b].meta.modelId==="GDA-GLOBAL-PROTOCOL"; return ga===gb?a-b:(ga?-1:1); });
+    $$("[data-ftssel]").forEach(sel=>{ sel.innerHTML=order.map(i=>{ const meta=MODELS[i].meta||{}; const lbl=(meta.modelId==="GDA-GLOBAL-PROTOCOL"?"Global protocol: ":"")+(meta.knowledgeArea||meta.name||meta.modelId); return '<option value="'+i+'"'+(i===active?' selected':'')+'>'+esc(lbl)+(meta.version?' v'+esc(meta.version):'')+'</option>'; }).join(""); sel.onchange=()=>setActive(Number(sel.value)); });
   }
 
   // tabs
@@ -4012,8 +4019,24 @@ function fsmSource(M, opts){
   $("#simReset").onclick=()=>{ setVec(initialVector()); simLog("reset","Reset to the initial configuration"); simRender(); };
   $("#simClear").onclick=()=>{ sim.trace=[]; simRender(); };
   $("#simFactAdd").onclick=()=>{ const n=($("#simFactNew").value||"").trim().replace(/[^A-Za-z0-9_]/g,"_"); if(!n) return; sim.facts[n]=true; $("#simFactNew").value=""; simRender(); };
-  $("#simScenarioFile").onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const sc=JSON.parse(rd.result); sim.scenario=sc; sim.facts=Object.assign({}, sc.assetProfile||{}); if(sc.subjectInstanceId) $("#simSubject").value=sc.subjectInstanceId; $("#simScenarioName").textContent=sc.name||sc.id||f.name; simLog("scenario","Loaded scenario "+(sc.id||f.name)); simRender(); }catch(err){ $("#simScenarioName").textContent="not a scenario file"; } }; rd.readAsText(f); $("#simScenarioFile").value=""; };
-  $("#simRunScript").onclick=()=>{ const sc=sim.scenario; if(!sc||!sc.script) return; sc.script.forEach(tid=>{ const t=M.transitions.find(x=>x.id===tid); if(!t){ simLog("blocked", tid+": unknown transition"); return; } const r=evaluateTransition(t); const gtxt=r.guards.map(x=>x.guard.id+"="+(x.v?"T":"F")).join(" "); const authOk=!r.dr || !(sc.authorizations&&sc.authorizations[r.dr.id]===false); if(r.eligible&&authOk){ sim.vec[r.rid]=t.target; simLog("fired", t.id+" "+t.name+" ("+regionCode(r.rid)+": "+nameOf(t.source)+" → "+nameOf(t.target)+")", {transition:t.id, guards:gtxt, decisionRight:r.dr?r.dr.id:null}); } else simLog("blocked", t.id+" "+t.name+": "+(r.srcActive?(r.eligible?"authorisation refused":"guard false"):"source not active"), {transition:t.id, guards:gtxt}); }); simRender(); };
+  $("#simScenarioFile").onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const sc=JSON.parse(rd.result); sim.scenario=sc; sim.facts=Object.assign({}, sc.assetProfile||{}); if(sc.subjectInstanceId) $("#simSubject").value=sc.subjectInstanceId;
+      // KA vectors: set the other loaded models' State Vectors (federated scenario)
+      Object.entries(sc.kaVectors||{}).forEach(([mid,v])=>{ const mm=MODELS.find(x=>x.meta&&x.meta.modelId===mid); if(mm){ const cur=vecOf(mm); Object.assign(cur, v); sim.vecs[mid]=cur; simLog("scenario", "KA vector set for "+(mm.meta.knowledgeArea||mid)); } });
+      $("#simScenarioName").textContent=sc.name||sc.id||f.name; simLog("scenario","Loaded scenario "+(sc.id||f.name)); simRender(); }catch(err){ $("#simScenarioName").textContent="not a scenario file"; } }; rd.readAsText(f); $("#simScenarioFile").value=""; };
+  function kaStep(mid, tid){
+    // fire one transition of another loaded model against its own vector (source active, its own guard expressions over its region codes)
+    const mm=MODELS.find(x=>x.meta&&x.meta.modelId===mid); if(!mm) return {ok:false, why:"model "+mid+" not loaded"};
+    const t=mm.transitions.find(x=>x.id===tid); if(!t) return {ok:false, why:"unknown transition"};
+    const v=vecOf(mm); const rid=(mm.subStates.find(x=>x.id===t.target)||{}).region; if(v[rid]!==t.source) return {ok:false, why:"source not active", t, mm};
+    const env=Object.assign({}, SIM_DEFAULT_FACTS, sim.facts, derivedFacts()&&Object.fromEntries(Object.entries(derivedFacts()).map(([k,d])=>[k,d.value]))); (mm.regions||[]).forEach(r=>{ env[r.code]=v[r.id]; });
+    let ok=true; (mm.guards||[]).filter(g=>g.transition===tid && !g.contribution && g.expression).forEach(g=>{ let r=null; try{ r=Function(...Object.keys(env), "return ("+pyToJs(g.expression)+");")(...Object.values(env)); }catch(e){ r=true; } if(r===false) ok=false; });
+    if(ok){ v[rid]=t.target; sim.vecs[mid]=v; if(M.meta.modelId===mid) sim.vec=v; }
+    return {ok, why: ok?"fired":"guard false", t, mm};
+  }
+  $("#simRunScript").onclick=()=>{ const sc=sim.scenario; if(!sc||!sc.script) return; sc.script.forEach(tid=>{
+      if(typeof tid==="string" && tid.indexOf(":")>0 && tid.split(":")[0]!==M.meta.modelId && MODELS.some(x=>x.meta&&x.meta.modelId===tid.split(":")[0])){ const [mid,kt]=tid.split(":"); const r=kaStep(mid,kt); simLog(r.ok?"fired":"blocked", tid+(r.t?" "+r.t.name:"")+(r.ok?"":": "+r.why), {transition:tid, kaModel:mid}); return; }
+      if(typeof tid==="string" && tid.indexOf(":")>0) tid=tid.split(":")[1];
+      const t=M.transitions.find(x=>x.id===tid); if(!t){ simLog("blocked", tid+": unknown transition"); return; } const r=evaluateTransition(t); const gtxt=r.guards.map(x=>x.guard.id+"="+(x.v?"T":"F")).join(" "); const authOk=!r.dr || !(sc.authorizations&&sc.authorizations[r.dr.id]===false); if(r.eligible&&authOk){ sim.vec[r.rid]=t.target; simLog("fired", t.id+" "+t.name+" ("+regionCode(r.rid)+": "+nameOf(t.source)+" → "+nameOf(t.target)+")", {transition:t.id, guards:gtxt, decisionRight:r.dr?r.dr.id:null}); } else simLog("blocked", t.id+" "+t.name+": "+(r.srcActive?(r.eligible?"authorisation refused":"guard false"):"source not active"), {transition:t.id, guards:gtxt}); }); simRender(); };
   function dl(name, text, type){ const blob=new Blob([text],{type}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500); }
   $("#simDlJson").onclick=()=>dl(((M.meta&&M.meta.modelId)||"fts")+"_trace.json", JSON.stringify({model:M.meta&&M.meta.modelId, modelVersion:M.meta&&M.meta.version, subject:$("#simSubject").value, scenario:sim.scenario&&sim.scenario.id, facts:Object.assign({},SIM_DEFAULT_FACTS,sim.facts), finalVector:sim.vec, trace:sim.trace, exportedAt:new Date().toISOString(), viewer:"0.6"}, null, 1), "application/json");
   $("#simDlCsv").onclick=()=>{ const regs=regionsOf(); const rows=[["#","at","kind","text","transition","decisionRight","guards"].concat(regs.map(r=>regionCode(r.id)))].concat(sim.trace.map((r,i)=>[i+1,r.at,r.kind,r.text,r.transition||"",r.decisionRight||"",r.guards||""].concat(regs.map(x=>r.vector[x.id]||"")))); dl(((M.meta&&M.meta.modelId)||"fts")+"_trace.csv", rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n"), "text/csv"); };

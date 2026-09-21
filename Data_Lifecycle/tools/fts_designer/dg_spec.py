@@ -13,7 +13,7 @@ Region 5 manages Data Asset issues raised by every Knowledge Area: DG handles is
 v0.2 also renames STS-OPM-04 to "Assigned Roles" and gives every transition a Decision Right (drafted holders
 flagged REVIEW).
 
-Usage: python dg_spec.py [out_dir]   -> data_governance.fts.json
+Usage: python dg_spec.py [out_dir] [--overrides spec/data_governance_overrides.json]   -> data_governance.fts.json
 """
 import json, os, sys
 from ka_build import build
@@ -256,10 +256,5 @@ SPEC = {
 }
 
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else "."
-    os.makedirs(out, exist_ok=True)
-    m = build(SPEC)
-    p = os.path.join(out, "data_governance.fts.json")
-    json.dump(m, open(p, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
-    print("wrote", p); print(json.dumps(m["meta"]["counts"])); print("QA", m["meta"]["qaCounts"])
-    for f in m["qaFindings"]: print(" ", f["severity"], f["rule"], f["element"], "|", f["finding"])
+    from ka_build import run_spec
+    run_spec(SPEC, "data_governance.fts.json")

@@ -289,9 +289,9 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
 
 <script>
 /* ===== build info ===== */
-const BUILD={version:'2.3.4',built:'2026-09-21 12:38 SAST'};
+const BUILD={version:'2.4.0',built:'2026-09-21 10:46 UTC'};
 /* ===== BUNDLED DATA (fallback + seed for the private repo) ===== */
-const BUNDLED = {
+const BUNDLED = /*__DATA__*/{
  "generated": "2026-09-20",
  "source_files": [
   "AccountTransactionsReport MWL.csv (Apr-25 \u2192 Mar-26)",
@@ -5023,7 +5023,7 @@ const BUNDLED = {
   "MWI_refunds": 1837.9,
   "MWL_current_account": 6500.0
  }
-};
+}/*__END__*/;
 
 /* ===== config ===== */
 const CFG_KEY='mws_sub_gh_cfg_v1';
@@ -5204,10 +5204,11 @@ function buildRow(s,tb){
     <td>${vatChip(s.vat)}</td>
     <td>${statusChip(s)}</td>
     <td>${s.call&&s.call!=='—'?`<span class="call ${s.call}">${esc(s.call)}</span>`:'<span class="muted">—</span>'}</td>
-    <td class="act"><button class="iconbtn" data-edit="${esc(s.id)}">Edit</button></td>`;
+    <td class="act"><button class="iconbtn" data-merge="${esc(s.id)}" title="Merge this subscription into another (fold in its charges)">Merge</button> <button class="iconbtn" data-edit="${esc(s.id)}">Edit</button></td>`;
   const det=el('tr','detail'+(state.open[s.id]?'':' hide'));
   const dc=el('td');dc.colSpan=COLS.length;dc.appendChild(chargeHistory(s));det.appendChild(dc);
   tr.querySelector('[data-hist]').onclick=()=>{state.open[s.id]=det.classList.toggle('hide')?false:true;};
+  tr.querySelector('[data-merge]').onclick=e=>{e.stopPropagation();openMerge(s.id);};
   tr.querySelector('[data-edit]').onclick=e=>{e.stopPropagation();openEdit(s.id);};
   tb.appendChild(tr);tb.appendChild(det);
 }
@@ -5293,6 +5294,72 @@ function openMoveCharge(fromSub,charge){
     dirty[fromSub.id]=true;dirty[tgt.id]=true;state.open[fromSub.id]=true;
     closeModal();applyOverdueRule();render();markDirty();
     toast('Moved to '+tgt.name+' — Save to GitHub to commit.');
+  };
+}
+
+/* ===== merge subscriptions (fold source into target) ===== */
+function mergePreview(src,tgt,cadence){
+  const seen=new Set(),charges=[];
+  [...(tgt.charges||[]),...(src.charges||[])].forEach(c=>{const k=chargeKey(c);if(seen.has(k))return;seen.add(k);charges.push(c);});
+  const dups=((tgt.charges||[]).length+(src.charges||[]).length)-charges.length;
+  const ch=charges.slice().sort((a,b)=>a.date<b.date?-1:1);
+  const pays=ch.filter(c=>!c.refund),refs=ch.filter(c=>c.refund);
+  const last_actual=pays.length?pays[pays.length-1].gross:0;
+  const typical=pays.length?Math.round(median(pays.map(c=>c.gross))*100)/100:0;
+  const cards=[...new Set(pays.map(c=>c.card))],ents=[...new Set(pays.map(c=>c.entity))];
+  const moved=(cards.length>1||ents.length>1)&&cadence!=='one-off';
+  const mult=CADENCE_MULT[cadence]??12;
+  const fwd=Math.round(last_actual*mult*100)/100;
+  const l=pays.length?pays[pays.length-1]:null;
+  return {ch,pays,refs,last_actual,typical,cards,ents,moved,fwd,mult,dups,
+    first:ch.length?ch[0].date:'—',last:ch.length?ch[ch.length-1].date:'—',
+    entity:l?l.entity:tgt.entity,card:l?l.card:tgt.card};
+}
+function openMerge(id){
+  const src=subs().find(x=>x.id===id);if(!src)return;
+  const opts=subs().filter(x=>x.id!==id).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  if(!opts.length){toast('Nothing to merge into.',true);return;}
+  const n=(src.charges||[]).length;
+  document.getElementById('modalRoot').innerHTML=`<div class="modal-bg"><div class="modal" style="max-width:640px">
+    <h2>Merge subscription</h2>
+    <div class="mdesc">Fold <b>${esc(src.name)}</b> into another subscription. The target keeps its name and identity; all charges combine and the figures recompute. <b>${esc(src.name)}</b> is then removed. Nothing changes until you confirm, and nothing commits until you Save to GitHub.</div>
+    <div class="note-box" style="font-family:var(--mono);font-size:12px">Source: ${esc(src.name)} · ${esc(src.entity)}·${esc(src.card)} · ${esc(src.cadence)} · ${n} charge${n===1?'':'s'}</div>
+    <div class="form-grid" style="margin-top:12px">
+      <div class="field"><label>Merge into (kept)</label>
+        <select id="mgTarget">${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)} — ${esc(o.entity)}·${esc(o.card)} (${(o.charges||[]).length})</option>`).join('')}</select></div>
+      <div class="field"><label>Resulting cadence</label><select id="mgCadence">${opt(CADENCES,'')}</select></div>
+    </div>
+    <div id="mgPrev" class="note-box" style="margin-top:12px"></div>
+    <div class="modal-foot"><div class="grow"></div>
+      <button class="btn ghost" id="mgCancel">Cancel</button>
+      <button class="btn" id="mgGo">Merge &amp; remove source</button></div>
+  </div></div>`;
+  const $=x=>document.getElementById(x);
+  function setDefaultCadence(){const tgt=subs().find(x=>x.id===$('mgTarget').value);if(tgt)$('mgCadence').value=tgt.cadence||'monthly';}
+  function refresh(){
+    const tgt=subs().find(x=>x.id===$('mgTarget').value);if(!tgt)return;
+    const cad=$('mgCadence').value,pv=mergePreview(src,tgt,cad);
+    $('mgPrev').innerHTML=`Result → <b>${esc(tgt.name)}</b> keeps its name, category, VAT and status.<br>
+      Charges <b>${pv.ch.length}</b> (${pv.pays.length} pay · ${pv.refs.length} refund)${pv.dups?` · <span class="muted">${pv.dups} duplicate charge(s) skipped</span>`:''} · ${esc(pv.first)} → ${esc(pv.last)}<br>
+      Now on <b>${esc(pv.entity)}·${esc(pv.card)}</b>${pv.moved?' <span class="chip moved">moved</span>':''}<br>
+      Last actual <b>${ZAR2(pv.last_actual)}</b> · typical <b>${ZAR2(pv.typical)}</b><br>
+      Forward annual <b>${ZAR2(pv.fwd)}</b> <span class="muted">(last actual × ${pv.mult} for <b>${esc(cad)}</b>)</span>`;
+  }
+  $('mgTarget').onchange=()=>{setDefaultCadence();refresh();};
+  $('mgCadence').onchange=refresh;
+  $('mgCancel').onclick=closeModal;
+  setDefaultCadence();refresh();
+  $('mgGo').onclick=()=>{
+    const tgt=subs().find(x=>x.id===$('mgTarget').value);if(!tgt)return;
+    const cad=$('mgCadence').value;
+    const seen=new Set((tgt.charges=tgt.charges||[]).map(chargeKey));
+    (src.charges||[]).forEach(c=>{const k=chargeKey(c);if(!seen.has(k)){tgt.charges.push(c);seen.add(k);}});
+    tgt.cadence=cad;recomputeSub(tgt);
+    const i=subs().findIndex(x=>x.id===src.id);if(i>=0)subs().splice(i,1);
+    delete dirty[src.id];dirty[tgt.id]=true;dirty['__del_'+src.id]=true;
+    state.open[tgt.id]=true;
+    closeModal();applyOverdueRule();render();markDirty();
+    toast('Merged into '+tgt.name+' — Save to GitHub to commit.');
   };
 }
 

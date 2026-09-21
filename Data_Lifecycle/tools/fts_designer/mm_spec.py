@@ -159,7 +159,7 @@ KA_COUPLINGS = [
     ("KAC-MM-02", "KA-DQ", "TR-PDCA-01", "", "MM_metadata_published", "The DQ cycle's inputs Business Metadata, Technical Metadata and Data Lineage are available for a Data Asset only when its metadata is published.", "Reverse coupling: a DQ transition cites an MM fact."),
     ("KAC-MM-03", "KA-DG", "TR-ISS-01", "EV-ISS-01", "MM_metadata_stale", "A metadata issue (input Metadata Issues) is logged as a Data Asset issue in the Data Governance issue FTS with source Metadata Management.", "DG owns escalation; MM owns the refresh."),
     ("KAC-MM-04", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "Metadata Standards are governing instruments: their publication is a Data Governance instrument publication (TR-POL-03), which TR-ARC-03 cites.", "Reverse coupling: an MM transition cites a DG fact."),
-    ("KAC-MM-05", "KA-DS", "", "", "", "Protection of metadata stores and of published metadata (goal 4, security) is handled by the Data Security FTS; the coupling is recorded when that model is built.", "Placeholder until the Data Security FTS exists."),
+    ("KAC-MM-05", "KA-DS", "TR-AST-03", "", "DS_protected", "Protection of metadata stores and of published metadata (goal 4, security) is handled by the Data Security FTS: publication (TR-AST-03) cites the asset's protection, and the classification attribute is part of the description (see KAC-DS-04, KAC-DS-05).", "Reverse coupling: an MM transition cites a DS fact."),
 ]
 FACT_BINDINGS = {
     "MM_programme_operating": {"region": "REG-MM-PRG", "states": ["STS-PRG-04", "STS-PRG-05"]},
@@ -198,7 +198,7 @@ SPEC = {
     "sources": [
         {"id": "SRC-MM-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "Process 5 carries no phase tag on the slide."},
         {"id": "SRC-MM-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating, quality and security delegation", "limitations": ""},
-        {"id": "SRC-MM-003", "source": SRC_PROTOCOL, "type": "Alignment target", "location": "Private repo models/", "use": "Global transition IDs for contributions; DG and DQ transition IDs for couplings", "limitations": "KA-DS (Data Security) not yet built; KAC-MM-05 is a placeholder."},
+        {"id": "SRC-MM-003", "source": SRC_PROTOCOL, "type": "Alignment target", "location": "Private repo models/", "use": "Global transition IDs for contributions; DG and DQ transition IDs for couplings", "limitations": ""},
     ],
     "qaNotes": [
         {"severity": "note", "rule": "N-007", "element": "STS-AST-06", "finding": "Archived Metadata is terminal per Data Asset instance, mirroring the Global Destruction and Custody Closure terminals; the scope-level regions have no terminal state, consistent with the DG decision of 21 Sep 2026. Confirm."},

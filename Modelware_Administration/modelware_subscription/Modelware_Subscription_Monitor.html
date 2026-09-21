@@ -112,6 +112,24 @@ tbody tr:last-child td{border-bottom:0}
 .iconbtn{border:1px solid var(--line);background:var(--card);color:var(--steel);border-radius:7px;
   padding:5px 9px;font-size:12px;cursor:pointer;font-weight:500}
 .iconbtn:hover{background:var(--steel-soft)}
+.msel{position:relative}
+.msel-btn{font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--card);
+  border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer;display:inline-flex;gap:8px;align-items:center}
+.msel-panel{position:absolute;top:calc(100% + 4px);right:0;background:var(--card);border:1px solid var(--line);
+  border-radius:10px;box-shadow:0 6px 22px rgba(0,0,0,.16);padding:6px;z-index:30;min-width:210px}
+.msel-panel label{display:flex;align-items:center;gap:9px;padding:7px 9px;font-size:13px;border-radius:6px;cursor:pointer}
+.msel-panel label:hover{background:var(--paper-2)}
+.msel-panel input{accent-color:var(--steel);width:15px;height:15px}
+.msel-foot{display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:4px;padding:8px 6px 4px}
+.msel-foot button{font-size:12px;background:none;border:0;color:var(--steel);cursor:pointer;font-weight:500}
+.grouphdr td{background:var(--paper-2);padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--line)}
+.grouphdr .glabel{font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+.grouphdr .gcount{font-family:var(--mono);font-weight:500;color:var(--ink-soft);margin-left:8px}
+.grouphdr .gtot{float:right;font-family:var(--mono);color:var(--ink);font-weight:600}
+.grouphdr .gcar{display:inline-block;width:14px;color:var(--ink-soft)}
+.gh-active .glabel{color:var(--good)} .gh-review .glabel{color:var(--review)}
+.gh-marked-to-cancel .glabel,.gh-cancelling .glabel,.gh-cancelled .glabel{color:var(--cancel)}
+.gh-moved .glabel{color:var(--warn)}
 .detail td{background:var(--paper-2);padding:0}
 .detail-inner{padding:14px 16px}
 .hist{width:100%;font-size:12.5px;margin-top:6px}
@@ -223,15 +241,10 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
     </div>
     <div class="grow"></div>
     <input type="search" id="q" placeholder="Search vendor…">
-    <select id="fstatus">
-      <option value="">All statuses</option>
-      <option value="active">Active</option>
-      <option value="review">Review</option>
-      <option value="marked-to-cancel">Marked to cancel</option>
-      <option value="cancelling">Cancelling</option>
-      <option value="cancelled">Cancelled</option>
-      <option value="moved">Moved</option>
-    </select>
+    <div class="msel" id="mselStatus">
+      <button class="msel-btn" id="mselStatusBtn" type="button">All statuses <span aria-hidden="true">▾</span></button>
+      <div class="msel-panel hide" id="mselStatusPanel"></div>
+    </div>
     <select id="fcall">
       <option value="">All calls</option>
       <option value="Keep">Keep</option>
@@ -270,7 +283,7 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
 
 <script>
 /* ===== build info ===== */
-const BUILD={version:'2.0.1',built:'2026-09-20 15:46 SAST'};
+const BUILD={version:'2.0.2',built:'2026-09-21 06:07 SAST'};
 /* ===== BUNDLED DATA (fallback + seed for the private repo) ===== */
 const BUNDLED = {
  "generated": "2026-09-20",
@@ -5048,7 +5061,7 @@ const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;
 function toast(msg,err){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show'+(err?' err':'');
   setTimeout(()=>t.className='toast',err?4200:2200);}
 
-let state={ent:'ALL',q:'',status:'',call:'',sort:'fwd_annual',dir:-1,tab:'inv',decisions:{},open:{}};
+let state={ent:'ALL',q:'',statusSel:[],call:'',sort:'fwd_annual',dir:-1,tab:'inv',decisions:{},open:{},collapsed:{},grouped:true};
 
 /* ===== GitHub Contents API ===== */
 function ghHeaders(){return{Authorization:'Bearer '+cfg.token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};}
@@ -5100,7 +5113,7 @@ function subs(){return LIVE.subscriptions;}
 function subsFiltered(){
   return subs().filter(s=>{
     if(state.ent!=='ALL'&&s.entity!==state.ent)return false;
-    if(state.status&&s.status!==state.status)return false;
+    if(state.statusSel.length&&!state.statusSel.includes(s.status))return false;
     if(state.call&&s.call!==state.call)return false;
     if(state.q&&!((s.name||'').toLowerCase().includes(state.q)||(s.category||'').toLowerCase().includes(state.q)))return false;
     return true;
@@ -5135,6 +5148,26 @@ function statusChip(s){const map={active:'active',review:'review','marked-to-can
   const lbl={active:'Active',review:'Review','marked-to-cancel':'To cancel',cancelling:'Cancelling',cancelled:'Cancelled',moved:'Moved'};
   return `<span class="chip ${map[s.status]||'review'}">${lbl[s.status]||s.status}</span>`;}
 function vatChip(v){return `<span class="chip vat">${({'SA-VAT-15':'15%',none:'none',confirm:'confirm'})[v]||v}</span>`;}
+const STATUS_LABEL={active:'Active',review:'Review','marked-to-cancel':'Marked to cancel',
+  cancelling:'Cancelling',cancelled:'Cancelled',moved:'Moved'};
+function buildRow(s,tb){
+  const tr=el('tr','row');
+  tr.innerHTML=`
+    <td><div class="vname" data-hist="${esc(s.id)}">${esc(s.name)} ${s.moved?'<span class="chip moved" title="Charged on more than one card/entity">moved</span>':''} ${s.edited_by?'<span class="chip edited" title="Edited by '+esc(s.edited_by)+' '+esc(s.edited_at)+'">edited</span>':''}</div><div class="vcat">${esc(s.category)}</div></td>
+    <td><span class="chip ent">${esc(s.entity)}</span> <span class="muted">${esc(s.card)}</span></td>
+    <td>${esc(s.cadence)}</td>
+    <td class="num">${s.last_actual?ZAR2(s.last_actual):'—'}</td>
+    <td class="num"><b>${s.fwd_annual?ZAR(s.fwd_annual):'—'}</b></td>
+    <td>${vatChip(s.vat)}</td>
+    <td>${statusChip(s)}</td>
+    <td>${s.call&&s.call!=='—'?`<span class="call ${s.call}">${esc(s.call)}</span>`:'<span class="muted">—</span>'}</td>
+    <td class="act"><button class="iconbtn" data-edit="${esc(s.id)}">Edit</button></td>`;
+  const det=el('tr','detail'+(state.open[s.id]?'':' hide'));
+  const dc=el('td');dc.colSpan=COLS.length;dc.appendChild(chargeHistory(s));det.appendChild(dc);
+  tr.querySelector('[data-hist]').onclick=()=>{state.open[s.id]=det.classList.toggle('hide')?false:true;};
+  tr.querySelector('[data-edit]').onclick=e=>{e.stopPropagation();openEdit(s.id);};
+  tb.appendChild(tr);tb.appendChild(det);
+}
 function renderInv(){
   const sec=document.getElementById('tab-inv');sec.innerHTML='';
   const card=el('div','tablecard');const tbl=el('table');
@@ -5144,23 +5177,21 @@ function renderInv(){
     tr.appendChild(th);});
   thead.appendChild(tr);tbl.appendChild(thead);
   const tb=el('tbody');const rows=subsFiltered();
-  rows.forEach(s=>{
-    const tr=el('tr','row');
-    tr.innerHTML=`
-      <td><div class="vname" data-hist="${esc(s.id)}">${esc(s.name)} ${s.moved?'<span class="chip moved" title="Charged on more than one card/entity">moved</span>':''} ${s.edited_by?'<span class="chip edited" title="Edited by '+esc(s.edited_by)+' '+esc(s.edited_at)+'">edited</span>':''}</div><div class="vcat">${esc(s.category)}</div></td>
-      <td><span class="chip ent">${esc(s.entity)}</span> <span class="muted">${esc(s.card)}</span></td>
-      <td>${esc(s.cadence)}</td>
-      <td class="num">${s.last_actual?ZAR2(s.last_actual):'—'}</td>
-      <td class="num"><b>${s.fwd_annual?ZAR(s.fwd_annual):'—'}</b></td>
-      <td>${vatChip(s.vat)}</td>
-      <td>${statusChip(s)}</td>
-      <td>${s.call&&s.call!=='—'?`<span class="call ${s.call}">${esc(s.call)}</span>`:'<span class="muted">—</span>'}</td>
-      <td class="act"><button class="iconbtn" data-edit="${esc(s.id)}">Edit</button></td>`;
-    const det=el('tr','detail'+(state.open[s.id]?'':' hide'));
-    const dc=el('td');dc.colSpan=COLS.length;dc.appendChild(chargeHistory(s));det.appendChild(dc);
-    tr.querySelector('[data-hist]').onclick=()=>{state.open[s.id]=det.classList.toggle('hide')?false:true;};
-    tr.querySelector('[data-edit]').onclick=e=>{e.stopPropagation();openEdit(s.id);};
-    tb.appendChild(tr);tb.appendChild(det);
+  // group by status, in lifecycle order
+  const groups={};rows.forEach(s=>{(groups[s.status]=groups[s.status]||[]).push(s);});
+  const order=STATUSES.filter(st=>groups[st]&&groups[st].length);
+  Object.keys(groups).forEach(st=>{if(!order.includes(st))order.push(st);});
+  order.forEach(st=>{
+    const gs=groups[st];
+    const tot=gs.reduce((t,s)=>t+(s.fwd_annual||0),0);
+    const collapsed=!!state.collapsed[st];
+    const hdr=el('tr','grouphdr gh-'+st);
+    const hc=el('td');hc.colSpan=COLS.length;
+    hc.innerHTML=`<span class="gcar">${collapsed?'▸':'▾'}</span><span class="glabel">${esc(STATUS_LABEL[st]||st)}</span><span class="gcount">${gs.length} sub${gs.length>1?'s':''}</span><span class="gtot">${ZAR(tot)}/yr</span>`;
+    hdr.appendChild(hc);
+    hdr.onclick=()=>{state.collapsed[st]=!state.collapsed[st];renderInv();};
+    tb.appendChild(hdr);
+    if(!collapsed) gs.forEach(s=>buildRow(s,tb));
   });
   tbl.appendChild(tb);card.appendChild(tbl);
   if(!rows.length)card.appendChild(el('div','',`<div style="padding:24px;text-align:center" class="muted">No subscriptions match these filters.</div>`));
@@ -5402,8 +5433,23 @@ document.getElementById('entseg').onclick=e=>{if(e.target.dataset.ent){state.ent
   document.querySelectorAll('#entseg button').forEach(b=>b.classList.toggle('on',b===e.target));render();}};
 document.getElementById('tabs').onclick=e=>{if(e.target.dataset.tab){state.tab=e.target.dataset.tab;render();}};
 document.getElementById('q').oninput=e=>{state.q=e.target.value.toLowerCase();if(state.tab==='inv')renderInv();renderKpis();};
-document.getElementById('fstatus').onchange=e=>{state.status=e.target.value;render();};
 document.getElementById('fcall').onchange=e=>{state.call=e.target.value;render();};
+// multi-select status filter
+function updStatusBtn(){const n=state.statusSel.length;
+  document.getElementById('mselStatusBtn').innerHTML=(n===0?'All statuses':n+' status'+(n>1?'es':'')+' selected')+' <span aria-hidden="true">▾</span>';}
+function buildStatusPanel(){
+  const p=document.getElementById('mselStatusPanel');
+  p.innerHTML=STATUSES.map(st=>`<label><input type="checkbox" value="${st}" ${state.statusSel.includes(st)?'checked':''}>${STATUS_LABEL[st]||st}</label>`).join('')
+    +`<div class="msel-foot"><button type="button" data-act="all">Select all</button><button type="button" data-act="clear">Clear</button></div>`;
+  p.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.onchange=()=>{
+    state.statusSel=[...p.querySelectorAll('input:checked')].map(x=>x.value);updStatusBtn();render();});
+  p.querySelector('[data-act=all]').onclick=()=>{state.statusSel=[...STATUSES];buildStatusPanel();updStatusBtn();render();};
+  p.querySelector('[data-act=clear]').onclick=()=>{state.statusSel=[];buildStatusPanel();updStatusBtn();render();};
+}
+document.getElementById('mselStatusBtn').onclick=e=>{e.stopPropagation();document.getElementById('mselStatusPanel').classList.toggle('hide');};
+document.addEventListener('click',e=>{const m=document.getElementById('mselStatus');
+  if(m&&!m.contains(e.target))document.getElementById('mselStatusPanel').classList.add('hide');});
+buildStatusPanel();updStatusBtn();
 document.getElementById('cfgBtn').onclick=openCfg;
 document.getElementById('addBtn').onclick=()=>openEdit(null);
 document.getElementById('saveBtn').onclick=doSave;

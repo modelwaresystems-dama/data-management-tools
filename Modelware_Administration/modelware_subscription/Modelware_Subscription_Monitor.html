@@ -285,7 +285,7 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
 
 <script>
 /* ===== build info ===== */
-const BUILD={version:'2.3.0',built:'2026-09-21 12:04 SAST'};
+const BUILD={version:'2.3.1',built:'2026-09-21 12:24 SAST'};
 /* ===== BUNDLED DATA (fallback + seed for the private repo) ===== */
 const BUNDLED = {
  "generated": "2026-09-20",
@@ -5249,13 +5249,41 @@ function chargeHistory(s){
   if(s.cancel_url||s.cancel_steps) w.appendChild(el('div','note-box',
     (s.cancel_url?('<b>Cancel:</b> <a href="'+esc(s.cancel_url)+'" target="_blank" rel="noopener">'+esc(s.cancel_url)+'</a> '):'')+(s.cancel_steps?('— '+esc(s.cancel_steps)):'')));
   const t=el('table','hist');
-  t.innerHTML='<thead><tr><th>Date</th><th>Entity·Card</th><th class="right">Amount</th><th>Bank description</th></tr></thead>';
+  t.innerHTML='<thead><tr><th>Date</th><th>Entity·Card</th><th class="right">Amount</th><th>Bank description</th><th></th></tr></thead>';
   const tb=el('tbody');
   (s.charges||[]).slice().reverse().forEach(c=>{const tr=el('tr',c.refund?'rf':'');
     tr.innerHTML=`<td>${esc(c.date)}</td><td>${esc(c.entity)}·${esc(c.card)}</td>
       <td class="right">${c.refund?'+':''}${ZAR2(c.gross)}</td>
-      <td style="white-space:normal;font-family:var(--sans)">${esc(c.desc)}</td>`;tb.appendChild(tr);});
+      <td style="white-space:normal;font-family:var(--sans)">${esc(c.desc)}</td><td class="right"></td>`;
+    const mv=el('button','iconbtn','Move');mv.style.cssText='font-size:11px;padding:3px 7px';
+    mv.title='Move this charge to another subscription';
+    mv.onclick=(e)=>{e.stopPropagation();openMoveCharge(s,c);};
+    tr.lastChild.appendChild(mv);tb.appendChild(tr);});
   t.appendChild(tb);w.appendChild(t);return w;
+}
+function openMoveCharge(fromSub,charge){
+  const opts=subs().filter(x=>x.id!==fromSub.id).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  document.getElementById('modalRoot').innerHTML=`<div class="modal-bg"><div class="modal" style="max-width:540px">
+    <h2>Move charge</h2>
+    <div class="mdesc">Reassign this charge from <b>${esc(fromSub.name)}</b> to the right subscription. Both are recalculated.</div>
+    <div class="note-box" style="font-family:var(--mono);font-size:12px">${esc(charge.date)} · ${esc(charge.entity)}·${esc(charge.card)} · ${charge.refund?'+':''}${ZAR2(charge.gross)}<br>${esc(charge.desc)}</div>
+    <div class="field full" style="margin-top:12px"><label>Move to</label>
+      <select id="mvTarget">${opts.map(o=>`<option value="${esc(o.id)}">${esc(o.name)} — ${esc(o.entity)}·${esc(o.card)}</option>`).join('')}</select></div>
+    <div class="modal-foot"><div class="grow"></div>
+      <button class="btn ghost" id="mvCancel">Cancel</button>
+      <button class="btn" id="mvGo">Move charge</button></div>
+  </div></div>`;
+  const $=x=>document.getElementById(x);
+  $('mvCancel').onclick=closeModal;
+  $('mvGo').onclick=()=>{
+    const tgt=subs().find(x=>x.id===$('mvTarget').value);if(!tgt)return;
+    fromSub.charges=(fromSub.charges||[]).filter(x=>x!==charge);
+    (tgt.charges=tgt.charges||[]).push(charge);
+    recomputeSub(fromSub);recomputeSub(tgt);
+    dirty[fromSub.id]=true;dirty[tgt.id]=true;state.open[fromSub.id]=true;
+    closeModal();applyOverdueRule();render();markDirty();
+    toast('Moved to '+tgt.name+' — Save to GitHub to commit.');
+  };
 }
 
 /* ===== edit modal ===== */

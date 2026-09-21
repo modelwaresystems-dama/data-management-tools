@@ -3,7 +3,8 @@
 // initial, final) and the Visual Paradigm guidance (super-state / sub-state, hide detail).
 //
 // opts:
-//   direction  "LR" | "TB"
+//   direction  "LR" | "TB"   (how the regions or Global States are laid out)
+//   innerDirection "TB" | "LR"  (how the states inside each region flow; default TB)
 //   level      "all" (full hierarchy) | "sub" (globals expanded one level, deeper nesting collapsed) | "global" (composites collapsed)
 //   contracts  true: entry / do / exit / {invariant} compartments
 //   labelMode  "full" | "code" | "id"     (transition and activity labels)
@@ -136,7 +137,7 @@ function fsmSource(M, opts){
     const ch=kidsOf(s.id).filter(c=>drawn(c.id));
     if(ch.length){
       L.push(pad+'state "'+name(s)+'" as '+id+" {");
-      L.push(pad+"  direction TB");
+      L.push(pad+"  direction "+(opts.innerDirection||"TB"));
       if(!opts.hideInnerInitial) edges.filter(e=>e.inner && e.a===s.id).forEach(e=>{ L.push(pad+"  [*] --> "+mid(e.b)+" : "+q(trLabel(e.t))); pushLegendTr(e.t); });
       if(parallel && s.kind==="region"){
         // each region is its own machine: initial pseudostate and final states live inside it
@@ -157,7 +158,7 @@ function fsmSource(M, opts){
   function pushLegendTr(t){
     if(legend.transitions.some(x=>x.id===t.id)) return;
     const ev=evOf(t.event); const gs=(M.guards||[]).filter(g=>g.transition===t.id);
-    legend.transitions.push({code:code.tr[t.id], id:t.id, name:t.name, from:byId(t.source)?byId(t.source).name:t.source, to:byId(t.target)?byId(t.target).name:t.target, event:ev?ev.name:"", eventCode:ev?code.ev[ev.id]:"", guards:gs.length, loop:isLoop(t), optionality:t.optionality||""});
+    legend.transitions.push({code:code.tr[t.id], id:t.id, label:trLabel(t), name:t.name, from:byId(t.source)?byId(t.source).name:t.source, to:byId(t.target)?byId(t.target).name:t.target, event:ev?ev.name:"", eventCode:ev?code.ev[ev.id]:"", guards:gs.length, loop:isLoop(t), optionality:t.optionality||""});
     gs.forEach(g=>{ if(!legend.guards.some(x=>x.id===g.id)) legend.guards.push({code:code.gd[g.id], id:g.id, transition:code.tr[t.id], predicate:g.predicate, scope:g.scope||""}); });
     if(ev && !legend.events.some(x=>x.id===ev.id)) legend.events.push({code:code.ev[ev.id], id:ev.id, name:ev.name, type:ev.eventType||""});
   }
@@ -194,6 +195,13 @@ function fsmSource(M, opts){
     const hl=opts.highlight.map(id=>visibleRep(id)).filter(id=>id && drawn(id)).map(mid);
     if(hl.length) L.push("class "+hl.join(",")+" current");
   }
-  return {src:L.join("\n"), legend, visible:{states:[...visStates], transitions:edges.map(e=>e.t.id)}};
+  // graph view for renderers that do not use Mermaid: drawn states with their parent and flags, drawn edges with the label text, region initial states
+  const graph={
+    nodes:[...visStates].map(id=>{ const st=byId(id)||{}; return {id, name:name(st), parent:st.parent||null, kind:st.kind||(st.parent?"sub":"top"), initial:!!st.initial, terminal:!!st.terminal, readiness:!!st.readiness, collapsedTop:collapsed.has(id)}; }),
+    edges:edges.map(e=>({id:e.t.id, a:e.a, b:e.b, label:trLabel(e.t), inner:e.inner})),
+    initials:M.transitions.filter(isInit).map(t=>visibleRep(t.target)).filter(b=>b&&drawn(b)),
+    protocolName:(opts.protocolName||(M.meta&&M.meta.protocolLabel)||"Formal Data Asset Protocol"), parallel
+  };
+  return {src:L.join("\n"), legend, visible:{states:[...visStates], transitions:edges.map(e=>e.t.id)}, graph};
 }
 if(typeof module!=="undefined") module.exports={fsmSource};

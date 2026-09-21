@@ -7,7 +7,9 @@ A KA spec is a Python dict (see dg_spec.py) with:
   meta        modelId, name, knowledgeArea, subjectType, version, note, sources
   context     the captured context diagram: definition, goals, drivers, inputs, processes (with tags and
               sub-activities), deliverables, suppliers, participants, consumers, techniques, tools, metrics
-  regions     [(id, name, code, question, initialStateId, regionInvariant, subjectNote)]
+  regions     [(id, name, code, question, initialStateId, regionInvariant, managedElement, extras{})]
+              managedElement: the element this region's FTS manages (one FTS per managed element);
+              extras: instanceScope, elementKind, contributesTo, conditionsThatMatter, issueSources, ...
   states      [(id, regionId, name, initial, terminal, definition, invariant, contextRefs)]
   transitions [(id, name, source, target, eventId, guardSummary, decisionRight, services, activityRefs)]
   events      {eventId: (name, type)}
@@ -55,8 +57,9 @@ def build(spec):
     m["contextCapture"] = spec.get("context", {})
     m["rules"] = spec.get("rules", [])
     m["lifecycle"] = {"phases": [], "effectClasses": [], "mappingRule": spec.get("mappingRule", "A Knowledge Area process describes work and is never a state of the Knowledge Area; each region names a durable condition of the KA's governed subject, and the KA reaches the Global protocol only through services, predicates, decision rights, controls, events and evidence (GA-005, GA-009).")}
-    m["regions"] = [row({"id": r[0], "name": r[1], "code": r[2], "question": r[3], "initialState": r[4], "regionInvariant": r[5], "subject": r[6] if len(r) > 6 else meta.get("subjectType")}, "spec:regions") for r in regions]
-    m["globalStates"] = [row({"id": r[0], "name": r[1], "definition": r[3], "kind": "region", "stateType": "Orthogonal State Region", "initial": False, "terminal": False, "semanticClass": "Region", "nameQA": {"status": "Pass", "rationale": "Region, not a state."}, "retainedRuleIds": ["N-005", "N-006", "GA-010"], "notes": (r[6] if len(r) > 6 else "")}, "spec:regions") for r in regions]
+    m["regions"] = [row({"id": r[0], "name": r[1], "code": r[2], "question": r[3], "initialState": r[4], "regionInvariant": r[5], "subject": r[6] if len(r) > 6 else meta.get("subjectType"), "managedElement": r[6] if len(r) > 6 else meta.get("subjectType"), **(r[7] if len(r) > 7 and isinstance(r[7], dict) else {})}, "spec:regions") for r in regions]
+    m["globalStates"] = [row({"id": r[0], "name": r[1], "definition": r[3], "kind": "region", "stateType": "Orthogonal State Region (one FTS per managed element)", "initial": False, "terminal": False, "semanticClass": "Region", "nameQA": {"status": "Pass", "rationale": "Region, not a state."}, "retainedRuleIds": ["N-005", "N-006", "GA-010"], "notes": ("Manages: " + r[6]) if len(r) > 6 else ""}, "spec:regions") for r in regions]
+    m["meta"]["managedElements"] = [{"region": r[0], "name": r[1], "managedElement": r[6] if len(r) > 6 else meta.get("subjectType"), "instanceScope": (r[7].get("instanceScope", "") if len(r) > 7 and isinstance(r[7], dict) else "")} for r in regions]
     m["subStates"] = []
     for s in states:
         qa = name_qa("state", s[2])
@@ -93,7 +96,7 @@ def build(spec):
     m["serviceFamilies"] = [{"family": f, "question": "", "outputs": f"{n} services"} for f, n in fam.items()]
     m["controls"] = [row({"id": s["id"].replace("SVC", "CTRL"), "name": s["name"], "controlType": "Mechanism (control service)", "appliesTo": ", ".join(s["usedByTransitions"]), "objective": s["trigger"], "outcome": s["output"], "service": s["id"]}, "spec:services control family") for s in m["services"] if s["family"] == "Control"]
     m["roles"] = [row({"id": r[0], "name": r[1], "accountability": r[2], "responsibility": r[3], "appliesTo": ""}, "context:role players") for r in spec.get("roles", [])]
-    m["decisionRights"] = [row({"id": k, "name": v[0], "holder": v[1], "appliesTo": ", ".join(t[0] for t in trans if t[6] == k) + ("; " + ", ".join(c[1] for c in contrib if c[2] == "decisionRight" and k in (c[4] or "")) if any(c[2] == "decisionRight" and k in (c[4] or "") for c in contrib) else ""), "definition": v[0] + ".", "requirement": "Required"}, "spec:decisionRights") for k, v in spec.get("decisionRights", {}).items()]
+    m["decisionRights"] = [row({"id": k, "name": v[0], "holder": v[1], "appliesTo": ", ".join(t[0] for t in trans if t[6] == k) + ("; " + ", ".join(c[1] for c in contrib if c[2] == "decisionRight" and k in (c[4] or "")) if any(c[2] == "decisionRight" and k in (c[4] or "") for c in contrib) else ""), "definition": v[0] + ".", "requirement": "Required", "notes": v[2] if len(v) > 2 else ""}, "spec:decisionRights") for k, v in spec.get("decisionRights", {}).items()]
     m["activities"] = [row({"id": a[0], "name": a[1], "processRef": a[2], "effectClass": a[3], "regions": a[4], "relatedTransitions": a[5], "services": a[6] if len(a) > 6 else [], "lifecyclePhases": [], "permittedIn": "see regions", "activityType": a[3], "nounVerb": "Verb", "permissibility": "Evaluated by the region contracts", "nameQA": dict(zip(("status", "rationale"), name_qa("activity", a[1])))}, "context:" + a[2]) for a in spec.get("activities", [])]
     m["permissionRecords"] = [row({"id": p[0], "activity": p[1], "context": p[2], "outcome": p[3], "guard": p[4], "authority": p[5], "services": p[6], "evidence": p[7], "effect": p[8], "basis": p[9]}, "spec:permissions") for p in spec.get("permissions", [])]
     if not m["permissionRecords"]:
@@ -137,12 +140,14 @@ def build(spec):
         if c > 1: qa.append({"severity": "warning", "rule": "ID", "element": i, "finding": f"duplicate ID ({c})"})
     for s in m["subStates"]:
         if s["nameQA"]["status"] != "PASS": qa.append({"severity": "note", "rule": "N-007", "element": s["id"], "finding": s["nameQA"]["rationale"]})
-    subjects = {r["subject"] for r in m["regions"]}
-    if len(subjects) > 1: qa.append({"severity": "warning", "rule": "N-006 / GA-010", "element": "regions", "finding": f"regions declare {len(subjects)} different subjects: {sorted(subjects)}. Orthogonality requires independently varying conditions of the same subject; a region with another subject is a separate machine coupled by events."})
+    # one FTS per managed element (decision 21 Sep 2026): every region must name what it manages
     for r in m["regions"]:
-        if not any(s["region"] == r["id"] and s["terminal"] for s in m["subStates"]): qa.append({"severity": "note", "rule": "N-007", "element": r["id"], "finding": "region has no terminal state (non-terminating capability condition; confirm)"})
+        if not r.get("managedElement"): qa.append({"severity": "warning", "rule": "N-002 / GA-010", "element": r["id"], "finding": "region does not name the element it manages; each region is its own FTS over one managed element"})
+        if not any(s["region"] == r["id"] and s["terminal"] for s in m["subStates"]): qa.append({"severity": "note", "rule": "N-007", "element": r["id"], "finding": "region has no terminal state (non-terminating condition of the managed element; confirm)"})
     for t in m["transitions"]:
-        if t["level"] != "Initial" and not t.get("decisionRight"): qa.append({"severity": "note", "rule": "N-016", "element": t["id"], "finding": "no Decision Right; confirm this change needs no authorization"})
+        if t["level"] != "Initial" and not t.get("decisionRight"): qa.append({"severity": "warning", "rule": "N-016", "element": t["id"], "finding": "no Decision Right; every KA transition needs one (decision 21 Sep 2026)"})
+    for d in m["decisionRights"]:
+        if "REVIEW" in (d.get("notes") or ""): qa.append({"severity": "note", "rule": "N-016", "element": d["id"], "finding": d["notes"]})
     for c in m["contributions"]:
         if not c.get("expression"): qa.append({"severity": "note", "rule": "SIM-03", "element": c["id"], "finding": "contribution has no simulator expression; the guard will be answered by the user"})
     m["qaFindings"] = qa + spec.get("qaNotes", [])

@@ -284,7 +284,7 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
 
 <script>
 /* ===== build info ===== */
-const BUILD={version:'2.2.0',built:'2026-09-21 08:39 SAST'};
+const BUILD={version:'2.2.1',built:'2026-09-21 08:59 SAST'};
 /* ===== BUNDLED DATA (fallback + seed for the private repo) ===== */
 const BUNDLED = {
  "generated": "2026-09-20",
@@ -5566,8 +5566,8 @@ function recomputeSub(s){
   s.charges=ch;recompute(s);
 }
 function applyImport(res){
-  const touched=new Set();
-  res.add.forEach(({sub,charge})=>{(sub.charges=sub.charges||[]).push(charge);touched.add(sub);dirty[sub.id]=true;});
+  const touched=new Set();const batch='imp_'+Date.now().toString(36);const createdSubIds=[];
+  res.add.forEach(({sub,charge})=>{charge._imp=batch;(sub.charges=sub.charges||[]).push(charge);touched.add(sub);dirty[sub.id]=true;});
   Object.entries(res.newVendors).forEach(([g,charges])=>{
     const meta=IMP_META[g];const last=charges[charges.length-1];
     const unk=g.startsWith('unknown:');
@@ -5575,8 +5575,9 @@ function applyImport(res){
       key:unk?'':g,name:meta?meta[0]:cleanName(charges[0].desc),category:meta?meta[1]:'? (new)',
       entity:last.entity,card:last.card,holder:last.holder,cadence:meta?meta[2]:'monthly',
       vat:meta?meta[3]:'confirm',status:'review',call:'—',buffer_pct:IMP_FOREIGN.has(g)?10:0,
-      charges:charges.slice(),...EDIT_FIELDS};
-    recomputeSub(s);subs().push(s);dirty[s.id]=true;
+      charges:charges.slice(),...EDIT_FIELDS,_impBatch:batch};
+    s.charges.forEach(c=>c._imp=batch);
+    recomputeSub(s);subs().push(s);createdSubIds.push(s.id);dirty[s.id]=true;
     (LIVE.review=LIVE.review||[]).push({kind:'unmatched',severity:'warn',
       title:'New vendor from import: '+s.name,
       detail:'Imported '+charges.length+' charge(s) that didn\'t match an existing subscription — added as Review. Confirm name/entity, set cadence & VAT, or edit to mark one-off / cancel.',
@@ -5589,9 +5590,36 @@ function applyImport(res){
     detail:'Bank fees / current-account movement — excluded from the subscription run-rate.',
     evidence:res.nonsub.map(c=>c.date+' '+c.card+' R'+c.gross.toFixed(2)+' '+c.desc.slice(0,26)).join('; ').slice(0,400)});}
   (LIVE.imports=LIVE.imports||[]).push({at:new Date().toISOString().slice(0,16).replace('T',' '),by:cfg.editor||'',
-    rows:res.rows,added:res.add.length,newVendors:Object.keys(res.newVendors).length,dups:res.dups,nonsub:res.nonsub.length});
+    rows:res.rows,added:res.add.length,newVendors:Object.keys(res.newVendors).length,dups:res.dups,nonsub:res.nonsub.length,
+    batch,createdSubIds});
   closeModal();render();markDirty();
   toast('Imported '+res.add.length+' charge(s), '+Object.keys(res.newVendors).length+' new vendor(s). Save to GitHub to commit.');
+}
+function undoLastImport(){
+  const imps=LIVE.imports||[];const last=imps[imps.length-1];
+  if(last&&last.batch){
+    const ids=new Set(last.createdSubIds||[]);
+    // remove charges this import added to existing subs, and delete subs it created
+    LIVE.subscriptions=subs().filter(s=>!ids.has(s.id));
+    const touched=[];
+    subs().forEach(s=>{const before=(s.charges||[]).length;
+      s.charges=(s.charges||[]).filter(c=>c._imp!==last.batch);
+      if(s.charges.length!==before){recomputeSub(s);dirty[s.id]=true;touched.push(s);}});
+    imps.pop();
+    applyOverdueRule();markDirty();render();
+    toast('Reverted import of '+last.at+' — removed '+(ids.size)+' vendor(s) and '+last.added+' matched charge(s). Save to GitHub to commit.');
+    return;
+  }
+  // legacy / untagged (e.g. the earlier bad import): remove import-created unmatched vendors
+  const bad=subs().filter(s=>(!s.key)&&!s.edited_by);
+  if(!bad.length){toast('Nothing to undo — no import-created unmatched vendors found.');return;}
+  if(!confirm('Remove '+bad.length+' import-created unmatched vendor(s)?\n\nThese have no matched vendor and were never edited by hand. Subscriptions you added or edited yourself are kept.\n\n'+bad.slice(0,12).map(s=>'• '+s.name).join('\n')+(bad.length>12?'\n…':'')))return;
+  const ids=new Set(bad.map(s=>s.id));
+  LIVE.subscriptions=subs().filter(s=>!ids.has(s.id));
+  bad.forEach(s=>{delete dirty[s.id];});
+  dirty['__undo_'+Date.now()]=true;   // force a dirty state so the removal can be saved
+  applyOverdueRule();markDirty();render();
+  toast('Removed '+bad.length+' unmatched vendor(s). Save to GitHub to commit.');
 }
 function openImport(){
   const root=document.getElementById('modalRoot');
@@ -5600,13 +5628,16 @@ function openImport(){
     <div class="mdesc">Pick an FNB <b>AccountTransactionsReport</b> CSV (the same export we use — it carries the card in each row, so one file can cover several cards). Charges are matched to existing subscriptions; new vendors go to the review inbox; duplicates already in the register are skipped.</div>
     <input type="file" id="impFile" accept=".csv,text/csv" style="margin:6px 0 4px">
     <div id="impPreview"></div>
-    <div class="modal-foot"><div class="grow"></div>
+    <div class="modal-foot">
+      <button class="btn danger" id="impUndo" title="Revert the most recent import (or clean up import-created unmatched vendors)">Undo last import</button>
+      <div class="grow"></div>
       <button class="btn ghost" id="impCancel">Cancel</button>
       <button class="btn" id="impApply" disabled>Apply import</button></div>
   </div></div>`;
   let result=null;
   const $=x=>document.getElementById(x);
   $('impCancel').onclick=closeModal;
+  $('impUndo').onclick=()=>{closeModal();undoLastImport();};
   $('impFile').onchange=e=>{
     const file=e.target.files[0];if(!file)return;
     const rd=new FileReader();
@@ -5615,7 +5646,10 @@ function openImport(){
       if(p.error){$('impPreview').innerHTML=`<div class="note-box" style="color:var(--cancel)">${esc(p.error)}</div>`;return;}
       result=classifyImport(p.rows);
       const nv=Object.entries(result.newVendors);
-      $('impPreview').innerHTML=`
+      const unmappedCards=[...new Set(p.rows.filter(r=>!Object.values(IMP_CARD_MAP).some(v=>v[1]===r.card)).map(r=>r.card))];
+      const warn=(nv.length>=5||unmappedCards.length)?`<div class="note-box" style="color:var(--cancel);border:1px solid var(--cancel)">
+        ⚠ This looks like a statement the simple importer can't read cleanly${unmappedCards.length?' (unrecognised account/card: '+unmappedCards.map(esc).join(', ')+')':''}${nv.length>=5?' — it would create <b>'+nv.length+'</b> separate new vendors':''}. If these are bank-reference lines (SWIFT, EFT), <b>don\\'t apply</b> — use the Claude import skill instead so they group into real vendors.</div>`:'';
+      $('impPreview').innerHTML=warn+`
         <div class="note-box" style="margin-top:12px">
           <div><b>${p.rows.length}</b> transaction rows read from <b>${esc(file.name)}</b></div>
           <div style="margin-top:8px;display:grid;gap:5px">

@@ -28,7 +28,7 @@ def export(m, out):
         ("The three layers", Font(bold=True)),
         *[(f"Layer {l['id'][-1]} {l['name']}: {l['question']} Constructs: {l['constructs']} Boundary: {l['boundary']}", None) for l in meta.get("layers", [])],
         ("", None), ("How to review", Font(bold=True)),
-        ("1. Regions and States are the Global FTS: four machines that run concurrently; the Data Asset's condition at a time is one state per region (the State Vector).", None),
+        (("1. Regions are the Knowledge Area's FTSs: one state machine per managed element (see the Regions sheet), running concurrently; the KA's condition at a time is one state per region (the State Vector)." if meta.get("level") == "knowledge-area" else "1. Regions and States are the Global FTS: four machines that run concurrently; the Data Asset's condition at a time is one state per region (the State Vector)."), None),
         ("2. Transitions, Events, Guards and Cross-Region Constraints are the transition contract: Eligible = Event and Active(source) and Exit and Guard and Entry and Invariants; Permitted = Eligible and risk acceptability and control satisfaction and assurance satisfaction and authorization.", None),
         ("3. Lifecycle Phases and Activities are Layer 1: work, never states. Permission Records say what an activity may do in a given state or vector.", None),
         ("4. GRCA Services, Controls, Decision Rights, Exceptions and Evidence are Layer 3.", None),
@@ -70,7 +70,13 @@ def export(m, out):
     if m.get("lifecycle", {}).get("effectClasses"): sheet(wb, "Effect Classes", ["Effect classification", "Definition", "Examples", "Source"], [[e["effectClass"], e["definition"], e["examples"], e.get("origin", "")] for e in m.get("lifecycle", {}).get("effectClasses", [])], [24, 90, 60, 50])
     sheet(wb, "Activities" if not ph else "Lifecycle Activities", ["Activity ID", "Activity", "Effect classification", "Lifecycle phases", "Related transitions", "GRCA services", "Permission records", "Name QA", "Notes", "Status", "Source"],
           [[a["id"], a["name"], a["effectClass"], a.get("lifecyclePhases", []), a.get("relatedTransitions", []), a.get("services", []), "; ".join(p["id"] for p in m.get("permissionRecords", []) if p["activity"] == a["id"]), g(g(a, "nameQA", {}), "status"), g(a, "notes"), S(a), O(a)] for a in m["activities"]], [10, 26, 34, 24, 30, 34, 20, 10, 50, 20, 40])
-    sheet(wb, "Regions", ["Region ID", "Region", "Code", "Question", "Initial state", "Terminal states", "Region invariant / rule", "States", "Transitions", "Status", "Source"],
+    ka_regions = any(r.get("managedElement") for r in m.get("regions", []))
+    if ka_regions:
+        sheet(wb, "Regions", ["Region ID", "Region (FTS)", "Code", "Managed element", "Element kind", "Instance scope", "Conditions that matter", "Question", "Initial state", "Terminal states", "Region invariant / rule", "States", "Transitions", "Contributes to the Global regions", "Issue sources", "Status", "Source"],
+              [[r["id"], r["name"], r["code"], r.get("managedElement", ""), r.get("elementKind", ""), r.get("instanceScope", ""), r.get("conditionsThatMatter", ""), r["question"], r["initialState"], "; ".join(s["id"] for s in m["subStates"] if s.get("region") == r["id"] and s.get("terminal")), r["regionInvariant"], sum(1 for s in m["subStates"] if s.get("region") == r["id"]), sum(1 for t in m["transitions"] if t.get("region") == r["id"] and t["level"] != "Initial"), r.get("contributesTo", ""), "; ".join(r.get("issueSources", [])), S(r), O(r)] for r in m.get("regions", [])], [10, 24, 6, 44, 14, 30, 36, 44, 12, 14, 44, 8, 10, 60, 40, 20, 40],
+              note=(m.get("meta", {}).get("regionModel") or "One FTS per managed element: each region is its own state machine over the element it names."))
+    else:
+        sheet(wb, "Regions", ["Region ID", "Region", "Code", "Question", "Initial state", "Terminal states", "Region invariant / rule", "States", "Transitions", "Status", "Source"],
           [[r["id"], r["name"], r["code"], r["question"], r["initialState"], "; ".join(s["id"] for s in m["subStates"] if s.get("region") == r["id"] and s.get("terminal")), r["regionInvariant"], sum(1 for s in m["subStates"] if s.get("region") == r["id"]), sum(1 for t in m["transitions"] if t.get("region") == r["id"] and t["level"] != "Initial"), S(r), O(r)] for r in m.get("regions", [])], [10, 24, 6, 50, 12, 20, 50, 8, 10, 20, 40])
     sheet(wb, "States", ["State ID", "Region", "State", "Initial?", "Terminal?", "Definition", "Invariant", "Entry condition", "Exit condition", "Semantic class", "Name QA", "Name QA rationale", "Status", "Source"],
           [[s["id"], s.get("region"), s["name"], s.get("initial", False), s.get("terminal", False), s["definition"],

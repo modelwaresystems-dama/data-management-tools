@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="945c710c99ce" data-built="18 Sep 2026" data-version="1.43.0">
+<meta name="crm-build" content="3f11833bd6b4" data-built="21 Sep 2026" data-version="1.44.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1466,6 +1466,34 @@ function followupsFor(st, subjectId){
 }
 function openFollowupsFor(st, subjectId){
   return followupsFor(st, subjectId).filter(function(f){ return f.status === "open"; });
+}
+/* WHOSE STEPS GO WITH A DEAL WHEN IT CHANGES HANDS.
+
+   A follow-up carries its own owner, because Today is built from follow-ups,
+   not from deals. So reassigning a deal and leaving its open steps where they
+   were hands the new owner a deal with nothing to do on it, while the old
+   owner's Today keeps chasing a customer who is no longer theirs. That is
+   NMG Administrators Botswana on 21 September: Debbie's deal, four open steps
+   in Paul's list, and nothing in hers.
+
+   Every open step not already with the new owner is offered. The edit form
+   ticks them all; a genuinely delegated step (Veronica raising the invoice)
+   can be unticked there, which is the only reason they are listed rather than
+   moved blind. */
+function stepsToHandOver(st, dealId, toOwner){
+  return openFollowupsFor(st, dealId).filter(function (f){
+    return f.subjectType === "deal" && (f.owner || "") !== (toOwner || ""); });
+}
+/* Open steps sitting with somebody other than the deal's owner, however they
+   got there — an owner changed before this build, a step created by whoever
+   was logging, an import that named the wrong person. The panel says so and
+   offers the fix; it never moves them on its own, because a delegated step
+   looks exactly like a stranded one. */
+function strandedSteps(st, dealId){
+  var d = st.deals[dealId];
+  if (!d || !d.owner) return [];
+  return openFollowupsFor(st, dealId).filter(function (f){
+    return f.subjectType === "deal" && f.owner && f.owner !== d.owner; });
 }
 function interactionsFor(st, subjectId){
   var out = [];
@@ -4079,9 +4107,20 @@ function importTriage(text, st, cfg, ctx){
           out.errors.push(where + ": " + wantOwner + " does not carry commission-earning deals. " +
             "Either name one of: " + sellers.join(", ") + ", or set “commission” to false.");
         } else {
-          changes.push({ what:"owner", from:deal.owner, to:wantOwner,
-            event:{ id:"ev_dox_" + stem, type:"deal.updated", actor:actor,
-                    payload:{ dealId:deal.id, owner:wantOwner } } });
+          /* The open steps go with it. An import is the likeliest way an owner
+             gets corrected, and correcting it without them is the NMG bug. */
+          var moving = stepsToHandOver(st, deal.id, wantOwner);
+          var ownEvents = [{ id:"ev_dox_" + stem, type:"deal.updated", actor:actor,
+                             payload:{ dealId:deal.id, owner:wantOwner } }];
+          moving.forEach(function (f){
+            ownEvents.push({ id:"ev_fho_" + triageHash(f.id + "\u241f" + wantOwner),
+              type:"followup.updated", actor:actor,
+              payload:{ followupId:f.id, owner:wantOwner } }); });
+          changes.push({ what:"owner", from:deal.owner, to:wantOwner, events:ownEvents,
+            note: moving.length
+              ? moving.length + " open step" + (moving.length === 1 ? " moves" : "s move") +
+                " with it: " + moving.map(function (f){ return "\u201c" + f.what + "\u201d"; }).join(", ")
+              : "" });
         }
       }
     }
@@ -5158,6 +5197,7 @@ var API = {
   relDays:relDays, uid:uid,
   sortEvents:sortEvents, foldEvents:foldEvents,
   openFollowups:openFollowups, followupsFor:followupsFor, openFollowupsFor:openFollowupsFor,
+  stepsToHandOver:stepsToHandOver, strandedSteps:strandedSteps,
   interactionsFor:interactionsFor, interactionsForCompany:interactionsForCompany,
   companySummary:companySummary,
   mailWatermark:mailWatermark,
@@ -7609,6 +7649,32 @@ function openDeal(dealId){
         onclick:function (e){ deferPopover(e.currentTarget, f); } }, "Defer"));
     fusec.appendChild(row);
   });
+  /* Steps with somebody other than the owner show in THAT person's Today and
+     nowhere in the owner's. Said here, with the fix beside it. */
+  var stranded = C.strandedSteps(App.st, d.id);
+  if (stranded.length){
+    var who = {};
+    stranded.forEach(function (f){ who[f.owner] = 1; });
+    var whoNames = Object.keys(who).map(userName).join(" and ");
+    fusec.appendChild(h("div", { class:"note stranded",
+        style:"margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:6px" },
+      h("div", { text: stranded.length + " of these " +
+        (stranded.length === 1 ? "is" : "are") + " with " + whoNames + ", not " +
+        userName(d.owner) + ", who owns this deal \u2014 so " +
+        (stranded.length === 1 ? "it shows" : "they show") + " in " + whoNames +
+        "\u2019s Today and not in " + userName(d.owner) + "\u2019s." }),
+      h("div", { style:"margin-top:6px" },
+        h("button", { class:"btn btn-sm", type:"button", onclick:function (){
+          stranded.forEach(function (f){
+            emit("followup.updated", { followupId:f.id, owner:d.owner }); });
+          render(); openDeal(d.id);
+          toast("Moved " + stranded.length + " step" + (stranded.length === 1 ? "" : "s") +
+                " to " + userName(d.owner) + ".");
+        } }, "Give " + (stranded.length === 1 ? "it" : "them") + " to " + userName(d.owner)),
+        h("span", { class:"k", style:"margin-left:8px",
+          text:"or use Edit to move only some" }))));
+  }
+
   var doneFus = fus.filter(function (f){ return f.status !== "open"; });
   if (doneFus.length)
     fusec.appendChild(h("div", { class:"note",
@@ -8914,6 +8980,38 @@ function editDeal(anchor, d){
     h("label", { class:"fld" }, h("span", { text:"Currency" }), cur)));
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Expected close" }), close));
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Owner" }), owner));
+
+  /* The open steps go with the deal. Listed, not moved blind: each is ticked,
+     and a step deliberately given to somebody else can be unticked. */
+  var handBox = h("div", { class:"handover", style:"margin:-4px 0 10px" });
+  var handTicks = {};
+  var paintHandover = function (){
+    clear(handBox);
+    var to = owner.value;
+    var steps = C.stepsToHandOver(App.st, d.id, to);
+    if (!steps.length) return;
+    var changed = to !== d.owner;
+    handBox.appendChild(h("div", { class:"note", style:"margin-bottom:4px",
+      text: changed
+        ? "These open steps go to " + userName(to) + " with the deal. Untick one only " +
+          "if it was deliberately given to somebody else."
+        : steps.length + " open step" + (steps.length === 1 ? " is" : "s are") +
+          " with somebody other than " + userName(to) + ", who owns this deal. " +
+          "Tick any that should be " + userName(to) + "\u2019s." }));
+    steps.forEach(function (f){
+      var cb = h("input", { type:"checkbox", "aria-label":"Move \u201c" + f.what + "\u201d to " + userName(to) });
+      cb.checked = changed;
+      handTicks[f.id] = cb;
+      handBox.appendChild(h("label", { class:"fld chk", style:"margin:2px 0" }, cb,
+        h("span", null, h("span", { text:f.what }),
+          h("span", { class:"k", style:"margin-left:6px",
+            text:"\u00b7 now " + (f.owner ? userName(f.owner) : "nobody") +
+                 " \u00b7 due " + C.fmtDay(f.dueDate) }))));
+    });
+  };
+  owner.addEventListener("change", function (){ handTicks = {}; paintHandover(); });
+  paintHandover();
+  box.appendChild(handBox);
   /* Per deal, by ruling — rates differ by what is being sold. Blank means no
      commission is computed at all, which is honest; a defaulted rate would be a
      number somebody eventually gets paid on. */
@@ -9172,6 +9270,15 @@ function editDeal(anchor, d){
         commissionable: !noComm.checked,
         commissionRate: noComm.checked ? null : (rp === "" ? null : C.round2(+rp) / 100),
         expectedCloseDate: close.value.trim() ? C.parseDateInput(close.value, App.today) : null });
+      /* After the deal, so the fold already has the new owner when the steps
+         arrive — and a re-render between the two can never show the steps
+         stranded under the old one. */
+      Object.keys(handTicks).forEach(function (fid){
+        var f = App.st.followups[fid];
+        if (!handTicks[fid].checked || !f || f.status !== "open") return;
+        if (f.owner === owner.value) return;
+        emit("followup.updated", { followupId:fid, owner:owner.value });
+      });
       closeLayers(); render(); openDeal(d.id);
     }}, "Save")));
   openPopover(anchor, box);

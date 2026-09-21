@@ -62,6 +62,10 @@ def export(m, out):
         sheet(wb, "KA Couplings", ["Coupling ID", "Target model", "Target transition", "Event", "Expression", "Predicate", "Note", "Status", "Source"],
               [[k["id"], k["targetModel"], k["targetTransition"], k.get("event", ""), k.get("expression", ""), k["predicate"], k.get("note", ""), S(k), O(k)] for k in m["kaCouplings"]], [14, 12, 16, 12, 34, 70, 50, 20, 40],
               note="How this Knowledge Area couples to another Knowledge Area's FTS (events emitted into it, or its facts cited by a transition here). Loose coupling: never a shared state, never a Global transition (those are on Global Contributions).")
+    if m.get("regulatoryFacts"):
+        sheet(wb, "Regulatory Facts", ["Fact ID", "Regulation", "Topic", "Obligation", "Model reference", "Verification", "Status", "Source"],
+              [[r["id"], r["regulation"], r["topic"], r["obligation"], r["modelReference"], r.get("verification", ""), S(r), O(r)] for r in m["regulatoryFacts"]], [14, 18, 30, 80, 40, 12, 20, 40],
+              note="Regulatory obligations the regulation-neutral states, events and time triggers cite. Periods marked verify are to be checked against the current text of each Act before use.")
     if m.get("roles"):
         sheet(wb, "Roles", ["Role ID", "Role", "Category", "Responsibility", "Status", "Source"], [[r["id"], r["name"], g(r, "accountability"), g(r, "responsibility"), S(r), O(r)] for r in m["roles"]], [12, 30, 12, 60, 20, 40])
     if m.get("artefacts"):

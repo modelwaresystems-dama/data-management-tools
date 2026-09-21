@@ -34,7 +34,7 @@ CONTEXT = {
         {"id": "2", "name": "Understand Metadata Requirements", "phase": "P", "subActivities": ["2.1 Business User Requirements", "2.2 Technical User Requirements"]},
         {"id": "3", "name": "Define Metadata Architecture", "phase": "P", "subActivities": ["3.1 Create MetaModel (D)", "3.2 Apply Metadata Standards (C)", "3.3 Manage Metadata Stores (C)"]},
         {"id": "4", "name": "Create and Maintain Metadata", "phase": "O", "subActivities": ["4.1 Integrate Metadata (O)", "4.2 Distribute and Deliver Metadata (O)"]},
-        {"id": "5", "name": "Query, Report and Analyze Metadata", "phase": "", "subActivities": [], "note": "No phase tag on the slide."},
+        {"id": "5", "name": "Query, Report and Analyze Metadata", "phase": "O", "subActivities": [], "note": "No phase tag on the slide; (O) inferred (decision 21 Sep 2026)."},
     ],
     "deliverables": ["Metadata Strategy", "Metadata Standards", "Metadata Architecture", "MetaModel", "Unified Metadata", "Metadata Stores", "Data Lineage", "Impact Analysis", "Dependency Analysis", "Metadata Control Process"],
     "suppliers": ["Business Data Stewards", "Data Managers", "Data Governance Bodies", "Data Modelers", "Database Administrators"],
@@ -196,12 +196,12 @@ SPEC = {
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
     "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
-        {"id": "SRC-MM-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "Process 5 carries no phase tag on the slide."},
+        {"id": "SRC-MM-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "Process 5 carries no phase tag on the slide; (O) inferred by decision."},
         {"id": "SRC-MM-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating, quality and security delegation", "limitations": ""},
         {"id": "SRC-MM-003", "source": SRC_PROTOCOL, "type": "Alignment target", "location": "Private repo models/", "use": "Global transition IDs for contributions; DG and DQ transition IDs for couplings", "limitations": ""},
     ],
     "qaNotes": [
-        {"severity": "note", "rule": "N-007", "element": "STS-AST-06", "finding": "Archived Metadata is terminal per Data Asset instance, mirroring the Global Destruction and Custody Closure terminals; the scope-level regions have no terminal state, consistent with the DG decision of 21 Sep 2026. Confirm."},
+        {"severity": "note", "rule": "N-007", "element": "STS-AST-06", "finding": "Archived Metadata is terminal per Data Asset instance, mirroring the Global Destruction and Custody Closure terminals (decision 21 Sep 2026, Howard: keep terminal); the scope-level regions have no terminal state."},
         {"severity": "note", "rule": "GA-005", "element": "KA-MM", "finding": "The Programme and the Architecture and Stores change rarely relative to a Data Asset and gate the per-asset metadata through XRG-MM-02/03; the Metadata of a Data Asset is the only MM region that gates Global transitions."},
         {"severity": "note", "rule": "derived", "element": "STATES", "finding": "All state names, events, decision rights, holders and services are first-pass drafts from the context diagram; every one is for Howard's review."},
     ],

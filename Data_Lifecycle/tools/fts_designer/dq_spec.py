@@ -31,7 +31,7 @@ CONTEXT = {
         {"id": "2", "name": "Define a Data Quality Strategy", "phase": "P", "subActivities": []},
         {"id": "3", "name": "Define Scope of Initial Assessment", "phase": "P", "subActivities": ["3.1 Identify Critical Data", "3.2 Identify Existing Rules and Patterns"]},
         {"id": "4", "name": "Perform Initial Data Quality Assessment", "phase": "P", "subActivities": ["4.1 Identify and prioritize issues", "4.2 Perform root cause analysis of issues"]},
-        {"id": "5", "name": "Identify and Prioritize Improvements", "phase": "", "subActivities": ["5.1 Prioritize Actions based on Business Impact", "5.2 Develop Preventative and Corrective Actions", "5.3 Confirm Planned Actions"], "note": "No phase tag on the slide."},
+        {"id": "5", "name": "Identify and Prioritize Improvements", "phase": "P", "subActivities": ["5.1 Prioritize Actions based on Business Impact", "5.2 Develop Preventative and Corrective Actions", "5.3 Confirm Planned Actions"], "note": "No phase tag on the slide; (P) inferred (decision 21 Sep 2026)."},
         {"id": "6", "name": "Develop and Deploy Data Quality Operations", "phase": "D", "subActivities": ["6.1 Develop Data Quality Operational Procedures", "6.2 Correct Data Quality Defects", "6.3 Measure and Monitor Data Quality", "6.4 Report on Data Quality levels and findings"]},
     ],
     "deliverables": ["Data Quality Strategy and framework", "Data Quality Program organization", "Analyses from Data Profiling", "Recommendations based on root cause analysis of issues", "DQM Procedures", "Data Quality Reports", "Data Quality Governance Reports", "Data Quality Service Level Agreements", "DQ Policies and Guidelines"],
@@ -189,7 +189,7 @@ SPEC = {
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
     "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
-        {"id": "SRC-DQ-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics, KA triangle", "limitations": "Process 5 carries no phase tag on the slide."},
+        {"id": "SRC-DQ-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics, KA triangle", "limitations": "Process 5 carries no phase tag on the slide; (P) inferred by decision."},
         {"id": "SRC-DQ-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, issue coupling, Assurance gating", "limitations": ""},
         {"id": "SRC-DQ-003", "source": SRC_PROTOCOL, "type": "Alignment target", "location": "Private repo models/", "use": "Global transition IDs for contributions; DG transition IDs for couplings", "limitations": ""},
     ],

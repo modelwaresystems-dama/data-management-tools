@@ -87,6 +87,7 @@ def build(spec):
     for c in contrib:
         if c[2] in ("guard", "decisionRight", "control"):
             m["guards"].append(row({"id": "GRD-" + c[0], "name": f"{meta.get('knowledgeArea')} contribution {c[0]}", "transition": c[1], "predicate": c[4], "scope": f"{meta.get('knowledgeArea')} (federated)", "requirement": c[6], "expression": c[5], "contribution": c[0]}, "spec:contributions"))
+    m["regulatoryFacts"] = [row({"id": r[0], "regulation": r[1], "topic": r[2], "obligation": r[3], "modelReference": r[4], "verification": r[5] if len(r) > 5 else ""}, "spec:regulatoryFacts") for r in spec.get("regulatoryFacts", [])]
     m["kaCouplings"] = [row({"id": k[0], "targetModel": k[1], "targetTransition": k[2], "event": k[3], "expression": k[4], "predicate": k[5], "note": k[6] if len(k) > 6 else ""}, "spec:kaCouplings") for k in spec.get("kaCouplings", [])]
     m["kaInteractions"] = [row({"id": "KAI-" + c[0][4:], "subState": c[1], "knowledgeArea": meta.get("knowledgeArea"), "interactionType": c[2], "applicability": c[6], "description": c[4], "notes": "requires " + json.dumps(c[3])}, "spec:contributions") for c in contrib]
     m["kaMatrix"] = []

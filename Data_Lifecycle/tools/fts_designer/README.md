@@ -24,3 +24,9 @@ Runs the minimum validation suite (referential integrity, initial and terminal s
 - `fsm_source.js` renders the regions as concurrent regions inside the protocol composite (Mermaid `--`); `fts_scxml.py` emits `<parallel>` with one compound `<state>` per region.
 
 - `fts_feedback.py model.fts.json reviews/*_feedback.json` attaches the viewer's downloaded feedback notes to the model as `reviewItems`; `protocol_workbook.py` then writes them to a Review Items sheet. Viewer v0.6.1 adds the Feedback tab and feedback boxes on states, transitions, permission records and simulation steps.
+
+## Knowledge Area FTS (v0.3 schema, orthogonal regions)
+
+- `ka_build.py` compiles a KA spec (regions, states, transitions, events, decision rights, roles, artefacts, activities, services, contributions to the Global protocol, cross-region constraints, state vectors) into `.fts.json`; permission records are derived from the transition-causing activities when the spec gives none.
+- `dg_spec.py` is the Data Governance spec (five regions from the context diagram); run `python dg_spec.py out/` then `python fts_sim.py out/data_governance.fts.json --align global_protocol.fts.json` (checks every contribution targets a real Global transition) and `python protocol_workbook.py`.
+- Contributions are emitted as guards on the Global transition IDs, so the viewer federates them onto the Global model; `meta.factBindings` lets the viewer derive the contribution facts from the KA's State Vector when both models are loaded.

@@ -40,14 +40,35 @@ def export(m, out):
         if f: c.font = f
     ws.column_dimensions["A"].width = 130
 
-    sheet(wb, "Architecture", ["Layer", "Name", "Primary question", "Primary constructs", "Boundary"], [[l["id"], l["name"], l["question"], l["constructs"], l["boundary"]] for l in meta.get("layers", [])], [8, 40, 50, 50, 50])
-    sheet(wb, "Guardrails", ["ID", "Guardrail", "Statement", "Status", "Authority"], [[r["id"], r["shortName"], r["statement"], r["status"], r["authority"]] for r in m["rules"]], [8, 30, 90, 22, 40])
+    if meta.get("layers"): sheet(wb, "Architecture", ["Layer", "Name", "Primary question", "Primary constructs", "Boundary"], [[l["id"], l["name"], l["question"], l["constructs"], l["boundary"]] for l in meta.get("layers", [])], [8, 40, 50, 50, 50])
+    cc = m.get("contextCapture") or {}
+    if cc:
+        rows = [["Definition", "", cc.get("definition", ""), "", ""], ["Ensures", "", cc.get("ensures", ""), "", ""]]
+        for gl in cc.get("goals", []): rows.append(["Goal", "", gl, "", ""])
+        for d in cc.get("businessDrivers", []): rows.append(["Business driver", "", d, "", ""])
+        for i, x in enumerate(cc.get("inputs", []), 1): rows.append(["Input", f"IN-{i}", x, "", ""])
+        for pr in cc.get("processes", []):
+            rows.append(["Process", pr.get("id"), pr.get("name"), pr.get("phase", ""), pr.get("note", "")])
+            for sa in pr.get("subActivities", []): rows.append(["Sub-activity", sa.split(" ")[0], sa[len(sa.split(" ")[0]):].strip(), pr.get("phase", ""), ""])
+        for i, x in enumerate(cc.get("deliverables", []), 1): rows.append(["Deliverable", f"DEL-{i}", x, "", ""])
+        for sec in ["suppliers", "participants", "consumers", "techniques", "tools", "metrics"]:
+            for i, x in enumerate(cc.get(sec, []), 1): rows.append([sec[:-1].capitalize(), f"{sec[:3].upper()}-{i}", x, "", ""])
+        sheet(wb, "Context Capture", ["Section", "Item ID", "Item", "Phase", "Note"], rows, [16, 10, 80, 8, 50], note=f"Structured capture of the {cc.get('knowledgeArea', '')} context diagram (image pages). {cc.get('phaseTags', '')}")
+    if m.get("contributions"):
+        sheet(wb, "Global Contributions", ["Contribution ID", "Global transition", "Kind", "Required KA states", "Predicate", "Simulator expression", "Requirement", "Note", "Status", "Source"],
+              [[c["id"], c["globalTransition"], c["kind"], json.dumps(c.get("requiredStates", {})), c["predicate"], c.get("expression") or "", c.get("requirement", ""), c.get("note", ""), S(c), O(c)] for c in m["contributions"]], [14, 14, 12, 40, 70, 40, 14, 50, 20, 40],
+              note="How this Knowledge Area reaches the Global Data Asset Protocol: guards, decision rights, services and events on named Global transitions (GA-005, GA-009). The viewer federates the guard rows onto the Global transitions; the simulator derives the fact values from this model's State Vector when both models are loaded.")
+    if m.get("roles"):
+        sheet(wb, "Roles", ["Role ID", "Role", "Category", "Responsibility", "Status", "Source"], [[r["id"], r["name"], g(r, "accountability"), g(r, "responsibility"), S(r), O(r)] for r in m["roles"]], [12, 30, 12, 60, 20, 40])
+    if m.get("artefacts"):
+        sheet(wb, "Artefacts", ["Artefact ID", "Artefact", "Produced in", "Producing activity", "Evidence use", "Status", "Source"], [[a["id"], a["name"], g(a, "producedIn"), g(a, "producingActivity"), g(a, "evidenceUse"), S(a), O(a)] for a in m["artefacts"]], [12, 40, 14, 40, 50, 20, 40])
+    if m.get("rules"): sheet(wb, "Guardrails", ["ID", "Guardrail", "Statement", "Status", "Authority"], [[r["id"], r["shortName"], r["statement"], r["status"], r["authority"]] for r in m["rules"]], [8, 30, 90, 22, 40])
     ph = m.get("lifecycle", {}).get("phases", [])
-    sheet(wb, "Lifecycle Phases", ["Phase ID", "Phase", "Purpose", "Execution trait / concurrency", "Entry context", "Activities", "Name QA", "Status", "Source"],
+    if ph: sheet(wb, "Lifecycle Phases", ["Phase ID", "Phase", "Purpose", "Execution trait / concurrency", "Entry context", "Activities", "Name QA", "Status", "Source"],
           [[p["id"], p["name"], p["purpose"], p["nonLinearity"], g(p, "entryContext"), "; ".join(a["id"] for a in m["activities"] if p["id"] in a.get("lifecyclePhases", [])), g(g(p, "nameQA", {}), "status"), S(p), O(p)] for p in ph], [10, 26, 60, 34, 40, 40, 10, 20, 40],
           note=(m.get("lifecycle", {}).get("mappingRule") or ""))
-    sheet(wb, "Effect Classes", ["Effect classification", "Definition", "Examples", "Source"], [[e["effectClass"], e["definition"], e["examples"], e.get("origin", "")] for e in m.get("lifecycle", {}).get("effectClasses", [])], [24, 90, 60, 50])
-    sheet(wb, "Lifecycle Activities", ["Activity ID", "Activity", "Effect classification", "Lifecycle phases", "Related transitions", "GRCA services", "Permission records", "Name QA", "Notes", "Status", "Source"],
+    if m.get("lifecycle", {}).get("effectClasses"): sheet(wb, "Effect Classes", ["Effect classification", "Definition", "Examples", "Source"], [[e["effectClass"], e["definition"], e["examples"], e.get("origin", "")] for e in m.get("lifecycle", {}).get("effectClasses", [])], [24, 90, 60, 50])
+    sheet(wb, "Activities" if not ph else "Lifecycle Activities", ["Activity ID", "Activity", "Effect classification", "Lifecycle phases", "Related transitions", "GRCA services", "Permission records", "Name QA", "Notes", "Status", "Source"],
           [[a["id"], a["name"], a["effectClass"], a.get("lifecyclePhases", []), a.get("relatedTransitions", []), a.get("services", []), "; ".join(p["id"] for p in m.get("permissionRecords", []) if p["activity"] == a["id"]), g(g(a, "nameQA", {}), "status"), g(a, "notes"), S(a), O(a)] for a in m["activities"]], [10, 26, 34, 24, 30, 34, 20, 10, 50, 20, 40])
     sheet(wb, "Regions", ["Region ID", "Region", "Code", "Question", "Initial state", "Terminal states", "Region invariant / rule", "States", "Transitions", "Status", "Source"],
           [[r["id"], r["name"], r["code"], r["question"], r["initialState"], "; ".join(s["id"] for s in m["subStates"] if s.get("region") == r["id"] and s.get("terminal")), r["regionInvariant"], sum(1 for s in m["subStates"] if s.get("region") == r["id"]), sum(1 for t in m["transitions"] if t.get("region") == r["id"] and t["level"] != "Initial"), S(r), O(r)] for r in m.get("regions", [])], [10, 24, 6, 50, 12, 20, 50, 8, 10, 20, 40])
@@ -78,10 +99,10 @@ def export(m, out):
           note="The report's worked examples and the definitions of the Availability states. The full permission matrix is in the validated workbook, which could not be read (encrypted).")
     sheet(wb, "Exceptions", ["Exception ID", "Exception", "Transition", "Basis", "Authority", "Conditions", "Status values", "Status", "Source"], [[x["id"], x["name"], g(x, "transition"), g(x, "basis"), g(x, "authority"), g(x, "conditions"), g(x, "statusValues"), S(x), O(x)] for x in m["exceptions"]], [10, 36, 12, 40, 30, 70, 30, 20, 40])
     sheet(wb, "Evidence", ["Evidence ID", "Evidence", "Type", "Relates to", "Description", "Requirement", "Status", "Source"], [[e["id"], e["name"], g(e, "evidenceType"), g(e, "relatesTo"), g(e, "description"), g(e, "requirement"), S(e), O(e)] for e in m["evidence"]], [10, 36, 22, 12, 70, 12, 20, 40])
-    sheet(wb, "Conformance Clauses", ["Clause ID", "Title", "Candidate normative text (SHALL is proposed, not approved)"], [[c["id"], c["title"], c["clause"]] for c in m.get("conformance", [])], [10, 30, 110])
-    sheet(wb, "Recommendations", ["ID", "Recommendation", "Proposed decision", "Suggested disposition"], [[r["id"], r["title"], r["proposedDecision"], r["suggestedDisposition"]] for r in m.get("recommendations", [])], [8, 40, 80, 26])
-    sheet(wb, "Editorial Decisions", ["Decision ID", "Question for the Board", "Recommended decision", "If deferred"], [[e["id"], e["question"], e["recommended"], e["ifDeferred"]] for e in m.get("editorialDecisions", [])], [10, 50, 60, 50])
-    sheet(wb, "Naming Standard", ["Element type", "Naming pattern", "Example", "Source"], [[n["elementType"], n["pattern"], n["example"], n["source"]] for n in m.get("namingStandard", [])], [20, 70, 40, 60])
+    if m.get("conformance"): sheet(wb, "Conformance Clauses", ["Clause ID", "Title", "Candidate normative text (SHALL is proposed, not approved)"], [[c["id"], c["title"], c["clause"]] for c in m.get("conformance", [])], [10, 30, 110])
+    if m.get("recommendations"): sheet(wb, "Recommendations", ["ID", "Recommendation", "Proposed decision", "Suggested disposition"], [[r["id"], r["title"], r["proposedDecision"], r["suggestedDisposition"]] for r in m.get("recommendations", [])], [8, 40, 80, 26])
+    if m.get("editorialDecisions"): sheet(wb, "Editorial Decisions", ["Decision ID", "Question for the Board", "Recommended decision", "If deferred"], [[e["id"], e["question"], e["recommended"], e["ifDeferred"]] for e in m.get("editorialDecisions", [])], [10, 50, 60, 50])
+    if m.get("namingStandard"): sheet(wb, "Naming Standard", ["Element type", "Naming pattern", "Example", "Source"], [[n["elementType"], n["pattern"], n["example"], n["source"]] for n in m.get("namingStandard", [])], [20, 70, 40, 60])
     qa = [[s["id"], "State", s["name"], g(g(s, "nameQA", {}), "status"), g(g(s, "nameQA", {}), "rationale")] for s in m["subStates"]] + \
          [[t["id"], "Transition", t["name"], g(g(t, "nameQA", {}), "status"), g(g(t, "nameQA", {}), "rationale")] for t in m["transitions"] if t["level"] != "Initial"] + \
          [[a["id"], "Activity", a["name"], g(g(a, "nameQA", {}), "status"), g(g(a, "nameQA", {}), "rationale")] for a in m["activities"]] + \

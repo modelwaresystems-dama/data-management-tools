@@ -69,6 +69,7 @@ class Model:
         for s in M.get("subStates", []): self.children[s.get("parent")].append(s["id"])
         for k in self.children: self.children[k].sort(key=lambda i: self.ss[i].get("sequence", 0))
         self.initial_tr = [t for t in self.tr.values() if t.get("level") == "Initial" or t.get("source") == "[Initial]"]
+        self.aligned = None  # set of transition IDs of the aligned (Global) model, when --align is given
         self.terminal = [g for g in self.gs if self.gs[g].get("terminal")]
 
     def parent(self, sid):
@@ -291,8 +292,16 @@ def validate_regions(m):
         if dr and not any(d["id"] == dr for d in M.get("decisionRights", [])): add("High", "Referential integrity", t["id"], f"decision right {dr} not defined")
         for svc in t.get("services", []):
             if not any(x["id"] == svc for x in M.get("services", [])): add("High", "Referential integrity", t["id"], f"service {svc} not defined")
+    aligned = m.aligned
     for g in m.guards:
+        if g.get("contribution"):
+            if aligned is not None and g.get("transition") not in aligned:
+                add("High", "Alignment", g["id"], f"contribution targets {g.get('transition')}, which is not a transition of the aligned model")
+            continue
         if g.get("transition") not in m.tr: add("High", "Referential integrity", g["id"], f"guard refers to unknown transition {g.get('transition')}")
+    for c in M.get("contributions", []):
+        if aligned is None: add("Info", "Alignment", c["id"], f"contribution to {c.get('globalTransition')} not checked (run with --align <global model>)")
+        elif c.get("globalTransition") not in aligned: add("High", "Alignment", c["id"], f"targets {c.get('globalTransition')}, not in the aligned model")
     for x in M.get("crossRegionConstraints", []):
         for tid in x.get("transitions", []):
             if tid not in m.tr: add("High", "Referential integrity", x["id"], f"constraint refers to unknown transition {tid}")
@@ -380,10 +389,47 @@ def vector_walk(m, scenario, by_region, adj, init_vec):
     code_of = {r["id"]: r.get("code", r["id"][-2:]) for r in M.get("regions", [])} or {rid: rid[-2:] for rid in by_region}
     vec = dict(init_vec)
     facts = dict((scenario or {}).get("assetProfile", {}))
-    script = (scenario or {}).get("script") or ["TR-EX-01", "TR-CP-01", "TR-EX-02", "TR-AS-01", "TR-AS-02", "TR-AV-01", "TR-AV-05", "TR-AS-09", "TR-EX-05", "TR-CP-10"]
+    script = (scenario or {}).get("script")
+    planned = False
+    if not script:
+        if m.meta.get("modelId") == "GDA-GLOBAL-PROTOCOL":
+            script = ["TR-EX-01", "TR-CP-01", "TR-EX-02", "TR-AS-01", "TR-AS-02", "TR-AV-01", "TR-AV-05", "TR-AS-09", "TR-EX-05", "TR-CP-10"]
+        else:
+            # plan: reach the example vector with the most non-initial states, one region step at a time, respecting guards
+            vecs = M.get("stateVectors", [])
+            target = max(vecs, key=lambda v: sum(1 for r, sid in v.get("vector", {}).items() if sid != init_vec.get(r))) if vecs else None
+            script = ["__plan__", target["vector"] if target else {}]; planned = True
     default_facts = {"hold_active": False, "disposition_control_verified": True, "supersession_use_authorized": False, "use_requires_assurance": True, "material_change": False, "atomic_withdrawal": False, "recipient_acceptance_evidenced": True, "enhanced_monitoring": True, "time_bounded_authority": True, "post_event_review_planned": True}
     env_facts = {**default_facts, **facts}
     log = []
+    if planned:
+        # breadth-first per region, then interleave: fire any region's next step whose guards pass
+        from collections import deque
+        tgt = script[1]
+        def path(rid, frm, to):
+            q = deque([(frm, [])]); seen = {frm}
+            while q:
+                n, p = q.popleft()
+                if n == to: return p
+                for nx, tid in adj.get(n, []):
+                    if nx not in seen: seen.add(nx); q.append((nx, p + [tid]))
+            return []
+        plans = {rid: path(rid, vec[rid], tgt.get(rid, vec[rid])) for rid in vec}
+        script = []
+        stalled = 0
+        while any(plans.values()) and stalled < 3:
+            progressed = False
+            for rid, p in plans.items():
+                if not p: continue
+                tid = p[0]; t = m.tr[tid]
+                env = {**env_facts, **{code_of[r]: s for r, s in vec.items()}}
+                ok = vec.get(rid) == t["source"] and all((eval_expression(g["expression"], env) if g.get("expression") else True) is not False for g in m.g_by_tr.get(tid, []) if not g.get("contribution"))
+                if ok:
+                    script.append(tid); vec[rid] = t["target"]; p.pop(0); progressed = True
+            stalled = 0 if progressed else stalled + 1
+        for rid, p in plans.items():
+            if p: script.extend(p)   # leave blocked steps in the script so the log shows why they block
+        vec = dict(init_vec)
     for tid in script:
         t = m.tr.get(tid)
         if not t: log.append({"transition": tid, "result": "unknown transition"}); continue
@@ -405,7 +451,8 @@ def vector_walk(m, scenario, by_region, adj, init_vec):
         if authorised: vec[rid] = t["target"]
         log.append({"transition": tid, "name": t.get("name"), "region": rid, "sourceActive": src_active, "guards": verdicts, "eligible": ok, "decisionRight": dr, "authorised": authorised,
                     "vectorBefore": {code_of[r]: s for r, s in before.items()}, "vectorAfter": {code_of[r]: s for r, s in vec.items()}, "result": "fired" if authorised else ("blocked: source not active" if not src_active else "blocked: guard false" if not ok else "blocked: not authorised")})
-    terminal_ok = all(m.ss[s].get("terminal") for r, s in vec.items() if r in ("REG-EX", "REG-CP"))
+    term_regions = [r for r in vec if any(x.get("region", x.get("parent")) == r and x.get("terminal") for x in m.ss.values())]
+    terminal_ok = bool(term_regions) and all(m.ss[vec[r]].get("terminal") for r in term_regions)
     return log, vec, terminal_ok
 
 # ---------------------------------------------------------------- guard evaluation
@@ -571,10 +618,12 @@ def write_xlsx(path, m, F, cycles, traces, fired, states_visited, guard_log, sce
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("model"); ap.add_argument("--scenario"); ap.add_argument("--out", default="."); ap.add_argument("--loop-bound", type=int, default=1)
+    ap.add_argument("model"); ap.add_argument("--scenario"); ap.add_argument("--out", default="."); ap.add_argument("--loop-bound", type=int, default=1); ap.add_argument("--align", help="the Global model this KA model contributes to; contribution targets are checked against it")
     a = ap.parse_args()
     M = json.load(open(a.model, encoding="utf-8"))
     m = Model(M)
+    if a.align:
+        m.aligned = {t["id"] for t in json.load(open(a.align, encoding="utf-8")).get("transitions", [])}
     scenario = json.load(open(a.scenario, encoding="utf-8")) if a.scenario else None
     stamp = now_sast()
     region_mode = bool(m.meta.get("parallelRegions"))
@@ -596,7 +645,7 @@ def main():
            "scenario": scenario.get("id") if scenario else None,
            "findings": F, "cycles": [{"path": p, "transitions": t} for p, t in cycles],
            "coverage": {"states": len(m.ss) if region_mode else len(m.states), "statesVisited": len(visited & set(m.ss if region_mode else m.states)), "transitions": len(m.tr), "transitionsFired": len(fired),
-                        "guards": len(m.guards), "guardsTrue": len({g['guard'] for g in guard_log if g['verdict']}), "guardsFalse": len({g['guard'] for g in guard_log if not g['verdict']}),
+                        "guards": len([g for g in m.guards if not g.get("contribution")]), "guardsTrue": len({g['guard'] for g in guard_log if g['verdict']}), "guardsFalse": len({g['guard'] for g in guard_log if not g['verdict']}),
                         "runs": len(traces)},
            "traces": traces, "guardLog": guard_log,
            "vectorWalk": ({"steps": walk[0], "finalVector": walk[1], "terminal": walk[2]} if walk else None)}

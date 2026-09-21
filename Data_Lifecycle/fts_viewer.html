@@ -355,8 +355,8 @@
       <div class="badges" id="metaBadges"></div>
     </div>
     <div class="stamp">
-      <div>Viewer v0.6.3</div>
-      <div>Built 20 Sep 2026, 15:27 SAST</div>
+      <div>Viewer v0.7</div>
+      <div>Built 21 Sep 2026, 08:08 SAST</div>
       <div>Holds no data. Reads .fts.json models from GitHub or disk.</div>
     </div>
   </header>
@@ -401,6 +401,7 @@
       <button class="tab" role="tab" data-pane="vector" aria-selected="false" data-v3>State vector and permissions</button>
       <button class="tab" role="tab" data-pane="grca" aria-selected="false" data-v3>GRCA services</button>
       <button class="tab" role="tab" data-pane="conf" aria-selected="false" data-v3>Conformance</button>
+      <button class="tab" role="tab" data-pane="contrib" aria-selected="false" data-v3>Global contributions</button>
       <button class="tab" role="tab" data-pane="sim" aria-selected="false" data-v3>Simulate</button>
       <button class="tab" role="tab" data-pane="rules" aria-selected="false">Rules</button>
       <button class="tab" role="tab" data-pane="fb" aria-selected="false">Feedback <span class="fbcount" id="fbCount"></span></button>
@@ -594,6 +595,16 @@
       </div>
       <div class="simbtns"><button class="btn" id="fbDlJson">Download feedback (JSON)</button><button class="btn" id="fbDlCsv">Download feedback (CSV)</button><label class="btn" style="cursor:pointer">Import feedback file<input type="file" id="fbImport" accept=".json" hidden></label><button class="btn" id="fbClear">Clear all feedback</button></div>
       <div id="fbList"></div>
+    </section>
+
+    <!-- CONTRIBUTIONS -->
+    <section class="pane" id="pane-contrib">
+      <div class="eyebrow">Knowledge Area to Global protocol</div>
+      <h2>How this Knowledge Area reaches the Data Asset protocol</h2>
+      <p class="lede">A Knowledge Area is never a region of the Data Asset. It contributes guards, decision rights, services and events to named Global transitions (GA-005, GA-009). Each contribution names the KA states that must hold; the viewer federates the guard rows onto the Global transitions, and the simulator derives the fact values from this model's State Vector when both models are loaded.</p>
+      <div id="contribList"></div>
+      <h3 style="margin-top:26px;font-size:15px">Context diagram capture</h3>
+      <div id="contextList"></div>
     </section>
 
     <!-- SIMULATE -->
@@ -3136,7 +3147,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     const lists=["rules","globalStates","subStates","activities","transitions","events","entryConditions","exitConditions","invariants","guards","kaInteractions","kaMatrix","rulesGov","controls","roles","decisionRights","exceptions","artefacts","evidence","compositeStates","relationships"];
     lists.forEach(k=>{ if(!Array.isArray(m[k])) m[k]=[]; });
     m.meta = m.meta||{};
-    ["regions","services","serviceFamilies","permissionRecords","crossRegionConstraints","stateVectors","conformance","recommendations","editorialDecisions","namingStandard"].forEach(k=>{ if(!Array.isArray(m[k])) m[k]=[]; });
+    ["regions","services","serviceFamilies","permissionRecords","crossRegionConstraints","stateVectors","conformance","recommendations","editorialDecisions","namingStandard","contributions"].forEach(k=>{ if(!Array.isArray(m[k])) m[k]=[]; });
     if(!m.lifecycle||typeof m.lifecycle!=="object") m.lifecycle={phases:[]}; if(!Array.isArray(m.lifecycle.phases)) m.lifecycle.phases=[];
     m.globalStates.forEach(s=>s.kind=(s.kind==="region"||m.meta.parallelRegions)?"region":"global");
     m.subStates.forEach(s=>s.kind=s.kind||"sub");
@@ -3193,9 +3204,12 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
     $$("[data-v3]").forEach(t=>t.hidden=!v3);
     $("#tabContrast").textContent=v3?"Architecture":"Contrast";
     const kaTab=$$(".tab").find(t=>t.dataset.pane==="ka"); if(kaTab) kaTab.hidden = v3 && !M.kaInteractions.length && !M.kaMatrix.length;
+    const lcTab=$$(".tab").find(t=>t.dataset.pane==="lifecycle"); if(lcTab) lcTab.hidden = !(v3 && M.lifecycle.phases.length);
+    const cfTab=$$(".tab").find(t=>t.dataset.pane==="conf"); if(cfTab) cfTab.hidden = !(v3 && (M.conformance.length||M.recommendations.length||M.namingStandard.length));
+    const ctTab=$$(".tab").find(t=>t.dataset.pane==="contrib"); if(ctTab) ctTab.hidden = !(v3 && ((M.contributions||[]).length || M.contextCapture));
     const curTab=$$(".tab").find(t=>t.getAttribute("aria-selected")==="true"); if(curTab && curTab.hidden){ $$(".tab")[0].click(); }
     renderContrast(); renderMap(); renderInspector(); renderTransitions(); renderKA(); renderRules();
-    if(v3){ renderLifecycle(); renderVector(); renderGRCA(); renderConf(); simInit(); }
+    if(v3){ renderLifecycle(); renderVector(); renderGRCA(); renderConf(); renderContrib(); simInit(); }
     renderFeedback();
     if($("#pane-uml").classList.contains("on")) renderUML(); else { $("#umlwrap").innerHTML='<div class="umlmsg">Rendering...</div>'; }
     if($("#pane-simp").classList.contains("on")) renderSimp(); else { $("#simpwrap").innerHTML='<div class="umlmsg">Rendering...</div>'; simp.focus={type:"all"}; }
@@ -3223,6 +3237,7 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
   // ---------- CONTRAST / ARCHITECTURE ----------
   function renderArchitecture(){
     const pane=$("#archwrap"); const meta=M.meta||{}; pane.hidden=false; $("#contrastOrig").hidden=true;
+    if(!M.lifecycle.phases.length){ renderKAArchitecture(pane, meta); return; }
     const ph=M.lifecycle.phases, regs=M.regions.length?M.regions:M.globalStates, fams=M.serviceFamilies;
     const nSt=M.subStates.length, nTr=M.transitions.filter(t=>!isInitial(t)).length, nG=M.guards.length, nX=M.crossRegionConstraints.length, nV=M.stateVectors.length, nP=M.permissionRecords.length, nS=M.services.length, nDR=M.decisionRights.length, nEv=M.evidence.length, nA=M.activities.length;
     const famCount=f=>M.services.filter(s=>s.family===f).length;
@@ -3240,6 +3255,33 @@ globalThis.mermaid = globalThis.__esbuild_esm_mermaid.default;
       '</div>'+
       '<div class="contract" style="margin-top:18px"><h4>Transition contract</h4><div class="formula">Eligible(τ) = <b>Event</b>(e) ∧ <b>Active</b>(s) ∧ <b>Exit</b>(s) ∧ <b>Guard</b>(τ) ∧ <b>Entry</b>(s′) ∧ <b>Preserve</b>(Invariants)<br>Permitted(τ) = Eligible(τ) ∧ <b>RiskAcceptability</b> ∧ <b>ControlSatisfaction</b> ∧ <b>AssuranceSatisfaction</b> ∧ <b>RequiredAuthorization</b></div><div style="margin-top:8px;font-size:12.5px;color:var(--ink-soft)">The mapping unit between Layer 1 and Layer 2 is not Phase to State. It is a decision chain: Lifecycle Context → Activity Request → Current State Vector → Permission Record → Guards and Invariants → GRCA Applicability and Results → Authorization → Outcome.</div></div>';
   }
+  function renderKAArchitecture(pane, meta){
+    const regs=M.regions.length?M.regions:M.globalStates; const cc=M.contextCapture||{};
+    const gm=MODELS.find(x=>x.meta&&x.meta.modelId==="GDA-GLOBAL-PROTOCOL");
+    const trName=id=>{ const t=gm&&gm.transitions.find(x=>x.id===id); return t?t.name:id; };
+    pane.innerHTML='<div class="eyebrow">Knowledge Area FTS</div><h2>'+esc(meta.name||meta.modelId)+'</h2>'+
+      (meta.definition?'<div class="contract" style="margin-top:12px"><h4>Definition</h4><div style="font-size:14px;color:var(--ink-soft);margin-top:6px">'+esc(meta.definition)+'</div>'+(cc.ensures?'<div style="font-size:12.5px;color:var(--ink-faint);margin-top:6px">'+esc(cc.ensures)+'</div>':'')+'</div>':'')+
+      '<p class="lede">'+esc(meta.note||"")+'</p>'+
+      '<div class="layer3">'+
+        '<div class="lay"><div><div class="lk">Subject</div><div class="ln">'+esc(meta.subjectType||"")+'</div><div class="lb">Every region names a durable condition of this subject (N-002, N-006).</div></div>'+
+          '<div><div class="lchain">'+regs.map((r,i)=>'<span class="box reg">'+esc(r.name)+'<small>'+esc(r.id)+' · '+M.subStates.filter(x=>(x.region||x.parent)===r.id).length+' states · '+M.transitions.filter(t=>t.region===r.id&&!isInitial(t)).length+' transitions</small></span>'+(i<regs.length-1?'<span class="par">&#8214;</span>':'')).join("")+'</div>'+
+          '<div class="cnums" style="margin-top:10px">'+[[M.subStates.length,"states"],[M.transitions.filter(t=>!isInitial(t)).length,"transitions"],[M.crossRegionConstraints.length,"cross-region constraints"],[M.contributions.length,"contributions to the Global protocol"],[M.services.length,"services offered"],[M.decisionRights.length,"decision rights"]].map(([n,l])=>'<div class="cnum"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>').join("")+'</div></div></div>'+
+        '<div class="lay"><div><div class="lk">Context diagram</div><div class="ln">Processes and activities</div><div class="lb">Work, never states. Each process is classified by its effect on the regions.</div></div>'+
+          '<div><div class="lchain">'+(cc.processes||[]).map(p=>'<span class="box">'+esc(p.id)+' '+esc(p.name)+'<small>('+esc(p.phase||"")+') · '+(p.subActivities||[]).length+' sub-activities'+(p.note?' · '+esc(p.note):'')+'</small></span>').join("")+'</div>'+
+          '<div class="cnums" style="margin-top:10px">'+[[(cc.inputs||[]).length,"inputs"],[(cc.deliverables||[]).length,"deliverables"],[(cc.suppliers||[]).length,"suppliers"],[(cc.participants||[]).length,"participants"],[(cc.consumers||[]).length,"consumers"],[(cc.metrics||[]).length,"metrics"]].map(([n,l])=>'<div class="cnum"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>').join("")+'</div></div></div>'+
+        '<div class="lay"><div><div class="lk">Alignment</div><div class="ln">Global transitions gated</div><div class="lb">Loose coupling: the KA supplies predicates, decision rights, services and events; it never synchronises whole machines.</div></div>'+
+          '<div><div class="chips">'+[...new Set(M.contributions.map(c=>c.globalTransition))].map(id=>'<span class="chip">'+esc(id)+' '+esc(trName(id))+'</span>').join("")+'</div>'+(gm?'':'<div class="lb" style="margin-top:8px">Load the Global protocol model as well to see the transition names and to simulate the two together.</div>')+'</div></div>'+
+      '</div>';
+  }
+  function renderContrib(){
+    const gm=MODELS.find(x=>x.meta&&x.meta.modelId==="GDA-GLOBAL-PROTOCOL");
+    const trName=id=>{ const t=gm&&gm.transitions.find(x=>x.id===id); return t?t.name+" ("+nameOfIn(gm,t.source)+" → "+nameOfIn(gm,t.target)+")":""; };
+    $("#contribList").innerHTML=M.contributions.length?'<table class="stab"><thead><tr><th>ID</th><th>Global transition</th><th>Kind</th><th>Required KA states</th><th>Predicate</th><th>Simulator expression</th><th>Requirement</th><th>Note</th></tr></thead><tbody>'+M.contributions.map(c=>'<tr><td class="mono">'+esc(c.id)+'</td><td><b>'+esc(c.globalTransition)+'</b><br><span style="font-size:11.5px;color:var(--ink-faint)">'+esc(trName(c.globalTransition))+'</span></td><td><span class="out '+(c.kind==="guard"?"Conditional":c.kind==="decisionRight"?"Required":"Permitted")+'">'+esc(c.kind)+'</span></td><td style="font-size:12px">'+Object.entries(c.requiredStates||{}).map(([code,ids])=>'<div><b>'+esc(code)+'</b>: '+ids.map(nameOf).join(" or ")+'</div>').join("")+'</td><td>'+esc(c.predicate)+'</td><td class="mono">'+esc(c.expression||"")+'</td><td>'+esc(c.requirement||"")+'</td><td>'+esc(c.note||"")+'</td></tr>').join("")+'</tbody></table>':'<div style="color:var(--ink-faint)">No contributions recorded.</div>';
+    const cc=M.contextCapture||{};
+    $("#contextList").innerHTML=Object.keys(cc).length?'<div class="comp">'+[["inputs","Inputs"],["deliverables","Deliverables"],["suppliers","Suppliers"],["participants","Participants"],["consumers","Consumers"],["techniques","Techniques"],["tools","Tools"],["metrics","Metrics"],["goals","Goals"],["businessDrivers","Business drivers"]].filter(([k])=>Array.isArray(cc[k])&&cc[k].length).map(([k,l])=>'<div class="compc"><div class="cn">'+l+' <span class="cid">'+cc[k].length+'</span></div><ul style="margin:8px 0 0;padding-left:16px;font-size:12.5px;color:var(--ink-soft)">'+cc[k].map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul></div>').join("")+
+      '<div class="compc"><div class="cn">Processes</div>'+(cc.processes||[]).map(p=>'<div style="margin-top:8px"><b style="color:var(--ink)">'+esc(p.id)+' '+esc(p.name)+'</b> <span class="mono" style="color:var(--ink-faint)">('+esc(p.phase||"")+')</span><ul style="margin:4px 0 0;padding-left:16px;font-size:12px;color:var(--ink-soft)">'+(p.subActivities||[]).map(x=>'<li>'+esc(x)+'</li>').join("")+(p.note?'<li style="color:var(--warn)">'+esc(p.note)+'</li>':'')+'</ul></div>').join("")+'</div></div>':'<div style="color:var(--ink-faint)">No context capture in this model.</div>';
+  }
+  function nameOfIn(model,id){ const s=model.globalStates.concat(model.subStates).find(x=>x.id===id); return s?s.name:id; }
   function renderContrast(){
     if(isV3()){ renderArchitecture(); return; }
     $("#archwrap").hidden=true; $("#contrastOrig").hidden=false;
@@ -3824,7 +3866,7 @@ function fsmSource(M, opts){
   function vecName(v){ return regionsOf().map(r=>nameOf((v.vector||{})[r.id]||"")).join(" · "); }
   function renderVector(){
     $("#vecList").innerHTML=M.stateVectors.map(v=>'<div class="compc"><div class="cn">'+esc(v.name)+'</div><div class="cid">'+esc(v.id)+'</div><div class="vec">'+regionsOf().map(r=>'<div><b>'+esc(r.name)+':</b> '+esc(nameOf((v.vector||{})[r.id]||"?"))+'</div>').join("")+'</div><div class="ctx">'+esc(v.legality||"")+'</div><div class="simbtns"><button class="btn" data-loadvec="'+esc(v.id)+'">Simulate from here</button></div></div>').join("")||'<div style="color:var(--ink-faint)">No example vectors.</div>';
-    $$("#vecList [data-loadvec]").forEach(b=>b.onclick=()=>{ const v=M.stateVectors.find(x=>x.id===b.dataset.loadvec); if(v){ sim.vec=Object.assign({},v.vector); simLog("load","Loaded configuration "+v.id); $$(".tab").find(t=>t.dataset.pane==="sim").click(); simRender(); } });
+    $$("#vecList [data-loadvec]").forEach(b=>b.onclick=()=>{ const v=M.stateVectors.find(x=>x.id===b.dataset.loadvec); if(v){ setVec(Object.assign({},v.vector)); simLog("load","Loaded configuration "+v.id); $$(".tab").find(t=>t.dataset.pane==="sim").click(); simRender(); } });
     $("#xrgList").innerHTML='<table class="stab"><thead><tr><th>ID</th><th>Constraint</th><th>Transitions</th><th>Requirement</th><th>Expression evaluated by the simulator</th></tr></thead><tbody>'+M.crossRegionConstraints.map(x=>'<tr><td class="mono">'+esc(x.id)+'</td><td><b>'+esc(x.constraint)+'</b></td><td class="mono">'+esc((x.transitions||[]).join(", "))+'</td><td>'+esc(x.requirement||"")+'</td><td class="mono">'+esc(x.expression||"")+'</td></tr>').join("")+'</tbody></table>';
     $("#prmList").innerHTML='<table class="stab"><thead><tr><th>ID</th><th>Activity</th><th>Context</th><th>Outcome</th><th>Guard</th><th>Authority</th><th>Services</th><th>Evidence</th><th>Effect</th></tr></thead><tbody>'+M.permissionRecords.map(p=>{ const a=M.activities.find(x=>x.id===p.activity); return '<tr><td class="mono">'+esc(p.id)+'</td><td><b>'+esc(a?a.name:p.activity)+'</b></td><td>'+esc(nameOf(p.context))+' <span class="mono">'+esc(p.context)+'</span></td><td><span class="out '+esc(p.outcome)+'">'+esc(p.outcome)+'</span></td><td>'+esc(p.guard||"")+'</td><td>'+esc(p.authority||"")+'</td><td class="mono">'+esc((p.services||[]).join(", "))+'</td><td>'+esc(p.evidence||"")+'</td><td>'+esc(p.effect||"")+'</td></tr><tr><td colspan="9" style="padding-top:0">'+fbBox("Permission Record", p.id, p.id+" "+(a?a.name:p.activity)+" in "+nameOf(p.context))+'</td></tr>'; }).join("")+'</tbody></table>'+(M.permissionRecords.length?'':'<div style="color:var(--ink-faint)">No permission records in this model.</div>');
     fbWire($("#prmList"));
@@ -3847,13 +3889,24 @@ function fsmSource(M, opts){
   }
 
   // ---------- SIMULATE (user-driven vector walk) ----------
-  const sim={vec:{}, facts:{}, trace:[], scenario:null, pending:null};
+  const sim={vec:{}, vecs:{}, facts:{}, trace:[], scenario:null, pending:null};
+  function setVec(v){ sim.vec=v; if(M&&M.meta) sim.vecs[M.meta.modelId]=v; }
+  function vecOf(model){ const id=model.meta&&model.meta.modelId; if(sim.vecs[id]) return sim.vecs[id]; const v={}; (model.regions||[]).forEach(r=>{ const init=model.subStates.find(x=>(x.region||x.parent)===r.id && x.initial)||model.subStates.find(x=>(x.region||x.parent)===r.id); if(init) v[r.id]=init.id; }); sim.vecs[id]=v; return v; }
+  function derivedFacts(){
+    // facts bound to other loaded models' State Vectors (meta.factBindings), e.g. DG_roles_assigned
+    const out={};
+    MODELS.forEach(model=>{ if(model===M) return; const fb=model.meta&&model.meta.factBindings; if(!fb) return; const v=vecOf(model);
+      Object.entries(fb).forEach(([fact,b])=>{ const cur=v[b.region]; out[fact]={value:(b.states||[]).includes(cur), from:(model.meta.knowledgeArea||model.meta.name)+": "+nameOfIn(model,cur)}; }); });
+    return out;
+  }
+  function allGuardsFor(tid){ return M.guards.filter(g=>g.transition===tid).concat(federatedGuards(tid)); }
   const SIM_DEFAULT_FACTS={hold_active:false, disposition_control_verified:true, supersession_use_authorized:false, use_requires_assurance:true, material_change:false, atomic_withdrawal:false, recipient_acceptance_evidenced:true, enhanced_monitoring:true, time_bounded_authority:true, post_event_review_planned:true};
   function regionCode(rid){ const r=regionsOf().find(x=>x.id===rid); return r?(r.code||r.id.slice(-2)):rid; }
   function regionOfState(sid){ const s=stateById(sid); return s?(s.region||s.parent):null; }
   function initialVector(){ const v={}; regionsOf().forEach(r=>{ const init=M.subStates.find(s=>(s.region||s.parent)===r.id && s.initial) || M.subStates.find(s=>(s.region||s.parent)===r.id); if(init) v[r.id]=init.id; }); return v; }
   function factNames(){ const names=new Set(Object.keys(SIM_DEFAULT_FACTS)); const codes=new Set(regionsOf().map(r=>regionCode(r.id)));
-    M.guards.concat(M.crossRegionConstraints).forEach(g=>{ (String(g.expression||"").match(/[A-Za-z_][A-Za-z0-9_]*/g)||[]).forEach(w=>{ if(!/^(and|or|not|in|True|False|None)$/.test(w) && !codes.has(w)) names.add(w); }); });
+    const fed=[]; M.transitions.forEach(t=>fed.push(...federatedGuards(t.id)));
+    M.guards.filter(g=>!g.contribution).concat(M.crossRegionConstraints, fed).forEach(g=>{ (String(g.expression||"").match(/[A-Za-z_][A-Za-z0-9_]*/g)||[]).forEach(w=>{ if(!/^(and|or|not|in|True|False|None)$/.test(w) && !codes.has(w)) names.add(w); }); });
     Object.keys(sim.facts).forEach(k=>names.add(k)); return [...names].sort(); }
   function pyToJs(expr){
     // Python-style boolean expression over identifiers and string literals -> JavaScript
@@ -3866,7 +3919,7 @@ function fsmSource(M, opts){
   function evalExpr(expr, env){
     try{ const js=pyToJs(expr); const names=Object.keys(env); const f=new Function(...names, '"use strict"; return ('+js+');'); const v=f(...names.map(n=>env[n])); return (v===true||v===false)?v:null; }catch(e){ return null; }
   }
-  function simEnv(){ const env=Object.assign({}, SIM_DEFAULT_FACTS, sim.facts); regionsOf().forEach(r=>env[regionCode(r.id)]=sim.vec[r.id]); return env; }
+  function simEnv(){ const env=Object.assign({}, SIM_DEFAULT_FACTS, sim.facts); const d=derivedFacts(); Object.entries(d).forEach(([k,v])=>env[k]=v.value); regionsOf().forEach(r=>env[regionCode(r.id)]=sim.vec[r.id]); return env; }
   function evaluateGuard(g){
     const sc=sim.scenario||{};
     if(sc.guardOutcomes && g.id in sc.guardOutcomes) return {v:!!sc.guardOutcomes[g.id], src:"scenario"};
@@ -3875,7 +3928,7 @@ function fsmSource(M, opts){
   }
   function evaluateTransition(t){
     const rid=regionOfState(t.target); const srcActive=sim.vec[rid]===t.source;
-    const guards=M.guards.filter(g=>g.transition===t.id).map(g=>Object.assign({guard:g}, evaluateGuard(g)));
+    const guards=allGuardsFor(t.id).filter(g=>!g.contribution || g.fromModel).map(g=>Object.assign({guard:g}, evaluateGuard(g)));
     const eligible=srcActive && guards.every(x=>x.v);
     const dr=t.decisionRight?M.decisionRights.find(d=>d.id===t.decisionRight):null;
     return {t, rid, srcActive, guards, eligible, dr};
@@ -3904,15 +3957,15 @@ function fsmSource(M, opts){
       $("#simDiagNote").textContent=cur.map(id=>nameOf(id)).join(" · ");
     }catch(err){ wrap.innerHTML='<div class="umlerr">Could not render the diagram.\n'+esc(err&&err.message||err)+'</div>'; }
   }
-  function simInit(){ if(!isV3()) return; if(!Object.keys(sim.vec).length || !regionsOf().every(r=>sim.vec[r.id]&&stateById(sim.vec[r.id]))){ sim.vec=initialVector(); } $("#simSubjectType").textContent=M.meta.subjectType||"Data Asset"; simRender(); }
+  function simInit(){ if(!isV3()) return; const v=sim.vecs[M.meta.modelId]; if(v && regionsOf().every(r=>v[r.id]&&stateById(v[r.id]))) sim.vec=v; else setVec(initialVector()); $("#simSubjectType").textContent=M.meta.subjectType||"Data Asset"; simRender(); }
   function simRender(){
     if(!isV3()) return;
     const legal=vectorLegality();
     $("#simVector").innerHTML=regionsOf().map(r=>{ const s=stateById(sim.vec[r.id]); const inv=s?M.invariants.filter(i=>i.appliesTo===s.id).map(i=>i.predicate).join(" "):""; return '<div class="vr'+(s&&s.terminal?' term':'')+'"><div class="rn">'+esc(r.name)+'</div><div class="sn">'+esc(s?s.name:"?")+'<small>'+esc(s?s.id:"")+(s&&s.terminal?' · terminal':'')+'</small><small>'+esc(inv)+'</small></div></div>'; }).join("");
     $("#simLegal").innerHTML=(legal.match?'Matches example configuration <b>'+esc(legal.match.id)+' '+esc(legal.match.name)+'</b>: '+esc(legal.match.legality||""):'Not one of the example configurations; legality follows from the active invariants and the cross-region constraints on the next transition.')+(legal.terminal.length?'<br>Terminal in: '+esc(legal.terminal.join(", ")):'')+(legal.problems.length?'<br><span style="color:var(--warn)">'+esc(legal.problems.map(p=>p.text).join("; "))+'</span>':'');
-    const names=factNames(); const env=Object.assign({},SIM_DEFAULT_FACTS,sim.facts);
+    const names=factNames(); const env=Object.assign({},SIM_DEFAULT_FACTS,sim.facts); const d=derivedFacts(); Object.keys(d).forEach(k=>names.includes(k)||names.push(k));
     $("#simFactCount").textContent=names.length;
-    $("#simFacts").innerHTML=names.map(n=>'<label><input type="checkbox" data-fact="'+esc(n)+'"'+(env[n]?' checked':'')+'> '+esc(n)+'</label>').join("");
+    $("#simFacts").innerHTML=names.map(n=>d[n]?'<label title="derived from the loaded model, not editable"><input type="checkbox" disabled'+(d[n].value?' checked':'')+'> '+esc(n)+' <span style="color:var(--accent);font-size:10.5px">from '+esc(d[n].from)+'</span></label>':'<label><input type="checkbox" data-fact="'+esc(n)+'"'+(env[n]?' checked':'')+'> '+esc(n)+'</label>').join("");
     $$("#simFacts [data-fact]").forEach(cb=>cb.onchange=()=>{ sim.facts[cb.dataset.fact]=cb.checked; simLog("fact", cb.dataset.fact+" = "+cb.checked); simRender(); });
     // available transitions grouped by event
     const avail=M.transitions.filter(t=>!isInitial(t)).map(evaluateTransition).filter(x=>x.srcActive);
@@ -3940,7 +3993,7 @@ function fsmSource(M, opts){
     $("#simEvalBox").hidden=false;
     $("#simEval").innerHTML='<div class="contract"><h4>'+esc(t.name)+' <span class="mono" style="font-weight:400;color:var(--ink-faint)">'+esc(t.id)+' · '+esc(regionCode(r.rid))+'</span></h4>'+
       '<div class="formula">Eligible = <b>Event</b> '+esc(evName(t.event))+' ∧ <b>Active</b>('+esc(nameOf(t.source))+') '+(r.srcActive?'✓':'✗')+' ∧ <b>Exit</b> ['+xc.length+'] ∧ <b>Guards</b> ['+r.guards.length+'] ∧ <b>Entry</b>('+esc(nameOf(t.target))+') ['+ec.length+'] → <b>'+(r.eligible?'ELIGIBLE':'NOT ELIGIBLE')+'</b></div>'+
-      '<div class="verd">'+r.guards.map(x=>'<div class="g '+(x.v?'ok':'no')+'"><span class="m">'+(x.v?'✓':'✗')+'</span><span>'+esc(x.guard.predicate)+'<small>'+esc(x.guard.id)+(x.guard.constraint?' · '+esc(x.guard.constraint):'')+' · '+esc(x.src)+(x.guard.expression?' · '+esc(x.guard.expression):'')+'</small></span></div>').join("")+'</div>'+
+      '<div class="verd">'+r.guards.map(x=>'<div class="g '+(x.v?'ok':'no')+'"><span class="m">'+(x.v?'✓':'✗')+'</span><span>'+esc(x.guard.predicate)+'<small>'+esc(x.guard.id)+(x.guard.constraint?' · '+esc(x.guard.constraint):'')+(x.guard.fromModel?' · contributed by '+esc(x.guard.fromModel):'')+' · '+esc(x.src)+(x.guard.expression?' · '+esc(x.guard.expression):'')+'</small></span></div>').join("")+'</div>'+
       (svc.length?'<div style="margin-top:8px;font-size:12.5px"><b>GRCA applicability:</b> '+svc.map(s=>esc(s.family)+' · '+esc(s.name)).join("; ")+'</div>':'')+
       '<div style="margin-top:8px;font-size:12.5px"><b>Authorisation:</b> '+(r.dr?esc(r.dr.id)+' '+esc(r.dr.name)+(r.dr.holder?' · '+esc(roleName(r.dr.holder)):''):'none required (time- or evidence-triggered)')+'</div>'+
       '<div class="simbtns">'+(r.eligible?(r.dr?'<button class="btn primary" id="simAuth">Authorise as '+esc(r.dr.id)+' and fire</button><button class="btn" id="simRefuse">Refuse authorisation</button>':'<button class="btn primary" id="simAuth">Fire</button>'):'<button class="btn" id="simBlocked">Record as blocked</button>')+'<button class="btn" id="simCancel">Cancel</button></div>'+fbBox("Simulation step", t.id, t.name+" at this state vector")+'</div>';
@@ -3952,7 +4005,7 @@ function fsmSource(M, opts){
     $("#simCancel").onclick=()=>{ $("#simEvalBox").hidden=true; };
     $("#simEvalBox").scrollIntoView({behavior:"smooth",block:"nearest"});
   }
-  $("#simReset").onclick=()=>{ sim.vec=initialVector(); simLog("reset","Reset to the initial configuration"); simRender(); };
+  $("#simReset").onclick=()=>{ setVec(initialVector()); simLog("reset","Reset to the initial configuration"); simRender(); };
   $("#simClear").onclick=()=>{ sim.trace=[]; simRender(); };
   $("#simFactAdd").onclick=()=>{ const n=($("#simFactNew").value||"").trim().replace(/[^A-Za-z0-9_]/g,"_"); if(!n) return; sim.facts[n]=true; $("#simFactNew").value=""; simRender(); };
   $("#simScenarioFile").onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const sc=JSON.parse(rd.result); sim.scenario=sc; sim.facts=Object.assign({}, sc.assetProfile||{}); if(sc.subjectInstanceId) $("#simSubject").value=sc.subjectInstanceId; $("#simScenarioName").textContent=sc.name||sc.id||f.name; simLog("scenario","Loaded scenario "+(sc.id||f.name)); simRender(); }catch(err){ $("#simScenarioName").textContent="not a scenario file"; } }; rd.readAsText(f); $("#simScenarioFile").value=""; };
@@ -4018,7 +4071,7 @@ function fsmSource(M, opts){
   }
   $("#fbAdd").onclick=()=>{ let o; try{ o=JSON.parse($("#fbPick").value); }catch(e){ return; } if(fbAdd(o[0],o[1],o[2],$("#fbText").value,$("#fbVerdict").value,null)){ $("#fbText").value=""; } };
   $("#fbClear").onclick=()=>{ if(!FB.length) return; if(!confirm("Remove all "+FB.length+" feedback notes from this browser? Download them first if you want to keep them.")) return; FB=[]; fbSave(); renderFeedback(); };
-  $("#fbDlJson").onclick=()=>dl(((M&&M.meta&&M.meta.modelId)||"fts")+"_feedback.json", JSON.stringify({model:M&&M.meta&&M.meta.modelId, modelVersion:M&&M.meta&&M.meta.version, exportedAt:new Date().toISOString(), viewer:"0.6.3", reviewer:"", items:FB}, null, 1), "application/json");
+  $("#fbDlJson").onclick=()=>dl(((M&&M.meta&&M.meta.modelId)||"fts")+"_feedback.json", JSON.stringify({model:M&&M.meta&&M.meta.modelId, modelVersion:M&&M.meta&&M.meta.version, exportedAt:new Date().toISOString(), viewer:"0.7", reviewer:"", items:FB}, null, 1), "application/json");
   $("#fbDlCsv").onclick=()=>{ const rows=[["id","at","model","modelVersion","elementType","elementId","elementName","verdict","note","vector"]].concat(FB.map(f=>[f.id,f.at,f.model,f.modelVersion,f.elementType,f.elementId,f.elementName,f.verdict,f.note,f.context&&f.context.vector?JSON.stringify(f.context.vector):""])); dl(((M&&M.meta&&M.meta.modelId)||"fts")+"_feedback.csv", rows.map(r=>r.map(v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"').join(",")).join("\n"), "text/csv"); };
   $("#fbImport").onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); const items=Array.isArray(d)?d:(d.items||[]); const ids=new Set(FB.map(x=>x.id)); items.forEach(it=>{ if(it&&it.id&&!ids.has(it.id)) FB.push(it); }); fbSave(); renderFeedback(); }catch(err){} }; rd.readAsText(f); e.target.value=""; };
   fbSave();

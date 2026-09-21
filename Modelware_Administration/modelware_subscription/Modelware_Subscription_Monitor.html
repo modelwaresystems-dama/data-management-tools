@@ -226,6 +226,7 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
     </div>
     <div class="hdr-actions">
       <div class="sync local" id="syncchip" title="Data source"><span class="dot"></span><span id="synctxt">Local file</span></div>
+      <button class="btn" id="importBtn">↥ Import statement</button>
       <button class="btn ghost" id="addBtn">+ Add</button>
       <button class="btn ghost" id="cfgBtn">⚙ GitHub</button>
     </div>
@@ -283,7 +284,7 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
 
 <script>
 /* ===== build info ===== */
-const BUILD={version:'2.0.2',built:'2026-09-21 06:07 SAST'};
+const BUILD={version:'2.2.0',built:'2026-09-21 08:39 SAST'};
 /* ===== BUNDLED DATA (fallback + seed for the private repo) ===== */
 const BUNDLED = {
  "generated": "2026-09-20",
@@ -5035,7 +5036,8 @@ const CALLS=['—','Keep','Cancel','Review'];  /* '—' = no advisory (Status is
 const TERMINAL=['cancelling','cancelled'];
 const CADENCES=['monthly','quarterly','6-monthly','annual','one-off'];
 const VATS=['SA-VAT-15','none','confirm'];
-const EDIT_FIELDS={next_renewal:'',cancel_url:'',cancel_steps:'',note:'',edited_by:'',edited_at:''};
+const EDIT_FIELDS={next_renewal:'',cancel_url:'',cancel_steps:'',note:'',edited_by:'',edited_at:'',auto_review:false};
+const OVERDUE_MONTHS=2;  // an Active monthly with no charge for this many months → Review
 
 let LIVE=null, sha=null, dirty={}, path=()=> (cfg.folder?cfg.folder.replace(/\/+$/,'')+'/':'')+'subscription_data.json';
 
@@ -5051,6 +5053,41 @@ function recompute(s){
   const mult=CADENCE_MULT[s.cadence]??12;
   s.fwd_annual=Math.round((s.last_actual||0)*mult*100)/100;
   s.fund_annual=Math.round(s.fwd_annual*(1+(s.buffer_pct||0)/100)*100)/100;
+}
+/* overdue-monthly rule: measured against the latest charge in the data (as-of) */
+function asOfDate(){let mx='';(LIVE.subscriptions||[]).forEach(s=>(s.charges||[]).forEach(c=>{if(!c.refund&&c.date>mx)mx=c.date;}));
+  return mx||LIVE.generated||new Date().toISOString().slice(0,10);}
+function monthsMissed(lastPay,asOf){const[ly,lm,ld]=lastPay.split('-').map(Number),[ay,am,ad]=asOf.split('-').map(Number);
+  let mo=(ay-ly)*12+(am-lm);if(ad<ld)mo-=1;return mo;}
+function cardAsOfMap(){const m={};(LIVE.subscriptions||[]).forEach(s=>(s.charges||[]).forEach(c=>{
+  if(!c.refund&&(!m[c.card]||c.date>m[c.card]))m[c.card]=c.date;}));return m;}
+function applyOverdueRule(){
+  const cm=cardAsOfMap(),gAsOf=asOfDate();let changed=0;
+  LIVE.review=(LIVE.review||[]).filter(r=>r.kind!=='overdue');   // system items regenerated each run
+  (LIVE.subscriptions||[]).forEach(s=>{
+    if(s.cadence!=='monthly')return;
+    if(['cancelled','cancelling','marked-to-cancel'].includes(s.status))return;
+    const asOf=cm[s.card]||gAsOf;   // 2-month clock runs from the latest statement on THIS card
+    const pays=(s.charges||[]).filter(c=>!c.refund).map(c=>c.date).sort();
+    const lastPay=pays.length?pays[pays.length-1]:null;
+    const missed=lastPay?monthsMissed(lastPay,asOf):999;
+    const overdue=missed>=OVERDUE_MONTHS;
+    // manual override holds until newer statement data arrives (edit dated at/after as-of)
+    const editedRecent=s.edited_at&&s.edited_at.slice(0,10)>=asOf;
+    if(overdue&&!editedRecent){
+      if(s.status==='active'){s.status='review';s.auto_review=true;dirty[s.id]=true;changed++;}
+      if(s.status==='review'){
+        LIVE.review.push({kind:'overdue',severity:'warn',
+          title:s.name+' — no payment for '+(missed>900?'2+':missed)+' month'+(missed===1?'':'s'),
+          detail:'Monthly subscription with no charge since '+(lastPay||'ever')+' (as of latest statement '+asOf+'). '+(s.auto_review?'Auto-moved to Review':'In Review')+'; it returns to Active automatically when a payment appears in a later import.',
+          evidence:s.entity+'·'+s.card+' · last paid '+(lastPay||'—')+' · typical R'+(s.typical||0).toFixed(2),
+          subId:s.id});
+      }
+    } else if(s.auto_review&&s.status==='review'&&!overdue){
+      s.status='active';s.auto_review=false;dirty[s.id]=true;changed++;
+    }
+  });
+  return changed;
 }
 
 /* ===== helpers ===== */
@@ -5095,13 +5132,14 @@ function showBuild(){
 async function boot(){
   showBuild();
   LIVE=normalise(BUNDLED);
+  applyOverdueRule();
   render();
   if(cfg.token&&cfg.owner&&cfg.repo){
     setSync('busy','Connecting…');
     try{
       const res=await ghGet();
       if(res.missing){ setSync('local','Repo empty — seed'); toast('No data file in repo yet — open ⚙ GitHub to seed it.'); }
-      else { LIVE=normalise(res.data); sha=res.sha; setSync('synced','Synced'); render(); }
+      else { LIVE=normalise(res.data); sha=res.sha; applyOverdueRule(); setSync('synced','Synced'); render(); }
     }catch(e){ setSync('error','Connect failed'); toast('GitHub: '+e.message,true); }
   } else {
     setSync('local','Local file — not connected');
@@ -5275,6 +5313,7 @@ function openEdit(id){
     if(!s.name){toast('Give it a name first.',true);return;}
     recompute(s);
     s.edited_by=cfg.editor||'(unnamed editor)';s.edited_at=new Date().toISOString().slice(0,16).replace('T',' ');
+    s.auto_review=false;   // manual edit takes over; overdue rule respects it until newer statement data arrives
     if(isNew){subs().push(s);} else {const i=subs().findIndex(x=>x.id===id);subs()[i]=s;}
     dirty[s.id]=true;closeModal();render();markDirty();
     toast(isNew?'Added — Save to GitHub to commit.':'Applied — Save to GitHub to commit.');
@@ -5326,7 +5365,7 @@ function openCfg(){
           setSync('synced','Synced');toast('Seeded the repo.');
         } else setSync('local','Repo empty — seed');
       } else {LIVE=normalise(res.data);sha=res.sha;setSync('synced','Synced');toast('Connected — loaded from GitHub.');}
-      dirty={};markDirty();render();
+      dirty={};applyOverdueRule();markDirty();render();
     }catch(e){setSync('error','Connect failed');toast('GitHub: '+e.message,true);}
   };
 }
@@ -5402,7 +5441,7 @@ function renderImport(){
   const p=el('div','prose');
   p.innerHTML=`
     <h3>How data gets in (hybrid ingestion)</h3>
-    <div class="step"><div class="n">1</div><div class="t"><b>Bank CSV import.</b> Charges auto-grouped by vendor and matched to subscriptions; a charge on a new card matches the same subscription (a <i>move</i>). Bundled vendors (Microsoft) split by amount signature. Unmatched → review inbox.</div></div>
+    <div class="step"><div class="n">1</div><div class="t"><b>Bank CSV import.</b> <span class="muted">(now live — use “↥ Import statement”)</span> Charges auto-grouped by vendor and matched to subscriptions; a charge on a new card matches the same subscription (a <i>move</i>). Bundled vendors (Microsoft) split by amount signature. New vendors → review inbox; duplicates skipped.</div></div>
     <div class="step"><div class="n">2</div><div class="t"><b>Manual enrichment.</b> <span class="muted">(now live)</span> Edit any subscription — entity, card, name, status, cadence, VAT, renewal date, cancel steps, notes. Add subscriptions the import didn't create. Everything commits to the private repo.</div></div>
     <div class="step"><div class="n">3</div><div class="t"><b>Outlook "Subscription" sweep.</b> <span class="muted">(increment 5)</span> Proposes renewal dates + tax invoices for approval before write.</div></div>
     <h3>Reconciliation against the bank exports</h3>
@@ -5411,9 +5450,188 @@ function renderImport(){
       <tr><td>MWI <span class="muted">(Apr-26 → Aug-26)</span></td><td class="num">${ZAR2(t.MWI_gross)}</td><td class="num">${ZAR2(t.MWI_refunds)}</td><td class="num">${ZAR2((t.MWI_gross||0)-(t.MWI_refunds||0))}</td><td class="num">R28,359.27</td><td class="ok">✓ ties</td></tr>
     </tbody></table>
     <p class="muted" style="margin-top:12px">MWL net includes <b>${ZAR2(t.MWL_current_account)}</b> current-account movement (tagged non-subscription, O6).</p>
+    <h3>Import history</h3>
+    ${(LIVE.imports&&LIVE.imports.length)?`<table class="recon"><thead><tr><th>When</th><th>By</th><th class="num">Rows</th><th class="num">Added</th><th class="num">New vendors</th><th class="num">Dups</th><th class="num">Non-sub</th></tr></thead><tbody>`+
+      LIVE.imports.slice().reverse().map(im=>`<tr><td>${esc(im.at)}</td><td>${esc(im.by||'—')}</td><td class="num">${im.rows}</td><td class="num">${im.added}</td><td class="num">${im.newVendors}</td><td class="num">${im.dups}</td><td class="num">${im.nonsub}</td></tr>`).join('')+
+      `</tbody></table>`:'<p class="muted">No statements imported yet in-app. The baseline above came from the first two exports.</p>'}
     <h3>Storage</h3>
     <p>Data lives as <code>${esc(path())}</code> in <code>${esc(cfg.owner)}/${esc(cfg.repo)}</code> (branch <code>${esc(cfg.branch)}</code>). Edits commit via the GitHub Contents API using your in-browser token — last-writer-wins, both you and Veronica editing. Open <b>⚙ GitHub</b> to connect or change the target.</p>`;
   sec.appendChild(p);
+}
+
+/* ===== statement import (FNB AccountTransactionsReport CSV) ===== */
+const IMP_CARD_MAP={
+ 'MWL Veronica Credit Card':['MWL','Veronica CC','Veronica'],
+ 'MWL Howard Credit Card':['MWL','Howard CC','Howard'],
+ 'MWL Current Account':['MWL','Current Account','-'],
+ 'MWI Howard Business Credit Card':['MWI','Howard Business CC','Howard'],
+ 'MWI Veronica Business Credit Card':['MWI','Veronica Business CC','Veronica'],
+};
+const IMP_RULES=[
+ [/MIGHTY NETWORKS/i,'mighty_networks'],[/LinkedIn SN/i,'linkedin'],[/INT PYMT FEE/i,'_bankfee'],
+ [/Daily Maverick/i,'daily_maverick'],[/YouTubePremium/i,'youtube_premium'],[/Google One/i,'google_one'],
+ [/SpotifyZA|SPOTIFY/i,'spotify'],[/APPLE\.COMBILL/i,'apple'],[/TUBEBUDDY/i,'tubebuddy'],
+ [/Phantombuster/i,'phantombuster'],[/PCLOUD/i,'pcloud'],[/AMAZON DIGI/i,'amazon_digital'],
+ [/TimesLIVE/i,'timeslive'],[/Diamatrix|DiaMatrix/i,'diamatrix'],[/MEETUP/i,'meetup'],
+ [/MENTIMETER/i,'mentimeter'],[/PADDLE\.NET SOCIABLEKT/i,'paddle_sociablekit'],[/MEDIUM ANNUAL|MEDIUM\.COM/i,'medium'],
+ [/GITHUB/i,'github'],[/DUET AIR|DUETDISPLAY/i,'duet_display'],[/MIRO\.COM/i,'miro'],[/GRAMMARLY/i,'grammarly'],
+ [/DAMA INTERNATIONAL/i,'dama_international'],[/GENSPARK/i,'genspark'],[/CLAUDE\.AI|ANTHROPIC/i,'claude'],
+ [/PAYFAST/i,'payfast'],[/Canva/i,'canva'],[/MSFT /i,'_MSFT'],[/BOOKMAGIC/i,'bookmagic'],[/MANUS AI/i,'manus'],[/Moodle/i,'moodle'],
+ [/PLUS DOCS/i,'plus_docs'],[/BNESIM/i,'bnesim'],[/SM\.NORD|NORD/i,'nordvpn'],
+ [/DAILY BREAD|ANDY PERSONAL/i,'_current_account'],
+];
+const IMP_META={
+ mighty_networks:['Mighty Networks','Community platform','annual','none'],linkedin:['LinkedIn Sales Navigator','Sales/prospecting','annual','confirm'],
+ daily_maverick:['Daily Maverick','News','monthly','SA-VAT-15'],youtube_premium:['YouTube Premium','Media','monthly','confirm'],
+ google_one:['Google One','Cloud storage','monthly','confirm'],spotify:['Spotify','Media','monthly','SA-VAT-15'],
+ apple:['Apple / iTunes','App store/media','monthly','SA-VAT-15'],tubebuddy:['TubeBuddy','YouTube tools','monthly','none'],
+ phantombuster:['Phantombuster','Automation','monthly','none'],pcloud:['pCloud','Cloud storage','monthly','none'],
+ amazon_digital:['Amazon Digital','Digital goods','one-off','confirm'],timeslive:['TimesLIVE','News','monthly','SA-VAT-15'],
+ diamatrix:['DiaMatrix','Software','monthly','SA-VAT-15'],meetup:['Meetup','Community','6-monthly','none'],
+ mentimeter:['Mentimeter','Presentation','annual','none'],paddle_sociablekit:['Paddle / SociableKit','Web widget','annual','confirm'],
+ medium:['Medium','Reading','annual','none'],github:['GitHub','Dev tools','monthly','confirm'],
+ duet_display:['Duet Display','Software','annual','none'],miro:['Miro','Whiteboard','annual','none'],
+ grammarly:['Grammarly','Writing','annual','none'],dama_international:['DAMA International','Membership','annual','none'],
+ genspark:['Genspark AI','AI tools','monthly','none'],claude:['Claude (Anthropic)','AI tools','monthly','none'],
+ payfast:['PayFast','Payments','monthly','confirm'],canva:['Canva','Design','annual','confirm'],bookmagic:['BookMagic AI','AI tools','annual','none'],
+ manus:['Manus AI','AI tools','monthly','none'],moodle:['Moodle','LMS','annual','confirm'],
+ plus_docs:['Plus Docs','Docs/AI','monthly','none'],bnesim:['bneSIM','Connectivity','monthly','none'],
+ nordvpn:['NordVPN','VPN','annual','none'],
+ msft_business:['Microsoft 365 (R1,600 line)','Productivity','monthly','SA-VAT-15'],
+ msft_second:['Microsoft (R409 line)','Productivity','monthly','SA-VAT-15'],
+ msft_azure:['Microsoft Azure (metered)','Cloud/metered','monthly','SA-VAT-15'],
+};
+const IMP_FOREIGN=new Set(['mighty_networks','linkedin','tubebuddy','phantombuster','pcloud','amazon_digital','meetup','mentimeter','paddle_sociablekit','medium','github','duet_display','miro','grammarly','dama_international','genspark','claude','bookmagic','manus','moodle','plus_docs','bnesim','nordvpn','google_one','youtube_premium','canva']);
+
+function parseCSVLine(line){const out=[];let cur='',q=false;
+  for(let i=0;i<line.length;i++){const ch=line[i];
+    if(q){if(ch==='"'){if(line[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}
+    else{if(ch==='"')q=true;else if(ch===','){out.push(cur);cur='';}else cur+=ch;}}
+  out.push(cur);return out;}
+function impAmount(s){s=(s||'').trim();if(!s)return 0;return parseFloat(s.replace(/,/g,''))||0;}
+function msftSplit(a){if(Math.abs(a-1600.20)<1)return 'msft_business';if(Math.abs(a-408.90)<1)return 'msft_second';return 'msft_azure';}
+function impMatch(desc,amount){for(const [re,k] of IMP_RULES){if(re.test(desc))return k==='_MSFT'?msftSplit(amount):k;}return null;}
+function cleanName(desc){return (desc||'').replace(/\s+/g,' ').trim().split(' ').slice(0,3).join(' ')||'Unknown vendor';}
+function median(a){const n=a.length;if(!n)return 0;const s=[...a].sort((x,y)=>x-y);return n%2?s[(n-1)/2]:(s[n/2-1]+s[n/2])/2;}
+function chargeKey(c){return c.date+'|'+c.card+'|'+c.gross+'|'+(c.refund?'r':'')+'|'+c.desc;}
+
+function parseStatement(text){
+  const lines=text.split(/\r?\n/);let hi=-1;
+  for(let i=0;i<lines.length;i++){if(/Account Description/.test(lines[i])){hi=i;break;}}
+  if(hi<0)return {error:'Not an AccountTransactionsReport CSV (no header row found).',rows:[]};
+  const rows=[];
+  for(let i=hi+1;i<lines.length;i++){
+    if(!lines[i].trim())continue;
+    const f=parseCSVLine(lines[i]);if(f.length<8)continue;
+    if(f[0].trim())continue;                       // section / balance rows
+    const dt=f[1].trim();if(!/^\d{2}\/\d{2}\/\d{4}$/.test(dt))continue;
+    const [d,m,y]=dt.split('/');const iso=`${y}-${m}-${d}`;
+    const bank=f[2].trim(),ttype=f[4].trim(),desc=f[5].trim();
+    const debit=impAmount(f[6]),credit=impAmount(f[7]);
+    const refund=credit>0&&/receipt/i.test(ttype);
+    const gross=Math.round((refund?credit:debit)*100)/100;
+    if(!gross)continue;
+    const ci=IMP_CARD_MAP[bank]||['?',bank,'-'];
+    let key=impMatch(desc,refund?credit:debit);
+    rows.push({date:iso,entity:ci[0],card:ci[1],holder:ci[2],desc,gross,refund,key});
+  }
+  return {rows};
+}
+function classifyImport(parsed){
+  const existing=new Set();subs().forEach(s=>(s.charges||[]).forEach(c=>existing.add(chargeKey(c))));
+  const byKey={};subs().forEach(s=>{if(s.key)byKey[s.key]=s;});
+  const res={rows:parsed.length,add:[],newVendors:{},dups:0,nonsub:[],batch:new Set()};
+  parsed.forEach(c=>{
+    const ck=chargeKey(c);
+    if(existing.has(ck)||res.batch.has(ck)){res.dups++;return;}
+    res.batch.add(ck);
+    if(c.key==='_bankfee'||c.key==='_current_account'){res.nonsub.push(c);return;}
+    const sub=c.key&&byKey[c.key];
+    if(sub){res.add.push({sub,charge:c});}
+    else{const g=c.key||('unknown:'+cleanName(c.desc));(res.newVendors[g]=res.newVendors[g]||[]).push(c);}
+  });
+  return res;
+}
+function recomputeSub(s){
+  const ch=(s.charges||[]).slice().sort((a,b)=>a.date<b.date?-1:1);
+  const pays=ch.filter(c=>!c.refund),refs=ch.filter(c=>c.refund);
+  s.n_charges=pays.length;s.n_refunds=refs.length;
+  s.net_refunds=Math.round(refs.reduce((t,c)=>t+c.gross,0)*100)/100;
+  if(pays.length){s.last_actual=pays[pays.length-1].gross;s.typical=Math.round(median(pays.map(c=>c.gross))*100)/100;}
+  if(ch.length){s.first_seen=ch[0].date;s.last_seen=ch[ch.length-1].date;}
+  const cards=[...new Set(pays.map(c=>c.card))],ents=[...new Set(pays.map(c=>c.entity))];
+  s.cards_touched=cards;s.entities_touched=ents;
+  s.moved=(cards.length>1||ents.length>1)&&s.cadence!=='one-off';
+  if(pays.length){const l=pays[pays.length-1];s.entity=l.entity;s.card=l.card;s.holder=l.holder;}
+  s.charges=ch;recompute(s);
+}
+function applyImport(res){
+  const touched=new Set();
+  res.add.forEach(({sub,charge})=>{(sub.charges=sub.charges||[]).push(charge);touched.add(sub);dirty[sub.id]=true;});
+  Object.entries(res.newVendors).forEach(([g,charges])=>{
+    const meta=IMP_META[g];const last=charges[charges.length-1];
+    const unk=g.startsWith('unknown:');
+    const s={id:unk?('sub_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5)):g,
+      key:unk?'':g,name:meta?meta[0]:cleanName(charges[0].desc),category:meta?meta[1]:'? (new)',
+      entity:last.entity,card:last.card,holder:last.holder,cadence:meta?meta[2]:'monthly',
+      vat:meta?meta[3]:'confirm',status:'review',call:'—',buffer_pct:IMP_FOREIGN.has(g)?10:0,
+      charges:charges.slice(),...EDIT_FIELDS};
+    recomputeSub(s);subs().push(s);dirty[s.id]=true;
+    (LIVE.review=LIVE.review||[]).push({kind:'unmatched',severity:'warn',
+      title:'New vendor from import: '+s.name,
+      detail:'Imported '+charges.length+' charge(s) that didn\'t match an existing subscription — added as Review. Confirm name/entity, set cadence & VAT, or edit to mark one-off / cancel.',
+      evidence:charges.map(c=>c.date+' '+c.entity+'·'+c.card+' R'+c.gross.toFixed(2)).join('; ').slice(0,400)});
+  });
+  touched.forEach(recomputeSub);
+  applyOverdueRule();   // re-evaluate overdue monthlies (and auto-restore any that just got paid)
+  if(res.nonsub.length){(LIVE.review=LIVE.review||[]).push({kind:'nonsub',severity:'info',
+    title:'Non-subscription rows in import ('+res.nonsub.length+')',
+    detail:'Bank fees / current-account movement — excluded from the subscription run-rate.',
+    evidence:res.nonsub.map(c=>c.date+' '+c.card+' R'+c.gross.toFixed(2)+' '+c.desc.slice(0,26)).join('; ').slice(0,400)});}
+  (LIVE.imports=LIVE.imports||[]).push({at:new Date().toISOString().slice(0,16).replace('T',' '),by:cfg.editor||'',
+    rows:res.rows,added:res.add.length,newVendors:Object.keys(res.newVendors).length,dups:res.dups,nonsub:res.nonsub.length});
+  closeModal();render();markDirty();
+  toast('Imported '+res.add.length+' charge(s), '+Object.keys(res.newVendors).length+' new vendor(s). Save to GitHub to commit.');
+}
+function openImport(){
+  const root=document.getElementById('modalRoot');
+  root.innerHTML=`<div class="modal-bg"><div class="modal">
+    <h2>Import a credit-card statement</h2>
+    <div class="mdesc">Pick an FNB <b>AccountTransactionsReport</b> CSV (the same export we use — it carries the card in each row, so one file can cover several cards). Charges are matched to existing subscriptions; new vendors go to the review inbox; duplicates already in the register are skipped.</div>
+    <input type="file" id="impFile" accept=".csv,text/csv" style="margin:6px 0 4px">
+    <div id="impPreview"></div>
+    <div class="modal-foot"><div class="grow"></div>
+      <button class="btn ghost" id="impCancel">Cancel</button>
+      <button class="btn" id="impApply" disabled>Apply import</button></div>
+  </div></div>`;
+  let result=null;
+  const $=x=>document.getElementById(x);
+  $('impCancel').onclick=closeModal;
+  $('impFile').onchange=e=>{
+    const file=e.target.files[0];if(!file)return;
+    const rd=new FileReader();
+    rd.onload=()=>{
+      const p=parseStatement(rd.result);
+      if(p.error){$('impPreview').innerHTML=`<div class="note-box" style="color:var(--cancel)">${esc(p.error)}</div>`;return;}
+      result=classifyImport(p.rows);
+      const nv=Object.entries(result.newVendors);
+      $('impPreview').innerHTML=`
+        <div class="note-box" style="margin-top:12px">
+          <div><b>${p.rows.length}</b> transaction rows read from <b>${esc(file.name)}</b></div>
+          <div style="margin-top:8px;display:grid;gap:5px">
+            <div>✅ <b>${result.add.length}</b> charge(s) will be added to known subscriptions</div>
+            <div>🆕 <b>${nv.length}</b> new vendor(s) → added as <b>Review</b> (${nv.reduce((t,[,c])=>t+c.length,0)} charge(s))</div>
+            <div>⏭️ <b>${result.dups}</b> duplicate(s) already in the register — skipped</div>
+            <div>➖ <b>${result.nonsub.length}</b> non-subscription row(s) (bank fee / current account) — noted, excluded</div>
+          </div>
+          ${nv.length?'<div style="margin-top:10px"><b>New vendors:</b> '+nv.map(([g,c])=>esc((IMP_META[g]?IMP_META[g][0]:cleanName(c[0].desc)))+' ('+c.length+')').join(', ')+'</div>':''}
+          ${result.add.length===0&&nv.length===0?'<div style="margin-top:10px;color:var(--warn)">Nothing new to import — every row is already in the register.</div>':''}
+        </div>`;
+      $('impApply').disabled=!(result.add.length||nv.length||result.nonsub.length);
+    };
+    rd.readAsText(file);
+  };
+  $('impApply').onclick=()=>{if(result)applyImport(result);};
 }
 
 /* ===== shell ===== */
@@ -5452,6 +5670,7 @@ document.addEventListener('click',e=>{const m=document.getElementById('mselStatu
 buildStatusPanel();updStatusBtn();
 document.getElementById('cfgBtn').onclick=openCfg;
 document.getElementById('addBtn').onclick=()=>openEdit(null);
+document.getElementById('importBtn').onclick=openImport;
 document.getElementById('saveBtn').onclick=doSave;
 document.getElementById('discardBtn').onclick=()=>{if(confirm('Discard unsaved changes and reload the last loaded data?'))boot();};
 boot();

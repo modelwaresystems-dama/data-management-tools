@@ -136,6 +136,10 @@
   .pv-h .who{font-weight:700;}.pv-h .sc{font-family:"IBM Plex Mono",monospace;color:var(--accent-ink);font-weight:700;}
   .pv-wait{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;color:var(--muted);}
   .pv-wait .big{font-family:"Sora",sans-serif;font-size:22px;color:var(--ink);font-weight:700;}
+  .bigemoji{font-size:64px;line-height:1;animation:bob 2.4s ease-in-out infinite;}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  @media (prefers-reduced-motion:reduce){.bigemoji{animation:none}}
+  .me-em{font-size:18px;}
   .pulse{width:54px;height:54px;border-radius:50%;border:3px solid var(--accent);animation:pl 1.4s infinite;}
   @keyframes pl{0%{transform:scale(.8);opacity:.5}70%{transform:scale(1.15);opacity:0}100%{opacity:0}}
   .pv-q{font-family:"Sora",sans-serif;font-weight:700;font-size:clamp(19px,5vw,24px);line-height:1.25;flex:none;margin-bottom:16px;}
@@ -224,7 +228,10 @@ let pTimer=null, myPick=null, myAnsweredQi=-1, myLog={};
 
 /* ---------- utils ---------- */
 function initials(n){return (n||"?").split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();}
-function color(seed){const c=["#2FD4C0","#E4572E","#E0A82E","#2E86E4","#17A673","#B57BFF","#F0685E","#4EC0A8"];let h=0;for(const ch of seed)h=(h*31+ch.charCodeAt(0))>>>0;return c[h%c.length];}
+function color(seed){const c=["#2FD4C0","#E4572E","#E0A82E","#2E86E4","#17A673","#B57BFF","#F0685E","#4EC0A8"];let h=0;for(const ch of String(seed))h=(h*31+ch.charCodeAt(0))>>>0;return c[h%c.length];}
+/* A fun, stable emoji per participant (keyed by their id), Menti-style */
+const EMOJI=["🦊","🐼","🦁","🐙","🦄","🐸","🐵","🦉","🐧","🐝","🦋","🐬","🐢","🦖","🐳","🦈","🦩","🦚","🦜","🐨","🐯","🦓","🦒","🐷","🐰","🐹","🦝","🦔","🦇","🐺","🦌","🐌","🐞","🐠","🐦","🦆","🐓","🦃","🐥","🌟","🍕","🍔","🌮","🍩","🍦","🎸","🚀","👾","🤖","🎩","👑","💎","🔥","⚡","🌈","🍀"];
+function emoji(seed){let h=0;for(const ch of String(seed))h=(h*31+ch.charCodeAt(0))>>>0;return EMOJI[h%EMOJI.length];}
 function ordinal(n){const s=["th","st","nd","rd"],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);}
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));}
 function cleanText(s){ if(s==null)return""; s=String(s);
@@ -371,24 +378,25 @@ function wireHostButtons(){
   document.getElementById("h-restart").onclick=()=>hostRestart();
   document.getElementById("h-save").onclick=downloadResults;
 }
-/* Export names, scores AND per-question right/wrong as CSV for the host to save
-   into the PRIVATE repo (results/). Columns: rank,name,score,correct,total,Q1..Qn
-   (✓ correct, ✗ wrong, – no answer), plus an answer-key comment line. */
+/* Export names, scores AND per-question results as CSV for the host to save into
+   the PRIVATE repo (results/). Per-question cells are numeric: 1 correct, -1 wrong,
+   0 no answer. Columns: rank,name,score,correct,wrong,net,total,Q1..Qn + answer key.
+   Numbers are written unquoted so Excel can SUM them. */
 function downloadResults(){
   if(!H||!H.players.size)return;
   const N=QUIZ.questions.length;
   const key=QUIZ.questions.map((q,i)=>`Q${i+1}=${String.fromCharCode(65+q.correct)}`).join("  ");
-  const head=["rank","name","score","correct","total"].concat(QUIZ.questions.map((_,i)=>"Q"+(i+1)));
+  const head=["rank","name","score","correct","wrong","net","total"].concat(QUIZ.questions.map((_,i)=>"Q"+(i+1)));
   const rows=[head];
   [...H.players.values()].sort((a,b)=>b.score-a.score).forEach((p,i)=>{
-    let correct=0;
-    const cells=QUIZ.questions.map((q,qi)=>{ const e=p.log&&p.log[qi]; if(e&&e.correct){correct++;return "✓";} if(e&&e.pick!=null)return "✗"; return "–"; });
-    rows.push([i+1,p.name,p.score,correct,N].concat(cells));
+    let correct=0, wrong=0;
+    const cells=QUIZ.questions.map((q,qi)=>{ const e=p.log&&p.log[qi]; if(e&&e.correct){correct++;return 1;} if(e&&e.pick!=null){wrong++;return -1;} return 0; });
+    rows.push([i+1,p.name,p.score,correct,wrong,correct-wrong,N].concat(cells));
   });
-  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  const csv=rows.map(r=>r.map(c=> typeof c==="number" ? String(c) : `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const date=new Date().toISOString();
-  const header=`# ${ (QUIZ&&QUIZ.title)||"Quiz" } — room ${room} — ${date}\r\n# Answer key: ${key}\r\n`;
-  const blob=new Blob(["﻿"+header+csv],{type:"text/csv;charset=utf-8"});  // BOM so Excel shows the ticks
+  const header=`# ${ (QUIZ&&QUIZ.title)||"Quiz" } — room ${room} — ${date}\r\n# Answer key: ${key}\r\n# Per-question: 1 = correct, -1 = wrong, 0 = no answer\r\n`;
+  const blob=new Blob(["﻿"+header+csv],{type:"text/csv;charset=utf-8"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download=`results-${room}-${date.slice(0,10)}.csv`;
@@ -442,7 +450,7 @@ function syncHostBar(s){
 function ringHTML(sec,frac){const R=25,C=2*Math.PI*R,off=C*(1-frac),col=sec>6?"var(--accent)":"var(--bad)";return `<div class="ring"><svg width="58" height="58"><circle cx="29" cy="29" r="${R}" fill="none" stroke="var(--line)" stroke-width="6"/><circle cx="29" cy="29" r="${R}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg><span class="num">${sec}</span></div>`;}
 function projectorHTML(s){
   if(s.phase==="lobby"){
-    const chips=[...H.players.values()].map(p=>`<span class="chip"><span class="av" style="background:${color(p.name)}">${esc(initials(p.name))}</span>${esc(p.name)}</span>`).join("");
+    const chips=[...H.players.entries()].map(([id,p])=>`<span class="chip"><span class="av" style="background:${color(id)};font-size:14px">${emoji(id)}</span>${esc(p.name)}</span>`).join("");
     return `<div class="lobby">
       <div class="join">
         <h2>Join the live quiz</h2>
@@ -465,15 +473,15 @@ function projectorHTML(s){
   if(s.phase==="reveal"){
     const tot=Math.max(1,s.answeredN);
     const tiles=s.question.options.map((o,i)=>{const ok=i===s.correct;return `<div class="tile ${OM(i).k} ${ok?'correct':'dim'}"><span class="gl">${OM(i).gl}</span><span class="tx">${esc(o)}</span>${ok?'<span class="mark">✓</span>':''}<span class="fill" style="width:${(s.counts[i]/tot)*100}%"></span><span class="ct">${s.counts[i]}</span></div>`;}).join("");
-    const lb=(s.leaderboard||[]).slice(0,6).map((p,i)=>`<div class="lrow ${i<3?'top':''}"><span class="rk">${i+1}</span><span class="av" style="background:${color(p.name)};width:24px;height:24px">${esc(initials(p.name))}</span><span class="nm">${esc(p.name)}</span>${p.lastPts>0?`<span class="dl">+${p.lastPts}</span>`:''}<span class="pt">${p.score}</span></div>`).join("");
+    const lb=(s.leaderboard||[]).slice(0,6).map((p,i)=>`<div class="lrow ${i<3?'top':''}"><span class="rk">${i+1}</span><span class="av" style="background:${color(p.pid)};width:24px;height:24px;font-size:15px">${emoji(p.pid)}</span><span class="nm">${esc(p.name)}</span>${p.lastPts>0?`<span class="dl">+${p.lastPts}</span>`:''}<span class="pt">${p.score}</span></div>`).join("");
     return `<div class="qhead"><span class="qmeta">Answer · Q<b>${s.qi+1}</b></span><span class="cat">${esc(s.category||"")}</span></div>
       <div class="reveal"><div class="left"><div class="grid" style="flex:0 0 auto">${tiles}</div><div class="whybox"><b>Why — the NotebookLM edge</b>${esc(s.why||"")}</div></div>
       <div class="lb"><h3>Leaderboard</h3><div class="rows">${lb}</div></div></div>`;
   }
   // final
   const lb=s.leaderboard||[]; const top=lb.slice(0,3); const order=[1,0,2];
-  const pods=order.map(pos=>{const p=top[pos];if(!p)return"";const cls=pos===0?"p1":pos===1?"p2":"p3";return `<div class="pod ${cls}"><span class="av" style="background:${color(p.name)};width:40px;height:40px;font-size:15px">${esc(initials(p.name))}</span><div class="who">${esc(p.name)}</div><div class="bar2">${p.score}</div><div class="mono" style="color:var(--faint)">#${pos+1}</div></div>`;}).join("");
-  const rest=lb.slice(0,8).map((p,i)=>`<div class="lrow"><span class="rk">${i+1}</span><span class="av" style="background:${color(p.name)};width:24px;height:24px">${esc(initials(p.name))}</span><span class="nm">${esc(p.name)}</span><span class="pt">${p.score}</span></div>`).join("");
+  const pods=order.map(pos=>{const p=top[pos];if(!p)return"";const cls=pos===0?"p1":pos===1?"p2":"p3";return `<div class="pod ${cls}"><span class="av" style="background:${color(p.pid)};width:44px;height:44px;font-size:24px">${emoji(p.pid)}</span><div class="who">${esc(p.name)}</div><div class="bar2">${p.score}</div><div class="mono" style="color:var(--faint)">#${pos+1}</div></div>`;}).join("");
+  const rest=lb.slice(0,8).map((p,i)=>`<div class="lrow"><span class="rk">${i+1}</span><span class="av" style="background:${color(p.pid)};width:24px;height:24px;font-size:15px">${emoji(p.pid)}</span><span class="nm">${esc(p.name)}</span><span class="pt">${p.score}</span></div>`).join("");
   return `<div class="final"><h2 class="disp">\u{1F3C6} Final results</h2><div class="podium">${pods}</div><div class="lb" style="width:min(460px,100%);max-height:230px"><h3>Top of the room</h3><div class="rows">${rest}</div></div></div>`;
 }
 function drawQR(url){
@@ -515,8 +523,8 @@ function renderPlayerWaiting(msg){
 function myScore(){ if(!P||!P.leaderboard)return 0; const me=P.leaderboard.find(p=>p.pid===pid); return me?me.score:0; }
 function renderPlayer(){
   if(!P){ return renderPlayerWaiting("Waiting for the host to start…"); }
-  const head=`<div class="pv-h"><span class="who">${esc(myName)}</span><span class="sc">${myScore()} pts</span></div>`;
-  if(P.phase==="lobby"){ mount.innerHTML=`<div class="pv">${head}<div class="pv-wait"><div class="pulse"></div><div class="big">You're in!</div><div>Waiting for the host to start…</div></div></div>`; return; }
+  const head=`<div class="pv-h"><span class="who"><span class="me-em">${emoji(pid)}</span> ${esc(myName)}</span><span class="sc">${myScore()} pts</span></div>`;
+  if(P.phase==="lobby"){ mount.innerHTML=`<div class="pv">${head}<div class="pv-wait"><div class="bigemoji">${emoji(pid)}</div><div class="big">You're in!</div><div>That's your emoji up on the big screen — waiting for the host to start…</div></div></div>`; return; }
   if(P.phase==="question"){
     const sec=Math.max(0,Math.ceil((P.endsAt-Date.now())/1000));
     if(myPick==null && myAnsweredQi!==P.qi){

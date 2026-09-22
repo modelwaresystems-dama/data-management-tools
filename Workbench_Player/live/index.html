@@ -152,6 +152,10 @@
   .pv-fb.ok .badge{color:var(--good);}.pv-fb.no .badge{color:var(--bad);}
   .pv-fb .pts{font-family:"IBM Plex Mono",monospace;font-size:40px;font-weight:700;}
   .pv-fb .rk{color:var(--muted);font-size:15px;}
+  .revwrap{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px;max-width:340px;}
+  .revchip{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;padding:5px 10px;border-radius:8px;}
+  .revchip.ok{background:color-mix(in srgb,var(--good) 20%,var(--panel));color:var(--good);}
+  .revchip.no{background:color-mix(in srgb,var(--bad) 18%,var(--panel));color:var(--bad);}
   .banner{background:var(--panel);border:1px solid var(--line2);color:var(--muted);font-size:13px;padding:10px 14px;border-radius:10px;margin:10px auto;max-width:560px;text-align:center;}
   .banner.warn{border-color:color-mix(in srgb,var(--gold) 50%,transparent);color:var(--gold);}
 
@@ -216,7 +220,7 @@ let ably=null, chState=null, chAns=null, chBase=null;
 let H = null; // {phase,qi,players:Map,answers:Map,counts,startTs,endsAt,timer}
 /* player received state */
 let P = null; // last state object from host
-let pTimer=null, myPick=null, myAnsweredQi=-1;
+let pTimer=null, myPick=null, myAnsweredQi=-1, myLog={};
 
 /* ---------- utils ---------- */
 function initials(n){return (n||"?").split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();}
@@ -345,7 +349,8 @@ let _pt=null; function throttledPublish(){ if(_pt)return; _pt=setTimeout(()=>{_p
 function hostStateForWire(){
   const total=QUIZ.questions.length;
   const base={code:room, title:QUIZ.title, category:QUIZ.category, phase:H.phase, qi:H.qi, total,
-              roomN:H.players.size, answeredN:H.answers.size, counts:H.counts.slice(), joinUrl:joinBase()+"?room="+room};
+              roomN:H.players.size, answeredN:H.answers.size, counts:H.counts.slice(),
+              joinBase:joinBase(), joinUrl:joinBase()+"?room="+room};
   if(H.phase==="question"){
     const q=QUIZ.questions[H.qi];
     base.question={q:q.q, options:q.options};   // NOTE: correct index intentionally omitted until reveal
@@ -366,21 +371,30 @@ function wireHostButtons(){
   document.getElementById("h-restart").onclick=()=>hostRestart();
   document.getElementById("h-save").onclick=downloadResults;
 }
-/* Export names + scores as CSV for the host to save into the PRIVATE repo (results/). */
+/* Export names, scores AND per-question right/wrong as CSV for the host to save
+   into the PRIVATE repo (results/). Columns: rank,name,score,correct,total,Q1..Qn
+   (✓ correct, ✗ wrong, – no answer), plus an answer-key comment line. */
 function downloadResults(){
   if(!H||!H.players.size)return;
-  const rows=[["rank","name","score"]];
-  [...H.players.values()].sort((a,b)=>b.score-a.score).forEach((p,i)=>rows.push([i+1,p.name,p.score]));
+  const N=QUIZ.questions.length;
+  const key=QUIZ.questions.map((q,i)=>`Q${i+1}=${String.fromCharCode(65+q.correct)}`).join("  ");
+  const head=["rank","name","score","correct","total"].concat(QUIZ.questions.map((_,i)=>"Q"+(i+1)));
+  const rows=[head];
+  [...H.players.values()].sort((a,b)=>b.score-a.score).forEach((p,i)=>{
+    let correct=0;
+    const cells=QUIZ.questions.map((q,qi)=>{ const e=p.log&&p.log[qi]; if(e&&e.correct){correct++;return "✓";} if(e&&e.pick!=null)return "✗"; return "–"; });
+    rows.push([i+1,p.name,p.score,correct,N].concat(cells));
+  });
   const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const date=new Date().toISOString();
-  const header=`# ${ (QUIZ&&QUIZ.title)||"Quiz" } — room ${room} — ${date}\r\n`;
-  const blob=new Blob([header+csv],{type:"text/csv;charset=utf-8"});
+  const header=`# ${ (QUIZ&&QUIZ.title)||"Quiz" } — room ${room} — ${date}\r\n# Answer key: ${key}\r\n`;
+  const blob=new Blob(["﻿"+header+csv],{type:"text/csv;charset=utf-8"});  // BOM so Excel shows the ticks
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download=`results-${room}-${date.slice(0,10)}.csv`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
-function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;}); H.answers=new Map(); H.counts=[0,0,0,0]; publishState(); renderHost(); }
+function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};}); H.answers=new Map(); H.counts=[0,0,0,0]; publishState(); renderHost(); }
 function hostNext(){
   clearInterval(H.timer);
   H.qi++;
@@ -396,9 +410,10 @@ function hostReveal(){
   clearInterval(H.timer); H.phase="reveal";
   const q=QUIZ.questions[H.qi];
   H.players.forEach((p,id)=>{
-    const a=H.answers.get(id); let pts=0;
-    if(a && a.pick===q.correct){ const frac=Math.max(0,Math.min(1,1-(a.at-H.startTs)/(DURATION*1000))); pts=Math.round(600+400*frac); }
+    const a=H.answers.get(id); let pts=0; const correct=!!(a && a.pick===q.correct);
+    if(correct){ const frac=Math.max(0,Math.min(1,1-(a.at-H.startTs)/(DURATION*1000))); pts=Math.round(600+400*frac); }
     p.lastPts=pts; p.score+=pts;
+    if(!p.log)p.log={}; p.log[H.qi]={pick:a?a.pick:null, correct};
   });
   publishState(); renderHost();
 }
@@ -432,7 +447,7 @@ function projectorHTML(s){
       <div class="join">
         <h2>Join the live quiz</h2>
         <div class="code mono">${esc(s.code)}</div>
-        <div class="url">at <b style="color:var(--ink)">${esc(s.joinUrl)}</b></div>
+        <div class="url">📱 Scan the QR &nbsp;·&nbsp; 💻 open <b style="color:var(--ink)">${esc(s.joinBase)}</b><br>and enter code <b style="color:var(--accent-ink)">${esc(s.code)}</b></div>
         <div class="joiners"><div class="cnt"><b>${s.roomN}</b> in the room</div><div class="chips">${chips||'<span style="color:var(--faint);font-size:14px">Waiting for people to join…</span>'}</div></div>
       </div>
       <div class="art"><div class="qr" id="qrbox"></div><div class="mono" style="color:var(--faint);font-size:13px">${esc(s.category||"")}</div></div>
@@ -477,13 +492,21 @@ function startPlayer(){
   chState.subscribe("s",(msg)=>onState(msg.data));
   // rewind delivers the last state if a round is already in progress
   renderPlayerWaiting("Connecting…");
-  clearInterval(pTimer); pTimer=setInterval(()=>{ if(P&&P.phase==="question")renderPlayer(); },250);
+  clearInterval(pTimer); pTimer=setInterval(()=>{
+    if(P&&P.phase==="question"){ const el=document.querySelector(".pv-timer"); if(el) el.textContent=Math.max(0,Math.ceil((P.endsAt-Date.now())/1000))+"s left"; }
+  },250);
 }
 function onState(s){
-  const changedQ = !P || P.phase!==s.phase || P.qi!==s.qi;
+  const changedPhase = !P || P.phase!==s.phase || P.qi!==s.qi;
   P=s;
-  if(changedQ && s.phase==="question"){ myPick=null; myAnsweredQi=-1; }
-  renderPlayer();
+  if(changedPhase){
+    if(s.phase==="question"){ myPick=null; myAnsweredQi=-1; }
+    renderPlayer();
+  } else if(s.phase!=="question"){
+    renderPlayer();   // reveal/final leaderboard updates are safe to re-render
+  }
+  // During a question with no phase/qi change (just live vote counts), do NOT
+  // re-render: rebuilding the answer buttons was eating taps on mobile.
 }
 function renderPlayerWaiting(msg){
   mount.innerHTML=`<div class="pv"><div class="pv-h"><span class="who">${esc(myName)}</span><span class="sc" id="pvsc">0 pts</span></div>
@@ -507,19 +530,22 @@ function renderPlayer(){
     return;
   }
   if(P.phase==="reveal"){
+    if(myLog[P.qi]) myLog[P.qi].correct=(myLog[P.qi].pick===P.correct);
     const ok=myPick===P.correct, answered=myAnsweredQi===P.qi||myPick!=null;
     const me=(P.leaderboard||[]).find(p=>p.pid===pid); const rank=(P.leaderboard||[]).findIndex(p=>p.pid===pid)+1;
     const pts=me?me.lastPts:0;
     mount.innerHTML=`<div class="pv">${head}<div class="pv-fb ${ok?'ok':'no'}"><div class="badge">${!answered?'⏱ No answer':(ok?'✓ Correct!':'✗ Not quite')}</div><div class="pts">${ok?'+'+pts:'0'}</div><div class="rk">${rank>0?`You're ${ordinal(rank)} of ${P.roomN} · ${myScore()} pts`:''}</div></div></div>`;
     return;
   }
-  // final
+  // final — with a per-question review of what you got right/wrong
   const rank=(P.leaderboard||[]).findIndex(p=>p.pid===pid)+1;
-  mount.innerHTML=`<div class="pv">${head}<div class="pv-fb"><div class="badge disp">\u{1F3C1} Done!</div><div class="pts">${myScore()}</div><div class="rk">${rank>0?`Final rank: ${ordinal(rank)} of ${P.roomN}`:''}</div></div></div>`;
+  const qids=Object.keys(myLog).map(Number).sort((a,b)=>a-b);
+  let corr=0; const chips=qids.map(qi=>{const e=myLog[qi];const ok=!!e.correct;if(ok)corr++;return `<span class="revchip ${ok?'ok':'no'}">Q${qi+1} ${ok?'✓':'✗'}</span>`;}).join("");
+  mount.innerHTML=`<div class="pv">${head}<div class="pv-fb"><div class="badge disp">\u{1F3C1} Done!</div><div class="pts">${myScore()}</div><div class="rk">${corr}/${P.total||qids.length} correct${rank>0?` · rank ${ordinal(rank)} of ${P.roomN}`:''}</div>${chips?`<div class="revwrap">${chips}</div>`:''}</div></div>`;
 }
 function sendAnswer(i){
   if(!P||P.phase!=="question"||myPick!=null)return;
-  myPick=i; myAnsweredQi=P.qi;
+  myPick=i; myAnsweredQi=P.qi; myLog[P.qi]={pick:i};
   chAns.publish("a",{pid,name:myName,qi:P.qi,pick:i,at:Date.now()});
   renderPlayer();
 }

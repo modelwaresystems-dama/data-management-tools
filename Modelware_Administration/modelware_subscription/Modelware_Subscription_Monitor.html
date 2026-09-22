@@ -289,7 +289,7 @@ footer{color:var(--ink-soft);font-size:12px;margin-top:30px;text-align:center}
 
 <script>
 /* ===== build info ===== */
-const BUILD={version:'2.4.0',built:'2026-09-21 10:46 UTC'};
+const BUILD={version:'2.4.1',built:'2026-09-22 03:45 UTC'};
 /* ===== BUNDLED DATA (fallback + seed for the private repo) ===== */
 const BUNDLED = /*__DATA__*/{
  "generated": "2026-09-20",
@@ -5112,10 +5112,30 @@ function b64dec(b64){return decodeURIComponent(escape(atob((b64||'').replace(/\n
 async function ghGet(){
   const url=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path()}?ref=${encodeURIComponent(cfg.branch)}`;
   const r=await fetch(url,{headers:ghHeaders()});
-  if(r.status===404) return {missing:true};
+  if(r.status===404){
+    // A 404 here is ambiguous: the data file may be genuinely absent, OR the owner/repo/
+    // branch/token is wrong. Only offer to seed when the repo+branch actually check out.
+    const diag=await ghDiagnose();
+    if(diag){const e=new Error(diag);e.repoErr=true;throw e;}
+    return {missing:true};
+  }
   if(!r.ok) throw new Error('read '+r.status+': '+(await r.text()).slice(0,160));
   const j=await r.json();
   return {data:JSON.parse(b64dec(j.content)),sha:j.sha};
+}
+/* Distinguish "repo/owner/branch/token wrong" from "data file genuinely missing".
+   Returns a human message when the connection itself is at fault, or '' when the
+   repo+branch are reachable (so a missing file really is just an un-seeded file). */
+async function ghDiagnose(){
+  try{
+    const rr=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}`,{headers:ghHeaders()});
+    if(rr.status===404) return `Can't find repo ${cfg.owner}/${cfg.repo}. Check the Owner and Repository spelling — the owner uses hyphens (e.g. modelwaresystems-dama), not underscores.`;
+    if(rr.status===401||rr.status===403) return `GitHub rejected the token (HTTP ${rr.status}). Use a fine-grained PAT with Contents read+write on this repo, and check it hasn't expired.`;
+    if(!rr.ok) return `Can't reach ${cfg.owner}/${cfg.repo} (HTTP ${rr.status}).`;
+    const br=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/branches/${encodeURIComponent(cfg.branch)}`,{headers:ghHeaders()});
+    if(br.status===404) return `Repo found, but branch "${cfg.branch}" doesn't exist. Check the Branch field.`;
+    return '';   // repo + branch OK → the data file itself is genuinely missing (offer to seed)
+  }catch(e){ return ''; }
 }
 async function ghPut(obj,prevSha,msg){
   const url=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path()}`;
@@ -5145,7 +5165,7 @@ async function boot(){
       const res=await ghGet();
       if(res.missing){ setSync('local','Repo empty — seed'); toast('No data file in repo yet — open ⚙ GitHub to seed it.'); }
       else { LIVE=normalise(res.data); sha=res.sha; applyOverdueRule(); setSync('synced','Synced'); render(); checkProposal(true); }
-    }catch(e){ setSync('error','Connect failed'); toast('GitHub: '+e.message,true); }
+    }catch(e){ setSync('error',e.repoErr?'Repo/token error':'Connect failed'); toast(e.repoErr?e.message:('GitHub: '+e.message),true); }
   } else {
     setSync('local','Local file — not connected');
   }
@@ -5472,7 +5492,7 @@ function openCfg(){
         } else setSync('local','Repo empty — seed');
       } else {LIVE=normalise(res.data);sha=res.sha;setSync('synced','Synced');toast('Connected — loaded from GitHub.');}
       dirty={};applyOverdueRule();markDirty();render();checkProposal(true);
-    }catch(e){setSync('error','Connect failed');toast('GitHub: '+e.message,true);}
+    }catch(e){setSync('error',e.repoErr?'Repo/token error':'Connect failed');toast(e.repoErr?e.message:('GitHub: '+e.message),true);}
   };
 }
 

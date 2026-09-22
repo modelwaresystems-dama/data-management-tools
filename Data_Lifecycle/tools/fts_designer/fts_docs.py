@@ -146,6 +146,11 @@ def context_svg(ms, mid):
         s.append(f'<text x="{colL+10}" y="{yy+18}" font-weight="600" fill="#1e2a30">{H.escape(r["name"])} <tspan font-weight="400" fill="#5f6f78">{r["id"]}</tspan></text>')
         for i, ln in enumerate(lines): s.append(f'<text x="{colL+10}" y="{yy+34+i*lh}" fill="#1e2a30" font-family="Consolas, Menlo, monospace" font-size="11">{H.escape(ln)}</text>')
         if not lines: s.append(f'<text x="{colL+10}" y="{yy+34}" fill="#9aa5ab" font-size="11">no contribution</text>')
+    # frame: the Knowledge Area's FTSs as one box, so the coupling spine joins the whole set and not one element
+    if C:
+        fy0 = C[0][1] - 12; fy1 = C[-1][1] + 48 + 12
+        s.append(f'<rect x="{colC-12}" y="{fy0}" width="{bw+24}" height="{fy1-fy0}" rx="10" fill="none" stroke="#0f6b6e" stroke-width="1.6" stroke-dasharray="6 4"/>')
+        s.append(f'<text x="{colC+bw+6}" y="{fy1+14}" text-anchor="end" fill="#0f6b6e" font-size="11">{H.escape(short(mid))} FTSs, {len(C)} regions</text>')
     for r, yy in C:
         s.append(f'<rect x="{colC}" y="{yy}" width="{bw}" height="48" rx="6" fill="#e3f1f0" stroke="#0f6b6e"/>')
         s.append(f'<text x="{colC+10}" y="{yy+19}" font-weight="600" fill="#1e2a30">{H.escape(r["name"][:40])}</text>')
@@ -177,8 +182,8 @@ def context_svg(ms, mid):
     if R:
         sx = colR - 34; top = R[0][2]; bot = R[-1][2] + box_h(R[-1][1])
         s.append(f'<line x1="{sx}" y1="{top}" x2="{sx}" y2="{bot}" stroke="#6a3d9a" stroke-width="1.6"/>')
-        cmid = (C[0][1] + C[-1][1] + 48) / 2 if C else (top + bot) / 2
-        s.append(f'<path d="M{colC+bw},{cmid:.0f} L{sx},{cmid:.0f}" fill="none" stroke="#6a3d9a" stroke-width="1.6"/>')
+        cmid = (C[0][1] - 12 + C[-1][1] + 60) / 2 if C else (top + bot) / 2
+        s.append(f'<path d="M{colC+bw+12},{cmid:.0f} L{sx},{cmid:.0f}" fill="none" stroke="#6a3d9a" stroke-width="1.6"/>')
         if not (top <= cmid <= bot): s.append(f'<line x1="{sx}" y1="{min(top, cmid):.0f}" x2="{sx}" y2="{max(bot, cmid):.0f}" stroke="#6a3d9a" stroke-width="1.6"/>')
     for oid, lines, yy in R:
         h = box_h(lines)
@@ -188,8 +193,8 @@ def context_svg(ms, mid):
         for i, ln in enumerate(lines): s.append(f'<text x="{colR+10}" y="{yy+34+i*lh}" fill="#1e2a30" font-family="Consolas, Menlo, monospace" font-size="11">{H.escape(ln)}</text>')
     s.insert(1, '<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f6f9a"/></marker></defs>')
     for i, ln in enumerate(["Left arrows: one per managed element and Global region pair, from the element whose states the contribution requires to the region it gates (dashed: no required state recorded).",
-                            "Letters: G guard, E event, S service, D decision right, * Non-waivable. Right: the Knowledge Areas this KA is coupled to, hung off one spine (the model does not record",
-                            "which managed element a coupling belongs to). out: declared by this KA (* event emitted) · in: declared by the other KA against this one."]):
+                            "Letters: G guard, E event, S service, D decision right, * Non-waivable. Right: the Knowledge Areas this KA is coupled to, hung off one spine that joins the frame around all of this KA's FTSs (the model does not",
+                            "record which managed element a coupling belongs to, so the couplings are the Knowledge Area's as a whole). out: declared by this KA (* event emitted) · in: declared by the other KA against this one."]):
         s.append(f'<text x="{colL}" y="{Hh-36+i*13}" fill="#5f6f78" font-size="10.5">{H.escape(ln)}</text>')
     s.append("</svg>")
     return "\n".join(s)

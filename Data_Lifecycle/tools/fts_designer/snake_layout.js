@@ -31,8 +31,13 @@ function snakeSvg(G, tops, availW, opts){
     const ids=new Set(kids.map(k=>k.id)); const fwd={}; kids.forEach(k=>fwd[k.id]=[]);
     G.edges.forEach(e=>{ if(!e.inner && ids.has(e.a) && ids.has(e.b) && e.a!==e.b) fwd[e.a].push(e.b); });
     const startId=(G.initials.find(i=>ids.has(i)))||(kids.find(k=>k.initial)||kids[0]).id;
-    const order=[]; const seen=new Set(); const q=[startId]; while(q.length){ const x=q.shift(); if(seen.has(x)) continue; seen.add(x); order.push(x); fwd[x].forEach(b=>{ if(!seen.has(b)) q.push(b); }); }
-    kids.forEach(k=>{ if(!seen.has(k.id)) order.push(k.id); });
+    // reading order: rank each state by its longest simple path from the initial state (so a retired, superseded or withdrawn
+    // state reached early by a short cut still sits after the states it follows in the main flow); ties keep the model's declared order
+    const declared={}; kids.forEach((k,i)=>declared[k.id]=i);
+    const rank={}; rank[startId]=0;
+    if(kids.length<=14){ const onPath=new Set(); (function dfs(x,d){ onPath.add(x); fwd[x].forEach(b=>{ if(onPath.has(b)) return; if(!(b in rank)||rank[b]<d+1) rank[b]=d+1; dfs(b,d+1); }); onPath.delete(x); })(startId,0); }
+    else { const q=[startId]; while(q.length){ const x=q.shift(); fwd[x].forEach(b=>{ if(!(b in rank)){ rank[b]=rank[x]+1; q.push(b); } }); } }
+    const order=kids.map(k=>k.id).sort((a,b)=>((a in rank)?rank[a]:999)-((b in rank)?rank[b]:999)||declared[a]-declared[b]);
     // pass 1: rows and x (typewriter wrap), then justify each row to the band width
     const bandX=MARG+PAD, x0=bandX+BANDPAD+40, xEnd=bandX+bandW-BANDPAD; let rx=x0, row=0; const rows=[[]];
     order.forEach(id=>{ const lines=wrapName(nodes[id].name); const w=boxW(lines); if(rx+w>xEnd && rows[row].length){ rx=x0; row++; rows.push([]); } pos[id]={x:rx,w,h:BOXH,row,lines}; rows[row].push(id); rx+=w+GAPX; });

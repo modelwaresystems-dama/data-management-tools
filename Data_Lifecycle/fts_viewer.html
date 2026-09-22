@@ -359,7 +359,7 @@
     </div>
     <div class="stamp">
       <div>Viewer v0.23</div>
-      <div>Built 22 Sep 2026, 10:32 SAST</div>
+      <div>Built 22 Sep 2026, 11:16 SAST</div>
       <div>Holds no data. Reads .fts.json models from GitHub or disk.</div>
     </div>
   </header>
@@ -704,7 +704,7 @@
   </dialog>
 
   <footer>
-    <span>Data State Transition Viewer · v0.23 · 22 Sep 2026, 10:32 SAST</span>
+    <span>Data State Transition Viewer · v0.23 · 22 Sep 2026, 11:16 SAST</span>
     <span class="mono" id="footStatus">No model loaded</span>
   </footer>
 </div>
@@ -7790,8 +7790,13 @@ function snakeSvg(G, tops, availW, opts){
     const ids=new Set(kids.map(k=>k.id)); const fwd={}; kids.forEach(k=>fwd[k.id]=[]);
     G.edges.forEach(e=>{ if(!e.inner && ids.has(e.a) && ids.has(e.b) && e.a!==e.b) fwd[e.a].push(e.b); });
     const startId=(G.initials.find(i=>ids.has(i)))||(kids.find(k=>k.initial)||kids[0]).id;
-    const order=[]; const seen=new Set(); const q=[startId]; while(q.length){ const x=q.shift(); if(seen.has(x)) continue; seen.add(x); order.push(x); fwd[x].forEach(b=>{ if(!seen.has(b)) q.push(b); }); }
-    kids.forEach(k=>{ if(!seen.has(k.id)) order.push(k.id); });
+    // reading order: rank each state by its longest simple path from the initial state (so a retired, superseded or withdrawn
+    // state reached early by a short cut still sits after the states it follows in the main flow); ties keep the model's declared order
+    const declared={}; kids.forEach((k,i)=>declared[k.id]=i);
+    const rank={}; rank[startId]=0;
+    if(kids.length<=14){ const onPath=new Set(); (function dfs(x,d){ onPath.add(x); fwd[x].forEach(b=>{ if(onPath.has(b)) return; if(!(b in rank)||rank[b]<d+1) rank[b]=d+1; dfs(b,d+1); }); onPath.delete(x); })(startId,0); }
+    else { const q=[startId]; while(q.length){ const x=q.shift(); fwd[x].forEach(b=>{ if(!(b in rank)){ rank[b]=rank[x]+1; q.push(b); } }); } }
+    const order=kids.map(k=>k.id).sort((a,b)=>((a in rank)?rank[a]:999)-((b in rank)?rank[b]:999)||declared[a]-declared[b]);
     // pass 1: rows and x (typewriter wrap), then justify each row to the band width
     const bandX=MARG+PAD, x0=bandX+BANDPAD+40, xEnd=bandX+bandW-BANDPAD; let rx=x0, row=0; const rows=[[]];
     order.forEach(id=>{ const lines=wrapName(nodes[id].name); const w=boxW(lines); if(rx+w>xEnd && rows[row].length){ rx=x0; row++; rows.push([]); } pos[id]={x:rx,w,h:BOXH,row,lines}; rows[row].push(id); rx+=w+GAPX; });
@@ -7871,6 +7876,7 @@ function snakeSvg(G, tops, availW, opts){
     s.push('<text x="'+cL+'" y="34" font-size="13" font-weight="600" fill="#1e2a30">Global Data Asset Protocol (what this KA gates)</text><text x="'+cC+'" y="34" font-size="13" font-weight="600" fill="#1e2a30">'+e(kaName(ms,mid))+': managed elements</text><text x="'+cR+'" y="34" font-size="13" font-weight="600" fill="#1e2a30">Other Knowledge Areas (couplings)</text>');
     const gy={}, gh={}, gtop={};
     L.forEach(([r,lines,yy])=>{ const h=bh(lines.length); gy[r.id]=yy+h/2; gh[r.id]=h; gtop[r.id]=yy; s.push('<rect x="'+cL+'" y="'+yy+'" width="'+bw+'" height="'+h+'" rx="6" fill="#e6eef5" stroke="#2f6f9a"/><text x="'+(cL+10)+'" y="'+(yy+18)+'" font-weight="600" fill="#1e2a30">'+e(r.name)+' <tspan font-weight="400" fill="#5f6f78">'+e(r.id)+'</tspan></text>'); lines.forEach((ln,i)=>s.push('<text x="'+(cL+10)+'" y="'+(yy+34+i*lh)+'" fill="#1e2a30" font-family="Consolas, Menlo, monospace" font-size="11">'+e(ln)+'</text>')); if(!lines.length) s.push('<text x="'+(cL+10)+'" y="'+(yy+34)+'" fill="#9aa5ab" font-size="11">no contribution</text>'); });
+    if(C.length){ const fy0=C[0][1]-12, fy1=C[C.length-1][1]+60; s.push('<rect x="'+(cC-12)+'" y="'+fy0+'" width="'+(bw+24)+'" height="'+(fy1-fy0)+'" rx="10" fill="none" stroke="#0f6b6e" stroke-width="1.6" stroke-dasharray="6 4"/><text x="'+(cC+bw+6)+'" y="'+(fy1+14)+'" text-anchor="end" fill="#0f6b6e" font-size="11">'+e(short(mid))+' FTSs, '+C.length+' regions</text>'); }
     C.forEach(([r,yy])=>{ s.push('<rect x="'+cC+'" y="'+yy+'" width="'+bw+'" height="48" rx="6" fill="#e3f1f0" stroke="#0f6b6e"/><text x="'+(cC+10)+'" y="'+(yy+19)+'" font-weight="600" fill="#1e2a30">'+e(r.name.slice(0,40))+'</text><text x="'+(cC+10)+'" y="'+(yy+36)+'" fill="#5f6f78" font-size="11">'+e(r.id)+' · '+e((r.instanceScope||"").slice(0,30))+'</text>'); });
     // one arrow per (managed element, Global region) pair, from the element whose states the contribution requires to the region it gates
     const pairs={};
@@ -7882,12 +7888,12 @@ function snakeSvg(G, tops, availW, opts){
       if(key) s.push('<path d="M'+cC+','+Math.round(ext[pk])+' L'+xm+','+Math.round(ext[pk])+' L'+xm+','+ty+' L'+(cL+bw+2)+','+ty+'" fill="none" stroke="#2f6f9a" stroke-width="1.2" marker-end="url(#docarr)">'+ttl+'</path>');
       else s.push('<path d="M'+(cC-8)+','+ty+' L'+(cL+bw+2)+','+ty+'" fill="none" stroke="#2f6f9a" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#docarr)">'+ttl+'</path>'); });
     // the coupled Knowledge Areas hang off one spine joined to the KA column
-    if(R.length){ const sx=cR-34, top=R[0][2], bot=R[R.length-1][2]+bh(R[R.length-1][1].length); const cmid=C.length?Math.round((C[0][1]+C[C.length-1][1]+48)/2):Math.round((top+bot)/2);
-      s.push('<line x1="'+sx+'" y1="'+Math.min(top,cmid)+'" x2="'+sx+'" y2="'+Math.max(bot,cmid)+'" stroke="#6a3d9a" stroke-width="1.6"/><path d="M'+(cC+bw)+','+cmid+' L'+sx+','+cmid+'" fill="none" stroke="#6a3d9a" stroke-width="1.6"/>'); }
+    if(R.length){ const sx=cR-34, top=R[0][2], bot=R[R.length-1][2]+bh(R[R.length-1][1].length); const cmid=C.length?Math.round((C[0][1]-12+C[C.length-1][1]+60)/2):Math.round((top+bot)/2);
+      s.push('<line x1="'+sx+'" y1="'+Math.min(top,cmid)+'" x2="'+sx+'" y2="'+Math.max(bot,cmid)+'" stroke="#6a3d9a" stroke-width="1.6"/><path d="M'+(cC+bw+12)+','+cmid+' L'+sx+','+cmid+'" fill="none" stroke="#6a3d9a" stroke-width="1.6"/>'); }
     R.forEach(([oid,lines,yy])=>{ const h=bh(lines.length); s.push('<line x1="'+(cR-34)+'" y1="'+Math.round(yy+h/2)+'" x2="'+cR+'" y2="'+Math.round(yy+h/2)+'" stroke="#6a3d9a" stroke-width="1.2"/><rect x="'+cR+'" y="'+yy+'" width="'+bw+'" height="'+h+'" rx="6" fill="#efe8f6" stroke="#6a3d9a"/><text x="'+(cR+10)+'" y="'+(yy+18)+'" font-weight="600" fill="#1e2a30">'+e(kaName(ms,oid).replace("Business Intelligence","BI").replace("Interoperability","Interop.").slice(0,34))+' <tspan font-weight="400" fill="#5f6f78">'+e(oid)+'</tspan></text>'); lines.forEach((ln,i)=>s.push('<text x="'+(cR+10)+'" y="'+(yy+34+i*lh)+'" fill="#1e2a30" font-family="Consolas, Menlo, monospace" font-size="11">'+e(ln)+'</text>')); });
     ["Left arrows: one per managed element and Global region pair, from the element whose states the contribution requires to the region it gates (dashed: no required state recorded).",
-     "Letters: G guard, E event, S service, D decision right, * Non-waivable. Right: the Knowledge Areas this KA is coupled to, hung off one spine (the model does not record",
-     "which managed element a coupling belongs to). out: declared by this KA (* event emitted) · in: declared by the other KA against this one."].forEach((ln,i)=>s.push('<text x="'+cL+'" y="'+(Hh-36+i*13)+'" fill="#5f6f78" font-size="10.5">'+e(ln)+'</text>'));
+     "Letters: G guard, E event, S service, D decision right, * Non-waivable. Right: the Knowledge Areas this KA is coupled to, hung off one spine that joins the frame around all of this KA's FTSs (the model does not record",
+     "which managed element a coupling belongs to, so the couplings are the Knowledge Area's as a whole). out: declared by this KA (* event emitted) · in: declared by the other KA against this one."].forEach((ln,i)=>s.push('<text x="'+cL+'" y="'+(Hh-36+i*13)+'" fill="#5f6f78" font-size="10.5">'+e(ln)+'</text>'));
     s.push('</svg>'); return s.join("");
   }
   // state diagrams: the Simplified FTS tab's wrapped layout, drawn from the model (all regions expanded, or one region alone)

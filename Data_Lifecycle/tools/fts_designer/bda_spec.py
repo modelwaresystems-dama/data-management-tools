@@ -209,6 +209,11 @@ CONTRIB = [
     ("CON-BDA-05", "TR-EX-03", "event", {"MDL": ["STS-MDL-07"]}, "An enhanced model deployed supersedes the previous model version.", "BDA_model_enhancing", "Conditional", "BDA emits EV-EX-03 when TR-MDL-10 deploys the enhanced version."),
     ("CON-BDA-06", "TR-AS-05", "event", {"MDL": ["STS-MDL-06"], "SRC": ["STS-SRC-06"], "PLT": ["STS-PLT-05"]}, "Model drift, a source alert or a platform breach is a material change affecting the assurance claim.", "BDA_model_drift or BDA_source_alert or BDA_platform_scaling", "Conditional", "BDA emits EV-AS-05 when TR-MDL-06, TR-SRC-06 or TR-PLT-05 fires."),
     ("CON-BDA-07", "TR-AS-02", "service", {"MDL": ["STS-MDL-04", "STS-MDL-05"]}, "Model Validation and Monitoring supplies assurance evidence for a model output or insight.", "SVC-BDA-06", "Conditional", "Assurance service; evidence EVD-BDA-08."),
+    ("CON-BDA-08", "TR-CP-01", "guard", {"PLT": ["STS-PLT-04", "STS-PLT-05"], "SRC": ["STS-SRC-02", "STS-SRC-03", "STS-SRC-04", "STS-SRC-05", "STS-SRC-06"]}, "An acquired source is taken into active custody only on a platform in service.", "BDA_platform_in_service or not BDA_source_active", "Conditional", "Howard, 22 Sep (custody register): BDA gates Custody through the platform, the source and the model."),
+    ("CON-BDA-09", "TR-CP-02", "guard", {"SRC": ["STS-SRC-07"], "MDL": ["STS-MDL-08"]}, "Preservation custody is entered only once the source and the model that used it are retired; an aligned source or a deployed model keeps the asset in active custody.", "(BDA_source_retired or not BDA_source_active) and (BDA_model_retired or not BDA_model_active)", "Conditional", "Applies per asset instance; an asset with neither a source nor a model is unaffected."),
+    ("CON-BDA-10", "TR-CP-05", "event", {"PLT": ["STS-PLT-06"]}, "Decommissioning the platform (TR-PLT-07 or TR-PLT-08) triggers a custody transfer of the data it held to another custodian.", "BDA_platform_decommissioned", "Conditional", "Event emitted into the Global protocol; the DSO, DII and DG guards on TR-CP-05 still decide."),
+    ("CON-BDA-11", "TR-CP-10", "guard", {"SRC": ["STS-SRC-01", "STS-SRC-02", "STS-SRC-03", "STS-SRC-07"], "MDL": ["STS-MDL-01", "STS-MDL-02", "STS-MDL-03", "STS-MDL-04", "STS-MDL-08"]}, "Custody is closed after destruction only when no ingested source and no deployed model still uses the asset.", "not BDA_source_ingested and not BDA_model_deployed", "Conditional", "A destroyed asset with an ingested source or a deployed model is a dangling dependency."),
+    ("CON-BDA-12", "TR-CP-03", "guard", {"PLT": ["STS-PLT-04", "STS-PLT-05"], "SRC": ["STS-SRC-02", "STS-SRC-03", "STS-SRC-04", "STS-SRC-05", "STS-SRC-06"]}, "A preserved source is restored to active custody only onto a platform in service.", "BDA_platform_in_service or not BDA_source_active", "Conditional", "Mirror of CON-BDA-08 for the restore path."),
 ]
 KA_COUPLINGS = [
     ("KAC-BDA-01", "KA-DG", "TR-ISS-01", "EV-ISS-01", "BDA_model_drift", "Model drift, a source alert, a platform breach and a rejected or withdrawn insight are logged as Data Asset issues with source Big Data and Data Science (TR-MDL-06, TR-SRC-06, TR-PLT-05, TR-INS-03 and TR-INS-06 emit EV-ISS-01).", "DG owns escalation; BDA owns the remediation."),
@@ -222,6 +227,9 @@ KA_COUPLINGS = [
     ("KAC-BDA-09", "KA-RMD", "TR-DOM-05", "", "RMD_domain_shared", "Master data is chosen as a source from a shared domain (TR-SRC-01 cites the RMD fact for master data sources).", "Reverse coupling: a BDA transition cites an RMD fact."),
 ]
 FACT_BINDINGS = {
+    "BDA_platform_decommissioned": {"region": "REG-BDA-PLT", "states": ["STS-PLT-06"]},
+    "BDA_source_retired": {"region": "REG-BDA-SRC", "states": ["STS-SRC-07"]},
+    "BDA_model_retired": {"region": "REG-BDA-MDL", "states": ["STS-MDL-08"]},
     "BDA_strategy_in_force": {"region": "REG-BDA-BDS", "states": ["STS-BDS-05", "STS-BDS-06"]},
     "BDA_platform_in_service": {"region": "REG-BDA-PLT", "states": ["STS-PLT-04", "STS-PLT-05"]},
     "BDA_platform_scaling": {"region": "REG-BDA-PLT", "states": ["STS-PLT-05"]},

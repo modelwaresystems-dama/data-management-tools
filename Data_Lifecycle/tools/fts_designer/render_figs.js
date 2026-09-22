@@ -2,7 +2,7 @@
 // usage: node render_figs.js <model.fts.json> <outdir> [width]
 // writes <stem>_all.svg (every region expanded, one band per region) and <stem>_<REGIONCODE>.svg (one region alone, its own transitions,
 // transition IDs as labels). The SVGs carry the same classes as the viewer's Simplified FTS tab.
-const {fsmSource}=require('./fsm_source.js'); const {snakeSvg}=require('./snake_layout.js'); const fs=require('fs'); const path=require('path');
+const {fsmSource}=require('./fsm_source.js'); const {snakeSvg, ftsSummarySvg}=require('./snake_layout.js'); const fs=require('fs'); const path=require('path');
 const [,, model, outdir, widthArg]=process.argv; const W=Number(widthArg||1180);
 const M=JSON.parse(fs.readFileSync(model,'utf8')); const stem=path.basename(model).replace(/\.fts\.json$/,'');
 fs.mkdirSync(outdir,{recursive:true});
@@ -13,5 +13,8 @@ const fix=s=>s.replace(/var\(--[a-z0-9-]+,\s*([^)]+)\)/g,'$1').replace(/ width="
 const title=(M.meta&&(M.meta.knowledgeArea||M.meta.name))||stem;
 fs.writeFileSync(path.join(outdir,stem+"_all.svg"), fix(snakeSvg(out.graph,tops,W,{title:title+": all regions"})));
 const written=[stem+"_all.svg"];
+// summary: the FTSs with their internal states collapsed, one card per region
+fs.writeFileSync(path.join(outdir,stem+"_summary.svg"), fix(ftsSummarySvg(M,W,{title:title+": the FTSs, internal states collapsed"})));
+written.push(stem+"_summary.svg");
 tops.forEach(t=>{ const code=(t.id.split("-").pop()); const svg=snakeSvg(out.graph,[t],W,{title:t.name+" ("+t.id+")"}); const f=stem+"_"+code+".svg"; fs.writeFileSync(path.join(outdir,f),fix(svg)); written.push(f); });
 console.log(stem, written.length, "figures", written.join(" "));

@@ -83,4 +83,36 @@ function snakeSvg(G, tops, availW, opts){
   const frame='<rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+(H-2*MARG)+'" rx="8" fill="var(--panel,#fff)" stroke="var(--ink,#333)"/><rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+TITLE+'" rx="8" fill="var(--panel-3,#e6e9ee)" stroke="var(--ink,#333)"/><text x="'+(MARG+inner/2)+'" y="'+(MARG+TITLE/2+5)+'" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink,#111)">'+esc(opts.title||G.protocolName)+'</text>';
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" width="'+W+'" style="font-family:Segoe UI,system-ui,sans-serif;max-width:none"><defs><marker id="fts-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink,#333)"/></marker></defs>'+frame+out.join("")+lab.join("")+'</svg>';
 }
-if(typeof module!=="undefined") module.exports={snakeSvg};
+
+// ftsSummarySvg: the Knowledge Area's FTSs with their internal states collapsed, one card per region: managed element, region ID,
+// instance scope, initial state, terminal states, state and transition counts, the Global transitions the region's states gate and the
+// cross-region guards it takes part in. Used at the head of the reference section before the individual FTSs (fts_docs.py and the viewer).
+function ftsSummarySvg(M, availW, opts){
+  opts=opts||{}; const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const W=Math.max(700, availW|0), MARG=16, TITLE=30, GAP=14, CW=Math.max(250, Math.floor((W-2*MARG-GAP*3)/3)), LH=15;
+  const regs=(M.regions&&M.regions.length)?M.regions:(M.globalStates||[]).map(g=>({id:g.id,name:g.name}));
+  const sub=M.subStates||[]; const regOf=id=>{ const st=sub.find(x=>x.id===id); return st?(st.region||st.parent):null; };
+  const sName=id=>{ const st=sub.find(x=>x.id===id); return st?st.name:id; };
+  const wrap=(text,max)=>{ const words=String(text).split(/\s+/); const lines=[]; let cur=""; words.forEach(w=>{ if((cur+" "+w).trim().length>max && cur){ lines.push(cur); cur=w; } else cur=(cur+" "+w).trim(); }); if(cur) lines.push(cur); return lines; };
+  const cpc=Math.floor((CW-20)/6.6);
+  const cards=regs.map(r=>{ const code=r.code||String(r.id).split("-").pop();
+    const states=sub.filter(x=>(x.region||x.parent)===r.id); const trs=(M.transitions||[]).filter(t=>!t.id.startsWith("TR-INIT")&&(regOf(t.target)===r.id||regOf(t.source)===r.id));
+    const init=r.initialState?sName(r.initialState):(states.find(x=>x.initial)||{}).name||""; const term=states.filter(x=>x.terminal).map(x=>x.name);
+    const gates=[]; (M.contributions||[]).forEach(c=>{ if(Object.keys(c.requiredStates||{}).includes(code) && !gates.includes(c.globalTransition)) gates.push(c.globalTransition); });
+    const xrg=(M.crossRegionConstraints||[]).filter(x=>{ const ap=x.transitions||x.appliesTo||[]; return Array.isArray(ap)&&ap.some(t=>trs.some(tt=>tt.id===t)); }).map(x=>x.id);
+    const lines=[]; lines.push(["b",wrap(r.managedElement&&r.managedElement!==r.name?r.name:r.name,cpc)]); lines.push(["m",[r.id+(r.instanceScope?" · "+r.instanceScope:"")]]);
+    lines.push(["n",wrap("Starts: "+init+(term.length?". Ends: "+term.join(", "):". No terminal state"),cpc)]);
+    lines.push(["n",[states.length+" states · "+trs.length+" transitions"]]);
+    if((M.contributions||[]).length) lines.push(["n",wrap("Gates: "+(gates.length?gates.join(", "):"no Global transition"),cpc)]);
+    if(xrg.length) lines.push(["n",wrap("Cross-region: "+xrg.join(", "),cpc)]);
+    const h=16+lines.reduce((a,[k,ls])=>a+ls.length*LH,0)+8; return {r,lines,h}; });
+  // lay the cards out in rows of three, equal height per row
+  const out=[]; let y=MARG+TITLE+16, x=MARG; const rows=[]; cards.forEach((c,i)=>{ if(i%3===0) rows.push([]); rows[rows.length-1].push(c); });
+  rows.forEach(row=>{ const rh=Math.max(...row.map(c=>c.h)); x=MARG; row.forEach(c=>{ out.push('<g class="statediagram-cluster fts-collapsed-frame"><rect x="'+x+'" y="'+y+'" width="'+CW+'" height="'+rh+'" rx="8" fill="var(--panel-2,#eef1f5)" stroke="var(--ink-faint,#888)" stroke-dasharray="6 4"/></g>');
+      let ty=y+18; c.lines.forEach(([k,ls])=>{ ls.forEach(l=>{ out.push('<text x="'+(x+10)+'" y="'+ty+'" font-size="'+(k==="b"?13:k==="m"?10.5:11.5)+'" '+(k==="b"?'font-weight="600" fill="var(--ink,#111)"':k==="m"?'font-family="Consolas, Menlo, monospace" fill="var(--ink-faint,#5f6f78)"':'fill="var(--ink,#1e2a30)"')+'>'+esc(l)+'</text>'); ty+=LH; }); });
+      x+=CW+GAP; }); y+=rh+GAP; });
+  const H=y+MARG-GAP+8; const inner=W-2*MARG;
+  const frame='<rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+(H-2*MARG)+'" rx="8" fill="var(--panel,#fff)" stroke="var(--ink,#333)"/><rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+TITLE+'" rx="8" fill="var(--panel-3,#e6e9ee)" stroke="var(--ink,#333)"/><text x="'+(W/2)+'" y="'+(MARG+20)+'" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink,#111)">'+esc(opts.title||"")+'</text>';
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" width="'+W+'" style="font-family:Segoe UI,system-ui,sans-serif;max-width:none">'+frame+out.join("")+'</svg>';
+}
+if(typeof module!=="undefined") module.exports={snakeSvg, ftsSummarySvg};

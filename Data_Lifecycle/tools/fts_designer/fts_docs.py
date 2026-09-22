@@ -363,7 +363,9 @@ def build_chapter(ms, mid, figures_dir=None):
     # ---- reference
     d.h(1, "Reference")
     d.h(2, "The FTSs: one region per managed element" if not is_global else "The four regions of the Data Asset")
-    d.p("Each region below is one Finite State Transition model: its question, its states, and its own transitions with their events, guards, decision rights, services and cross-region constraints. A transition never crosses regions.")
+    d.p("Each region below is one Finite State Transition model: its question, its states, and its own transitions with their events, guards, decision rights, services and cross-region constraints. A transition never crosses regions. The summary first shows every FTS with its internal states collapsed: where it starts and ends, how many states and transitions it has, which Global transitions its states gate and which cross-region guards it takes part in.")
+    fs_ = figure_svg(figures_dir, m, "_summary")
+    if fs_: d.fig(fs_, f"The {kaname(ms, mid) if not is_global else 'Global protocol'} FTSs with their internal states collapsed, one card per region.", "FIG-SUMMARY")
     for r in m["regions"]:
         code = r.get("code") or r["id"].split("-")[-1]
         d.h(3, f"{r['id']} {r['name']}", r["id"])

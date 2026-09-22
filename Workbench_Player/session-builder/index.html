@@ -26,15 +26,32 @@
   .mk{width:27px;height:27px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#1c8f83);display:grid;place-items:center;color:#04211d;font-weight:800;font-family:"Sora";}
   .brand{font-family:"Sora";font-weight:700;}
   .brand span{color:var(--faint);font-weight:500;}
-  .wrap{flex:1;width:100%;max-width:1100px;margin:0 auto;padding:clamp(16px,3vw,28px);display:grid;grid-template-columns:1fr 1fr;gap:22px;}
+  .wrap{flex:1;width:100%;max-width:1100px;margin:0 auto;padding:clamp(16px,3vw,28px);display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start;}
   @media (max-width:800px){.wrap{grid-template-columns:1fr;}}
   h2{font-family:"Sora";font-size:17px;margin:0 0 4px;}
   .sub{color:var(--faint);font-size:13px;margin:0 0 14px;}
   .panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px;}
+  /* left library panel: header fixed, list scrolls independently */
+  .libpanel{display:flex;flex-direction:column;max-height:calc(100vh - 130px);position:sticky;top:16px;}
+  .libhdr{flex:none;}
+  .libtools{display:flex;align-items:center;gap:8px;margin:2px 0 12px;}
+  .libtools .count{font-family:"IBM Plex Mono";font-size:11px;color:var(--faint);margin-right:auto;}
+  .libtools button{border:1px solid var(--line2);background:var(--surface2);color:var(--muted);font-weight:600;font-size:12px;padding:6px 11px;border-radius:8px;}
+  .libtools button:hover{border-color:var(--accent);color:var(--ink);}
+  #library{overflow-y:auto;flex:1;min-height:0;padding-right:6px;margin-right:-4px;}
+  #library::-webkit-scrollbar{width:9px;}
+  #library::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px;}
+  #library::-webkit-scrollbar-track{background:transparent;}
 
-  /* library */
-  .topic{font-family:"IBM Plex Mono";font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-ink);margin:16px 0 8px;}
-  .topic:first-of-type{margin-top:4px;}
+  /* library — collapsible notebook groups */
+  .grouphdr{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:10px 12px;margin:0 0 8px;color:var(--accent-ink);}
+  .grouphdr:hover{border-color:var(--line2);}
+  .grouphdr .car{transition:transform .18s;font-size:10px;color:var(--faint);flex:none;}
+  .grouphdr.collapsed .car{transform:rotate(-90deg);}
+  .grouphdr .tt{font-family:"IBM Plex Mono";font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;flex:1;line-height:1.3;}
+  .grouphdr .gc{font-family:"IBM Plex Mono";font-size:10.5px;color:var(--faint);background:var(--stage);border:1px solid var(--line);border-radius:999px;padding:2px 8px;flex:none;}
+  .groupbody{margin:0 0 12px;}
+  .groupbody.hide{display:none;}
   .qrow{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;margin-bottom:8px;background:var(--surface2);}
   .qrow .nm{flex:1;font-weight:600;font-size:14px;}
   .qrow .ct{font-family:"IBM Plex Mono";font-size:11px;color:var(--faint);}
@@ -79,9 +96,16 @@
   <div class="bar"><span class="mk">ds</span><span class="brand">Session Builder <span>· training sessions from your quiz library</span></span></div>
   <div id="topBanner"></div>
   <div class="wrap">
-    <div class="panel">
-      <h2 class="disp">Your quiz library</h2>
-      <p class="sub">Add quizzes to the session on the right. Order and weight them there.</p>
+    <div class="panel libpanel">
+      <div class="libhdr">
+        <h2 class="disp">Your quiz library</h2>
+        <p class="sub">Add quizzes to the session on the right. Order and weight them there.</p>
+        <div class="libtools">
+          <span class="count" id="libCount"></span>
+          <button id="expandAll" type="button">Expand all</button>
+          <button id="collapseAll" type="button">Collapse all</button>
+        </div>
+      </div>
       <div id="library"><div class="empty">Loading your library…</div></div>
     </div>
     <div class="panel">
@@ -146,24 +170,40 @@ async function boot(){
   }
 }
 function inSel(path){ return SEL.some(s=>s.path===path); }
+const COLLAPSED=new Set();   // topics currently collapsed
 function renderLibrary(){
   if(!LIB.length){ libEl.innerHTML=`<div class="empty">No quizzes found in your library.</div>`; return; }
-  const byTopic={};
-  LIB.forEach(q=>{ (byTopic[q.topic]=byTopic[q.topic]||[]).push(q); });
-  libEl.innerHTML=Object.keys(byTopic).map(topic=>`
-    <div class="topic">${esc(topic)}</div>
-    ${byTopic[topic].map(q=>`
+  const byTopic={}; const order=[];
+  LIB.forEach(q=>{ if(!byTopic[q.topic]){byTopic[q.topic]=[];order.push(q.topic);} byTopic[q.topic].push(q); });
+  const cnt=document.getElementById("libCount");
+  if(cnt) cnt.textContent=`${LIB.length} quizzes · ${order.length} notebooks`;
+  libEl.innerHTML=order.map((topic,gi)=>{
+    const collapsed=COLLAPSED.has(topic);
+    const rows=byTopic[topic].map(q=>`
       <div class="qrow">
         <span class="nm">${esc(q.title)}</span>
         <span class="ct">${q.questions} Q</span>
         <button class="addbtn" data-path="${esc(q.path)}" ${inSel(q.path)?"disabled":""}>${inSel(q.path)?"Added":"+ Add"}</button>
-      </div>`).join("")}
-  `).join("");
+      </div>`).join("");
+    return `<button class="grouphdr ${collapsed?'collapsed':''}" data-topic="${esc(topic)}" type="button">
+        <span class="car">▼</span><span class="tt">${esc(topic)}</span><span class="gc">${byTopic[topic].length}</span>
+      </button>
+      <div class="groupbody ${collapsed?'hide':''}" data-body="${esc(topic)}">${rows}</div>`;
+  }).join("");
+  libEl.querySelectorAll(".grouphdr").forEach(h=>h.onclick=()=>{
+    const t=h.dataset.topic;
+    if(COLLAPSED.has(t))COLLAPSED.delete(t); else COLLAPSED.add(t);
+    h.classList.toggle("collapsed");
+    const body=libEl.querySelector(`.groupbody[data-body="${CSS.escape(t)}"]`);
+    if(body)body.classList.toggle("hide");
+  });
   libEl.querySelectorAll(".addbtn").forEach(btn=>btn.onclick=()=>{
     const q=LIB.find(x=>x.path===btn.dataset.path); if(!q||inSel(q.path))return;
     SEL.push({...q,weight:1}); renderSel(); renderLibrary();
   });
 }
+document.getElementById("collapseAll").onclick=()=>{ LIB.forEach(q=>COLLAPSED.add(q.topic)); renderLibrary(); };
+document.getElementById("expandAll").onclick=()=>{ COLLAPSED.clear(); renderLibrary(); };
 function renderSel(){
   if(!SEL.length){ selEl.innerHTML=`<div class="empty">No quizzes yet — add some from your library.</div>`; }
   else{

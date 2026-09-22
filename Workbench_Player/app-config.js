@@ -6,14 +6,14 @@
    ============================================================ */
 window.APP_CONFIG = {
   // Mints short-lived Ably tokens (the real Ably API key stays server-side, never here):
-  tokenUrl: "https://modelware-quiz-api.netlify.app/.netlify/functions/ably-token",   // e.g. "https://your-private-site.netlify.app/.netlify/functions/ably-token"
+  tokenUrl: "https://modelware-quiz-api.netlify.app/.netlify/functions/ably-token",
 
   // Serves private quiz/flashcard JSON, CORS-locked to your app's origin:
-  assetApi: "https://modelware-quiz-api.netlify.app/.netlify/functions/asset",   // e.g. "https://your-private-site.netlify.app/.netlify/functions/asset"
+  assetApi: "https://modelware-quiz-api.netlify.app/.netlify/functions/asset",
 
   // Which private assets this deployment loads (relative to the backend's data/ dir):
-  quizPath:  "ai-activate-2026-bias/AI Quiz.json",
-  cardsPath: "ai-activate-2026-bias/Bias Flashcards.json",
+  quizPath:  "ai-activate-2026-addressing-bias-in-intelligent-systems/AI Quiz.json",
+  cardsPath: "ai-activate-2026-addressing-bias-in-intelligent-systems/Bias Flashcards.json",
 
   // Session behaviour (not secret):
   questionSeconds: 20,

@@ -12,11 +12,14 @@ window.APP_CONFIG = {
   assetApi: "https://modelware-quiz-api.netlify.app/.netlify/functions/asset",
 
   // Which private assets this deployment loads (relative to the backend's data/ dir):
-  quizPath:  "ai-activate-2026-addressing-bias-in-intelligent-systems/AI Quiz.json",
-  cardsPath: "ai-activate-2026-addressing-bias-in-intelligent-systems/Bias Flashcards.json",
+  quizPath:  "dama-dmbok-data-management-and-lifecycle-overview/Ch 01. Data Management Quiz.json",
+  cardsPath: "dama-dmbok-data-management-and-lifecycle-overview/Ch 01. Data Management Flashcards.json",
 
   // Session behaviour (not secret):
   questionSeconds: 20,
+  // Label shown in the launcher's pill and as the home course:
+  homeTopic: "DM for Certification",
+
   brand: "datasherpa",
   joinBaseUrl: ""   // "" = auto-derive from where the page is hosted
 };

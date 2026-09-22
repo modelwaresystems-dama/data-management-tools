@@ -246,12 +246,22 @@ function normalizeQuiz(raw){
    Self-paced player reshuffles each attempt. */
 function shuffleQuiz(quiz){
   if(!quiz||!quiz.questions) return quiz;
+  let prev=-1; const used={};
   quiz.questions.forEach(q=>{
-    if(!q.options||q.options.length<2) return;
-    const idx=q.options.map((_,i)=>i);
-    for(let i=idx.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [idx[i],idx[j]]=[idx[j],idx[i]]; }
-    q.options=idx.map(i=>q.options[i]);
-    q.correct=idx.indexOf(q.correct);
+    if(!q.options||q.options.length<2){ return; }
+    const k=q.options.length;
+    // target slot for the correct answer: balanced across the quiz, never the same slot as the previous question
+    let cand=[]; for(let s=0;s<k;s++){ if(s!==prev||k===1) cand.push(s); }
+    let min=Infinity; cand.forEach(s=>{ const u=used[s]||0; if(u<min)min=u; });
+    const best=cand.filter(s=>(used[s]||0)===min);
+    const target=best[Math.floor(Math.random()*best.length)];
+    used[target]=(used[target]||0)+1; prev=target;
+    // correct -> target, remaining options shuffled into the other slots
+    const others=q.options.map((_,i)=>i).filter(i=>i!==q.correct);
+    for(let i=others.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [others[i],others[j]]=[others[j],others[i]]; }
+    const order=new Array(k); order[target]=q.correct;
+    let oi=0; for(let s=0;s<k;s++){ if(s!==target) order[s]=others[oi++]; }
+    q.options=order.map(i=>q.options[i]); q.correct=target;
   });
   return quiz;
 }

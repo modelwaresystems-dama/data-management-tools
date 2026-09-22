@@ -126,6 +126,15 @@
   .opt .rmark{margin-left:auto;font-weight:800;}
   .why{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:14px 16px;color:#FFFFFF;font-size:15px;line-height:1.6;}
   .why b{color:var(--accent-ink);font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:5px;}
+  .why .ctx{color:var(--accent-ink);font-style:italic;margin:0 0 10px;}
+  .why .wrow{display:flex;gap:10px;align-items:flex-start;margin-top:9px;}
+  .why .wrow .mk{flex:none;font-weight:800;line-height:1.5;}
+  .why .wrow .mk{font-size:15px;}
+  .why .wrow.ok .mk{color:var(--good);}
+  .why .wrow.no .mk{color:var(--bad);}
+  .why .wrow b{display:inline;color:#fff;font-weight:700;}
+  .why .wrow.no{color:#C9D6EE;}
+  .why .wsep{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:15px 0 2px;}
   .navrow{display:flex;align-items:center;gap:12px;margin-top:20px;}
   .btn{border:1px solid var(--line2);background:var(--surface2);color:var(--ink);font-weight:600;font-size:14px;padding:11px 20px;border-radius:11px;}
   .btn.primary{background:var(--accent);color:#04211d;border-color:var(--accent);}
@@ -240,23 +249,21 @@ function normalizeQuiz(raw){
   return { title:raw.title||"Quiz", category:raw.category||"",
     questions: raw.questions.map(q=>{ const o=q.answerOptions||[]; let c=o.findIndex(x=>x.isCorrect); if(c<0)c=0;
       return { q:cleanText(q.question), options:o.map(x=>cleanText(x.text)), correct:c,
-               why:cleanText((o[c]&&o[c].rationale)||q.hint||""), hint:cleanText(q.hint||"") }; }) };
+               why:cleanText((o[c]&&o[c].rationale)||q.hint||""), rats:o.map(x=>cleanText(x.rationale||"")), context:cleanText(q.context||""), hint:cleanText(q.hint||"") }; }) };
 }
 /* Randomise option order per question so the correct answer isn't always in the same slot.
    Self-paced player reshuffles each attempt. */
 function shuffleQuiz(quiz){
   if(!quiz||!quiz.questions) return quiz;
-  let prev=-1; const used={};
+  const nQ=quiz.questions.length; let prev=-1; const used={};
   quiz.questions.forEach(q=>{
     if(!q.options||q.options.length<2){ return; }
-    const k=q.options.length;
-    // target slot for the correct answer: balanced across the quiz, never the same slot as the previous question
-    let cand=[]; for(let s=0;s<k;s++){ if(s!==prev||k===1) cand.push(s); }
-    let min=Infinity; cand.forEach(s=>{ const u=used[s]||0; if(u<min)min=u; });
-    const best=cand.filter(s=>(used[s]||0)===min);
-    const target=best[Math.floor(Math.random()*best.length)];
+    const k=q.options.length, cap=Math.ceil(nQ/k);
+    let cand=[]; for(let s=0;s<k;s++) if(s!==prev && (used[s]||0)<cap) cand.push(s);
+    if(!cand.length){ for(let s=0;s<k;s++) if(s!==prev) cand.push(s); }
+    if(!cand.length){ for(let s=0;s<k;s++) cand.push(s); }
+    const target=cand[Math.floor(Math.random()*cand.length)];
     used[target]=(used[target]||0)+1; prev=target;
-    // correct -> target, remaining options shuffled into the other slots
     const others=q.options.map((_,i)=>i).filter(i=>i!==q.correct);
     for(let i=others.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [others[i],others[j]]=[others[j],others[i]]; }
     const order=new Array(k); order[target]=q.correct;
@@ -393,6 +400,15 @@ function backBar(){ return `<div class="backrow"><button class="backbtn" id="bac
 function wireBack(){ const b=document.getElementById("back"); if(b)b.onclick=()=>{ view="lib"; syncSeg(); renderLibrary(); }; }
 
 /* ---------- QUIZ ---------- */
+function whyHTML(q){
+  const rats=q.rats||[];
+  const ctx=q.context?`<div class="ctx">${esc(q.context)}</div>`:"";
+  const cr=rats[q.correct]||q.why||"";
+  const correct=`<div class="wrow ok"><span class="mk">\u2713</span><div><b>${esc(q.options[q.correct])}</b>${cr?` \u2014 ${esc(cr)}`:""}</div></div>`;
+  let wrong="";
+  q.options.forEach((o,i)=>{ if(i===q.correct||!rats[i])return; wrong+=`<div class="wrow no"><span class="mk">\u2717</span><div><b>${esc(o)}</b> \u2014 ${esc(rats[i])}</div></div>`; });
+  return `<div class="why"><b>Explanation</b>${ctx}${correct}${wrong?`<div class="wsep">Why the other answers are wrong</div>${wrong}`:""}</div>`;
+}
 function renderQuiz(){
   if(!QUIZ||QUIZ.error){ stage.innerHTML=`<div class="wrap"><div class="stagew">${backBar()}<div class="center"><div class="card"><h1>Couldn't load quiz</h1><p>${esc(QUIZ&&QUIZ.error||"Missing quiz JSON")} (${esc(QUIZ_SRC)})</p></div></div></div></div>`; wireBack(); return; }
   const N=QUIZ.questions.length;
@@ -413,7 +429,7 @@ function renderQuiz(){
     <div class="qn">Question ${qi+1} of ${N}</div>
     <div class="qtext disp">${esc(q.q)}</div>
     <div class="opts">${opts}</div>
-    ${answered?`<div class="why"><b>Why</b>${esc(q.why||"")}</div>`:""}
+    ${answered?whyHTML(q):""}
     <div class="navrow">
       <button class="btn primary" id="next" ${answered?"":"disabled"}>${qi>=N-1?"See score":"Next →"}</button>
       <span class="scorepill">${score} / ${N}</span>

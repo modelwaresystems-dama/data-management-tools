@@ -11,7 +11,7 @@ Decisions 21 Sep 2026: the Metadata of a Data Asset gates Global registration (d
 (published), custody transfer and disposition (lineage and dependencies known) and stale metadata emits the
 material-change trigger for Assurance; metadata quality and security are handled by the Data Quality PDCA
 cycle and the Data Security FTS (metadata is itself a Data Asset), so this model keeps no quality or security
-states and couples to them instead; every transition carries a Decision Right (holders drafted, REVIEW).
+states and couples to them instead; every transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python mm_spec.py [out_dir] [--overrides spec/metadata_management_overrides.json]   -> metadata_management.fts.json
 """
@@ -82,13 +82,13 @@ EVENTS = {
     "EV-AST-01": ("Data Asset brought into metadata scope", "Request"), "EV-AST-02": ("Metadata requirements agreed", "Decision outcome"), "EV-AST-03": ("Metadata integrated", "Evidence trigger"), "EV-AST-04": ("Metadata publication", "Decision outcome"), "EV-AST-05": ("Source or structure change detected", "Monitoring trigger"), "EV-AST-06": ("Metadata refresh completed", "Evidence trigger"), "EV-AST-07": ("Publication withdrawal", "Decision outcome"), "EV-AST-08": ("Data Asset destroyed or custody closed", "Monitoring trigger"),
 }
 DR = {
-    "DR-MM-01": ("Approve Metadata Strategy and Requirements", "ROLE-MM-S03", "REVIEW: drafted holder"),
-    "DR-MM-02": ("Activate, Revise and Retire the Programme", "ROLE-MM-S02", "REVIEW: drafted holder"),
-    "DR-MM-03": ("Approve Metadata Architecture, Metamodel and Standards", "ROLE-MM-P03", "REVIEW: drafted holder"),
-    "DR-MM-04": ("Activate, Revise and Retire Metadata Stores", "ROLE-MM-S02", "REVIEW: drafted holder"),
-    "DR-MM-05": ("Bring a Data Asset into Metadata Scope and Agree its Requirements", "ROLE-MM-S01", "REVIEW: drafted holder"),
-    "DR-MM-06": ("Accept Integrated Metadata and Authorize Publication", "ROLE-MM-P01", "REVIEW: drafted holder"),
-    "DR-MM-07": ("Declare Metadata Stale, Refreshed or Archived", "ROLE-MM-P01", "REVIEW: drafted holder"),
+    "DR-MM-01": ("Approve Metadata Strategy and Requirements", "ROLE-DGC", "Confirmed 22 Sep 2026 (holder register): Data Governance Council; drafted as Data Governance Bodies"),
+    "DR-MM-02": ("Activate, Revise and Retire the Programme", "ROLE-PM-MM", "Confirmed 22 Sep 2026 (holder register): Metadata Management Practice Manager; drafted as Data Managers"),
+    "DR-MM-03": ("Approve Metadata Architecture, Metamodel and Standards", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Data Architects"),
+    "DR-MM-04": ("Activate, Revise and Retire Metadata Stores", "ROLE-PM-MM", "Confirmed 22 Sep 2026 (holder register): Metadata Management Practice Manager; drafted as Data Managers"),
+    "DR-MM-05": ("Bring a Data Asset into Metadata Scope and Agree its Requirements", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Business Data Stewards"),
+    "DR-MM-06": ("Accept Integrated Metadata and Authorize Publication", "ROLE-TDS", "Confirmed 22 Sep 2026 (holder register): Technical Data Steward; drafted as Data Stewards"),
+    "DR-MM-07": ("Declare Metadata Stale, Refreshed or Archived", "ROLE-TDS", "Confirmed 22 Sep 2026 (holder register): Technical Data Steward; drafted as Data Stewards"),
 }
 ROLES = [
     ("ROLE-MM-S01", "Business Data Stewards", "Supplier", "Supply business metadata and requirements."), ("ROLE-MM-S02", "Data Managers", "Supplier", "Sponsor the programme and stores."), ("ROLE-MM-S03", "Data Governance Bodies", "Supplier", "Supply governance metadata; approve strategy and standards."), ("ROLE-MM-S04", "Data Modelers", "Supplier", "Supply logical and physical structures."), ("ROLE-MM-S05", "Database Administrators", "Supplier", "Supply technical and operational metadata."),

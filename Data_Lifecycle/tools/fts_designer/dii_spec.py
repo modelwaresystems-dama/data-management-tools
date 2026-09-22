@@ -11,7 +11,7 @@ Decisions 21 Sep 2026: DII gates Global access release through a data service (p
 operation under an agreement), custody transfer and external custody (orchestrated exchange with documented lineage),
 supersession by a completed migration exchange; an alert or suspension emits the assurance and access-suspension
 triggers; profiling and business rule compliance is an assurance service; every transition carries a Decision Right
-(holders drafted, REVIEW).
+(holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python dii_spec.py [out_dir] [--overrides spec/data_integration_interoperability_overrides.json]   -> data_integration_interoperability.fts.json
 """
@@ -88,13 +88,13 @@ EVENTS = {
     "EV-DSV-01": ("Service request", "Request"), "EV-DSV-02": ("Service development completion", "Evidence trigger"), "EV-DSV-03": ("Service publication", "Decision outcome"), "EV-DSV-04": ("Service change request", "Request"), "EV-DSV-05": ("Deprecation decision", "Decision outcome"), "EV-DSV-06": ("Service retirement", "Decision outcome"), "EV-DSV-07": ("Service test failure", "Assessment outcome"),
 }
 DR = {
-    "DR-DII-01": ("Approve the DII Architecture and its Interface Standards", "ROLE-DII-P01", "REVIEW: drafted holder"),
-    "DR-DII-02": ("Bring into Force, Revise and Retire the DII Architecture", "ROLE-DII-P01", "REVIEW: drafted holder"),
-    "DR-DII-03": ("Define, Profile and Map an Exchange", "ROLE-DII-P02", "REVIEW: drafted holder"),
-    "DR-DII-04": ("Orchestrate, Accept and Change an Exchange", "ROLE-DII-P05", "REVIEW: drafted holder"),
-    "DR-DII-05": ("Agree and Retire an Exchange (Specification and Access Agreement)", "ROLE-DII-P04", "REVIEW: drafted holder"),
-    "DR-DII-06": ("Raise and Clear Alerts, Suspend and Resume an Exchange", "ROLE-DII-P05", "REVIEW: drafted holder"),
-    "DR-DII-07": ("Design, Publish, Version, Deprecate and Retire a Data Service", "ROLE-DII-P01", "REVIEW: drafted holder"),
+    "DR-DII-01": ("Approve the DII Architecture and its Interface Standards", "ROLE-PM-DII", "Confirmed 22 Sep 2026 (holder register): Data Integration and Interoperability Practice Manager; drafted as Data Architects"),
+    "DR-DII-02": ("Bring into Force, Revise and Retire the DII Architecture", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Data Architects"),
+    "DR-DII-03": ("Define, Profile and Map an Exchange", "ROLE-BA", "Confirmed 22 Sep 2026 (holder register): Business Analyst; drafted as Business and Data Analysts"),
+    "DR-DII-04": ("Orchestrate, Accept and Change an Exchange", "ROLE-DENG", "Confirmed 22 Sep 2026 (holder register): Data Engineer; drafted as ETL, Service, Interface Developers"),
+    "DR-DII-05": ("Agree and Retire an Exchange (Specification and Access Agreement)", "ROLE-TDS", "Confirmed 22 Sep 2026 (holder register): Technical Data Steward; drafted as Data Stewards"),
+    "DR-DII-06": ("Raise and Clear Alerts, Suspend and Resume an Exchange", "ROLE-DENG", "Confirmed 22 Sep 2026 (holder register): Data Engineer; drafted as ETL, Service, Interface Developers"),
+    "DR-DII-07": ("Design, Publish, Version, Deprecate and Retire a Data Service", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Data Architects"),
 }
 ROLES = [
     ("ROLE-DII-S01", "Data Producers", "Supplier", "Supply source data."), ("ROLE-DII-S02", "IT Steering Committee", "Supplier", "Supplies priorities and platform direction."), ("ROLE-DII-S03", "Executives and Managers", "Supplier", "Supply business goals and strategies."), ("ROLE-DII-S04", "Subject Matter Experts", "Supplier", "Supply data semantics and business rules."),

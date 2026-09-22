@@ -313,7 +313,8 @@ def build_book(ms, scen_dir=None, runs_dir=None):
         d.p("No scenario folder was given to the generator.")
     d.h(1, "9. Review status")
     drs = [(kid, dr) for kid in kas for dr in ms[kid].get("decisionRights", []) if "REVIEW" in (dr.get("notes") or "")]
-    d.p(f"{len(drs)} decision-right holders are drafted and marked REVIEW across the thirteen Knowledge Areas; they are settled in each workbook's Decision Rights sheet or by a comment on the chapter's decision-right row. Every state name, event, service and lifecycle drafted from a context diagram that shows no lifecycle is marked in the chapter's 'Drafted for review' list.")
+    nconf = sum(1 for kid in kas for dr in ms[kid].get("decisionRights", []) if "Confirmed" in (dr.get("notes") or ""))
+    d.p((f"{len(drs)} decision-right holders are drafted and marked REVIEW across the thirteen Knowledge Areas; they are settled in each workbook's Decision Rights sheet or by a comment on the chapter's decision-right row. " if drs else "") + (f"{nconf} decision-right holders are confirmed from the shared role vocabulary (role_vocabulary.json, 22 Sep 2026). " if nconf else "") + "Every state name, event, service and lifecycle drafted from a context diagram that shows no lifecycle is marked in the chapter's 'Drafted for review' list.")
     d.p("Status of every element: Proposed / illustrative until the Board says otherwise.")
     return d
 
@@ -405,7 +406,7 @@ def build_chapter(ms, mid, figures_dir=None):
     d.h(2, "Cross-region constraints")
     d.t(["ID", "Constraint", "Applies to", "Requirement", "Expression"], [[x["id"], x.get("constraint") or x.get("text", ""), ", ".join(x.get("transitions") or x.get("appliesTo") or []) if isinstance(x.get("transitions") or x.get("appliesTo"), list) else str(x.get("appliesTo") or ""), x.get("requirement", ""), x.get("expression") or ""] for x in m.get("crossRegionConstraints", [])], "TBL-XRG")
     d.h(2, "Decision rights")
-    d.t(["ID", "Decision right", "Holder", "Applies to", "Note"], [[dr["id"], dr.get("name", ""), dr.get("holder", ""), dr.get("appliesTo", ""), dr.get("notes", "")] for dr in m.get("decisionRights", [])], "TBL-DR")
+    d.t(["ID", "Decision right", "Holder", "Applies to", "Note"], [[dr["id"], dr.get("name", ""), dr.get("holderName") or dr.get("holder", ""), dr.get("appliesTo", ""), dr.get("notes", "")] for dr in m.get("decisionRights", [])], "TBL-DR")
     d.h(2, "Services")
     d.t(["ID", "Family", "Service", "Trigger", "Output"], [[s["id"], s.get("family", ""), s.get("name", ""), s.get("trigger", ""), s.get("output", "")] for s in m.get("services", [])], "TBL-SERVICES")
     if m.get("events"):

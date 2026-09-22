@@ -12,7 +12,7 @@ Decisions 21 Sep 2026: DSO gates Global materialisation (environment in service,
 (environment in service under a tested continuity plan), preservation custody (archive copy), restoration of active
 custody (restored and protected instance), destruction and custody closure (purge confirmed); a migration or
 replication is a custody transfer trigger; an OLA breach or a continuity invocation emits the Assurance trigger;
-monitoring is an assurance service; every transition carries a Decision Right (holders drafted, REVIEW).
+monitoring is an assurance service; every transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python dso_spec.py [out_dir] [--overrides spec/data_storage_operations_overrides.json]   -> data_storage_operations.fts.json
 """
@@ -102,14 +102,14 @@ EVENTS = {
     "EV-BCP-01": ("Continuity planning", "Request"), "EV-BCP-02": ("Test success", "Assessment outcome"), "EV-BCP-03": ("Test failure", "Assessment outcome"), "EV-BCP-04": ("Continuity event", "Monitoring trigger"), "EV-BCP-05": ("Recovery confirmation", "Evidence trigger"), "EV-BCP-06": ("Post-incident review", "Decision outcome"), "EV-BCP-07": ("Plan revision trigger", "Monitoring trigger"), "EV-BCP-08": ("Plan retirement", "Decision outcome"),
 }
 DR = {
-    "DR-DSO-01": ("Evaluate, Adopt and Retire a Database Technology", "ROLE-DSO-P02", "REVIEW: drafted holder"),
-    "DR-DSO-02": ("Approve Environment Requirements and Development", "ROLE-DSO-P02", "REVIEW: drafted holder"),
-    "DR-DSO-03": ("Accept an Environment into Service, Declare Degradation and Decommission", "ROLE-DSO-P01", "REVIEW: drafted holder"),
-    "DR-DSO-04": ("Load, Protect, Archive and Restore a Stored Instance", "ROLE-DSO-P01", "REVIEW: drafted holder"),
-    "DR-DSO-05": ("Approve and Verify Migration, Replication and Versioning", "ROLE-DSO-P01", "REVIEW: drafted holder"),
-    "DR-DSO-06": ("Confirm the Purge of a Stored Instance", "ROLE-DSO-P01", "REVIEW: drafted holder"),
-    "DR-DSO-07": ("Approve, Test, Invoke and Stand Down the Continuity Plan", "ROLE-DSO-P01", "REVIEW: drafted holder"),
-    "DR-DSO-08": ("Provision, Mask, Refresh and Retire a Test Dataset", "ROLE-DSO-P01", "REVIEW: drafted holder"),
+    "DR-DSO-01": ("Evaluate, Adopt and Retire a Database Technology", "ROLE-PM-DSO", "Confirmed 22 Sep 2026 (holder register): Data Storage and Operations Practice Manager; drafted as Data Architect"),
+    "DR-DSO-02": ("Approve Environment Requirements and Development", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Data Architect"),
+    "DR-DSO-03": ("Accept an Environment into Service, Declare Degradation and Decommission", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
+    "DR-DSO-04": ("Load, Protect, Archive and Restore a Stored Instance", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
+    "DR-DSO-05": ("Approve and Verify Migration, Replication and Versioning", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
+    "DR-DSO-06": ("Confirm the Purge of a Stored Instance", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
+    "DR-DSO-07": ("Approve, Test, Invoke and Stand Down the Continuity Plan", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
+    "DR-DSO-08": ("Provision, Mask, Refresh and Retire a Test Dataset", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
 }
 ROLES = [
     ("ROLE-DSO-S01", "Data Architect", "Supplier", "Supplies the data architecture and technology direction."), ("ROLE-DSO-S02", "Data Modeler", "Supplier", "Supplies the physical data models."), ("ROLE-DSO-S03", "Software Developer", "Supplier", "Supplies application requirements and change scripts."), ("ROLE-DSO-S04", "Application Testing Team", "Supplier", "Supplies test requirements and datasets."),

@@ -14,7 +14,7 @@ materialisation (ingested and aligned on a platform in service), release of a mo
 insight published after the trust and ethics review, which is a hard gate: structural path plus a Non-waivable guard),
 supersession by an enhanced model (event) and the assurance trigger on model drift, a source alert or a platform breach;
 model validation is an assurance service; guards are Conditional so assets outside big data are unaffected; every
-transition carries a Decision Right (holders drafted, REVIEW).
+transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python bda_spec.py [out_dir] [--overrides spec/big_data_data_science_overrides.json]   -> big_data_data_science.fts.json
 """
@@ -112,15 +112,15 @@ EVENTS = {
     "EV-INS-01": ("Insight draft", "Evidence trigger"), "EV-INS-02": ("Trust and ethics review pass", "Decision outcome"), "EV-INS-03": ("Trust and ethics review failure", "Decision outcome"), "EV-INS-04": ("Insight publication", "Decision outcome"), "EV-INS-05": ("Insight supersession", "Decision outcome"), "EV-INS-06": ("Insight withdrawal", "Decision outcome"), "EV-INS-07": ("Insight redraft", "Request"),
 }
 DR = {
-    "DR-BDA-01": ("Approve the Big Data Strategy and Standards", "ROLE-BDA-P06", "REVIEW: drafted holder"),
-    "DR-BDA-02": ("Define, Review and Retire the Strategy and Standards", "ROLE-BDA-P06", "REVIEW: drafted holder"),
-    "DR-BDA-03": ("Decide, Provision, Scale and Decommission a Platform", "ROLE-BDA-P01", "REVIEW: drafted holder"),
-    "DR-BDA-04": ("Choose, Acquire and Retire a Data Source", "ROLE-BDA-P03", "REVIEW: drafted holder"),
-    "DR-BDA-05": ("Ingest, Align and Refresh a Data Source", "ROLE-BDA-P02", "REVIEW: drafted holder"),
-    "DR-BDA-06": ("Develop, Explore, Validate and Enhance a Model", "ROLE-BDA-P04", "REVIEW: drafted holder"),
-    "DR-BDA-07": ("Deploy, Monitor and Retire a Model", "ROLE-BDA-P05", "REVIEW: drafted holder"),
-    "DR-BDA-08": ("Review an Insight for Trust and Ethics", "ROLE-BDA-P06", "REVIEW: drafted holder"),
-    "DR-BDA-09": ("Draft, Publish, Supersede and Withdraw an Insight", "ROLE-BDA-P05", "REVIEW: drafted holder"),
+    "DR-BDA-01": ("Approve the Big Data Strategy and Standards", "ROLE-PM-BDA", "Confirmed 22 Sep 2026 (holder register): Big Data and Data Science Practice Manager; drafted as DM Managers"),
+    "DR-BDA-02": ("Define, Review and Retire the Strategy and Standards", "ROLE-PM-BDA", "Confirmed 22 Sep 2026 (holder register): Big Data and Data Science Practice Manager; drafted as DM Managers"),
+    "DR-BDA-03": ("Decide, Provision, Scale and Decommission a Platform", "ROLE-BDPA", "Confirmed 22 Sep 2026 (holder register): Big Data Platform Architect; drafted as Big Data Platform Architects"),
+    "DR-BDA-04": ("Choose, Acquire and Retire a Data Source", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Data SMEs"),
+    "DR-BDA-05": ("Ingest, Align and Refresh a Data Source", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Ingestion Architects"),
+    "DR-BDA-06": ("Develop, Explore, Validate and Enhance a Model", "ROLE-DSCI", "Confirmed 22 Sep 2026 (holder register): Data Scientist; drafted as Data Scientists"),
+    "DR-BDA-07": ("Deploy, Monitor and Retire a Model", "ROLE-DSCI", "Confirmed 22 Sep 2026 (holder register): Data Scientist; drafted as Analytic Design Lead"),
+    "DR-BDA-08": ("Review an Insight for Trust and Ethics", "ROLE-PM-BDA", "Confirmed 22 Sep 2026 (holder register): Big Data and Data Science Practice Manager; drafted as DM Managers"),
+    "DR-BDA-09": ("Draft, Publish, Supersede and Withdraw an Insight", "ROLE-DSCI", "Confirmed 22 Sep 2026 (holder register): Data Scientist; drafted as Analytic Design Lead"),
 }
 ROLES = [
     ("ROLE-BDA-S01", "Big Data Platform Architects", "Supplier", "Supply platform options and the build, buy or rent decision tree."), ("ROLE-BDA-S02", "Data Scientists", "Supplier", "Supply hypotheses and methods."), ("ROLE-BDA-S03", "Data Producers", "Supplier", "Supply internal data sources."), ("ROLE-BDA-S04", "Data Suppliers", "Supplier", "Supply external data sources."), ("ROLE-BDA-S05", "Information Consumers", "Supplier", "Supply questions and feedback."),

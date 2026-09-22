@@ -13,3 +13,10 @@ This folder is public and holds **no model data**. Models live in a private stor
 ## Versioning
 
 The viewer carries its version and build date and time (SAST) in the header and footer. A model carries its own version, status and build stamp in `meta`.
+
+## Decision-right holders and viewer v0.25 (22 Sep 2026, 15:44 SAST)
+
+- `tools/fts_designer/role_vocabulary.json`: the one shared role vocabulary, confirmed 22 Sep 2026 on the Decision-Right Holder Register. It has 36 roles, including a six-tier steward ladder (Chief, Enterprise, Domain, Coordinating, Business and Technical Data Steward) and a Practice Manager for each Knowledge Area; the Information Security Officer is also the Data Security Practice Manager. It maps all 109 Knowledge Area decision rights to a holder.
+- `ka_build.py` v0.4 reads the vocabulary. Each decision right carries `holder` (a shared role ID) and `holderName`. The holders a KA uses are added to its roles as Decision-Right Holders, next to the role players from the context diagram. The REVIEW flags on holders are cleared.
+- `fts_docs.py` and the viewer's Documentation tab show the holder's role name.
+- `protocol_build.py` also takes the Global protocol's decision-right holders from `role_vocabulary.json` (`globalMapping`), and adds those holders as Decision-Right Holder roles.

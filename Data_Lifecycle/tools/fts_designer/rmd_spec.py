@@ -10,7 +10,7 @@ per master entity, for example one customer), which is the Customer Master asset
 Decisions 21 Sep 2026: RMD gates Global registration (validated definitions, assessed source), materialisation
 (data model and integration pattern), access release (sharing service published, conditions of use agreed) and
 supersession (new reference version or merged golden record); a match conflict or split emits the Assurance
-material-change trigger; every transition carries a Decision Right (holders drafted, REVIEW).
+material-change trigger; every transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python rmd_spec.py [out_dir] [--overrides spec/reference_master_data_overrides.json]   -> reference_master_data.fts.json
 """
@@ -94,14 +94,14 @@ EVENTS = {
     "EV-GLD-01": ("Match completion", "Assessment outcome"), "EV-GLD-02": ("Reconciliation and quality confirmation", "Assessment outcome"), "EV-GLD-03": ("Conflict detection", "Monitoring trigger"), "EV-GLD-04": ("Conflict resolution", "Decision outcome"), "EV-GLD-05": ("Split decision", "Decision outcome"), "EV-GLD-06": ("Record retirement", "Decision outcome"), "EV-GLD-07": ("Re-match after split", "Assessment outcome"), "EV-GLD-08": ("Source update", "Monitoring trigger"),
 }
 DR = {
-    "DR-RMD-01": ("Approve Shared Data Approach, Processes and Policies", "ROLE-RMD-P05", "REVIEW: drafted holder"),
-    "DR-RMD-02": ("Activate, Revise and Retire the Programme", "ROLE-RMD-P05", "REVIEW: drafted holder"),
-    "DR-RMD-03": ("Bring a Domain into Scope and Validate its Definitions", "ROLE-RMD-P03", "REVIEW: drafted holder"),
-    "DR-RMD-04": ("Designate Sources and Approve the Domain Model", "ROLE-RMD-P05", "REVIEW: drafted holder"),
-    "DR-RMD-05": ("Assign Domain Stewardship and Publish the Sharing Service", "ROLE-RMD-P03", "REVIEW: drafted holder"),
-    "DR-RMD-06": ("Publish, Supersede and Retire a Reference Data Version", "ROLE-RMD-P03", "REVIEW: drafted holder"),
-    "DR-RMD-07": ("Confirm Match, Merge, Split and Retirement of a Golden Record", "ROLE-RMD-P03", "REVIEW: drafted holder"),
-    "DR-RMD-08": ("Declare and Resolve a Golden Record Conflict", "ROLE-RMD-P06", "REVIEW: drafted holder"),
+    "DR-RMD-01": ("Approve Shared Data Approach, Processes and Policies", "ROLE-PM-RMD", "Confirmed 22 Sep 2026 (holder register): Reference and Master Data Practice Manager; drafted as Data Architects"),
+    "DR-RMD-02": ("Activate, Revise and Retire the Programme", "ROLE-PM-RMD", "Confirmed 22 Sep 2026 (holder register): Reference and Master Data Practice Manager; drafted as Data Architects"),
+    "DR-RMD-03": ("Bring a Domain into Scope and Validate its Definitions", "ROLE-DDS", "Confirmed 22 Sep 2026 (holder register): Domain Data Steward; drafted as Data Stewards"),
+    "DR-RMD-04": ("Designate Sources and Approve the Domain Model", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Data Architects"),
+    "DR-RMD-05": ("Assign Domain Stewardship and Publish the Sharing Service", "ROLE-EDS", "Confirmed 22 Sep 2026 (holder register): Enterprise Data Steward; drafted as Data Stewards"),
+    "DR-RMD-06": ("Publish, Supersede and Retire a Reference Data Version", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Data Stewards"),
+    "DR-RMD-07": ("Confirm Match, Merge, Split and Retirement of a Golden Record", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Data Stewards"),
+    "DR-RMD-08": ("Declare and Resolve a Golden Record Conflict", "ROLE-DQA", "Confirmed 22 Sep 2026 (holder register): Data Quality Analyst; drafted as Data Quality Analysts"),
 }
 ROLES = [
     ("ROLE-RMD-S01", "Subject Matter Experts", "Supplier", "Supply definitions and business rules."), ("ROLE-RMD-S02", "Data Stewards", "Supplier", "Supply stewardship knowledge and requirements."), ("ROLE-RMD-S03", "Application Developers", "Supplier", "Supply source records and consuming applications."), ("ROLE-RMD-S04", "Data Providers", "Supplier", "Supply purchased and open data and code sets."), ("ROLE-RMD-S05", "Business Analysts", "Supplier", "Supply cross-functional requirements."), ("ROLE-RMD-S06", "Infrastructure Systems Analysts", "Supplier", "Supply platform constraints."),
@@ -179,6 +179,9 @@ CONTRIB = [
     ("CON-RMD-10", "TR-AV-04", "guard", {"GLD": ["STS-GLD-03"]}, "Suspended access is restored only when the record is Reliable again.", "RMD_record_reliable", "Required", ""),
     ("CON-RMD-11", "TR-EX-05", "event", {"GLD": ["STS-GLD-06"], "REF": ["STS-REF-05"]}, "Retirement of a record or set with no dependency is a disposition trigger.", "RMD_record_retired or RMD_set_retired", "Conditional", "RMD emits EV-EX-05 when TR-GLD-09 or TR-REF-05 fires and retention allows."),
     ("CON-RMD-12", "TR-AS-02", "service", {"GLD": ["STS-GLD-03"]}, "Reconciliation and Quality Confirmation supplies the assurance evidence for a golden record.", "SVC-RMD-08", "Conditional", "Assurance service; artefact ART-RMD-03."),
+    ("CON-RMD-13", "TR-CP-01", "guard", {"DOM": ["STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]}, "A master domain is taken into active custody only once its stewardship is defined.", "RMD_stewardship_defined or not RMD_domain_scoped", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep): non-master assets are unaffected."),
+    ("CON-RMD-14", "TR-CP-04", "guard", {"DOM": ["STS-DOM-06", "STS-DOM-07"]}, "A master domain is placed in external custody only as a Shared Domain.", "RMD_domain_shared or not RMD_domain_scoped", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
+    ("CON-RMD-15", "TR-CP-10", "guard", {"GLD": ["STS-GLD-01", "STS-GLD-06"]}, "Custody of a golden record is closed after destruction only when the record is retired.", "RMD_record_retired or not RMD_record_matched", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
 ]
 KA_COUPLINGS = [
     ("KAC-RMD-01", "KA-DQ", "TR-PDCA-03", "", "DQ_conforming", "A golden record is Reliable only when its DQ PDCA cycle is at Conforming Quality (TR-GLD-02 cites the DQ fact).", "Reverse coupling: an RMD transition cites a DQ fact."),
@@ -188,6 +191,8 @@ KA_COUPLINGS = [
     ("KAC-RMD-05", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "The programme's governance policies are governing instruments published under Data Governance (TR-PRG-02 cites the DG fact).", "Reverse coupling."),
 ]
 FACT_BINDINGS = {
+    "RMD_domain_scoped": {"region": "REG-RMD-DOM", "states": ["STS-DOM-02", "STS-DOM-03", "STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]},
+    "RMD_stewardship_defined": {"region": "REG-RMD-DOM", "states": ["STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]},
     "RMD_programme_operating": {"region": "REG-RMD-PRG", "states": ["STS-PRG-04", "STS-PRG-05"]},
     "RMD_definitions_validated": {"region": "REG-RMD-DOM", "states": ["STS-DOM-02", "STS-DOM-03", "STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]},
     "RMD_source_assessed": {"region": "REG-RMD-DOM", "states": ["STS-DOM-03", "STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]},

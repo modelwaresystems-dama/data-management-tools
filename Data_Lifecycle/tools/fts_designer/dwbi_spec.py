@@ -12,7 +12,7 @@ Decisions 21 Sep 2026: DWBI gates Global materialisation of a warehoused asset (
 loaded and reconciled), release of a data product (released under the release plan with lineage in the dictionary),
 supersession by a refreshed population; a failed load or a monitoring breach emits the Assurance trigger; load
 reconciliation is an assurance service; guards are Conditional so assets outside the warehouse are unaffected; every
-transition carries a Decision Right (holders drafted, REVIEW).
+transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python dwbi_spec.py [out_dir] [--overrides spec/data_warehousing_bi_overrides.json]   -> data_warehousing_bi.fts.json
 """
@@ -107,14 +107,14 @@ EVENTS = {
     "EV-BIP-01": ("Portfolio planning", "Request"), "EV-BIP-02": ("Portfolio approval", "Decision outcome"), "EV-BIP-03": ("Portfolio activation", "Decision outcome"), "EV-BIP-04": ("Portfolio review trigger", "Monitoring trigger"), "EV-BIP-05": ("Reviewed portfolio approval", "Decision outcome"), "EV-BIP-06": ("Portfolio retirement", "Decision outcome"), "EV-BIP-07": ("Plan rejection", "Decision outcome"),
 }
 DR = {
-    "DR-DWBI-01": ("Approve the DW and BI Architecture", "ROLE-DWBI-P02", "REVIEW: drafted holder"),
-    "DR-DWBI-02": ("Understand Requirements, Maintain and Retire the Architecture", "ROLE-DWBI-P02", "REVIEW: drafted holder"),
-    "DR-DWBI-03": ("Develop, Release, Tune and Retire a Warehouse or Mart", "ROLE-DWBI-P03", "REVIEW: drafted holder"),
-    "DR-DWBI-04": ("Design, Load, Reconcile, Refresh and Retire a Population", "ROLE-DWBI-P03", "REVIEW: drafted holder"),
-    "DR-DWBI-05": ("Specify, Build and Change a Data Product", "ROLE-DWBI-P01", "REVIEW: drafted holder"),
-    "DR-DWBI-06": ("Release, Confirm Adoption and Retire a Data Product", "ROLE-DWBI-P01", "REVIEW: drafted holder"),
-    "DR-DWBI-07": ("Raise and Resolve a Monitoring Alert", "ROLE-DWBI-P03", "REVIEW: drafted holder"),
-    "DR-DWBI-08": ("Approve, Activate, Review and Retire the BI Portfolio Plans", "ROLE-DWBI-P01", "REVIEW: drafted holder"),
+    "DR-DWBI-01": ("Approve the DW and BI Architecture", "ROLE-PM-DWBI", "Confirmed 22 Sep 2026 (holder register): Data Warehousing and Business Intelligence Practice Manager; drafted as Architects and Analysts"),
+    "DR-DWBI-02": ("Understand Requirements, Maintain and Retire the Architecture", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Architects and Analysts"),
+    "DR-DWBI-03": ("Develop, Release, Tune and Retire a Warehouse or Mart", "ROLE-DENG", "Confirmed 22 Sep 2026 (holder register): Data Engineer; drafted as DW/BI Specialists (BI Platform, Data Storage, Information Management)"),
+    "DR-DWBI-04": ("Design, Load, Reconcile, Refresh and Retire a Population", "ROLE-DENG", "Confirmed 22 Sep 2026 (holder register): Data Engineer; drafted as DW/BI Specialists (BI Platform, Data Storage, Information Management)"),
+    "DR-DWBI-05": ("Specify, Build and Change a Data Product", "ROLE-DPO", "Confirmed 22 Sep 2026 (holder register): Data Product Owner; drafted as Sponsors and Product Owner"),
+    "DR-DWBI-06": ("Release, Confirm Adoption and Retire a Data Product", "ROLE-DPO", "Confirmed 22 Sep 2026 (holder register): Data Product Owner; drafted as Sponsors and Product Owner"),
+    "DR-DWBI-07": ("Raise and Resolve a Monitoring Alert", "ROLE-DENG", "Confirmed 22 Sep 2026 (holder register): Data Engineer; drafted as DW/BI Specialists (BI Platform, Data Storage, Information Management)"),
+    "DR-DWBI-08": ("Approve, Activate, Review and Retire the BI Portfolio Plans", "ROLE-PM-DWBI", "Confirmed 22 Sep 2026 (holder register): Data Warehousing and Business Intelligence Practice Manager; drafted as Sponsors and Product Owner"),
 }
 ROLES = [
     ("ROLE-DWBI-S01", "Business Executive", "Supplier", "Supplies business requirements and priorities."), ("ROLE-DWBI-S02", "Governance Body", "Supplier", "Supplies governance activities and policies."), ("ROLE-DWBI-S03", "Enterprise Architecture", "Supplier", "Supplies the enterprise and data architectures."), ("ROLE-DWBI-S04", "Data Producers", "Supplier", "Supply the internal data feeds."), ("ROLE-DWBI-S05", "Information Consumers", "Supplier", "Supply information needs and feedback."), ("ROLE-DWBI-S06", "Subject Matter Experts", "Supplier", "Supply business meaning."),
@@ -202,6 +202,10 @@ CONTRIB = [
     ("CON-DWBI-05", "TR-AS-05", "event", {"POP": ["STS-POP-05"], "DWH": ["STS-DWH-05"], "PRD": ["STS-PRD-06", "STS-PRD-08"]}, "A failed load, a warehouse performance breach or a product alert is a material change affecting the assurance claim.", "DWBI_load_failed or DWBI_warehouse_tuning or DWBI_product_alert", "Conditional", "DWBI emits EV-AS-05 when TR-POP-04, TR-POP-08, TR-DWH-05, TR-PRD-06 or TR-PRD-13 fires."),
     ("CON-DWBI-06", "TR-AS-02", "service", {"POP": ["STS-POP-04"]}, "Load Reconciliation and Lineage Recording supplies assurance evidence for the warehoused asset.", "SVC-DWBI-05", "Conditional", "Assurance service; evidence EVD-DWBI-04."),
     ("CON-DWBI-07", "TR-AV-03", "event", {"PRD": ["STS-PRD-08"]}, "A product data or performance alert suspends access to the product until resolved; a usage alert does not.", "DWBI_product_data_alert", "Conditional", "DWBI emits EV-AV-03 when TR-PRD-13 fires (Howard, 21 Sep: suspend only on a data issue)."),
+    ("CON-DWBI-08", "TR-CP-01", "guard", {"DWH": ["STS-DWH-04", "STS-DWH-05"], "POP": ["STS-POP-02", "STS-POP-03", "STS-POP-04", "STS-POP-05", "STS-POP-06"]}, "A warehouse population is taken into active custody only in a warehouse in production.", "DWBI_warehouse_in_production or not DWBI_population_active", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
+    ("CON-DWBI-09", "TR-CP-02", "guard", {"POP": ["STS-POP-04", "STS-POP-06"]}, "A population enters preservation custody only when reconciled; a failed load is never preserved.", "DWBI_population_reconciled or not DWBI_population_active", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
+    ("CON-DWBI-10", "TR-CP-05", "event", {"DWH": ["STS-DWH-06"]}, "Retirement of a warehouse (TR-DWH-07 or TR-DWH-08) triggers the custody transfer of the populations it held.", "DWBI_warehouse_retired", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep): event emitted into the Global protocol; the DSO, DII and DG guards on TR-CP-05 still decide."),
+    ("CON-DWBI-11", "TR-CP-10", "guard", {"POP": ["STS-POP-01", "STS-POP-07"], "PRD": ["STS-PRD-01", "STS-PRD-07"]}, "Custody is closed after destruction only when no live population or data product still depends on the asset.", "not DWBI_population_active and not DWBI_product_active", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
 ]
 KA_COUPLINGS = [
     ("KAC-DWBI-01", "KA-DA", "TR-EDA-05", "", "DA_architecture_in_force", "The DW and BI architecture is defined within the Enterprise Data Architecture in force (TR-ARC-02 cites the DA fact).", "Reverse coupling: a DWBI transition cites a DA fact."),
@@ -214,6 +218,7 @@ KA_COUPLINGS = [
     ("KAC-DWBI-08", "KA-RMD", "TR-DOM-05", "", "RMD_domain_shared", "Master and reference data are populated into the warehouse from a shared domain (TR-POP-01 cites the RMD fact for master data feeds).", "Reverse coupling: a DWBI transition cites an RMD fact."),
 ]
 FACT_BINDINGS = {
+    "DWBI_warehouse_retired": {"region": "REG-DWBI-DWH", "states": ["STS-DWH-06"]},
     "DWBI_architecture_in_force": {"region": "REG-DWBI-ARC", "states": ["STS-ARC-04", "STS-ARC-05"]},
     "DWBI_warehouse_in_production": {"region": "REG-DWBI-DWH", "states": ["STS-DWH-04", "STS-DWH-05"]},
     "DWBI_warehouse_tuning": {"region": "REG-DWBI-DWH", "states": ["STS-DWH-05"]},

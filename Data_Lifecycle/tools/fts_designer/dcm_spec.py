@@ -11,7 +11,7 @@ state of the one lifecycle); 4 a Legal Hold or e-discovery matter (one per matte
 Decisions 22 Sep 2026: DCM gates Global destruction (retention expired and no active hold), preservation (retention rule
 assigned) and release of published content or a declared record; a hold raised emits the Assurance trigger and blocks
 disposition; records retention and the audit trail is an assurance service; guards are Conditional so assets with no
-content item are unaffected; every transition carries a Decision Right (holders drafted, REVIEW).
+content item are unaffected; every transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python dcm_spec.py [out_dir] [--overrides spec/document_content_management_overrides.json]   -> document_content_management.fts.json
 """
@@ -94,14 +94,14 @@ EVENTS = {
     "EV-HLD-01": ("Hold identification", "Request"), "EV-HLD-02": ("Preservation notice", "Decision outcome"), "EV-HLD-03": ("Hold withdrawal", "Decision outcome"), "EV-HLD-04": ("Discovery request", "Request"), "EV-HLD-05": ("Discovery completion", "Evidence trigger"), "EV-HLD-06": ("Hold release", "Decision outcome"), "EV-HLD-07": ("Hold record closure", "Decision outcome"),
 }
 DR = {
-    "DR-DCM-01": ("Approve the Content and Records Strategy and Handling Policies", "ROLE-DCM-P02", "REVIEW: drafted holder"),
-    "DR-DCM-02": ("Plan, Develop, Review and Retire the Strategy and Policies", "ROLE-DCM-P03", "REVIEW: drafted holder"),
-    "DR-DCM-03": ("Approve the Information Architecture and its Changes", "ROLE-DCM-P02", "REVIEW: drafted holder"),
-    "DR-DCM-04": ("Define, Change and Retire the Information Architecture and Repository", "ROLE-DCM-P04", "REVIEW: drafted holder"),
-    "DR-DCM-05": ("Capture, Classify, Publish and Withdraw Content", "ROLE-DCM-P04", "REVIEW: drafted holder"),
-    "DR-DCM-06": ("Declare, Archive, Retrieve and Extend a Record", "ROLE-DCM-P03", "REVIEW: drafted holder"),
-    "DR-DCM-07": ("Dispose of a Record or Discard Content", "ROLE-DCM-P03", "REVIEW: drafted holder"),
-    "DR-DCM-08": ("Identify, Issue, Release and Close a Legal Hold", "ROLE-DCM-S01", "REVIEW: drafted holder"),
+    "DR-DCM-01": ("Approve the Content and Records Strategy and Handling Policies", "ROLE-PM-DCM", "Confirmed 22 Sep 2026 (holder register): Document and Content Management Practice Manager; drafted as Data management professional"),
+    "DR-DCM-02": ("Plan, Develop, Review and Retire the Strategy and Policies", "ROLE-RIM", "Confirmed 22 Sep 2026 (holder register): Records and Information Manager; drafted as Records management staff"),
+    "DR-DCM-03": ("Approve the Information Architecture and its Changes", "ROLE-PM-DCM", "Confirmed 22 Sep 2026 (holder register): Document and Content Management Practice Manager; drafted as Data management professional"),
+    "DR-DCM-04": ("Define, Change and Retire the Information Architecture and Repository", "ROLE-RIM", "Confirmed 22 Sep 2026 (holder register): Records and Information Manager; drafted as Content management staff"),
+    "DR-DCM-05": ("Capture, Classify, Publish and Withdraw Content", "ROLE-RIM", "Confirmed 22 Sep 2026 (holder register): Records and Information Manager; drafted as Content management staff"),
+    "DR-DCM-06": ("Declare, Archive, Retrieve and Extend a Record", "ROLE-RIM", "Confirmed 22 Sep 2026 (holder register): Records and Information Manager; drafted as Records management staff"),
+    "DR-DCM-07": ("Dispose of a Record or Discard Content", "ROLE-RIM", "Confirmed 22 Sep 2026 (holder register): Records and Information Manager; drafted as Records management staff"),
+    "DR-DCM-08": ("Identify, Issue, Release and Close a Legal Hold", "ROLE-LEGAL", "Confirmed 22 Sep 2026 (holder register): Legal Counsel; drafted as Legal team"),
 }
 ROLES = [
     ("ROLE-DCM-S01", "Legal team", "Supplier", "Supplies legal retention requirements, holds and the e-discovery obligations."), ("ROLE-DCM-S02", "Business team", "Supplier", "Supplies the business strategy and content needs."), ("ROLE-DCM-S03", "IT team", "Supplier", "Supplies the IT strategy and platforms."), ("ROLE-DCM-S04", "External party", "Supplier", "Supplies content and documents from outside the organisation."),

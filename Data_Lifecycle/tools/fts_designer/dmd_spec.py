@@ -10,7 +10,7 @@ per model level, each per asset, with draft, reviewed, approved, managed, revisi
 Decisions 21 Sep 2026: DMD gates Global registration (approved conceptual model) and materialisation (reviewed,
 approved and deployed physical model); a physical model revision emits the Assurance material-change trigger; model
 validation measurement is an assurance service; every Return for Rework logs a DG Data Asset issue; every transition
-carries a Decision Right (holders drafted, REVIEW).
+carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python dmd_spec.py [out_dir] [--overrides spec/data_modelling_design_overrides.json]   -> data_modelling_design.fts.json
 """
@@ -96,12 +96,12 @@ for code, name, adj, sub, what, ctx in LEVELS:
     EVENTS.update({f"EV-{code}-01": (f"{name} initiation", "Request"), f"EV-{code}-02": (f"{name} review completion", "Assessment outcome"), f"EV-{code}-03": (f"{name} review rejection", "Decision outcome"), f"EV-{code}-04": (f"{name} approval", "Decision outcome"), f"EV-{code}-05": (f"{name} publication", "Decision outcome"), f"EV-{code}-06": (f"{name} change request", "Request"), f"EV-{code}-07": (f"{name} supersession", "Decision outcome")})
 EVENTS["EV-PDM-08"] = ("Physical Data Model deployment", "Evidence trigger")
 DR = {
-    "DR-DMD-01": ("Approve the Modelling Standards and Plan", "ROLE-DMD-P02", "REVIEW: drafted holder"),
-    "DR-DMD-02": ("Activate, Revise and Retire the Modelling Standards", "ROLE-DMD-P02", "REVIEW: drafted holder"),
-    "DR-DMD-03": ("Initiate and Revise a Data Model", "ROLE-DMD-P02", "REVIEW: drafted holder"),
-    "DR-DMD-04": ("Review a Data Model and Record its Validation Measurement", "ROLE-DMD-P01", "REVIEW: drafted holder"),
-    "DR-DMD-05": ("Approve or Reject a Data Model Version", "ROLE-DMD-P02", "REVIEW: drafted holder"),
-    "DR-DMD-06": ("Publish, Supersede and Re-model a Data Model", "ROLE-DMD-P02", "REVIEW: drafted holder"),
+    "DR-DMD-01": ("Approve the Modelling Standards and Plan", "ROLE-PM-DMD", "Confirmed 22 Sep 2026 (holder register): Data Modelling and Design Practice Manager; drafted as Data Modelers"),
+    "DR-DMD-02": ("Activate, Revise and Retire the Modelling Standards", "ROLE-DMOD", "Confirmed 22 Sep 2026 (holder register): Data Modeller; drafted as Data Modelers"),
+    "DR-DMD-03": ("Initiate and Revise a Data Model", "ROLE-DMOD", "Confirmed 22 Sep 2026 (holder register): Data Modeller; drafted as Data Modelers"),
+    "DR-DMD-04": ("Review a Data Model and Record its Validation Measurement", "ROLE-BA", "Confirmed 22 Sep 2026 (holder register): Business Analyst; drafted as Business Analysts"),
+    "DR-DMD-05": ("Approve or Reject a Data Model Version", "ROLE-PM-DMD", "Confirmed 22 Sep 2026 (holder register): Data Modelling and Design Practice Manager; drafted as Data Modelers"),
+    "DR-DMD-06": ("Publish, Supersede and Re-model a Data Model", "ROLE-DMOD", "Confirmed 22 Sep 2026 (holder register): Data Modeller; drafted as Data Modelers"),
 }
 ROLES = [
     ("ROLE-DMD-S01", "Business Professionals", "Supplier", "Supply business requirements and vocabulary."), ("ROLE-DMD-S02", "Business Analysts", "Supplier", "Supply analysed requirements."), ("ROLE-DMD-S03", "Data Architects", "Supplier", "Supply the data architecture and enterprise data model."), ("ROLE-DMD-S04", "Database Administrators and Developers", "Supplier", "Supply existing databases and physical constraints."), ("ROLE-DMD-S05", "Subject Matter Experts", "Supplier", "Supply business meaning."), ("ROLE-DMD-S06", "Data Stewards", "Supplier", "Supply data standards and definitions."), ("ROLE-DMD-S07", "Metadata Administrators", "Supplier", "Supply existing models and metadata."),
@@ -159,6 +159,9 @@ CONTRIB = [
     ("CON-DMD-02", "TR-EX-02", "guard", {"PDM": ["STS-PDM-06", "STS-PDM-07"]}, "An asset is materialised only under a reviewed, approved physical data model deployed as the schema of its store.", "DMD_physical_deployed", "Required", "Materialize Asset cites the deployed physical model version; the logical model is implied by XRG-DMD-03."),
     ("CON-DMD-03", "TR-AS-05", "event", {"PDM": ["STS-PDM-07"]}, "A physical model revision is a material change affecting the assurance claim.", "DMD_physical_revision", "Conditional", "DMD emits EV-AS-05 when TR-PDM-06 fires."),
     ("CON-DMD-04", "TR-AS-02", "service", {"PDM": ["STS-PDM-06"]}, "The Data Model Review and Validation Measurement supplies assurance evidence for the asset's model.", "SVC-DMD-03", "Conditional", "Assurance service; evidence EVD-DMD-04."),
+    ("CON-DMD-05", "TR-CP-01", "guard", {"PDM": ["STS-PDM-06", "STS-PDM-07"]}, "A custodian accepts accountability for a stored asset only when a deployed physical data model describes what is held.", "DMD_physical_deployed or not DMD_model_managed", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep): assets with no managed physical model are unaffected."),
+    ("CON-DMD-06", "TR-CP-04", "guard", {"LDM": ["STS-LDM-04", "STS-LDM-05", "STS-LDM-06"]}, "An asset is placed in external custody only with an approved logical data model as the data contract handed to the external custodian.", "DMD_logical_approved or not DMD_model_managed", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
+    ("CON-DMD-07", "TR-CP-05", "guard", {"LDM": ["STS-LDM-04", "STS-LDM-05", "STS-LDM-06"]}, "A custody transfer is initiated only when the transfer package is described by an approved logical data model.", "DMD_logical_approved or not DMD_model_managed", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
 ]
 KA_COUPLINGS = [
     ("KAC-DMD-01", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "The modelling standards are governing instruments published under Data Governance (TR-STD-02 and TR-STD-05 cite the DG fact).", "Reverse coupling: a DMD transition cites a DG fact."),

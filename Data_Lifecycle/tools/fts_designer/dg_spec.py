@@ -11,7 +11,7 @@ Decision 21 Sep 2026: the regions are separate FTSs, one per managed element, no
 "capability" subject. Each region names the element it manages and the conditions that matter to the KA.
 Region 5 manages Data Asset issues raised by every Knowledge Area: DG handles issue management for all of them.
 v0.2 also renames STS-OPM-04 to "Assigned Roles" and gives every transition a Decision Right (drafted holders
-flagged REVIEW).
+flagged REVIEW; holders confirmed 22 Sep 2026 from role_vocabulary.json).
 
 Usage: python dg_spec.py [out_dir] [--overrides spec/data_governance_overrides.json]   -> data_governance.fts.json
 """
@@ -100,20 +100,20 @@ EVENTS = {
     "EV-ISS-01": ("Issue logged by a Knowledge Area", "Request"), "EV-ISS-02": ("Resolution assigned", "Decision outcome"), "EV-ISS-03": ("Escalation", "Decision outcome"), "EV-ISS-04": ("Resolution or risk acceptance", "Decision outcome"), "EV-ISS-05": ("Issue closure", "Evidence trigger"), "EV-ISS-06": ("Issue reopened", "Monitoring trigger"),
 }
 DR = {
-    "DR-DG-01": ("Approve Data Governance Strategy and Roadmap", "ROLE-DG-P01"), "DR-DG-02": ("Approve Operating Framework and Federation Model", "ROLE-DG-P01"), "DR-DG-03": ("Assign Data Owners and Stewards", "ROLE-DG-P03"),
-    "DR-DG-04": ("Approve Governing Instruments", "ROLE-DG-P07"), "DR-DG-05": ("Authorize Change Programme", "ROLE-DG-P02"), "DR-DG-06": ("Escalate and Decide Data Asset Issues", "ROLE-DG-P07"), "DR-DG-07": ("Accept Residual Risk on an Issue", "ROLE-DG-P01"),
-    # v0.2: decision 21 Sep 2026, every transition carries a Decision Right; holders drafted, flagged REVIEW
-    "DR-DG-08": ("Mandate Strategy Formulation", "ROLE-DG-P01", "REVIEW: drafted holder"),
-    "DR-DG-09": ("Sponsor Data Asset Valuation and Recognise Value", "ROLE-DG-P09", "REVIEW: drafted holder"),
-    "DR-DG-10": ("Open a Strategy Revision", "ROLE-DG-P03", "REVIEW: drafted holder"),
-    "DR-DG-11": ("Mandate Operating Model Design or Restructuring", "ROLE-DG-P03", "REVIEW: drafted holder"),
-    "DR-DG-12": ("Declare a Role Vacancy", "ROLE-DG-P03", "REVIEW: drafted holder"),
-    "DR-DG-13": ("Commission a Readiness Assessment", "ROLE-DG-P03", "REVIEW: drafted holder"),
-    "DR-DG-14": ("Accept Readiness Baseline and Target", "ROLE-DG-P01", "REVIEW: drafted holder"),
-    "DR-DG-15": ("Mandate Instrument Development or Review", "ROLE-DG-P07", "REVIEW: drafted holder"),
-    "DR-DG-16": ("Log, Triage and Reopen a Data Asset Issue", "ROLE-DG-P06", "REVIEW: drafted holder"),
-    "DR-DG-17": ("Assign Issue Resolution", "ROLE-DG-P05", "REVIEW: drafted holder"),
-    "DR-DG-18": ("Accept Issue Resolution and Close", "ROLE-DG-S03", "REVIEW: drafted holder"),
+    "DR-DG-01": ("Approve Data Governance Strategy and Roadmap", "ROLE-DGSC", "Confirmed 22 Sep 2026: Data Governance Steering Committee; drafted as Steering Committees"), "DR-DG-02": ("Approve Operating Framework and Federation Model", "ROLE-DGSC", "Confirmed 22 Sep 2026: Data Governance Steering Committee; drafted as Steering Committees"), "DR-DG-03": ("Assign Data Owners and Stewards", "ROLE-CDS", "Confirmed 22 Sep 2026: Chief Data Steward; drafted as CDO / Chief Data Stewards"),
+    "DR-DG-04": ("Approve Governing Instruments", "ROLE-DGC", "Confirmed 22 Sep 2026: Data Governance Council; drafted as Data Governance Bodies"), "DR-DG-05": ("Authorize Change Programme", "ROLE-DGSC", "Confirmed 22 Sep 2026: Data Governance Steering Committee; drafted as CIO"), "DR-DG-06": ("Escalate and Decide Data Asset Issues", "ROLE-DGC", "Confirmed 22 Sep 2026: Data Governance Council; drafted as Data Governance Bodies"), "DR-DG-07": ("Accept Residual Risk on an Issue", "ROLE-DO", "Confirmed 22 Sep 2026: Data Owner; drafted as Steering Committees"),
+    # v0.2: decision 21 Sep 2026, every transition carries a Decision Right; holders confirmed 22 Sep 2026 from role_vocabulary.json
+    "DR-DG-08": ("Mandate Strategy Formulation", "ROLE-DGSC", "Confirmed 22 Sep 2026 (holder register): Data Governance Steering Committee; drafted as Steering Committees"),
+    "DR-DG-09": ("Sponsor Data Asset Valuation and Recognise Value", "ROLE-CDO", "Confirmed 22 Sep 2026 (holder register): Chief Data Officer; drafted as DM Executives"),
+    "DR-DG-10": ("Open a Strategy Revision", "ROLE-CDS", "Confirmed 22 Sep 2026 (holder register): Chief Data Steward; drafted as CDO / Chief Data Stewards"),
+    "DR-DG-11": ("Mandate Operating Model Design or Restructuring", "ROLE-PM-DG", "Confirmed 22 Sep 2026 (holder register): Data Governance Practice Manager; drafted as CDO / Chief Data Stewards"),
+    "DR-DG-12": ("Declare a Role Vacancy", "ROLE-PM-DG", "Confirmed 22 Sep 2026 (holder register): Data Governance Practice Manager; drafted as CDO / Chief Data Stewards"),
+    "DR-DG-13": ("Commission a Readiness Assessment", "ROLE-PM-DG", "Confirmed 22 Sep 2026 (holder register): Data Governance Practice Manager; drafted as CDO / Chief Data Stewards"),
+    "DR-DG-14": ("Accept Readiness Baseline and Target", "ROLE-DGSC", "Confirmed 22 Sep 2026 (holder register): Data Governance Steering Committee; drafted as Steering Committees"),
+    "DR-DG-15": ("Mandate Instrument Development or Review", "ROLE-DGC", "Confirmed 22 Sep 2026 (holder register): Data Governance Council; drafted as Data Governance Bodies"),
+    "DR-DG-16": ("Log, Triage and Reopen a Data Asset Issue", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Business Data Stewards"),
+    "DR-DG-17": ("Assign Issue Resolution", "ROLE-CODS", "Confirmed 22 Sep 2026 (holder register): Coordinating Data Steward; drafted as Coordinating Data Stewards"),
+    "DR-DG-18": ("Accept Issue Resolution and Close", "ROLE-DO", "Confirmed 22 Sep 2026 (holder register): Data Owner; drafted as Data Owners"),
 }
 ROLES = [
     ("ROLE-DG-S01", "Business Executives", "Supplier", "Supply business strategies and goals."), ("ROLE-DG-S02", "Data Stewards", "Supplier", "Supply stewardship knowledge; act as custodians."), ("ROLE-DG-S03", "Data Owners", "Supplier", "Own Data Assets; hold asset-level decision rights."), ("ROLE-DG-S04", "Subject Matter Experts", "Supplier", "Supply domain knowledge."), ("ROLE-DG-S05", "Maturity Assessors", "Supplier", "Supply maturity and readiness assessments."), ("ROLE-DG-S06", "Regulators", "Supplier", "Supply regulatory requirements."), ("ROLE-DG-S07", "Enterprise Architects", "Supplier", "Supply the business reference architecture."),
@@ -250,7 +250,7 @@ SPEC = {
     "qaNotes": [
         {"severity": "note", "rule": "capture", "element": "process:4", "finding": "Embed Data Governance (C,O) has no sub-activities on the DMBOK context diagram; ACT-DG-4 is scoped from the region definitions (decision 21 Sep 2026)."},
         {"severity": "note", "rule": "GA-005", "element": "KA-DG", "finding": "Regions STR, OPM, RDY and POL manage scope-level elements that change rarely relative to a Data Asset; they gate Global transitions as preconditions (contributions), which is the loose coupling GA-009 asks for. Region ISS manages one case per issue and is the only region instantiated per Data Asset event."},
-        {"severity": "note", "rule": "N-016", "element": "DR-DG-08..18", "finding": "Decision Rights DR-DG-08 to DR-DG-18 and their holders are drafted so that every transition carries one (decision 21 Sep 2026); each is flagged REVIEW."},
+        {"severity": "note", "rule": "N-016", "element": "DR-DG-08..18", "finding": "Decision Rights DR-DG-08 to DR-DG-18 exist so that every transition carries one (decision 21 Sep 2026); holders confirmed 22 Sep 2026 on the holder register."},
         {"severity": "note", "rule": "derived", "element": "STATES", "finding": "All state names, events, decision rights and services are first-pass drafts from the context diagram; every one is for Howard's review."},
     ],
 }

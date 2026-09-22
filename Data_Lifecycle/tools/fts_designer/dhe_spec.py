@@ -13,7 +13,7 @@ Decisions 22 Sep 2026: Data Ethics gates Global access release on ethical cleara
 not Conditional: every release needs a cleared use), external custody and custody transfer on the sharing conditions of
 a cleared use (Conditional), restoration on the incident being resolved and the clearance restored; a compliance
 incident emits the access-suspension and assurance triggers; the ethics risk assessment is an assurance service; every
-transition carries a Decision Right (holders drafted, REVIEW).
+transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python dhe_spec.py [out_dir] [--overrides spec/data_handling_ethics_overrides.json]   -> data_handling_ethics.fts.json
 """
@@ -106,14 +106,14 @@ EVENTS = {
     "EV-ECI-01": ("Incident report", "Request"), "EV-ECI-02": ("Investigation completion", "Evidence trigger"), "EV-ECI-03": ("Remediation completion", "Evidence trigger"), "EV-ECI-04": ("Incident dismissal", "Decision outcome"), "EV-ECI-05": ("Incident closure", "Decision outcome"), "EV-ECI-06": ("Incident reopening", "Monitoring trigger"), "EV-ECI-07": ("Remediation rejection", "Assessment outcome"),
 }
 DR = {
-    "DR-DHE-01": ("Approve the Ethical Data Handling Strategy, Statements and Policies", "ROLE-DHE-P02", "REVIEW: drafted holder"),
-    "DR-DHE-02": ("Review Practices, Define, Realign and Retire the Strategy", "ROLE-DHE-P01", "REVIEW: drafted holder"),
-    "DR-DHE-03": ("Identify, Plan, Address, Verify and Accept a Practice Gap", "ROLE-DHE-P04", "REVIEW: drafted holder"),
-    "DR-DHE-04": ("Plan, Develop, Launch, Refresh and Retire the Programme", "ROLE-DHE-P06", "REVIEW: drafted holder"),
-    "DR-DHE-05": ("Assess a Use and Set its Conditions", "ROLE-DHE-P04", "REVIEW: drafted holder"),
-    "DR-DHE-06": ("Clear, Suspend, Restore, Withdraw and Decline a Use", "ROLE-DHE-P01", "REVIEW: drafted holder"),
-    "DR-DHE-07": ("Report and Investigate an Incident", "ROLE-DHE-P07", "REVIEW: drafted holder"),
-    "DR-DHE-08": ("Remediate, Dismiss, Close and Reopen an Incident", "ROLE-DHE-P01", "REVIEW: drafted holder"),
+    "DR-DHE-01": ("Approve the Ethical Data Handling Strategy, Statements and Policies", "ROLE-CDO", "Confirmed 22 Sep 2026 (holder register): Chief Data Officer; drafted as CDO / CIO"),
+    "DR-DHE-02": ("Review Practices, Define, Realign and Retire the Strategy", "ROLE-DGC", "Confirmed 22 Sep 2026 (holder register): Data Governance Council; drafted as Data Governance Bodies"),
+    "DR-DHE-03": ("Identify, Plan, Address, Verify and Accept a Practice Gap", "ROLE-CODS", "Confirmed 22 Sep 2026 (holder register): Coordinating Data Steward; drafted as Coordinating Data Stewards"),
+    "DR-DHE-04": ("Plan, Develop, Launch, Refresh and Retire the Programme", "ROLE-CHG", "Confirmed 22 Sep 2026 (holder register): Change Manager; drafted as Change Managers"),
+    "DR-DHE-05": ("Assess a Use and Set its Conditions", "ROLE-CODS", "Confirmed 22 Sep 2026 (holder register): Coordinating Data Steward; drafted as Coordinating Data Stewards"),
+    "DR-DHE-06": ("Clear, Suspend, Restore, Withdraw and Decline a Use", "ROLE-DGC", "Confirmed 22 Sep 2026 (holder register): Data Governance Council; drafted as Data Governance Bodies"),
+    "DR-DHE-07": ("Report and Investigate an Incident", "ROLE-PM-DHE", "Confirmed 22 Sep 2026 (holder register): Data Handling Ethics Practice Manager; drafted as DM Services"),
+    "DR-DHE-08": ("Remediate, Dismiss, Close and Reopen an Incident", "ROLE-DGC", "Confirmed 22 Sep 2026 (holder register): Data Governance Council; drafted as Data Governance Bodies"),
 }
 ROLES = [
     ("ROLE-DHE-S01", "Executives", "Supplier", "Supply the preferred organisation ethics and business strategy."), ("ROLE-DHE-S02", "Data Stewards", "Supplier", "Supply current practices."), ("ROLE-DHE-S03", "Executive Data Stewards", "Supplier", "Supply domain accountability."), ("ROLE-DHE-S04", "IT Executives", "Supplier", "Supply systems practices."), ("ROLE-DHE-S05", "Data Providers", "Supplier", "Supply data and its handling conditions."), ("ROLE-DHE-S06", "Regulators", "Supplier", "Supply regulations."),

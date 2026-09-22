@@ -11,7 +11,7 @@ Asset (one per asset).
 Decisions 21 Sep 2026: DA gates Global registration (blueprint in force, model published, asset placed in the
 enterprise data model and data flows), materialisation (conforming or approved exception) and external custody (the
 flow is in the blueprint); a blueprint revision that affects the asset emits the Assurance suspension trigger; every
-transition carries a Decision Right (holders drafted, REVIEW).
+transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python da_spec.py [out_dir] [--overrides spec/data_architecture_overrides.json]   -> data_architecture.fts.json
 """
@@ -90,13 +90,13 @@ EVENTS = {
     "EV-CNF-01": ("Asset placement", "Request"), "EV-CNF-02": ("Conformance confirmation", "Assessment outcome"), "EV-CNF-03": ("Deviation finding", "Assessment outcome"), "EV-CNF-04": ("Exception approval", "Decision outcome"), "EV-CNF-05": ("Remediation confirmation", "Assessment outcome"), "EV-CNF-06": ("Exception expiry", "Time trigger"), "EV-CNF-07": ("Blueprint revision affecting the asset", "Monitoring trigger"), "EV-CNF-08": ("Placement removal", "Decision outcome"),
 }
 DR = {
-    "DR-DA-01": ("Approve the Enterprise Data Architecture and its Standards", "ROLE-DA-P01", "REVIEW: drafted holder"),
-    "DR-DA-02": ("Evaluate, Bring into Force, Revise and Retire the Architecture", "ROLE-DA-P01", "REVIEW: drafted holder"),
-    "DR-DA-03": ("Approve, Publish and Supersede an Enterprise Data Model Version", "ROLE-DA-P01", "REVIEW: drafted holder"),
-    "DR-DA-04": ("Approve, Execute, Deliver and Re-plan the Roadmap", "ROLE-DA-P01", "REVIEW: drafted holder"),
-    "DR-DA-05": ("Place an Asset and Confirm its Conformance", "ROLE-DA-P02", "REVIEW: drafted holder"),
-    "DR-DA-06": ("Grant, Expire and Close a Conformance Exception", "ROLE-DA-P01", "REVIEW: drafted holder"),
-    "DR-DA-07": ("Declare an Asset Non-conforming", "ROLE-DA-P01", "REVIEW: drafted holder"),
+    "DR-DA-01": ("Approve the Enterprise Data Architecture and its Standards", "ROLE-PM-DA", "Confirmed 22 Sep 2026 (holder register): Data Architecture Practice Manager; drafted as Enterprise Data Architects"),
+    "DR-DA-02": ("Evaluate, Bring into Force, Revise and Retire the Architecture", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Enterprise Data Architects"),
+    "DR-DA-03": ("Approve, Publish and Supersede an Enterprise Data Model Version", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Enterprise Data Architects"),
+    "DR-DA-04": ("Approve, Execute, Deliver and Re-plan the Roadmap", "ROLE-PM-DA", "Confirmed 22 Sep 2026 (holder register): Data Architecture Practice Manager; drafted as Enterprise Data Architects"),
+    "DR-DA-05": ("Place an Asset and Confirm its Conformance", "ROLE-DMOD", "Confirmed 22 Sep 2026 (holder register): Data Modeller; drafted as Data Modelers"),
+    "DR-DA-06": ("Grant, Expire and Close a Conformance Exception", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Enterprise Data Architects"),
+    "DR-DA-07": ("Declare an Asset Non-conforming", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Enterprise Data Architects"),
 }
 ROLES = [
     ("ROLE-DA-S01", "Enterprise Architects", "Supplier", "Supply the Enterprise and Business Architecture and IT standards."), ("ROLE-DA-S02", "Data Stewards", "Supplier", "Supply data requirements and asset knowledge."), ("ROLE-DA-S03", "Subject Matter Experts", "Supplier", "Supply business meaning and value chains."), ("ROLE-DA-S04", "Data Analysts", "Supplier", "Supply analysis of existing specifications and flows."),

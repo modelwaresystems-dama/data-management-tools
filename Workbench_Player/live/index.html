@@ -222,7 +222,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.7.1";</script>
+<script>window.PAGE_BUILD="1.7.2";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -335,22 +335,54 @@ function renderLanding(preRoom, preClass){
     document.getElementById("goJoin").onclick=()=>renderJoinForm(body,"");
   }
 }
+let MANIFEST=null;
+async function loadManifest(){ if(MANIFEST)return MANIFEST; try{MANIFEST=await fetchAsset("manifest.json","");}catch(e){MANIFEST={assets:[]};} return MANIFEST; }
+function slugify(s){ return (s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
+function classesForQuiz(r, quizPath, quizTopic){
+  const classes=r.classes||[], sessions=r.sessions||[];
+  const sIds=sessions.filter(s=>(s.quizzes||[]).includes(quizPath)).map(s=>s.id);
+  const tSlug=slugify(quizTopic);
+  const matched=[], others=[];
+  classes.forEach(c=>{
+    const bySession=(c.sessionIds||[]).some(id=>sIds.includes(id));
+    const byTopic=(c.topicSlugs||[]).includes(tSlug);
+    (bySession||byTopic?matched:others).push(c);
+  });
+  return {matched, others};
+}
 async function renderHostSetup(body){
-  const r=await loadRosters();
-  const has=r.classes&&r.classes.length;
-  const opts = has
-    ? '<option value="">Open join (no class)</option>'+r.classes.map((c,i)=>`<option value="${i}">${esc(c.name)}</option>`).join("")
-    : '<option value="">Open join</option>';
+  const [r, man] = await Promise.all([ loadRosters(), loadManifest() ]);
+  const quizzes=(man.assets||man.quizzes||[]).filter(a=>(a.type||"quiz")==="quiz");
+  const curPath=new URLSearchParams(location.search).get("quiz")||CFG.quizPath||(quizzes[0]&&quizzes[0].path)||"";
+  const byTopic={}, order=[];
+  quizzes.forEach(q=>{ const t=q.topic||"Quizzes"; if(!byTopic[t]){byTopic[t]=[];order.push(t);} byTopic[t].push(q); });
+  const qOpts=order.map(t=>`<optgroup label="${esc(t)}">`+byTopic[t].map(q=>`<option value="${esc(q.path)}" ${q.path===curPath?"selected":""}>${esc(q.title)}</option>`).join("")+`</optgroup>`).join("");
   body.innerHTML=`
-    <div class="field"><label for="hclass">Class for this room</label><select id="hclass">${opts}</select>
-      <div class="err" id="hnote" style="color:var(--faint)">${has?'Learners join and pick their name from this class.':'No class list yet \u2014 add a CSV to data/classes/. You can still host as open join.'}</div></div>
-    <button class="bigbtn" id="hstart">Start the room \u2192</button>
-    <button class="tinylink" id="hback">\u2190 back</button>`;
+    <div class="field"><label for="hquiz">Quiz to run</label><select id="hquiz">${qOpts||'<option value="">(quiz library not found)</option>'}</select></div>
+    <div class="field"><label for="hclass">Class for this room</label><select id="hclass"></select>
+      <div class="err" id="hnote" style="color:var(--faint)"></div></div>
+    <button class="bigbtn" id="hstart">Start the room →</button>
+    <button class="tinylink" id="hback">← back</button>`;
+  const qsel=document.getElementById("hquiz"), csel=document.getElementById("hclass"), note=document.getElementById("hnote");
+  function fillClasses(){
+    if(!r.classes||!r.classes.length){ csel.innerHTML='<option value="">Open join (no class list)</option>'; note.textContent="Add a CSV to data/classes/ to link a class."; return; }
+    const q=quizzes.find(x=>x.path===qsel.value)||{};
+    const {matched, others}=classesForQuiz(r, qsel.value, q.topic||"");
+    let html='<option value="">Open join (no class)</option>';
+    if(matched.length) html+='<optgroup label="Linked to this quiz">'+matched.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")+'</optgroup>';
+    if(others.length) html+='<optgroup label="Other classes">'+others.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")+'</optgroup>';
+    csel.innerHTML=html;
+    if(matched.length===1){ csel.value=matched[0].id; note.textContent="Auto-selected the class linked to this quiz."; }
+    else if(matched.length>1){ note.textContent="Several classes are linked — pick one."; }
+    else { note.textContent="No class linked to this quiz yet — pick one or host open."; }
+  }
+  qsel.onchange=fillClasses; fillClasses();
   document.getElementById("hback").onclick=()=>renderLanding("");
-  document.getElementById("hstart").onclick=()=>{
-    const sel=document.getElementById("hclass"), ci=sel.value;
-    if(ci!==""&&r.classes&&r.classes[+ci]){ hostClassId=r.classes[+ci].id; hostClassName=r.classes[+ci].name; }
-    else { hostClassId=""; hostClassName=""; }
+  document.getElementById("hstart").onclick=async ()=>{
+    const qp=qsel.value;
+    if(qp){ try{ QUIZ=normalizeQuiz(await fetchAsset(qp,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; } }
+    const c=(r.classes||[]).find(x=>x.id===csel.value);
+    if(c){ hostClassId=c.id; hostClassName=c.name; } else { hostClassId=""; hostClassName=""; }
     role="host"; startHost();
   };
 }

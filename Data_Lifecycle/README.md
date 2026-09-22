@@ -25,3 +25,13 @@ The viewer carries its version and build date and time (SAST) in the header and 
 
 - The Twin tab has a new **Load from GitHub** button. It reads `fleet.json`, `instances.json`, `elements.json` and `events.json` from the `twin` folder next to the models folder in the private repo (`Data Lifecycle/models` means `Data Lifecycle/twin`). It uses the same saved GitHub settings and token as the models, so there is nothing new to set up.
 - When the tab opens, the viewer first tries the local service, then GitHub if a token is saved. The GitHub copy is the last export; live events still need the local service.
+
+## Digital Twin Viewer v0.1 and FTS viewer v0.27 (22 Sep 2026, 16:30 SAST)
+
+- `twin_viewer.html` is a separate page that visualises the digital twin. It uses the same GitHub settings and token as `fts_viewer.html` on this site, and reads `Data Lifecycle/models` and `Data Lifecycle/twin` from the private repo, or the same files from disk. It holds no data. It has four views:
+  - **Heat map:** every state region of every FTS as a row of its states, with the number of assets in each state now. Click a cell to list its assets.
+  - **Replay:** the heat map at any date, with play and step controls. A cell outlined green had a transition fire in the last step and one outlined red had a transition refused; a feed of events names the guard that refused each one.
+  - **One asset:** the asset's state in every region, then each Knowledge Area's real state diagrams with its current state filled, the states it passed through outlined, the transitions it took drawn thick and refused transitions drawn in red, plus its timeline.
+  - **Influence:** a network and a from/to matrix of how the FTSs act on each other. Allowed counts come from the models' contributions and couplings applied to the fired events; refused counts come from the failing guards in the event log.
+- The Twin tab in `fts_viewer.html` (v0.27) links to it.
+- `snake_layout.js` now tags each drawn transition with its ID (`data-tr`), so pages can highlight the path an asset took.

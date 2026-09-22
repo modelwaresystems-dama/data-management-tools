@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Digital Twin Viewer</title>
+<style>
+:root{--bg:#f4f6f8;--panel:#fff;--panel-2:#eef1f5;--panel-3:#e6e9ee;--ink:#1d2a31;--ink-faint:#66757e;--line:#d5dce1;--accent:#0f6b6e;--accent-soft:#d6ecec;--edge:#7d8b94;--bad:#b3261e;--bad-soft:#fbe4e2;--amber:#a86200;--mono:ui-monospace,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12171a;--panel:#1b2226;--panel-2:#232c31;--panel-3:#2a343a;--ink:#e3e9ec;--ink-faint:#98a7af;--line:#34414a;--accent:#4fb3b5;--accent-soft:#1f3b3c;--edge:#8e9ca4;--bad:#ef6b62;--bad-soft:#3d2120;--amber:#e3a24f}}
+:root[data-theme="dark"]{--bg:#12171a;--panel:#1b2226;--panel-2:#232c31;--panel-3:#2a343a;--ink:#e3e9ec;--ink-faint:#98a7af;--line:#34414a;--accent:#4fb3b5;--accent-soft:#1f3b3c;--edge:#8e9ca4;--bad:#ef6b62;--bad-soft:#3d2120;--amber:#e3a24f}
+*{box-sizing:border-box} [hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:14px 20px 0}
+.hrow1{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start} .hrow1>div:first-child{flex:1 1 480px}
+h1{font-size:22px;margin:0 0 2px}
+.ver{font-family:var(--mono);font-size:12px;color:var(--ink-faint);text-align:right}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.btn{font:inherit;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel-2);color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+select,input[type=text],input[type=password]{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+.status{font-size:12.5px;color:var(--ink-faint)} .status.bad{color:var(--bad)}
+.tabs{display:flex;gap:2px;margin-top:6px}
+.tab{font:inherit;padding:8px 16px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:var(--panel-2);color:var(--ink-faint);cursor:pointer}
+.tab[aria-selected=true]{background:var(--bg);color:var(--ink);font-weight:600}
+main{padding:14px 20px 40px}
+.lede{max-width:95ch;color:var(--ink-faint);margin:0 0 12px}
+.dim{color:var(--ink-faint)} .mono{font-family:var(--mono);font-size:12px} .redt{color:var(--bad)} .amber{color:var(--amber)}
+.pill{display:inline-block;font-size:10.5px;font-family:var(--mono);padding:0 6px;border-radius:9px;background:var(--panel-3);color:var(--ink-faint);vertical-align:1px}
+.pill.red{background:var(--bad-soft);color:var(--bad)}
+.split{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+.side{position:sticky;top:10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;max-height:calc(100vh - 30px);overflow:auto}
+.side h3{margin:0 0 4px;font-size:15px}
+.alist{padding-left:18px;margin:6px 0} .alist a,.feed a{color:var(--accent)}
+.heat{display:flex;flex-direction:column;gap:10px}
+.hmodel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.hmname{margin-bottom:4px}
+.hrow{display:grid;grid-template-columns:260px minmax(0,1fr);gap:8px;align-items:center;padding:3px 0;border-top:1px solid var(--line)}
+.hrow:first-of-type{border-top:none}
+.hreg{font-size:12.5px}
+.hcells{display:flex;gap:3px;flex-wrap:wrap}
+.hcell{position:relative;min-width:86px;max-width:150px;flex:1 1 86px;border:1px solid var(--line);border-radius:5px;padding:3px 6px;text-align:left;font:inherit;font-size:11.5px;cursor:pointer;color:var(--ink);background:color-mix(in srgb,var(--accent) calc(var(--f)*85%),var(--panel))}
+.hcell .hn{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hcell .hv{display:block;font-family:var(--mono);font-weight:600;font-size:12.5px;min-height:15px}
+.hcell.zero{background:var(--panel);color:var(--ink-faint)}
+.hcell.term{border-style:double;border-width:3px}
+.hcell.sel{outline:2px solid var(--ink);outline-offset:1px}
+.hcell.fl-fire{box-shadow:0 0 0 2px var(--accent)} .hcell.fl-ref{box-shadow:0 0 0 3px var(--bad)}
+@media (prefers-color-scheme:dark){.hcell:not(.zero){color:#fff}}
+.replaybar,.assetbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
+#slider{flex:1;min-width:260px} #clock{font-family:var(--mono);font-size:15px;font-weight:600;min-width:94px}
+.feed{list-style:none;padding:0;margin:0;font-size:12.5px} .feed li{padding:5px 0;border-top:1px solid var(--line)} .feed li.bad{color:var(--bad)} .feed li.ovr{color:var(--amber)}
+.ahead h2{margin:0;font-size:18px}
+.strip{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.smod{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px;min-width:120px;flex:1 1 150px}
+.smod.na{opacity:.4} .smn{font-weight:600;font-size:12px;margin-bottom:3px}
+.schip{display:block;font-size:11.5px;padding:2px 5px;margin:2px 0;border-radius:4px;background:var(--panel-2);color:var(--ink);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.schip.moved{background:var(--accent-soft)} .schip.bad{background:var(--bad-soft);color:var(--bad)} .schip.sh{border-left:3px solid var(--edge)}
+details.amod{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin:8px 0;padding:6px 10px}
+details.amod summary{cursor:pointer;padding:4px 0}
+.areg{margin:10px 0 16px} .aregh{margin-bottom:4px}
+.fig svg rect.current{fill:var(--accent)!important;stroke:var(--accent)!important}
+.fig svg g.node:has(rect.current) text{fill:#fff!important;font-weight:600}
+.fig svg rect.visited{stroke:var(--accent)!important;stroke-width:2.5px}
+.fig svg path.taken{stroke:var(--accent)!important;stroke-width:3px}
+.fig svg path.refused{stroke:var(--bad)!important;stroke-width:3.5px;stroke-dasharray:7 4}
+.tscroll{overflow-x:auto} table.tl{border-collapse:collapse;width:100%;font-size:12.5px} .tl th,.tl td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top} .tl th{color:var(--ink-faint);font-weight:600;font-size:11.5px} .tl tr.bad td{color:var(--bad)} .tl tr.ovr td{color:var(--amber)} td.n{text-align:right;font-family:var(--mono)}
+svg.inf{width:100%;height:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+svg.inf g.in rect{fill:var(--panel-2);stroke:var(--ink)} svg.inf g.in{cursor:pointer} svg.inf .int{font-weight:600;font-size:13px;fill:var(--ink)} svg.inf .ins{font-size:10.5px;fill:var(--ink-faint)}
+svg.inf path.ie{cursor:pointer;opacity:.28} svg.inf path.ie.blk{opacity:.85} svg.inf.focus path.ie{opacity:.9} svg.inf path.ie:hover{opacity:1} svg.inf path.ie.dimmed{opacity:.04!important}
+.mx{border-collapse:collapse;font-size:12px} .mx th,.mx td{border:1px solid var(--line);padding:3px 5px;text-align:center;min-width:44px} .mx th{color:var(--ink-faint);font-weight:600} .mx th.r{text-align:left} .mx td{background:color-mix(in srgb,var(--accent) calc(var(--f)*80%),var(--panel));cursor:pointer} .mx td.self{background:var(--panel-3)} .mx td b{color:var(--bad)} .ifilter{margin:0 0 8px}
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:18px;max-width:460px}
+dialog label{display:block;font-size:12px;color:var(--ink-faint);margin:8px 0 2px} dialog input{width:100%}
+.warn{font-size:12px;color:var(--amber);margin-top:8px}
+#empty{max-width:80ch}
+@media (max-width:900px){.split{grid-template-columns:1fr}.hrow{grid-template-columns:1fr}.side{position:static}}
+</style></head><body>
+<header>
+ <div class="hrow1"><div><h1>Digital Twin Viewer</h1><div class="dim">The digital twin of the DMBOK Data Lifecycle: every Data Asset instance moving through the Global Data Asset Protocol and the Knowledge Area FTSs.</div></div>
+ <div class="ver">Twin viewer v0.1<br>Built 22 Sep 2026, 16:30 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
+ <div class="bar"><button class="btn primary" id="btnGh">Load from GitHub</button><button class="btn" id="btnGhSet">GitHub settings</button><label class="btn" for="files">Load files</label><input type="file" id="files" multiple accept=".json" hidden>
+ <select id="cls" aria-label="asset class"><option value="">every asset class</option></select><span id="status" class="status"></span></div>
+ <div class="tabs" role="tablist"><button class="tab" data-t="heat" aria-selected="true">Heat map</button><button class="tab" data-t="replay" aria-selected="false">Replay</button><button class="tab" data-t="asset" aria-selected="false">One asset</button><button class="tab" data-t="influence" aria-selected="false">Influence</button></div>
+</header>
+<main>
+ <div id="empty"><p class="lede">Nothing loaded yet. Load from GitHub uses the same settings and token as the FTS viewer on this site: the models folder (Data Lifecycle/models) and the twin export in the folder next to it (Data Lifecycle/twin). Or choose the .fts.json models together with fleet.json, instances.json, elements.json and events.json from disk.</p></div>
+ <div id="main" hidden>
+  <div id="replaybar" class="replaybar" hidden><button class="btn primary" id="play">Play</button><span id="clock"></span><input type="range" id="slider" aria-label="time"><label class="dim">step <select id="speed"><option value="1">1 day</option><option value="3" selected>3 days</option><option value="7">1 week</option><option value="14">2 weeks</option></select></label></div>
+  <div id="assetbar" class="assetbar" hidden><button class="btn" id="assetPrev" aria-label="previous asset">‹</button><select id="assetSel" aria-label="asset"></select><button class="btn" id="assetNext" aria-label="next asset">›</button><button class="btn" id="assetRef">Next asset with a refusal</button></div>
+  <section class="pane" id="pane-heat"></section><section class="pane" id="pane-replay" hidden></section><section class="pane" id="pane-asset" hidden></section><section class="pane" id="pane-influence" hidden></section>
+ </div>
+</main>
+<dialog id="ghdlg"><h3 style="margin:0 0 6px">GitHub settings</h3><div class="dim">Shared with the FTS viewer on this site.</div>
+<label for="ghOwner">Owner</label><input id="ghOwner" type="text"><label for="ghRepo">Repository</label><input id="ghRepo" type="text"><label for="ghBranch">Branch</label><input id="ghBranch" type="text"><label for="ghPath">Models folder</label><input id="ghPath" type="text"><label for="ghToken">Token</label><input id="ghToken" type="password" autocomplete="off">
+<div class="warn">The token stays in this browser and is sent only to api.github.com. Use a fine-grained token for this one repository, Contents read-only.</div>
+<div class="bar" style="justify-content:flex-end"><button class="btn" id="ghCancel">Cancel</button><button class="btn primary" id="ghSave">Save and load</button></div></dialog>
+<script>
+// State machine source (Mermaid stateDiagram-v2) generated from an FTS model, with
+// simplification controls after Harel (clustering / zoom), SCXML (compound vs atomic,
+// initial, final) and the Visual Paradigm guidance (super-state / sub-state, hide detail).
+//
+// opts:
+//   direction  "LR" | "TB"   (how the regions or Global States are laid out)
+//   innerDirection "TB" | "LR"  (how the states inside each region flow; default TB)
+//   level      "all" (full hierarchy) | "sub" (globals expanded one level, deeper nesting collapsed) | "global" (composites collapsed)
+//   contracts  true: entry / do / exit / {invariant} compartments
+//   labelMode  "full" | "code" | "id"     (transition and activity labels)
+//   showEvent, showGuard, showEffect      (parts of the transition label in "full" mode; in code mode the code is always shown)
+//   hideLoops, hideReadiness, hideInnerInitial, hideNotes
+//   ids        true: append the state ID to the state name
+//   focus      {type:"all"} | {type:"composite", id} | {type:"neighbourhood", id} | {type:"path", id}
+//   highlight  [stateId, ...]  states drawn as "current" (used by the simulator for the active State Vector)
+//   collapsed  [topStateId, ...]  regions or Global States drawn as a single box (their inner states hidden, transitions mapped onto the box)
+// returns { src, legend:{transitions:[], activities:[], guards:[], events:[]}, visible:{states:[], transitions:[]} }
+function fsmSource(M, opts){
+  opts = Object.assign({direction:"LR", level:"all", contracts:true, labelMode:"full", showEvent:true, showGuard:true, showEffect:true,
+                        hideLoops:false, hideReadiness:false, hideInnerInitial:false, hideNotes:false, ids:false, focus:{type:"all"}}, opts||{});
+  const mid = id => String(id).replace(/[^A-Za-z0-9_]/g,"_");
+  const q = s => String(s==null?"":s).replace(/"/g,"'").replace(/[\r\n]+/g," ").replace(/[{}]/g,"").replace(/;/g,",").replace(/:/g,"∶");
+  const all = M.globalStates.concat(M.subStates);
+  const byId = id => all.find(s=>s.id===id);
+  const kidsOf = pid => M.subStates.filter(s=>s.parent===pid).sort((a,b)=>(Number(a.sequence)||99)-(Number(b.sequence)||99)||String(a.id).localeCompare(String(b.id)));
+  const depthOf = id => { let d=0, s=byId(id); while(s && s.kind!=="global" && s.parent){ s=byId(s.parent); d++; if(d>30) break; } return d; };
+  const topOf = id => { let s=byId(id), g=0; while(s && s.kind!=="global" && s.parent && g++<30) s=byId(s.parent); return s?s.id:null; };
+  const isInit = t => /initial/i.test(t.level||"") || String(t.source).startsWith("[");
+  const isLoop = t => /recurs|iterat|self|return|revisit/i.test((t.optionality||"")+" "+(t.transitionType||"")+" "+(t.name||""));
+  const evOf = id => (M.events||[]).find(x=>x.id===id);
+
+  // ---- codes (stable within a model: order of appearance) ----
+  const code = {tr:{}, ev:{}, act:{}, gd:{}};
+  M.transitions.forEach((t,i)=>code.tr[t.id]="T"+(i+1));
+  (M.events||[]).forEach((e,i)=>code.ev[e.id]="E"+(i+1));
+  (M.activities||[]).forEach((a,i)=>code.act[a.id]="A"+(i+1));
+  (M.guards||[]).forEach((g,i)=>code.gd[g.id]="G"+(i+1));
+
+  // ---- visibility: which states are drawn, and where a hidden state maps to ----
+  const maxDepth = opts.level==="global"?0 : opts.level==="sub"?1 : 99;
+  const collapsed = new Set(opts.collapsed||[]);
+  function visibleRep(id){                       // the drawn state that represents id
+    let s=byId(id); if(!s) return null;
+    const top=topOf(id); if(top && collapsed.has(top)) return top;
+    while(s && depthOf(s.id)>maxDepth && s.parent){ s=byId(s.parent); }
+    if(s && opts.hideReadiness && s.readiness){ return s.parent? visibleRep(s.parent) : null; }
+    return s? s.id : null;
+  }
+  let visStates = new Set(all.filter(s=>depthOf(s.id)<=maxDepth && !(opts.hideReadiness&&s.readiness) && !(depthOf(s.id)>0 && collapsed.has(topOf(s.id)))).map(s=>s.id));
+  // focus reduces the visible set
+  const f = opts.focus||{type:"all"};
+  let pathTrs=null, nbRep=null;
+  if(f.type==="composite" && f.id){
+    const keep=new Set([f.id]); (function walk(p){ kidsOf(p).forEach(c=>{ keep.add(c.id); walk(c.id); }); })(f.id);
+    let anc=byId(f.id); while(anc && anc.parent){ keep.add(anc.parent); anc=byId(anc.parent); }
+    visStates = new Set([...visStates].filter(x=>keep.has(x)));
+  }
+  if(f.type==="neighbourhood" && f.id){
+    const rep=visibleRep(f.id); nbRep=rep; const keep=new Set([rep]);
+    M.transitions.forEach(t=>{ if(isInit(t)) return; const a=visibleRep(t.source), b=visibleRep(t.target); if(a===rep&&b) keep.add(b); if(b===rep&&a) keep.add(a); });
+    [...keep].forEach(id=>{ let s=byId(id); while(s && s.parent){ keep.add(s.parent); s=byId(s.parent); } });
+    visStates = new Set([...visStates].filter(x=>keep.has(x)));
+  }
+  if(f.type==="path" && f.id){
+    // BFS over drawn states from the initial state to the target
+    const target=visibleRep(f.id);
+    const init=M.transitions.find(isInit); const start=init?visibleRep(init.target):null;
+    const prev={}; const q0=[start]; const seen=new Set([start]);
+    while(q0.length){ const cur=q0.shift(); if(cur===target) break;
+      M.transitions.forEach(t=>{ if(isInit(t)) return; const a=visibleRep(t.source), b=visibleRep(t.target); if(a===cur && b && !seen.has(b) && a!==b){ seen.add(b); prev[b]={from:a,t}; q0.push(b);} }); }
+    const keep=new Set(); pathTrs=new Set();
+    if(seen.has(target)){ let cur=target; keep.add(cur); while(prev[cur]){ pathTrs.add(prev[cur].t.id); cur=prev[cur].from; keep.add(cur); } }
+    [...keep].forEach(id=>{ let s=byId(id); while(s && s.parent){ keep.add(s.parent); s=byId(s.parent); } });
+    visStates = new Set([...visStates].filter(x=>keep.has(x)));
+  }
+  const drawn = id => visStates.has(id);
+
+  // ---- transitions to draw (mapped onto drawn states, de-duplicated) ----
+  const edges=[]; const seenEdge=new Set();
+  M.transitions.forEach(t=>{
+    if(isInit(t)) return;
+    if(opts.hideLoops && isLoop(t)) return;
+    if(pathTrs && !pathTrs.has(t.id)) return;
+    const a=visibleRep(t.source), b=visibleRep(t.target);
+    if(!a||!b||!drawn(a)||!drawn(b)) return;
+    if(nbRep && a!==nbRep && b!==nbRep) return;
+    if(a===b) return;                                   // collapsed inside one drawn state
+    // an entry from a composite into its own child is the inner initial pseudostate, handled in emit
+    const sa=byId(a), sb=byId(b);
+    if(sb && sb.parent===a) { edges.push({t,a,b,inner:true}); return; }
+    const key=a+">"+b+"|"+(opts.labelMode==="full"?t.id:t.id);
+    if(seenEdge.has(key)) return; seenEdge.add(key);
+    edges.push({t,a,b,inner:false});
+  });
+
+  const legend={transitions:[],activities:[],guards:[],events:[]};
+  function trLabel(t){
+    const ev=evOf(t.event); const gcount=(M.guards||[]).filter(g=>g.transition===t.id).length;
+    if(opts.labelMode==="code"){ let l=code.tr[t.id]; if(opts.showGuard&&gcount) l+=" [G×"+gcount+"]"; return l; }
+    if(opts.labelMode==="id"){ let l=t.id; if(opts.showGuard&&gcount) l+=" ["+gcount+" g]"; return l; }
+    const parts=[]; if(opts.showEvent && ev) parts.push(ev.name);
+    let l=parts.join("");
+    if(opts.showGuard && gcount) l+=" ["+gcount+" guard"+(gcount===1?"":"s")+"]";
+    if(opts.showEffect && t.name && (!ev || t.name!==ev.name)) l+=(l?" / ":"")+t.name;
+    if(!l) l=t.name||t.id;
+    return l;
+  }
+  function actLabel(a){ return opts.labelMode==="code"?code.act[a.id]: opts.labelMode==="id"?a.id: a.name; }
+
+  const L=["stateDiagram-v2","direction "+opts.direction];
+  function name(s){ return q(s.name)+(opts.ids?" ("+s.id+")":""); }
+  function contract(s, pad){
+    if(!opts.contracts) return;
+    const id=mid(s.id);
+    const ec=(M.entryConditions||[]).filter(x=>x.appliesTo===s.id).length;
+    const xc=(M.exitConditions||[]).filter(x=>x.appliesTo===s.id).length;
+    const inv=(M.invariants||[]).filter(x=>x.appliesTo===s.id).length;
+    const acts=(M.activities||[]).filter(x=>x.permittedIn===s.id);
+    if(ec) L.push(pad+id+" : entry / ["+ec+" entry condition"+(ec===1?"":"s")+"]");
+    if(acts.length){ const lab=acts.map(actLabel); const shown=(opts.labelMode==="full"?lab.slice(0,4):lab.slice(0,8)).join(", ")+(lab.length>(opts.labelMode==="full"?4:8)?" +"+(lab.length-(opts.labelMode==="full"?4:8))+" more":""); L.push(pad+id+" : do / "+q(shown)); }
+    if(xc) L.push(pad+id+" : exit / ["+xc+" exit condition"+(xc===1?"":"s")+"]");
+    if(inv) L.push(pad+id+" : {invariant × "+inv+"}");
+    if(s.readiness) L.push(pad+id+" : «readiness»");
+  }
+  function note(s, pad){
+    if(!opts.contracts || opts.hideNotes) return;
+    const ec=(M.entryConditions||[]).filter(x=>x.appliesTo===s.id).length;
+    const xc=(M.exitConditions||[]).filter(x=>x.appliesTo===s.id).length;
+    const inv=(M.invariants||[]).filter(x=>x.appliesTo===s.id).length;
+    const acts=(M.activities||[]).filter(x=>x.permittedIn===s.id).length;
+    const parts=[]; if(ec) parts.push("entry / ["+ec+"]"); if(acts) parts.push("do / "+acts+" activities"); if(xc) parts.push("exit / ["+xc+"]"); if(inv) parts.push("{invariant × "+inv+"}");
+    if(parts.length) L.push(pad+"note right of "+mid(s.id)+" : "+parts.join("  "));
+  }
+  const parallel = !!(M.meta && M.meta.parallelRegions);
+  function emit(s, indent){
+    const pad="  ".repeat(indent), id=mid(s.id);
+    const ch=kidsOf(s.id).filter(c=>drawn(c.id));
+    if(ch.length){
+      L.push(pad+'state "'+name(s)+'" as '+id+" {");
+      L.push(pad+"  direction "+(opts.innerDirection||"TB"));
+      if(!opts.hideInnerInitial) edges.filter(e=>e.inner && e.a===s.id).forEach(e=>{ L.push(pad+"  [*] --> "+mid(e.b)+" : "+q(trLabel(e.t))); pushLegendTr(e.t); });
+      if(parallel && s.kind==="region"){
+        // each region is its own machine: initial pseudostate and final states live inside it
+        M.transitions.filter(isInit).forEach(t=>{ const b=visibleRep(t.target); if(b && drawn(b) && (byId(b)||{}).parent===s.id){ L.push(pad+"  [*] --> "+mid(b)); pushLegendTr(t); } });
+      }
+      ch.forEach(c=>emit(c, indent+1));
+      const desc=new Set(descendants(s.id));
+      edges.filter(e=>!e.inner && desc.has(e.a) && desc.has(e.b)).forEach(e=>{ if(!e.done){ L.push(pad+"  "+edge(e)); e.done=true; } });
+      if(parallel && s.kind==="region") ch.filter(c=>c.terminal).forEach(c=>L.push(pad+"  "+mid(c.id)+" --> [*]"));
+      L.push(pad+"}");
+      note(s, pad);
+    }else{
+      L.push(pad+'state "'+name(s)+'" as '+id);
+      contract(s, pad);
+    }
+  }
+  function descendants(pid){ const out=[]; kidsOf(pid).forEach(c=>{ out.push(c.id); out.push(...descendants(c.id)); }); return out; }
+  function pushLegendTr(t){
+    if(legend.transitions.some(x=>x.id===t.id)) return;
+    const ev=evOf(t.event); const gs=(M.guards||[]).filter(g=>g.transition===t.id);
+    legend.transitions.push({code:code.tr[t.id], id:t.id, label:trLabel(t), name:t.name, from:byId(t.source)?byId(t.source).name:t.source, to:byId(t.target)?byId(t.target).name:t.target, event:ev?ev.name:"", eventCode:ev?code.ev[ev.id]:"", guards:gs.length, loop:isLoop(t), optionality:t.optionality||""});
+    gs.forEach(g=>{ if(!legend.guards.some(x=>x.id===g.id)) legend.guards.push({code:code.gd[g.id], id:g.id, transition:code.tr[t.id], predicate:g.predicate, scope:g.scope||""}); });
+    if(ev && !legend.events.some(x=>x.id===ev.id)) legend.events.push({code:code.ev[ev.id], id:ev.id, name:ev.name, type:ev.eventType||""});
+  }
+  function edge(e){ pushLegendTr(e.t); return mid(e.a)+" --> "+mid(e.b)+" : "+q(trLabel(e.t)); }
+
+  if(parallel){
+    // orthogonal regions: one composite holding concurrent regions separated by --
+    const regs=M.globalStates.filter(g=>drawn(g.id));
+    L.push('state "'+q(opts.protocolName||(M.meta&&M.meta.protocolLabel)||"Formal Data Asset Protocol")+'" as PROTOCOL {');
+    L.push("  direction "+opts.direction);
+    regs.forEach((g,i)=>{ if(i) L.push("  --"); emit(g,1); });
+    L.push("}");
+    edges.filter(e=>!e.inner && !e.done).forEach(e=>{ L.push(edge(e)); e.done=true; });
+  } else {
+  // initial pseudostate
+  M.transitions.filter(isInit).forEach(t=>{ const b=visibleRep(t.target); if(b && drawn(b)){ L.push("[*] --> "+mid(b)+" : "+q(trLabel(t))); pushLegendTr(t); } });
+  // top level
+  M.globalStates.filter(g=>drawn(g.id)).forEach(g=>emit(g,0));
+  // cross-composite edges
+  edges.filter(e=>!e.inner && !e.done).forEach(e=>{ L.push(edge(e)); e.done=true; });
+  // final
+  M.globalStates.filter(g=>g.terminal && drawn(g.id)).forEach(g=>L.push(mid(g.id)+" --> [*]"));
+  }
+  // activities legend (for drawn states)
+  (M.activities||[]).forEach(a=>{ if(drawn(a.permittedIn) || drawn(visibleRep(a.permittedIn)||"")) legend.activities.push({code:code.act[a.id], id:a.id, name:a.name, state:byId(a.permittedIn)?byId(a.permittedIn).name:a.permittedIn, type:a.activityType||""}); });
+  // styling
+  L.push("classDef readiness fill:#e8f0fb,stroke:#2b5fa8,color:#1b202b");
+  L.push("classDef focus fill:#dff3ef,stroke:#0f6e64,color:#1b202b,stroke-width:2px");
+  const ready=M.subStates.filter(s=>s.readiness && drawn(s.id)).map(s=>mid(s.id));
+  if(ready.length) L.push("class "+ready.join(",")+" readiness");
+  if((f.type==="neighbourhood"||f.type==="path") && f.id){ const rep=visibleRep(f.id); if(rep && drawn(rep)) L.push("class "+mid(rep)+" focus"); }
+  if(Array.isArray(opts.highlight) && opts.highlight.length){
+    L.push("classDef current fill:#0f6e64,stroke:#0a4f48,color:#ffffff,stroke-width:2px");
+    const hl=opts.highlight.map(id=>visibleRep(id)).filter(id=>id && drawn(id)).map(mid);
+    if(hl.length) L.push("class "+hl.join(",")+" current");
+  }
+  // graph view for renderers that do not use Mermaid: drawn states with their parent and flags, drawn edges with the label text, region initial states
+  const graph={
+    nodes:[...visStates].map(id=>{ const st=byId(id)||{}; return {id, name:name(st), parent:st.parent||null, kind:st.kind||(st.parent?"sub":"top"), initial:!!st.initial, terminal:!!st.terminal, readiness:!!st.readiness, collapsedTop:collapsed.has(id)}; }),
+    edges:edges.map(e=>({id:e.t.id, a:e.a, b:e.b, label:trLabel(e.t), inner:e.inner})),
+    initials:M.transitions.filter(isInit).map(t=>visibleRep(t.target)).filter(b=>b&&drawn(b)),
+    protocolName:(opts.protocolName||(M.meta&&M.meta.protocolLabel)||"Formal Data Asset Protocol"), parallel
+  };
+  return {src:L.join("\n"), legend, visible:{states:[...visStates], transitions:edges.map(e=>e.t.id)}, graph};
+}
+//={fsmSource};
+
+// snake_layout.js  -  the viewer's own "wrapped" layout: an FTS reads from the top left, left to right, and wraps to the next
+// row when the pane width is used up; rows are justified to the full width; the initial pseudostate sits before the first state.
+// Collapsed regions are drawn as single boxes in a row at the top; expanded regions are stacked bands. Transitions between
+// rows run orthogonally through lanes in the gap below a row and, when rows are not adjacent, through a channel at the band's
+// left (upward) or right (downward) edge, so no path crosses a state box. Output is an SVG string whose elements carry the same
+// classes and ids as the Mermaid output (g.node id state-<id>-0, g.statediagram-cluster id <id>, g.edgeLabel) so the viewer's
+// click, hover and collapse handlers work unchanged.
+function snakeSvg(G, tops, availW, opts){
+  opts=opts||{}; const mid=id=>String(id).replace(/[^A-Za-z0-9_]/g,"_"); const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const FONT=13, CH=7.3, BOXH=44, GAPX=112, PAD=18, TITLE=30, BANDPAD=22, MARG=16, LANE=15, GAP0=26, GAPEND=14;
+  const W=Math.max(700, availW|0);
+  const nodes=Object.fromEntries(G.nodes.map(n=>[n.id,n]));
+  const inner=W-2*MARG, bandW=inner-2*PAD;
+  function wrapName(name){ const words=String(name).split(/\s+/); const lines=[]; let cur=""; words.forEach(w=>{ if((cur+" "+w).trim().length>22 && cur){ lines.push(cur); cur=w; } else cur=(cur+" "+w).trim(); }); if(cur) lines.push(cur); return lines.slice(0,3); }
+  function boxW(lines){ return Math.max(120, Math.min(260, Math.max(...lines.map(l=>l.length))*CH+28)); }
+  const out=[], lab=[], pos={};
+  let y=MARG+TITLE+14;
+  // 1 collapsed tops in one row (wrapping if needed)
+  const collapsedTops=tops.filter(t=>nodes[t.id]&&nodes[t.id].collapsedTop); const expandedTops=tops.filter(t=>nodes[t.id]&&!nodes[t.id].collapsedTop);
+  if(collapsedTops.length){
+    let x=MARG+PAD, rowTop=y, rowH=0;
+    collapsedTops.forEach(t=>{ const lines=wrapName(t.name); const w=boxW(lines)+24, h=BOXH+18+(lines.length-1)*15; if(x+w>MARG+inner-PAD){ x=MARG+PAD; rowTop+=rowH+18; rowH=0; } rowH=Math.max(rowH,h);
+      out.push('<g class="statediagram-cluster fts-collapsed-frame"><rect x="'+x+'" y="'+rowTop+'" width="'+w+'" height="'+h+'" rx="6" fill="var(--panel-2,#eef1f5)" stroke="var(--ink-faint,#888)" stroke-dasharray="6 4"/></g>');
+      out.push('<g class="node statediagram-state fts-collapsed" id="state-'+mid(t.id)+'-0" style="cursor:pointer"><title>Click to expand '+esc(t.name)+'</title><rect x="'+(x+12)+'" y="'+(rowTop+9)+'" width="'+(w-24)+'" height="'+(h-18)+'" rx="6" fill="var(--panel,#fff)" stroke="var(--ink,#333)"/>'+lines.map((l,i)=>'<text x="'+(x+w/2)+'" y="'+(rowTop+h/2+(i-(lines.length-1)/2)*15+5)+'" text-anchor="middle" font-size="'+FONT+'" fill="var(--ink,#111)">'+esc(l)+'</text>').join("")+'</g>');
+      pos[t.id]={x,y:rowTop,w,h,cx:x+w/2,cy:rowTop+h/2,row:-1}; x+=w+18; });
+    y=rowTop+rowH+30;
+  }
+  // 2 expanded tops as bands
+  expandedTops.forEach(top=>{
+    const kids=G.nodes.filter(n=>n.parent===top.id); if(!kids.length) return;
+    const ids=new Set(kids.map(k=>k.id)); const fwd={}; kids.forEach(k=>fwd[k.id]=[]);
+    G.edges.forEach(e=>{ if(!e.inner && ids.has(e.a) && ids.has(e.b) && e.a!==e.b) fwd[e.a].push(e.b); });
+    const startId=(G.initials.find(i=>ids.has(i)))||(kids.find(k=>k.initial)||kids[0]).id;
+    // reading order: rank each state by its longest simple path from the initial state (so a retired, superseded or withdrawn
+    // state reached early by a short cut still sits after the states it follows in the main flow); ties keep the model's declared order
+    const declared={}; kids.forEach((k,i)=>declared[k.id]=i);
+    const rank={}; rank[startId]=0;
+    if(kids.length<=14){ const onPath=new Set(); (function dfs(x,d){ onPath.add(x); fwd[x].forEach(b=>{ if(onPath.has(b)) return; if(!(b in rank)||rank[b]<d+1) rank[b]=d+1; dfs(b,d+1); }); onPath.delete(x); })(startId,0); }
+    else { const q=[startId]; while(q.length){ const x=q.shift(); fwd[x].forEach(b=>{ if(!(b in rank)){ rank[b]=rank[x]+1; q.push(b); } }); } }
+    const order=kids.map(k=>k.id).sort((a,b)=>((a in rank)?rank[a]:999)-((b in rank)?rank[b]:999)||declared[a]-declared[b]);
+    // pass 1: rows and x (typewriter wrap), then justify each row to the band width
+    const bandX=MARG+PAD, x0=bandX+BANDPAD+40, xEnd=bandX+bandW-BANDPAD; let rx=x0, row=0; const rows=[[]];
+    order.forEach(id=>{ const lines=wrapName(nodes[id].name); const w=boxW(lines); if(rx+w>xEnd && rows[row].length){ rx=x0; row++; rows.push([]); } pos[id]={x:rx,w,h:BOXH,row,lines}; rows[row].push(id); rx+=w+GAPX; });
+    rows.forEach((r,ri)=>{ if(r.length>=2 && (ri<rows.length-1 || r.length>=3)){ const L=pos[r[r.length-1]]; const extra=(xEnd-(L.x+L.w))/(r.length-1); if(extra>0) r.forEach((id,i)=>{ pos[id].x+=extra*i; }); } r.forEach((id,i)=>{ pos[id].cx=pos[id].x+pos[id].w/2; if(r[i+1]) pos[id].next=r[i+1]; }); });
+    // pass 2: lane demand per gap (gap g lies below row g; the gap after the last row exists too)
+    const edges=G.edges.filter(e=>!e.inner && ids.has(e.a) && ids.has(e.b)); const pairIdx={}; const laneCount=new Array(rows.length+1).fill(0); const chanCount={L:0,R:0};
+    const plans=edges.map(e=>{ const k=e.a+">"+e.b; const idx=(pairIdx[k]=(pairIdx[k]||0)); pairIdx[k]++; const A=pos[e.a], B=pos[e.b]; const p={e,idx,A,B};
+      if(A.row===B.row){ if(A.next===e.b && idx===0) p.kind="straight"; else { p.kind="samerow"; p.l0=laneCount[A.row]++; } }
+      else if(B.row>A.row){ if(B.row===A.row+1){ p.kind="down"; p.l0=laneCount[A.row]++; } else { p.kind="downchan"; p.l0=laneCount[A.row]++; p.c=chanCount.R++; p.l1=laneCount[B.row-1]++; } }
+      else { if(A.row===B.row+1){ p.kind="up"; p.l0=laneCount[B.row]++; } else { p.kind="upchan"; p.l0=laneCount[A.row-1]++; p.c=chanCount.L++; p.l1=laneCount[B.row]++; } }
+      return p; });
+    // pass 3: row y from the gap sizes
+    const bandY=y; const rowY=[]; let ry=bandY+TITLE+26; const gapY=[];
+    rows.forEach((r,ri)=>{ rowY[ri]=ry; const gapH=GAP0+laneCount[ri]*LANE+GAPEND; gapY[ri]=ry+BOXH+GAP0; ry+=BOXH+gapH; });
+    const lastGap=laneCount[rows.length-1]? 0 : -GAPEND-GAP0+BANDPAD;   // trim the last gap when unused
+    const bandH=(ry+lastGap)-bandY+8;
+    order.forEach(id=>{ const p=pos[id]; p.y=rowY[p.row]; p.cy=p.y+BOXH/2; });
+    const laneY=(g,i)=>gapY[g]+i*LANE, chanX=(side,i)=>side==="L"? bandX+16+i*7 : bandX+bandW-16-i*7;
+    // band frame and title
+    out.push('<g class="statediagram-cluster fts-top" id="'+mid(top.id)+'"><rect x="'+bandX+'" y="'+bandY+'" width="'+bandW+'" height="'+bandH+'" rx="8" fill="var(--panel-2,#f2f4f7)" stroke="var(--ink-faint,#888)" stroke-dasharray="6 4"/><rect x="'+(bandX+8)+'" y="'+(bandY+8)+'" width="'+(bandW-16)+'" height="'+(bandH-16)+'" rx="6" fill="var(--panel,#fff)" stroke="var(--ink,#333)"/><rect x="'+(bandX+8)+'" y="'+(bandY+8)+'" width="'+(bandW-16)+'" height="'+TITLE+'" rx="6" fill="var(--panel-3,#e6e9ee)" stroke="var(--ink,#333)"/><text class="cluster-label" x="'+(bandX+bandW/2)+'" y="'+(bandY+8+TITLE/2+5)+'" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink,#111)" style="cursor:pointer"><title>Click to collapse '+esc(top.name)+'</title>'+esc(top.name)+'</text></g>');
+    // initial dot and terminal marks
+    const s0=pos[startId]; if(s0 && G.initials.includes(startId)) out.push('<circle cx="'+(s0.x-28)+'" cy="'+s0.cy+'" r="6" fill="var(--ink,#111)"/><path d="M'+(s0.x-22)+' '+s0.cy+' L'+(s0.x-2)+' '+s0.cy+'" stroke="var(--ink,#333)" stroke-width="1.4" marker-end="url(#fts-arrow)"/>');
+    // states
+    order.forEach(id=>{ const n=nodes[id], p=pos[id]; out.push('<g class="node statediagram-state" id="state-'+mid(id)+'-0"><rect x="'+p.x+'" y="'+p.y+'" width="'+p.w+'" height="'+p.h+'" rx="6" fill="var(--panel-2,#eef1f5)" stroke="var(--ink,#333)"'+(n.terminal?' stroke-width="2.5"':'')+'/>'+p.lines.map((l,i)=>'<text x="'+p.cx+'" y="'+(p.cy+(i-(p.lines.length-1)/2)*15+5)+'" text-anchor="middle" font-size="'+FONT+'" fill="var(--ink,#111)">'+esc(l)+'</text>').join("")+'</g>');
+      if(n.terminal){ const tx=p.x+p.w+26; out.push('<path d="M'+(p.x+p.w)+' '+p.cy+' L'+(tx-9)+' '+p.cy+'" stroke="var(--ink,#333)" stroke-width="1.4"/><circle cx="'+tx+'" cy="'+p.cy+'" r="8" fill="none" stroke="var(--ink,#333)" stroke-width="1.4"/><circle cx="'+tx+'" cy="'+p.cy+'" r="4.5" fill="var(--ink,#111)"/>'); } });
+    // edges
+    const seg=pts=>"M"+pts.map(p=>p[0]+" "+p[1]).join(" L");
+    plans.forEach(p=>{ const {e,idx,A,B}=p; const off=idx*12; let d,lx,ly;
+      if(p.kind==="straight"){ d='M'+(A.x+A.w)+' '+A.cy+' L'+(B.x-2)+' '+B.cy; lx=(A.x+A.w+B.x)/2; ly=A.cy-8; }
+      else if(p.kind==="samerow"){ const L0=laneY(A.row,p.l0); const xa=A.cx+off, xb=B.cx-off; d=seg([[xa,A.y+A.h],[xa,L0],[xb,L0],[xb,B.y+B.h+2]]); lx=(xa+xb)/2; ly=L0-6; }
+      else if(p.kind==="down"){ const L0=laneY(A.row,p.l0); const xa=A.cx+off, xb=B.cx-off; d=seg([[xa,A.y+A.h],[xa,L0],[xb,L0],[xb,B.y-2]]); lx=(xa+xb)/2; ly=L0-6; }
+      else if(p.kind==="downchan"){ const L0=laneY(A.row,p.l0), L1=laneY(B.row-1,p.l1), cx=chanX("R",p.c); const xa=A.cx+off, xb=B.cx-off; d=seg([[xa,A.y+A.h],[xa,L0],[cx,L0],[cx,L1],[xb,L1],[xb,B.y-2]]); lx=(xa+cx)/2; ly=L0-6; }
+      else if(p.kind==="up"){ const L0=laneY(B.row,p.l0); const xa=A.cx-off, xb=B.cx+off; d=seg([[xa,A.y],[xa,L0],[xb,L0],[xb,B.y+B.h+2]]); lx=(xa+xb)/2; ly=L0-6; }
+      else { const L0=laneY(A.row-1,p.l0), L1=laneY(B.row,p.l1), cx=chanX("L",p.c); const xa=A.cx-off, xb=B.cx+off; d=seg([[xa,A.y],[xa,L0],[cx,L0],[cx,L1],[xb,L1],[xb,B.y+B.h+2]]); lx=(xa+cx)/2; ly=L0-6; }
+      out.push('<path class="transition"'+(e.id?' data-tr="'+esc(e.id)+'"':'')+' data-a="'+esc(e.a)+'" data-b="'+esc(e.b)+'" d="'+d+'" fill="none" stroke="var(--ink,#333)" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#fts-arrow)"/>');
+      const tw=String(e.label).length*6.6+10;
+      lab.push('<g class="edgeLabel" style="cursor:help"><rect x="'+(lx-tw/2)+'" y="'+(ly-9)+'" width="'+tw+'" height="16" rx="3" fill="var(--panel,#fff)" fill-opacity="0.92"/><text x="'+lx+'" y="'+(ly+3)+'" text-anchor="middle" font-size="11" fill="var(--ink,#111)">'+esc(e.label)+'</text></g>'); });
+    y=bandY+bandH+22;
+  });
+  // cross-region edges (rare): straight lines between centres
+  G.edges.filter(e=>!e.inner && pos[e.a] && pos[e.b] && nodes[e.a].parent!==nodes[e.b].parent).forEach(e=>{ const A=pos[e.a], B=pos[e.b]; out.push('<path class="transition" d="M'+A.cx+' '+A.cy+' L'+B.cx+' '+B.cy+'" fill="none" stroke="var(--ink,#333)" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#fts-arrow)"/>'); const lx=(A.cx+B.cx)/2, ly=(A.cy+B.cy)/2-8, tw=String(e.label).length*6.6+10; lab.push('<g class="edgeLabel" style="cursor:help"><rect x="'+(lx-tw/2)+'" y="'+(ly-9)+'" width="'+tw+'" height="16" rx="3" fill="var(--panel,#fff)" fill-opacity="0.92"/><text x="'+lx+'" y="'+(ly+3)+'" text-anchor="middle" font-size="11" fill="var(--ink,#111)">'+esc(e.label)+'</text></g>'); });
+  const H=y+MARG;
+  const frame='<rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+(H-2*MARG)+'" rx="8" fill="var(--panel,#fff)" stroke="var(--ink,#333)"/><rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+TITLE+'" rx="8" fill="var(--panel-3,#e6e9ee)" stroke="var(--ink,#333)"/><text x="'+(MARG+inner/2)+'" y="'+(MARG+TITLE/2+5)+'" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink,#111)">'+esc(opts.title||G.protocolName)+'</text>';
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" width="'+W+'" style="font-family:Segoe UI,system-ui,sans-serif;max-width:none"><defs><marker id="fts-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink,#333)"/></marker></defs>'+frame+out.join("")+lab.join("")+'</svg>';
+}
+
+// ftsSummarySvg: the Knowledge Area's FTSs with their internal states collapsed, one card per region: managed element, region ID,
+// instance scope, initial state, terminal states, state and transition counts, the Global transitions the region's states gate and the
+// cross-region guards it takes part in. Used at the head of the reference section before the individual FTSs (fts_docs.py and the viewer).
+function ftsSummarySvg(M, availW, opts){
+  opts=opts||{}; const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const W=Math.max(700, availW|0), MARG=16, TITLE=30, GAP=14, CW=Math.max(250, Math.floor((W-2*MARG-GAP*3)/3)), LH=15;
+  const regs=(M.regions&&M.regions.length)?M.regions:(M.globalStates||[]).map(g=>({id:g.id,name:g.name}));
+  const sub=M.subStates||[]; const regOf=id=>{ const st=sub.find(x=>x.id===id); return st?(st.region||st.parent):null; };
+  const sName=id=>{ const st=sub.find(x=>x.id===id); return st?st.name:id; };
+  const wrap=(text,max)=>{ const words=String(text).split(/\s+/); const lines=[]; let cur=""; words.forEach(w=>{ if((cur+" "+w).trim().length>max && cur){ lines.push(cur); cur=w; } else cur=(cur+" "+w).trim(); }); if(cur) lines.push(cur); return lines; };
+  const cpc=Math.floor((CW-20)/6.6);
+  const cards=regs.map(r=>{ const code=r.code||String(r.id).split("-").pop();
+    const states=sub.filter(x=>(x.region||x.parent)===r.id); const trs=(M.transitions||[]).filter(t=>!t.id.startsWith("TR-INIT")&&(regOf(t.target)===r.id||regOf(t.source)===r.id));
+    const init=r.initialState?sName(r.initialState):(states.find(x=>x.initial)||{}).name||""; const term=states.filter(x=>x.terminal).map(x=>x.name);
+    const gates=[]; (M.contributions||[]).forEach(c=>{ if(Object.keys(c.requiredStates||{}).includes(code) && !gates.includes(c.globalTransition)) gates.push(c.globalTransition); });
+    const xrg=(M.crossRegionConstraints||[]).filter(x=>{ const ap=x.transitions||x.appliesTo||[]; return Array.isArray(ap)&&ap.some(t=>trs.some(tt=>tt.id===t)); }).map(x=>x.id);
+    const lines=[]; lines.push(["b",wrap(r.managedElement&&r.managedElement!==r.name?r.name:r.name,cpc)]); lines.push(["m",[r.id+(r.instanceScope?" · "+r.instanceScope:"")]]);
+    lines.push(["n",wrap("Starts: "+init+(term.length?". Ends: "+term.join(", "):". No terminal state"),cpc)]);
+    lines.push(["n",[states.length+" states · "+trs.length+" transitions"]]);
+    if((M.contributions||[]).length) lines.push(["n",wrap("Gates: "+(gates.length?gates.join(", "):"no Global transition"),cpc)]);
+    if(xrg.length) lines.push(["n",wrap("Cross-region: "+xrg.join(", "),cpc)]);
+    const h=16+lines.reduce((a,[k,ls])=>a+ls.length*LH,0)+8; return {r,lines,h}; });
+  // lay the cards out in rows of three, equal height per row
+  const out=[]; let y=MARG+TITLE+16, x=MARG; const rows=[]; cards.forEach((c,i)=>{ if(i%3===0) rows.push([]); rows[rows.length-1].push(c); });
+  rows.forEach(row=>{ const rh=Math.max(...row.map(c=>c.h)); x=MARG; row.forEach(c=>{ out.push('<g class="statediagram-cluster fts-collapsed-frame"><rect x="'+x+'" y="'+y+'" width="'+CW+'" height="'+rh+'" rx="8" fill="var(--panel-2,#eef1f5)" stroke="var(--ink-faint,#888)" stroke-dasharray="6 4"/></g>');
+      let ty=y+18; c.lines.forEach(([k,ls])=>{ ls.forEach(l=>{ out.push('<text x="'+(x+10)+'" y="'+ty+'" font-size="'+(k==="b"?13:k==="m"?10.5:11.5)+'" '+(k==="b"?'font-weight="600" fill="var(--ink,#111)"':k==="m"?'font-family="Consolas, Menlo, monospace" fill="var(--ink-faint,#5f6f78)"':'fill="var(--ink,#1e2a30)"')+'>'+esc(l)+'</text>'); ty+=LH; }); });
+      x+=CW+GAP; }); y+=rh+GAP; });
+  const H=y+MARG-GAP+8; const inner=W-2*MARG;
+  const frame='<rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+(H-2*MARG)+'" rx="8" fill="var(--panel,#fff)" stroke="var(--ink,#333)"/><rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+TITLE+'" rx="8" fill="var(--panel-3,#e6e9ee)" stroke="var(--ink,#333)"/><text x="'+(W/2)+'" y="'+(MARG+20)+'" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink,#111)">'+esc(opts.title||"")+'</text>';
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" width="'+W+'" style="font-family:Segoe UI,system-ui,sans-serif;max-width:none">'+frame+out.join("")+'</svg>';
+}
+//={snakeSvg, ftsSummarySvg};
+
+// twin_app.js: the Digital Twin viewer (twin_viewer.html). Howard, 22 Sep 2026: a separate page with four pictures of the twin:
+// the fleet heat map (every region of every FTS, assets per state), replay over time, one asset on its FTS diagrams, and the
+// cross-FTS influence map. Reads the models and the twin/ export from the private GitHub repo with the same saved settings as
+// fts_viewer.html (same origin, same localStorage key), or from files on disk. Holds no data.
+(function(){
+  "use strict";
+  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+  const e=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const GID="GDA-GLOBAL-PROTOCOL", GH_KEY="fts.viewer.github.v1";
+  const GH_DEFAULT={owner:"modelwaresystems-dama",repo:"modelware_app_storage",branch:"main",path:"Data Lifecycle/models",token:""};
+  const D={models:{}, order:[], assets:[], byId:{}, elements:{}, events:[], fleet:null, st:{}, reg:{}, shared:new Set(), keys:{}, tMin:0, tMax:0, ready:false};
+  const V={tab:"heat", cls:"", t:null, playing:false, timer:null, speed:3, asset:null, openModels:new Set([GID]), sel:null};
+  const fmtD=ms=>{ const d=new Date(ms); return d.toISOString().slice(0,10); };
+  const fmtT=s=>s?String(s).replace("T"," ").slice(0,16):"";
+  const tms=s=>Date.parse(s);
+  function status(msg,bad){ const el=$("#status"); el.textContent=msg||""; el.className="status"+(bad?" bad":""); }
+
+  // ------------------------------------------------------------------ loading
+  function ghGet(){ try{ return Object.assign({},GH_DEFAULT,JSON.parse(localStorage.getItem(GH_KEY)||"null")||{}); }catch(x){ return Object.assign({},GH_DEFAULT); } }
+  function ghSet(c){ try{ localStorage.setItem(GH_KEY,JSON.stringify(c)); }catch(x){} }
+  function ghOpen(){ const c=ghGet(); $("#ghOwner").value=c.owner; $("#ghRepo").value=c.repo; $("#ghBranch").value=c.branch; $("#ghPath").value=c.path; $("#ghToken").value=""; $("#ghToken").placeholder=c.token?"saved, leave blank to keep":"github_pat_..."; $("#ghdlg").showModal(); }
+  function explain(st){ return st===401?"GitHub rejected the token (401): check it is a fine-grained token for this repository with Contents read-only, not expired.":st===403?"GitHub refused (403): the token may not cover this repository, or the rate limit is used up.":st===404?"not found (404): check owner, repository, branch and folder; for a private repository a 404 also means the token cannot see it.":"GitHub returned "+st+"."; }
+  async function ghLoad(){
+    const c=ghGet(); if(!c.token){ ghOpen(); return; }
+    const H={"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+c.token};
+    const api=p=>"https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+encodeURIComponent(c.repo)+"/contents/"+p.split("/").map(encodeURIComponent).join("/")+"?ref="+encodeURIComponent(c.branch||"main");
+    const twinDir=c.path.replace(/\/+$/,"").replace(/\/?[^\/]*$/,""); const tdir=(twinDir?twinDir+"/":"")+"twin";
+    try{
+      status("reading the models from "+c.owner+"/"+c.repo+" "+c.path+" ...");
+      const r=await fetch(api(c.path),{headers:H}); if(!r.ok) throw new Error("models folder: "+explain(r.status));
+      const list=(await r.json()).filter(f=>f.type==="file"&&/\.fts\.json$/i.test(f.name));
+      const models=[]; for(const f of list){ const rr=await fetch(f.url,{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(rr.ok){ try{ const m=JSON.parse(await rr.text()); if(m.meta&&m.regions&&m.subStates) models.push(m); }catch(x){} } }
+      status("reading the twin export from "+tdir+" ...");
+      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","events.json"]){ const rr=await fetch(api(tdir+"/"+n),{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(!rr.ok) throw new Error(tdir+"/"+n+": "+explain(rr.status)); tw[n]=JSON.parse(await rr.text()); }
+      ingest(models,tw,"GitHub "+c.owner+"/"+c.repo+" ("+c.branch+")");
+    }catch(ex){ status("Could not load from GitHub. "+ex.message,true); }
+  }
+  async function fileLoad(files){
+    const models=[], tw={};
+    for(const f of files){ try{ const j=JSON.parse(await f.text()); if(j.meta&&j.regions&&j.subStates) models.push(j); else tw[f.name]=j; }catch(x){ status("could not read "+f.name,true); return; } }
+    if(!tw["instances.json"]||!tw["events.json"]){ status("choose the .fts.json models and the twin export (instances.json, elements.json, events.json, fleet.json) together",true); return; }
+    ingest(models,tw,"files from disk");
+  }
+
+  // ------------------------------------------------------------------ the data model
+  function orderStates(m,rid){
+    const kids=m.subStates.filter(s=>(s.region||s.parent)===rid); const ids=new Set(kids.map(k=>k.id));
+    const fwd={}; kids.forEach(k=>fwd[k.id]=[]); (m.transitions||[]).forEach(t=>{ if(ids.has(t.source)&&ids.has(t.target)&&t.source!==t.target) fwd[t.source].push(t.target); });
+    const start=(kids.find(k=>k.initial)||kids[0]||{}).id; const rank={}; if(start) rank[start]=0;
+    if(kids.length<=14){ const on=new Set(); (function dfs(x,d){ on.add(x); (fwd[x]||[]).forEach(b=>{ if(on.has(b)) return; if(!(b in rank)||rank[b]<d+1) rank[b]=d+1; dfs(b,d+1); }); on.delete(x); })(start,0); }
+    else { const q=[start]; while(q.length){ const x=q.shift(); (fwd[x]||[]).forEach(b=>{ if(!(b in rank)){ rank[b]=rank[x]+1; q.push(b); } }); } }
+    const dec={}; kids.forEach((k,i)=>dec[k.id]=i);
+    return kids.slice().sort((a,b)=>((a.id in rank)?rank[a.id]:999)-((b.id in rank)?rank[b.id]:999)||dec[a.id]-dec[b.id]);
+  }
+  function ingest(models,tw,src){
+    D.models={}; models.forEach(m=>D.models[m.meta.modelId]=m);
+    D.order=Object.keys(D.models).sort((a,b)=>a===GID?-1:b===GID?1:(D.models[a].meta.knowledgeArea||a).localeCompare(D.models[b].meta.knowledgeArea||b));
+    D.st={}; D.reg={};
+    D.order.forEach(mid=>{ const m=D.models[mid]; m.subStates.forEach(s=>D.st[s.id]=s); m.regions.forEach(r=>{ D.reg[mid+"|"+r.id]={m:mid, r, states:orderStates(m,r.id)}; }); });
+    D.assets=(tw["instances.json"].assets||[]); D.byId={}; D.assets.forEach(a=>D.byId[a.id]=a);
+    D.elements={}; ((tw["elements.json"]||{}).elements||[]).forEach(x=>D.elements[x.id]=x);
+    D.events=(tw["events.json"].events||[]).slice().sort((a,b)=>tms(a.at)-tms(b.at)||(a.seq-b.seq));
+    D.fleet=tw["fleet.json"]||null;
+    D.shared=new Set(); D.assets.forEach(a=>Object.keys(a.refs||{}).forEach(rid=>D.shared.add(rid)));
+    // replay keys: per asset and region, the state before its first event and every change after
+    D.keys={};
+    D.events.forEach(ev=>{ if(!ev.region||!ev.model) return; const k=ev.instanceId+"|"+ev.model+"|"+ev.region; const t=tms(ev.at);
+      let L=D.keys[k]; if(!L){ const a=D.byId[ev.instanceId]; const pre=ev.fired&&ev.from?ev.from:(ev.stateAfter||ev.from); L=D.keys[k]=[[a?tms(a.createdAt):t, pre]]; }
+      if(ev.stateAfter) L.push([t, ev.stateAfter]); });
+    const ts=D.assets.map(a=>tms(a.createdAt)).concat(D.events.map(ev=>tms(ev.at))).filter(x=>!isNaN(x));
+    D.tMin=Math.min(...ts); D.tMax=Math.max(...ts); V.t=D.tMax;
+    D.ready=true;
+    const refused=D.events.filter(x=>String(x.result).startsWith("blocked")).length;
+    status(src+" · "+D.order.length+" models · "+D.assets.length+" assets · "+Object.keys(D.elements).length+" shared elements · "+D.events.length+" events ("+refused+" refused) · exported "+fmtT(D.fleet&&(D.fleet.exportedAt||D.fleet.generatedAt)));
+    const classes=[...new Set(D.assets.map(a=>a.assetClass))].sort(); $("#cls").innerHTML='<option value="">every asset class</option>'+classes.map(c=>'<option>'+e(c)+'</option>').join("");
+    $("#assetSel").innerHTML=D.assets.map(a=>'<option value="'+e(a.id)+'">'+e(a.id+"  "+a.name.replace("Customer Master record: ",""))+'</option>').join("");
+    if(!V.asset) V.asset=(D.assets.find(a=>D.events.some(x=>x.instanceId===a.id&&String(x.result).startsWith("blocked")))||D.assets[0]||{}).id;
+    $("#assetSel").value=V.asset;
+    $("#slider").min=D.tMin; $("#slider").max=D.tMax; $("#slider").value=D.tMax; $("#slider").step=3600000;
+    $("#empty").hidden=true; $("#main").hidden=false; render();
+  }
+  // the state of one asset in one region, now or at time t (null t = now)
+  function stateOf(a,mid,rid,t){
+    if(D.shared.has(rid) && (a.refs||{})[rid]){ const el=D.elements[a.refs[rid]]; return el?el.state:null; }
+    if(t!=null){ const L=D.keys[a.id+"|"+mid+"|"+rid]; if(L){ if(t<L[0][0]) return null; let lo=0,hi=L.length-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(L[m][0]<=t) lo=m; else hi=m-1; } return L[lo][1]; } if(tms(a.createdAt)>t) return null; }
+    const v=(a.vectors||{})[mid]; if(v&&v[rid]) return v[rid];
+    const R=D.reg[mid+"|"+rid]; return R&&R.r.initialState||null;
+  }
+  const applies=(a,mid)=>mid===GID||!(a.kaModels)||a.kaModels.includes(mid);
+  const pool=()=>D.assets.filter(a=>!V.cls||a.assetClass===V.cls);
+  const kaName=mid=>mid===GID?"Global Data Asset Protocol":(D.models[mid].meta.knowledgeArea||D.models[mid].meta.name);
+  const kaShort=mid=>mid===GID?"Global":mid.replace(/^KA-/,"");
+
+  // ------------------------------------------------------------------ 1 the heat map (also the frame of the replay)
+  function counts(t){
+    const C={}, act=pool().filter(a=>t==null||tms(a.createdAt)<=t);
+    D.order.forEach(mid=>D.models[mid].regions.forEach(r=>{ const k=mid+"|"+r.id; const c=C[k]={}; act.forEach(a=>{ if(!applies(a,mid)) return; const s=stateOf(a,mid,r.id,t); if(s) c[s]=(c[s]||0)+1; }); }));
+    return {C, n:act.length};
+  }
+  function heatHtml(t, win){
+    const {C,n}=counts(t); const h=[];
+    const flash={}; (win||[]).forEach(ev=>{ if(!ev.region) return; const k=ev.model+"|"+ev.region+"|"+(ev.from||""); if(String(ev.result).startsWith("blocked")) flash[k]="ref"; const k2=ev.model+"|"+ev.region+"|"+(ev.stateAfter||""); if(ev.fired&&!flash[k2]) flash[k2]="fire"; });
+    const refByReg={}; D.events.forEach(ev=>{ if(String(ev.result).startsWith("blocked")&&(t==null||tms(ev.at)<=t)) refByReg[ev.model+"|"+ev.region]=(refByReg[ev.model+"|"+ev.region]||0)+1; });
+    h.push('<div class="heat">');
+    D.order.forEach(mid=>{ const m=D.models[mid];
+      h.push('<div class="hmodel"><div class="hmname"><b>'+e(kaName(mid))+'</b> <span class="mono dim">'+e(mid)+'</span></div>');
+      m.regions.forEach(r=>{ const k=mid+"|"+r.id, R=D.reg[k], c=C[k]; const tot=Object.values(c).reduce((x,y)=>x+y,0);
+        h.push('<div class="hrow"><div class="hreg"><span class="mono">'+e(r.code||r.id.split("-").pop())+'</span> '+e(r.name)+(D.shared.has(r.id)?' <span class="pill" title="shared region: one governing element per scope, every asset reads it">shared</span>':'')+(refByReg[k]?' <span class="pill red" title="refused events in this region">'+refByReg[k]+' refused</span>':'')+'</div><div class="hcells">');
+        R.states.forEach(s=>{ const v=c[s.id]||0; const f=tot?v/tot:0; const fl=flash[k+"|"+s.id];
+          h.push('<button class="hcell'+(v?'':' zero')+(fl?' fl-'+fl:'')+(s.terminal?' term':'')+(V.sel&&V.sel.k===k&&V.sel.s===s.id?' sel':'')+'" data-k="'+e(k)+'" data-s="'+e(s.id)+'" style="--f:'+f.toFixed(3)+'" title="'+e(s.name+": "+v+" of "+tot+" assets"+(s.terminal?" (terminal)":""))+'"><span class="hn">'+e(s.name)+'</span><span class="hv">'+(v||"")+'</span></button>'); });
+        h.push('</div></div>'); });
+      h.push('</div>'); });
+    h.push('</div>');
+    return {html:h.join(""), n};
+  }
+  function renderHeat(){
+    const {html,n}=heatHtml(null);
+    $("#pane-heat").innerHTML='<p class="lede">Every state region of every FTS, one row each, states left to right in reading order. A cell shows how many of the '+n+' assets'+(V.cls?' of class '+e(V.cls):'')+' sit in that state now; the darker the cell, the larger its share of the row. Shared regions (a strategy, a programme, a platform) have one governing element that every asset reads, so the whole row sits in one state. Click a cell for the assets in it.</p><div class="split"><div>'+html+'</div><aside id="side" class="side"></aside></div>';
+    wireCells(); renderSide();
+  }
+  function wireCells(){ $$(".hcell").forEach(b=>b.onclick=()=>{ V.sel={k:b.dataset.k,s:b.dataset.s}; $$(".hcell.sel").forEach(x=>x.classList.remove("sel")); b.classList.add("sel"); renderSide(); }); }
+  function renderSide(){
+    const el=$("#side"); if(!el) return; if(!V.sel){ el.innerHTML='<div class="dim">Click a cell to list its assets.</div>'; return; }
+    const [mid,rid]=V.sel.k.split("|"); const t=V.tab==="replay"?V.t:null; const s=D.st[V.sel.s]||{};
+    const list=pool().filter(a=>applies(a,mid)&&(t==null||tms(a.createdAt)<=t)&&stateOf(a,mid,rid,t)===V.sel.s);
+    el.innerHTML='<h3>'+e(s.name||V.sel.s)+'</h3><div class="dim">'+e(kaName(mid))+' · '+e((D.reg[V.sel.k]||{r:{}}).r.name)+'</div><p>'+e(s.definition||"")+'</p><div class="dim">'+list.length+' assets'+(t!=null?' on '+fmtD(t):'')+'</div><ul class="alist">'+list.slice(0,200).map(a=>'<li><a href="#" data-a="'+e(a.id)+'">'+e(a.id)+'</a> '+e(a.name.replace("Customer Master record: ",""))+'</li>').join("")+'</ul>';
+    el.querySelectorAll("a[data-a]").forEach(x=>x.onclick=ev=>{ ev.preventDefault(); V.asset=x.dataset.a; $("#assetSel").value=V.asset; setTab("asset"); });
+  }
+
+  // ------------------------------------------------------------------ 2 replay
+  function renderReplay(){
+    const step=V.speed*86400000; const win=D.events.filter(ev=>{ const x=tms(ev.at); return x>V.t-step&&x<=V.t; });
+    const {html,n}=heatHtml(V.t,win);
+    const feed=D.events.filter(ev=>tms(ev.at)<=V.t).slice(-14).reverse();
+    $("#clock").textContent=fmtD(V.t); $("#slider").value=V.t;
+    const pane=$("#pane-replay");
+    if(!pane.dataset.built){ pane.innerHTML='<p class="lede">The heat map at any moment of the '+Math.round((D.tMax-D.tMin)/86400000)+' days the twin covers. Press play and the fleet moves through the states of every FTS: assets arrive, cells fill and drain as events fire; a cell outlined in green fired in the last step, one in red refused a transition, and the feed on the right names the event and the guard that refused it.</p><div class="split"><div id="rheat"></div><aside class="side" id="rfeed"></aside></div>'; pane.dataset.built="1"; }
+    $("#rheat").innerHTML='<div class="dim">'+n+' assets exist on '+fmtD(V.t)+'</div>'+html;
+    $("#rfeed").innerHTML='<h3>Events up to '+fmtD(V.t)+'</h3><ol class="feed">'+feed.map(ev=>{ const bad=String(ev.result).startsWith("blocked"); const g=(ev.guards||[]).filter(x=>x.verdict===false); return '<li class="'+(bad?'bad':ev.result==="override"?'ovr':ev.result==="facts"?'fct':'')+'"><span class="mono dim">'+fmtT(ev.at)+'</span> <a href="#" data-a="'+e(ev.instanceId)+'" class="mono">'+e(ev.instanceId)+'</a><br>'+(ev.result==="facts"?'facts set: '+e(Object.entries(ev.factsApplied||{}).map(([k,v])=>k+"="+v).join(", ")):e(kaShort(ev.model||"")+" "+(ev.transition||"")+" "+(ev.name||"")))+(bad?'<br><b>refused</b>: '+(g.length?g.map(x=>e((x.contributedBy?"["+kaShort(x.contributedBy)+"] ":"")+x.predicate)).join("; "):'source state not active'):ev.result==="override"?'<br><b>override</b>: '+e(ev.reason||""):'')+'</li>'; }).join("")+'</ol>';
+    $$("#rfeed a[data-a]").forEach(x=>x.onclick=ev=>{ ev.preventDefault(); stop(); V.asset=x.dataset.a; $("#assetSel").value=V.asset; setTab("asset"); });
+    $$("#rheat .hcell").forEach(b=>b.onclick=()=>{ stop(); V.sel={k:b.dataset.k,s:b.dataset.s}; setTab("heat"); });
+  }
+  function play(){ if(V.playing){ stop(); return; } if(V.t>=D.tMax) V.t=D.tMin; V.playing=true; $("#play").textContent="Pause"; V.timer=setInterval(()=>{ V.t=Math.min(D.tMax,V.t+V.speed*86400000); if(V.tab==="replay") renderReplay(); if(V.t>=D.tMax) stop(); },700); }
+  function stop(){ V.playing=false; clearInterval(V.timer); $("#play").textContent="Play"; }
+
+  // ------------------------------------------------------------------ 3 one asset on its FTS diagrams
+  function regionSvg(mid,r){
+    try{ const out=fsmSource(D.models[mid],{level:"all",contracts:false,labelMode:"id",hideNotes:true}); return snakeSvg(out.graph,[{id:r.id,name:r.name}],1100,{title:(r.code||"")+" "+r.name}).replace(/ width="\d+" style="font-family:Segoe UI,system-ui,sans-serif;max-width:none"/,' style="font-family:inherit;width:100%;height:auto"'); }
+    catch(ex){ return '<div class="dim">diagram not drawn: '+e(ex.message)+'</div>'; }
+  }
+  const mid_=id=>String(id).replace(/[^A-Za-z0-9_]/g,"_");
+  function renderAsset(){
+    const a=D.byId[V.asset]; const pane=$("#pane-asset"); if(!a){ pane.innerHTML='<div class="dim">Choose an asset.</div>'; return; }
+    const evs=D.events.filter(x=>x.instanceId===a.id);
+    const refused=evs.filter(x=>String(x.result).startsWith("blocked"));
+    const h=['<p class="lede">One Data Asset across every FTS. The strip shows its state in each region; open a Knowledge Area to see the real state diagram of each of its regions with the asset\'s current state filled, the states it passed through outlined, the transitions it took drawn thick, and any transition the twin refused drawn red with the reason.</p>'];
+    h.push('<div class="ahead"><h2>'+e(a.id)+' · '+e(a.name.replace("Customer Master record: ",""))+'</h2><div class="dim">'+e(a.assetClass)+' · created '+fmtT(a.createdAt)+' · '+evs.filter(x=>x.fired&&x.transition).length+' transitions fired · <span class="'+(refused.length?'redt':'')+'">'+refused.length+' refused</span> · '+evs.filter(x=>x.result==="override").length+' overrides'+((a.facts||{}).hold_active?' · <b class="amber">legal hold</b>':'')+'</div></div>');
+    // the state vector strip
+    h.push('<div class="strip">'+D.order.map(mid=>'<div class="smod'+(applies(a,mid)?'':' na')+'"><div class="smn">'+e(kaShort(mid))+'</div>'+D.models[mid].regions.map(r=>{ const s=stateOf(a,mid,r.id,null); const moved=evs.some(x=>x.model===mid&&x.region===r.id&&x.fired); const bad=evs.some(x=>x.model===mid&&x.region===r.id&&String(x.result).startsWith("blocked")); return '<a href="#reg-'+mid_(mid+r.id)+'" class="schip'+(moved?' moved':'')+(bad?' bad':'')+(D.shared.has(r.id)?' sh':'')+'" data-m="'+e(mid)+'" title="'+e(r.name+": "+((D.st[s]||{}).name||s||"")+(D.shared.has(r.id)?" (shared element)":""))+'"><span class="mono">'+e(r.code||"")+'</span> '+e((D.st[s]||{}).name||"")+'</a>'; }).join("")+'</div>').join("")+'</div>');
+    // per model, collapsible diagrams
+    D.order.forEach(mid=>{ if(!applies(a,mid)) return; const m=D.models[mid]; const n=evs.filter(x=>x.model===mid).length; const nb=evs.filter(x=>x.model===mid&&String(x.result).startsWith("blocked")).length;
+      h.push('<details class="amod" data-m="'+e(mid)+'"'+(V.openModels.has(mid)?' open':'')+'><summary><b>'+e(kaName(mid))+'</b> <span class="dim">'+m.regions.length+' regions · '+n+' events'+(nb?'</span> <span class="redt">'+nb+' refused</span>':'</span>')+'</summary><div class="amodbody" data-m="'+e(mid)+'"></div></details>'); });
+    h.push('<h3>Timeline</h3><div class="tscroll"><table class="tl"><thead><tr><th>At</th><th>FTS</th><th>Transition</th><th>Result</th><th>State after</th><th>Why</th></tr></thead><tbody>'+evs.map(ev=>{ const bad=String(ev.result).startsWith("blocked"); const g=(ev.guards||[]).filter(x=>x.verdict===false); return '<tr class="'+(bad?'bad':ev.result==="override"?'ovr':'')+'"><td class="mono">'+fmtT(ev.at)+'</td><td class="mono">'+e(kaShort(ev.model||""))+'</td><td>'+e((ev.transition||"")+" "+(ev.name||""))+(ev.result==="facts"?'facts: '+e(Object.entries(ev.factsApplied||{}).map(([k,v])=>k+"="+v).join(", ")):'')+'</td><td>'+e(ev.result)+'</td><td>'+e((D.st[ev.stateAfter]||{}).name||"")+'</td><td>'+(bad?(g.length?g.map(x=>'<span class="mono">'+e(x.guard)+'</span>'+(x.contributedBy?' ['+e(kaShort(x.contributedBy))+']':'')+': '+e(x.predicate)).join("<br>"):'source state not active'):ev.result==="override"?e(ev.reason||""):'')+'</td></tr>'; }).join("")+'</tbody></table></div>');
+    pane.innerHTML=h.join("");
+    $$("#pane-asset details.amod").forEach(d=>{ const fill=()=>{ if(d.open){ V.openModels.add(d.dataset.m); drawModel(d.querySelector(".amodbody"),a,d.dataset.m,evs); } else V.openModels.delete(d.dataset.m); }; d.addEventListener("toggle",fill); if(d.open) fill(); });
+    $$("#pane-asset .schip").forEach(c=>c.onclick=()=>{ const d=document.querySelector('details.amod[data-m="'+c.dataset.m+'"]'); if(d&&!d.open) d.open=true; });
+  }
+  function drawModel(box,a,mid,evs){
+    if(box.dataset.done===a.id) return; box.dataset.done=a.id;
+    const m=D.models[mid]; const h=[];
+    m.regions.forEach(r=>{ const re=evs.filter(x=>x.model===mid&&x.region===r.id); const cur=stateOf(a,mid,r.id,null);
+      h.push('<div class="areg" id="reg-'+mid_(mid+r.id)+'"><div class="aregh"><b>'+e(r.name)+'</b> · now <b>'+e((D.st[cur]||{}).name||cur||"")+'</b>'+(D.shared.has(r.id)?' <span class="pill" title="shared element '+e((a.refs||{})[r.id]||"")+'">shared: '+e((a.refs||{})[r.id]||"")+'</span>':'')+' <span class="dim">'+re.filter(x=>x.fired).length+' fired'+(re.some(x=>String(x.result).startsWith("blocked"))?'</span> <span class="redt">'+re.filter(x=>String(x.result).startsWith("blocked")).length+' refused</span>':'</span>')+'</div><div class="fig" data-r="'+e(r.id)+'">'+regionSvg(mid,r)+'</div></div>'); });
+    box.innerHTML=h.join("");
+    m.regions.forEach(r=>{ const fig=box.querySelector('.fig[data-r="'+r.id+'"]'); if(!fig) return; const re=evs.filter(x=>x.model===mid&&x.region===r.id); const cur=stateOf(a,mid,r.id,null);
+      const visited=new Set(); re.forEach(x=>{ if(x.fired&&x.from) visited.add(x.from); if(x.stateAfter) visited.add(x.stateAfter); });
+      visited.forEach(s=>{ const g=fig.querySelector("#state-"+mid_(s)+"-0 rect"); if(g){ g.classList.add("visited"); } });
+      const cg=fig.querySelector("#state-"+mid_(cur)+"-0 rect"); if(cg) cg.classList.add("current");
+      const taken=new Set(re.filter(x=>x.fired&&x.transition).map(x=>x.transition)); const bad={}; re.filter(x=>String(x.result).startsWith("blocked")).forEach(x=>bad[x.transition]=x);
+      fig.querySelectorAll("path.transition[data-tr]").forEach(p=>{ const id=p.getAttribute("data-tr"); if(taken.has(id)) p.classList.add("taken"); if(bad[id]){ p.classList.add("refused"); const tt=document.createElementNS("http://www.w3.org/2000/svg","title"); const g=(bad[id].guards||[]).filter(x=>x.verdict===false); tt.textContent="refused "+fmtT(bad[id].at)+": "+(g.length?g.map(x=>(x.contributedBy?"["+x.contributedBy+"] ":"")+x.predicate).join("; "):"source state not active"); p.appendChild(tt); } });
+    });
+  }
+
+  // ------------------------------------------------------------------ 4 the cross-FTS influence map
+  function influence(){
+    // allows: a fired transition whose guards include a contribution or coupling from another FTS (from the models, for the
+    // assets that FTS applies to); blocks: a refused event whose failing guard names the contributing FTS (from the event log)
+    const byT={}; D.order.forEach(src=>{ if(src===GID) return; const m=D.models[src];
+      (m.contributions||[]).forEach(c=>{ if(c.kind!=="guard"&&c.kind!=="decisionRight") return; (byT[GID+"|"+c.globalTransition]=byT[GID+"|"+c.globalTransition]||[]).push({src, id:c.id, kind:c.kind, pred:c.predicate}); });
+      (m.kaCouplings||[]).forEach(k=>{ if(!k.targetModel||!k.targetTransition) return; (byT[k.targetModel+"|"+k.targetTransition]=byT[k.targetModel+"|"+k.targetTransition]||[]).push({src, id:k.id, kind:k.event?"event":"fact", pred:k.predicate}); }); });
+    const E={}; const add=(s,t,kind,detail)=>{ const k=s+">"+t; const x=E[k]=E[k]||{s,t,allow:0,block:0,event:0,det:{}}; x[kind]++; const d=x.det[detail]=x.det[detail]||{allow:0,block:0,event:0}; d[kind]++; };
+    const act=pool(); const inPool=new Set(act.map(a=>a.id));
+    D.events.forEach(ev=>{ if(!inPool.has(ev.instanceId)||!ev.model||!ev.transition) return; const a=D.byId[ev.instanceId];
+      if(ev.fired && ev.result==="fired"){ (byT[ev.model+"|"+ev.transition]||[]).forEach(c=>{ if(c.src===ev.model||!applies(a,c.src)) return; add(c.src,ev.model,c.kind==="event"?"event":"allow",ev.transition+" "+(ev.name||"")+" · "+c.id); }); }
+      else if(String(ev.result).startsWith("blocked")){ (ev.guards||[]).filter(g=>g.verdict===false).forEach(g=>{ const s=g.contributedBy||ev.model; add(s,ev.model,"block",ev.transition+" "+(ev.name||"")+" · "+g.guard); }); }
+    });
+    return Object.values(E);
+  }
+  function matrix(edges){
+    const ids=D.order, M={}; edges.forEach(x=>M[x.s+'>'+x.t]=x); const mxv=Math.max(1,...edges.map(x=>x.allow+x.event));
+    return '<div class="tscroll"><table class="mx"><thead><tr><th class="r">from ↓ · to →</th>'+ids.map(t=>'<th title="'+e(kaName(t))+'">'+e(kaShort(t))+'</th>').join('')+'</tr></thead><tbody>'+ids.map(s=>'<tr><th class="r" title="'+e(kaName(s))+'">'+e(kaShort(s))+'</th>'+ids.map(t=>{ const x=M[s+'>'+t]; const v=x?x.allow+x.event:0; return '<td class="'+(s===t?'self':'')+'" data-s="'+e(s)+'" data-t="'+e(t)+'" style="--f:'+(v?(0.15+0.85*Math.log(1+v)/Math.log(1+mxv)).toFixed(3):0)+'" title="'+e(kaShort(s)+' → '+kaShort(t)+': '+v+' allowed, '+(x?x.block:0)+' refused')+'">'+(v||'')+(x&&x.block?' <b>'+x.block+'</b>':'')+'</td>'; }).join('')+'</tr>').join('')+'</tbody></table></div>';
+  }
+  function renderInfluence(){
+    const edges=influence(); const ids=D.order; const W=880, H=640, cx=W/2, cy=H/2, R=250;
+    const pos={}; pos[GID]={x:cx,y:cy}; const kas=ids.filter(x=>x!==GID); kas.forEach((k,i)=>{ const ang=-Math.PI/2+i*2*Math.PI/kas.length; pos[k]={x:cx+R*Math.cos(ang), y:cy+R*0.92*Math.sin(ang)}; });
+    const mx=Math.max(1,...edges.map(x=>x.allow+x.event+x.block));
+    const wOf=v=>1+5*Math.log(1+v)/Math.log(1+mx);
+    const svg=['<svg viewBox="0 0 '+W+' '+H+'" class="inf" role="img" aria-label="Influence between the FTSs"><defs><marker id="ia" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--edge)"/></marker><marker id="ib" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--bad)"/></marker></defs>'];
+    const curve=(s,t,bend)=>{ const A=pos[s],B=pos[t]; const dx=B.x-A.x, dy=B.y-A.y, L=Math.hypot(dx,dy)||1; const ux=dx/L, uy=dy/L; const a0={x:A.x+ux*44,y:A.y+uy*26}, b0={x:B.x-ux*48,y:B.y-uy*30}; const mxp=(a0.x+b0.x)/2-uy*bend, myp=(a0.y+b0.y)/2+ux*bend; return 'M'+a0.x.toFixed(1)+' '+a0.y.toFixed(1)+' Q'+mxp.toFixed(1)+' '+myp.toFixed(1)+' '+b0.x.toFixed(1)+' '+b0.y.toFixed(1); };
+    edges.forEach((x,i)=>{ if(!pos[x.s]||!pos[x.t]||x.s===x.t) return; const ok=x.allow+x.event; if(ok) svg.push('<path class="ie" data-i="'+i+'" data-s="'+e(x.s)+'" data-t="'+e(x.t)+'" d="'+curve(x.s,x.t,18)+'" stroke="var(--edge)" stroke-width="'+wOf(ok).toFixed(1)+'" fill="none" marker-end="url(#ia)"><title>'+e(kaShort(x.s)+" → "+kaShort(x.t)+": "+x.allow+" transitions allowed, "+x.event+" events emitted")+'</title></path>');
+      if(x.block) svg.push('<path class="ie blk" data-i="'+i+'" data-s="'+e(x.s)+'" data-t="'+e(x.t)+'" d="'+curve(x.s,x.t,-18)+'" stroke="var(--bad)" stroke-width="'+wOf(x.block).toFixed(1)+'" fill="none" marker-end="url(#ib)"><title>'+e(kaShort(x.s)+" → "+kaShort(x.t)+": "+x.block+" transitions refused")+'</title></path>'); });
+    ids.forEach(k=>{ const p=pos[k]; const oth=edges.filter(x=>x.s===k&&x.t!==k); const out=oth.reduce((a,x)=>a+x.allow+x.event,0), blk=oth.reduce((a,x)=>a+x.block,0), own=edges.filter(x=>x.s===k&&x.t===k).reduce((a,x)=>a+x.block,0); const w=k===GID?150:124;
+      svg.push('<g class="in" data-m="'+e(k)+'" transform="translate('+p.x.toFixed(1)+' '+p.y.toFixed(1)+')"><rect x="'+(-w/2)+'" y="-26" width="'+w+'" height="52" rx="8"/><text y="-7" text-anchor="middle" class="int">'+e(kaShort(k))+'</text><text y="8" text-anchor="middle" class="ins">'+(k===GID?'gates nothing directly':out+' allowed in others')+'</text><text y="21" text-anchor="middle" class="ins" '+(blk||own?'style="fill:var(--bad)"':'')+'>'+(k===GID?own+' refused by own guards':blk+' refused in others')+'</text><title>'+e(kaName(k))+'</title></g>'); });
+    svg.push('</svg>');
+    const rows=edges.slice().sort((a,b)=>(b.block-a.block)||((b.allow+b.event)-(a.allow+a.event)));
+    $("#pane-influence").innerHTML='<p class="lede">How the FTSs act on each other in the twin. A grey arrow from one FTS to another means its state was a condition of transitions the other fired (a contributed guard or decision right, or a coupling), counted per asset event; a red arrow means one of its guards refused a transition in the other. Line width grows with the count. The Global protocol sits in the middle because every Knowledge Area contributes to it. Click an arrow or a box for the transitions behind it.</p><div class="split"><div>'+svg.join("")+'</div><aside class="side" id="iside"><div class="dim">Click an arrow or an FTS. Only refusals are drawn strong; click an FTS to bring its arrows forward.</div></aside></div><h3>From and to, as a matrix</h3><p class="lede">Each row is the FTS whose state acts, each column the FTS whose transition it acts on. The shade is the number of transitions it allowed; a red figure is the number it refused. The diagonal is an FTS refusing its own transitions (its cross-region guards, or a transition tried from the wrong state).</p>'+matrix(edges)+'<h3>Every pair</h3><div class="tscroll"><table class="tl"><thead><tr><th>From</th><th>To</th><th>Allowed</th><th>Events emitted</th><th>Refused</th></tr></thead><tbody>'+rows.map((x,i)=>'<tr><td>'+e(kaShort(x.s))+'</td><td>'+e(kaShort(x.t))+'</td><td class="n">'+x.allow+'</td><td class="n">'+x.event+'</td><td class="n'+(x.block?' redt':'')+'">'+x.block+'</td></tr>').join("")+'</tbody></table></div>';
+    const side=$("#iside");
+    function showPair(i){ const x=edges[i]; $("#pane-influence svg.inf").classList.add("focus"); $$("#pane-influence .ie").forEach(q=>q.classList.toggle("dimmed",q.dataset.i!==String(i))); side.innerHTML='<h3>'+e(kaShort(x.s))+' → '+e(kaShort(x.t))+'</h3><div class="dim">'+x.allow+' allowed · '+x.event+' events · '+x.block+' refused</div><table class="tl"><thead><tr><th>Transition · guard or coupling</th><th>Allowed</th><th>Refused</th></tr></thead><tbody>'+Object.entries(x.det).sort((a,b)=>(b[1].block-a[1].block)||(b[1].allow+b[1].event-a[1].allow-a[1].event)).map(([k,v])=>'<tr><td>'+e(k)+'</td><td class="n">'+(v.allow+v.event)+'</td><td class="n'+(v.block?' redt':'')+'">'+v.block+'</td></tr>').join("")+'</tbody></table>'; }
+    $$("#pane-influence path.ie").forEach(p=>p.onclick=()=>showPair(+p.dataset.i));
+    $$("#pane-influence .mx td").forEach(td=>td.onclick=()=>{ const i=edges.findIndex(x=>x.s===td.dataset.s&&x.t===td.dataset.t); if(i<0){ side.innerHTML='<div class="dim">'+e(kaShort(td.dataset.s))+' does not act on '+e(kaShort(td.dataset.t))+' in this fleet.</div>'; return; } showPair(i); side.scrollIntoView({block:'nearest'}); });
+    $$("#pane-influence g.in").forEach(g=>g.onclick=()=>{ const k=g.dataset.m; $("#pane-influence svg.inf").classList.add("focus"); $$("#pane-influence .ie").forEach(q=>q.classList.toggle("dimmed",q.dataset.s!==k&&q.dataset.t!==k)); const o=edges.filter(x=>x.s===k), i=edges.filter(x=>x.t===k); side.innerHTML='<h3>'+e(kaName(k))+'</h3><p class="dim">Acts on '+o.length+' FTSs, acted on by '+i.length+'.</p><table class="tl"><thead><tr><th>Direction</th><th>FTS</th><th>Allowed</th><th>Refused</th></tr></thead><tbody>'+o.map(x=>'<tr><td>acts on</td><td>'+e(kaShort(x.t))+'</td><td class="n">'+(x.allow+x.event)+'</td><td class="n'+(x.block?' redt':'')+'">'+x.block+'</td></tr>').concat(i.map(x=>'<tr><td>acted on by</td><td>'+e(kaShort(x.s))+'</td><td class="n">'+(x.allow+x.event)+'</td><td class="n'+(x.block?' redt':'')+'">'+x.block+'</td></tr>')).join("")+'</tbody></table>'; });
+  }
+
+  // ------------------------------------------------------------------ shell
+  function setTab(t){ V.tab=t; $$(".tab").forEach(b=>b.setAttribute("aria-selected",b.dataset.t===t?"true":"false")); $$(".pane").forEach(p=>p.hidden=p.id!=="pane-"+t); $("#replaybar").hidden=t!=="replay"; $("#assetbar").hidden=t!=="asset"; if(t!=="replay") stop(); render(); }
+  function render(){ if(!D.ready) return; if(V.tab==="heat") renderHeat(); else if(V.tab==="replay") renderReplay(); else if(V.tab==="asset") renderAsset(); else renderInfluence(); }
+  function init(){
+    $$(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.t));
+    $("#btnGh").onclick=ghLoad; $("#btnGhSet").onclick=ghOpen; $("#ghCancel").onclick=()=>$("#ghdlg").close();
+    $("#ghSave").onclick=()=>{ const c=ghGet(); c.owner=$("#ghOwner").value.trim(); c.repo=$("#ghRepo").value.trim(); c.branch=$("#ghBranch").value.trim()||"main"; c.path=$("#ghPath").value.trim().replace(/^\/+|\/+$/g,""); const t=$("#ghToken").value.trim(); if(t) c.token=t; ghSet(c); $("#ghdlg").close(); ghLoad(); };
+    $("#files").onchange=ev=>fileLoad([...ev.target.files]);
+    $("#cls").onchange=ev=>{ V.cls=ev.target.value; render(); };
+    $("#play").onclick=play; $("#speed").onchange=ev=>{ V.speed=+ev.target.value; };
+    $("#slider").oninput=ev=>{ stop(); V.t=+ev.target.value; renderReplay(); };
+    $("#assetSel").onchange=ev=>{ V.asset=ev.target.value; renderAsset(); };
+    $("#assetPrev").onclick=()=>{ const i=D.assets.findIndex(a=>a.id===V.asset); if(i>0){ V.asset=D.assets[i-1].id; $("#assetSel").value=V.asset; renderAsset(); } };
+    $("#assetNext").onclick=()=>{ const i=D.assets.findIndex(a=>a.id===V.asset); if(i<D.assets.length-1){ V.asset=D.assets[i+1].id; $("#assetSel").value=V.asset; renderAsset(); } };
+    $("#assetRef").onclick=()=>{ const r=D.assets.filter(a=>D.events.some(x=>x.instanceId===a.id&&String(x.result).startsWith("blocked"))); const i=r.findIndex(a=>a.id===V.asset); const n=r[(i+1)%r.length]; if(n){ V.asset=n.id; $("#assetSel").value=V.asset; renderAsset(); } };
+    const c=ghGet(); if(c.token) ghLoad(); else status("Load from GitHub (the same settings and token as the FTS viewer) or choose the models and the twin export from disk.");
+  }
+  window.__twin={D,V,ingest};
+  init();
+})();
+
+</script></body></html>

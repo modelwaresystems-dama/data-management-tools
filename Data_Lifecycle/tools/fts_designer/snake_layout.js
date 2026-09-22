@@ -72,7 +72,7 @@ function snakeSvg(G, tops, availW, opts){
       else if(p.kind==="downchan"){ const L0=laneY(A.row,p.l0), L1=laneY(B.row-1,p.l1), cx=chanX("R",p.c); const xa=A.cx+off, xb=B.cx-off; d=seg([[xa,A.y+A.h],[xa,L0],[cx,L0],[cx,L1],[xb,L1],[xb,B.y-2]]); lx=(xa+cx)/2; ly=L0-6; }
       else if(p.kind==="up"){ const L0=laneY(B.row,p.l0); const xa=A.cx-off, xb=B.cx+off; d=seg([[xa,A.y],[xa,L0],[xb,L0],[xb,B.y+B.h+2]]); lx=(xa+xb)/2; ly=L0-6; }
       else { const L0=laneY(A.row-1,p.l0), L1=laneY(B.row,p.l1), cx=chanX("L",p.c); const xa=A.cx-off, xb=B.cx+off; d=seg([[xa,A.y],[xa,L0],[cx,L0],[cx,L1],[xb,L1],[xb,B.y+B.h+2]]); lx=(xa+cx)/2; ly=L0-6; }
-      out.push('<path class="transition" d="'+d+'" fill="none" stroke="var(--ink,#333)" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#fts-arrow)"/>');
+      out.push('<path class="transition"'+(e.id?' data-tr="'+esc(e.id)+'"':'')+' data-a="'+esc(e.a)+'" data-b="'+esc(e.b)+'" d="'+d+'" fill="none" stroke="var(--ink,#333)" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#fts-arrow)"/>');
       const tw=String(e.label).length*6.6+10;
       lab.push('<g class="edgeLabel" style="cursor:help"><rect x="'+(lx-tw/2)+'" y="'+(ly-9)+'" width="'+tw+'" height="16" rx="3" fill="var(--panel,#fff)" fill-opacity="0.92"/><text x="'+lx+'" y="'+(ly+3)+'" text-anchor="middle" font-size="11" fill="var(--ink,#111)">'+esc(e.label)+'</text></g>'); });
     y=bandY+bandH+22;

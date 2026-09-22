@@ -29,6 +29,7 @@ Runs the minimum validation suite (referential integrity, initial and terminal s
 ## Knowledge Area FTS (v0.3 schema, orthogonal regions)
 
 - `ka_build.py` compiles a KA spec (regions, states, transitions, events, decision rights, roles, artefacts, activities, services, contributions to the Global protocol, cross-region constraints, state vectors) into `.fts.json`; permission records are derived from the transition-causing activities when the spec gives none. Each region is its own FTS over one managed element (tuple index 6, plus an extras dict: instanceScope, elementKind, conditionsThatMatter, contributesTo, issueSources); a region without a managed element and a transition without a Decision Right are QA warnings.
+- `dhe_spec.py` is the Data Handling Ethics spec v0.1 (Ethical Data Handling Strategy; Practice Gap; Ethics Communication and Training Programme; Ethical Use of a Data Asset; Ethics Compliance Incident).
 - `bda_spec.py` is the Big Data and Data Science spec v0.1 (Big Data Strategy and Standards; Big Data Platform; Data Source; Analytical Model; Data Insight).
 - `dcm_spec.py` is the Document and Content Management spec v0.1 (Content and Records Management Strategy; Information Architecture and Content Repository; Record or Content Item of a Data Asset; Legal Hold or e-Discovery Matter).
 - `dwbi_spec.py` is the Data Warehousing and Business Intelligence spec v0.1 (DW and BI Architecture; Data Warehouse or Data Mart; Population of a Data Asset; Data Product; BI Portfolio).

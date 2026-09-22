@@ -20,3 +20,8 @@ The viewer carries its version and build date and time (SAST) in the header and 
 - `ka_build.py` v0.4 reads the vocabulary. Each decision right carries `holder` (a shared role ID) and `holderName`. The holders a KA uses are added to its roles as Decision-Right Holders, next to the role players from the context diagram. The REVIEW flags on holders are cleared.
 - `fts_docs.py` and the viewer's Documentation tab show the holder's role name.
 - `protocol_build.py` also takes the Global protocol's decision-right holders from `role_vocabulary.json` (`globalMapping`), and adds those holders as Decision-Right Holder roles.
+
+## Viewer v0.26 (22 Sep 2026, 16:08 SAST): the Twin tab reads the private repo
+
+- The Twin tab has a new **Load from GitHub** button. It reads `fleet.json`, `instances.json`, `elements.json` and `events.json` from the `twin` folder next to the models folder in the private repo (`Data Lifecycle/models` means `Data Lifecycle/twin`). It uses the same saved GitHub settings and token as the models, so there is nothing new to set up.
+- When the tab opens, the viewer first tries the local service, then GitHub if a token is saved. The GitHub copy is the last export; live events still need the local service.

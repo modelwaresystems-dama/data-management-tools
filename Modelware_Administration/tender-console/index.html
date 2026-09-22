@@ -324,6 +324,7 @@
     <button data-tab="analytics">Analytics</button>
     <button data-tab="bank">Experience Bank <span class="ct" id="ctBank">0</span></button>
     <button data-tab="sfia">SFIA Profile <span class="ct" id="ctSfia">0</span></button>
+    <button data-tab="aiconcepts">AI Concepts <span class="ct" id="ctAi">0</span></button>
     <button data-tab="settings">Settings</button>
   </nav>
   <div class="diag" id="diag" hidden></div>
@@ -379,6 +380,9 @@
       <div class="a-card"><h3>Your talent domains vs what the tenders reward</h3><div id="sfStrDemand"></div></div>
     </div>
     <div class="a-card"><h3>Strengths behind the top requirements</h3><div id="sfStrReq"></div></div>
+    <div class="row" style="margin-top:28px"><div><h2 class="sh">AI readiness <span style="font-weight:400;color:var(--ink-faint);font-size:.82rem">— your profile vs the SFIA AI concepts register</span></h2><p class="sub">How your governed SFIA skills cover the 64 AI concepts. Weighted: Direct 1 · Contributing 0.6 · Supporting 0.3. Register is a SFIA prototype under review for SFIA 10.</p></div></div>
+    <div class="a-card"><h3>Coverage by AI category <span class="a-sub">— weighted across the register's concepts · overall <span id="aiOverall">—</span></span></h3><div id="aiCatBars"></div></div>
+    <div class="a-card"><h3>Weakest AI concepts — where to build <span class="a-sub">— lowest coverage first</span></h3><div id="aiWeak"></div></div>
   </section>
 
   <!-- BANK -->
@@ -403,6 +407,37 @@
     <div id="sfBehs"></div>
     <div id="sfStrengths"></div>
     <div id="sfSkills"></div>
+  </section>
+  <!-- AI CONCEPTS -->
+  <section class="section" id="sec-aiconcepts">
+    <style>
+      #sec-aiconcepts .ai-search{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font-size:.92rem;margin:2px 0 10px}
+      #sec-aiconcepts .ai-search:focus-visible{outline:2px solid var(--glacier);outline-offset:1px}
+      #sec-aiconcepts .ai-filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+      .ai-fbtn{font-family:var(--fm);font-size:.72rem;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);cursor:pointer}
+      .ai-fbtn.on{background:var(--glacier);border-color:var(--glacier);color:#fff}
+      .ai-con{border:1px solid var(--line);border-radius:11px;margin-bottom:8px;background:var(--surface);overflow:hidden;box-shadow:var(--shadow)}
+      .ai-con>summary{list-style:none;cursor:pointer;padding:11px 14px;display:flex;align-items:center;gap:11px}
+      .ai-con>summary::-webkit-details-marker{display:none}
+      .ai-cv{font-family:var(--fm);font-size:.74rem;font-weight:700;width:40px;text-align:right;flex:none}
+      .ai-cvbar{width:56px;height:7px;background:var(--surface-2);border-radius:999px;overflow:hidden;flex:none}.ai-cvbar i{display:block;height:100%;border-radius:999px}
+      .ai-cname{font-weight:650;flex:1;font-size:.93rem}
+      .ai-dir{font-family:var(--fm);font-size:.66rem;color:var(--ink-faint);flex:none}
+      .ai-ccat{font-family:var(--fm);font-size:.62rem;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em;flex:none}
+      .ai-body{padding:0 14px 12px;border-top:1px solid var(--line-soft)}
+      .ai-desc{font-size:.85rem;color:var(--ink-soft);margin:10px 0}
+      .ai-sk{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px 10px;align-items:start;padding:6px 0;border-top:1px dashed var(--line-soft);font-size:.83rem}
+      .ai-code{font-family:var(--fm);font-weight:700;font-size:.75rem}.ai-code.h{color:var(--good)}.ai-code.n{color:var(--ink-faint)}
+      .ai-sn{color:var(--ink-soft)} .ai-why{display:block;color:var(--ink-faint);font-size:.77rem;margin-top:1px}
+      .ai-rl{font-family:var(--fm);font-size:.58rem;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:999px;font-weight:700;white-space:nowrap;height:fit-content}
+      .ai-rl.DIRECT{background:var(--glacier-soft);color:var(--good)} .ai-rl.CONTRIBUTING{background:var(--glacier-soft);color:var(--glacier)} .ai-rl.SUPPORTING{background:var(--surface-2);color:var(--ink-soft)} .ai-rl.CONTEXT-DEPENDENT{background:var(--surface-2);color:var(--ink-faint)}
+      .ai-lv{font-family:var(--fm);font-size:.72rem;white-space:nowrap}
+    </style>
+    <div class="row"><div><h2 class="sh">AI Concepts</h2><p class="sub">Search everyday AI terminology and see the SFIA skills it draws on — and whether you hold them. From the SFIA AI Skills Framework (prototype AI concepts register, under review for SFIA 10).</p></div></div>
+    <div class="sf-sum" id="aiSum"></div>
+    <input class="ai-search" id="aiSearch" placeholder="Search a concept or SFIA code… (e.g. RAG, MLOps, GOVN)">
+    <div class="ai-filters" id="aiExpFilters"></div>
+    <div id="aiExpList"></div>
   </section>
   <section class="section" id="sec-settings">
     <h2 class="sh">Settings</h2>
@@ -476,14 +511,17 @@
 "use strict";
 (function(){
   /* ---------- constants ---------- */
-  var APP_VERSION="1.6.2";           // bump on every change
-  var APP_BUILD="2026-09-16 Strengths radar (overlaid)";  // date/time of this build
+  var APP_VERSION="1.7.0";           // bump on every change
+  var APP_BUILD="2026-09-22 AI concepts";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
   var GO=["undecided","bid","pass"];
   var TEAM=["Howard Diesel","Debbie","Monica","Veronica"];  // Phase 2 team roster
   var FILES={tenders:"tenders.json",experience:"experience.json",harvest:"harvest.json",sfiaProfile:"sfia-profile.json"};
+  var AI_FILE="sfia-ai-concepts.json";
+  var AIW={DIRECT:1,CONTRIBUTING:0.6,SUPPORTING:0.3,"CONTEXT-DEPENDENT":0.3};
+  var AICAT={"DATA FOUNDATIONS":"Data","CORE AI & MACHINE LEARNING TECHNIQUES":"Core AI/ML","BUILDING & INTEGRATING AI SYSTEMS":"Build & Integrate","ASSURING AI QUALITY, PERFORMANCE & SECURITY":"Assure","GOVERNING, PROTECTING & REGULATING AI":"Govern","WORKING WITH AI":"Work with AI","STRATEGY, VALUE & DELIVERY":"Strategy"};
   var CFG_KEY="tc_config", CACHE_KEY="tc_cache";
   var API="https://api.github.com";
 
@@ -492,13 +530,14 @@
   var data={tenders:[],experience:[],harvest:[]};
   var sha={}, dirty={}, editingT=null, editingEx=null, diag={};
   var sfiaProf={loaded:false,byCode:{},count:0};
+  var aiConcepts={loaded:false,concepts:[],counts:null,src:""};
 
   /* ---------- utils ---------- */
   function $(id){return document.getElementById(id);}
   function loadCfg(){try{return JSON.parse(localStorage.getItem(CFG_KEY))||{};}catch(e){return {};}}
   function saveCfg(){try{localStorage.setItem(CFG_KEY,JSON.stringify(cfg));}catch(e){}}
-  function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:data,sha:sha,dirty:dirty,sfiaProf:sfiaProf}));}catch(e){}}
-  function loadCache(){try{var c=JSON.parse(localStorage.getItem(CACHE_KEY));if(c){data=c.data||data;sha=c.sha||{};dirty=c.dirty||{};if(c.sfiaProf)sfiaProf=c.sfiaProf;}}catch(e){}}
+  function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({data:data,sha:sha,dirty:dirty,sfiaProf:sfiaProf,aiConcepts:aiConcepts}));}catch(e){}}
+  function loadCache(){try{var c=JSON.parse(localStorage.getItem(CACHE_KEY));if(c){data=c.data||data;sha=c.sha||{};dirty=c.dirty||{};if(c.sfiaProf)sfiaProf=c.sfiaProf;if(c.aiConcepts)aiConcepts=c.aiConcepts;}}catch(e){}}
   function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
   function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
   function b64enc(str){return btoa(unescape(encodeURIComponent(str)));}
@@ -538,6 +577,12 @@
   }
 
   /* ---------- load / save data files ---------- */
+  function parseAI(res){
+    if(!res||res.missing){aiConcepts={loaded:false,concepts:[],counts:null,src:"missing"};return;}
+    try{var obj=JSON.parse(b64dec(res.content));
+      aiConcepts={loaded:true,concepts:obj.concepts||[],counts:obj.counts||null,src:obj.sourceUrl||"",provenance:obj.provenance||"",framework:obj.framework||""};
+    }catch(e){aiConcepts={loaded:false,concepts:[],counts:null,src:"err"};}
+  }
   function parseFile(key,res){
     if(res.missing){sha[key]=null;diag[key]={missing:true,count:0};if(key==="sfiaProfile")sfiaProf={loaded:false,byCode:{},count:0,missing:true};return;}
     sha[key]=res.sha;
@@ -579,6 +624,7 @@
     var jobs=Object.keys(FILES).map(function(key){
       return ghGet(pathOf(key)).then(function(res){parseFile(key,res);});
     });
+    jobs.push(ghGet(pathFor(AI_FILE)).then(function(res){parseAI(res);}).catch(function(){aiConcepts={loaded:false,concepts:[],counts:null,src:"err"};}));
     return Promise.all(jobs).then(function(){
       dirty={};saveCache();renderAll();renderDiag();setConn("ok","Connected");toast("Synced from GitHub");
     }).catch(function(e){
@@ -738,7 +784,7 @@
       ((x.tags&&x.tags.length)?'<div class="tags">'+x.tags.map(function(tg){return '<span class="tag">'+esc(tg)+'</span>';}).join("")+'</div>':'')+
       '<div class="acts"><button class="btn sm" data-exedit="'+x.id+'">Edit</button></div></div>';}).join("");
   }
-  function renderAll(){renderCounts();populateFilters();renderList("console");renderList("archive");renderBank();renderAnalytics();renderSfiaAnalytics();renderSfia();}
+  function renderAll(){renderCounts();populateFilters();renderList("console");renderList("archive");renderBank();renderAnalytics();renderSfiaAnalytics();renderSfia();renderAiExplorer();}
 
   /* ---------- analytics (Phase 2) ---------- */
   function bar(label,val,max,valTxt){var pct=max>0?Math.round(val/max*100):0;
@@ -849,6 +895,7 @@
   function renderSfiaAnalytics(){
     if(!$("sfImprove"))return;
     renderStrengthsRadar();
+    renderAiReadiness();
     if(!sfiaProf.loaded||!sfMappedTenders().length){
       var msg='<div class="hint">'+(!sfiaProf.loaded?'SFIA profile not loaded — sync first.':'No SFIA-mapped tenders yet — map a tender to populate this analysis.')+'</div>';
       ["sfImprove","sfDemand","sfRadar","sfHist","sfTenderFit","sfBehBars"].forEach(function(id){if($(id))$(id).innerHTML=msg;});
@@ -935,6 +982,67 @@
       '</div>'+
       '<div class="imp-sub" style="text-align:center;margin:0 auto 6px;max-width:360px">Where the bold outline pinches to the centre but the fill still reaches out (Relationship Building), you have the <b>depth</b> but it isn\'t yet a <b>signature</b> strength.</div>'+
       '<div class="sf-legend" style="justify-content:center;margin:0">'+CFORDER.map(function(d){return '<span><i style="background:'+DOMCOL[d]+'"></i>'+esc(d)+' · '+(t10[d]||0)+'/10 · '+Math.round((rw[d]/rwMax)*100)+'%</span>';}).join("")+'</div>';
+  }
+  /* ---------- AI concepts (SFIA AI Skills Framework) ---------- */
+  function aiHeld(code){var s=sfiaProf.byCode&&sfiaProf.byCode[code];return (s&&s.band!=="na"&&s.level)?s.level:null;}
+  function aiConceptCov(c){var num=0,den=0;(c.skills||[]).forEach(function(s){var w=AIW[s.relationship]||0.3;den+=w;if(aiHeld(s.code)!=null)num+=w;});return den?Math.round(num/den*100):0;}
+  function aiCovCol(v){return v>=80?"var(--good)":v>=55?"var(--warn)":"var(--accent)";}
+  function aiRows(){
+    return (aiConcepts.concepts||[]).map(function(c){
+      var ndir=(c.skills||[]).filter(function(s){return s.relationship==="DIRECT";}).length;
+      var ndirh=(c.skills||[]).filter(function(s){return s.relationship==="DIRECT"&&aiHeld(s.code)!=null;}).length;
+      return {cat:AICAT[c.category]||c.category,catFull:c.category,concept:c.concept,desc:c.description,cov:aiConceptCov(c),ndir:ndir,ndirh:ndirh,skills:c.skills||[]};
+    });
+  }
+  function renderAiReadiness(){
+    if(!$("aiCatBars"))return;
+    if(!aiConcepts.loaded||!sfiaProf.loaded){
+      var m='<div class="hint">'+(!aiConcepts.loaded?"AI concepts register not loaded — sync (sfia-ai-concepts.json in the data folder).":"SFIA profile not loaded.")+'</div>';
+      $("aiCatBars").innerHTML=m;if($("aiWeak"))$("aiWeak").innerHTML="";if($("aiOverall"))$("aiOverall").textContent="—";return;
+    }
+    var rows=aiRows();
+    var overall=rows.length?Math.round(rows.reduce(function(a,r){return a+r.cov;},0)/rows.length):0;
+    if($("aiOverall"))$("aiOverall").textContent=overall+"%";
+    var by={};rows.forEach(function(r){(by[r.cat]=by[r.cat]||[]).push(r.cov);});
+    var cats=Object.keys(by).map(function(k){var a=by[k];return {c:k,avg:Math.round(a.reduce(function(x,y){return x+y;},0)/a.length),n:a.length};}).sort(function(a,b){return b.avg-a.avg;});
+    $("aiCatBars").innerHTML=cats.map(function(r){
+      return '<div class="hbar w"><div class="hl">'+esc(r.c)+'</div><div class="ht"><i style="width:'+r.avg+'%;background:'+aiCovCol(r.avg)+'"></i></div><div class="hv">'+r.avg+'%</div></div>';
+    }).join("")+'<div class="imp-sub" style="margin-top:8px">Overall weighted coverage <b>'+overall+'%</b> · '+rows.filter(function(r){return r.ndir===r.ndirh&&r.ndir>0;}).length+'/'+rows.length+' concepts with all Direct skills held. <span style="color:var(--ink-faint)">Register is a SFIA prototype (under review for SFIA 10).</span></div>';
+    var weak=rows.slice().sort(function(a,b){return a.cov-b.cov;}).slice(0,8);
+    $("aiWeak").innerHTML=weak.map(function(r){
+      var miss=r.skills.filter(function(s){return s.relationship==="DIRECT"&&aiHeld(s.code)==null;}).map(function(s){return s.code;});
+      return '<div class="imp-row"><div class="imp-top"><span class="nm">'+esc(r.concept)+' <span style="color:var(--ink-faint);font-size:.72rem">('+esc(r.cat)+')</span></span><span class="rdot '+(r.cov<55?"gap":"partial")+'">'+r.cov+'%</span></div>'+
+        '<div class="imp-bar"><i style="width:'+r.cov+'%;background:'+aiCovCol(r.cov)+'"></i></div>'+
+        '<div class="imp-sub">Direct held '+r.ndirh+'/'+r.ndir+(miss.length?' · missing '+miss.join(", "):'')+'</div></div>';
+    }).join("");
+  }
+  // in-app explorer
+  var aiFilterCat="All", aiQ="";
+  function renderAiExplorer(){
+    var ct=$("ctAi");
+    if(!$("aiExpList"))return;
+    if(!aiConcepts.loaded){$("aiExpList").innerHTML='<div class="empty">AI concepts register not loaded. Connect and sync — it reads <code>'+esc(AI_FILE)+'</code> from your data folder.</div>';if(ct)ct.textContent="0";if($("aiExpFilters"))$("aiExpFilters").innerHTML="";return;}
+    var rows=aiRows();
+    if(ct)ct.textContent=rows.length;
+    var cats=["All"].concat(rows.map(function(r){return r.cat;}).filter(function(v,i,a){return a.indexOf(v)===i;}));
+    if($("aiExpFilters"))$("aiExpFilters").innerHTML=cats.map(function(c){return '<button class="ai-fbtn'+(c===aiFilterCat?" on":"")+'" data-aic="'+esc(c)+'">'+esc(c)+'</button>';}).join("");
+    var list=rows.filter(function(r){
+      if(aiFilterCat!=="All"&&r.cat!==aiFilterCat)return false;
+      if(aiQ){var hay=(r.concept+" "+r.desc+" "+r.skills.map(function(s){return s.code+" "+s.name;}).join(" ")).toLowerCase();return hay.indexOf(aiQ)>=0;}
+      return true;
+    }).sort(function(a,b){return b.cov-a.cov;});
+    $("aiExpList").innerHTML=list.length?list.map(function(r){
+      var sk=r.skills.map(function(s){var lv=aiHeld(s.code);
+        return '<div class="ai-sk"><span class="ai-code '+(lv!=null?"h":"n")+'">'+esc(s.code)+'</span><span class="ai-sn">'+esc(s.name)+'<span class="ai-why">'+esc(s.why||"")+'</span></span>'+
+          '<span class="ai-rl '+s.relationship+'">'+esc(s.relationship.replace("CONTEXT-DEPENDENT","CONTEXT"))+'</span>'+
+          '<span class="ai-lv">'+(lv!=null?'<b style="color:var(--good)">✓ L'+lv+'</b>':'<span style="color:var(--ink-faint)">✗ —</span>')+'</span></div>';
+      }).join("");
+      return '<details class="ai-con"><summary><span class="ai-cv" style="color:'+aiCovCol(r.cov)+'">'+r.cov+'%</span>'+
+        '<span class="ai-cvbar"><i style="width:'+r.cov+'%;background:'+aiCovCol(r.cov)+'"></i></span>'+
+        '<span class="ai-cname">'+esc(r.concept)+'</span><span class="ai-dir">dir '+r.ndirh+'/'+r.ndir+'</span>'+
+        '<span class="ai-ccat">'+esc(r.cat)+'</span></summary>'+
+        '<div class="ai-body"><div class="ai-desc">'+esc(r.desc)+'</div>'+sk+'</div></details>';
+    }).join(""):'<div class="hint">No concepts match.</div>';
   }
   /* ---------- Strengths x tenders ---------- */
   var CFDOMAIN={
@@ -1218,6 +1326,8 @@
 
   ["searchConsole","searchArchive"].forEach(function(id){$(id).addEventListener("input",function(){renderList(id==="searchConsole"?"console":"archive");});});
   $("searchBank").addEventListener("input",renderBank);
+  $("aiSearch").addEventListener("input",function(e){aiQ=(e.target.value||"").toLowerCase();renderAiExplorer();});
+  $("aiExpFilters").addEventListener("click",function(ev){var b=ev.target.closest(".ai-fbtn");if(!b)return;aiFilterCat=b.getAttribute("data-aic");renderAiExplorer();});
   ["fltStatus","fltSector","fltOwner","fltFit"].forEach(function(id){$(id).addEventListener("change",function(){renderList("console");});});
   $("fltClear").onclick=function(){["fltStatus","fltSector","fltOwner","fltFit"].forEach(function(id){$(id).value="";});$("searchConsole").value="";renderList("console");};
 

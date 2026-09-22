@@ -21,6 +21,7 @@ Runs the minimum validation suite (referential integrity, initial and terminal s
 - `protocol_build.py` builds `global_protocol.fts.json` from the specification report content (regions, states, transitions, constraints, vectors, permissions, services, clauses). Rows only the encrypted validated workbook holds are marked and stand-ins are traced `derived:`.
 - `protocol_workbook.py model.fts.json out.xlsx` exports the 34-sheet review workbook for a v0.3 model.
 - `fts_sim.py` detects `meta.parallelRegions` and runs the region-aware suite (per-region initial, reachability, liveness, terminal irreversibility, region integrity, non-determinism, cycles, hold-before-destruction, state-vector legality, permission coverage) plus a State Vector walk driven by a scenario `script`.
+- `viewer_docs.js` renders the viewer's Documentation tab (v0.22): the selected model's chapter and, on the Global protocol, the system book matrices, from the loaded models in the browser. It mirrors `fts_docs.py` section for section and uses the same element IDs; when a section is added to one it is added to the other.
 - `snake_layout.js` draws the viewer's wrapped layout from `fsmSource(...).graph` (typewriter rows justified to the width, orthogonal lanes and channels); `fsm_source.js` now returns that `graph` alongside the Mermaid source.
 - `fsm_source.js` renders the regions as concurrent regions inside the protocol composite (Mermaid `--`); `fts_scxml.py` emits `<parallel>` with one compound `<state>` per region.
 

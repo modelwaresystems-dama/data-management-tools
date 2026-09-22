@@ -135,7 +135,7 @@ def context_svg(ms, mid):
     for oid, lines, yy in R:
         h = box_h(lines)
         s.append(f'<rect x="{colR}" y="{yy}" width="{bw}" height="{h}" rx="6" fill="#efe8f6" stroke="#6a3d9a"/>')
-        s.append(f'<text x="{colR+10}" y="{yy+18}" font-weight="600" fill="#1e2a30">{H.escape(kaname(ms, oid)[:40])} <tspan font-weight="400" fill="#5f6f78">{oid}</tspan></text>')
+        s.append(f'<text x="{colR+10}" y="{yy+18}" font-weight="600" fill="#1e2a30">{H.escape(kaname(ms, oid).replace("Business Intelligence","BI").replace("Interoperability","Interop.")[:36])} <tspan font-weight="400" fill="#5f6f78">{oid}</tspan></text>')
         for i, ln in enumerate(lines): s.append(f'<text x="{colR+10}" y="{yy+34+i*lh}" fill="#1e2a30" font-family="Consolas, Menlo, monospace" font-size="11">{H.escape(ln)}</text>')
         s.append(f'<line x1="{colC+bw}" y1="{yy+h/2:.0f}" x2="{colR}" y2="{yy+h/2:.0f}" stroke="#6a3d9a" stroke-width="1.4"/>')
     s.insert(1, '<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f6f9a"/></marker></defs>')
@@ -268,7 +268,7 @@ def build_chapter(ms, mid, figures_dir=None):
     d = Doc(title, f"{'Layer 2 of the Global Data Asset Architecture' if is_global else 'Knowledge Area FTS, DMBOK chapter ' + str(ch)} · model {mid} v{m['meta'].get('version', '')} · built {m['meta'].get('buildStamp', '')} · document generated {stamp()} · fts_docs v{VERSION}")
     # ---- executive opening
     d.h(1, "In one page")
-    d.p(m["meta"].get("definition") or (m.get("contextCapture") or {}).get("definition") or "", "META-DEF")
+    d.p(m["meta"].get("definition") or (m.get("contextCapture") or {}).get("definition") or m["meta"].get("note") or "", "META-DEF")
     if not is_global:
         cc = m.get("contextCapture") or {}
         if cc.get("ensures"): d.p("What the Knowledge Area ensures: " + cc["ensures"], "META-ENSURES")

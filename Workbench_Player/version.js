@@ -1,7 +1,7 @@
 /* Build stamp — bump `number` and `built` on each deploy.
    Shows a small badge in the corner of every page so you can confirm which
    version a client has loaded (a stale/cached client will show an older stamp). */
-window.APP_VERSION = { number: "1.5.0", built: "2026-09-22 05:57 SAST" };
+window.APP_VERSION = { number: "1.6.0", built: "2026-09-22 08:10 SAST" };
 
 (function () {
   try {
@@ -14,10 +14,10 @@ window.APP_VERSION = { number: "1.5.0", built: "2026-09-22 05:57 SAST" };
       d.title = "Build version — reload (Ctrl+Shift+R) to get the latest";
       d.style.cssText =
         "position:fixed;right:8px;bottom:6px;z-index:2147483000;" +
-        "font:600 10px/1.2 'IBM Plex Mono',ui-monospace,SFMono-Regular,monospace;" +
-        "color:rgba(157,176,210,.6);background:rgba(12,18,32,.55);" +
-        "padding:3px 8px;border-radius:6px;pointer-events:none;letter-spacing:.03em;" +
-        "border:1px solid rgba(51,70,112,.5);";
+        "font:700 11px/1.2 'IBM Plex Mono',ui-monospace,SFMono-Regular,monospace;" +
+        "color:#FFFFFF;background:rgba(12,18,32,.85);" +
+        "padding:4px 9px;border-radius:6px;pointer-events:none;letter-spacing:.03em;" +
+        "border:1px solid rgba(47,212,192,.7);";
       document.body.appendChild(d);
     }
     if (document.readyState !== "loading") inject();

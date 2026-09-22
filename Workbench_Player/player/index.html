@@ -124,7 +124,7 @@
   .opt.wrong{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,var(--surface));}
   .opt:disabled{cursor:default;}
   .opt .rmark{margin-left:auto;font-weight:800;}
-  .why{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:14px 16px;color:var(--muted);font-size:14.5px;line-height:1.55;}
+  .why{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:14px 16px;color:#FFFFFF;font-size:15px;line-height:1.6;}
   .why b{color:var(--accent-ink);font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:5px;}
   .navrow{display:flex;align-items:center;gap:12px;margin-top:20px;}
   .btn{border:1px solid var(--line2);background:var(--surface2);color:var(--ink);font-weight:600;font-size:14px;padding:11px 20px;border-radius:11px;}
@@ -190,8 +190,8 @@
   </div>
 </aside>
 
-<script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
+<script src="../app-config.js"></script>
+<script src="../version.js"></script>
 <script>
 /* ============ Workbench Player ============
    Library view (indexed from manifest.json on the private backend) +
@@ -241,6 +241,19 @@ function normalizeQuiz(raw){
     questions: raw.questions.map(q=>{ const o=q.answerOptions||[]; let c=o.findIndex(x=>x.isCorrect); if(c<0)c=0;
       return { q:cleanText(q.question), options:o.map(x=>cleanText(x.text)), correct:c,
                why:cleanText((o[c]&&o[c].rationale)||q.hint||""), hint:cleanText(q.hint||"") }; }) };
+}
+/* Randomise option order per question so the correct answer isn't always in the same slot.
+   Self-paced player reshuffles each attempt. */
+function shuffleQuiz(quiz){
+  if(!quiz||!quiz.questions) return quiz;
+  quiz.questions.forEach(q=>{
+    if(!q.options||q.options.length<2) return;
+    const idx=q.options.map((_,i)=>i);
+    for(let i=idx.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [idx[i],idx[j]]=[idx[j],idx[i]]; }
+    q.options=idx.map(i=>q.options[i]);
+    q.correct=idx.indexOf(q.correct);
+  });
+  return quiz;
 }
 
 /* ---------- mode segment ---------- */
@@ -347,7 +360,7 @@ async function playAsset(a){
   stage.innerHTML=`<div class="wrap"><div class="stagew"><div class="center"><div class="card"><h1>Loading…</h1><p>${esc(a.title)}</p></div></div></div></div>`;
   try{
     if(type==="flashcards"){ CARDS=await fetchAsset(a.path,"flashcards.sample.json"); view="cards"; }
-    else { QUIZ=normalizeQuiz(await fetchAsset(a.path,"../live/quiz.sample.json")); QUIZ_SRC=a.path; view="quiz"; }
+    else { QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(a.path,"../live/quiz.sample.json"))); QUIZ_SRC=a.path; view="quiz"; }
   }catch(e){ if(type==="flashcards")CARDS={error:e.message}; else QUIZ={error:e.message}; }
   syncSeg(); render();
 }
@@ -356,7 +369,7 @@ async function playAsset(a){
 async function deepLink(){
   const qp=U.get("quiz"), cp=U.get("cards");
   if(!qp&&!cp) return false;
-  if(qp){ try{QUIZ=normalizeQuiz(await fetchAsset(qp,"../live/quiz.sample.json"));QUIZ_SRC=qp;}catch(e){QUIZ={error:e.message};} }
+  if(qp){ try{QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(qp,"../live/quiz.sample.json")));QUIZ_SRC=qp;}catch(e){QUIZ={error:e.message};} }
   if(cp){ try{CARDS=await fetchAsset(cp,"flashcards.sample.json");}catch(e){CARDS=null;} }
   curAsset={title:(QUIZ&&QUIZ.title)||"Asset"};
   view=(U.get("mode")==="cards"||(cp&&!qp))?"cards":"quiz"; syncSeg(); render(); return true;
@@ -410,7 +423,7 @@ function renderResult(){
     <div class="navrow" style="justify-content:center"><button class="btn primary" id="again">Try again</button><button class="btn" id="tolib">← Back to Library</button></div>
   </div></div></div>`;
   wireBack();
-  document.getElementById("again").onclick=()=>{ qi=0;chosen=null;score=0;answers=[];render(); };
+  document.getElementById("again").onclick=()=>{ shuffleQuiz(QUIZ); qi=0;chosen=null;score=0;answers=[];render(); };
   document.getElementById("tolib").onclick=()=>{ view="lib"; syncSeg(); renderLibrary(); };
 }
 

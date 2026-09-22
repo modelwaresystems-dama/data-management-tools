@@ -21,6 +21,8 @@ Then a coverage run:
   - evaluates every guard once TRUE (pass) and once FALSE (blocked) using the scenario's
     guard outcomes or expressions, so the coverage matrix records both verdicts
   - writes a JSON report and an Excel workbook stamped with version and SAST build time.
+  From v0.3 the vector walk evaluates every step through fts_twin_engine.Federation (the digital twin's engine), so the
+  scenario runs are the regression suite of the twin.
 
 A scenario file is optional. Shape:
   { "id": "...", "name": "...", "assetProfile": {"attr": value, ...},
@@ -32,7 +34,7 @@ assetProfile attributes, evaluated with no builtins). Precedence: guardOutcomes 
 import json, sys, os, re, argparse, datetime, itertools
 from collections import defaultdict, Counter
 
-VERSION = "0.2"
+VERSION = "0.3"
 
 def now_sast():
     tz = datetime.timezone(datetime.timedelta(hours=2))
@@ -475,36 +477,39 @@ def vector_walk(m, scenario, by_region, adj, init_vec, ka_models=None):
         for rid, p in plans.items():
             if p: script.extend(p)   # leave blocked steps in the script so the log shows why they block
         vec = dict(init_vec)
+    # the twin engine evaluates every step (one federation of this model and the KA models; the scenario's vectors are one asset)
+    from fts_twin_engine import Federation
+    fed = Federation([M] + ka_models); fed.shared = {mid: set() for mid in fed.models}   # a scenario carries every region on its one asset
+    asset = {"id": "scenario", "kind": "asset", "vectors": {m.meta.get("modelId"): dict(vec), **{mid: dict(v) for mid, v in ka_vecs.items()}}, "refs": {}, "kaModels": list(ka_by_id), "facts": {**default_facts, **facts}}
+    gm = m.meta.get("modelId")
     for tid in script:
         if isinstance(tid, str) and ":" in tid and tid.split(":", 1)[0] in ka_by_id:
             mid, ktid = tid.split(":", 1); km = ka_by_id[mid]
-            before_k = dict(ka_vecs[mid])
-            ok_k, res_k, vk = ka_step(km, ka_vecs[mid], ktid, env_facts)
-            env_facts = {**default_facts, **ka_facts(ka_models, ka_vecs), **facts}
-            kcode = {r["id"]: r.get("code") for r in km.get("regions", [])}
-            log.append({"transition": tid, "name": next((x["name"] for x in km["transitions"] if x["id"] == ktid), ktid), "region": mid, "sourceActive": res_k != "source not active", "guards": vk, "eligible": ok_k, "decisionRight": next((x.get("decisionRight") for x in km["transitions"] if x["id"] == ktid), None), "authorised": ok_k,
-                        "vectorBefore": {kcode.get(r, r): sid for r, sid in before_k.items()}, "vectorAfter": {kcode.get(r, r): sid for r, sid in ka_vecs[mid].items()}, "result": res_k, "kaModel": mid})
+            r = fed.evaluate(asset, mid, ktid, {})
+            before_k = dict(asset["vectors"][mid]); fed.apply(asset, r, {}); ka_vecs[mid] = asset["vectors"][mid]
+            kcode = {x["id"]: x.get("code") for x in km.get("regions", [])}
+            log.append({"transition": tid, "name": r.get("name", ktid), "region": mid, "sourceActive": r.get("sourceActive", False), "guards": [{"guard": g["guard"], "verdict": g["verdict"]} for g in r.get("guards", [])], "eligible": r.get("eligible", False), "decisionRight": r.get("decisionRight"), "authorised": r.get("fired", False),
+                        "vectorBefore": {kcode.get(x, x): sid for x, sid in before_k.items()}, "vectorAfter": {kcode.get(x, x): sid for x, sid in asset["vectors"][mid].items()}, "result": r.get("result"), "kaModel": mid})
             continue
         t = m.tr.get(tid)
         if not t: log.append({"transition": tid, "result": "unknown transition"}); continue
-        rid = region_of(m, t["target"]); src_active = vec.get(rid) == t["source"]
-        env = {**env_facts, **{code_of[r]: s for r, s in vec.items()}}
-        verdicts = []
-        ok = src_active
-        for g in list(m.g_by_tr.get(tid, [])) + fed.get(tid, []):
-            if g.get("expression"):
-                v = eval_expression(g["expression"], env); srcv = "expression"
-                if v is None: v, srcv = guard_verdict(g, scenario)[0], "default (expression not evaluable)"
-            else:
-                v, srcv = guard_verdict(g, scenario)
-            verdicts.append({"guard": g["id"], "verdict": v, "source": srcv, "constraint": g.get("constraint"), "contributedBy": g.get("fromModel")})
+        r = fed.evaluate(asset, gm, tid, {}, (scenario or {}).get("authorizations"))
+        # scenario verdicts for guards that carry no expression (guardOutcomes, defaultGuardOutcome) keep their precedence
+        verdicts = []; ok = r.get("sourceActive", False)
+        for g in r.get("guards", []):
+            v, srcv = g["verdict"], g["source"]
+            if srcv != "expression":
+                gg = next((x for x in list(m.g_by_tr.get(tid, [])) + fed.fed.get(tid, []) if x["id"] == g["guard"]), {"id": g["guard"]})
+                v, srcv = guard_verdict(gg, scenario)
+                if g["source"].startswith("default (expression"): srcv = "default (expression not evaluable)"
+            verdicts.append({"guard": g["guard"], "verdict": v, "source": srcv, "constraint": g.get("predicate"), "contributedBy": g.get("contributedBy")})
             if not v: ok = False
-        dr = t.get("decisionRight")
-        authorised = ok and (dr is None or (scenario or {}).get("authorizations", {}).get(dr, True))
-        before = dict(vec)
-        if authorised: vec[rid] = t["target"]
-        log.append({"transition": tid, "name": t.get("name"), "region": rid, "sourceActive": src_active, "guards": verdicts, "eligible": ok, "decisionRight": dr, "authorised": authorised,
-                    "vectorBefore": {code_of[r]: s for r, s in before.items()}, "vectorAfter": {code_of[r]: s for r, s in vec.items()}, "result": "fired" if authorised else ("blocked: source not active" if not src_active else "blocked: guard false" if not ok else "blocked: not authorised")})
+        dr = r.get("decisionRight"); authorised = ok and (dr is None or (scenario or {}).get("authorizations", {}).get(dr, True))
+        before = dict(asset["vectors"][gm])
+        if authorised: asset["vectors"][gm][r["region"]] = r["to"]
+        vec = asset["vectors"][gm]
+        log.append({"transition": tid, "name": t.get("name"), "region": r.get("region"), "sourceActive": r.get("sourceActive", False), "guards": verdicts, "eligible": ok, "decisionRight": dr, "authorised": authorised,
+                    "vectorBefore": {code_of[x]: sid for x, sid in before.items()}, "vectorAfter": {code_of[x]: sid for x, sid in vec.items()}, "result": "fired" if authorised else ("blocked: source not active" if not r.get("sourceActive") else "blocked: guard false" if not ok else "blocked: not authorised")})
     term_regions = [r for r in vec if any(x.get("region", x.get("parent")) == r and x.get("terminal") for x in m.ss.values())]
     terminal_ok = bool(term_regions) and all(m.ss[vec[r]].get("terminal") for r in term_regions)
     if ka_models: log.append({"transition": "(KA vectors)", "result": json.dumps({mid: {r[-3:] if False else r: sid for r, sid in v.items()} for mid, v in ka_vecs.items()})})

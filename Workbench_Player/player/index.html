@@ -56,8 +56,16 @@
   .chip[aria-pressed="true"]{background:var(--accent);color:#04211d;border-color:var(--accent);}
   .liblist{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:20px;padding-right:4px;}
   .grp{display:flex;flex-direction:column;gap:9px;}
-  .grp h2{font-family:"Sora",sans-serif;font-weight:700;font-size:14px;margin:0;color:var(--accent-ink);display:flex;align-items:center;gap:10px;}
-  .grp h2 .ct{color:var(--faint);font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:11px;}
+  .grphdr{font-family:"Sora",sans-serif;font-weight:700;font-size:14px;margin:0;color:var(--accent-ink);display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:transparent;border:0;padding:2px 0;cursor:pointer;}
+  .grphdr:hover{color:#a6f5ea;}
+  .grphdr .car{font-size:10px;color:var(--faint);transition:transform .18s;flex:none;}
+  .grphdr.collapsed .car{transform:rotate(-90deg);}
+  .grphdr .ct{color:var(--faint);font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:11px;}
+  .grpbody{display:flex;flex-direction:column;gap:9px;}
+  .grpbody.hide{display:none;}
+  .libtools{display:flex;gap:8px;flex:none;}
+  .libtools button{border:1px solid var(--line);background:var(--surface);color:var(--muted);font-weight:600;font-size:12px;padding:7px 11px;border-radius:8px;}
+  .libtools button:hover{border-color:var(--line2);color:var(--ink);}
   .row{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:13px 16px;transition:border-color .15s;}
   .row:hover{border-color:var(--line2);}
   .row.sel{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 9%,var(--surface));}
@@ -208,6 +216,7 @@ const stage=document.getElementById("stage");
 let view="lib";                       // lib | quiz | cards
 let MANIFEST=null, ASSETS=[];
 let libSearch="", libFilter="all";    // all | quiz | flashcards
+let libCollapsed=new Set();           // collapsed notebook groups
 let curAsset=null;                    // {path,title,type,...} being played
 let QUIZ=null, CARDS=null, QUIZ_SRC="";
 let qi=0, chosen=null, score=0, answers=[];
@@ -272,6 +281,7 @@ function renderLibrary(){
   const totC=ASSETS.filter(a=>a.type==="flashcards").length;
 
   let groups = topics.map(t=>{
+    const collapsed=libCollapsed.has(t);
     const rows=byTopic[t].map(a=>{
       const type=a.type||"quiz", sel=inSession(type==="quiz"||type==="flashcards"?a.path:a.path);
       const unit=type==="flashcards"?"cards":"questions";
@@ -284,7 +294,10 @@ function renderLibrary(){
         </div>
       </div>`;
     }).join("");
-    return `<div class="grp"><h2>${esc(t)}<span class="ct">${byTopic[t].length} item${byTopic[t].length!==1?'s':''}</span></h2>${rows}</div>`;
+    return `<div class="grp">
+      <button class="grphdr ${collapsed?'collapsed':''}" data-topic="${esc(t)}" type="button"><span class="car">▼</span>${esc(t)}<span class="ct">${byTopic[t].length} item${byTopic[t].length!==1?'s':''}</span></button>
+      <div class="grpbody ${collapsed?'hide':''}" data-body="${esc(t)}">${rows}</div>
+    </div>`;
   }).join("");
 
   if(!list.length) groups=`<div class="empty-lib">No assets match "${esc(libSearch)}".</div>`;
@@ -298,9 +311,24 @@ function renderLibrary(){
         <button class="chip" data-f="quiz" aria-pressed="${libFilter==='quiz'}">Quizzes ${totQ}</button>
         <button class="chip" data-f="flashcards" aria-pressed="${libFilter==='flashcards'}">Cards ${totC}</button>
       </div>
+      <div class="libtools">
+        <button id="expandAll" type="button">Expand all</button>
+        <button id="collapseAll" type="button">Collapse all</button>
+      </div>
     </div>
     <div class="liblist">${groups}</div>
   </div>`;
+
+  const ea=document.getElementById("expandAll"), ca=document.getElementById("collapseAll");
+  if(ea)ea.onclick=()=>{ libCollapsed.clear(); renderLibrary(); };
+  if(ca)ca.onclick=()=>{ topics.forEach(t=>libCollapsed.add(t)); renderLibrary(); };
+  stage.querySelectorAll(".grphdr").forEach(h=>h.onclick=()=>{
+    const t=h.dataset.topic;
+    if(libCollapsed.has(t))libCollapsed.delete(t); else libCollapsed.add(t);
+    h.classList.toggle("collapsed");
+    const body=stage.querySelector(`.grpbody[data-body="${CSS.escape(t)}"]`);
+    if(body)body.classList.toggle("hide");
+  });
 
   const qbox=document.getElementById("libq");
   qbox.oninput=()=>{ libSearch=qbox.value; const pos=qbox.selectionStart; renderLibrary(); const nb=document.getElementById("libq"); if(nb){nb.focus(); try{nb.setSelectionRange(pos,pos);}catch(e){}} };

@@ -51,7 +51,7 @@ main{padding:14px 20px 40px}
 .smod{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px;min-width:120px;flex:1 1 150px}
 .smod.na{opacity:.4} .smn{font-weight:600;font-size:12px;margin-bottom:3px}
 .schip{display:block;font-size:11.5px;padding:2px 5px;margin:2px 0;border-radius:4px;background:var(--panel-2);color:var(--ink);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.schip.moved{background:var(--accent-soft)} .schip.bad{background:var(--bad-soft);color:var(--bad)} .schip.sh{border-left:3px solid var(--edge)}
+.schip.na{opacity:.45} .schip.moved{background:var(--accent-soft)} .schip.bad{background:var(--bad-soft);color:var(--bad)} .schip.sh{border-left:3px solid var(--edge)}
 details.amod{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin:8px 0;padding:6px 10px}
 details.amod summary{cursor:pointer;padding:4px 0}
 .areg{margin:10px 0 16px} .aregh{margin-bottom:4px}
@@ -81,7 +81,7 @@ dialog label{display:block;font-size:12px;color:var(--ink-faint);margin:8px 0 2p
 </style></head><body>
 <header>
  <div class="hrow1"><div><h1>Digital Twin Viewer</h1><div class="dim">The digital twin of the DMBOK Data Lifecycle: every Data Asset (a data product, table or feed) and the golden records inside it, moving through the Global Data Asset Protocol and the Knowledge Area FTSs.</div></div>
- <div class="ver">Twin viewer v0.3<br>Built 22 Sep 2026, 16:57 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
+ <div class="ver">Twin viewer v0.4<br>Built 22 Sep 2026, 17:08 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
  <div class="bar"><button class="btn primary" id="btnGh">Load from GitHub</button><button class="btn" id="btnGhSet">GitHub settings</button><label class="btn" for="files">Load files</label><input type="file" id="files" multiple accept=".json" hidden>
  <select id="org" aria-label="organisation" hidden></select><select id="cls" aria-label="asset class"><option value="">every asset class</option></select><span id="status" class="status"></span></div>
  <div class="tabs" role="tablist"><button class="tab" data-t="heat" aria-selected="true">Heat map</button><button class="tab" data-t="replay" aria-selected="false">Replay</button><button class="tab" data-t="asset" aria-selected="false">One asset</button><button class="tab" data-t="influence" aria-selected="false">Influence</button></div>
@@ -520,6 +520,8 @@ function ftsSummarySvg(M, availW, opts){
     const R=D.reg[mid+"|"+rid]; return R&&R.r.initialState||null;
   }
   const applies=(a,mid)=>mid===GID||!(a.kaModels)||a.kaModels.includes(mid);
+  // v0.4 (Howard, 22 Sep 2026: master or reference): a reference data asset has no golden records; a master holds no reference set
+  const regApplies=(a,mid,rid)=>!(mid==="KA-RMD"&&((a.rmdKind==="reference"&&rid==="REG-RMD-GLD")||(a.rmdKind==="master"&&rid==="REG-RMD-REF")));
   const pool=()=>D.assets.filter(a=>(!V.cls||a.assetClass===V.cls)&&(!V.org||a.org===V.org));
   function recState(r,mid,rid,t){ const L=D.keys[r.id+"|"+mid+"|"+rid]; if(t!=null){ if(tms(r.createdAt)>t) return null; if(L){ if(t<L[0][0]) return L[0][1]; let lo=0,hi=L.length-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(L[m][0]<=t) lo=m; else hi=m-1; } return L[lo][1]; } } return ((r.regions||{})[mid]||{})[rid]||null; }
   const kaName=mid=>mid===GID?"Global Data Asset Protocol":(D.models[mid].meta.knowledgeArea||D.models[mid].meta.name);
@@ -528,7 +530,7 @@ function ftsSummarySvg(M, availW, opts){
   // ------------------------------------------------------------------ 1 the heat map (also the frame of the replay)
   function counts(t){
     const C={}, act=pool().filter(a=>t==null||tms(a.createdAt)<=t);
-    D.order.forEach(mid=>D.models[mid].regions.forEach(r=>{ const k=mid+"|"+r.id; const c=C[k]={}; act.forEach(a=>{ if(!applies(a,mid)) return; const s=stateOf(a,mid,r.id,t); if(s) c[s]=(c[s]||0)+1; }); }));
+    D.order.forEach(mid=>D.models[mid].regions.forEach(r=>{ const k=mid+"|"+r.id; const c=C[k]={}; act.forEach(a=>{ if(!applies(a,mid)||!regApplies(a,mid,r.id)) return; const s=stateOf(a,mid,r.id,t); if(s) c[s]=(c[s]||0)+1; }); }));
     const ids=new Set(act.map(a=>a.id)); const R={};
     D.recRegions.forEach(k=>{ const [mid,rid]=k.split("|"); const c=R[k]={}; D.records.forEach(r=>{ if(!ids.has(r.parentId)) return; const s=recState(r,mid,rid,t); if(s) c[s]=(c[s]||0)+1; }); });
     return {C, R, n:act.length};
@@ -660,7 +662,7 @@ function ftsSummarySvg(M, availW, opts){
     const h=['<p class="lede">One Data Asset across every FTS. The strip shows its state in each region; open a Knowledge Area to see the real state diagram of each of its regions with the asset\'s current state filled, the states it passed through outlined, the transitions it took drawn thick, and any transition the twin refused drawn red with the reason.</p>'];
     h.push('<div class="ahead"><h2>'+e(a.id)+' · '+e(a.name)+'</h2><div class="dim">'+(a.org?e(a.org)+' · ':'')+(a.domain?e(a.domain)+' · ':'')+(a.classification?e(a.classification)+' · ':'')+e(a.assetClass)+' · created '+fmtT(a.createdAt)+' · '+evs.filter(x=>x.fired&&x.transition).length+' transitions fired · <span class="'+(refused.length?'redt':'')+'">'+refused.length+' refused</span> · '+evs.filter(x=>x.result==="override").length+' overrides'+((a.facts||{}).hold_active?' · <b class="amber">legal hold</b>':'')+'</div></div>');
     // the state vector strip
-    h.push('<div class="strip">'+D.order.map(mid=>'<div class="smod'+(applies(a,mid)?'':' na')+'"><div class="smn">'+e(kaShort(mid))+'</div>'+D.models[mid].regions.map(r=>{ const s=stateOf(a,mid,r.id,null); const moved=evs.some(x=>x.model===mid&&x.region===r.id&&x.fired); const bad=evs.some(x=>x.model===mid&&x.region===r.id&&String(x.result).startsWith("blocked")); return '<a href="#reg-'+mid_(mid+r.id)+'" class="schip'+(moved?' moved':'')+(bad?' bad':'')+(D.shared.has(r.id)?' sh':'')+'" data-m="'+e(mid)+'" title="'+e(r.name+": "+((D.st[s]||{}).name||s||"")+(D.shared.has(r.id)?" (shared element)":""))+'"><span class="mono">'+e(r.code||"")+'</span> '+e((D.st[s]||{}).name||"")+'</a>'; }).join("")+'</div>').join("")+'</div>');
+    h.push('<div class="strip">'+D.order.map(mid=>'<div class="smod'+(applies(a,mid)?'':' na')+'"><div class="smn">'+e(kaShort(mid))+'</div>'+D.models[mid].regions.map(r=>{ const s=stateOf(a,mid,r.id,null); const moved=evs.some(x=>x.model===mid&&x.region===r.id&&x.fired); const bad=evs.some(x=>x.model===mid&&x.region===r.id&&String(x.result).startsWith("blocked")); if(!regApplies(a,mid,r.id)) return '<span class="schip na" title="'+e(r.name+": not applicable to a "+a.rmdKind+" data asset")+'"><span class="mono">'+e(r.code||"")+'</span> not applicable</span>'; return '<a href="#reg-'+mid_(mid+r.id)+'" class="schip'+(moved?' moved':'')+(bad?' bad':'')+(D.shared.has(r.id)?' sh':'')+'" data-m="'+e(mid)+'" title="'+e(r.name+": "+((D.st[s]||{}).name||s||"")+(D.shared.has(r.id)?" (shared element)":""))+'"><span class="mono">'+e(r.code||"")+'</span> '+e((D.st[s]||{}).name||"")+'</a>'; }).join("")+'</div>').join("")+'</div>');
     if(refused.length) h.push('<div class="refusals"><h3>'+refused.length+' refusal'+(refused.length===1?'':'s')+' for this asset</h3>'+refused.map((ev,i)=>explainHtml(a,ev).replace('<div class="why">','<div class="why"><button class="btn sm showd" data-i="'+i+'">Show on the diagram</button>')).join("")+'</div>');
     const recs=D.recsOf[a.id]||[];
     if(recs.length){ const mid="KA-RMD", rid="REG-RMD-GLD"; const Rg=D.reg[mid+"|"+rid]; const cnt={}; recs.forEach(r=>{ const s=recState(r,mid,rid,null); cnt[s]=(cnt[s]||0)+1; });

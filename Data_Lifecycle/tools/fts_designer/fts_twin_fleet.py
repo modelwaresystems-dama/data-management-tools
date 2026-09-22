@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fts_twin_fleet.py v0.2  -  the twin's fleet: the Data Products of three business architectures as Data Assets, with the golden
+fts_twin_fleet.py v0.3  -  the twin's fleet: the Data Products of three business architectures as Data Assets, with the golden
 records of their party masters as records inside them. Every step goes through the twin engine, so a refusal is a real refusal.
 
   python fts_twin_fleet.py --models <dir> --scenario <banking.sim.json> --architecture <private>/twin/architecture --db twin.sqlite [--seed 1]
@@ -21,6 +21,9 @@ How the fleet is made (all of it synthetic apart from the product names, types, 
     confirmed around the asset's own match and confirm steps, then keep arriving, updating, conflicting, splitting and retiring after
     release; the asset's Golden Record region is their roll-up (fts_twin.ROLLUP). One master suffers a match-rule defect that puts 8%
     of its records in conflict for a week, which suspends its assurance and access through the Global protocol and restores them;
+  3a (v0.3) an RMD product that is not a master (a catalogue, a glossary) is a reference data set: asset facts RMD_is_master false and
+     RMD_is_reference true, no golden record path; it holds its own Reference Data Set region and is gated on a validated set and a
+     published version (CON-RMD-16, CON-RMD-05);
   4 about one asset in four receives one out-of-order event the guards refuse, one in twelve a legal hold, one in twenty an override.
 """
 import json, os, re, sys, glob, argparse, random, datetime
@@ -110,8 +113,12 @@ def main():
     for p in products:
         org = p["org"]; pfx, scope = ORGS[org]; aid = f"{pfx}-{p['DataProductID']}"; name = p["Name"]; ptype = p.get("ProductType")
         kas = BASE + [k for k, rule in KA_RULES if rule(ptype or "", name)]
-        asset = fed.new_asset(aid, name, ptype or "Proposed data product", refs=fed.default_refs(scopes[org]), facts=sc.get("assetProfile"), ka_models=kas)
-        asset.update({"org": org, "scope": scope, "domain": p.get("Domain"), "owner": p.get("Owner"), "classification": p.get("Classification"), "productType": ptype, "dq": p.get("dq"),
+        # RMD asset kind (Howard, 22 Sep 2026: split by master or reference): a Core / master product or a party master is master data;
+        # any other product in RMD scope (a catalogue, a glossary) is a reference data set whose releases are versions
+        is_master = "KA-RMD" in kas and (ptype == "Core / master" or bool(PARTY_MASTER.search(name)))
+        is_reference = "KA-RMD" in kas and not is_master
+        asset = fed.new_asset(aid, name, ptype or "Proposed data product", refs=fed.default_refs(scopes[org]), facts={**(sc.get("assetProfile") or {}), "RMD_is_master": is_master, "RMD_is_reference": is_reference}, ka_models=kas)
+        asset.update({"rmdKind": "master" if is_master else "reference" if is_reference else None, "org": org, "scope": scope, "domain": p.get("Domain"), "owner": p.get("Owner"), "classification": p.get("Classification"), "productType": ptype, "dq": p.get("dq"),
                       "source": f"{org}_FutureState_Model.xlsx, 18 · DataProduct {p['DataProductID']}"})
         for mid, v in preset.items():
             if mid in asset["vectors"]: asset["vectors"][mid].update(v)
@@ -154,7 +161,7 @@ def main():
                     for j, rid in enumerate(recs):
                         if random.random() < 0.98: tw.post_record_event(rid, "KA-RMD", "TR-GLD-02", actor="synthetic:confirmation", at=iso(t + datetime.timedelta(minutes=j)))
                 continue
-            if has_records and mid == "KA-RMD" and fed.region_of[mid].get(fed.tr[mid][tid]["target"]) == "REG-RMD-GLD": continue
+            if (has_records or is_reference) and mid == "KA-RMD" and fed.region_of[mid].get(fed.tr[mid][tid]["target"]) == "REG-RMD-GLD": continue
             tw.post_event(aid, mid, transition=tid, actor="synthetic:scenario", at=iso(t))
         # records after release, in time order: arrivals, updates, disputes resolved within days, splits, retirements; on the
         # defect master a match-rule defect puts 8% of the records in conflict for a week

@@ -61,3 +61,16 @@ The viewer carries its version and build date and time (SAST) in the header and 
   - an organisation filter;
   - a records row under the Golden Record row in the heat map and replay;
   - a golden-records section on the One asset view, with the state counts, the record list and a record drawer showing the record's diagram and timeline.
+
+## RMD split into master data and reference data; twin v0.4 (22 Sep 2026, 17:10 SAST)
+
+- **Two asset facts in RMD.** Reference and Master Data now tells master data from reference data with two asset facts: `RMD_is_master` (default true) and `RMD_is_reference` (default false). They are recorded under `meta.assetFacts`.
+- **Which guards apply to which kind:**
+  - The golden record guards apply to master data assets only: CON-RMD-03 (materialisation), CON-RMD-04 (release) and CON-RMD-10 (restoration).
+  - The reference data guards apply to reference data sets only: the new CON-RMD-16 (materialisation needs a validated set) and CON-RMD-05 (release needs a published version, now Required).
+  - A new fact binding, `RMD_set_validated`, backs CON-RMD-16.
+- **Reference Data Set is no longer shared.** The twin engine no longer treats that region as shared per scope; each reference data asset holds its own set.
+- **Code that carries the new defaults:** `fts_sim.py`, `fts_twin_engine.py` and the FTS viewer (v0.28) all use the new fact defaults.
+- **Regression.** Unchanged: banking 213 of 214 steps, the AGGPSA micro-entrepreneur run 59 of 60, the external feed 26 of 30.
+- **The fleet.** Six catalogue and glossary products are now reference data. They no longer walk a golden record path.
+- **Twin viewer v0.4.** It leaves the Golden Record row out for reference data assets and the Reference Data Set row out for masters.

@@ -62,6 +62,7 @@
   .field label{display:block;font-family:"IBM Plex Mono";font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
   .field input[type=text]{width:100%;padding:12px 14px;border:1px solid var(--line2);background:#0E1830;color:var(--ink);border-radius:11px;font-size:15px;}
   .field input[type=text]::placeholder{color:var(--faint);}
+  .field select{width:100%;padding:12px 14px;border:1px solid var(--line2);background:#0E1830;color:var(--ink);border-radius:11px;font-size:15px;cursor:pointer;}
   .idline{font-family:"IBM Plex Mono";font-size:12px;color:var(--muted);margin-top:6px;}
   .idline b{color:var(--accent-ink);}
 
@@ -123,6 +124,11 @@
       <h2 class="disp">Training course</h2>
       <p class="sub">Name the course, add one or more <b>sessions</b>, then add quizzes into each session from the library. A session's quizzes score cumulatively.</p>
       <div class="field">
+        <label for="loadPick">Edit an existing course</label>
+        <select id="loadPick"><option value="">— New course (start blank) —</option></select>
+        <div class="idline">Pick a saved course to load it here, edit it, then re-download.</div>
+      </div>
+      <div class="field">
         <label for="ctitle">Course title</label>
         <input type="text" id="ctitle" placeholder="e.g. DAMA-DMBOK Data Management" maxlength="80">
         <div class="idline">saves as <b id="cfile">sessions/…</b>.json</div>
@@ -142,7 +148,7 @@
   </div>
   <div class="foot">datasherpa · Workbench</div>
 
-<script>window.PAGE_BUILD="1.9.0";</script>
+<script>window.PAGE_BUILD="1.9.1";</script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
@@ -162,6 +168,7 @@ let LIB=[];  // [{path,title,questions,topic}]
 /* COURSE model: title + sessions[] ; each session = {title, quizzes:[{path,title,questions,topic,weight}]} */
 let COURSE={ title:"", sessions:[ {title:"", quizzes:[]} ] };
 let active=0;  // index of the session that +Add drops into
+let COURSES=[];  // [{id,title}] top-level courses from rosters, for the edit dropdown
 
 const libEl=document.getElementById("library");
 const sessEl=document.getElementById("sessions");
@@ -177,6 +184,12 @@ async function boot(){
       .map(a=>({path:a.path,title:a.title,topic:a.topic||"Uncategorised",questions:(a.count!=null?a.count:a.questions)||0}));
     renderLibrary();
   }catch(e){ libEl.innerHTML=`<div class="empty">Couldn't load your library (${esc(e.message)}). Make sure <code>data/manifest.json</code> is published.</div>`; }
+  try{
+    const r=await fetchAsset("rosters.json","./rosters.sample.json");
+    COURSES=(r.sessions||[]).filter(x=>!x.course).map(x=>({id:x.id,title:x.title}));
+    const sel=document.getElementById("loadPick");
+    if(sel&&COURSES.length){ sel.innerHTML='<option value="">— New course (start blank) —</option>'+COURSES.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}</option>`).join(""); }
+  }catch(e){ /* no rosters yet — dropdown stays "new course" only */ }
   renderSessions();
 }
 
@@ -290,6 +303,25 @@ document.getElementById("dl").onclick=()=>{
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   const after=document.getElementById("after"); after.style.display="block";
   after.innerHTML=`Saved <code>${esc(id)}.course.json</code>. Put it in your private repo at <code>Workbench_Player/data/sessions/${esc(id)}.course.json</code>, commit &amp; push. Its sessions and quizzes then link to classes and the live runner.`;
+};
+document.getElementById("loadPick").onchange=async function(){
+  const id=this.value; if(!id) return;
+  try{
+    const course=await fetchAsset("sessions/"+id+".course.json","./sessions/"+id+".course.json");
+    COURSE={ title: course.title||"",
+      sessions:(course.sessions||[]).map(se=>({ title:se.title||"",
+        quizzes:(se.quizzes||[]).map(q=>{ const lib=LIB.find(x=>x.path===q.path)||{};
+          return {path:q.path, title:q.title||lib.title||q.path, questions:(q.count!=null?q.count:lib.questions)||0, topic:lib.topic||"Uncategorised", weight:q.weight||1}; }) }))
+    };
+    if(!COURSE.sessions.length) COURSE.sessions=[{title:"",quizzes:[]}];
+    active=0; titleEl.value=COURSE.title; COURSE.title=course.title||"";
+    renderSessions();
+    const after=document.getElementById("after"); after.style.display="block";
+    after.innerHTML=`Loaded <code>${esc(id)}.course.json</code> for editing. Make your changes, then <b>Download course file</b> and replace it in your private repo at the same path, commit &amp; push.`;
+  }catch(e){
+    const after=document.getElementById("after"); after.style.display="block";
+    after.innerHTML=`Couldn't load that course (${esc(e.message)}). It may not be pushed to your private repo yet.`;
+  }
 };
 boot();
 </script>

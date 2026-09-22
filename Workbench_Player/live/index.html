@@ -55,6 +55,7 @@
 
   /* host controls */
   .hostbar{flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px clamp(14px,3vw,26px);border-top:1px solid var(--line);background:rgba(9,14,26,.6);}
+  .hostbar[hidden]{display:none;}
   .joinov{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(5,10,20,.82);}
   .joinov[hidden]{display:none;}
   .joinov-card{position:relative;background:#fff;color:#0a1120;border-radius:24px;padding:30px 40px 26px;text-align:center;box-shadow:0 24px 80px rgba(0,0,0,.6);}
@@ -96,6 +97,8 @@
   .ring svg{transform:rotate(-90deg);}
   .ring .num{position:absolute;inset:0;display:grid;place-items:center;font-family:"Sora",sans-serif;font-weight:700;font-size:20px;}
   .qtext{font-family:"Sora",sans-serif;font-weight:700;font-size:clamp(22px,3.6vw,38px);line-height:1.15;text-wrap:balance;margin:2px 0 18px;flex:none;}
+  .qname{font-family:"Sora",sans-serif;font-weight:800;font-size:clamp(15px,1.8vw,22px);color:var(--accent-ink);margin:2px 0 -2px;flex:none;}
+  .pv-quizname{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.04em;color:var(--accent-ink);font-weight:700;margin-bottom:2px;}
   .grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:14px;min-height:0;}
   .tile{position:relative;border-radius:var(--r);padding:16px 18px;display:flex;align-items:center;gap:14px;color:#fff;font-weight:600;overflow:hidden;border:2px solid transparent;transition:opacity .3s,filter .3s;min-height:74px;}
   .tile .gl{font-size:22px;flex:none;width:34px;height:34px;display:grid;place-items:center;background:rgba(255,255,255,.18);border-radius:9px;}
@@ -164,7 +167,7 @@
   @keyframes pl{0%{transform:scale(.8);opacity:.5}70%{transform:scale(1.15);opacity:0}100%{opacity:0}}
   .pv-q{font-family:"Sora",sans-serif;font-weight:700;font-size:clamp(19px,5vw,24px);line-height:1.25;flex:none;margin-bottom:16px;}
   .pv-timer{font-family:"IBM Plex Mono",monospace;color:var(--faint);font-size:14px;margin-bottom:10px;flex:none;}
-  .pv-opts{flex:1;display:grid;grid-template-rows:repeat(4,1fr);gap:12px;min-height:0;}
+  .pv-opts{flex:1;display:grid;grid-template-rows:repeat(4,1fr);gap:12px;min-height:0;padding-bottom:6px;}
   .pv-opt{border:0;border-radius:16px;color:#fff;font-weight:700;font-size:clamp(15px,4vw,18px);display:flex;align-items:center;gap:14px;padding:0 18px;text-align:left;transition:transform .1s,opacity .2s;}
   .pv-opt .gl{font-size:22px;width:34px;height:34px;display:grid;place-items:center;background:rgba(255,255,255,.2);border-radius:9px;flex:none;}
   .pv-opt.a{background:var(--a)}.pv-opt.b{background:var(--b)}.pv-opt.c{background:var(--c)}.pv-opt.d{background:var(--d)}
@@ -222,7 +225,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.9.4";</script>
+<script>window.PAGE_BUILD="1.9.5";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -662,7 +665,9 @@ function projectorHTML(s){
     const sec=Math.max(0,Math.ceil((s.endsAt-Date.now())/1000)), frac=Math.max(0,(s.endsAt-Date.now())/(DURATION*1000));
     const tot=Math.max(1,s.answeredN);
     const tiles=s.question.options.map((o,i)=>`<div class="tile ${OM(i).k}"><span class="gl">${OM(i).gl}</span><span class="tx">${esc(o)}</span><span class="fill" style="width:${(s.counts[i]/tot)*100}%"></span><span class="ct">${s.counts[i]}</span></div>`).join("");
+    const qn=(s.plan&&s.plan.quizTitle)||s.title||"";
     return `<div class="qhead"><span class="qmeta">Question <b>${s.qi+1}</b> / ${s.total}${s.plan?` \u00b7 Quiz ${s.plan.idx+1}/${s.plan.total}`:""}</span><span class="cat">${esc(s.category||"")}</span>${ringHTML(sec,frac)}</div>
+      ${qn?`<div class="qname">${esc(qn)}</div>`:""}
       <div class="qtext disp">${esc(s.question.q)}</div>
       <div class="grid">${tiles}</div>
       <div class="qfoot"><span class="answered">${s.answeredN}</span>&nbsp;of ${s.roomN} answered <span class="dots"><i></i><i></i><i></i></span><span class="minicode">Join ${esc(s.code)} · ${esc(s.joinUrl)}</span></div>`;
@@ -744,7 +749,8 @@ function renderPlayer(){
     const sec=Math.max(0,Math.ceil((P.endsAt-Date.now())/1000));
     if(myPick==null && myAnsweredQi!==P.qi){
       const btns=P.question.options.map((o,i)=>`<button class="pv-opt ${OM(i).k}" data-i="${i}"><span class="gl">${OM(i).gl}</span>${esc(o)}</button>`).join("");
-      mount.innerHTML=`<div class="pv">${head}<div class="pv-timer">${sec}s left</div><div class="pv-q disp">${esc(P.question.q)}</div><div class="pv-opts">${btns}</div></div>`;
+      const qn=(P.plan&&P.plan.quizTitle)||P.title||"";
+      mount.innerHTML=`<div class="pv">${head}${qn?`<div class="pv-quizname">${esc(qn)}</div>`:""}<div class="pv-timer">${sec}s left</div><div class="pv-q disp">${esc(P.question.q)}</div><div class="pv-opts">${btns}</div></div>`;
       mount.querySelectorAll(".pv-opt").forEach(b=>b.onclick=()=>sendAnswer(parseInt(b.dataset.i,10)));
     } else {
       const o=P.question.options[myPick];

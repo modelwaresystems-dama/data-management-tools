@@ -220,6 +220,7 @@ let role=null;            // 'host' | 'player'
 let room=null;
 let pid = "p_"+Math.random().toString(36).slice(2,9);
 let myName="";
+let hostClassId="", hostClassName="";
 let ably=null, chState=null, chAns=null, chBase=null;
 
 /* host authoritative model */
@@ -271,12 +272,12 @@ async function boot(){
   const u=new URLSearchParams(location.search);
   if(u.get("host")==="1"){ role="host"; return startHost(); }
   const pre=(u.get("room")||"").toUpperCase();
-  renderLanding(pre);
+  renderLanding(pre, u.get("class")||"");
 }
 function liveUnconfigured(){ return !CFG.tokenUrl; }
 
 /* ---------- landing ---------- */
-function renderLanding(preRoom){
+function renderLanding(preRoom, preClass){
   mount.innerHTML=`
     <div class="center"><div class="card">
       <h1 class="disp">${esc(QUIZ.title||"Live Quiz")}</h1>
@@ -285,20 +286,39 @@ function renderLanding(preRoom){
       <div id="landingBody"></div>
     </div></div>`;
   const body=document.getElementById("landingBody");
-  if(preRoom){ renderJoinForm(body, preRoom); }
+  if(preRoom){ renderJoinForm(body, preRoom, preClass); }
   else{
     body.innerHTML=`<div class="choice">
       <button class="bigbtn" id="goHost">Host this quiz &nbsp;→</button>
       <button class="bigbtn alt" id="goJoin">Join a quiz</button>
     </div>`;
-    document.getElementById("goHost").onclick=()=>{ role="host"; startHost(); };
+    document.getElementById("goHost").onclick=()=>renderHostSetup(body);
     document.getElementById("goJoin").onclick=()=>renderJoinForm(body,"");
   }
 }
-async function renderJoinForm(body, preRoom){
+async function renderHostSetup(body){
+  const r=await loadRosters();
+  const has=r.classes&&r.classes.length;
+  const opts = has
+    ? '<option value="">Open join (no class)</option>'+r.classes.map((c,i)=>`<option value="${i}">${esc(c.name)}</option>`).join("")
+    : '<option value="">Open join</option>';
+  body.innerHTML=`
+    <div class="field"><label for="hclass">Class for this room</label><select id="hclass">${opts}</select>
+      <div class="err" id="hnote" style="color:var(--faint)">${has?'Learners join and pick their name from this class.':'No class list yet \u2014 add a CSV to data/classes/. You can still host as open join.'}</div></div>
+    <button class="bigbtn" id="hstart">Start the room \u2192</button>
+    <button class="tinylink" id="hback">\u2190 back</button>`;
+  document.getElementById("hback").onclick=()=>renderLanding("");
+  document.getElementById("hstart").onclick=()=>{
+    const sel=document.getElementById("hclass"), ci=sel.value;
+    if(ci!==""&&r.classes&&r.classes[+ci]){ hostClassId=r.classes[+ci].id; hostClassName=r.classes[+ci].name; }
+    else { hostClassId=""; hostClassName=""; }
+    role="host"; startHost();
+  };
+}
+async function renderJoinForm(body, preRoom, preClass){
   body.innerHTML=`
     <div class="field"><label for="jcode">Room code</label><input id="jcode" class="code" maxlength="6" placeholder="ABCDE" value="${esc(preRoom)}"></div>
-    <div class="field"><label for="jclass">Your class</label><select id="jclass"><option value="">Loading classes…</option></select></div>
+    <div class="field" id="jclasswrap"><label for="jclass">Your class</label><select id="jclass"><option value="">Loading classes…</option></select></div>
     <div class="field"><label for="jname">Your name</label><select id="jname"><option value="">Pick your class first</option></select></div>
     <div class="field" id="jnewwrap" style="display:none"><label for="jnew">Type your name</label><input id="jnew" maxlength="24" placeholder="Your name" autocomplete="off"></div>
     <div class="err" id="jerr"></div>
@@ -311,6 +331,10 @@ async function renderJoinForm(body, preRoom){
   const r=await loadRosters();
   if(!r.classes||!r.classes.length){ csel.innerHTML='<option value="">No class list — type your name</option>'; nsel.innerHTML='<option value="__new__">Type your name below</option>'; newwrap.style.display=""; }
   else { csel.innerHTML='<option value="">Select your class…</option>'+r.classes.map((c,i)=>`<option value="${i}">${esc(c.name)}</option>`).join(""); }
+  if(preClass && r.classes){
+    const li=r.classes.findIndex(c=>c.id===preClass);
+    if(li>=0){ csel.value=String(li); const w=document.getElementById("jclasswrap"); if(w)w.style.display="none"; }
+  }
   function fillNames(){
     newwrap.style.display="none"; if(newinp)newinp.value="";
     const ci=csel.value;
@@ -319,6 +343,7 @@ async function renderJoinForm(body, preRoom){
     nsel.innerHTML='<option value="">Select your name…</option>'+mem.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join("")+'<option value="__new__">➕ I\'m not on the list…</option>';
   }
   csel.onchange=fillNames;
+  fillNames();   // populate names if a class is pre-locked from the host QR
   nsel.onchange=()=>{ if(nsel.value==="__new__"){ newwrap.style.display=""; if(newinp)newinp.focus(); } else newwrap.style.display="none"; };
   const go=()=>{
     const code=(document.getElementById("jcode").value||"").trim().toUpperCase();
@@ -388,7 +413,7 @@ function hostStateForWire(){
   const total=QUIZ.questions.length;
   const base={code:room, title:QUIZ.title, category:QUIZ.category, phase:H.phase, qi:H.qi, total,
               roomN:H.players.size, answeredN:H.answers.size, counts:H.counts.slice(),
-              joinBase:joinBase(), joinUrl:joinBase()+"?room="+room};
+              joinBase:joinBase(), joinUrl:joinBase()+"?room="+room+(hostClassId?("&class="+encodeURIComponent(hostClassId)):""), classId:hostClassId, className:hostClassName};
   if(H.phase==="question"){
     const q=QUIZ.questions[H.qi];
     base.question={q:q.q, options:q.options};   // NOTE: correct index intentionally omitted until reveal
@@ -486,7 +511,7 @@ function projectorHTML(s){
       <div class="join">
         <h2>Join the live quiz</h2>
         <div class="code mono">${esc(s.code)}</div>
-        <div class="url">📱 Scan the QR &nbsp;·&nbsp; 💻 open <b style="color:var(--ink)">${esc(s.joinBase)}</b><br>and enter code <b style="color:var(--accent-ink)">${esc(s.code)}</b></div>
+        <div class="url">📱 Scan the QR &nbsp;·&nbsp; 💻 open <b style="color:var(--ink)">${esc(s.joinBase)}</b><br>and enter code <b style="color:var(--accent-ink)">${esc(s.code)}</b></div>${s.className?`<div class="url" style="margin-top:6px">Class: <b style="color:var(--accent-ink)">${esc(s.className)}</b></div>`:""}
         <div class="joiners"><div class="cnt"><b>${s.roomN}</b> in the room</div><div class="chips">${chips||'<span style="color:var(--faint);font-size:14px">Waiting for people to join…</span>'}</div></div>
       </div>
       <div class="art"><div class="qr" id="qrbox"></div><div class="mono" style="color:var(--faint);font-size:13px">${esc(s.category||"")}</div></div>

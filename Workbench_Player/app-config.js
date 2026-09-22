@@ -6,10 +6,10 @@
    ============================================================ */
 window.APP_CONFIG = {
   // Mints short-lived Ably tokens (the real Ably API key stays server-side, never here):
-  tokenUrl: "",   // e.g. "https://your-private-site.netlify.app/.netlify/functions/ably-token"
+  tokenUrl: "https://modelware-quiz-api.netlify.app/.netlify/functions/ably-token",   // e.g. "https://your-private-site.netlify.app/.netlify/functions/ably-token"
 
   // Serves private quiz/flashcard JSON, CORS-locked to your app's origin:
-  assetApi: "",   // e.g. "https://your-private-site.netlify.app/.netlify/functions/asset"
+  assetApi: "https://modelware-quiz-api.netlify.app/.netlify/functions/asset",   // e.g. "https://your-private-site.netlify.app/.netlify/functions/asset"
 
   // Which private assets this deployment loads (relative to the backend's data/ dir):
   quizPath:  "ai-activate-2026-bias/AI Quiz.json",

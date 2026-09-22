@@ -184,6 +184,7 @@ CONTRIB = [
     ("CON-DS-12", "TR-AS-05", "event", {"PRT": ["STS-PRT-04"], "INC": ["STS-INC-02"]}, "A control deficiency or a detected incident is a control failure affecting the assurance claim.", "DS_control_deficiency or DS_open_incident", "Conditional", "DS emits EV-AS-05."),
     ("CON-DS-13", "TR-AS-06", "event", {"PRT": ["STS-PRT-04"], "INC": ["STS-INC-02"]}, "A control deficiency or a detected incident breaches a condition of conditional assurance.", "DS_control_deficiency or DS_open_incident", "Conditional", ""),
     ("CON-DS-14", "TR-AS-02", "service", {"PRT": ["STS-PRT-03"]}, "Security Audit supplies the control evidence (access history, audit reports) that assurance confirmation cites.", "SVC-DS-05", "Conditional", "Assurance service; artefacts ART-DS-07, ART-DS-08."),
+    ("CON-DS-15", "TR-AV-02", "event", {"CLS": ["STS-CLS-04"]}, "A changed classification (reclassification due) requires access to be restricted until the asset is reclassified.", "DS_reclassification_due", "Conditional", "Data Security emits EV-AV-02 when TR-CLS-03 fires (Howard, 22 Sep: the obvious contribution on TR-AV-02)."),
 ]
 KA_COUPLINGS = [
     ("KAC-DS-01", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DS_open_incident", "Every detected security incident is also logged as a Data Asset issue in the Data Governance issue FTS with source Data Security (TR-INC-01 emits EV-ISS-01).", "Decision 21 Sep 2026: own FTS plus DG issue. DG owns escalation and residual-risk acceptance."),
@@ -196,6 +197,7 @@ KA_COUPLINGS = [
 FACT_BINDINGS = {
     "DS_instruments_in_force": {"region": "REG-DS-POL", "states": ["STS-POL-04", "STS-POL-05"]},
     "DS_classified": {"region": "REG-DS-CLS", "states": ["STS-CLS-03", "STS-CLS-04"]},
+    "DS_reclassification_due": {"region": "REG-DS-CLS", "states": ["STS-CLS-04"]},
     "DS_protected": {"region": "REG-DS-PRT", "states": ["STS-PRT-03"]},
     "DS_control_deficiency": {"region": "REG-DS-PRT", "states": ["STS-PRT-04"]},
     "DS_sanitised": {"region": "REG-DS-PRT", "states": ["STS-PRT-05"]},

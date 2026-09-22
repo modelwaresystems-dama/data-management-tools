@@ -55,6 +55,13 @@
 
   /* host controls */
   .hostbar{flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px clamp(14px,3vw,26px);border-top:1px solid var(--line);background:rgba(9,14,26,.6);}
+  .joinov{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(5,10,20,.82);}
+  .joinov-card{position:relative;background:#fff;color:#0a1120;border-radius:24px;padding:30px 40px 26px;text-align:center;box-shadow:0 24px 80px rgba(0,0,0,.6);}
+  .joinov-x{position:absolute;top:14px;right:14px;border:0;background:#eef1f7;color:#334;width:32px;height:32px;border-radius:9px;cursor:pointer;font-size:16px;}
+  .joinov-t{font-family:"Sora",sans-serif;font-weight:700;font-size:18px;color:#334;margin-bottom:6px;}
+  .joinov-code{font-family:"IBM Plex Mono",monospace;font-weight:800;font-size:54px;letter-spacing:.1em;color:#0a1120;margin:0 0 14px;}
+  .joinov-qr{display:flex;justify-content:center;}
+  .joinov-url{font-family:"IBM Plex Mono",monospace;font-size:12px;color:#5a6472;word-break:break-all;margin-top:12px;max-width:280px;}
   .hostbar .lbl{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);}
   .btn{border:1px solid var(--line2);background:var(--panel2);color:var(--ink);font-weight:600;font-size:13.5px;padding:9px 16px;border-radius:10px;}
   .btn:hover{border-color:var(--accent);}
@@ -197,10 +204,20 @@
     <button class="btn" id="h-next" disabled>Next question</button>
     <button class="btn" id="h-save" disabled title="Download a results CSV to save into your private repo">Save results ⤓</button>
     <button class="btn ghost" id="h-restart">Restart</button>
+    <button class="btn" id="h-qr">Show join QR</button>
     <span class="status" id="h-status"></span>
   </div>
 </div>
 
+<div id="joinOverlay" class="joinov" hidden>
+  <div class="joinov-card">
+    <button id="qrClose" class="joinov-x" aria-label="Close">✕</button>
+    <div class="joinov-t">Join the live quiz</div>
+    <div class="joinov-code mono" id="qrCode2"></div>
+    <div class="joinov-qr" id="qrboxLive"></div>
+    <div class="joinov-url mono" id="qrUrl2"></div>
+  </div>
+</div>
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
@@ -522,6 +539,23 @@ function syncHostBar(s){
   document.getElementById("h-status").textContent=t;
 }
 
+/* ---------- join QR overlay (host can toggle any time for late joiners) ---------- */
+function currentJoinUrl(){ return joinBase()+"?room="+room+(hostClassId?("&class="+encodeURIComponent(hostClassId)):""); }
+function showJoinQR(){
+  const u=currentJoinUrl();
+  document.getElementById("qrCode2").textContent=room||"";
+  document.getElementById("qrUrl2").textContent=u.replace(/^https?:\/\//,"");
+  drawQR(u,"qrboxLive",240);
+  document.getElementById("joinOverlay").hidden=false;
+  const b=document.getElementById("h-qr"); if(b)b.textContent="Hide join QR";
+}
+function hideJoinQR(){ document.getElementById("joinOverlay").hidden=true; const b=document.getElementById("h-qr"); if(b)b.textContent="Show join QR"; }
+function toggleJoinQR(){ document.getElementById("joinOverlay").hidden?showJoinQR():hideJoinQR(); }
+(function wireQR(){
+  const b=document.getElementById("h-qr"); if(b)b.onclick=toggleJoinQR;
+  const x=document.getElementById("qrClose"); if(x)x.onclick=hideJoinQR;
+  const ov=document.getElementById("joinOverlay"); if(ov)ov.onclick=(e)=>{ if(e.target.id==="joinOverlay")hideJoinQR(); };
+})();
 /* ---------- shared projector HTML (used by host) ---------- */
 function ringHTML(sec,frac){const R=25,C=2*Math.PI*R,off=C*(1-frac),col=sec>6?"var(--accent)":"var(--bad)";return `<div class="ring"><svg width="58" height="58"><circle cx="29" cy="29" r="${R}" fill="none" stroke="var(--line)" stroke-width="6"/><circle cx="29" cy="29" r="${R}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg><span class="num">${sec}</span></div>`;}
 function projectorHTML(s){
@@ -569,9 +603,10 @@ function revealWhy(s){
   opts.forEach((o,i)=>{ if(i===c||!rats[i])return; wrong+=`<div class="wrow no"><span class="mk">\u2717</span><div><b>${esc(o)}</b> \u2014 ${esc(rats[i])}</div></div>`; });
   return `<b>Explanation</b>${ctx}${correct}${wrong?`<div class="wsep">Why the other answers are wrong</div>${wrong}`:""}`;
 }
-function drawQR(url){
-  const box=document.getElementById("qrbox"); if(!box)return; box.innerHTML="";
-  try{ new QRCode(box,{text:url,width:200,height:200,colorDark:"#0a1120",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.M}); }
+function drawQR(url, boxId, size){
+  const box=document.getElementById(boxId||"qrbox"); if(!box)return; box.innerHTML="";
+  const px=size||200;
+  try{ new QRCode(box,{text:url,width:px,height:px,colorDark:"#0a1120",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.M}); }
   catch(e){ box.innerHTML=`<div class="mono" style="color:#0a1120;font-weight:700">${esc(room)}</div>`; }
 }
 

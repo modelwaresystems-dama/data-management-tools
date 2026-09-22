@@ -222,7 +222,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.8.0";</script>
+<script>window.PAGE_BUILD="1.9.0";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -251,6 +251,7 @@ let room=null;
 let pid = "p_"+Math.random().toString(36).slice(2,9);
 let myName="";
 let hostClassId="", hostClassName="";
+let PLAN=null; // {title, items:[{path,title,weight}], idx} when running a session/course
 let ably=null, chState=null, chAns=null, chBase=null;
 
 /* host authoritative model */
@@ -353,34 +354,57 @@ function classesForQuiz(r, quizPath, quizTopic){
 async function renderHostSetup(body){
   const [r, man] = await Promise.all([ loadRosters(), loadManifest() ]);
   const quizzes=(man.assets||man.quizzes||[]).filter(a=>(a.type||"quiz")==="quiz");
+  const sessions=r.sessions||[];
   const curPath=new URLSearchParams(location.search).get("quiz")||CFG.quizPath||(quizzes[0]&&quizzes[0].path)||"";
-  const byTopic={}, order=[];
+  let runOpts="";
+  if(sessions.length){
+    runOpts+='<optgroup label="Courses & sessions (run cumulatively)">'+sessions.map(x=>`<option value="plan:${esc(x.id)}">${esc(x.title)} \u00b7 ${x.quizzes.length} quizzes</option>`).join("")+'</optgroup>';
+  }
+  const byTopic={},order=[];
   quizzes.forEach(q=>{ const t=q.topic||"Quizzes"; if(!byTopic[t]){byTopic[t]=[];order.push(t);} byTopic[t].push(q); });
-  const qOpts=order.map(t=>`<optgroup label="${esc(t)}">`+byTopic[t].map(q=>`<option value="${esc(q.path)}" ${q.path===curPath?"selected":""}>${esc(q.title)}</option>`).join("")+`</optgroup>`).join("");
+  runOpts+=order.map(t=>`<optgroup label="${esc(t)}">`+byTopic[t].map(q=>`<option value="quiz:${esc(q.path)}" ${q.path===curPath?"selected":""}>${esc(q.title)}</option>`).join("")+`</optgroup>`).join("");
   body.innerHTML=`
-    <div class="field"><label for="hquiz">Quiz to run</label><select id="hquiz">${qOpts||'<option value="">(quiz library not found)</option>'}</select></div>
+    <div class="field"><label for="hquiz">What to run</label><select id="hquiz">${runOpts||'<option value="">(library not found)</option>'}</select></div>
     <div class="field"><label for="hclass">Class for this room</label><select id="hclass"></select>
       <div class="err" id="hnote" style="color:var(--faint)"></div></div>
-    <button class="bigbtn" id="hstart">Start the room →</button>
-    <button class="tinylink" id="hback">← back</button>`;
+    <button class="bigbtn" id="hstart">Start the room \u2192</button>
+    <button class="tinylink" id="hback">\u2190 back</button>`;
   const qsel=document.getElementById("hquiz"), csel=document.getElementById("hclass"), note=document.getElementById("hnote");
+  function selInfo(){
+    const v=qsel.value||"";
+    if(v.indexOf("plan:")===0){ const sx=sessions.find(x=>x.id===v.slice(5)); return {kind:"plan", session:sx, quizPath:(sx&&sx.quizzes[0])||""}; }
+    return {kind:"quiz", quizPath:v.replace(/^quiz:/,"")};
+  }
   function fillClasses(){
     if(!r.classes||!r.classes.length){ csel.innerHTML='<option value="">Open join (no class list)</option>'; note.textContent="Add a CSV to data/classes/ to link a class."; return; }
-    const q=quizzes.find(x=>x.path===qsel.value)||{};
-    const {matched, others}=classesForQuiz(r, qsel.value, q.topic||"");
+    const info=selInfo();
+    const q=quizzes.find(x=>x.path===info.quizPath)||{};
+    let matched=[], others=[];
+    if(info.kind==="plan" && info.session){
+      const sid=info.session.id;
+      r.classes.forEach(c=>((c.sessionIds||[]).includes(sid)?matched:others).push(c));
+      if(!matched.length){ const t=slugify(q.topic||""); matched=[];others=[]; r.classes.forEach(c=>((c.topicSlugs||[]).includes(t)?matched:others).push(c)); }
+    } else { const res=classesForQuiz(r, info.quizPath, q.topic||""); matched=res.matched; others=res.others; }
     let html='<option value="">Open join (no class)</option>';
-    if(matched.length) html+='<optgroup label="Linked to this quiz">'+matched.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")+'</optgroup>';
+    if(matched.length) html+='<optgroup label="Linked to this">'+matched.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")+'</optgroup>';
     if(others.length) html+='<optgroup label="Other classes">'+others.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")+'</optgroup>';
     csel.innerHTML=html;
-    if(matched.length===1){ csel.value=matched[0].id; note.textContent="Auto-selected the class linked to this quiz."; }
-    else if(matched.length>1){ note.textContent="Several classes are linked — pick one."; }
-    else { note.textContent="No class linked to this quiz yet — pick one or host open."; }
+    if(matched.length===1){ csel.value=matched[0].id; note.textContent="Auto-selected the linked class."; }
+    else if(matched.length>1){ note.textContent="Several classes linked \u2014 pick one."; }
+    else { note.textContent="No linked class \u2014 pick one or host open."; }
   }
   qsel.onchange=fillClasses; fillClasses();
   document.getElementById("hback").onclick=()=>renderLanding("");
   document.getElementById("hstart").onclick=async ()=>{
-    const qp=qsel.value;
-    if(qp){ try{ QUIZ=normalizeQuiz(await fetchAsset(qp,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; } }
+    const info=selInfo();
+    if(info.kind==="plan" && info.session){
+      const sx=info.session;
+      PLAN={ title:sx.title, items:sx.quizzes.map(p=>({path:p,title:(quizzes.find(x=>x.path===p)||{}).title||p,weight:1})), idx:0 };
+      try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[0].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
+    } else {
+      PLAN=null;
+      try{ QUIZ=normalizeQuiz(await fetchAsset(info.quizPath,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
+    }
     const c=(r.classes||[]).find(x=>x.id===csel.value);
     if(c){ hostClassId=c.id; hostClassName=c.name; } else { hostClassId=""; hostClassName=""; }
     role="host"; startHost();
@@ -490,10 +514,11 @@ function hostStateForWire(){
     base.question={q:q.q, options:q.options};   // NOTE: correct index intentionally omitted until reveal
     base.endsAt=H.endsAt;
   }
-  if(H.phase==="reveal"||H.phase==="final"){
+  if(H.phase==="reveal"||H.phase==="final"||H.phase==="interlude"){
     if(H.phase==="reveal"){ const q=QUIZ.questions[H.qi]; base.question={q:q.q,options:q.options}; base.correct=q.correct; base.why=q.why; base.context=q.context||""; base.rats=q.rats||[]; }
     base.leaderboard=[...H.players.entries()].map(([id,p])=>({pid:id,name:p.name,score:p.score,lastPts:p.lastPts||0})).sort((a,b)=>b.score-a.score);
   }
+  if(PLAN){ base.plan={title:PLAN.title, idx:PLAN.idx, total:PLAN.items.length, quizTitle:(QUIZ&&QUIZ.title)||"", nextTitle:(PLAN.items[PLAN.idx+1]&&PLAN.items[PLAN.idx+1].title)||""}; }
   return base;
 }
 function publishState(){ if(chState) chState.publish("s", hostStateForWire()); }
@@ -501,7 +526,7 @@ function publishState(){ if(chState) chState.publish("s", hostStateForWire()); }
 function wireHostButtons(){
   document.getElementById("h-start").onclick=()=>{ if(H.phase==="lobby")hostNext(); };
   document.getElementById("h-reveal").onclick=()=>{ if(H.phase==="question")hostReveal(); };
-  document.getElementById("h-next").onclick=()=>{ if(H.phase==="reveal")hostNext(); };
+  document.getElementById("h-next").onclick=()=>{ if(H.phase==="reveal")hostNext(); else if(H.phase==="interlude")hostNextQuiz(); };
   document.getElementById("h-restart").onclick=()=>hostRestart();
   document.getElementById("h-save").onclick=downloadResults;
 }
@@ -511,6 +536,7 @@ function wireHostButtons(){
    Numbers are written unquoted so Excel can SUM them. */
 function downloadResults(){
   if(!H||!H.players.size)return;
+  if(PLAN){ return downloadSessionResults(); }
   const N=QUIZ.questions.length;
   const key=QUIZ.questions.map((q,i)=>`Q${i+1}=${String.fromCharCode(65+q.correct)}`).join("  ");
   const head=["rank","name","score","correct","wrong","net","total"].concat(QUIZ.questions.map((_,i)=>"Q"+(i+1)));
@@ -529,11 +555,34 @@ function downloadResults(){
   a.download=`results-${room}-${date.slice(0,10)}.csv`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
-function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};}); H.answers=new Map(); H.counts=[0,0,0,0]; publishState(); renderHost(); }
+function downloadSessionResults(){
+  const head=["rank","name","total"].concat(PLAN.items.map((it,i)=>"Q"+(i+1)));
+  const rows=[head];
+  [...H.players.values()].sort((a,b)=>b.score-a.score).forEach((p,i)=>{
+    const subs=PLAN.items.map((it,qi)=>(p.quizTotals&&p.quizTotals[qi]!=null)?p.quizTotals[qi]:0);
+    rows.push([i+1,p.name,p.score].concat(subs));
+  });
+  const csv=rows.map(r=>r.map(c=> typeof c==="number"?String(c):`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  const date=new Date().toISOString();
+  const legend=PLAN.items.map((it,i)=>`Q${i+1} = ${it.title}`).join("  \u00b7  ");
+  const header=`# ${PLAN.title} (session) \u2014 room ${room} \u2014 ${date}\r\n# ${legend}\r\n`;
+  const blob=new Blob(["\ufeff"+header+csv],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=`session-${room}-${date.slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+async function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};p.quizTotals=[];p._qstart=0;}); H.answers=new Map(); H.counts=[0,0,0,0];
+  if(PLAN){ PLAN.idx=0; try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(PLAN.items[0].path,"quiz.sample.json"))); }catch(e){} }
+  publishState(); renderHost(); }
 function hostNext(){
   clearInterval(H.timer);
   H.qi++;
-  if(H.qi>=QUIZ.questions.length){ H.phase="final"; publishState(); renderHost(); return; }
+  if(H.qi===0){ H.players.forEach(p=>{ p._qstart=p.score||0; }); }
+  if(H.qi>=QUIZ.questions.length){
+    H.players.forEach(p=>{ if(!p.quizTotals)p.quizTotals=[]; p.quizTotals.push((p.score||0)-(p._qstart||0)); });
+    if(PLAN && PLAN.idx<PLAN.items.length-1){ H.phase="interlude"; publishState(); renderHost(); return; }
+    H.phase="final"; publishState(); renderHost(); return;
+  }
   H.phase="question"; H.answers=new Map(); H.counts=[0,0,0,0];
   H.startTs=Date.now(); H.endsAt=H.startTs+DURATION*1000;
   publishState(); renderHost();
@@ -546,13 +595,21 @@ function hostReveal(){
   const q=QUIZ.questions[H.qi];
   H.players.forEach((p,id)=>{
     const a=H.answers.get(id); let pts=0; const correct=!!(a && a.pick===q.correct);
-    if(correct){ const frac=Math.max(0,Math.min(1,1-(a.at-H.startTs)/(DURATION*1000))); pts=Math.round(600+400*frac); }
+    if(correct){ const frac=Math.max(0,Math.min(1,1-(a.at-H.startTs)/(DURATION*1000))); pts=Math.round((600+400*frac)*((PLAN&&PLAN.items[PLAN.idx]&&PLAN.items[PLAN.idx].weight)||1)); }
     p.lastPts=pts; p.score+=pts;
     if(!p.log)p.log={}; p.log[H.qi]={pick:a?a.pick:null, correct};
   });
   publishState(); renderHost();
 }
 
+async function hostNextQuiz(){
+  if(!PLAN) return;
+  clearInterval(H.timer); PLAN.idx++;
+  const item=PLAN.items[PLAN.idx];
+  try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(item.path,"quiz.sample.json"))); }catch(e){ QUIZ={title:item.title,questions:[]}; }
+  H.qi=-1; H.answers=new Map(); H.counts=[0,0,0,0];
+  hostNext();
+}
 /* host render (projector) */
 function renderHost(){
   const s=hostStateForWire();
@@ -563,12 +620,15 @@ function renderHost(){
 function syncHostBar(s){
   document.getElementById("h-start").disabled=s.phase!=="lobby";
   document.getElementById("h-reveal").disabled=s.phase!=="question";
-  const nx=document.getElementById("h-next"); nx.disabled=s.phase!=="reveal"; nx.textContent=(s.qi>=s.total-1)?"See results":"Next question";
-  document.getElementById("h-save").disabled=!(s.phase==="reveal"||s.phase==="final");
+  const nx=document.getElementById("h-next");
+  if(s.phase==="interlude"){ nx.disabled=false; nx.textContent="Next quiz \u2192"; }
+  else { nx.disabled=s.phase!=="reveal"; nx.textContent=(s.qi>=s.total-1)?(s.plan?"End of quiz \u2192":"See results"):"Next question"; }
+  document.getElementById("h-save").disabled=!(s.phase==="reveal"||s.phase==="final"||s.phase==="interlude");
   let t="";
   if(s.phase==="lobby")t=`${s.roomN} joined · waiting`;
   else if(s.phase==="question")t=`Q${s.qi+1}/${s.total} · ${s.answeredN}/${s.roomN} answered · ${Math.max(0,Math.ceil((s.endsAt-Date.now())/1000))}s`;
   else if(s.phase==="reveal")t=`Q${s.qi+1}/${s.total} revealed`;
+  else if(s.phase==="interlude")t="Quiz complete \u00b7 press Next quiz";
   else t="Final results";
   document.getElementById("h-status").textContent=t;
 }
@@ -609,7 +669,7 @@ function projectorHTML(s){
     const sec=Math.max(0,Math.ceil((s.endsAt-Date.now())/1000)), frac=Math.max(0,(s.endsAt-Date.now())/(DURATION*1000));
     const tot=Math.max(1,s.answeredN);
     const tiles=s.question.options.map((o,i)=>`<div class="tile ${OM(i).k}"><span class="gl">${OM(i).gl}</span><span class="tx">${esc(o)}</span><span class="fill" style="width:${(s.counts[i]/tot)*100}%"></span><span class="ct">${s.counts[i]}</span></div>`).join("");
-    return `<div class="qhead"><span class="qmeta">Question <b>${s.qi+1}</b> / ${s.total}</span><span class="cat">${esc(s.category||"")}</span>${ringHTML(sec,frac)}</div>
+    return `<div class="qhead"><span class="qmeta">Question <b>${s.qi+1}</b> / ${s.total}${s.plan?` \u00b7 Quiz ${s.plan.idx+1}/${s.plan.total}`:""}</span><span class="cat">${esc(s.category||"")}</span>${ringHTML(sec,frac)}</div>
       <div class="qtext disp">${esc(s.question.q)}</div>
       <div class="grid">${tiles}</div>
       <div class="qfoot"><span class="answered">${s.answeredN}</span>&nbsp;of ${s.roomN} answered <span class="dots"><i></i><i></i><i></i></span><span class="minicode">Join ${esc(s.code)} · ${esc(s.joinUrl)}</span></div>`;
@@ -622,11 +682,19 @@ function projectorHTML(s){
       <div class="reveal"><div class="left"><div class="grid" style="flex:0 0 auto">${tiles}</div><div class="whybox">${revealWhy(s)}</div></div>
       <div class="lb"><h3>Leaderboard</h3><div class="rows">${lb}</div></div></div>`;
   }
+  if(s.phase==="interlude"){
+    const lbi=(s.leaderboard||[]).slice(0,8).map((p,i)=>`<div class="lrow ${i<3?'top':''}"><span class="rk">${i+1}</span><span class="av" style="background:${color(p.pid)};width:24px;height:24px;font-size:15px">${emoji(p.pid)}</span><span class="nm">${esc(p.name)}</span><span class="pt">${p.score}</span></div>`).join("");
+    const done=(s.plan?s.plan.idx+1:1), tot=(s.plan?s.plan.total:1);
+    return `<div class="final"><h2 class="disp">\u2713 ${esc((s.plan&&s.plan.quizTitle)||"Quiz")} complete</h2>
+      <div class="mono" style="color:var(--accent-ink);margin:-4px 0 16px;font-size:15px">Quiz ${done} of ${tot}${s.plan&&s.plan.nextTitle?` \u00b7 Next up: <b>${esc(s.plan.nextTitle)}</b>`:""}</div>
+      <div class="lb" style="width:min(520px,100%);max-height:300px"><h3>Cumulative standings</h3><div class="rows">${lbi}</div></div>
+      <div class="mono" style="color:var(--faint);margin-top:14px">Host: press \u201cNext quiz \u2192\u201d when the room is ready</div></div>`;
+  }
   // final
   const lb=s.leaderboard||[]; const top=lb.slice(0,3); const order=[1,0,2];
   const pods=order.map(pos=>{const p=top[pos];if(!p)return"";const cls=pos===0?"p1":pos===1?"p2":"p3";return `<div class="pod ${cls}"><span class="av" style="background:${color(p.pid)};width:44px;height:44px;font-size:24px">${emoji(p.pid)}</span><div class="who">${esc(p.name)}</div><div class="bar2">${p.score}</div><div class="mono" style="color:var(--faint)">#${pos+1}</div></div>`;}).join("");
   const rest=lb.slice(0,8).map((p,i)=>`<div class="lrow"><span class="rk">${i+1}</span><span class="av" style="background:${color(p.pid)};width:24px;height:24px;font-size:15px">${emoji(p.pid)}</span><span class="nm">${esc(p.name)}</span><span class="pt">${p.score}</span></div>`).join("");
-  return `<div class="final"><h2 class="disp">\u{1F3C6} Final results</h2><div class="podium">${pods}</div><div class="lb" style="width:min(460px,100%);max-height:230px"><h3>Top of the room</h3><div class="rows">${rest}</div></div></div>`;
+  return `<div class="final"><h2 class="disp">\u{1F3C6} Final results${s.plan?` \u2014 ${esc(s.plan.title)}`:""}</h2><div class="podium">${pods}</div><div class="lb" style="width:min(460px,100%);max-height:230px"><h3>Top of the room</h3><div class="rows">${rest}</div></div></div>`;
 }
 function revealWhy(s){
   const opts=(s.question&&s.question.options)||[], rats=s.rats||[], c=s.correct;
@@ -697,6 +765,11 @@ function renderPlayer(){
     const me=(P.leaderboard||[]).find(p=>p.pid===pid); const rank=(P.leaderboard||[]).findIndex(p=>p.pid===pid)+1;
     const pts=me?me.lastPts:0;
     mount.innerHTML=`<div class="pv">${head}<div class="pv-fb ${ok?'ok':'no'}"><div class="badge">${!answered?'⏱ No answer':(ok?'✓ Correct!':'✗ Not quite')}</div><div class="pts">${ok?'+'+pts:'0'}</div><div class="rk">${rank>0?`You're ${ordinal(rank)} of ${P.roomN} · ${myScore()} pts`:''}</div></div></div>`;
+    return;
+  }
+  if(P.phase==="interlude"){
+    const rank=(P.leaderboard||[]).findIndex(p=>p.pid===pid)+1;
+    mount.innerHTML=`<div class="pv">${head}<div class="pv-fb"><div class="badge disp">\u2713 Quiz done</div><div class="pts">${myScore()}</div><div class="rk">${rank>0?`You're ${ordinal(rank)} of ${P.roomN}`:''}${P.plan&&P.plan.nextTitle?` \u00b7 next: ${esc(P.plan.nextTitle)}`:""}</div></div></div>`;
     return;
   }
   // final — with a per-question review of what you got right/wrong

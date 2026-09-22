@@ -35,3 +35,29 @@ The viewer carries its version and build date and time (SAST) in the header and 
   - **Influence:** a network and a from/to matrix of how the FTSs act on each other. Allowed counts come from the models' contributions and couplings applied to the fired events; refused counts come from the failing guards in the event log.
 - The Twin tab in `fts_viewer.html` (v0.27) links to it.
 - `snake_layout.js` now tags each drawn transition with its ID (`data-tr`), so pages can highlight the path an asset took.
+
+## Digital Twin Viewer v0.2 (22 Sep 2026, 16:43 SAST): digging into a refusal
+
+- On the One asset view, each refusal has its own box above the diagrams. The box names the transition and where the asset was at the time, and explains in plain language why the twin refused it:
+  - **Wrong starting state:** the transition was tried from the wrong state, with the state it needed and the state the asset was actually in.
+  - **Guards answered false:** each guard that answered false, with which FTS set it, whether it is Required, Conditional or Non-waivable, the states it needs, and the asset's states in that FTS at that moment.
+  - Each box also gives the decision right and its holder, says when a refusal was a deliberate test event from the synthetic fleet, and says if the same transition fired later. "Show on the diagram" scrolls to the transition and makes it pulse.
+- Every state and transition on the diagrams can now be clicked; you can click a transition's line or its label. A panel opens with the definition, the cross-region guards, what other FTSs require of that transition, and this asset's history on it.
+
+## Twin v0.2: Data Assets with the golden records inside them (22 Sep 2026, 17:02 SAST)
+
+- **What changed.** The first fleet treated each of 120 customer records as its own Data Asset, which was wrong: a customer is a record, not an asset. The twin now has two levels.
+  - **Data Assets** (a data product, table or feed) carry the Global protocol and the Knowledge Area regions that apply to them.
+  - **Golden records** are instances of kind `record` inside their asset, carrying only the record-level region (`KA-RMD` `REG-RMD-GLD`). They are evaluated against their parent asset.
+  - **The asset's own Golden Record state is the roll-up of its records:**
+    - Record Conflict when 5% or more of the active records are in conflict;
+    - Reliable Record when 90% or more are reliable;
+    - Matched Record when 90% or more are matched or reliable;
+    - otherwise Candidate Record.
+  - Every roll-up change is logged as a `rollup` event. A roll-up into conflict raises the asset's assurance and suspension triggers (CON-RMD-08, CON-RMD-09); the way back reassesses, confirms and restores access.
+- `fts_twin.py` v0.2 adds `new_record`, `post_record_event`, `records`, `rollup` and the `RECORD_REGIONS` and `ROLLUP` settings. `fts_twin_store.py` exports and imports `records.json`.
+- `fts_twin_fleet.py` v0.2 builds the fleet from the Data Products in the three FutureState workbooks in the private `twin/architecture` folder (see that file's docstring for the rules).
+- `twin_viewer.html` v0.3 adds:
+  - an organisation filter;
+  - a records row under the Golden Record row in the heat map and replay;
+  - a golden-records section on the One asset view, with the state counts, the record list and a record drawer showing the record's diagram and timeline.

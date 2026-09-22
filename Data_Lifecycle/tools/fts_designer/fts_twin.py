@@ -27,7 +27,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fts_twin_engine import Federation, GLOBAL_ID, now_iso
 from fts_twin_store import TwinStore
 
-VERSION = "0.1"
+VERSION = "0.2"
+
+# v0.2 (Howard, 22 Sep 2026, twin structure "two levels"): the Data Asset (a table, dataset, feed or data product) carries the Global
+# vector and the per-asset Knowledge Area regions; an entity record inside it (a customer or party golden record) is its own instance
+# of kind "record" carrying only the record-level regions below, evaluated against its parent asset's vector and facts. The asset's own
+# copy of a record-level region is the roll-up of its records (ROLLUP below), logged as a "rollup" event so the replay shows it.
+RECORD_REGIONS = {"KA-RMD": ["REG-RMD-GLD"]}
+ROLLUP = {"conflictShare": 0.05, "reliableShare": 0.90, "matchedShare": 0.90}
+GLD = {"candidate": "STS-GLD-01", "matched": "STS-GLD-02", "reliable": "STS-GLD-03", "conflict": "STS-GLD-04", "split": "STS-GLD-05", "retired": "STS-GLD-06"}
 
 class Twin:
     def __init__(self, models_dir, db_path):
@@ -78,20 +86,76 @@ class Twin:
         asset["facts"] = {**(asset.get("facts") or {}), **facts}; asset["updatedAt"] = at or now_iso(); self.store.put_instance(asset)
         return self.store.log_event({"instanceId": instance_id, "model": None, "transition": None, "event": None, "result": "facts", "fired": False, "override": False, "factsApplied": facts, "actor": actor, "at": at or now_iso(), "guards": []})
 
+
+    # ---------------------------------------------------------------- v0.2 records inside an asset
+    def new_record(self, rid, parent_id, name, record_type="Golden Record", at=None):
+        parent = self.store.get_instance(parent_id)
+        if not parent or parent.get("kind") != "asset": return {"error": f"no asset instance {parent_id}"}
+        regions = {mid: {r: self.fed.initial[mid][r] for r in regs} for mid, regs in RECORD_REGIONS.items() if mid in self.fed.applicable(parent)}
+        rec = {"id": rid, "kind": "record", "parentId": parent_id, "name": name, "recordType": record_type, "regions": regions, "createdAt": at or now_iso(), "updatedAt": at or now_iso()}
+        self.store.put_instance(rec); return rec
+
+    def _view(self, rec, parent):
+        v = json.loads(json.dumps(parent))
+        for mid, regs in rec["regions"].items(): v["vectors"].setdefault(mid, {}).update(regs)
+        return v
+
+    def post_record_event(self, record_id, model_id, transition, actor=None, at=None):
+        rec = self.store.get_instance(record_id)
+        if not rec or rec.get("kind") != "record": return {"error": f"no record {record_id}"}
+        parent = self.store.get_instance(rec["parentId"]); els = self.store.elements(); view = self._view(rec, parent)
+        v = self.fed.evaluate(view, model_id, transition, els)
+        if v.get("fired"): self.fed.apply(view, v, els)
+        rid = v.get("region")
+        if rid in rec["regions"].get(model_id, {}): rec["regions"][model_id][rid] = view["vectors"][model_id][rid]
+        out = {**v, "instanceId": record_id, "parentId": rec["parentId"], "event": self.fed.tr[model_id][transition].get("event"), "actor": actor, "at": at or now_iso(), "override": False, "candidates": [transition], "factsApplied": {}}
+        out["guardCount"] = len(v.get("guards", [])); out["guards"] = [g for g in v.get("guards", []) if not g.get("verdict")]; out.pop("vectorBefore", None)
+        out["stateAfter"] = rec["regions"].get(model_id, {}).get(rid)
+        rec["updatedAt"] = out["at"]; self.store.put_instance(rec); logged = self.store.log_event(out)
+        self.rollup(rec["parentId"], at=out["at"], cause=record_id)
+        return logged
+
+    def records(self, parent_id=None):
+        return [r for r in self.store.instances("record") if not parent_id or r["parentId"] == parent_id]
+
+    def rollup_state(self, recs):
+        """the asset-level Golden Record state from its records: Record Conflict when at least 5% of the active records are in
+        conflict; Reliable Record when at least 90% are reliable; Matched Record when at least 90% are matched or reliable;
+        otherwise Candidate Record. Retired records are not active; split records count as not yet matched."""
+        act = [r["regions"]["KA-RMD"]["REG-RMD-GLD"] for r in recs if "KA-RMD" in r["regions"] and r["regions"]["KA-RMD"]["REG-RMD-GLD"] != GLD["retired"]]
+        if not act: return None
+        n = len(act); share = lambda *s: sum(1 for x in act if x in s) / n
+        if share(GLD["conflict"]) >= ROLLUP["conflictShare"]: return GLD["conflict"]
+        if share(GLD["reliable"]) >= ROLLUP["reliableShare"]: return GLD["reliable"]
+        if share(GLD["reliable"], GLD["matched"]) >= ROLLUP["matchedShare"]: return GLD["matched"]
+        return GLD["candidate"]
+
+    def rollup(self, parent_id, at=None, cause=None):
+        parent = self.store.get_instance(parent_id); new = self.rollup_state(self.records(parent_id))
+        if not new or "KA-RMD" not in parent["vectors"]: return None
+        old = parent["vectors"]["KA-RMD"].get("REG-RMD-GLD")
+        if new == old: return None
+        parent["vectors"]["KA-RMD"]["REG-RMD-GLD"] = new; parent["updatedAt"] = at or now_iso(); self.store.put_instance(parent)
+        recs = self.records(parent_id)
+        return self.store.log_event({"instanceId": parent_id, "model": "KA-RMD", "region": "REG-RMD-GLD", "transition": None, "event": None, "name": "roll-up of " + str(len(recs)) + " golden records",
+                                     "result": "rollup", "fired": True, "override": False, "from": old, "stateAfter": new, "cause": cause, "actor": "twin:rollup", "at": at or now_iso(), "guards": [], "guardCount": 0,
+                                     "reason": "asset-level Golden Record state derived from its records (conflict at 5% or more, reliable at 90% or more, matched at 90% or more)"})
+
     # ---------------------------------------------------------------- views
     def fleet(self):
-        els = self.store.elements(); stats = self.store.event_stats(); rows = []
+        els = self.store.elements(); stats = self.store.event_stats(); rows = []; recs_by = {}
+        for r in self.store.instances("record"): recs_by.setdefault(r["parentId"], []).append(r)
         for a in self.store.instances("asset"):
             s = self.fed.summary(a, els); st = stats.get(a["id"], {})
             last = self.store.last_event(a["id"]) if st else None
             rows.append({"id": a["id"], "name": a.get("name"), "assetClass": a.get("assetClass"), "global": s["global"], "kaRegionsMoved": s["kaRegionsMoved"], "kaRegions": s["kaRegions"],
                          "fired": st.get("fired", 0), "refused": st.get("refused", 0), "overrides": st.get("overrides", 0), "lastAt": st.get("lastAt"),
                          "last": ({"transition": last.get("transition"), "name": last.get("name"), "result": last.get("result"), "model": last.get("model")} if last else None),
-                         "holdActive": bool((a.get("facts") or {}).get("hold_active")), "updatedAt": a.get("updatedAt")})
+                         "holdActive": bool((a.get("facts") or {}).get("hold_active")), "updatedAt": a.get("updatedAt"), "records": len(recs_by.get(a["id"], [])), "scope": a.get("scope"), "org": a.get("org")})
         by_state = {}
         for r in rows:
             for code, v in r["global"].items(): by_state.setdefault(code, {}).setdefault(v["name"], 0); by_state[code][v["name"]] += 1
-        return {"generatedAt": now_iso(), "engine": f"fts_twin v{VERSION}", "models": len(self.fed.models), "assets": len(rows), "elements": len(els),
+        return {"generatedAt": now_iso(), "engine": f"fts_twin v{VERSION}", "models": len(self.fed.models), "assets": len(rows), "records": sum(len(v) for v in recs_by.values()), "elements": len(els),
                 "events": sum(v["fired"] + v["refused"] + v["overrides"] for v in stats.values()), "refused": sum(v["refused"] for v in stats.values()), "overrides": sum(v["overrides"] for v in stats.values()),
                 "byGlobalState": by_state, "rows": rows}
 
@@ -99,13 +163,14 @@ class Twin:
         a = self.store.get_instance(iid)
         if not a: return None
         if a.get("kind") == "element": return {**a, "stateName": self.fed.state[a["modelId"]].get(a["state"], {}).get("name"), "timeline": []}
+        if a.get("kind") == "record": return {**a, "timeline": self.store.timeline(iid)}
         els = self.store.elements(); vectors = {}
         for mid in [GLOBAL_ID] + self.fed.applicable(a):
             vec = self.fed.full_vector(a, mid, els)
             vectors[mid] = {"name": self.fed.models[mid]["meta"].get("knowledgeArea") or self.fed.models[mid]["meta"].get("name"), "regions": [
                 {"region": rid, "regionName": self.fed.regions[mid][rid]["name"], "code": self.fed.code_of[mid][rid], "state": sid, "stateName": self.fed.state[mid].get(sid, {}).get("name", sid),
                  "initial": sid == self.fed.initial[mid].get(rid), "shared": rid in self.fed.shared.get(mid, ()), "elementId": a["refs"].get(rid) if rid in self.fed.shared.get(mid, ()) else None} for rid, sid in vec.items()]}
-        return {**a, "vectorsResolved": vectors, "facts": self.fed.facts(a, els), "timeline": self.store.timeline(iid), "summary": self.fed.summary(a, els)}
+        return {**a, "vectorsResolved": vectors, "facts": self.fed.facts(a, els), "timeline": self.store.timeline(iid), "summary": self.fed.summary(a, els), "records": len(self.records(iid))}
 
     def models(self):
         return [{"id": mid, "name": m["meta"].get("name"), "knowledgeArea": m["meta"].get("knowledgeArea"), "version": m["meta"].get("version"), "regions": len(m.get("regions", [])), "shared": sorted(self.fed.shared[mid])} for mid, m in self.fed.models.items()]

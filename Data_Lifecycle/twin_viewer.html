@@ -68,14 +68,22 @@ svg.inf path.ie{cursor:pointer;opacity:.28} svg.inf path.ie.blk{opacity:.85} svg
 dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:18px;max-width:460px}
 dialog label{display:block;font-size:12px;color:var(--ink-faint);margin:8px 0 2px} dialog input{width:100%}
 .warn{font-size:12px;color:var(--amber);margin-top:8px}
-#empty{max-width:80ch}
+#empty{max-width:80ch} .recs{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0} .recs h3{margin:0 0 4px} .hrow.rec{background:var(--panel-2)} .rfig svg{width:100%;height:auto}
+.refusals{background:var(--bad-soft);border:1px solid var(--bad);border-radius:8px;padding:10px 12px;margin:10px 0}
+.refusals h3{margin:0 0 6px;color:var(--bad)} .why{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin:8px 0} .why p{margin:6px 0}
+.gl{margin:4px 0 4px 18px;padding:0} .gl li{margin:4px 0} .note{font-size:12.5px;color:var(--amber);margin-top:6px} .ok{color:var(--accent)}
+.btn.sm{font-size:12px;padding:2px 8px;float:right;margin-left:8px}
+#drawer{position:fixed;top:0;right:0;width:min(520px,100vw);height:100vh;overflow:auto;background:var(--panel);border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.18);padding:16px 18px 30px;z-index:20}
+#drawer h3{margin:0 40px 4px 0} #drawer h4{margin:14px 0 4px;font-size:13px;color:var(--ink-faint)} .dclose{position:absolute;top:12px;right:12px;font-size:12px;padding:3px 9px}
+.fig svg g.node{cursor:pointer} .fig svg g.node:hover rect{stroke-width:3px}
+.fig svg path.pulse{stroke:var(--bad)!important;stroke-width:6px!important;animation:pl 0.6s 4 alternate} @keyframes pl{to{stroke-width:2px}}
 @media (max-width:900px){.split{grid-template-columns:1fr}.hrow{grid-template-columns:1fr}.side{position:static}}
 </style></head><body>
 <header>
- <div class="hrow1"><div><h1>Digital Twin Viewer</h1><div class="dim">The digital twin of the DMBOK Data Lifecycle: every Data Asset instance moving through the Global Data Asset Protocol and the Knowledge Area FTSs.</div></div>
- <div class="ver">Twin viewer v0.1<br>Built 22 Sep 2026, 16:30 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
+ <div class="hrow1"><div><h1>Digital Twin Viewer</h1><div class="dim">The digital twin of the DMBOK Data Lifecycle: every Data Asset (a data product, table or feed) and the golden records inside it, moving through the Global Data Asset Protocol and the Knowledge Area FTSs.</div></div>
+ <div class="ver">Twin viewer v0.3<br>Built 22 Sep 2026, 16:57 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
  <div class="bar"><button class="btn primary" id="btnGh">Load from GitHub</button><button class="btn" id="btnGhSet">GitHub settings</button><label class="btn" for="files">Load files</label><input type="file" id="files" multiple accept=".json" hidden>
- <select id="cls" aria-label="asset class"><option value="">every asset class</option></select><span id="status" class="status"></span></div>
+ <select id="org" aria-label="organisation" hidden></select><select id="cls" aria-label="asset class"><option value="">every asset class</option></select><span id="status" class="status"></span></div>
  <div class="tabs" role="tablist"><button class="tab" data-t="heat" aria-selected="true">Heat map</button><button class="tab" data-t="replay" aria-selected="false">Replay</button><button class="tab" data-t="asset" aria-selected="false">One asset</button><button class="tab" data-t="influence" aria-selected="false">Influence</button></div>
 </header>
 <main>
@@ -86,6 +94,7 @@ dialog label{display:block;font-size:12px;color:var(--ink-faint);margin:8px 0 2p
   <section class="pane" id="pane-heat"></section><section class="pane" id="pane-replay" hidden></section><section class="pane" id="pane-asset" hidden></section><section class="pane" id="pane-influence" hidden></section>
  </div>
 </main>
+<aside id="drawer" hidden></aside>
 <dialog id="ghdlg"><h3 style="margin:0 0 6px">GitHub settings</h3><div class="dim">Shared with the FTS viewer on this site.</div>
 <label for="ghOwner">Owner</label><input id="ghOwner" type="text"><label for="ghRepo">Repository</label><input id="ghRepo" type="text"><label for="ghBranch">Branch</label><input id="ghBranch" type="text"><label for="ghPath">Models folder</label><input id="ghPath" type="text"><label for="ghToken">Token</label><input id="ghToken" type="password" autocomplete="off">
 <div class="warn">The token stays in this browser and is sent only to api.github.com. Use a fine-grained token for this one repository, Contents read-only.</div>
@@ -451,7 +460,7 @@ function ftsSummarySvg(M, availW, opts){
       const list=(await r.json()).filter(f=>f.type==="file"&&/\.fts\.json$/i.test(f.name));
       const models=[]; for(const f of list){ const rr=await fetch(f.url,{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(rr.ok){ try{ const m=JSON.parse(await rr.text()); if(m.meta&&m.regions&&m.subStates) models.push(m); }catch(x){} } }
       status("reading the twin export from "+tdir+" ...");
-      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","events.json"]){ const rr=await fetch(api(tdir+"/"+n),{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(!rr.ok) throw new Error(tdir+"/"+n+": "+explain(rr.status)); tw[n]=JSON.parse(await rr.text()); }
+      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","events.json","records.json"]){ const rr=await fetch(api(tdir+"/"+n),{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(!rr.ok){ if(n==="records.json") continue; throw new Error(tdir+"/"+n+": "+explain(rr.status)); } tw[n]=JSON.parse(await rr.text()); }
       ingest(models,tw,"GitHub "+c.owner+"/"+c.repo+" ("+c.branch+")");
     }catch(ex){ status("Could not load from GitHub. "+ex.message,true); }
   }
@@ -478,6 +487,9 @@ function ftsSummarySvg(M, availW, opts){
     D.st={}; D.reg={};
     D.order.forEach(mid=>{ const m=D.models[mid]; m.subStates.forEach(s=>D.st[s.id]=s); m.regions.forEach(r=>{ D.reg[mid+"|"+r.id]={m:mid, r, states:orderStates(m,r.id)}; }); });
     D.assets=(tw["instances.json"].assets||[]); D.byId={}; D.assets.forEach(a=>D.byId[a.id]=a);
+    // v0.3 two levels: records (golden records) inside their Data Asset, carrying only the record-level regions
+    D.records=((tw["records.json"]||{}).records||[]); D.recById={}; D.recsOf={}; D.recRegions=new Set();
+    D.records.forEach(r=>{ D.recById[r.id]=r; (D.recsOf[r.parentId]=D.recsOf[r.parentId]||[]).push(r); Object.entries(r.regions||{}).forEach(([m,v])=>Object.keys(v).forEach(rid=>D.recRegions.add(m+"|"+rid))); });
     D.elements={}; ((tw["elements.json"]||{}).elements||[]).forEach(x=>D.elements[x.id]=x);
     D.events=(tw["events.json"].events||[]).slice().sort((a,b)=>tms(a.at)-tms(b.at)||(a.seq-b.seq));
     D.fleet=tw["fleet.json"]||null;
@@ -491,9 +503,10 @@ function ftsSummarySvg(M, availW, opts){
     D.tMin=Math.min(...ts); D.tMax=Math.max(...ts); V.t=D.tMax;
     D.ready=true;
     const refused=D.events.filter(x=>String(x.result).startsWith("blocked")).length;
-    status(src+" · "+D.order.length+" models · "+D.assets.length+" assets · "+Object.keys(D.elements).length+" shared elements · "+D.events.length+" events ("+refused+" refused) · exported "+fmtT(D.fleet&&(D.fleet.exportedAt||D.fleet.generatedAt)));
+    status(src+" · "+D.order.length+" models · "+D.assets.length+" assets · "+(D.records.length?D.records.length+" records · ":"")+Object.keys(D.elements).length+" shared elements · "+D.events.length+" events ("+refused+" refused) · exported "+fmtT(D.fleet&&(D.fleet.exportedAt||D.fleet.generatedAt)));
     const classes=[...new Set(D.assets.map(a=>a.assetClass))].sort(); $("#cls").innerHTML='<option value="">every asset class</option>'+classes.map(c=>'<option>'+e(c)+'</option>').join("");
-    $("#assetSel").innerHTML=D.assets.map(a=>'<option value="'+e(a.id)+'">'+e(a.id+"  "+a.name.replace("Customer Master record: ",""))+'</option>').join("");
+    const orgs=[...new Set(D.assets.map(a=>a.org).filter(Boolean))].sort(); $("#org").innerHTML='<option value="">every organisation</option>'+orgs.map(c=>'<option>'+e(c)+'</option>').join(""); $("#org").hidden=!orgs.length;
+    $("#assetSel").innerHTML=D.assets.map(a=>'<option value="'+e(a.id)+'">'+e(a.id+"  "+a.name+(a.org?" ("+a.org+")":"")+((D.recsOf[a.id]||[]).length?" · "+D.recsOf[a.id].length+" records":""))+'</option>').join("");
     if(!V.asset) V.asset=(D.assets.find(a=>D.events.some(x=>x.instanceId===a.id&&String(x.result).startsWith("blocked")))||D.assets[0]||{}).id;
     $("#assetSel").value=V.asset;
     $("#slider").min=D.tMin; $("#slider").max=D.tMax; $("#slider").value=D.tMax; $("#slider").step=3600000;
@@ -507,7 +520,8 @@ function ftsSummarySvg(M, availW, opts){
     const R=D.reg[mid+"|"+rid]; return R&&R.r.initialState||null;
   }
   const applies=(a,mid)=>mid===GID||!(a.kaModels)||a.kaModels.includes(mid);
-  const pool=()=>D.assets.filter(a=>!V.cls||a.assetClass===V.cls);
+  const pool=()=>D.assets.filter(a=>(!V.cls||a.assetClass===V.cls)&&(!V.org||a.org===V.org));
+  function recState(r,mid,rid,t){ const L=D.keys[r.id+"|"+mid+"|"+rid]; if(t!=null){ if(tms(r.createdAt)>t) return null; if(L){ if(t<L[0][0]) return L[0][1]; let lo=0,hi=L.length-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(L[m][0]<=t) lo=m; else hi=m-1; } return L[lo][1]; } } return ((r.regions||{})[mid]||{})[rid]||null; }
   const kaName=mid=>mid===GID?"Global Data Asset Protocol":(D.models[mid].meta.knowledgeArea||D.models[mid].meta.name);
   const kaShort=mid=>mid===GID?"Global":mid.replace(/^KA-/,"");
 
@@ -515,10 +529,12 @@ function ftsSummarySvg(M, availW, opts){
   function counts(t){
     const C={}, act=pool().filter(a=>t==null||tms(a.createdAt)<=t);
     D.order.forEach(mid=>D.models[mid].regions.forEach(r=>{ const k=mid+"|"+r.id; const c=C[k]={}; act.forEach(a=>{ if(!applies(a,mid)) return; const s=stateOf(a,mid,r.id,t); if(s) c[s]=(c[s]||0)+1; }); }));
-    return {C, n:act.length};
+    const ids=new Set(act.map(a=>a.id)); const R={};
+    D.recRegions.forEach(k=>{ const [mid,rid]=k.split("|"); const c=R[k]={}; D.records.forEach(r=>{ if(!ids.has(r.parentId)) return; const s=recState(r,mid,rid,t); if(s) c[s]=(c[s]||0)+1; }); });
+    return {C, R, n:act.length};
   }
   function heatHtml(t, win){
-    const {C,n}=counts(t); const h=[];
+    const {C,R:RC,n}=counts(t); const h=[];
     const flash={}; (win||[]).forEach(ev=>{ if(!ev.region) return; const k=ev.model+"|"+ev.region+"|"+(ev.from||""); if(String(ev.result).startsWith("blocked")) flash[k]="ref"; const k2=ev.model+"|"+ev.region+"|"+(ev.stateAfter||""); if(ev.fired&&!flash[k2]) flash[k2]="fire"; });
     const refByReg={}; D.events.forEach(ev=>{ if(String(ev.result).startsWith("blocked")&&(t==null||tms(ev.at)<=t)) refByReg[ev.model+"|"+ev.region]=(refByReg[ev.model+"|"+ev.region]||0)+1; });
     h.push('<div class="heat">');
@@ -528,20 +544,27 @@ function ftsSummarySvg(M, availW, opts){
         h.push('<div class="hrow"><div class="hreg"><span class="mono">'+e(r.code||r.id.split("-").pop())+'</span> '+e(r.name)+(D.shared.has(r.id)?' <span class="pill" title="shared region: one governing element per scope, every asset reads it">shared</span>':'')+(refByReg[k]?' <span class="pill red" title="refused events in this region">'+refByReg[k]+' refused</span>':'')+'</div><div class="hcells">');
         R.states.forEach(s=>{ const v=c[s.id]||0; const f=tot?v/tot:0; const fl=flash[k+"|"+s.id];
           h.push('<button class="hcell'+(v?'':' zero')+(fl?' fl-'+fl:'')+(s.terminal?' term':'')+(V.sel&&V.sel.k===k&&V.sel.s===s.id?' sel':'')+'" data-k="'+e(k)+'" data-s="'+e(s.id)+'" style="--f:'+f.toFixed(3)+'" title="'+e(s.name+": "+v+" of "+tot+" assets"+(s.terminal?" (terminal)":""))+'"><span class="hn">'+e(s.name)+'</span><span class="hv">'+(v||"")+'</span></button>'); });
-        h.push('</div></div>'); });
+        h.push('</div></div>');
+        if(RC[k]){ const c2=RC[k], t2=Object.values(c2).reduce((x,y)=>x+y,0);
+          h.push('<div class="hrow rec"><div class="hreg"><span class="mono">'+e(r.code||"")+'</span> '+e(r.name)+' <span class="pill" title="one instance per entity record inside its Data Asset">records</span><div class="dim" style="font-size:11px">the row above is each asset\'s roll-up of these</div></div><div class="hcells">');
+          R.states.forEach(s=>{ const v=c2[s.id]||0; const f=t2?v/t2:0; h.push('<button class="hcell rc'+(v?'':' zero')+(V.sel&&V.sel.k===k+"|rec"&&V.sel.s===s.id?' sel':'')+'" data-k="'+e(k+"|rec")+'" data-s="'+e(s.id)+'" style="--f:'+f.toFixed(3)+'" title="'+e(s.name+": "+v+" of "+t2+" records")+'"><span class="hn">'+e(s.name)+'</span><span class="hv">'+(v||"")+'</span></button>'); });
+          h.push('</div></div>'); } });
       h.push('</div>'); });
     h.push('</div>');
     return {html:h.join(""), n};
   }
   function renderHeat(){
     const {html,n}=heatHtml(null);
-    $("#pane-heat").innerHTML='<p class="lede">Every state region of every FTS, one row each, states left to right in reading order. A cell shows how many of the '+n+' assets'+(V.cls?' of class '+e(V.cls):'')+' sit in that state now; the darker the cell, the larger its share of the row. Shared regions (a strategy, a programme, a platform) have one governing element that every asset reads, so the whole row sits in one state. Click a cell for the assets in it.</p><div class="split"><div>'+html+'</div><aside id="side" class="side"></aside></div>';
+    $("#pane-heat").innerHTML='<p class="lede">Every state region of every FTS, one row each, states left to right in reading order. A cell shows how many of the '+n+' assets'+(V.cls?' of class '+e(V.cls):'')+' sit in that state now'+(D.records.length?' (a row marked records counts the golden records inside the assets instead; the row above it is each asset\'s roll-up)':'')+'; the darker the cell, the larger its share of the row. Shared regions (a strategy, a programme, a platform) have one governing element that every asset reads, so the whole row sits in one state. Click a cell for the assets in it.</p><div class="split"><div>'+html+'</div><aside id="side" class="side"></aside></div>';
     wireCells(); renderSide();
   }
   function wireCells(){ $$(".hcell").forEach(b=>b.onclick=()=>{ V.sel={k:b.dataset.k,s:b.dataset.s}; $$(".hcell.sel").forEach(x=>x.classList.remove("sel")); b.classList.add("sel"); renderSide(); }); }
   function renderSide(){
     const el=$("#side"); if(!el) return; if(!V.sel){ el.innerHTML='<div class="dim">Click a cell to list its assets.</div>'; return; }
-    const [mid,rid]=V.sel.k.split("|"); const t=V.tab==="replay"?V.t:null; const s=D.st[V.sel.s]||{};
+    const [mid,rid,lvl]=V.sel.k.split("|"); const t=V.tab==="replay"?V.t:null; const s=D.st[V.sel.s]||{};
+    if(lvl==="rec"){ const ids=new Set(pool().map(a=>a.id)); const list=D.records.filter(r=>ids.has(r.parentId)&&recState(r,mid,rid,t)===V.sel.s); const by={}; list.forEach(r=>(by[r.parentId]=by[r.parentId]||[]).push(r));
+      el.innerHTML='<h3>'+e(s.name||V.sel.s)+'</h3><div class="dim">'+e(kaName(mid))+' · '+e((D.reg[mid+"|"+rid]||{r:{}}).r.name)+' · records</div><p>'+e(s.definition||"")+'</p><div class="dim">'+list.length+' records in '+Object.keys(by).length+' assets</div>'+Object.entries(by).map(([pid,rs])=>'<div style="margin-top:6px"><a href="#" data-a="'+e(pid)+'"><b>'+e(pid)+'</b> '+e((D.byId[pid]||{}).name||"")+'</a><ul class="alist">'+rs.slice(0,60).map(r=>'<li><a href="#" data-a="'+e(pid)+'" data-r="'+e(r.id)+'">'+e(r.id.split("-").pop())+'</a> '+e(r.name)+'</li>').join("")+'</ul></div>').join("");
+      el.querySelectorAll("a[data-a]").forEach(x=>x.onclick=ev=>{ ev.preventDefault(); V.asset=x.dataset.a; V.openRec=x.dataset.r||null; $("#assetSel").value=V.asset; setTab("asset"); }); return; }
     const list=pool().filter(a=>applies(a,mid)&&(t==null||tms(a.createdAt)<=t)&&stateOf(a,mid,rid,t)===V.sel.s);
     el.innerHTML='<h3>'+e(s.name||V.sel.s)+'</h3><div class="dim">'+e(kaName(mid))+' · '+e((D.reg[V.sel.k]||{r:{}}).r.name)+'</div><p>'+e(s.definition||"")+'</p><div class="dim">'+list.length+' assets'+(t!=null?' on '+fmtD(t):'')+'</div><ul class="alist">'+list.slice(0,200).map(a=>'<li><a href="#" data-a="'+e(a.id)+'">'+e(a.id)+'</a> '+e(a.name.replace("Customer Master record: ",""))+'</li>').join("")+'</ul>';
     el.querySelectorAll("a[data-a]").forEach(x=>x.onclick=ev=>{ ev.preventDefault(); V.asset=x.dataset.a; $("#assetSel").value=V.asset; setTab("asset"); });
@@ -569,19 +592,87 @@ function ftsSummarySvg(M, availW, opts){
     catch(ex){ return '<div class="dim">diagram not drawn: '+e(ex.message)+'</div>'; }
   }
   const mid_=id=>String(id).replace(/[^A-Za-z0-9_]/g,"_");
+  // ---- v0.2 (Howard, 22 Sep 2026: "how do I dig into the refusal"): every refusal explained in plain language, and every state and
+  // transition on a diagram clickable for its definition, its guards and this asset's history on it
+  const trOf=(mid,id)=>((D.models[mid]||{}).transitions||[]).find(t=>t.id===id)||{};
+  const sName=id=>(D.st[id]||{}).name||id||"";
+  const regName=(mid,rid)=>((D.reg[mid+"|"+rid]||{}).r||{}).name||rid;
+  const synth=ev=>/^synthetic:/.test(ev.actor||"")&&!/scenario/.test(ev.actor)?ev.actor.replace("synthetic:",""):"";
+  function guardDetail(a,ev,g){
+    const t=tms(ev.at); const out={who:g.contributedBy?kaName(g.contributedBy):"the Global protocol itself", need:"", had:""};
+    let mm;
+    if(g.contributedBy&&(mm=g.guard.match(/^GRD-(CON-[A-Z]+-\d+)/))){ const km=D.models[g.contributedBy]; const c=(km&&km.contributions||[]).find(x=>x.id===mm[1]);
+      if(c&&c.requiredStates){ const parts=[], had=[]; Object.entries(c.requiredStates).forEach(([code,ids])=>{ const r=(km.regions||[]).find(x=>x.code===code); if(!r) return; parts.push(r.name+" in "+ids.map(sName).join(" or ")); const s=stateOf(a,g.contributedBy,r.id,t); had.push(r.name+" was "+(s?sName(s):"not started")+(ids.includes(s)?" (met)":" (not met)")); }); out.need=parts.join("; and "); out.had=had.join("; "); }
+      if(c&&c.expression) out.expr=c.expression; }
+    else if((mm=g.guard.match(/^GRD-(XRG-\d+)/))){ const x=(D.models[GID].crossRegionConstraints||[]).find(y=>y.id===mm[1]); if(x){ out.expr=x.expression; out.need=x.constraint; out.had="Global vector then: "+D.models[GID].regions.map(r=>r.code+" "+sName(stateOf(a,GID,r.id,t))).join(", ")+(a.facts?" · facts now: "+Object.entries(a.facts).filter(([k])=>(x.expression||"").includes(k)).map(([k,v])=>k+"="+v).join(", "):""); } }
+    return out;
+  }
+  function explainHtml(a,ev){
+    const tr=trOf(ev.model,ev.transition); const when=fmtT(ev.at); const reg=regName(ev.model,ev.region);
+    const h=['<div class="why"><div><b>'+e(ev.transition+" "+(tr.name||ev.name||""))+'</b> in <b>'+e(kaName(ev.model))+'</b> · '+e(reg)+' · '+e(when)+'</div>'];
+    h.push('<div class="dim">It would move the asset from <b>'+e(sName(tr.source))+'</b> to <b>'+e(sName(tr.target))+'</b>. Guard in the model: '+e(tr.guardSummary||"")+'</div>');
+    if(ev.result==="blocked: source not active"){
+      h.push('<p><b>Why it was refused:</b> the transition can only start from <b>'+e(sName(tr.source))+'</b>, but on '+e(when)+' this asset\'s '+e(reg)+' was in <b>'+e(sName(ev.stateAfter))+'</b>. The request came out of order, so the twin refused it and nothing changed.</p>');
+    } else {
+      const fails=(ev.guards||[]).filter(g=>g.verdict===false);
+      h.push('<p><b>Why it was refused:</b> '+fails.length+' guard'+(fails.length===1?'':'s')+' on this transition answered false when the event arrived, so the twin kept the asset where it was.</p><ol class="gl">'+fails.map(g=>{ const d=guardDetail(a,ev,g); return '<li><div><span class="mono">'+e(g.guard)+'</span> · set by '+e(d.who)+' · <b>'+e(g.requirement||"")+'</b>'+(g.requirement==="Non-waivable"?' (no exception can override it)':'')+'</div><div>'+e(g.predicate)+'</div>'+(d.need&&d.need!==g.predicate?'<div class="dim">Needs: '+e(d.need)+'</div>':'')+(d.had?'<div>At the time: '+e(d.had)+'</div>':'')+(d.expr?'<div class="mono dim">'+e(d.expr)+'</div>':'')+'</li>'; }).join("")+'</ol>');
+    }
+    if(tr.decisionRight){ const dr=((D.models[ev.model]||{}).decisionRights||[]).find(x=>x.id===tr.decisionRight); if(dr) h.push('<div class="dim">Decision right '+e(dr.id)+' '+e(dr.name)+', held by '+e(dr.holderName||dr.holder||"not stated")+'.</div>'); }
+    const s=synth(ev); if(s) h.push('<div class="note">This is a test event the synthetic fleet injected on purpose ("'+e(s)+'") to prove the guards refuse it. In a real feed the same panel would name the system and person that sent it.</div>');
+    const after=D.events.filter(x=>x.instanceId===a.id&&x.model===ev.model&&x.transition===ev.transition&&x.fired&&tms(x.at)>tms(ev.at))[0];
+    if(after) h.push('<div>Later the same transition fired on '+e(fmtT(after.at))+', once its conditions held.</div>');
+    h.push('</div>'); return h.join("");
+  }
+  function openDrawer(html){ const d=$("#drawer"); d.innerHTML='<button class="btn dclose" aria-label="close">Close</button>'+html; d.hidden=false; d.querySelector(".dclose").onclick=()=>{ d.hidden=true; }; }
+  function stateDrawer(a,mid,rid,sid,evs){
+    const s=D.st[sid]||{}; const m=D.models[mid]; const into=evs.filter(x=>x.model===mid&&x.region===rid&&x.fired&&x.stateAfter===sid), outof=evs.filter(x=>x.model===mid&&x.region===rid&&x.fired&&x.from===sid&&x.stateAfter!==sid);
+    const cur=stateOf(a,mid,rid,null)===sid; const trs=(m.transitions||[]).filter(t=>t.source===sid||t.target===sid);
+    openDrawer('<h3>'+e(s.name||sid)+'</h3><div class="dim mono">'+e(sid)+' · '+e(kaName(mid))+' · '+e(regName(mid,rid))+'</div><p>'+e(s.definition||"")+'</p>'+(s.invariant?'<div class="dim">Holds while in this state: '+e(s.invariant)+'</div>':'')+
+      '<h4>This asset</h4><div>'+(cur?'<b>It is in this state now.</b> ':'')+(into.length?'Entered '+into.map(x=>fmtT(x.at)+' by '+x.transition).join(", ")+'. ':'')+(outof.length?'Left '+outof.map(x=>fmtT(x.at)+' by '+x.transition).join(", ")+'.':'')+(!cur&&!into.length&&!outof.length?'Never in this state.':'')+'</div>'+
+      '<h4>Transitions in and out</h4><ul class="alist">'+trs.map(t=>'<li><span class="mono">'+e(t.id)+'</span> '+e(t.name)+': '+e(sName(t.source))+' → '+e(sName(t.target))+'</li>').join("")+'</ul>');
+  }
+  function transDrawer(a,mid,tid,evs){
+    const t=trOf(mid,tid); const m=D.models[mid]; const mine=evs.filter(x=>x.model===mid&&x.transition===tid);
+    const contrib=[]; D.order.forEach(k=>{ if(k===mid) return; (D.models[k].contributions||[]).forEach(c=>{ if(mid===GID&&c.globalTransition===tid) contrib.push([k,c]); }); (D.models[k].kaCouplings||[]).forEach(c=>{ if(c.targetModel===mid&&c.targetTransition===tid) contrib.push([k,c]); }); });
+    const xrg=(t.crossRegionConstraints||[]).map(id=>(m.crossRegionConstraints||[]).find(x=>x.id===id)).filter(Boolean);
+    const dr=(m.decisionRights||[]).find(x=>x.id===t.decisionRight);
+    openDrawer('<h3>'+e(tid+" "+(t.name||""))+'</h3><div class="dim">'+e(kaName(mid))+' · '+e(sName(t.source))+' → '+e(sName(t.target))+'</div><p>'+e(t.guardSummary||"")+'</p>'+(dr?'<div>Decision right <span class="mono">'+e(dr.id)+'</span> '+e(dr.name)+', held by <b>'+e(dr.holderName||dr.holder||"not stated")+'</b>.</div>':'')+
+      (xrg.length?'<h4>Cross-region guards</h4><ul class="alist">'+xrg.map(x=>'<li><span class="mono">'+e(x.id)+'</span> ('+e(x.requirement)+') '+e(x.constraint)+'</li>').join("")+'</ul>':'')+
+      (contrib.length?'<h4>What other FTSs require</h4><ul class="alist">'+contrib.map(([k,c])=>'<li><b>'+e(kaShort(k))+'</b> <span class="mono">'+e(c.id)+'</span>'+(c.requirement?' ('+e(c.requirement)+')':'')+': '+e(c.predicate||"")+'</li>').join("")+'</ul>':'')+
+      '<h4>This asset on this transition</h4>'+(mine.length?mine.map(ev=>String(ev.result).startsWith("blocked")?explainHtml(a,ev):'<div class="ok">'+e(fmtT(ev.at))+' fired → '+e(sName(ev.stateAfter))+(ev.actor?' <span class="dim">('+e(ev.actor)+')</span>':'')+'</div>').join(""):'<div class="dim">Never attempted.</div>'));
+  }
+  function recordDrawer(recId){
+    const r=D.recById[recId]; if(!r) return; const a=D.byId[r.parentId]; const evs=D.events.filter(x=>x.instanceId===r.id); const mid="KA-RMD", rg=D.models[mid].regions.find(x=>x.id==="REG-RMD-GLD");
+    openDrawer('<h3>'+e(r.name)+'</h3><div class="dim mono">'+e(r.id)+' · '+e(r.recordType||"record")+' · inside '+e(a?a.id+" "+a.name:r.parentId)+'</div><p>Now <b>'+e(sName(recState(r,mid,"REG-RMD-GLD",null)))+'</b>. Created '+e(fmtT(r.createdAt))+'.</p><div class="fig rfig">'+regionSvg(mid,rg)+'</div><h4>Timeline</h4><table class="tl"><tbody>'+evs.map(ev=>{ const bad=String(ev.result).startsWith("blocked"); return '<tr class="'+(bad?'bad':'')+'"><td class="mono">'+fmtT(ev.at)+'</td><td>'+e((ev.transition||"")+" "+(ev.name||""))+'</td><td>'+e(bad?"refused":sName(ev.stateAfter))+'</td><td class="dim">'+e((ev.actor||"").replace("synthetic:",""))+'</td></tr>'; }).join("")+'</tbody></table>'+(evs.some(x=>String(x.result).startsWith("blocked"))?evs.filter(x=>String(x.result).startsWith("blocked")).map(ev=>explainHtml(a,ev)).join(""):""));
+    const fig=$("#drawer .rfig"); if(!fig) return; const cur=recState(r,mid,"REG-RMD-GLD",null);
+    const visited=new Set(); evs.forEach(x=>{ if(x.fired&&x.from) visited.add(x.from); if(x.stateAfter) visited.add(x.stateAfter); }); visited.forEach(s=>{ const g=fig.querySelector("#state-"+mid_(s)+"-0 rect"); if(g) g.classList.add("visited"); });
+    const cg=fig.querySelector("#state-"+mid_(cur)+"-0 rect"); if(cg) cg.classList.add("current");
+    const taken=new Set(evs.filter(x=>x.fired&&x.transition).map(x=>x.transition)); fig.querySelectorAll("path.transition[data-tr]").forEach(p=>{ if(taken.has(p.getAttribute("data-tr"))) p.classList.add("taken"); });
+  }
+  function showOnDiagram(mid,rid,tid){
+    const d=document.querySelector('details.amod[data-m="'+mid+'"]'); if(d&&!d.open){ d.open=true; }
+    setTimeout(()=>{ const box=document.getElementById("reg-"+mid_(mid+rid)); if(box){ box.scrollIntoView({behavior:"smooth",block:"center"}); const p=box.querySelector('path.transition[data-tr="'+tid+'"]'); if(p){ p.classList.add("pulse"); setTimeout(()=>p.classList.remove("pulse"),2400); } } },60);
+  }
   function renderAsset(){
     const a=D.byId[V.asset]; const pane=$("#pane-asset"); if(!a){ pane.innerHTML='<div class="dim">Choose an asset.</div>'; return; }
     const evs=D.events.filter(x=>x.instanceId===a.id);
     const refused=evs.filter(x=>String(x.result).startsWith("blocked"));
     const h=['<p class="lede">One Data Asset across every FTS. The strip shows its state in each region; open a Knowledge Area to see the real state diagram of each of its regions with the asset\'s current state filled, the states it passed through outlined, the transitions it took drawn thick, and any transition the twin refused drawn red with the reason.</p>'];
-    h.push('<div class="ahead"><h2>'+e(a.id)+' · '+e(a.name.replace("Customer Master record: ",""))+'</h2><div class="dim">'+e(a.assetClass)+' · created '+fmtT(a.createdAt)+' · '+evs.filter(x=>x.fired&&x.transition).length+' transitions fired · <span class="'+(refused.length?'redt':'')+'">'+refused.length+' refused</span> · '+evs.filter(x=>x.result==="override").length+' overrides'+((a.facts||{}).hold_active?' · <b class="amber">legal hold</b>':'')+'</div></div>');
+    h.push('<div class="ahead"><h2>'+e(a.id)+' · '+e(a.name)+'</h2><div class="dim">'+(a.org?e(a.org)+' · ':'')+(a.domain?e(a.domain)+' · ':'')+(a.classification?e(a.classification)+' · ':'')+e(a.assetClass)+' · created '+fmtT(a.createdAt)+' · '+evs.filter(x=>x.fired&&x.transition).length+' transitions fired · <span class="'+(refused.length?'redt':'')+'">'+refused.length+' refused</span> · '+evs.filter(x=>x.result==="override").length+' overrides'+((a.facts||{}).hold_active?' · <b class="amber">legal hold</b>':'')+'</div></div>');
     // the state vector strip
     h.push('<div class="strip">'+D.order.map(mid=>'<div class="smod'+(applies(a,mid)?'':' na')+'"><div class="smn">'+e(kaShort(mid))+'</div>'+D.models[mid].regions.map(r=>{ const s=stateOf(a,mid,r.id,null); const moved=evs.some(x=>x.model===mid&&x.region===r.id&&x.fired); const bad=evs.some(x=>x.model===mid&&x.region===r.id&&String(x.result).startsWith("blocked")); return '<a href="#reg-'+mid_(mid+r.id)+'" class="schip'+(moved?' moved':'')+(bad?' bad':'')+(D.shared.has(r.id)?' sh':'')+'" data-m="'+e(mid)+'" title="'+e(r.name+": "+((D.st[s]||{}).name||s||"")+(D.shared.has(r.id)?" (shared element)":""))+'"><span class="mono">'+e(r.code||"")+'</span> '+e((D.st[s]||{}).name||"")+'</a>'; }).join("")+'</div>').join("")+'</div>');
+    if(refused.length) h.push('<div class="refusals"><h3>'+refused.length+' refusal'+(refused.length===1?'':'s')+' for this asset</h3>'+refused.map((ev,i)=>explainHtml(a,ev).replace('<div class="why">','<div class="why"><button class="btn sm showd" data-i="'+i+'">Show on the diagram</button>')).join("")+'</div>');
+    const recs=D.recsOf[a.id]||[];
+    if(recs.length){ const mid="KA-RMD", rid="REG-RMD-GLD"; const Rg=D.reg[mid+"|"+rid]; const cnt={}; recs.forEach(r=>{ const s=recState(r,mid,rid,null); cnt[s]=(cnt[s]||0)+1; });
+      h.push('<div class="recs"><h3>'+recs.length+' golden records inside this asset</h3><p class="dim">Each record is its own instance with its own Golden Record state; the asset\'s Golden Record region is their roll-up (Record Conflict when 5% or more are in conflict, Reliable when 90% or more are reliable, Matched when 90% or more are matched or reliable). A conflict roll-up raises the assurance and suspension triggers on the asset through the Global protocol. Now: <b>'+e(sName(stateOf(a,mid,rid,null)))+'</b>.</p><div class="hcells">'+(Rg?Rg.states:[]).map(s=>'<span class="hcell'+(cnt[s.id]?'':' zero')+'" style="--f:'+((cnt[s.id]||0)/recs.length).toFixed(3)+';cursor:default"><span class="hn">'+e(s.name)+'</span><span class="hv">'+(cnt[s.id]||"")+'</span></span>').join("")+'</div><div class="tscroll" style="max-height:260px;overflow:auto;margin-top:8px"><table class="tl"><thead><tr><th>Record</th><th>Name</th><th>State</th><th>Events</th><th>Last</th></tr></thead><tbody>'+recs.map(r=>{ const ev=D.events.filter(x=>x.instanceId===r.id); const last=ev[ev.length-1]; return '<tr class="'+(ev.some(x=>String(x.result).startsWith("blocked"))?'bad':'')+'"><td><a href="#" class="mono ropen" data-r="'+e(r.id)+'">'+e(r.id.split("-").pop())+'</a></td><td>'+e(r.name)+'</td><td>'+e(sName(recState(r,mid,rid,null)))+'</td><td class="n">'+ev.length+'</td><td>'+(last?e(fmtT(last.at)+" "+(last.transition||"")+" "+(last.actor||"").replace("synthetic:","")):"")+'</td></tr>'; }).join("")+'</tbody></table></div></div>'); }
     // per model, collapsible diagrams
     D.order.forEach(mid=>{ if(!applies(a,mid)) return; const m=D.models[mid]; const n=evs.filter(x=>x.model===mid).length; const nb=evs.filter(x=>x.model===mid&&String(x.result).startsWith("blocked")).length;
       h.push('<details class="amod" data-m="'+e(mid)+'"'+(V.openModels.has(mid)?' open':'')+'><summary><b>'+e(kaName(mid))+'</b> <span class="dim">'+m.regions.length+' regions · '+n+' events'+(nb?'</span> <span class="redt">'+nb+' refused</span>':'</span>')+'</summary><div class="amodbody" data-m="'+e(mid)+'"></div></details>'); });
     h.push('<h3>Timeline</h3><div class="tscroll"><table class="tl"><thead><tr><th>At</th><th>FTS</th><th>Transition</th><th>Result</th><th>State after</th><th>Why</th></tr></thead><tbody>'+evs.map(ev=>{ const bad=String(ev.result).startsWith("blocked"); const g=(ev.guards||[]).filter(x=>x.verdict===false); return '<tr class="'+(bad?'bad':ev.result==="override"?'ovr':'')+'"><td class="mono">'+fmtT(ev.at)+'</td><td class="mono">'+e(kaShort(ev.model||""))+'</td><td>'+e((ev.transition||"")+" "+(ev.name||""))+(ev.result==="facts"?'facts: '+e(Object.entries(ev.factsApplied||{}).map(([k,v])=>k+"="+v).join(", ")):'')+'</td><td>'+e(ev.result)+'</td><td>'+e((D.st[ev.stateAfter]||{}).name||"")+'</td><td>'+(bad?(g.length?g.map(x=>'<span class="mono">'+e(x.guard)+'</span>'+(x.contributedBy?' ['+e(kaShort(x.contributedBy))+']':'')+': '+e(x.predicate)).join("<br>"):'source state not active'):ev.result==="override"?e(ev.reason||""):'')+'</td></tr>'; }).join("")+'</tbody></table></div>');
     pane.innerHTML=h.join("");
+    $$("#pane-asset .ropen").forEach(x=>x.onclick=ev=>{ ev.preventDefault(); recordDrawer(x.dataset.r); });
+    if(V.openRec){ const r=V.openRec; V.openRec=null; setTimeout(()=>recordDrawer(r),50); }
+    $$("#pane-asset .showd").forEach(b=>b.onclick=()=>{ const ev=refused[+b.dataset.i]; showOnDiagram(ev.model,ev.region,ev.transition); });
     $$("#pane-asset details.amod").forEach(d=>{ const fill=()=>{ if(d.open){ V.openModels.add(d.dataset.m); drawModel(d.querySelector(".amodbody"),a,d.dataset.m,evs); } else V.openModels.delete(d.dataset.m); }; d.addEventListener("toggle",fill); if(d.open) fill(); });
     $$("#pane-asset .schip").forEach(c=>c.onclick=()=>{ const d=document.querySelector('details.amod[data-m="'+c.dataset.m+'"]'); if(d&&!d.open) d.open=true; });
   }
@@ -597,6 +688,10 @@ function ftsSummarySvg(M, availW, opts){
       const cg=fig.querySelector("#state-"+mid_(cur)+"-0 rect"); if(cg) cg.classList.add("current");
       const taken=new Set(re.filter(x=>x.fired&&x.transition).map(x=>x.transition)); const bad={}; re.filter(x=>String(x.result).startsWith("blocked")).forEach(x=>bad[x.transition]=x);
       fig.querySelectorAll("path.transition[data-tr]").forEach(p=>{ const id=p.getAttribute("data-tr"); if(taken.has(id)) p.classList.add("taken"); if(bad[id]){ p.classList.add("refused"); const tt=document.createElementNS("http://www.w3.org/2000/svg","title"); const g=(bad[id].guards||[]).filter(x=>x.verdict===false); tt.textContent="refused "+fmtT(bad[id].at)+": "+(g.length?g.map(x=>(x.contributedBy?"["+x.contributedBy+"] ":"")+x.predicate).join("; "):"source state not active"); p.appendChild(tt); } });
+      // clickable: a wide invisible hit line on every transition, and every state box
+      fig.querySelectorAll("path.transition[data-tr]").forEach(p=>{ const hit=p.cloneNode(false); hit.setAttribute("class","hit"); hit.removeAttribute("marker-end"); hit.setAttribute("stroke","transparent"); hit.setAttribute("stroke-width","16"); hit.style.pointerEvents="stroke"; hit.style.cursor="pointer"; const tt=document.createElementNS("http://www.w3.org/2000/svg","title"); tt.textContent=p.getAttribute("data-tr")+": click for its guards and this asset's history"; hit.appendChild(tt); p.parentNode.insertBefore(hit,p.nextSibling); hit.addEventListener("click",()=>transDrawer(a,mid,p.getAttribute("data-tr"),evs)); });
+      fig.querySelectorAll("g.edgeLabel").forEach(g=>{ const tid=(g.textContent||"").trim().split(/\s/)[0]; if(/^TR-/.test(tid)){ g.style.cursor="pointer"; g.addEventListener("click",()=>transDrawer(a,mid,tid,evs)); } });
+      (D.reg[mid+"|"+r.id]||{states:[]}).states.forEach(s=>{ const g=fig.querySelector("#state-"+mid_(s.id)+"-0"); if(g){ g.style.cursor="pointer"; const tt=document.createElementNS("http://www.w3.org/2000/svg","title"); tt.textContent=s.name+": click for its definition and this asset's time in it"; g.appendChild(tt); g.addEventListener("click",()=>stateDrawer(a,mid,r.id,s.id,evs)); } });
     });
   }
 
@@ -648,7 +743,7 @@ function ftsSummarySvg(M, availW, opts){
     $("#btnGh").onclick=ghLoad; $("#btnGhSet").onclick=ghOpen; $("#ghCancel").onclick=()=>$("#ghdlg").close();
     $("#ghSave").onclick=()=>{ const c=ghGet(); c.owner=$("#ghOwner").value.trim(); c.repo=$("#ghRepo").value.trim(); c.branch=$("#ghBranch").value.trim()||"main"; c.path=$("#ghPath").value.trim().replace(/^\/+|\/+$/g,""); const t=$("#ghToken").value.trim(); if(t) c.token=t; ghSet(c); $("#ghdlg").close(); ghLoad(); };
     $("#files").onchange=ev=>fileLoad([...ev.target.files]);
-    $("#cls").onchange=ev=>{ V.cls=ev.target.value; render(); };
+    $("#cls").onchange=ev=>{ V.cls=ev.target.value; render(); }; $("#org").onchange=ev=>{ V.org=ev.target.value; render(); };
     $("#play").onclick=play; $("#speed").onchange=ev=>{ V.speed=+ev.target.value; };
     $("#slider").oninput=ev=>{ stop(); V.t=+ev.target.value; renderReplay(); };
     $("#assetSel").onchange=ev=>{ V.asset=ev.target.value; renderAsset(); };

@@ -1,7 +1,7 @@
 /* Build stamp — bump `number` and `built` on each deploy.
    Shows a small badge in the corner of every page so you can confirm which
    version a client has loaded (a stale/cached client will show an older stamp). */
-window.APP_VERSION = { number: "1.6.8", built: "2026-09-22 11:20 SAST" };
+window.APP_VERSION = { number: "1.6.9", built: "2026-09-22 11:45 SAST" };
 
 (function () {
   try {

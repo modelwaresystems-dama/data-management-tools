@@ -48,6 +48,7 @@
   .field{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;text-align:left;}
   .field label{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);}
   .field input{padding:14px;border-radius:12px;border:1px solid var(--line2);background:var(--stage2);color:var(--ink);font-size:17px;}
+  .field select{padding:14px;border-radius:12px;border:1px solid var(--line2);background:var(--stage2);color:var(--ink);font-size:17px;width:100%;}
   .field input.code{font-family:"IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;}
   .err{color:var(--bad);font-size:13px;margin:4px 0 12px;min-height:16px;}
   .tinylink{background:none;border:0;color:var(--faint);font-size:13px;text-decoration:underline;padding:8px 0 0;}
@@ -107,7 +108,7 @@
   /* reveal */
   .reveal{flex:1;display:grid;grid-template-columns:1.25fr .75fr;gap:22px;min-height:0;}
   .reveal .left{display:flex;flex-direction:column;min-height:0;}
-  .whybox{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:13px 15px;font-size:14.5px;color:var(--muted);line-height:1.5;}
+  .whybox{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:13px 15px;font-size:15px;color:#FFFFFF;line-height:1.6;}
   .whybox b{color:var(--accent-ink);font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:5px;}
   .lb{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;min-height:0;}
   .lb h3{font-family:"Sora",sans-serif;font-size:15px;margin:0 0 12px;}
@@ -247,6 +248,18 @@ function normalizeQuiz(raw){
       return { q:cleanText(q.question), options:o.map(x=>cleanText(x.text)), correct:c,
                why:cleanText((o[c]&&o[c].rationale)||q.hint||""), hint:cleanText(q.hint||"") }; }) };
 }
+function shuffleQuiz(quiz){
+  if(!quiz||!quiz.questions) return quiz;
+  quiz.questions.forEach(q=>{
+    if(!q.options||q.options.length<2) return;
+    const idx=q.options.map((_,i)=>i);
+    for(let i=idx.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [idx[i],idx[j]]=[idx[j],idx[i]]; }
+    q.options=idx.map(i=>q.options[i]); q.correct=idx.indexOf(q.correct);
+  });
+  return quiz;
+}
+let ROSTERS=null;
+async function loadRosters(){ if(ROSTERS)return ROSTERS; try{ROSTERS=await fetchAsset("rosters.json","");}catch(e){ROSTERS={classes:[]};} return ROSTERS; }
 function joinBase(){ return (CFG.joinBaseUrl&&CFG.joinBaseUrl.trim()) || (location.origin+location.pathname); }
 function newCode(){ const A="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<5;i++)s+=A[Math.floor(Math.random()*A.length)]; return s; }
 
@@ -282,24 +295,40 @@ function renderLanding(preRoom){
     document.getElementById("goJoin").onclick=()=>renderJoinForm(body,"");
   }
 }
-function renderJoinForm(body, preRoom){
+async function renderJoinForm(body, preRoom){
   body.innerHTML=`
     <div class="field"><label for="jcode">Room code</label><input id="jcode" class="code" maxlength="6" placeholder="ABCDE" value="${esc(preRoom)}"></div>
-    <div class="field"><label for="jname">Your name</label><input id="jname" maxlength="18" placeholder="Type a name" autocomplete="off"></div>
+    <div class="field"><label for="jclass">Your class</label><select id="jclass"><option value="">Loading classes…</option></select></div>
+    <div class="field"><label for="jname">Your name</label><select id="jname"><option value="">Pick your class first</option></select></div>
+    <div class="field" id="jnewwrap" style="display:none"><label for="jnew">Type your name</label><input id="jnew" maxlength="24" placeholder="Your name" autocomplete="off"></div>
     <div class="err" id="jerr"></div>
     <button class="bigbtn" id="jgo">Join →</button>
     <button class="tinylink" id="jback">← back</button>`;
+  const jerr=(m)=>{document.getElementById("jerr").textContent=m||"";};
+  const back=document.getElementById("jback"); if(back)back.onclick=()=>renderLanding("");
+  const csel=document.getElementById("jclass"), nsel=document.getElementById("jname"),
+        newwrap=document.getElementById("jnewwrap"), newinp=document.getElementById("jnew");
+  const r=await loadRosters();
+  if(!r.classes||!r.classes.length){ csel.innerHTML='<option value="">No class list — type your name</option>'; nsel.innerHTML='<option value="__new__">Type your name below</option>'; newwrap.style.display=""; }
+  else { csel.innerHTML='<option value="">Select your class…</option>'+r.classes.map((c,i)=>`<option value="${i}">${esc(c.name)}</option>`).join(""); }
+  function fillNames(){
+    newwrap.style.display="none"; if(newinp)newinp.value="";
+    const ci=csel.value;
+    if(ci===""||!r.classes||!r.classes[+ci]){ nsel.innerHTML='<option value="">Pick your class first</option>'; return; }
+    const mem=r.classes[+ci].members||[];
+    nsel.innerHTML='<option value="">Select your name…</option>'+mem.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join("")+'<option value="__new__">➕ I\'m not on the list…</option>';
+  }
+  csel.onchange=fillNames;
+  nsel.onchange=()=>{ if(nsel.value==="__new__"){ newwrap.style.display=""; if(newinp)newinp.focus(); } else newwrap.style.display="none"; };
   const go=()=>{
     const code=(document.getElementById("jcode").value||"").trim().toUpperCase();
-    const nm=(document.getElementById("jname").value||"").trim();
-    if(code.length<4){document.getElementById("jerr").textContent="Enter the room code from the screen.";return;}
-    if(!nm){document.getElementById("jerr").textContent="Enter a name so you appear on the leaderboard.";return;}
+    if(code.length<4){ jerr("Enter the room code from the screen."); return; }
+    let nm = (nsel.value==="__new__"||newwrap.style.display!=="none") ? (newinp.value||"").trim() : nsel.value;
+    if(!nm){ jerr("Pick your name (or add it) so you appear on the leaderboard."); return; }
     myName=nm; room=code; role="player"; startPlayer();
   };
   document.getElementById("jgo").onclick=go;
-  document.getElementById("jname").addEventListener("keydown",e=>{if(e.key==="Enter")go();});
-  const back=document.getElementById("jback"); if(back)back.onclick=()=>renderLanding("");
-  const jn=document.getElementById("jname"); if(jn)jn.focus();
+  if(newinp)newinp.addEventListener("keydown",e=>{if(e.key==="Enter")go();});
 }
 
 /* ---------- Ably wiring ---------- */
@@ -315,6 +344,7 @@ function connect(){
 
 /* ================= HOST ================= */
 function startHost(){
+  shuffleQuiz(QUIZ);
   if(liveUnconfigured()){ mount.innerHTML=`<div class="center"><div class="card"><h1>Backend not set</h1><p class="sub">Set <b>tokenUrl</b> in app-config.js (your private backend's ably-token function) to host a live session — see README. No key goes in this page.</p></div></div>`; return; }
   room=newCode();
   H={phase:"lobby",qi:-1,players:new Map(),answers:new Map(),counts:[0,0,0,0],startTs:0,endsAt:0,timer:null};

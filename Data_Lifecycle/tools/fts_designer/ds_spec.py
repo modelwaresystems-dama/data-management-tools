@@ -102,8 +102,8 @@ DR = {
     "DR-DS-03": ("Assign and Change a Security Classification", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Data Stewards"),
     "DR-DS-04": ("Accept Residual Security Risk and Confirm Protection", "ROLE-DO", "Confirmed 22 Sep 2026 (holder register): Data Owner; drafted as Information Security Team"),
     "DR-DS-05": ("Declare and Close a Control Deficiency", "ROLE-AUDIT", "Confirmed 22 Sep 2026 (holder register): Internal Audit; drafted as Internal Auditors"),
-    "DR-DS-06": ("Establish, Lapse and Re-establish a Privacy Basis", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Data Stewards"),
-    "DR-DS-07": ("Answer a Data Subject Request", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Data Stewards"),
+    "DR-DS-06": ("Establish, Lapse and Re-establish a Privacy Basis", "ROLE-DPRO", "Confirmed 23 Sep 2026: Data Protection Officer; held by the Business Data Steward from 22 Sep 2026, moved when the role was added; drafted as Data Stewards"),
+    "DR-DS-07": ("Answer a Data Subject Request", "ROLE-DPRO", "Confirmed 23 Sep 2026: Data Protection Officer; held by the Business Data Steward from 22 Sep 2026, moved when the role was added; drafted as Data Stewards"),
     "DR-DS-08": ("Declare, Contain, Notify and Close a Security Incident", "ROLE-ISO", "Confirmed 22 Sep 2026 (holder register): Information Security Officer; drafted as Information Security Team"),
     "DR-DS-09": ("Confirm Sanitisation", "ROLE-ISO", "Confirmed 22 Sep 2026 (holder register): Information Security Officer; drafted as Information Security Team"),
 }
@@ -185,6 +185,7 @@ CONTRIB = [
     ("CON-DS-13", "TR-AS-06", "event", {"PRT": ["STS-PRT-04"], "INC": ["STS-INC-02"]}, "A control deficiency or a detected incident breaches a condition of conditional assurance.", "DS_control_deficiency or DS_open_incident", "Conditional", ""),
     ("CON-DS-14", "TR-AS-02", "service", {"PRT": ["STS-PRT-03"]}, "Security Audit supplies the control evidence (access history, audit reports) that assurance confirmation cites.", "SVC-DS-05", "Conditional", "Assurance service; artefacts ART-DS-07, ART-DS-08."),
     ("CON-DS-15", "TR-AV-02", "event", {"CLS": ["STS-CLS-04"]}, "A changed classification (reclassification due) requires access to be restricted until the asset is reclassified.", "DS_reclassification_due", "Conditional", "Data Security emits EV-AV-02 when TR-CLS-03 fires (Howard, 22 Sep: the obvious contribution on TR-AV-02)."),
+    ("CON-DS-16", "TR-AV-10", "event", {"PRV": ["STS-PRV-05"]}, "A lapsed privacy basis withdraws restricted access as well as released and suspended access.", "DS_privacy_basis_lapsed", "Conditional", "Howard, 23 Sep 2026: TR-AV-10 had no contribution of any kind; Data Security detects the lapse, as it does on TR-AV-05 and TR-AV-06. Data Security emits EV-AV-05 when TR-PRV-05 fires."),
 ]
 KA_COUPLINGS = [
     ("KAC-DS-01", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DS_open_incident", "Every detected security incident is also logged as a Data Asset issue in the Data Governance issue FTS with source Data Security (TR-INC-01 emits EV-ISS-01).", "Decision 21 Sep 2026: own FTS plus DG issue. DG owns escalation and residual-risk acceptance."),

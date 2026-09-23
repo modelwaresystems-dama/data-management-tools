@@ -98,20 +98,25 @@ dialog label{display:block;font-size:12px;color:var(--ink-faint);margin:8px 0 2p
 .fig svg g.node{cursor:pointer} .fig svg g.node:hover rect{stroke-width:3px}
 .fig svg path.pulse{stroke:var(--bad)!important;stroke-width:6px!important;animation:pl 0.6s 4 alternate} @keyframes pl{to{stroke-width:2px}}
 @media (max-width:900px){.split{grid-template-columns:1fr}.hrow{grid-template-columns:1fr}.side{position:static}}
+.who{margin:6px 0;padding:6px 8px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 4px 4px 0}
+.raised{margin:6px 0;padding:6px 8px;border-left:3px solid #b45309;background:var(--panel);border-radius:0 4px 4px 0}
+.sev{display:inline-block;padding:1px 7px;border-radius:9px;font-size:.82em;font-weight:600;white-space:nowrap}
+.sev.high{background:#fee2e2;color:#991b1b}.sev.med{background:#fef3c7;color:#92400e}.sev.low{background:#e0e7ef;color:#3f4a5a}
+@media (prefers-color-scheme:dark){.sev.high{background:#4c1d1d;color:#fecaca}.sev.med{background:#453210;color:#fde68a}.sev.low{background:#2a3340;color:#cbd5e1}}
 </style></head><body>
 <header>
  <div class="hrow1"><div><h1>Digital Twin Viewer</h1><div class="dim">The digital twin of the DMBOK Data Lifecycle: every Data Asset (a data product, table or feed) and the golden records inside it, moving through the Global Data Asset Protocol and the Knowledge Area FTSs.</div></div>
- <div class="ver">Twin viewer v0.6<br>Built 23 Sep 2026, 15:21 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
+ <div class="ver">Twin viewer v0.8<br>Built 23 Sep 2026, 16:40 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
  <div class="bar"><button class="btn primary" id="btnGh">Load from GitHub</button><button class="btn" id="btnGhSet">GitHub settings</button><label class="btn" for="files">Load files</label><input type="file" id="files" multiple accept=".json" hidden>
  <select id="org" aria-label="organisation" hidden></select><select id="cls" aria-label="asset class"><option value="">every asset class</option></select><span id="status" class="status"></span></div>
- <div class="tabs" role="tablist"><button class="tab" data-t="heat" aria-selected="true">Heat map</button><button class="tab" data-t="replay" aria-selected="false">Replay</button><button class="tab" data-t="asset" aria-selected="false">One asset</button><button class="tab" data-t="dash" aria-selected="false">Dashboard</button><button class="tab" data-t="influence" aria-selected="false">Influence</button></div>
+ <div class="tabs" role="tablist"><button class="tab" data-t="heat" aria-selected="true">Heat map</button><button class="tab" data-t="replay" aria-selected="false">Replay</button><button class="tab" data-t="asset" aria-selected="false">One asset</button><button class="tab" data-t="dash" aria-selected="false">Dashboard</button><button class="tab" data-t="issues" aria-selected="false">Issues</button><button class="tab" data-t="influence" aria-selected="false">Influence</button></div>
 </header>
 <main>
  <div id="empty"><p class="lede">Nothing loaded yet. Load from GitHub uses the same settings and token as the FTS viewer on this site: the models folder (Data Lifecycle/models) and the twin export in the folder next to it (Data Lifecycle/twin). Or choose the .fts.json models together with fleet.json, instances.json, elements.json and events.json from disk.</p></div>
  <div id="main" hidden>
   <div id="replaybar" class="replaybar" hidden><button class="btn primary" id="play">Play</button><span id="clock"></span><input type="range" id="slider" aria-label="time"><label class="dim">step <select id="speed"><option value="1">1 day</option><option value="3" selected>3 days</option><option value="7">1 week</option><option value="14">2 weeks</option></select></label></div>
   <div id="assetbar" class="assetbar" hidden><button class="btn" id="assetPrev" aria-label="previous asset">‹</button><select id="assetSel" aria-label="asset"></select><button class="btn" id="assetNext" aria-label="next asset">›</button><button class="btn" id="assetRef">Next asset with a refusal</button><span id="assetcount" class="dim"></span></div>
-  <section class="pane" id="pane-heat"></section><section class="pane" id="pane-replay" hidden></section><section class="pane" id="pane-asset" hidden></section><section class="pane" id="pane-dash" hidden></section><section class="pane" id="pane-influence" hidden></section>
+  <section class="pane" id="pane-heat"></section><section class="pane" id="pane-replay" hidden></section><section class="pane" id="pane-asset" hidden></section><section class="pane" id="pane-dash" hidden></section><section class="pane" id="pane-issues" hidden></section><section class="pane" id="pane-influence" hidden></section>
  </div>
 </main>
 <aside id="drawer" hidden></aside>
@@ -458,7 +463,7 @@ function ftsSummarySvg(M, availW, opts){
   const GID="GDA-GLOBAL-PROTOCOL", GH_KEY="fts.viewer.github.v1";
   const GH_DEFAULT={owner:"modelwaresystems-dama",repo:"modelware_app_storage",branch:"main",path:"Data Lifecycle/models",token:""};
   const D={models:{}, order:[], assets:[], byId:{}, elements:{}, events:[], fleet:null, st:{}, reg:{}, shared:new Set(), keys:{}, tMin:0, tMax:0, ready:false};
-  const V={tab:"heat", cls:"", t:null, playing:false, timer:null, speed:3, asset:null, openModels:new Set([GID]), sel:null};
+  const V={tab:"heat", cls:"", t:null, playing:false, timer:null, speed:3, asset:null, openModels:new Set([GID]), sel:null, issOpen:false};
   const fmtD=ms=>{ const d=new Date(ms); return d.toISOString().slice(0,10); };
   const fmtT=s=>s?String(s).replace("T"," ").slice(0,16):"";
   const tms=s=>Date.parse(s);
@@ -480,7 +485,7 @@ function ftsSummarySvg(M, availW, opts){
       const list=(await r.json()).filter(f=>f.type==="file"&&/\.fts\.json$/i.test(f.name));
       const models=[]; for(const f of list){ const rr=await fetch(f.url,{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(rr.ok){ try{ const m=JSON.parse(await rr.text()); if(m.meta&&m.regions&&m.subStates) models.push(m); }catch(x){} } }
       status("reading the twin export from "+tdir+" ...");
-      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","events.json","records.json"]){ const rr=await fetch(api(tdir+"/"+n),{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(!rr.ok){ if(n==="records.json") continue; throw new Error(tdir+"/"+n+": "+explain(rr.status)); } tw[n]=JSON.parse(await rr.text()); }
+      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","events.json","records.json","issues.json"]){ const rr=await fetch(api(tdir+"/"+n),{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(!rr.ok){ if(n==="records.json"||n==="issues.json") continue; throw new Error(tdir+"/"+n+": "+explain(rr.status)); } tw[n]=JSON.parse(await rr.text()); }
       ingest(models,tw,"GitHub "+c.owner+"/"+c.repo+" ("+c.branch+")");
     }catch(ex){ status("Could not load from GitHub. "+ex.message,true); }
   }
@@ -510,6 +515,9 @@ function ftsSummarySvg(M, availW, opts){
     // v0.3 two levels: records (golden records) inside their Data Asset, carrying only the record-level regions
     D.records=((tw["records.json"]||{}).records||[]); D.recById={}; D.recsOf={}; D.recRegions=new Set();
     D.records.forEach(r=>{ D.recById[r.id]=r; (D.recsOf[r.parentId]=D.recsOf[r.parentId]||[]).push(r); Object.entries(r.regions||{}).forEach(([m,v])=>Object.keys(v).forEach(rid=>D.recRegions.add(m+"|"+rid))); });
+    // v0.7 (Howard, 23 Sep 2026): the Data Governance issues raised by refusals, one instance per issue case
+    D.issues=((tw["issues.json"]||{}).issues||[]); D.issById={}; D.issOf={}; D.issBySeq={};
+    D.issues.forEach(i=>{ D.issById[i.id]=i; (D.issOf[i.parentId]=D.issOf[i.parentId]||[]).push(i); const q=(i.source||{}).eventSeq; if(q!=null) D.issBySeq[q]=i; });
     D.elements={}; ((tw["elements.json"]||{}).elements||[]).forEach(x=>D.elements[x.id]=x);
     D.events=(tw["events.json"].events||[]).slice().sort((a,b)=>tms(a.at)-tms(b.at)||(a.seq-b.seq));
     D.fleet=tw["fleet.json"]||null;
@@ -636,6 +644,13 @@ fillAssets();
     else if((mm=g.guard.match(/^GRD-(XRG-\d+)/))){ const x=(D.models[GID].crossRegionConstraints||[]).find(y=>y.id===mm[1]); if(x){ out.expr=x.expression; out.need=x.constraint; out.had="Global vector then: "+D.models[GID].regions.map(r=>r.code+" "+sName(stateOf(a,GID,r.id,t))).join(", ")+(a.facts?" · facts now: "+Object.entries(a.facts).filter(([k])=>(x.expression||"").includes(k)).map(([k,v])=>k+"="+v).join(", "):""); } }
     return out;
   }
+  function whoAskedHtml(ev){
+    const q=ev.requester; if(!q) return '<div class="dim">Who asked: not recorded. This event predates the requester block.</div>';
+    return '<div class="who"><b>Who asked:</b> '+e(q.roleName||q.role)+' <span class="mono dim">'+e(q.role)+'</span>'+(q.system?', through '+e(q.system):'')+
+      ', performing <span class="mono">'+e(q.activity)+'</span> '+e(q.activityName||"")+(q.activityModel&&q.activityModel!==ev.model?' ('+e(kaName(q.activityModel))+')':'')+'.'+
+      (q.purpose?' <span class="dim">Purpose: '+e(q.purpose)+'.</span>':'')+
+      (q.claimsTransition===false?'<div class="redt">No activity in the model claims this transition, so the nearest one is named. That gap is on the register for Howard.</div>':'')+'</div>';
+  }
   function explainHtml(a,ev){
     const tr=trOf(ev.model,ev.transition); const when=fmtT(ev.at); const reg=regName(ev.model,ev.region);
     const h=['<div class="why"><div><b>'+e(ev.transition+" "+(tr.name||ev.name||""))+'</b> in <b>'+e(kaName(ev.model))+'</b> · '+e(reg)+' · '+e(when)+'</div>'];
@@ -646,8 +661,12 @@ fillAssets();
       const fails=(ev.guards||[]).filter(g=>g.verdict===false);
       h.push('<p><b>Why it was refused:</b> '+fails.length+' guard'+(fails.length===1?'':'s')+' on this transition answered false when the event arrived, so the twin kept the asset where it was.</p><ol class="gl">'+fails.map(g=>{ const d=guardDetail(a,ev,g); return '<li><div><span class="mono">'+e(g.guard)+'</span> · set by '+e(d.who)+' · <b>'+e(g.requirement||"")+'</b>'+(g.requirement==="Non-waivable"?' (no exception can override it)':'')+'</div><div>'+e(g.predicate)+'</div>'+(d.need&&d.need!==g.predicate?'<div class="dim">Needs: '+e(d.need)+'</div>':'')+(d.had?'<div>At the time: '+e(d.had)+'</div>':'')+(d.expr?'<div class="mono dim">'+e(d.expr)+'</div>':'')+'</li>'; }).join("")+'</ol>');
     }
+    h.push(whoAskedHtml(ev));
     if(tr.decisionRight){ const dr=((D.models[ev.model]||{}).decisionRights||[]).find(x=>x.id===tr.decisionRight); if(dr) h.push('<div class="dim">Decision right '+e(dr.id)+' '+e(dr.name)+', held by '+e(dr.holderName||dr.holder||"not stated")+'.</div>'); }
-    const s=synth(ev); if(s) h.push('<div class="note">This is a test event the synthetic fleet injected on purpose ("'+e(s)+'") to prove the guards refuse it. In a real feed the same panel would name the system and person that sent it.</div>');
+    const iss=D.issBySeq&&ev.seq!=null?D.issBySeq[ev.seq]:null;
+    if(iss) h.push('<div class="raised">Raised <b>'+e(iss.id)+'</b>, a '+e((iss.severity||"").toLowerCase())+'-severity Data Governance Data Issue against this asset, now <b>'+e(iss.stateName||iss.state||"")+'</b>. <button class="btn sm issopen" data-iss="'+e(iss.id)+'">Open the issue</button></div>');
+    else if((ev.guards||[]).filter(g=>g.verdict===false&&(g.requirement==="Non-waivable"||g.requirement==="Required")).length===0) h.push('<div class="dim">No Data Governance issue was raised: no Non-waivable or Required guard answered false, so the twin recorded the refusal and left it there.</div>');
+    const s=synth(ev); if(s) h.push('<div class="note">This is a test event the synthetic fleet injected on purpose ("'+e(s)+'") to prove the guards refuse it.</div>');
     const after=D.events.filter(x=>x.instanceId===a.id&&x.model===ev.model&&x.transition===ev.transition&&x.fired&&tms(x.at)>tms(ev.at))[0];
     if(after) h.push('<div>Later the same transition fired on '+e(fmtT(after.at))+', once its conditions held.</div>');
     h.push('</div>'); return h.join("");
@@ -770,7 +789,7 @@ fillAssets();
   // and what-if controls that run through the real guards (a dry run: nothing is written to the twin).
   const DEFAULT_FACTS={hold_active:false, disposition_control_verified:true, supersession_use_authorized:false, use_requires_assurance:true, material_change:false,
     atomic_withdrawal:false, recipient_acceptance_evidenced:true, enhanced_monitoring:true, time_bounded_authority:true, post_event_review_planned:true,
-    RMD_is_master:true, RMD_is_reference:false};
+    RMD_is_master:true, RMD_is_reference:false, MM_is_metadata_asset:false};
   function pyToJs(x){ let s=String(x);
     s=s.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s+not\s+in\s*\(([^)]*)\)/g,"(![$2].includes($1))");
     s=s.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s+in\s*\(([^)]*)\)/g,"([$2].includes($1))");
@@ -899,10 +918,65 @@ fillAssets();
   }
 
   // ------------------------------------------------------------------ shell
+  // ------------------------------------------------------------------ v0.7 Issues: the Data Governance issues refusals raised
+  const issOpen=i=>["STS-ISS-02","STS-ISS-03","STS-ISS-04"].indexOf(i.state)>=0;
+  const sevCls=s=>s==="High"?"high":s==="Medium"?"med":"low";
+  function issueRows(){
+    const ids=new Set(pool().map(a=>a.id));
+    return (D.issues||[]).filter(i=>ids.has(i.parentId)).filter(i=>V.issOpen?issOpen(i):true)
+      .slice().sort((a,b)=>(b.severity==="High")-(a.severity==="High")||String(b.createdAt).localeCompare(String(a.createdAt)));
+  }
+  function renderIssues(){
+    const pane=$("#pane-issues"); const all=(D.issues||[]);
+    if(!all.length){ pane.innerHTML='<p class="lede">No issues in this export. Issues are raised by the twin when a transition is refused by a Non-waivable or Required guard; an export made before 23 September 2026 has none.</p>'; return; }
+    const rows=issueRows(); const ids=new Set(pool().map(a=>a.id)); const mine=all.filter(i=>ids.has(i.parentId));
+    const nOpen=mine.filter(issOpen).length, nHigh=mine.filter(i=>i.severity==="High").length;
+    const nMed=mine.filter(i=>i.severity==="Medium").length, nLow=mine.filter(i=>i.severity==="Low").length;
+    const inPool=id=>ids.has(id)||(D.recById[id]&&ids.has(D.recById[id].parentId));
+    const refusals=D.events.filter(x=>String(x.result).startsWith("blocked")&&inPool(x.instanceId));
+    const h=['<p class="lede">A refusal is a governance event. Every refusal raises one Data Governance Data Issue against the Data Asset, naming the transition that was asked for, the activity and role that asked, the decision right and its holder, and every guard that said no with the Knowledge Area that set it. Severity follows what refused it: <b>High</b> when a Non-waivable guard answered false, <b>Medium</b> when a Required one did, and <b>Low</b> when every guard answered true and only the state of the asset was wrong. A Low issue is not a guard failure; it is a request that should never have been sent, so the control belongs in the system that sent it. The issue is its own instance carrying the Issue Management region of Data Governance, so several can be open on one asset at once, and the asset\'s own issue state is the most severe of them. The twin assigns and resolves an issue when the refused transition later fires; closing it stays with the Data Owner under DR-DG-18.</p>'];
+    h.push('<div class="kpis"><div class="kpi"><div class="kn">'+mine.length+'</div><div class="kl">issues raised</div></div>'+
+      '<div class="kpi"><div class="kn'+(nOpen?' redt':'')+'">'+nOpen+'</div><div class="kl">still open</div></div>'+
+      '<div class="kpi"><div class="kn">'+nHigh+'</div><div class="kl">high (a Non-waivable guard said no)</div></div>'+
+      '<div class="kpi"><div class="kn">'+nMed+'</div><div class="kl">medium (a Required guard said no)</div></div>'+
+      '<div class="kpi"><div class="kn">'+nLow+'</div><div class="kl">low: asked for out of order</div></div>'+
+      '<div class="kpi"><div class="kn">'+refusals.length+'</div><div class="kl">refusals in all</div></div></div>'+
+      (nLow?'<p class="dim">The '+nLow+' low-severity '+(nLow===1?'issue is a request':'issues are requests')+' the asset was in no position to satisfy: every guard answered true and the transition simply cannot start from the state the asset was in. Nothing in the protocol refused '+(nLow===1?'it':'them')+' on the merits, so the fix is a control in the system that sent the request, not a change to a guard.</p>':''));
+    h.push('<div class="bar"><label class="dim"><input type="checkbox" id="issOnlyOpen"'+(V.issOpen?" checked":"")+'> show only open issues</label></div>');
+    h.push('<div class="tscroll"><table class="tl"><thead><tr><th>Issue</th><th>Data Asset</th><th>Severity</th><th>State</th><th>What was refused</th><th>Who asked</th><th>Decision right held by</th><th>Raised</th></tr></thead><tbody>'+
+      rows.map(i=>{ const q=(i.source||{}).requester||{}; const a=D.byId[i.parentId]||{};
+        return '<tr class="'+(issOpen(i)?"bad":"")+'"><td><a href="#" class="mono issopen" data-iss="'+e(i.id)+'">'+e(i.id)+'</a></td>'+
+          '<td>'+e(i.parentId)+' '+e(a.name||i.assetName||"")+'<div class="dim">'+e(a.org||i.org||"")+'</div></td>'+
+          '<td><span class="sev '+sevCls(i.severity)+'">'+e(i.severity)+'</span></td>'+
+          '<td>'+e(i.stateName||i.state||"")+'</td>'+
+          '<td><span class="mono">'+e((i.source||{}).transition||"")+'</span> '+e((i.source||{}).transitionName||"")+'<div class="dim">'+e(i.outOfOrder?("the asset was not in a state it can start from"+((i.source||{}).recordId?", on record "+(i.source||{}).recordId:"")):(((i.source||{}).guards||[]).length+" guard"+((((i.source||{}).guards||[]).length)===1?"":"s")+" refused it, from "+(((i.source||{}).sourceKnowledgeAreas)||[]).map(kaShort).join(", ")))+'</div></td>'+
+          '<td>'+e(q.roleName||q.role||"not recorded")+'<div class="dim mono">'+e(q.activity||"")+'</div></td>'+
+          '<td>'+e((i.source||{}).holderName||(i.source||{}).holder||"")+'<div class="dim mono">'+e((i.source||{}).decisionRight||"")+'</div></td>'+
+          '<td>'+e(fmtT(i.createdAt))+'</td></tr>'; }).join("")+'</tbody></table></div>');
+    pane.innerHTML=h.join("");
+    const cb=$("#issOnlyOpen"); if(cb) cb.onchange=()=>{ V.issOpen=cb.checked; renderIssues(); };
+  }
+  function issueDrawer(iid){
+    const i=D.issById[iid]; if(!i) return; const src=i.source||{}; const a=D.byId[i.parentId]||{};
+    const ev=D.events.find(x=>x.seq===src.eventSeq);
+    const tl=D.events.filter(x=>x.instanceId===iid);
+    const h=['<h3>'+e(i.id)+'</h3><div class="dim">'+e(i.name)+'</div>'+
+      '<p><span class="sev '+sevCls(i.severity)+'">'+e(i.severity)+'</span> · now <b>'+e(i.stateName||i.state)+'</b> · raised '+e(fmtT(i.createdAt))+' against <b>'+e(i.parentId)+'</b> '+e(a.name||i.assetName||"")+'</p>'];
+    h.push('<h4>The request that was refused</h4>'+whoAskedHtml(ev||{requester:src.requester}));
+    h.push('<div>Asked for <span class="mono">'+e(src.transition)+'</span> '+e(src.transitionName||"")+' in '+e(kaName(src.model||GID))+', which would have moved '+e(regName(src.model||GID,src.region))+' from <b>'+e(sName(src.from))+'</b> to <b>'+e(sName(src.to))+'</b>. Decision right '+e(src.decisionRight||"none")+' '+e(src.decisionRightName||"")+', held by <b>'+e(src.holderName||src.holder||"not stated")+'</b>.</div>');
+    h.push(src.controlGap?'<h4>Why it was refused</h4><div class="raised">'+e(src.controlGap)+'</div>':'<h4>Why it was refused</h4><ol class="gl">'+(src.guards||[]).map(g=>'<li><div><span class="mono">'+e(g.guard)+'</span> · set by '+e(g.contributedBy?kaName(g.contributedBy):"the Global protocol itself")+' · <b>'+e(g.requirement||"")+'</b>'+(g.requirement==="Non-waivable"?' (no exception can override it)':'')+'</div><div>'+e(g.predicate||"")+'</div></li>').join("")+'</ol>');
+    h.push('<h4>The issue\'s own life</h4><table class="tl"><tbody>'+tl.map(x=>'<tr class="'+(String(x.result).startsWith("blocked")?"bad":"")+'"><td class="mono">'+e(fmtT(x.at))+'</td><td>'+e((x.transition||"")+" "+(x.name||""))+'</td><td>'+e(String(x.result).startsWith("blocked")?"refused":sName(x.stateAfter))+'</td><td class="dim">'+e(x.reason||x.actor||"")+'</td></tr>').join("")+'</tbody></table>');
+    const mDG=D.models["KA-DG"]||{}; const drs=(mDG.decisionRights||[]);
+    const nm=id=>{ const d=drs.find(x=>x.id===id)||{}; return d.name?d.name+", held by "+(d.holderName||d.holder||"not stated"):id; };
+    h.push('<h4>Whose decision it is now</h4><ul class="alist"><li><b>Log and triage</b> DR-DG-16: '+e(nm("DR-DG-16"))+'</li><li><b>Assign the resolution</b> DR-DG-17: '+e(nm("DR-DG-17"))+'</li><li><b>Escalate</b> DR-DG-06: '+e(nm("DR-DG-06"))+'</li><li><b>Accept and close</b> DR-DG-18: '+e(nm("DR-DG-18"))+'</li></ul>');
+    if(ev) h.push('<h4>The refusal in full</h4>'+explainHtml(a,ev));
+    openDrawer(h.join(""));
+  }
   function setTab(t){ V.tab=t; $$(".tab").forEach(b=>b.setAttribute("aria-selected",b.dataset.t===t?"true":"false")); $$(".pane").forEach(p=>p.hidden=p.id!=="pane-"+t); $("#replaybar").hidden=t!=="replay"; $("#assetbar").hidden=!(t==="asset"||t==="dash"); if(t!=="replay") stop(); render(); }
-  function render(){ if(!D.ready) return; if(V.tab==="heat") renderHeat(); else if(V.tab==="replay") renderReplay(); else if(V.tab==="asset") renderAsset(); else if(V.tab==="dash") renderDash(); else renderInfluence(); }
+  function render(){ if(!D.ready) return; if(V.tab==="heat") renderHeat(); else if(V.tab==="replay") renderReplay(); else if(V.tab==="asset") renderAsset(); else if(V.tab==="dash") renderDash(); else if(V.tab==="issues") renderIssues(); else renderInfluence(); }
   function init(){
     $$(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.t));
+    document.addEventListener("click",ev=>{ const b=ev.target.closest&&ev.target.closest(".issopen"); if(!b) return; ev.preventDefault(); issueDrawer(b.dataset.iss); });
     $("#btnGh").onclick=ghLoad; $("#btnGhSet").onclick=ghOpen; $("#ghCancel").onclick=()=>$("#ghdlg").close();
     $("#ghSave").onclick=()=>{ const c=ghGet(); c.owner=$("#ghOwner").value.trim(); c.repo=$("#ghRepo").value.trim(); c.branch=$("#ghBranch").value.trim()||"main"; c.path=$("#ghPath").value.trim().replace(/^\/+|\/+$/g,""); const t=$("#ghToken").value.trim(); if(t) c.token=t; ghSet(c); $("#ghdlg").close(); ghLoad(); };
     $("#files").onchange=ev=>fileLoad([...ev.target.files]);

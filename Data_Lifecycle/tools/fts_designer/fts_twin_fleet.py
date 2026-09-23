@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fts_twin_fleet.py v0.4  -  the twin's fleet: the Data Products of three business architectures as Data Assets, with the golden
+fts_twin_fleet.py v0.5  -  the twin's fleet: the Data Products of three business architectures as Data Assets, with the golden
 records of their party masters as records inside them. Every step goes through the twin engine, so a refusal is a real refusal.
 
   python fts_twin_fleet.py --models <dir> --scenario <banking.sim.json> --architecture <private>/twin/architecture --db twin.sqlite [--seed 1]
@@ -24,7 +24,12 @@ How the fleet is made (all of it synthetic apart from the product names, types, 
   3a (v0.3) an RMD product that is not a master (a catalogue, a glossary) is a reference data set: asset facts RMD_is_master false and
      RMD_is_reference true, no golden record path; it holds its own Reference Data Set region and is gated on a validated set and a
      published version (CON-RMD-16, CON-RMD-05);
-  4 about one asset in four receives one out-of-order event the guards refuse, one in twelve a legal hold, one in twenty an override.
+  4 about one asset in four receives one out-of-order event the guards refuse, one in twelve a legal hold, one in twenty an override;
+  5 (v0.5, Howard 23 Sep 2026) every event names the activity that asked for the transition and the role that asked for it, so a
+    refusal can say who wanted it; a refusal on a Non-waivable or Required guard raises a Data Governance Data Issue against the
+    Data Asset, which the twin resolves when the same transition later fires. Where no activity in the model claims a transition
+    (the Global Availability family, see ACT_FALLBACK) the nearest real activity is named and the event records claimsTransition
+    false, so the gap in the model is visible rather than hidden.
 """
 import json, os, re, sys, glob, argparse, random, datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -46,6 +51,42 @@ ORGN = ["Ubuntu", "Ikhaya", "Lesedi", "Thrive", "Kasi", "Masakhane", "Siyakha", 
 ORGT = ["Enterprise Hub", "Youth Trust", "Makers Co-op", "Incubator", "Learning Centre", "Foundation", "Growth Partners", "Skills Network"]
 OUT_OF_ORDER = [("GDA-GLOBAL-PROTOCOL", "TR-AV-01", "release attempted before assurance"), ("GDA-GLOBAL-PROTOCOL", "TR-EX-05", "disposition attempted under hold", {"hold_active": True}),
                 ("GDA-GLOBAL-PROTOCOL", "TR-AV-04", "onward use attempted before release"), ("KA-DS", "TR-PRV-03", "privacy use before basis recorded")]
+
+# v0.5: who asked. The activity comes from the model where an activity claims the transition; these are the ones no activity claims
+# (finding of 23 Sep 2026, on Howard's register): the whole Global Availability family apart from suspend and restore, and the two
+# assurance expiries. The nearest real activity is named and the event carries claimsTransition false.
+ACT_FALLBACK = {"TR-AV-01": "ACT-08", "TR-AV-02": "ACT-08", "TR-AV-05": "ACT-08", "TR-AV-06": "ACT-08", "TR-AV-07": "ACT-08", "TR-AV-10": "ACT-08",
+                "TR-AV-08": "ACT-18", "TR-AV-09": "ACT-18", "TR-AS-09": "ACT-06", "TR-AS-10": "ACT-06"}
+ROLE_BY_MODEL = {"KA-DG": "ROLE-BDS", "KA-DA": "ROLE-DARCH", "KA-DMD": "ROLE-DMOD", "KA-DSO": "ROLE-DBA", "KA-DII": "ROLE-DENG", "KA-MM": "ROLE-PM-MM",
+                 "KA-DQ": "ROLE-DQA", "KA-DS": "ROLE-ISO", "KA-DHE": "ROLE-PM-DHE", "KA-DWBI": "ROLE-PM-DWBI", "KA-BDA": "ROLE-DSCI", "KA-RMD": "ROLE-DDS", "KA-DCM": "ROLE-RIM"}
+GLOBAL_ROLE = {"EX": "ROLE-DO", "AS": "ROLE-DQA", "AV": "ROLE-DO", "CP": "ROLE-DBA"}
+OOO_REQ = {"TR-AV-01": ("ROLE-DENG", "publish the product to its consumers ahead of the assurance run"),
+           "TR-EX-05": ("ROLE-DBA", "clear storage under the retention schedule"),
+           "TR-AV-04": ("ROLE-BA", "restore the feed for a business report"),
+           "TR-PRV-03": ("ROLE-LEGAL", "action a data subject request")}
+SYSTEMS = {"Modelware": "Modelware data platform", "AGGPSA": "AGGPSA grants platform", "Nedbank": "Nedbank data platform"}
+REC_REQ = {"TR-GLD-01": ("ROLE-DENG", "match an arriving record to the master"), "TR-GLD-02": ("ROLE-DDS", "confirm the surviving record"),
+           "TR-GLD-03": ("ROLE-DDS", "raise a survivorship dispute"), "TR-GLD-05": ("ROLE-DDS", "resolve the survivorship dispute"),
+           "TR-GLD-06": ("ROLE-DDS", "split a false merge"), "TR-GLD-07": ("ROLE-DENG", "re-match the split record"),
+           "TR-GLD-08": ("ROLE-DENG", "apply a source update"), "TR-GLD-09": ("ROLE-DDS", "retire an ended entity"),
+           "TR-GLD-10": ("ROLE-DDS", "retire a duplicate")}
+
+def make_req(tw):
+    """the requester block for a synthetic event: the activity that claims the transition, and a role that would plausibly ask"""
+    cache = {}
+    def act_for(mid, tid):
+        k = (mid, tid)
+        if k not in cache:
+            a = next((aid for aid, x in sorted(tw.acts.items()) if x["model"] == mid and tid in x["claims"]), None) or ACT_FALLBACK.get(tid)
+            if not a:
+                rid = tw.fed.region_of[mid].get(tw.fed.tr[mid][tid]["target"])
+                a = next((x["id"] for x in (tw.fed.models[mid].get("activities") or []) if rid in (x.get("regions") or [])), None)
+            cache[k] = a or next((x["id"] for x in (tw.fed.models[mid].get("activities") or [])), "ACT-08")
+        return cache[k]
+    def req(mid, tid, org=None, role=None, purpose=None):
+        if not role: role = GLOBAL_ROLE.get(tid.split("-")[1], "ROLE-DO") if mid == GLOBAL_ID else ROLE_BY_MODEL.get(mid, "ROLE-BDS")
+        return {"activity": act_for(mid, tid), "role": role, "system": SYSTEMS.get(org, "data platform"), "purpose": purpose}
+    return req
 
 def iso(dt): return dt.replace(microsecond=0).isoformat()
 
@@ -91,7 +132,7 @@ def main():
     ap.add_argument("--db", default="twin.sqlite"); ap.add_argument("--seed", type=int, default=1); ap.add_argument("--days", type=int, default=240)
     a = ap.parse_args(); random.seed(a.seed)
     if os.path.exists(a.db): os.remove(a.db)
-    tw = Twin(a.models, a.db); fed = tw.fed; store = tw.store
+    tw = Twin(a.models, a.db); fed = tw.fed; store = tw.store; req = make_req(tw)
     sc = json.load(open(a.scenario, encoding="utf-8")); products = read_products(a.architecture)
     tz = datetime.timezone(datetime.timedelta(hours=2)); now = datetime.datetime.now(tz); t0 = now - datetime.timedelta(days=a.days)
     # the scenario split into shared-region steps and per-asset steps, keeping each step's position in the script
@@ -120,17 +161,21 @@ def main():
     preset = {mid: {rid: sid for rid, sid in v.items() if rid not in fed.shared.get(mid, ())} for mid, v in (sc.get("kaVectors") or {}).items()}
     counts = {"assets": 0, "records": 0, "refused": 0, "holds": 0, "overrides": 0, "proposed": 0, "released": 0, "suspended": 0}
     defect_asset = next((f"NED-{p['DataProductID']}" for p in products if p["org"] == "Nedbank" and PARTY_MASTER.search(p["Name"] or "") and p.get("ProductType") == "Core / master"), None)
-    def rec_ev(aid, rid, tid, actor, when):
+    def rec_ev(aid, rid, tid, actor, when, org=None):
         """a record event; when the roll-up moves the asset into or out of Record Conflict, the RMD event contributions fire on the
         asset's Global protocol: the assurance and suspension triggers (CON-RMD-08, 09) on entry, reassessment, confirmation and
         restoration of access (CON-RMD-10 needs Reliable) on the way back"""
+        org = org or (store.get_instance(aid) or {}).get("org")
+        rq = REC_REQ.get(tid, ("ROLE-DDS", None))
         before = store.get_instance(aid)["vectors"].get("KA-RMD", {}).get("REG-RMD-GLD")
-        tw.post_record_event(rid, "KA-RMD", tid, actor=actor, at=iso(when))
+        tw.post_record_event(rid, "KA-RMD", tid, actor=actor, at=iso(when), requester=req("KA-RMD", tid, org, role=rq[0], purpose=rq[1]))
         after = store.get_instance(aid)["vectors"].get("KA-RMD", {}).get("REG-RMD-GLD")
         if before != GLD["conflict"] and after == GLD["conflict"]:
-            for k, t2 in enumerate(["TR-AS-05", "TR-AV-03"]): tw.post_event(aid, GLOBAL_ID, transition=t2, actor="twin:roll-up entered Record Conflict (CON-RMD-08, 09)", at=iso(when + datetime.timedelta(minutes=k + 1)))
+            for k, t2 in enumerate(["TR-AS-05", "TR-AV-03"]): tw.post_event(aid, GLOBAL_ID, transition=t2, actor="twin:roll-up entered Record Conflict (CON-RMD-08, 09)", at=iso(when + datetime.timedelta(minutes=k + 1)),
+                                                                           requester=req(GLOBAL_ID, t2, org, role="ROLE-DDS", purpose="contain the master data conflict the roll-up detected"))
         if before == GLD["conflict"] and after == GLD["reliable"]:
-            for k, t2 in enumerate(["TR-AS-08", "TR-AS-02", "TR-AV-04"]): tw.post_event(aid, GLOBAL_ID, transition=t2, actor="synthetic:reassessed and restored after the conflict", at=iso(when + datetime.timedelta(hours=2 + 4 * k)))
+            for k, t2 in enumerate(["TR-AS-08", "TR-AS-02", "TR-AV-04"]): tw.post_event(aid, GLOBAL_ID, transition=t2, actor="synthetic:reassessed and restored after the conflict", at=iso(when + datetime.timedelta(hours=2 + 4 * k)),
+                                                                                        requester=req(GLOBAL_ID, t2, org, role="ROLE-DQA", purpose="reassess and restore the master after the conflict cleared"))
     for p in products:
         org = p["org"]; pfx, scope = ORGS[org]; aid = f"{pfx}-{p['DataProductID']}"; name = p["Name"]; ptype = p.get("ProductType")
         kas = BASE + [k for k, rule in KA_RULES if rule(ptype or "", name)]
@@ -167,7 +212,8 @@ def main():
             if ooo_i == k:
                 o = ooo; extra = o[3] if len(o) > 3 else None
                 if o[0] == GLOBAL_ID or o[0] in kas:
-                    r = tw.post_event(aid, o[0], transition=o[1], facts=extra, actor="synthetic:" + o[2], at=iso(t))
+                    orl, opu = OOO_REQ.get(o[1], (None, None))
+                    r = tw.post_event(aid, o[0], transition=o[1], facts=extra, actor="synthetic:" + o[2], at=iso(t), requester=req(o[0], o[1], org, role=orl, purpose=opu))
                     if extra: tw.set_facts(aid, {x: False for x in extra}, actor="synthetic:hold lifted", at=iso(t + datetime.timedelta(hours=1)))
                     if str(r.get("result", "")).startswith("blocked"): counts["refused"] += 1
             if has_records and i in GLD_STEPS:
@@ -176,14 +222,16 @@ def main():
                         nm = f"{random.choice(FIRST)} {random.choice(LAST)}" if persons else f"{random.choice(ORGN)} {random.choice(ORGT)}"
                         rec = tw.new_record(f"{aid}-R{j+1:04d}", aid, nm, "Golden Record: " + ("person" if persons else "organisation"), at=iso(t)); recs.append(rec["id"])
                     for j, rid in enumerate(recs):
-                        if random.random() < 0.99: tw.post_record_event(rid, "KA-RMD", "TR-GLD-01", actor="synthetic:initial match", at=iso(t + datetime.timedelta(minutes=j)))
+                        if random.random() < 0.99: tw.post_record_event(rid, "KA-RMD", "TR-GLD-01", actor="synthetic:initial match", at=iso(t + datetime.timedelta(minutes=j)),
+                                                                          requester=req("KA-RMD", "TR-GLD-01", org, role="ROLE-DENG", purpose="load and match the initial population"))
                     counts["records"] += len(recs)
                 else:                          # confirmed reliable, a few left matched for review
                     for j, rid in enumerate(recs):
-                        if random.random() < 0.98: tw.post_record_event(rid, "KA-RMD", "TR-GLD-02", actor="synthetic:confirmation", at=iso(t + datetime.timedelta(minutes=j)))
+                        if random.random() < 0.98: tw.post_record_event(rid, "KA-RMD", "TR-GLD-02", actor="synthetic:confirmation", at=iso(t + datetime.timedelta(minutes=j)),
+                                                                          requester=req("KA-RMD", "TR-GLD-02", org, role="ROLE-DDS", purpose="confirm the surviving record"))
                 continue
             if (has_records or is_reference) and mid == "KA-RMD" and fed.region_of[mid].get(fed.tr[mid][tid]["target"]) == "REG-RMD-GLD": continue
-            tw.post_event(aid, mid, transition=tid, actor="synthetic:scenario", at=iso(t))
+            tw.post_event(aid, mid, transition=tid, actor="synthetic:scenario", at=iso(t), requester=req(mid, tid, org))
         # records after release, in time order: arrivals, updates, disputes resolved within days, splits, retirements; on the
         # defect master a match-rule defect puts 8% of the records in conflict for a week
         if has_records and recs and cut > I_REL:
@@ -202,7 +250,7 @@ def main():
                 if fn == "defect":
                     live = [r for r in recs if store.get_instance(r)["regions"]["KA-RMD"]["REG-RMD-GLD"] == GLD["reliable"]]
                     hit = random.sample(live, max(1, int(len(live) * 0.08) + 1))
-                    for j, rid in enumerate(hit): rec_ev(aid, rid, "TR-GLD-03", "synthetic:match-rule defect", when + datetime.timedelta(minutes=j))
+                    for j, rid in enumerate(hit): rec_ev(aid, rid, "TR-GLD-03", "synthetic:match-rule defect", when + datetime.timedelta(minutes=j), org)
                     def fix(w, hit=hit):
                         for j, rid in enumerate(hit):
                             rec_ev(aid, rid, "TR-GLD-05", "synthetic:match rule corrected", w + datetime.timedelta(minutes=j))

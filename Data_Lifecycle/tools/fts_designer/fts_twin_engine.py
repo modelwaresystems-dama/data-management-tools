@@ -24,7 +24,7 @@ SHARED_SCOPE = re.compile(r"governed scope|per platform|per database|per warehou
 DEFAULT_FACTS = {"hold_active": False, "disposition_control_verified": True, "supersession_use_authorized": False, "use_requires_assurance": True,
                  "material_change": False, "atomic_withdrawal": False, "recipient_acceptance_evidenced": True, "enhanced_monitoring": True,
                  "time_bounded_authority": True, "post_event_review_planned": True,
-                 "RMD_is_master": True, "RMD_is_reference": False}  # asset kind for RMD (Howard, 22 Sep 2026)
+                 "RMD_is_master": True, "RMD_is_reference": False, "MM_is_metadata_asset": False}  # asset kinds: RMD master or reference (22 Sep 2026), Metadata Asset (23 Sep 2026)
 
 def now_iso(): return datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).isoformat(timespec="seconds")
 

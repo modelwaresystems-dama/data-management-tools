@@ -74,3 +74,13 @@ The viewer carries its version and build date and time (SAST) in the header and 
 - **Regression.** Unchanged: banking 213 of 214 steps, the AGGPSA micro-entrepreneur run 59 of 60, the external feed 26 of 30.
 - **The fleet.** Six catalogue and glossary products are now reference data. They no longer walk a golden record path.
 - **Twin viewer v0.4.** It leaves the Golden Record row out for reference data assets and the Reference Data Set row out for masters.
+
+## Twin viewer v0.5: the Data Asset operational dashboard (23 Sep 2026, 10:04 SAST)
+
+Howard's Data Asset Digital Twin dashboard design, built on the real twin as a fifth tab.
+
+- **Composite state vector S(a,t):** one card per Global region with its state, the state's own definition and four detail lines from real sources: schema and personal-data field counts, refresh rate and pipeline mode, stored instance, data quality state with the workbook's score and RAG, metadata state, consumers from the AI use case, agent and process-step maps, ethical use, classification, privacy basis, owner, legal hold and golden record count. A line with no source reads "no feed yet"; a Knowledge Area out of scope for the product says so.
+- **Guard panel:** every guard on release, disposal, external custody and restoration, evaluated against this asset now by a browser copy of the twin engine (the same expressions, fact bindings and applicability filter). It says which pass, which would refuse and who set them, and marks a gate the asset is already past.
+- **Digital thread LC-01 to LC-06:** the Global model's own lifecycle phases, the transitions its activities relate to, this asset's events and refusals in each phase, and the Knowledge Areas that gate it.
+- **What if:** six controls (quality fails, ethics clearance withdrawn, privacy basis lapses, legal hold raised, metadata stale, golden record conflict). Each is a dry run through the real guards with one region or fact overridden: it reports the transitions whose verdict changes, the guards the change touches with their before and after, and how many other assets in the current filter would lose the same transition. Nothing is written to the twin.
+- `fts_twin_fleet.py` v0.4 carries the workbook's product facts (consumers, quality score and dimensions, refresh, pipeline, timeliness, schema and personal-data field counts) onto each asset, so the dashboard reads them rather than inventing them.

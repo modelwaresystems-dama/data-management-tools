@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fts_twin_fleet.py v0.3  -  the twin's fleet: the Data Products of three business architectures as Data Assets, with the golden
+fts_twin_fleet.py v0.4  -  the twin's fleet: the Data Products of three business architectures as Data Assets, with the golden
 records of their party masters as records inside them. Every step goes through the twin engine, so a refusal is a real refusal.
 
   python fts_twin_fleet.py --models <dir> --scenario <banking.sim.json> --architecture <private>/twin/architecture --db twin.sqlite [--seed 1]
@@ -59,9 +59,30 @@ def read_products(arch_dir):
         if "155 · DataProductDQControl" in wb.sheetnames:
             for r in list(wb["155 · DataProductDQControl"].iter_rows(values_only=True))[4:]:
                 if r and r[1]: dq[r[1]] = {"score": r[11], "rag": r[12]}
+        # v0.4 (Howard, 22 Sep 2026, dashboard): the operational facts the workbook does hold, so no dashboard tile is invented
+        def count(sheet, col):
+            if sheet not in wb.sheetnames: return {}
+            c = {}
+            for r in list(wb[sheet].iter_rows(values_only=True))[4:]:
+                if r and len(r) > col and r[col]: c[r[col]] = c.get(r[col], 0) + 1
+            return c
+        uses = count("189 · DataProduct_AIUseCase_Map", 1); agents = count("34 · AIAgent_DataProduct_Map", 1)
+        steps = count("136 · ProcessStep_DataProduct_M", 1) or count("136 · ProcessStep_DataProduct_Map", 1)
+        controls = count("220 · DataProduct_Control_Map", 1) or count("220 · DataProduct_Control_Map", 0)
+        dims = {}
+        if "156 · DataProductDQScorecard" in wb.sheetnames:
+            for r in list(wb["156 · DataProductDQScorecard"].iter_rows(values_only=True))[4:]:
+                if r and r[0]: dims.setdefault(r[0], []).append({"dimension": r[2], "target": r[3], "score": r[4], "rag": r[5], "trend": r[6]})
         for r in rows[4:]:
             if not r or not r[0]: continue
-            d = dict(zip(hdr, r)); d["org"] = org; d["dq"] = dq.get(d["DataProductID"]); d["pii"] = ":pii" in str(d.get("Schema (field:type[:pii])") or "")
+            d = dict(zip(hdr, r)); pid = d["DataProductID"]; d["org"] = org; d["dq"] = dq.get(pid); d["pii"] = ":pii" in str(d.get("Schema (field:type[:pii])") or "")
+            sch = str(d.get("Schema (field:type[:pii])") or "")
+            d["product"] = {"id": pid, "domain": d.get("Domain"), "owner": d.get("Owner"), "description": d.get("Description"), "classification": d.get("Classification"),
+                            "productType": d.get("ProductType"), "refreshRate": d.get("DataRefreshRate"), "pipelineMode": d.get("PipelineMode"), "timelinessSLA": d.get("TimelinessSLA"),
+                            "meetsTimeliness": d.get("MeetsTimeliness"), "realisesCDP": d.get("RealisesCDP"), "producers": d.get("Producers"), "pii": d["pii"],
+                            "schemaFields": len([x for x in re.split(r"[;|\n]", sch) if x.strip()]), "piiFields": sch.count(":pii"),
+                            "consumers": {"aiUseCases": uses.get(pid, 0), "aiAgents": agents.get(pid, 0), "processSteps": steps.get(pid, 0), "controls": controls.get(pid, 0)},
+                            "dq": dq.get(pid), "dqDimensions": dims.get(pid, []), "source": f"{org}_FutureState_Model.xlsx"}
             out.append(d)
     return out
 
@@ -119,7 +140,7 @@ def main():
         is_reference = "KA-RMD" in kas and not is_master
         asset = fed.new_asset(aid, name, ptype or "Proposed data product", refs=fed.default_refs(scopes[org]), facts={**(sc.get("assetProfile") or {}), "RMD_is_master": is_master, "RMD_is_reference": is_reference}, ka_models=kas)
         asset.update({"rmdKind": "master" if is_master else "reference" if is_reference else None, "org": org, "scope": scope, "domain": p.get("Domain"), "owner": p.get("Owner"), "classification": p.get("Classification"), "productType": ptype, "dq": p.get("dq"),
-                      "source": f"{org}_FutureState_Model.xlsx, 18 · DataProduct {p['DataProductID']}"})
+                      "source": f"{org}_FutureState_Model.xlsx, 18 · DataProduct {p['DataProductID']}", "product": p.get("product")})
         for mid, v in preset.items():
             if mid in asset["vectors"]: asset["vectors"][mid].update(v)
         asset["createdAt"] = asset["updatedAt"] = iso(t0 + datetime.timedelta(days=random.uniform(0, a.days * 0.45)))

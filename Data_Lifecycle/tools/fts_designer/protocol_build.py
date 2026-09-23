@@ -62,6 +62,12 @@ ACTIVITIES = [
     ("ACT-16", "Supersede Asset", "Transition-causing", ["LC-05", "LC-06"], ["TR-EX-03", "TR-EX-04"], ["SVC-GOV-04", "SVC-CTL-05"]),
     ("ACT-17", "Destroy Asset", "Transition-causing", ["LC-06"], ["TR-EX-05", "TR-EX-06", "TR-CP-10"], ["SVC-GOV-05", "SVC-CTL-06"]),
     ("ACT-18", "Authorize Exception", "State-preserving / transition-supporting", ["LC-01", "LC-02", "LC-03", "LC-04", "LC-05", "LC-06"], [], ["SVC-GOV-02", "SVC-RSK-05"]),
+    # v0.2.2 (Howard, 23 Sep 2026): the Availability release, restriction, withdrawal and emergency transitions were claimed by no
+    # activity, so a requester could not name one truthfully. ACT-09 Access Data and ACT-10 Share Data are State-preserving and
+    # cannot cause a transition; these two are the acts that exercise DR-06 and DR-08. TR-AS-09 and TR-AS-10 stay unclaimed by
+    # design: assurance expiry is a time trigger raised by Data Quality (CON-DQ-09, CON-DQ-10), not an act anyone performs.
+    ("ACT-19", "Release, Restrict or Withdraw Access", "Transition-causing", ["LC-03", "LC-04"], ["TR-AV-01", "TR-AV-02", "TR-AV-05", "TR-AV-06", "TR-AV-07", "TR-AV-10"], ["SVC-GOV-03", "SVC-CTL-04"]),
+    ("ACT-20", "Grant and Close Emergency Access", "Transition-causing", ["LC-03", "LC-04"], ["TR-AV-08", "TR-AV-09"], ["SVC-GOV-02", "SVC-RSK-05", "SVC-CTL-04"]),
 ]
 
 # ------------------------------------------------------------------ Layer 2: protocol regions
@@ -329,7 +335,7 @@ def build():
         d["origin"] = origin; d["trace"] = trace; d["status"] = STATUS; return d
     m = {"meta": {
         "modelId": "GDA-GLOBAL-PROTOCOL", "name": "Global Data Asset Architecture: Formal Data Asset Protocol (Global FTS)", "level": "global", "knowledgeArea": None,
-        "version": "0.2.1", "schemaVersion": "0.3", "status": STATUS, "subjectType": "Data Asset (governed identity and its controlled representations)", "parallelRegions": True,
+        "version": "0.2.2", "schemaVersion": "0.3", "status": STATUS, "subjectType": "Data Asset (governed identity and its controlled representations)", "parallelRegions": True,
         "layers": [
             {"id": "L1", "name": "Data Lifecycle", "question": "What work is performed with or on the Data Asset?", "constructs": "Phases, activities, purpose, intended outcomes, iteration", "boundary": "Non-executable; does not itself authorize work or define asset state."},
             {"id": "L2", "name": "Formal Data Asset Protocol (Global FTS)", "question": "What durable conditions hold and what state changes are permissible?", "constructs": "Regions, states, events, transitions, guards, invariants, state vector", "boundary": "Does not absorb lifecycle work or internal GRCA workflows."},

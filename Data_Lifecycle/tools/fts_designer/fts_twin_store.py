@@ -59,8 +59,8 @@ class TwinStore:
         return [json.loads(r[0]) | {"seq": r[1]} for r in self.db.execute("select doc, seq from events order by seq desc limit ?", (limit,)).fetchall()]
 
     def event_stats(self):
-        rows = self.db.execute("select instanceId, sum(case when result='fired' then 1 else 0 end), sum(case when result like 'blocked%' then 1 else 0 end), sum(override), max(at), max(seq) from events group by instanceId").fetchall()
-        return {r[0]: {"fired": r[1] or 0, "refused": r[2] or 0, "overrides": r[3] or 0, "lastAt": r[4], "lastSeq": r[5]} for r in rows}
+        rows = self.db.execute("select instanceId, sum(case when result='fired' then 1 else 0 end), sum(case when result like 'blocked%' then 1 else 0 end), sum(override), max(at), max(seq), sum(case when result like 'rejected%' then 1 else 0 end) from events group by instanceId").fetchall()
+        return {r[0]: {"fired": r[1] or 0, "refused": r[2] or 0, "overrides": r[3] or 0, "lastAt": r[4], "lastSeq": r[5], "rejected": r[6] or 0} for r in rows}
 
     def last_event(self, iid):
         r = self.db.execute("select doc from events where instanceId=? order by seq desc limit 1", (iid,)).fetchone()
@@ -75,13 +75,15 @@ class TwinStore:
         json.dump({"exportedAt": stamp, "count": len(elements), "elements": elements}, open(os.path.join(out_dir, "elements.json"), "w", encoding="utf-8"), indent=1)
         records = self.instances("record")
         json.dump({"exportedAt": stamp, "count": len(records), "records": records}, open(os.path.join(out_dir, "records.json"), "w", encoding="utf-8"), indent=1)
+        issues = self.instances("issue")
+        json.dump({"exportedAt": stamp, "count": len(issues), "issues": issues}, open(os.path.join(out_dir, "issues.json"), "w", encoding="utf-8"), indent=1)
         json.dump({"exportedAt": stamp, "count": len(events), "events": events}, open(os.path.join(out_dir, "events.json"), "w", encoding="utf-8"), indent=1)
         if fleet is not None: json.dump({"exportedAt": stamp, **fleet}, open(os.path.join(out_dir, "fleet.json"), "w", encoding="utf-8"), indent=1)
-        return {"assets": len(assets), "records": len(records), "elements": len(elements), "events": len(events), "dir": out_dir}
+        return {"assets": len(assets), "records": len(records), "issues": len(issues), "elements": len(elements), "events": len(events), "dir": out_dir}
 
     def import_dir(self, in_dir):
         n = 0
-        for f, key in (("instances.json", "assets"), ("elements.json", "elements"), ("records.json", "records")):
+        for f, key in (("instances.json", "assets"), ("elements.json", "elements"), ("records.json", "records"), ("issues.json", "issues")):
             p = os.path.join(in_dir, f)
             if os.path.exists(p):
                 for doc in json.load(open(p, encoding="utf-8")).get(key, []): self.put_instance(doc); n += 1

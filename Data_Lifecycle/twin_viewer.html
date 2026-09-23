@@ -101,7 +101,7 @@ dialog label{display:block;font-size:12px;color:var(--ink-faint);margin:8px 0 2p
 </style></head><body>
 <header>
  <div class="hrow1"><div><h1>Digital Twin Viewer</h1><div class="dim">The digital twin of the DMBOK Data Lifecycle: every Data Asset (a data product, table or feed) and the golden records inside it, moving through the Global Data Asset Protocol and the Knowledge Area FTSs.</div></div>
- <div class="ver">Twin viewer v0.5<br>Built 23 Sep 2026, 10:04 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
+ <div class="ver">Twin viewer v0.6<br>Built 23 Sep 2026, 15:21 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
  <div class="bar"><button class="btn primary" id="btnGh">Load from GitHub</button><button class="btn" id="btnGhSet">GitHub settings</button><label class="btn" for="files">Load files</label><input type="file" id="files" multiple accept=".json" hidden>
  <select id="org" aria-label="organisation" hidden></select><select id="cls" aria-label="asset class"><option value="">every asset class</option></select><span id="status" class="status"></span></div>
  <div class="tabs" role="tablist"><button class="tab" data-t="heat" aria-selected="true">Heat map</button><button class="tab" data-t="replay" aria-selected="false">Replay</button><button class="tab" data-t="asset" aria-selected="false">One asset</button><button class="tab" data-t="dash" aria-selected="false">Dashboard</button><button class="tab" data-t="influence" aria-selected="false">Influence</button></div>
@@ -110,7 +110,7 @@ dialog label{display:block;font-size:12px;color:var(--ink-faint);margin:8px 0 2p
  <div id="empty"><p class="lede">Nothing loaded yet. Load from GitHub uses the same settings and token as the FTS viewer on this site: the models folder (Data Lifecycle/models) and the twin export in the folder next to it (Data Lifecycle/twin). Or choose the .fts.json models together with fleet.json, instances.json, elements.json and events.json from disk.</p></div>
  <div id="main" hidden>
   <div id="replaybar" class="replaybar" hidden><button class="btn primary" id="play">Play</button><span id="clock"></span><input type="range" id="slider" aria-label="time"><label class="dim">step <select id="speed"><option value="1">1 day</option><option value="3" selected>3 days</option><option value="7">1 week</option><option value="14">2 weeks</option></select></label></div>
-  <div id="assetbar" class="assetbar" hidden><button class="btn" id="assetPrev" aria-label="previous asset">‹</button><select id="assetSel" aria-label="asset"></select><button class="btn" id="assetNext" aria-label="next asset">›</button><button class="btn" id="assetRef">Next asset with a refusal</button></div>
+  <div id="assetbar" class="assetbar" hidden><button class="btn" id="assetPrev" aria-label="previous asset">‹</button><select id="assetSel" aria-label="asset"></select><button class="btn" id="assetNext" aria-label="next asset">›</button><button class="btn" id="assetRef">Next asset with a refusal</button><span id="assetcount" class="dim"></span></div>
   <section class="pane" id="pane-heat"></section><section class="pane" id="pane-replay" hidden></section><section class="pane" id="pane-asset" hidden></section><section class="pane" id="pane-dash" hidden></section><section class="pane" id="pane-influence" hidden></section>
  </div>
 </main>
@@ -526,7 +526,7 @@ function ftsSummarySvg(M, availW, opts){
     status(src+" · "+D.order.length+" models · "+D.assets.length+" assets · "+(D.records.length?D.records.length+" records · ":"")+Object.keys(D.elements).length+" shared elements · "+D.events.length+" events ("+refused+" refused) · exported "+fmtT(D.fleet&&(D.fleet.exportedAt||D.fleet.generatedAt)));
     const classes=[...new Set(D.assets.map(a=>a.assetClass))].sort(); $("#cls").innerHTML='<option value="">every asset class</option>'+classes.map(c=>'<option>'+e(c)+'</option>').join("");
     const orgs=[...new Set(D.assets.map(a=>a.org).filter(Boolean))].sort(); $("#org").innerHTML='<option value="">every organisation</option>'+orgs.map(c=>'<option>'+e(c)+'</option>').join(""); $("#org").hidden=!orgs.length;
-    $("#assetSel").innerHTML=D.assets.map(a=>'<option value="'+e(a.id)+'">'+e(a.id+"  "+a.name+(a.org?" ("+a.org+")":"")+((D.recsOf[a.id]||[]).length?" · "+D.recsOf[a.id].length+" records":""))+'</option>').join("");
+fillAssets();
     if(!V.asset) V.asset=(D.assets.find(a=>D.events.some(x=>x.instanceId===a.id&&String(x.result).startsWith("blocked")))||D.assets[0]||{}).id;
     $("#assetSel").value=V.asset;
     $("#slider").min=D.tMin; $("#slider").max=D.tMax; $("#slider").value=D.tMax; $("#slider").step=3600000;
@@ -543,6 +543,13 @@ function ftsSummarySvg(M, availW, opts){
   // v0.4 (Howard, 22 Sep 2026: master or reference): a reference data asset has no golden records; a master holds no reference set
   const regApplies=(a,mid,rid)=>!(mid==="KA-RMD"&&((a.rmdKind==="reference"&&rid==="REG-RMD-GLD")||(a.rmdKind==="master"&&rid==="REG-RMD-REF")));
   const pool=()=>D.assets.filter(a=>(!V.cls||a.assetClass===V.cls)&&(!V.org||a.org===V.org));
+  // v0.5: the asset picker follows the organisation and class filters (Howard, 23 Sep 2026: picking Modelware still listed AGGPSA assets)
+  function fillAssets(){
+    const list=pool(); const sel=$("#assetSel"); if(!sel) return;
+    sel.innerHTML=list.map(a=>'<option value="'+e(a.id)+'">'+e(a.id+"  "+a.name+(a.org?" ("+a.org+")":"")+((D.recsOf[a.id]||[]).length?" · "+D.recsOf[a.id].length+" records":""))+'</option>').join("");
+    if(!list.some(a=>a.id===V.asset)) V.asset=(list[0]||{}).id||null;
+    sel.value=V.asset||""; $("#assetcount").textContent=list.length+" of "+D.assets.length+" assets";
+  }
   function recState(r,mid,rid,t){ const L=D.keys[r.id+"|"+mid+"|"+rid]; if(t!=null){ if(tms(r.createdAt)>t) return null; if(L){ if(t<L[0][0]) return L[0][1]; let lo=0,hi=L.length-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(L[m][0]<=t) lo=m; else hi=m-1; } return L[lo][1]; } } return ((r.regions||{})[mid]||{})[rid]||null; }
   const kaName=mid=>mid===GID?"Global Data Asset Protocol":(D.models[mid].meta.knowledgeArea||D.models[mid].meta.name);
   const kaShort=mid=>mid===GID?"Global":mid.replace(/^KA-/,"");
@@ -899,13 +906,13 @@ function ftsSummarySvg(M, availW, opts){
     $("#btnGh").onclick=ghLoad; $("#btnGhSet").onclick=ghOpen; $("#ghCancel").onclick=()=>$("#ghdlg").close();
     $("#ghSave").onclick=()=>{ const c=ghGet(); c.owner=$("#ghOwner").value.trim(); c.repo=$("#ghRepo").value.trim(); c.branch=$("#ghBranch").value.trim()||"main"; c.path=$("#ghPath").value.trim().replace(/^\/+|\/+$/g,""); const t=$("#ghToken").value.trim(); if(t) c.token=t; ghSet(c); $("#ghdlg").close(); ghLoad(); };
     $("#files").onchange=ev=>fileLoad([...ev.target.files]);
-    $("#cls").onchange=ev=>{ V.cls=ev.target.value; render(); }; $("#org").onchange=ev=>{ V.org=ev.target.value; render(); };
+    $("#cls").onchange=ev=>{ V.cls=ev.target.value; V.sel=null; fillAssets(); render(); }; $("#org").onchange=ev=>{ V.org=ev.target.value; V.sel=null; fillAssets(); render(); };
     $("#play").onclick=play; $("#speed").onchange=ev=>{ V.speed=+ev.target.value; };
     $("#slider").oninput=ev=>{ stop(); V.t=+ev.target.value; renderReplay(); };
     $("#assetSel").onchange=ev=>{ V.asset=ev.target.value; render(); };
-    $("#assetPrev").onclick=()=>{ const i=D.assets.findIndex(a=>a.id===V.asset); if(i>0){ V.asset=D.assets[i-1].id; $("#assetSel").value=V.asset; render(); } };
-    $("#assetNext").onclick=()=>{ const i=D.assets.findIndex(a=>a.id===V.asset); if(i<D.assets.length-1){ V.asset=D.assets[i+1].id; $("#assetSel").value=V.asset; render(); } };
-    $("#assetRef").onclick=()=>{ const r=D.assets.filter(a=>D.events.some(x=>x.instanceId===a.id&&String(x.result).startsWith("blocked"))); const i=r.findIndex(a=>a.id===V.asset); const n=r[(i+1)%r.length]; if(n){ V.asset=n.id; $("#assetSel").value=V.asset; render(); } };
+    $("#assetPrev").onclick=()=>{ const L=pool(); const i=L.findIndex(a=>a.id===V.asset); if(i>0){ V.asset=L[i-1].id; $("#assetSel").value=V.asset; render(); } };
+    $("#assetNext").onclick=()=>{ const L=pool(); const i=L.findIndex(a=>a.id===V.asset); if(i>=0&&i<L.length-1){ V.asset=L[i+1].id; $("#assetSel").value=V.asset; render(); } };
+    $("#assetRef").onclick=()=>{ const r=pool().filter(a=>D.events.some(x=>x.instanceId===a.id&&String(x.result).startsWith("blocked"))); const i=r.findIndex(a=>a.id===V.asset); const n=r[(i+1)%r.length]; if(n){ V.asset=n.id; $("#assetSel").value=V.asset; render(); } };
     const c=ghGet(); if(c.token) ghLoad(); else status("Load from GitHub (the same settings and token as the FTS viewer) or choose the models and the twin export from disk.");
   }
   window.__twin={D,V,ingest};

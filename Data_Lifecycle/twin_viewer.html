@@ -192,13 +192,21 @@ html[data-cr] .btn.primary{background:#0284c7;border-color:#0284c7}
 @keyframes crflashrow{0%{background:#78350f}100%{background:transparent}}
 @keyframes crin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.chg,.crrow.chg,.crcs{animation:none}}
+/* v0.10 governing instruments: policy sets and their versions */
+.crset{border:1px solid var(--c-line2);border-radius:8px;margin-top:6px;overflow:hidden} .crset>summary{cursor:pointer;background:#1e293b;padding:6px 10px;font-size:12.5px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.setst{font-size:10.5px;letter-spacing:.04em;padding:1px 7px;border-radius:4px} .setst.ok{background:#065f46;color:#6ee7b7} .setst.no{background:#7f1d1d;color:#fecaca}
+.crins{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 8px;align-items:center;width:100%;text-align:left;font:inherit;font-size:12px;color:var(--c-ink);background:transparent;border:0;border-top:1px solid var(--c-line);padding:6px 10px;cursor:pointer}
+.crins:hover{background:#162033} .crins.foc{background:#083344} .crins:focus-visible{outline:2px solid #fbbf24;outline-offset:1px}
+.ik{font-size:10px;letter-spacing:.05em;text-align:center;border-radius:4px;padding:1px 4px} .ik.p{background:#4c1d95;color:#ddd6fe} .ik.q{background:#1e3a8a;color:#bfdbfe}
+.vchs{grid-column:2;display:flex;gap:4px;flex-wrap:wrap} .vch{font-size:10.5px;padding:1px 6px;border-radius:4px;border:1px solid #334155;color:var(--c-muted);white-space:nowrap}
+.vch.dr{border-color:#a16207;color:#fcd34d} .vch.ap{border-color:#3b82f6;color:#93c5fd} .vch.in{background:#065f46;border-color:#10b981;color:#d1fae5} .vch.su{color:#64748b;text-decoration:line-through} .vch.wd{border-color:#b91c1c;color:#fca5a5}
 @media (max-width:700px){.tabs{flex-wrap:wrap}.tab{padding:6px 10px}}
 #assetSel{max-width:100%;min-width:0} .assetbar{flex-wrap:wrap}
 .crlens label{display:flex;align-items:center;gap:6px;max-width:100%;min-width:0} .crlens select{min-width:0;max-width:100%;flex:1 1 auto}
 </style></head><body>
 <header>
  <div class="hrow1"><div><h1>Digital Twin Viewer</h1><div class="dim">The digital twin of the DMBOK Data Lifecycle: every Data Asset (a data product, table or feed) and the golden records inside it, moving through the Global Data Asset Protocol and the Knowledge Area FTSs.</div></div>
- <div class="ver">Twin viewer v0.9<br>Built 24 Sep 2026, 07:10 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
+ <div class="ver">Twin viewer v0.10<br>Built 24 Sep 2026, 09:13 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
  <div class="bar"><button class="btn primary" id="btnGh">Load from GitHub</button><button class="btn" id="btnGhSet">GitHub settings</button><label class="btn" for="files">Load files</label><input type="file" id="files" multiple accept=".json" hidden>
  <select id="org" aria-label="organisation" hidden></select><select id="cls" aria-label="asset class"><option value="">every asset class</option></select><span id="status" class="status"></span></div>
  <div class="tabs" role="tablist"><button class="tab" data-t="heat" aria-selected="true">Heat map</button><button class="tab" data-t="replay" aria-selected="false">Replay</button><button class="tab" data-t="asset" aria-selected="false">One asset</button><button class="tab" data-t="dash" aria-selected="false">Dashboard (role workspace)</button><button class="tab" data-t="issues" aria-selected="false">Issues</button><button class="tab" data-t="influence" aria-selected="false">Influence</button></div>
@@ -577,7 +585,7 @@ function ftsSummarySvg(M, availW, opts){
       const list=(await r.json()).filter(f=>f.type==="file"&&/\.fts\.json$/i.test(f.name));
       const models=[]; for(const f of list){ const rr=await fetch(f.url,{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(rr.ok){ try{ const m=JSON.parse(await rr.text()); if(m.meta&&m.regions&&m.subStates) models.push(m); }catch(x){} } }
       status("reading the twin export from "+tdir+" ...");
-      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","events.json","records.json","issues.json"]){ const rr=await fetch(api(tdir+"/"+n),{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(!rr.ok){ if(n==="records.json"||n==="issues.json") continue; throw new Error(tdir+"/"+n+": "+explain(rr.status)); } tw[n]=JSON.parse(await rr.text()); }
+      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","events.json","records.json","issues.json","instruments.json"]){ const rr=await fetch(api(tdir+"/"+n),{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(!rr.ok){ if(n==="records.json"||n==="issues.json"||n==="instruments.json") continue; throw new Error(tdir+"/"+n+": "+explain(rr.status)); } tw[n]=JSON.parse(await rr.text()); }
       ingest(models,tw,"GitHub "+c.owner+"/"+c.repo+" ("+c.branch+")");
     }catch(ex){ status("Could not load from GitHub. "+ex.message,true); }
   }
@@ -610,6 +618,9 @@ function ftsSummarySvg(M, availW, opts){
     // v0.7 (Howard, 23 Sep 2026): the Data Governance issues raised by refusals, one instance per issue case
     D.issues=((tw["issues.json"]||{}).issues||[]); D.issById={}; D.issOf={}; D.issBySeq={};
     D.issues.forEach(i=>{ D.issById[i.id]=i; (D.issOf[i.parentId]=D.issOf[i.parentId]||[]).push(i); const q=(i.source||{}).eventSeq; if(q!=null) D.issBySeq[q]=i; });
+    // v0.10 (Howard, 24 Sep 2026): governing instrument versions, one instance per version of a policy or procedure
+    D.inst=((tw["instruments.json"]||{}).instruments||[]); D.instById={}; D.instByScope={};
+    D.inst.forEach(i=>{ D.instById[i.id]=i; (D.instByScope[i.scope]=D.instByScope[i.scope]||[]).push(i); });
     D.elements={}; ((tw["elements.json"]||{}).elements||[]).forEach(x=>D.elements[x.id]=x);
     D.events=(tw["events.json"].events||[]).slice().sort((a,b)=>tms(a.at)-tms(b.at)||(a.seq-b.seq));
     D.fleet=tw["fleet.json"]||null;
@@ -641,7 +652,7 @@ fillAssets();
   }
   const applies=(a,mid)=>mid===GID||!(a.kaModels)||a.kaModels.includes(mid);
   // v0.4 (Howard, 22 Sep 2026: master or reference): a reference data asset has no golden records; a master holds no reference set
-  const regApplies=(a,mid,rid)=>!(mid==="KA-RMD"&&((a.rmdKind==="reference"&&rid==="REG-RMD-GLD")||(a.rmdKind==="master"&&rid==="REG-RMD-REF")));
+  const regApplies=(a,mid,rid)=>!(mid==="KA-DG"&&rid==="REG-DG-INS")&&!(mid==="KA-RMD"&&((a.rmdKind==="reference"&&rid==="REG-RMD-GLD")||(a.rmdKind==="master"&&rid==="REG-RMD-REF")));
   const pool=()=>D.assets.filter(a=>(!V.cls||a.assetClass===V.cls)&&(!V.org||a.org===V.org));
   // v0.5: the asset picker follows the organisation and class filters (Howard, 23 Sep 2026: picking Modelware still listed AGGPSA assets)
   function fillAssets(){
@@ -947,10 +958,47 @@ fillAssets();
   function asEvents(a){ return D.events.filter(ev=>ev.instanceId===a.id||ev.parentId===a.id).sort((x,y)=>tms(x.at)-tms(y.at)||(x.seq-y.seq)); }
   function worldAt(a,t){ const vec={}; D.order.forEach(mid=>{ if(!applies(a,mid)) return; vec[mid]={};
       (D.models[mid].regions||[]).forEach(r=>{ if(regApplies(a,mid,r.id)) vec[mid][r.id]=stateOf(a,mid,r.id,t)||initialOf(mid,r.id); }); });
-    return {vec, facts:{}}; }
+    const w={vec, facts:{}, inst:instWorld(a,t), scope:a.scope};
+    if(w.vec["KA-DG"]&&Object.keys(w.inst).length){ const p=polRollupW(w); if(p) w.vec["KA-DG"]["REG-DG-POL"]=p; }
+    return w; }
+  // ---- governing instrument versions (Howard, 24 Sep 2026, Instrument Versions Register): the versions of the asset's governed scope
+  // at the replay point, their policy sets, each set's fact, and the scope's REG-DG-POL as the roll-up of the counted sets
+  const KAS13=["DG","DA","DMD","DSO","DII","MM","DQ","DS","DHE","DWBI","BDA","RMD","DCM"];
+  const INSR=()=>((D.fleet||{}).instrumentRules)||{polRollup:"ka",useFeeds:true,kaDomains:{},feeds:{}};
+  const domSlug=n=>String(n||"").replace(/[^A-Za-z0-9]+/g,"_").replace(/^_+|_+$/g,"").toLowerCase();
+  const instMeta=id=>D.instById[id]||((DV.sbMeta||{})[id])||null;
+  const INS_NAME={"STS-INS-01":"No Version","STS-INS-02":"Drafted","STS-INS-03":"Reviewed","STS-INS-04":"Approved","STS-INS-05":"In Force","STS-INS-06":"Superseded","STS-INS-07":"Withdrawn"};
+  function instWorld(a,t){ const out={}; ((D.instByScope||{})[a.scope]||[]).forEach(i=>{ if(t!=null&&tms(i.createdAt)>t) return;
+      out[i.id]={"KA-DG":{"REG-DG-INS":recState(i,"KA-DG","REG-DG-INS",t)||"STS-INS-01"},"KA-DCM":{"REG-DCM-REC":recState(i,"KA-DCM","REG-DCM-REC",t)||"STS-REC-01"}}; }); return out; }
+  function setsOf(w){ if(w._sets) return w._sets; const by={};
+    Object.keys(w.inst||{}).forEach(id=>{ const m=instMeta(id); if(m) (by[m.domainName]=by[m.domainName]||[]).push(id); });
+    const sets={}; Object.entries(by).forEach(([dom,ids])=>{ const per={}; let pol=false; ids.forEach(id=>{ const m=instMeta(id); if(m.instrumentKind==="policy") pol=true; (per[m.instrumentId]=per[m.instrumentId]||[]).push(id); });
+      sets[dom]={ok:pol&&Object.values(per).every(xs=>xs.some(id=>w.inst[id]["KA-DG"]["REG-DG-INS"]==="STS-INS-05")), per, ids}; });
+    Object.defineProperty(w,"_sets",{value:sets,enumerable:false,writable:true,configurable:true}); return sets; }
+  const setKA=d=>{ const R=INSR(); return R.kaDomains[d]||(R.useFeeds?R.feeds[d]:null)||null; };
+  function scopeFactsW(w){ const sets=setsOf(w); const f={}; Object.entries(sets).forEach(([d,x])=>f["POLDOM_"+domSlug(d)+"_in_force"]=x.ok);
+    KAS13.forEach(ka=>{ const ds=Object.keys(sets).filter(d=>setKA(d)===ka); if(ds.length) f[ka+"_policy_set_in_force"]=ds.every(d=>sets[d].ok); }); return f; }
+  function polCounted(w){ const R=INSR(); return Object.keys(setsOf(w)).filter(d=>R.polRollup==="all"||(R.polRollup==="dg"&&d==="Data Governance")||(R.polRollup==="ka"&&setKA(d))); }
+  function polRollupW(w){ const sets=setsOf(w); const counted=polCounted(w); if(!counted.length) return null;
+    const st=[]; counted.forEach(d=>sets[d].ids.forEach(id=>st.push(w.inst[id]["KA-DG"]["REG-DG-INS"])));
+    return counted.every(d=>sets[d].ok)?"STS-POL-04":st.some(x=>x==="STS-INS-04"||x==="STS-INS-05")?"STS-POL-03":st.some(x=>x==="STS-INS-02"||x==="STS-INS-03")?"STS-POL-02":"STS-POL-01"; }
+  const touchInst=w=>{ w._sets=null; };
   function factsW(a,w){ const env=Object.assign({},DEFAULT_FACTS);
     Object.keys(w.vec).forEach(mid=>{ if(mid===GID) return; const fb=(D.models[mid].meta||{}).factBindings||{}; Object.entries(fb).forEach(([f,b])=>{ env[f]=((b.states)||[]).includes(w.vec[mid][b.region]); }); });
+    if(w.inst&&Object.keys(w.inst).length) Object.assign(env, scopeFactsW(w));
     Object.assign(env, a.facts||{}, w.facts||{}); return env; }
+  // a version evaluated on its own view: the scope's shared DG and DCM regions with the version's two regions on top, and its facts
+  function evalInst(a,w,id,mid,tid){ const t=trOf(mid,tid); const m=instMeta(id); const iv=(w.inst||{})[id]; if(!t.id||!m||!iv) return null; const region=regionOfT(mid,t);
+    const vec={}; ["KA-DG","KA-DCM"].forEach(k=>{ vec[k]=Object.assign({}, w.vec[k]||{}, iv[k]); });
+    const env=Object.assign({},DEFAULT_FACTS); ["KA-DG","KA-DCM"].forEach(k=>{ const fb=(D.models[k].meta||{}).factBindings||{}; Object.entries(fb).forEach(([f,b])=>{ env[f]=((b.states)||[]).includes(vec[k][b.region]); }); });
+    Object.assign(env, scopeFactsW(w));
+    const pr=m.predecessor&&w.inst[m.predecessor]?w.inst[m.predecessor]["KA-DG"]["REG-DG-INS"]:null;
+    Object.assign(env,{INS_is_policy:m.instrumentKind==="policy", INS_is_procedure:m.instrumentKind==="procedure", INS_predecessor_ok:!pr||pr==="STS-INS-05"||pr==="STS-INS-07"});
+    (D.models[mid].regions||[]).forEach(r=>env[codeOf(mid,r.id)]=vec[mid][r.id]);
+    const src=vec[mid][region]===t.source;
+    const gs=(D.models[mid].guards||[]).filter(g=>!g.contribution&&g.transition===tid).map(g=>{ let v=true, how="no expression, assumed true"; if(g.expression){ const r=evalExpr(g.expression,env); if(r===null) how="not evaluable, assumed true"; else { v=r; how="expression"; } }
+      return {guard:g.id, verdict:v, requirement:g.requirement, contributedBy:null, predicate:g.predicate||g.constraint, expression:g.expression, how}; });
+    return {mid, tid, name:t.name, region, from:t.source, to:t.target, sourceActive:src, guards:gs, fired:src&&gs.every(g=>g.verdict), dr:t.decisionRight, event:t.event, inst:id}; }
   function regionOfT(mid,t){ const s=D.st[t.target]||{}; return s.region||s.parent; }
   function evalW(a,w,mid,tid){ const t=trOf(mid,tid); if(!t.id||!w.vec[mid]) return null; const region=regionOfT(mid,t); const vec=w.vec[mid];
     const env=factsW(a,w); (D.models[mid].regions||[]).forEach(r=>env[codeOf(mid,r.id)]=vec[r.id]);
@@ -974,8 +1022,27 @@ fillAssets();
   function cascade(a,w0,userSteps){
     const w=clone(w0); const steps=[]; const snaps=[]; let n=0; const seen=new Set();
     const runOne=(first)=>{ const q=[first];
-      while(q.length&&n<24){ const it=q.shift(); const key=it.mid+"|"+it.tid; if(it.depth>0&&seen.has(key)) continue; seen.add(key);
+      const flips=(f0,f1,it,step)=>{ Object.keys(w.vec).forEach(k=>{ if(k===GID) return;
+            (D.models[k].contributions||[]).forEach(c=>{ if(c.kind!=="event"||!c.globalTransition) return; if(evalExpr(c.expression,f0)!==true&&evalExpr(c.expression,f1)===true){
+              const tgt=viaEvent(w,GID,c.globalTransition); step.emits.push({id:c.id, from:k, to:GID, tid:tgt, predicate:c.predicate});
+              q.push({mid:GID, tid:tgt, depth:it.depth+1, cause:c.id, causeFrom:k, requester:{role:"raised by "+kaShort(k), activity:c.id}}); } });
+            (D.models[k].kaCouplings||[]).forEach(c=>{ if(!c.event||!c.targetTransition||!w.vec[c.targetModel]||c.id==="KAC-DG-01") return; if(evalExpr(c.expression,f0)!==true&&evalExpr(c.expression,f1)===true){
+              const tgt=viaEvent(w,c.targetModel,c.targetTransition); step.emits.push({id:c.id, from:k, to:c.targetModel, tid:tgt, predicate:c.predicate});
+              q.push({mid:c.targetModel, tid:tgt, depth:it.depth+1, cause:c.id, causeFrom:k, requester:{role:"raised by "+kaShort(k), activity:c.id}}); } }); }); };
+      while(q.length&&n<40){ const it=q.shift(); const key=(it.inst||"")+"|"+it.mid+"|"+it.tid; if(it.depth>0&&seen.has(key)) continue; seen.add(key);
         const f0=factsW(a,w);
+        if(it.inst){ // a step on a governing instrument version
+          const v=evalInst(a,w,it.inst,it.mid,it.tid); if(!v) continue; n++; const m=instMeta(it.inst);
+          const step={n, depth:it.depth, user:!!it.user, mid:it.mid, tid:it.tid, name:v.name, region:v.region, before:w.inst[it.inst][it.mid][v.region], to:v.to, fired:v.fired, sourceActive:v.sourceActive,
+            guards:v.guards, cause:it.cause||null, causeFrom:it.causeFrom||null, requester:it.requester||null, dr:v.dr, emits:[], inst:it.inst, instName:m?(m.instrumentId+" v"+m.version):it.inst};
+          if(v.fired){ w.inst[it.inst][it.mid][v.region]=v.to; touchInst(w);
+            if(it.mid==="KA-DG"&&(it.tid==="TR-INS-06"||it.tid==="TR-INS-07")&&m.predecessor&&w.inst[m.predecessor]&&w.inst[m.predecessor]["KA-DG"]["REG-DG-INS"]==="STS-INS-05")
+              q.unshift({mid:"KA-DG", tid:"TR-INS-08", inst:m.predecessor, depth:it.depth+1, cause:"XRG-DG-09, automatic supersession", causeFrom:"KA-DG", requester:{role:"automatic supersession", activity:"ACT-DG-2.2"}});
+            if(it.mid==="KA-DG"&&it.tid==="TR-INS-08"){ const t2={"STS-REC-04":"TR-REC-06","STS-REC-03":"TR-REC-05"}[w.inst[it.inst]["KA-DCM"]["REG-DCM-REC"]];
+              if(t2) q.unshift({mid:"KA-DCM", tid:t2, inst:it.inst, depth:it.depth+1, cause:"KAC-DG-01", causeFrom:"KA-DG", requester:{role:"raised by DG", activity:"KAC-DG-01"}}); }
+            if(w.vec["KA-DG"]){ const p=polRollupW(w), cur=w.vec["KA-DG"]["REG-DG-POL"]; if(p&&p!==cur){ step.polRoll={from:cur, to:p}; w.vec["KA-DG"]["REG-DG-POL"]=p; } }
+            flips(f0,factsW(a,w),it,step); }
+          steps.push(step); snaps.push(clone(w)); continue; }
         // logging an issue opens a new issue instance (fts_twin v0.3): evaluate it on a fresh case, then roll the asset's region up
         const newIssue=it.mid==="KA-DG"&&it.tid==="TR-ISS-01";
         const view=newIssue?(()=>{ const x=clone(w); x.vec["KA-DG"]["REG-DG-ISS"]=initialOf("KA-DG","REG-DG-ISS"); return x; })():w;
@@ -988,14 +1055,7 @@ fillAssets();
         if(v.fired&&newIssue){ const cur=w.vec["KA-DG"]["REG-DG-ISS"]; step.issueOpened=true;
           if(["STS-ISS-01","STS-ISS-05",undefined,null].includes(cur)){ step.issueRoll={from:cur, to:"STS-ISS-02"}; w.vec["KA-DG"]["REG-DG-ISS"]="STS-ISS-02"; }
           steps.push(step); snaps.push(clone(w)); continue; }
-        if(v.fired){ w.vec[it.mid][v.region]=v.to; const f1=factsW(a,w);
-          Object.keys(w.vec).forEach(k=>{ if(k===GID) return;
-            (D.models[k].contributions||[]).forEach(c=>{ if(c.kind!=="event"||!c.globalTransition) return; if(evalExpr(c.expression,f0)!==true&&evalExpr(c.expression,f1)===true){
-              const tgt=viaEvent(w,GID,c.globalTransition); step.emits.push({id:c.id, from:k, to:GID, tid:tgt, predicate:c.predicate});
-              q.push({mid:GID, tid:tgt, depth:it.depth+1, cause:c.id, causeFrom:k, requester:{role:"raised by "+kaShort(k), activity:c.id}}); } });
-            (D.models[k].kaCouplings||[]).forEach(c=>{ if(!c.event||!c.targetTransition||!w.vec[c.targetModel]) return; if(evalExpr(c.expression,f0)!==true&&evalExpr(c.expression,f1)===true){
-              const tgt=viaEvent(w,c.targetModel,c.targetTransition); step.emits.push({id:c.id, from:k, to:c.targetModel, tid:tgt, predicate:c.predicate});
-              q.push({mid:c.targetModel, tid:tgt, depth:it.depth+1, cause:c.id, causeFrom:k, requester:{role:"raised by "+kaShort(k), activity:c.id}}); } }); });
+        if(v.fired){ w.vec[it.mid][v.region]=v.to; flips(f0,factsW(a,w),it,step);
         } else { const s=severityOf(v); if(s.sev&&w.vec["KA-DG"]){ step.issue={severity:s.sev, guards:s.blk};
             if(w.vec["KA-DG"]&&["STS-ISS-01","STS-ISS-05",undefined,null].includes(w.vec["KA-DG"]["REG-DG-ISS"])){ step.issueRoll={from:w.vec["KA-DG"]["REG-DG-ISS"], to:"STS-ISS-02"}; w.vec["KA-DG"]["REG-DG-ISS"]="STS-ISS-02"; } } }
         steps.push(step); snaps.push(clone(w)); } };
@@ -1019,8 +1079,9 @@ fillAssets();
     {id:"pdm", label:"Physical model revised", sub:"a schema change opens a model revision", mid:"KA-DMD", rid:"REG-DMD-PDM", to:"STS-PDM-07", tone:"grey"}];
 
   // ---------------------------------------------------------------- rendering
-  function dashAsset(){ const a=D.byId[V.asset]; if(!a) return null; if(DV.asset!==a.id){ DV.asset=a.id; DV.sb=null; DV.pick=null; DV.preview=null; DV.focus=null; DV.prev={}; DV.i=null; stopDash(); } return a; }
-  function curWorld(a,evs){ if(DV.sb) return DV.sb.snaps[DV.sb.shown-1]||DV.sb.base; const t=DV.i>0?tms(evs[DV.i-1].at):tms(a.createdAt)-1; return worldAt(a,t); }
+  function dashAsset(){ const a=D.byId[V.asset]; if(!a) return null; if(DV.asset!==a.id){ DV.asset=a.id; DV.sb=null; DV.pick=null; DV.preview=null; DV.focus=null; DV.prev={}; DV.i=null; DV.sbMeta={}; DV.instFocus=null; stopDash(); } return a; }
+  const tAt=(a,evs)=>DV.i>=evs.length?Date.now():DV.i>0?tms(evs[DV.i-1].at):tms(a.createdAt)-1;
+  function curWorld(a,evs){ if(DV.sb) return DV.sb.snaps[DV.sb.shown-1]||DV.sb.base; return worldAt(a,tAt(a,evs)); }
   function stopDash(){ DV.playing=false; if(DV.timer) clearInterval(DV.timer); DV.timer=null; }
   function renderDash(){
     const a=dashAsset(); const pane=$("#pane-dash"); if(!a){ pane.innerHTML='<div class="cr"><div class="crwrap">Choose an asset.</div></div>'; return; }
@@ -1072,6 +1133,7 @@ fillAssets();
       (m.regions||[]).filter(r=>w.vec[k]&&w.vec[k][r.id]).map(r=>{ const s=w.vec[k][r.id]; const mine=(m.transitions||[]).filter(t=>t.source===s&&regionOfT(k,t)===r.id&&heldDR(k,t.decisionRight)).length;
         return '<button class="crrow'+chg(k+"|"+r.id,s)+(DV.focus===k+"|"+r.id?' foc':'')+'" data-f="'+e(k+"|"+r.id)+'"><span class="mono faint">'+e(r.code||"")+'</span><span class="crrn">'+e(r.name)+'</span><span class="crchipst">'+e(sName(s))+'</span>'+(mine?'<span class="yours" title="transitions from this state whose decision right this role holds">◆ '+mine+'</span>':'')+'</button>'; }).join("")+'</div>'); });
     h.push('</div></div>');
+    h.push(instPanelHtml(a,w,lens,chg));
     // XRG
     const xrg=D.models[GID].crossRegionConstraints||[]; const genv=Object.assign({},env); D.models[GID].regions.forEach(r=>genv[r.code]=w.vec[GID][r.id]);
     h.push('<div class="crpanel"><div class="crph"><span>CROSS-REGION GUARDS (XRG) EVALUATION ENGINE</span></div>'+xrg.map(x=>{ const v=evalExpr(x.expression,genv); const trs=(String(x.transitions||"").match(/TR-[A-Z]+-\d+/g)||[]);
@@ -1100,16 +1162,50 @@ fillAssets();
   function evLine(x){ const bad=String(x.result).startsWith("blocked"); const q=x.requester;
     return e((x.transition||"")+" "+(x.name||""))+(x.instanceId&&x.instanceId!==DV.asset?' <span class="faint">on '+e(x.instanceId)+'</span>':'')+' <b class="'+(bad?'red':x.fired?'green':'faint')+'">'+(bad?'refused':x.result==="rollup"?'roll-up':x.fired?'fired':e(x.result))+'</b>'+(q&&q.roleName?' <span class="faint">asked by '+e(q.roleName)+'</span>':''); }
 
+  // ---- the Governing Instruments panel: the policy sets of this lens, each Policy and Procedure with its versions
+  const VCLS={"STS-INS-02":"dr","STS-INS-03":"dr","STS-INS-04":"ap","STS-INS-05":"in","STS-INS-06":"su","STS-INS-07":"wd"};
+  function versionsOf(w,instrumentId){ return Object.keys(w.inst||{}).filter(id=>{ const m=instMeta(id); return m&&m.instrumentId===instrumentId; }).sort((x,y)=>instMeta(x).version-instMeta(y).version); }
+  function instPanelHtml(a,w,lens,chg){
+    const sets=setsOf(w); const doms=Object.keys(sets); if(!doms.length) return '';
+    const R=INSR(); const counted=polCounted(w); const nIn=counted.filter(d=>sets[d].ok).length; const pol=(w.vec["KA-DG"]||{})["REG-DG-POL"];
+    const shown=DV.allSets?doms.slice().sort():doms.filter(d=>lens.includes("KA-"+setKA(d))).sort();
+    const h=['<div class="crpanel"><div class="crph"><span>GOVERNING INSTRUMENTS</span><span class="faint">'+e(a.org||a.scope||"")+' · '+doms.length+' policy sets</span></div>'+
+      '<div class="faint crnote">REG-DG-POL, the roll-up of the '+counted.length+' '+(R.polRollup==="ka"?"Knowledge Area":R.polRollup==="dg"?"Data Governance":"")+' sets: <b class="'+(pol==="STS-POL-04"?"green":"amber")+'">'+e(sName(pol))+'</b> · '+nIn+' of '+counted.length+' in force. Click a policy or procedure to act on its versions in the testbed. <button class="crlink" data-allsets="1">'+(DV.allSets?'show this lens only':'show every set')+'</button></div>'];
+    if(!shown.length) h.push('<div class="faint">No policy set of this organisation feeds the Knowledge Areas in this lens.</div>');
+    shown.forEach(d=>{ const x=sets[d]; const ka=setKA(d); const fact=ka?ka+"_policy_set_in_force":"POLDOM_"+domSlug(d)+"_in_force";
+      const ids=Object.keys(x.per).sort((p,q)=>((instMeta(x.per[p][0]).instrumentKind==="policy")?-1:0)-((instMeta(x.per[q][0]).instrumentKind==="policy")?-1:0)||p.localeCompare(q));
+      h.push('<details class="crset"'+(shown.length<=2?' open':'')+'><summary><b>'+e(d)+'</b>'+(ka?' <span class="faint">('+e(ka)+')</span>':'')+' <span class="setst '+(x.ok?'ok':'no')+'">'+(x.ok?'SET IN FORCE':'NOT IN FORCE')+'</span> <span class="mono faint">'+e(fact)+'</span></summary>'+
+        ids.map(iid=>{ const vs=versionsOf(w,iid); const m=instMeta(vs[0]); const on=DV.instFocus===iid;
+          return '<button class="crins'+(on?' foc':'')+chg("INS|"+iid,vs.map(v=>w.inst[v]["KA-DG"]["REG-DG-INS"]).join(","))+'" data-ins="'+e(iid)+'"><span class="ik '+(m.instrumentKind==="policy"?'p':'q')+'">'+(m.instrumentKind==="policy"?'POLICY':'PROC')+'</span><span class="crrn" title="'+e(m.name||"")+'"><span class="mono">'+e(iid)+'</span> '+e(String(m.name||""))+'</span><span class="vchs">'+vs.map(v=>{ const st=w.inst[v]["KA-DG"]["REG-DG-INS"]; return '<span class="vch '+(VCLS[st]||"")+'">v'+instMeta(v).version+' '+e(INS_NAME[st]||st)+'</span>'; }).join("")+'</span></button>'; }).join("")+'</details>'); });
+    h.push('</div>'); return h.join(""); }
+  function instActionsHtml(a,w){
+    if(!DV.instFocus) return '<div class="faint">Choose a policy or procedure in the Governing Instruments panel. Its versions and what can be done to each appear here: draft a new version, review, approve, publish its document, put it in force (which supersedes the version in force), or withdraw it.</div>';
+    const vs=versionsOf(w,DV.instFocus); if(!vs.length) return '<div class="faint">That instrument has no version at the replay point.</div>';
+    const m0=instMeta(vs[0]); const h=['<div class="crgrp">'+e(m0.instrumentKind==="policy"?"Policy":"Procedure")+' '+e(DV.instFocus)+' · '+e(m0.domainName)+'</div><div class="faint" style="font-size:12px">'+e(m0.name||"")+'</div>'];
+    const busy=vs.some(v=>["STS-INS-02","STS-INS-03","STS-INS-04"].includes(w.inst[v]["KA-DG"]["REG-DG-INS"]));
+    if(!busy){ h.push('<button class="cra crnew" data-insnew="'+e(DV.instFocus)+'" data-full=""><b>Draft version '+(Math.max(...vs.map(v=>instMeta(v).version))+1)+'</b><span class="cras faint">sandbox</span></button>');
+      h.push('<button class="cra crnew" data-insnew="'+e(DV.instFocus)+'" data-full="1"><b>Draft, approve, publish and put version '+(Math.max(...vs.map(v=>instMeta(v).version))+1)+' in force</b><span class="cras faint">full path, sandbox</span></button>'); }
+    vs.forEach(v=>{ const mm=instMeta(v); const st=w.inst[v]["KA-DG"]["REG-DG-INS"]; const doc=w.inst[v]["KA-DCM"]["REG-DCM-REC"];
+      h.push('<div class="crgrp">v'+mm.version+' · '+e(INS_NAME[st]||st)+' · document '+e(sName(doc))+(mm.synthetic?' · synthetic':'')+'</div>');
+      [["KA-DG","REG-DG-INS",st],["KA-DCM","REG-DCM-REC",doc]].forEach(([mid,rid,cur])=>{ (D.models[mid].transitions||[]).filter(t=>regionOfT(mid,t)===rid&&t.source===cur&&t.source!==t.target).forEach(t=>{
+        const x=evalInst(a,w,v,mid,t.id); if(!x) return; const mine=heldDR(mid,x.dr); const on=DV.pick&&DV.pick.inst===v&&DV.pick.tid===t.id;
+        h.push('<button class="cra'+(on?' on':'')+'" data-inst="'+e(v)+'" data-mid="'+e(mid)+'" data-tid="'+e(t.id)+'"><span class="mono">'+e(t.id)+'</span> '+e(t.name)+' <span class="faint">'+e(kaShort(mid))+'</span>'+(mine?' <span class="yours">◆ yours</span>':'')+'<span class="cras '+(x.fired?'g':'r')+'">'+(x.fired?'ready':'guards refuse')+'</span></button>'); }); }); });
+    return h.join(""); }
   function testbedHtml(a,w,kas){
     const h=['<div class="crbed"><div class="crbedh">DIGITAL TWIN SIMULATION &amp; INCIDENT TESTBED ("WHAT-IF" CONTROLS)</div><div class="crbedb">'];
     h.push('<div class="crinc">'+INCIDENTS.filter(x=>w.vec[x.mid]&&w.vec[x.mid][x.rid]!==undefined).map(x=>'<button class="crib '+x.tone+(DV.pick&&DV.pick.inc===x.id?' on':'')+'" data-inc="'+e(x.id)+'"><b>'+e(x.label)+'</b><span>'+e(x.sub)+'</span></button>').join("")+'</div>');
-    h.push('<div class="crtabs">'+[["yours","Your actions"],["act","By activity"],["ev","By event"]].map(([k,l])=>'<button class="crtab'+(DV.tab===k?' on':'')+'" data-tb="'+k+'">'+l+'</button>').join("")+(DV.focus?'<span class="faint"> · focused on '+e(regName(...DV.focus.split("|")))+' <button class="crlink" data-unfocus="1">clear</button></span>':'')+'</div><div class="crlist">');
+    h.push('<div class="crtabs">'+[["yours","Your actions"],["act","By activity"],["ev","By event"]].concat(Object.keys(w.inst||{}).length?[["ins","Instruments"]]:[]).map(([k,l])=>'<button class="crtab'+(DV.tab===k?' on':'')+'" data-tb="'+k+'">'+l+'</button>').join("")+(DV.focus?'<span class="faint"> · focused on '+e(regName(...DV.focus.split("|")))+' <button class="crlink" data-unfocus="1">clear</button></span>':'')+'</div><div class="crlist">');
     const btn=(mid,tid,act)=>{ const v=evalW(a,w,mid,tid); if(!v) return ""; const mine=heldDR(mid,v.dr); const st=v.fired?["ready","g"]:v.sourceActive?["guards refuse","r"]:["not from this state","faint"];
       const on=DV.pick&&DV.pick.mid===mid&&DV.pick.tid===tid;
       return '<button class="cra'+(on?' on':'')+'" data-mid="'+e(mid)+'" data-tid="'+e(tid)+'" data-act="'+e(act||"")+'"><span class="mono">'+e(tid)+'</span> '+e(v.name)+' <span class="faint">'+e(kaShort(mid))+'</span>'+(mine?' <span class="yours">◆ yours</span>':'')+'<span class="cras '+st[1]+'">'+st[0]+'</span></button>'; };
     const inFocus=(mid,tid)=>{ if(!DV.focus) return true; const [fm,fr]=DV.focus.split("|"); return mid===fm&&regionOfT(mid,trOf(mid,tid))===fr; };
     const models=[GID].concat(kas);
-    if(DV.tab==="yours"){ const rows=[]; D.order.filter(m=>w.vec[m]).forEach(mid=>(D.models[mid].transitions||[]).forEach(t=>{ const rid=regionOfT(mid,t); if(!w.vec[mid][rid]||w.vec[mid][rid]!==t.source||!heldDR(mid,t.decisionRight)||!inFocus(mid,t.id)) return; rows.push(btn(mid,t.id,(claimingAct(mid,t.id)||{}).id)); }));
+    if(DV.tab==="ins") h.push(instActionsHtml(a,w));
+    else if(DV.tab==="yours"){ const rows=[]; D.order.filter(m=>w.vec[m]).forEach(mid=>(D.models[mid].transitions||[]).forEach(t=>{ const rid=regionOfT(mid,t); if(!w.vec[mid][rid]||w.vec[mid][rid]!==t.source||!heldDR(mid,t.decisionRight)||!inFocus(mid,t.id)) return; rows.push(btn(mid,t.id,(claimingAct(mid,t.id)||{}).id)); }));
+      // governing instrument versions in this lens whose next step this role decides (the Data Owner approves procedures, the Council policies)
+      const sets=setsOf(w); let nIns=0; Object.keys(sets).filter(d=>kas.includes("KA-"+setKA(d))).forEach(d=>sets[d].ids.forEach(v=>{ if(nIns>=12) return; const st=w.inst[v]["KA-DG"]["REG-DG-INS"];
+        (D.models["KA-DG"].transitions||[]).filter(t=>regionOfT("KA-DG",t)==="REG-DG-INS"&&t.source===st&&heldDR("KA-DG",t.decisionRight)).forEach(t=>{ const x=evalInst(a,w,v,"KA-DG",t.id); if(!x||!x.fired) return; nIns++;
+          rows.push('<button class="cra" data-inst="'+e(v)+'" data-mid="KA-DG" data-tid="'+e(t.id)+'"><span class="mono">'+e(t.id)+'</span> '+e(t.name)+' <span class="faint">'+e(instMeta(v).instrumentId+" v"+instMeta(v).version)+'</span> <span class="yours">◆ yours</span><span class="cras g">ready</span></button>'); }); }));
       h.push(rows.length?rows.join(""):'<div class="faint">'+e((roleOf(DV.role)||{}).name||"This role")+' holds the decision right for no transition that can start from where this asset is now'+(DV.focus?' in the focused region':'')+'. Try By activity.</div>'); }
     else if(DV.tab==="act"){ models.forEach(mid=>{ const acts=(D.models[mid].activities||[]).filter(x=>(x.relatedTransitions||[]).some(tid=>{ const t=trOf(mid,tid); return t.id&&w.vec[mid]&&w.vec[mid][regionOfT(mid,t)]!==undefined&&inFocus(mid,tid); }));
         if(!acts.length) return; h.push('<div class="crgrp">'+e(kaName(mid))+'</div>');
@@ -1131,23 +1227,42 @@ fillAssets();
     const kch={}; Object.keys(pv.w.vec).forEach(k=>{ if(k===GID) return; Object.keys(pv.w.vec[k]).forEach(r=>{ if(pv.base.vec[k][r]!==pv.w.vec[k][r]) (kch[k]=kch[k]||[]).push(r); }); });
     return s.length+' '+(s.length===1?'step':'steps')+': '+fired.length+' fire'+(ref.length?', '+ref.length+' refused':'')+(na.length?', '+na.length+' emitted but not applicable from this state':'')+(iss.length?', opening '+iss.length+' Data Governance '+(iss.length===1?'issue':'issues')+' ('+iss.map(x=>x.severity==="coupled"?"logged by a coupling":x.severity).join(", ")+')':'')+'. '+
       (gch.length?'The Global vector moves on '+gch.map(r=>codeOf(GID,r)+' to '+sName(g1[r])).join(", ")+'. ':'The Global vector does not move. ')+
-      (Object.keys(kch).length?'Knowledge Areas touched: '+Object.entries(kch).map(([k,rs])=>kaShort(k)+' ('+rs.length+')').join(", ")+'.':''); }
+      (Object.keys(kch).length?'Knowledge Areas touched: '+Object.entries(kch).map(([k,rs])=>kaShort(k)+' ('+rs.length+')').join(", ")+'.':'')+gateImpact(a,pv); }
+  // what the scenario does to this asset's gates: every guard on the Global transitions that matter, before and after
+  const WATCH2=["TR-EX-01","TR-EX-02","TR-AV-01","TR-AV-04","TR-CP-04","TR-CP-05","TR-EX-05"];
+  function gateImpact(a,pv){ const out=[];
+    WATCH2.forEach(tid=>{ const v0=evalW(a,pv.base,GID,tid), v1=evalW(a,pv.w,GID,tid); if(!v0||!v1) return; const ok0=v0.guards.every(g=>g.verdict), ok1=v1.guards.every(g=>g.verdict); if(ok0===ok1) return;
+      const now=v1.guards.filter(g=>!g.verdict&&v0.guards.some(x=>x.guard===g.guard&&x.verdict)).map(g=>g.guard);
+      out.push('<b>'+e(tid)+' '+e(v1.name)+'</b> '+(ok1?'<span class="green">now passes</span>':'<span class="red">now refused</span>'+(now.length?' by '+now.map(e).join(", "):''))); });
+    const f0=scopeFactsW(pv.base), f1=scopeFactsW(pv.w); const sf=Object.keys(Object.assign({},f0,f1)).filter(k=>f0[k]!==f1[k]);
+    return (sf.length?'<div>Policy sets that change: '+sf.map(k=>'<span class="mono">'+e(k)+'</span> '+(f1[k]?'<span class="green">in force</span>':'<span class="red">not in force</span>')).join(" · ")+'</div>':'')+
+      (out.length?'<div>This asset\'s gates that change: '+out.join(" · ")+'</div>':(sf.length?'<div class="faint">No gate on this asset changes verdict.</div>':'')); }
 
   function cascadeHtml(sb){ return '<div class="crcas"><div class="crcash">CASCADE</div>'+sb.steps.slice(0,sb.shown).map(s=>{
       const cls=s.na?"faint":s.fired?"g":s.issue?"r":"faint"; const q=s.requester||{};
-      return '<div class="crcs '+cls+'" style="margin-left:'+(s.depth*18)+'px"><span class="crcsn">'+s.n+'</span><div><div><b>'+e(kaShort(s.mid))+'</b> <span class="mono">'+e(s.tid)+'</span> '+e(s.name||"")+' <b class="'+cls+'">'+(s.na?'does not apply from this state':s.issueOpened?'fired on a new issue instance':s.fired?'fired':s.sourceActive?'refused by its guards':'refused: not from this state')+'</b></div>'+
+      return '<div class="crcs '+cls+'" style="margin-left:'+(s.depth*18)+'px"><span class="crcsn">'+s.n+'</span><div><div><b>'+e(kaShort(s.mid))+'</b> <span class="mono">'+e(s.tid)+'</span> '+e(s.name||"")+(s.inst?' <span class="indigo">on '+e(s.instName)+'</span>':'')+' <b class="'+cls+'">'+(s.na?'does not apply from this state':s.issueOpened?'fired on a new issue instance':s.fired?'fired':s.sourceActive?'refused by its guards':'refused: not from this state')+'</b></div>'+
         '<div class="faint">'+(s.user?'asked by '+e((roleOf(DV.role)||{}).name||"")+(q.activity?' via '+e(q.activity):''):'raised by '+e(kaShort(s.causeFrom||""))+' through '+e(s.cause||""))+(s.dr?' · decision right '+e(s.dr)+(heldDR(s.mid,s.dr)?' (yours)':''):'')+'</div>'+
         (s.na?'<div class="faint">'+e(regName(s.mid,s.region))+' is in '+e(sName(s.before))+'; this transition starts from '+e(sName(trOf(s.mid,s.tid).source))+'. An event the models emit is not a request, so no issue is raised.</div>':'')+
         (s.issueOpened?'<div>A Data Governance issue case opens in Open Issue'+(s.issueRoll?'; the asset\'s Issue Management region rolls up from '+e(sName(s.issueRoll.from))+' to <b>Open Issue</b>':'; the asset already has an issue open')+'</div>':'')+
-        (s.fired&&!s.issueOpened?'<div>'+e(regName(s.mid,s.region))+': '+e(sName(s.before))+' → <b>'+e(sName(s.to))+'</b></div>':'')+
+        (s.fired&&!s.issueOpened?'<div>'+e(regName(s.mid,s.region))+': '+e(s.inst&&s.mid==="KA-DG"?(INS_NAME[s.before]||s.before):sName(s.before))+' → <b>'+e(s.inst&&s.mid==="KA-DG"?(INS_NAME[s.to]||s.to):sName(s.to))+'</b></div>':'')+
         (!s.fired&&!s.na?'<div>'+(s.guards.filter(g=>!g.verdict).map(g=>'<span class="mono">'+e(g.guard)+'</span> '+e(g.requirement||"")+(g.contributedBy?' ['+e(kaShort(g.contributedBy))+']':'')).join(" · ")||'every guard passed; '+e(regName(s.mid,s.region))+' was in '+e(sName(s.before))+', not '+e(sName(trOf(s.mid,s.tid).source)))+'</div>':'')+
         (s.issue?'<div class="amber">Raises a '+e(s.issue.severity)+' Data Governance issue, logged under DR-DG-16 by the Business Data Steward'+(s.issue.severity==="Low"?(s.user?': a request the asset was in no position to satisfy, so the control belongs in the system that sent it':': '+e(kaShort(s.causeFrom||""))+' emitted this through '+e(s.cause||"")+' while the asset was not in a state it can start from. Recorded so you can ask why the model emits it here'):'')+(s.issueRoll?'; the asset\'s Issue Management region moves to Open Issue':'')+'</div>':'')+
+        (s.inst&&!s.fired?'<div class="faint">No Data Governance issue is raised: issues attach to a Data Asset, and a policy or procedure version is not one.</div>':'')+
+        (s.polRoll?'<div class="amber">The policy sets roll up: REG-DG-POL '+e(sName(s.polRoll.from))+' → <b>'+e(sName(s.polRoll.to))+'</b></div>':'')+
         (s.emits.length?'<div class="indigo">emits '+s.emits.map(x=>e(x.id)+' → '+e(kaShort(x.to))+' '+e(x.tid)).join(" · ")+'</div>':'')+'</div></div>'; }).join("")+(sb.shown<sb.steps.length?'<div class="faint">…</div>':'')+'</div>'; }
 
-  function preview(a,evs,pick){ const base=DV.sb?DV.sb.snaps[DV.sb.steps.length-1]||DV.sb.base:worldAt(a,DV.i>0?tms(evs[DV.i-1].at):tms(a.createdAt)-1);
+  function preview(a,evs,pick){ const base=clone(DV.sb?DV.sb.snaps[DV.sb.steps.length-1]||DV.sb.base:worldAt(a,tAt(a,evs)));
     let user=[]; let note="";
     if(pick.inc){ const x=INCIDENTS.find(y=>y.id===pick.inc); const p=pathTo(base,x.mid,x.rid,x.to); if(p===null) note=sName(x.to)+" cannot be reached from "+sName(base.vec[x.mid][x.rid]); else if(!p.length) note=regName(x.mid,x.rid)+" is already in "+sName(x.to);
       else user=p.map(tid=>({mid:x.mid, tid, requester:{activity:(claimingAct(x.mid,tid)||{}).id}})); }
+    else if(pick.insNew){ const vs=versionsOf(base,pick.insNew); const top=vs[vs.length-1]; const m=instMeta(top); const n=Math.max(...vs.map(v=>instMeta(v).version))+1;
+      const inForce=vs.find(v=>base.inst[v]["KA-DG"]["REG-DG-INS"]==="STS-INS-05"); const nid=pick.insNew+"-v"+n+"-sandbox";
+      DV.sbMeta=DV.sbMeta||{}; DV.sbMeta[nid]=Object.assign({},m,{id:nid, version:n, predecessor:inForce||null, synthetic:true, sandbox:true, name:(m.name||"")+" (version "+n+", sandbox)"});
+      base.inst[nid]={"KA-DG":{"REG-DG-INS":"STS-INS-01"},"KA-DCM":{"REG-DCM-REC":"STS-REC-01"}}; touchInst(base);
+      const pol=m.instrumentKind==="policy";
+      const path=pick.full?["TR-INS-01","TR-INS-02",pol?"TR-INS-04":"TR-INS-05","TR-REC-01","TR-REC-02","TR-REC-03",pol?"TR-INS-06":"TR-INS-07"]:["TR-INS-01"];
+      user=path.map(tid=>{ const mid=tid.startsWith("TR-REC")?"KA-DCM":"KA-DG"; return {mid, tid, inst:nid, requester:{activity:(claimingAct(mid,tid)||{}).id}}; }); }
+    else if(pick.inst) user=[{mid:pick.mid, tid:pick.tid, inst:pick.inst, requester:{activity:(claimingAct(pick.mid,pick.tid)||{}).id}}];
     else user=[{mid:pick.mid, tid:pick.tid, requester:{activity:pick.act||(claimingAct(pick.mid,pick.tid)||{}).id}}];
     const r=cascade(a,base,user); return Object.assign(r,{base, note}); }
 
@@ -1165,7 +1280,11 @@ fillAssets();
     pane.querySelectorAll(".crtab").forEach(b=>b.onclick=()=>{ DV.tab=b.dataset.tb; renderDash(); });
     const choose=(pick)=>{ stopDash(); DV.pick=pick; DV.preview=preview(a,evs,pick); renderDash(); };
     pane.querySelectorAll(".crib").forEach(b=>b.onclick=()=>{ const x=INCIDENTS.find(y=>y.id===b.dataset.inc); choose({inc:x.id, label:x.label}); });
-    pane.querySelectorAll(".cra").forEach(b=>b.onclick=()=>{ const mid=b.dataset.mid, tid=b.dataset.tid; choose({mid, tid, act:b.dataset.act||null, ev:b.dataset.ev||null, label:(b.dataset.ev?b.dataset.ev+" → ":"")+tid+" "+(trOf(mid,tid).name||"")}); });
+    pane.querySelectorAll(".crins").forEach(b=>b.onclick=()=>{ DV.instFocus=b.dataset.ins; DV.tab="ins"; renderDash(); });
+    pane.querySelectorAll("[data-allsets]").forEach(b=>b.onclick=()=>{ DV.allSets=!DV.allSets; renderDash(); });
+    pane.querySelectorAll(".crnew").forEach(b=>b.onclick=()=>{ choose({insNew:b.dataset.insnew, full:!!b.dataset.full, label:(b.dataset.full?"new version in force: ":"draft a new version: ")+b.dataset.insnew}); });
+    pane.querySelectorAll(".cra[data-inst]").forEach(b=>b.onclick=()=>{ const v=b.dataset.inst; choose({inst:v, mid:b.dataset.mid, tid:b.dataset.tid, label:b.dataset.tid+" "+(trOf(b.dataset.mid,b.dataset.tid).name||"")+" on "+instMeta(v).instrumentId+" v"+instMeta(v).version}); });
+    pane.querySelectorAll(".cra:not([data-inst]):not(.crnew)").forEach(b=>b.onclick=()=>{ const mid=b.dataset.mid, tid=b.dataset.tid; choose({mid, tid, act:b.dataset.act||null, ev:b.dataset.ev||null, label:(b.dataset.ev?b.dataset.ev+" → ":"")+tid+" "+(trOf(mid,tid).name||"")}); });
     pane.querySelectorAll("[data-run]").forEach(b=>b.onclick=()=>{ const pv=DV.preview; if(!pv||!pv.steps.length) return;
       if(DV.sb){ // extend the running sandbox
         const off=DV.sb.steps.length; pv.steps.forEach(s=>s.n+=off); DV.sb.steps=DV.sb.steps.concat(pv.steps); DV.sb.snaps=DV.sb.snaps.concat(pv.snaps); }
@@ -1173,7 +1292,7 @@ fillAssets();
       DV.pick=null; DV.preview=null; if(DV.anim) return; DV.anim=true;
       const tick=()=>{ if(!DV.sb){ DV.anim=false; return; } if(DV.sb.shown<DV.sb.steps.length){ DV.sb.shown++; if(V.tab==="dash") renderDash(); setTimeout(tick,750); } else { DV.anim=false; if(V.tab==="dash") renderDash(); } };
       tick(); });
-    pane.querySelectorAll("[data-reset]").forEach(b=>b.onclick=()=>{ DV.sb=null; DV.pick=null; DV.preview=null; renderDash(); });
+    pane.querySelectorAll("[data-reset]").forEach(b=>b.onclick=()=>{ DV.sb=null; DV.pick=null; DV.preview=null; DV.sbMeta={}; renderDash(); });
   }
 
   // ------------------------------------------------------------------ shell

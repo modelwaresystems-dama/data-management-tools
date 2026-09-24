@@ -24,7 +24,14 @@ SHARED_SCOPE = re.compile(r"governed scope|per platform|per database|per warehou
 DEFAULT_FACTS = {"hold_active": False, "disposition_control_verified": True, "supersession_use_authorized": False, "use_requires_assurance": True,
                  "material_change": False, "atomic_withdrawal": False, "recipient_acceptance_evidenced": True, "enhanced_monitoring": True,
                  "time_bounded_authority": True, "post_event_review_planned": True,
-                 "RMD_is_master": True, "RMD_is_reference": False, "MM_is_metadata_asset": False}  # asset kinds: RMD master or reference (22 Sep 2026), Metadata Asset (23 Sep 2026)
+                 "RMD_is_master": True, "RMD_is_reference": False, "MM_is_metadata_asset": False,
+                 # governing instrument versions (Howard, 24 Sep 2026): instance facts of a version, and the set facts, which read as in
+                 # force wherever no instruments are loaded (the scenario runs) so nothing that does not model instruments is blocked
+                 "INS_is_policy": False, "INS_is_procedure": False, "INS_predecessor_ok": True,
+                 **{k + "_policy_set_in_force": True for k in ("DG", "DA", "DMD", "DSO", "DII", "MM", "DQ", "DS", "DHE", "DWBI", "BDA", "RMD", "DCM")}}  # asset kinds: RMD master or reference (22 Sep 2026), Metadata Asset (23 Sep 2026)
+
+# regions held by instrument version instances, never by a Data Asset (Howard, 24 Sep 2026)
+INSTRUMENT_REGIONS = {"KA-DG": ["REG-DG-INS"]}
 
 def now_iso(): return datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).isoformat(timespec="seconds")
 
@@ -39,6 +46,7 @@ class Federation:
             mid = (m.get("meta") or {}).get("modelId")
             if mid == GLOBAL_ID or (mid or "").startswith("KA-"): self.models[mid] = m
         self.global_model = self.models.get(GLOBAL_ID)
+        self.scope_facts = {}   # {scope: {fact: bool}}, set by the twin from the instrument versions of each governed scope
         self.ka_ids = sorted(k for k in self.models if k != GLOBAL_ID)
         # indexes
         self.tr = {mid: {t["id"]: t for t in m.get("transitions", [])} for mid, m in self.models.items()}
@@ -92,7 +100,7 @@ class Federation:
     def new_asset(self, aid, name, asset_class="Data Asset", refs=None, facts=None, ka_models=None):
         vectors = {GLOBAL_ID: dict(self.initial[GLOBAL_ID])}
         for mid in (ka_models or self.ka_ids):
-            vectors[mid] = {rid: sid for rid, sid in self.initial[mid].items() if rid not in self.shared[mid]}
+            vectors[mid] = {rid: sid for rid, sid in self.initial[mid].items() if rid not in self.shared[mid] and rid not in INSTRUMENT_REGIONS.get(mid, ())}
         return {"id": aid, "kind": "asset", "name": name, "assetClass": asset_class, "vectors": vectors, "refs": dict(refs or {}),
                 "kaModels": list(ka_models or self.ka_ids), "facts": {**DEFAULT_FACTS, **(facts or {})}, "createdAt": now_iso(), "updatedAt": now_iso()}
 
@@ -116,6 +124,7 @@ class Federation:
             vec = self.full_vector(asset, mid, elements)
             for fact, b in (self.models[mid]["meta"].get("factBindings") or {}).items():
                 env[fact] = vec.get(b.get("region")) in (b.get("states") or [])
+        env.update(self.scope_facts.get(asset.get("scope"), {}))   # the policy set facts of the asset's governed scope
         env.update(asset.get("facts") or {})   # the asset's own facts last, as the scenario walker orders them
         return env
 

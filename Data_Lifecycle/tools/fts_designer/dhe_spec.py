@@ -194,7 +194,7 @@ CONTRIB = [
 ]
 KA_COUPLINGS = [
     ("KAC-DHE-01", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DHE_open_incident", "A reported ethics incident and an identified practice gap are logged as Data Asset issues with source Data Handling Ethics (TR-ECI-01 and TR-GAP-01 emit EV-ISS-01).", "DG owns escalation; Data Ethics owns the remediation."),
-    ("KAC-DHE-02", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "The ethics policies and corporate statements are published as governance instruments (TR-EDS-06 cites the DG fact).", "Reverse coupling: a Data Ethics transition cites a DG fact."),
+    ("KAC-DHE-02", "KA-DG", "TR-POL-03", "", "DHE_policy_set_in_force", "The ethics policies and corporate statements are published as governance instruments (TR-EDS-06 cites the DG fact).", "Reverse coupling: a Data Ethics transition cites a DG fact."),
     ("KAC-DHE-03", "KA-DS", "TR-PRV-02", "", "DS_privacy_basis_ok", "The ethics assessment of a use cites the lawful basis of the asset (TR-EUS-01 cites the DS fact).", "Reverse coupling: a Data Ethics transition cites a DS fact."),
     ("KAC-DHE-04", "KA-DS", "TR-INC-01", "", "DS_open_incident", "A security incident involving misuse of data is also reported as an ethics incident (TR-ECI-01 cites the DS fact).", "Reverse coupling: a Data Ethics transition cites a DS fact."),
     ("KAC-DHE-05", "KA-BDA", "TR-INS-02", "", "DHE_use_cleared", "The trust and ethics review of an insight cites the ethical clearance of the model's use (the BDA transition cites the Data Ethics fact).", "Forward coupling: a BDA transition cites a Data Ethics fact."),

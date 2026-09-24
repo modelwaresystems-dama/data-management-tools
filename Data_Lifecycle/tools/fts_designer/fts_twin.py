@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fts_twin_engine import Federation, GLOBAL_ID, now_iso
 from fts_twin_store import TwinStore
 
-VERSION = "0.3"
+VERSION = "0.4"
 
 # v0.2 (Howard, 22 Sep 2026, twin structure "two levels"): the Data Asset (a table, dataset, feed or data product) carries the Global
 # vector and the per-asset Knowledge Area regions; an entity record inside it (a customer or party golden record) is its own instance
@@ -59,6 +59,26 @@ ISSUE_REQ = {"TR-ISS-01": {"activity": "ACT-DG-2.5", "role": "ROLE-BDS", "system
              "TR-ISS-02": {"activity": "ACT-DG-2.5", "role": "ROLE-CODS", "system": "fts_twin", "purpose": "assign the resolution of a refusal-sourced issue"},
              "TR-ISS-05": {"activity": "ACT-DG-2.5", "role": "ROLE-DO", "system": "fts_twin", "purpose": "record that the refused transition has since fired"}}
 
+# v0.4 (Howard, 24 Sep 2026, Instrument Versions Register): every version of a policy or procedure is its own instance of kind
+# "instrument", carrying REG-DG-INS and the Document and Content Management record of its document (REG-DCM-REC), grouped by the
+# policy domain of Howard's FutureState workbooks. Putting a version in force supersedes its predecessor in the same act and declares
+# the predecessor's document a record (KAC-DG-01). Each policy domain is its own set with its own fact; the scope's REG-DG-POL
+# element is the roll-up of the counted sets.
+INS_S = {"none": "STS-INS-01", "drafted": "STS-INS-02", "reviewed": "STS-INS-03", "approved": "STS-INS-04", "in_force": "STS-INS-05", "superseded": "STS-INS-06", "withdrawn": "STS-INS-07"}
+KAS13 = ("DG", "DA", "DMD", "DSO", "DII", "MM", "DQ", "DS", "DHE", "DWBI", "BDA", "RMD", "DCM")
+KA_DOMAINS = {"Data Governance": "DG", "Data Architecture": "DA", "Data Modelling & Design": "DMD", "Data Storage & Operations": "DSO", "Data Security": "DS",
+              "Data Integration & Interoperability": "DII", "Document & Content Management": "DCM", "Reference & Master Data": "RMD",
+              "Data Warehousing & BI": "DWBI", "Metadata Management": "MM", "Data Quality": "DQ"}
+# register card 13 (pending when written): policy domains that also feed the two Knowledge Areas with no domain named for them
+KA_DOMAIN_FEEDS = {"Ethical Stewardship": "DHE", "AI Governance": "BDA", "Model Governance": "BDA", "AI Usage": "BDA"}
+USE_FEEDS = True
+# register card 14 (pending when written): what REG-DG-POL rolls up: "ka" the Knowledge Area sets, "all" every set, "dg" the DG set alone
+POL_ROLLUP = "ka"
+
+def dom_slug(name):
+    import re
+    return re.sub(r"[^A-Za-z0-9]+", "_", name or "").strip("_").lower()
+
 class Twin:
     def __init__(self, models_dir, db_path):
         self.fed = Federation.load(models_dir); self.store = TwinStore(db_path); self.models_dir = models_dir
@@ -70,6 +90,8 @@ class Twin:
             self.roles = {r["id"]: r for r in json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "role_vocabulary.json"), encoding="utf-8"))["roles"]}
         except Exception:
             self.roles = {}
+        for sc in {i.get("scope") for i in self.store.instances("instrument")}:
+            self.fed.scope_facts[sc] = self.set_facts_of(sc)[0]
 
     # ---------------------------------------------------------------- the requester block (Howard, 23 Sep 2026)
     def requester(self, req, model_id=None, transition_id=None):
@@ -189,6 +211,91 @@ class Twin:
 
     def records(self, parent_id=None):
         return [r for r in self.store.instances("record") if not parent_id or r["parentId"] == parent_id]
+
+    # ---------------------------------------------------------------- v0.4 governing instrument versions
+    def instruments(self, scope=None):
+        return [i for i in self.store.instances("instrument") if not scope or i.get("scope") == scope]
+
+    def new_instrument(self, iid, scope, org, domain_id, domain_name, instrument_id, kind, name, policy_id=None, version=1, owner=None, effective=None,
+                       status=None, predecessor=None, synthetic=False, at=None):
+        ins = {"id": iid, "kind": "instrument", "scope": scope, "org": org, "domainId": domain_id, "domainName": domain_name,
+               "ka": KA_DOMAINS.get(domain_name) or (KA_DOMAIN_FEEDS.get(domain_name) if USE_FEEDS else None), "instrumentId": instrument_id,
+               "instrumentKind": kind, "policyId": policy_id or (instrument_id if kind == "policy" else None), "version": version, "name": name,
+               "owner": owner, "effective": effective, "workbookStatus": status, "predecessor": predecessor, "synthetic": synthetic,
+               "regions": {"KA-DG": {"REG-DG-INS": self.fed.initial["KA-DG"]["REG-DG-INS"]}, "KA-DCM": {"REG-DCM-REC": self.fed.initial["KA-DCM"]["REG-DCM-REC"]}},
+               "state": self.fed.initial["KA-DG"]["REG-DG-INS"], "createdAt": at or now_iso(), "updatedAt": at or now_iso()}
+        self.store.put_instance(ins); return ins
+
+    def _inst_view(self, ins):
+        """an asset-shaped view of a version: the governed scope's shared elements, the version's own two regions and its facts"""
+        els = self.store.elements(); refs = {e["regionId"]: e["id"] for e in els.values() if e.get("scope") == ins["scope"]}
+        pred = self.store.get_instance(ins["predecessor"]) if ins.get("predecessor") else None
+        ok = (pred is None) or pred.get("state") in (INS_S["in_force"], INS_S["withdrawn"])
+        view = {"id": ins["id"], "kind": "asset", "scope": ins["scope"], "vectors": json.loads(json.dumps(ins["regions"])), "refs": refs, "kaModels": ["KA-DG", "KA-DCM"],
+                "facts": {"INS_is_policy": ins["instrumentKind"] == "policy", "INS_is_procedure": ins["instrumentKind"] == "procedure", "INS_predecessor_ok": ok}}
+        return view, els
+
+    def post_instrument_event(self, iid, model_id, transition, actor=None, at=None, requester=None, reason=None):
+        ins = self.store.get_instance(iid)
+        if not ins or ins.get("kind") != "instrument": return {"error": f"no instrument version {iid}"}
+        req, err = self.requester(requester, model_id, transition)
+        if err: return self.store.log_event({"instanceId": iid, "scope": ins["scope"], "model": model_id, "transition": transition, "name": self.fed.tr[model_id][transition].get("name"),
+                                             "result": "rejected: " + err, "fired": False, "override": False, "guards": [], "guardCount": 0, "actor": actor, "at": at or now_iso(), "requester": requester if isinstance(requester, dict) else None})
+        view, els = self._inst_view(ins)
+        v = self.fed.evaluate(view, model_id, transition, els)
+        if v.get("fired") and not v.get("sharedRegion"):
+            self.fed.apply(view, v, els); rid = v["region"]
+            if rid in ins["regions"].get(model_id, {}): ins["regions"][model_id][rid] = view["vectors"][model_id][rid]
+        ins["state"] = ins["regions"]["KA-DG"]["REG-DG-INS"]; ins["updatedAt"] = at or now_iso(); self.store.put_instance(ins)
+        out = {**v, "instanceId": iid, "scope": ins["scope"], "event": self.fed.tr[model_id][transition].get("event"), "actor": actor, "at": at or now_iso(), "override": False,
+               "candidates": [transition], "factsApplied": {}, "requester": req, "reason": reason}
+        out["guardCount"] = len(v.get("guards", [])); out["guards"] = [g for g in v.get("guards", []) if not g.get("verdict")]; out.pop("vectorBefore", None)
+        out["stateAfter"] = ins["regions"].get(model_id, {}).get(v.get("region"))
+        logged = self.store.log_event(out)
+        if v.get("fired") and model_id == "KA-DG" and transition in ("TR-INS-06", "TR-INS-07") and ins.get("predecessor"):
+            pred = self.store.get_instance(ins["predecessor"])
+            if pred and pred.get("state") == INS_S["in_force"]:   # automatic supersession, in the same act (register card 5)
+                self.post_instrument_event(pred["id"], "KA-DG", "TR-INS-08", actor="twin:supersession", at=at, requester={**(requester or {}), "activity": "ACT-DG-2.2"}, reason="superseded by " + iid)
+        if v.get("fired") and model_id == "KA-DG" and transition == "TR-INS-08":   # KAC-DG-01: the superseded document is declared a record
+            doc = ins["regions"]["KA-DCM"]["REG-DCM-REC"]; t2 = {"STS-REC-04": "TR-REC-06", "STS-REC-03": "TR-REC-05"}.get(doc)
+            if t2: self.post_instrument_event(iid, "KA-DCM", t2, actor="twin:coupling KAC-DG-01", at=at,
+                                              requester={"activity": (next((a for a, x in self.acts.items() if x["model"] == "KA-DCM" and t2 in x["claims"]), "ACT-DCM-4")), "role": "ROLE-RIM", "system": "fts_twin", "purpose": "keep the superseded version under retention"},
+                                              reason="KAC-DG-01: superseding a version declares its document a record")
+        if v.get("fired"): self.refresh_scope(ins["scope"], at=at, cause=iid)
+        return logged
+
+    def set_facts_of(self, scope):
+        """{fact: bool} for every policy set of a governed scope, and the per-set detail the viewer shows"""
+        vers = self.instruments(scope); by_dom = {}
+        for i in vers: by_dom.setdefault(i["domainName"], []).append(i)
+        facts, sets = {}, {}
+        for dom, vs in by_dom.items():
+            insts = {}
+            for i in vs: insts.setdefault(i["instrumentId"], []).append(i)
+            has_policy = any(i["instrumentKind"] == "policy" for i in vs)
+            ok = has_policy and all(any(x.get("state") == INS_S["in_force"] for x in xs) for xs in insts.values())
+            sets[dom] = ok; facts["POLDOM_" + dom_slug(dom) + "_in_force"] = ok
+        for ka in KAS13:
+            doms = [d for d in sets if KA_DOMAINS.get(d) == ka or (USE_FEEDS and KA_DOMAIN_FEEDS.get(d) == ka)]
+            if doms: facts[ka + "_policy_set_in_force"] = all(sets[d] for d in doms)
+        return facts, sets
+
+    def refresh_scope(self, scope, at=None, cause=None, log=True):
+        facts, sets = self.set_facts_of(scope); self.fed.scope_facts[scope] = facts
+        counted = [d for d in sets if POL_ROLLUP == "all" or (POL_ROLLUP == "dg" and d == "Data Governance") or (POL_ROLLUP == "ka" and (d in KA_DOMAINS or (USE_FEEDS and d in KA_DOMAIN_FEEDS)))]
+        if not counted: return None
+        states = [i.get("state") for i in self.instruments(scope) if i["domainName"] in counted]
+        new = ("STS-POL-04" if all(sets[d] for d in counted) else "STS-POL-03" if any(x in (INS_S["approved"], INS_S["in_force"]) for x in states)
+               else "STS-POL-02" if any(x in (INS_S["drafted"], INS_S["reviewed"]) for x in states) else "STS-POL-01")
+        el = next((e for e in self.store.instances("element") if e.get("scope") == scope and e.get("regionId") == "REG-DG-POL"), None)
+        if not el or el.get("state") == new: return None
+        old = el["state"]; el["state"] = new; el["updatedAt"] = at or now_iso(); self.store.put_instance(el)
+        if not log: return None
+        n_in = sum(1 for d in counted if sets[d])
+        return self.store.log_event({"instanceId": el["id"], "scope": scope, "model": "KA-DG", "region": "REG-DG-POL", "transition": None, "event": None,
+                                     "name": "roll-up of " + str(len(counted)) + " policy sets (" + str(n_in) + " in force)", "result": "rollup", "fired": True, "override": False,
+                                     "from": old, "stateAfter": new, "cause": cause, "actor": "twin:rollup", "at": at or now_iso(), "guards": [], "guardCount": 0,
+                                     "reason": "REG-DG-POL is the roll-up of the policy sets (" + POL_ROLLUP + ")"})
 
     # ---------------------------------------------------------------- v0.3 issues raised by refusals
     def issues(self, parent_id=None, open_only=False):
@@ -318,7 +425,8 @@ class Twin:
             for code, v in r["global"].items(): by_state.setdefault(code, {}).setdefault(v["name"], 0); by_state[code][v["name"]] += 1
         return {"generatedAt": now_iso(), "engine": f"fts_twin v{VERSION}", "models": len(self.fed.models), "assets": len(rows), "records": sum(len(v) for v in recs_by.values()), "elements": len(els),
                 "events": sum(v["fired"] + v["refused"] + v["overrides"] for v in stats.values()), "refused": sum(v["refused"] for v in stats.values()), "overrides": sum(v["overrides"] for v in stats.values()),
-                "rejected": sum(v.get("rejected", 0) for v in stats.values()),
+                "rejected": sum(v.get("rejected", 0) for v in stats.values()), "instruments": len(self.store.instances("instrument")),
+                "instrumentRules": {"polRollup": POL_ROLLUP, "useFeeds": USE_FEEDS, "kaDomains": KA_DOMAINS, "feeds": KA_DOMAIN_FEEDS},
                 "issues": sum(len(v) for v in iss_by.values()), "openIssues": sum(len([i for i in v if i.get("state") in ISSUE_OPEN]) for v in iss_by.values()),
                 "byGlobalState": by_state, "rows": rows}
 
@@ -327,6 +435,7 @@ class Twin:
         if not a: return None
         if a.get("kind") == "element": return {**a, "stateName": self.fed.state[a["modelId"]].get(a["state"], {}).get("name"), "timeline": []}
         if a.get("kind") == "record": return {**a, "timeline": self.store.timeline(iid)}
+        if a.get("kind") == "instrument": return {**a, "timeline": self.store.timeline(iid)}
         if a.get("kind") == "issue": return {**a, "stateName": self.fed.state[ISSUE_MODEL].get(a.get("state"), {}).get("name", a.get("state")), "timeline": self.store.timeline(iid)}
         els = self.store.elements(); vectors = {}
         for mid in [GLOBAL_ID] + self.fed.applicable(a):

@@ -190,7 +190,7 @@ KA_COUPLINGS = [
     ("KAC-RMD-02", "KA-DG", "TR-ISS-01", "EV-ISS-01", "RMD_record_conflict", "A golden record conflict is logged as a Data Asset issue in the DG issue FTS with source Reference and Master Data (TR-GLD-03 and TR-GLD-04 emit EV-ISS-01).", "DG owns escalation; RMD owns the resolution."),
     ("KAC-RMD-03", "KA-MM", "TR-AST-02", "", "MM_asset_described", "Domain definitions are validated against the glossary and recorded as business metadata; the domain's model is technical metadata (TR-DOM-01 and TR-DOM-03 cite the Metadata FTS).", "Reverse coupling: an RMD transition cites an MM fact."),
     ("KAC-RMD-04", "KA-DS", "TR-CLS-02", "", "DS_classified", "A domain's sharing service is published only for classified data; the conditions-of-use agreement carries the classification and, for personal data, the privacy basis (TR-DOM-05 cites DS facts).", "Reverse coupling: an RMD transition cites DS facts."),
-    ("KAC-RMD-05", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "The programme's governance policies are governing instruments published under Data Governance (TR-PRG-02 cites the DG fact).", "Reverse coupling."),
+    ("KAC-RMD-05", "KA-DG", "TR-POL-03", "", "RMD_policy_set_in_force", "The programme's governance policies are governing instruments published under Data Governance (TR-PRG-02 cites the DG fact).", "Reverse coupling."),
 ]
 FACT_BINDINGS = {
     "RMD_domain_scoped": {"region": "REG-RMD-DOM", "states": ["STS-DOM-02", "STS-DOM-03", "STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]},

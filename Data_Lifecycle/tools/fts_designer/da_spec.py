@@ -170,7 +170,7 @@ CONTRIB = [
     ("CON-DA-07", "TR-AS-02", "service", {"CNF": ["STS-CNF-03"]}, "The Architectural Conformance Review supplies assurance evidence for the asset.", "SVC-DA-06", "Conditional", "Assurance service; evidence EVD-DA-06."),
 ]
 KA_COUPLINGS = [
-    ("KAC-DA-01", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "The architecture standards are governing instruments published under Data Governance (TR-EDA-03 and TR-EDA-07 cite the DG fact).", "Reverse coupling: a DA transition cites a DG fact."),
+    ("KAC-DA-01", "KA-DG", "TR-POL-03", "", "DA_policy_set_in_force", "The architecture standards are governing instruments published under Data Governance (TR-EDA-03 and TR-EDA-07 cite this Knowledge Area's own instrument set (Howard, 24 Sep 2026: one policy with its procedures per Knowledge Area, each set its own fact)).", "Reverse coupling: a DA transition cites a DG fact."),
     ("KAC-DA-02", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DA_non_conforming", "A deviation without exception is logged as a Data Asset issue in the DG issue FTS with source Data Architecture (TR-CNF-03 and TR-CNF-11 emit EV-ISS-01).", "DG owns escalation; DA owns the remediation or exception."),
     ("KAC-DA-03", "KA-MM", "TR-ARC-03", "", "MM_stores_operating", "The enterprise data model is published through the metadata stores; publication requires operating stores (TR-EDM-04 and TR-EDM-06 cite the MM fact).", "Reverse coupling: a DA transition cites an MM fact."),
     ("KAC-DA-04", "KA-MM", "TR-AST-02", "", "DA_asset_placed", "An asset's placement (subject area, flows, value chain) is recorded as its business and technical metadata when the asset is described (the MM transition cites the DA fact).", "Forward coupling: an MM transition cites a DA fact."),

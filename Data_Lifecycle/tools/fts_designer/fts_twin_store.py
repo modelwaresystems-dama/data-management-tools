@@ -77,13 +77,15 @@ class TwinStore:
         json.dump({"exportedAt": stamp, "count": len(records), "records": records}, open(os.path.join(out_dir, "records.json"), "w", encoding="utf-8"), indent=1)
         issues = self.instances("issue")
         json.dump({"exportedAt": stamp, "count": len(issues), "issues": issues}, open(os.path.join(out_dir, "issues.json"), "w", encoding="utf-8"), indent=1)
+        instruments = self.instances("instrument")
+        json.dump({"exportedAt": stamp, "count": len(instruments), "instruments": instruments}, open(os.path.join(out_dir, "instruments.json"), "w", encoding="utf-8"), indent=1)
         json.dump({"exportedAt": stamp, "count": len(events), "events": events}, open(os.path.join(out_dir, "events.json"), "w", encoding="utf-8"), indent=1)
         if fleet is not None: json.dump({"exportedAt": stamp, **fleet}, open(os.path.join(out_dir, "fleet.json"), "w", encoding="utf-8"), indent=1)
-        return {"assets": len(assets), "records": len(records), "issues": len(issues), "elements": len(elements), "events": len(events), "dir": out_dir}
+        return {"assets": len(assets), "records": len(records), "issues": len(issues), "instruments": len(instruments), "elements": len(elements), "events": len(events), "dir": out_dir}
 
     def import_dir(self, in_dir):
         n = 0
-        for f, key in (("instances.json", "assets"), ("elements.json", "elements"), ("records.json", "records"), ("issues.json", "issues")):
+        for f, key in (("instances.json", "assets"), ("elements.json", "elements"), ("records.json", "records"), ("issues.json", "issues"), ("instruments.json", "instruments")):
             p = os.path.join(in_dir, f)
             if os.path.exists(p):
                 for doc in json.load(open(p, encoding="utf-8")).get(key, []): self.put_instance(doc); n += 1

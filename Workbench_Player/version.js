@@ -1,7 +1,7 @@
 /* Build stamp — bump number/built on each deploy. version.js is loaded
    cache-busted (always fresh); each page declares window.PAGE_BUILD, and if the
    page is older than this build it force-reloads itself once (self-healing cache). */
-window.APP_VERSION = { number: "1.9.12", built: "2026-09-24 12:00 SAST" };
+window.APP_VERSION = { number: "1.9.13", built: "2026-09-24 12:30 SAST" };
 
 (function () {
   try {

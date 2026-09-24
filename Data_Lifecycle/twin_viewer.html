@@ -200,13 +200,28 @@ html[data-cr] .btn.primary{background:#0284c7;border-color:#0284c7}
 .ik{font-size:10px;letter-spacing:.05em;text-align:center;border-radius:4px;padding:1px 4px} .ik.p{background:#4c1d95;color:#ddd6fe} .ik.q{background:#1e3a8a;color:#bfdbfe}
 .vchs{grid-column:2;display:flex;gap:4px;flex-wrap:wrap} .vch{font-size:10.5px;padding:1px 6px;border-radius:4px;border:1px solid #334155;color:var(--c-muted);white-space:nowrap}
 .vch.dr{border-color:#a16207;color:#fcd34d} .vch.ap{border-color:#3b82f6;color:#93c5fd} .vch.in{background:#065f46;border-color:#10b981;color:#d1fae5} .vch.su{color:#64748b;text-decoration:line-through} .vch.wd{border-color:#b91c1c;color:#fca5a5}
+/* v0.11 collapsible sections and Knowledge Area cards */
+.crtog{font:inherit;font-size:12px;line-height:1;width:22px;height:22px;margin-right:8px;border-radius:5px;border:1px solid var(--c-line2);background:var(--c-raised);color:var(--c-muted);cursor:pointer;flex:0 0 auto}
+.crtog:hover{color:var(--c-ink);border-color:#475569} .crtog:focus-visible,.crkah:focus-visible{outline:2px solid #fbbf24;outline-offset:1px}
+.crph{align-items:center} .crph>span:first-of-type{flex:1 1 auto}
+.crpanel.closed .crpb,.crbed.closed .crbedb{display:none} .crpanel.closed .crph{margin-bottom:0}
+.crbedh{display:flex;align-items:center} .crbedh .crtog{border-color:#a16207;background:#451a03;color:#fbbf24}
+.crsecs{display:flex;gap:4px;flex-wrap:wrap;align-items:center;flex-basis:100%} .crsecs>span{font-size:11px;letter-spacing:.04em;margin-right:4px}
+.crkatools{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+.crkaband{align-items:start}
+.crkah{display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;text-align:left;font:inherit;font-size:12.5px;color:var(--c-ink);border:0;cursor:pointer}
+.crkah:hover{background:#3b4a61} .crtg{color:var(--c-muted);width:12px} .crkan{min-width:0} .crkas2{margin-left:auto;font-size:11px;color:var(--c-muted)}
+.crka.shut .crkah{background:#1e293b} .crka.out{border-style:dashed} .crka.out .crkah b{color:var(--c-muted)}
+.crkanote{padding:8px 10px;font-size:12px;line-height:1.4}
+.crkashut{display:flex;flex-wrap:wrap;gap:6px} .crkashut .crka{flex:0 1 auto;max-width:100%} .crkashut .crkah{padding:5px 10px;flex-wrap:nowrap} .crkashut .crkan{display:none} .crkashut .crkas2{margin-left:10px}
+
 @media (max-width:700px){.tabs{flex-wrap:wrap}.tab{padding:6px 10px}}
 #assetSel{max-width:100%;min-width:0} .assetbar{flex-wrap:wrap}
 .crlens label{display:flex;align-items:center;gap:6px;max-width:100%;min-width:0} .crlens select{min-width:0;max-width:100%;flex:1 1 auto}
 </style></head><body>
 <header>
  <div class="hrow1"><div><h1>Digital Twin Viewer</h1><div class="dim">The digital twin of the DMBOK Data Lifecycle: every Data Asset (a data product, table or feed) and the golden records inside it, moving through the Global Data Asset Protocol and the Knowledge Area FTSs.</div></div>
- <div class="ver">Twin viewer v0.10<br>Built 24 Sep 2026, 09:13 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
+ <div class="ver">Twin viewer v0.11<br>Built 24 Sep 2026, 09:48 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
  <div class="bar"><button class="btn primary" id="btnGh">Load from GitHub</button><button class="btn" id="btnGhSet">GitHub settings</button><label class="btn" for="files">Load files</label><input type="file" id="files" multiple accept=".json" hidden>
  <select id="org" aria-label="organisation" hidden></select><select id="cls" aria-label="asset class"><option value="">every asset class</option></select><span id="status" class="status"></span></div>
  <div class="tabs" role="tablist"><button class="tab" data-t="heat" aria-selected="true">Heat map</button><button class="tab" data-t="replay" aria-selected="false">Replay</button><button class="tab" data-t="asset" aria-selected="false">One asset</button><button class="tab" data-t="dash" aria-selected="false">Dashboard (role workspace)</button><button class="tab" data-t="issues" aria-selected="false">Issues</button><button class="tab" data-t="influence" aria-selected="false">Influence</button></div>
@@ -933,7 +948,8 @@ fillAssets();
   // define (event contributions into the Global protocol, Knowledge Area couplings into other KAs, the issue rule on a refusal);
   // his dark palette regardless of the system theme. Everything is per Data Asset and follows the replay point.
   const LS_ROLE="twin.dash.role.v1";
-  const DV={role:null, kasBy:{}, i:null, asset:null, playing:false, timer:null, speed:900, sb:null, prev:{}, tab:"yours", focus:null, pick:null, preview:null};
+  const LS_LAYOUT="twin.dash.layout.v1";
+  const DV={secClosed:{}, kaOpen:{}, role:null, kasBy:{}, i:null, asset:null, playing:false, timer:null, speed:900, sb:null, prev:{}, tab:"yours", focus:null, pick:null, preview:null};
   try{ DV.role=localStorage.getItem(LS_ROLE)||null; }catch(x){}
   const initialOf=(mid,rid)=>{ const R=D.reg[mid+"|"+rid]; if(!R) return null; return (R.states.find(s=>s.initial)||{}).id||R.r.initialState||(R.states[0]||{}).id; };
   const clone=o=>JSON.parse(JSON.stringify(o));
@@ -947,6 +963,16 @@ fillAssets();
     return (D.roleList=Object.values(m).sort((a,b)=>a.name.localeCompare(b.name))); }
   const roleOf=id=>rolesAll().find(r=>r.id===id)||null;
   const heldDR=(mid,dr)=>{ if(!dr) return false; const d=(D.models[mid].decisionRights||[]).find(x=>x.id===dr); return !!d&&d.holder===DV.role; };
+  // v0.11 layout: every section and every Knowledge Area card can be collapsed (Howard, 24 Sep 2026: "allow me to collapse the KAs so I can focus")
+  (function(){ try{ const x=JSON.parse(localStorage.getItem(LS_LAYOUT)||"{}"); DV.secClosed=x.secClosed||{}; DV.kaOpen=x.kaOpen||{}; }catch(err){} })();
+  function saveLayout(){ try{ localStorage.setItem(LS_LAYOUT, JSON.stringify({secClosed:DV.secClosed, kaOpen:DV.kaOpen})); }catch(err){} }
+  const SECS=[["sv","Composite State Vector"],["ka","Knowledge Areas"],["ins","Governing Instruments"],["xrg","Cross-region guards"],["thr","Digital Thread"],["bed","Testbed"]];
+  // wrap the panel built since index i0 of h: a toggle in its header and its body in .crpb, so a closed panel shows only its header
+  function secWrap(h,i0,key){ const html=h.splice(i0).join(""); const closed=!!DV.secClosed[key];
+    const hs=html.indexOf('<div class="crph">'); const he=html.indexOf('</div>',hs)+6; const last=html.lastIndexOf('</div>');
+    const open0=html.slice(0,hs).replace(/^<div class="crpanel/,'<div data-secp="'+key+'" class="crpanel'+(closed?' closed':''));
+    const head=html.slice(hs,he).replace('<div class="crph">','<div class="crph"><button class="crtog" data-sec="'+key+'" aria-expanded="'+(!closed)+'" title="'+(closed?'Expand':'Collapse')+' this section">'+(closed?'▸':'▾')+'</button>');
+    h.push(open0+head+'<div class="crpb">'+html.slice(he,last)+'</div></div>'); }
   function lensKAs(a){
     const key=DV.role||"none"; if(DV.kasBy[key]) return DV.kasBy[key].filter(k=>applies(a,k));
     const R=roleOf(DV.role); let ks=R?[...new Set(R.rights.map(x=>x.mid).filter(k=>k!==GID&&applies(a,k)))]:[];
@@ -1107,6 +1133,7 @@ fillAssets();
     const allKA=D.order.filter(k=>k!==GID&&applies(a,k));
     h.push('<div class="crlens"><label>VIEWING AS <select id="crRole">'+rolesAll().map(r=>'<option value="'+e(r.id)+'"'+(r.id===DV.role?' selected':'')+'>'+e(r.name)+(r.rights.length?'':' (no decision rights)')+'</option>').join("")+'</select></label>'+
       '<div class="crkas"><span class="faint">KNOWLEDGE AREAS</span>'+allKA.map(k=>{ const held=R&&R.rights.some(x=>x.mid===k); return '<button class="kachip'+(lens.includes(k)?' on':'')+(held?' held':'')+(touched.has(k)?' hit':'')+'" data-k="'+e(k)+'" title="'+e(kaName(k)+(held?": this role holds decision rights here":""))+'">'+e(kaShort(k))+(held?' ◆':'')+'</button>'; }).join("")+'</div>'+
+      '<div class="crsecs"><span class="faint">SECTIONS</span><button class="crlink" data-secall="open">expand all</button><button class="crlink" data-secall="close">collapse all</button>'+SECS.map(([k,l])=>'<button class="kachip'+(DV.secClosed[k]?'':' on')+'" data-sec="'+k+'" title="'+(DV.secClosed[k]?'Show':'Hide')+' '+e(l)+'">'+e(l)+'</button>').join("")+'</div>'+
       '<div class="crrights faint">'+(R&&R.rights.length?e(R.name)+' holds '+R.rights.length+' decision '+(R.rights.length===1?'right':'rights')+': '+R.rights.map(x=>e(x.id)).join(", "):e((R||{}).name||"This role")+' holds no decision rights; the view shows the Knowledge Areas it has asked in.')+'</div></div>');
     // replay bar
     const cur=evs[DV.i-1];
@@ -1117,6 +1144,7 @@ fillAssets();
         return '<rect x="'+(j*1000/Math.max(1,evs.length)).toFixed(1)+'" y="'+(bad?0:3)+'" width="'+Math.max(1.2,1000/Math.max(1,evs.length)*.7).toFixed(1)+'" height="'+(bad?14:8)+'" fill="'+col+'" opacity="'+(j<DV.i?1:.35)+'" data-j="'+(j+1)+'"/>'; }).join("")+'</svg></div>');
     h.push('<div class="crgrid"><div class="crcol">');
     // S(a,t)
+    let i0=h.length;
     h.push('<div class="crpanel"><div class="crph"><span>FTS Composite State Vector S(a,t)</span><span class="cyan mono">S = ⟨'+gv.map(x=>e(x.r.code+"-"+numOf(x.s))).join(", ")+'⟩</span></div><div class="faint crnote">Condition vector across the four orthogonal governance regions'+(DV.sb?', in the sandbox':' at the replay point')+'.</div><div class="crquads">');
     const Rw=(k,rid)=>w.vec[k]&&w.vec[k][rid]?sName(w.vec[k][rid]):null;
     const det=(k,v)=>'<div class="crd"><span>'+e(k)+'</span><b>'+(v==null||v===""?'<i>no feed yet</i>':e(v))+'</b></div>';
@@ -1126,22 +1154,39 @@ fillAssets();
       CP:[["Data owner",P.owner||a.owner],["Legal hold",env.hold_active?"active":Rw("KA-DCM","REG-DCM-HLD")],["Privacy basis",Rw("KA-DS","REG-DS-PRV")]]};
     gv.forEach(x=>{ const c=REG_CLS[x.r.code]||"ex"; const st=D.st[x.s]||{};
       h.push('<div class="crq '+c+chg(GID+"|"+x.r.id,x.s)+'"><div class="crqh">STS-'+e(x.r.code)+': '+e(x.r.name)+' Region<i></i></div><div class="crqb"><span class="crst">State: '+e(numOf(x.s))+'-'+e(st.name||x.s)+'</span>'+(details[x.r.code]||[]).map(d=>det(d[0],d[1])).join("")+'</div></div>'); });
-    h.push('</div></div>');
+    h.push('</div></div>'); secWrap(h,i0,"sv");
     // KA band
-    h.push('<div class="crpanel"><div class="crph"><span>Knowledge Area State Vectors</span><span class="faint">'+lens.length+' in this lens'+(kas.length>lens.length?' · '+(kas.length-lens.length)+' more touched by the scenario':'')+'</span></div><div class="crkaband">');
-    kas.forEach(k=>{ const m=D.models[k]; h.push('<div class="crka'+(touched.has(k)?' hit':'')+'"><div class="crkah"><b>'+e(kaShort(k))+'</b> '+e(kaName(k))+(touched.has(k)?' <span class="amber">· changed by the scenario</span>':'')+'</div>'+
-      (m.regions||[]).filter(r=>w.vec[k]&&w.vec[k][r.id]).map(r=>{ const s=w.vec[k][r.id]; const mine=(m.transitions||[]).filter(t=>t.source===s&&regionOfT(k,t)===r.id&&heldDR(k,t.decisionRight)).length;
-        return '<button class="crrow'+chg(k+"|"+r.id,s)+(DV.focus===k+"|"+r.id?' foc':'')+'" data-f="'+e(k+"|"+r.id)+'"><span class="mono faint">'+e(r.code||"")+'</span><span class="crrn">'+e(r.name)+'</span><span class="crchipst">'+e(sName(s))+'</span>'+(mine?'<span class="yours" title="transitions from this state whose decision right this role holds">◆ '+mine+'</span>':'')+'</button>'; }).join("")+'</div>'); });
-    h.push('</div></div>');
-    h.push(instPanelHtml(a,w,lens,chg));
+    i0=h.length;
+    const allK=D.order.filter(k=>k!==GID); const inK=allK.filter(k=>applies(a,k)), outK=allK.filter(k=>!applies(a,k));
+    const kaIsOpen=k=>DV.kaOpen[k]!==undefined?DV.kaOpen[k]:(applies(a,k)&&(lens.includes(k)||touched.has(k)));
+    const nOpen=allK.filter(kaIsOpen).length;
+    h.push('<div class="crpanel"><div class="crph"><span>Knowledge Area State Vectors</span><span class="faint">'+inK.length+' manage this asset · '+nOpen+' open · '+lens.length+' in this lens'+(touched.size?' · '+[...touched].filter(k=>k!==GID).length+' changed by the scenario':'')+'</span></div>'+
+      '<div class="crkatools"><button class="crlink" data-kaall="open">expand all</button><button class="crlink" data-kaall="close">collapse all</button><button class="crlink" data-kaall="lens">only this lens</button><button class="crlink" data-kaall="reset">back to the default</button></div><div class="crkaband">');
+    const kaCard=k=>{ const m=D.models[k]; const on=kaIsOpen(k); const inScope=applies(a,k);
+      const regs=inScope?(m.regions||[]).filter(r=>w.vec[k]&&w.vec[k][r.id]):[];
+      const yours=regs.reduce((n,r)=>n+(m.transitions||[]).filter(t=>t.source===w.vec[k][r.id]&&regionOfT(k,t)===r.id&&heldDR(k,t.decisionRight)).length,0);
+      const sum=inScope?regs.length+' '+(regs.length===1?'region':'regions')+(yours?' · <span class="yours">◆ '+yours+'</span>':''):'<span class="faint">does not manage this asset</span>';
+      return '<div class="crka'+(touched.has(k)?' hit':'')+(on?'':' shut')+(inScope?'':' out')+'"><button class="crkah" data-kat="'+e(k)+'" aria-expanded="'+on+'" title="'+(on?'Collapse':'Expand')+' '+e(kaName(k))+'"><span class="crtg">'+(on?'▾':'▸')+'</span><b>'+e(kaShort(k))+'</b> <span class="crkan">'+e(kaName(k))+'</span>'+(touched.has(k)?' <span class="amber">· changed</span>':'')+'<span class="crkas2">'+sum+'</span></button>'+
+        (!on?'':inScope?regs.map(r=>{ const st=w.vec[k][r.id]; const mine=(m.transitions||[]).filter(t=>t.source===st&&regionOfT(k,t)===r.id&&heldDR(k,t.decisionRight)).length;
+          return '<button class="crrow'+chg(k+"|"+r.id,st)+(DV.focus===k+"|"+r.id?' foc':'')+'" data-f="'+e(k+"|"+r.id)+'"><span class="mono faint">'+e(r.code||"")+'</span><span class="crrn">'+e(r.name)+'</span><span class="crchipst">'+e(sName(st))+'</span>'+(mine?'<span class="yours" title="transitions from this state whose decision right this role holds">◆ '+mine+'</span>':'')+'</button>'; }).join("")
+          :'<div class="crkanote faint">'+e(a.name||a.id)+' is not in this Knowledge Area\'s scope: an asset\'s Knowledge Areas follow its type and name in the fleet rules. Its '+(m.regions||[]).length+' regions ('+(m.regions||[]).map(r=>e(r.code||r.id)).join(", ")+') move for the assets it does manage.</div>')+'</div>'; };
+    const openK=inK.concat(outK).filter(kaIsOpen), shutIn=inK.filter(k=>!kaIsOpen(k)), shutOut=outK.filter(k=>!kaIsOpen(k));
+    h.push(openK.length?openK.map(kaCard).join(""):'<div class="faint">Every Knowledge Area is collapsed. Open one below, or use expand all.</div>');
+    h.push('</div>');
+    if(shutIn.length) h.push('<div class="crgrp">Collapsed ('+shutIn.length+')</div><div class="crkashut">'+shutIn.map(kaCard).join("")+'</div>');
+    if(shutOut.length) h.push('<div class="crgrp">Not managing this asset ('+shutOut.length+')</div><div class="crkashut">'+shutOut.map(kaCard).join("")+'</div>');
+    h.push('</div>'); secWrap(h,i0,"ka");
+    i0=h.length; h.push(instPanelHtml(a,w,lens,chg)); if(h.length>i0&&h[i0]) secWrap(h,i0,"ins"); else h.splice(i0);
     // XRG
     const xrg=D.models[GID].crossRegionConstraints||[]; const genv=Object.assign({},env); D.models[GID].regions.forEach(r=>genv[r.code]=w.vec[GID][r.id]);
-    h.push('<div class="crpanel"><div class="crph"><span>CROSS-REGION GUARDS (XRG) EVALUATION ENGINE</span></div>'+xrg.map(x=>{ const v=evalExpr(x.expression,genv); const trs=(String(x.transitions||"").match(/TR-[A-Z]+-\d+/g)||[]);
+    i0=h.length; h.push('<div class="crpanel"><div class="crph"><span>CROSS-REGION GUARDS (XRG) EVALUATION ENGINE</span></div>'+xrg.map(x=>{ const v=evalExpr(x.expression,genv); const trs=(String(x.transitions||"").match(/TR-[A-Z]+-\d+/g)||[]);
       const live=trs.some(tid=>{ const t=trOf(GID,tid); return t.id&&w.vec[GID][regionOfT(GID,t)]===t.source; });
       const st=!live?["ARMED","armed","b"]:v===false?["BLOCKS","fail","r"]:["PASS","pass","g"];
       return '<div class="crx"><i class="dot '+st[2]+'"></i><span class="crxn">'+e(x.id)+' <span class="faint">'+e((x.constraint||"").slice(0,70))+((x.constraint||"").length>70?'…':'')+'</span></span><span class="mono faint">'+e(trs.join(", "))+'</span><span class="crxs '+st[1]+'">'+st[0]+'</span></div>'; }).join("")+'</div>');
+    secWrap(h,i0,"xrg");
     h.push('</div><div class="crcol">');
     // the digital thread
+    i0=h.length;
     h.push('<div class="crpanel"><div class="crph"><span>Digital Thread: Data Lifecycle Lineage Graph (LC-01 .. LC-06)</span><span class="amber">End-to-End Provenance</span></div><div class="faint crnote">The Global model\'s lifecycle phases, the transitions its activities relate to, and this asset\'s events in each phase up to the replay point.</div><div class="crthread">');
     const lc=(x)=>{ const fired=x.ev.filter(y=>y.fired); const active=(stage||{}).id===x.p.id;
       const open=x.refused.filter(r=>!fired.some(f=>f.transition===r.transition&&tms(f.at)>tms(r.at)));
@@ -1152,7 +1197,7 @@ fillAssets();
     const dso=Rw("KA-DSO","REG-DSO-STO"), dq=Rw("KA-DQ","REG-DQ-PDCA");
     h.push('<div class="crtarget"><div class="crtgh">TARGET DIGITAL TWIN ASSET: '+e(a.name)+' ('+e(((stage||{}).id||"")+" "+((stage||{}).name||""))+')</div><div class="crtgb"><div>State Vector Binding: <span class="cyan mono">S(a,t) = ⟨'+gv.map(x=>e(x.r.code+"-"+numOf(x.s))).join(", ")+'⟩</span></div><div class="crtgc">'+
       '<div><span>STORED INSTANCE</span><b>'+e(dso||"not in scope")+'</b></div><div><span>DATA QUALITY</span><b class="green">'+e(dq||"not in scope")+((P.dq||{}).score?' · '+e(P.dq.score):'')+'</b></div><div><span>OPEN ISSUES</span><b class="'+(openIss.length+sbIss.length?'amber':'cyan')+'">'+(openIss.length+sbIss.length)+(openIss.length?' · '+e(openIss.map(i=>i.severity).join(", ")):'')+(sbIss.length?' <span class="indigo">('+sbIss.length+' in the sandbox)</span>':'')+'</b></div></div></div></div><div class="crdash"></div>');
-    h.push('<div class="crrow3">'+th.slice(3,6).map(lc).join('<div class="crarr">→</div>')+'</div></div></div>');
+    h.push('<div class="crrow3">'+th.slice(3,6).map(lc).join('<div class="crarr">→</div>')+'</div></div></div>'); secWrap(h,i0,"thr");
     // the testbed
     h.push(testbedHtml(a,w,kas));
     h.push('</div></div></div></div>');
@@ -1192,7 +1237,8 @@ fillAssets();
         h.push('<button class="cra'+(on?' on':'')+'" data-inst="'+e(v)+'" data-mid="'+e(mid)+'" data-tid="'+e(t.id)+'"><span class="mono">'+e(t.id)+'</span> '+e(t.name)+' <span class="faint">'+e(kaShort(mid))+'</span>'+(mine?' <span class="yours">◆ yours</span>':'')+'<span class="cras '+(x.fired?'g':'r')+'">'+(x.fired?'ready':'guards refuse')+'</span></button>'); }); }); });
     return h.join(""); }
   function testbedHtml(a,w,kas){
-    const h=['<div class="crbed"><div class="crbedh">DIGITAL TWIN SIMULATION &amp; INCIDENT TESTBED ("WHAT-IF" CONTROLS)</div><div class="crbedb">'];
+    const cb=!!DV.secClosed.bed;
+    const h=['<div class="crbed'+(cb?' closed':'')+'" data-secp="bed"><div class="crbedh"><button class="crtog" data-sec="bed" aria-expanded="'+(!cb)+'" title="'+(cb?'Expand':'Collapse')+' this section">'+(cb?'▸':'▾')+'</button>DIGITAL TWIN SIMULATION &amp; INCIDENT TESTBED ("WHAT-IF" CONTROLS)</div><div class="crbedb">'];
     h.push('<div class="crinc">'+INCIDENTS.filter(x=>w.vec[x.mid]&&w.vec[x.mid][x.rid]!==undefined).map(x=>'<button class="crib '+x.tone+(DV.pick&&DV.pick.inc===x.id?' on':'')+'" data-inc="'+e(x.id)+'"><b>'+e(x.label)+'</b><span>'+e(x.sub)+'</span></button>').join("")+'</div>');
     h.push('<div class="crtabs">'+[["yours","Your actions"],["act","By activity"],["ev","By event"]].concat(Object.keys(w.inst||{}).length?[["ins","Instruments"]]:[]).map(([k,l])=>'<button class="crtab'+(DV.tab===k?' on':'')+'" data-tb="'+k+'">'+l+'</button>').join("")+(DV.focus?'<span class="faint"> · focused on '+e(regName(...DV.focus.split("|")))+' <button class="crlink" data-unfocus="1">clear</button></span>':'')+'</div><div class="crlist">');
     const btn=(mid,tid,act)=>{ const v=evalW(a,w,mid,tid); if(!v) return ""; const mine=heldDR(mid,v.dr); const st=v.fired?["ready","g"]:v.sourceActive?["guards refuse","r"]:["not from this state","faint"];
@@ -1269,7 +1315,13 @@ fillAssets();
   function wireDash(a,evs){
     const pane=$("#pane-dash");
     const role=$("#crRole"); if(role) role.onchange=()=>{ DV.role=role.value; try{ localStorage.setItem(LS_ROLE,DV.role); }catch(x){} DV.focus=null; DV.pick=null; DV.preview=null; renderDash(); };
-    pane.querySelectorAll(".kachip").forEach(b=>b.onclick=()=>{ const cur=lensKAs(a); const k=b.dataset.k; DV.kasBy[DV.role||"none"]=cur.includes(k)?cur.filter(x=>x!==k):cur.concat(k); renderDash(); });
+    pane.querySelectorAll("[data-sec]").forEach(b=>b.onclick=()=>{ const k=b.dataset.sec; DV.secClosed[k]=!DV.secClosed[k]; if(!DV.secClosed[k]) delete DV.secClosed[k]; saveLayout(); renderDash(); });
+    pane.querySelectorAll("[data-secall]").forEach(b=>b.onclick=()=>{ DV.secClosed={}; if(b.dataset.secall==="close") SECS.forEach(([k])=>DV.secClosed[k]=true); saveLayout(); renderDash(); });
+    pane.querySelectorAll("[data-kat]").forEach(b=>b.onclick=()=>{ const k=b.dataset.kat; DV.kaOpen[k]=b.getAttribute("aria-expanded")!=="true"; saveLayout(); renderDash(); });
+    pane.querySelectorAll("[data-kaall]").forEach(b=>b.onclick=()=>{ const m=b.dataset.kaall; const lensNow=lensKAs(a); DV.kaOpen={};
+      if(m!=="reset") D.order.filter(k=>k!==GID).forEach(k=>DV.kaOpen[k]=m==="open"?true:m==="close"?false:lensNow.includes(k));
+      if(m==="close") DV.secClosed.ka&&delete DV.secClosed.ka; saveLayout(); renderDash(); });
+    pane.querySelectorAll(".kachip[data-k]").forEach(b=>b.onclick=()=>{ const cur=lensKAs(a); const k=b.dataset.k; DV.kasBy[DV.role||"none"]=cur.includes(k)?cur.filter(x=>x!==k):cur.concat(k); renderDash(); });
     const sl=$("#crSlider"); if(sl) sl.oninput=()=>{ stopDash(); DV.sb=null; DV.i=+sl.value; renderDash(); };
     pane.querySelectorAll(".crticks rect").forEach(r=>r.onclick=()=>{ stopDash(); DV.sb=null; DV.i=+r.dataset.j; renderDash(); });
     pane.querySelectorAll("[data-rp]").forEach(b=>b.onclick=()=>{ const k=b.dataset.rp;

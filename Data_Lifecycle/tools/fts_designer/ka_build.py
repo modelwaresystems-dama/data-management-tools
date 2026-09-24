@@ -136,6 +136,16 @@ def build(spec, overrides=None):
             m["roles"].append(row({"id": hid, "name": _voc[hid]["name"], "accountability": "Decision-Right Holder", "responsibility": _voc[hid]["definition"], "appliesTo": ", ".join(k for k, v in spec["decisionRights"].items() if v[1] == hid)}, "role_vocabulary.json"))
     m["decisionRights"] = [row({"id": k, "name": v[0], "holder": v[1], "holderName": _voc.get(v[1], {}).get("name", v[1]), "appliesTo": ", ".join(t[0] for t in trans if t[6] == k) + ("; " + ", ".join(c[1] for c in contrib if c[2] == "decisionRight" and k in (c[4] or "")) if any(c[2] == "decisionRight" and k in (c[4] or "") for c in contrib) else ""), "definition": v[0] + ".", "requirement": "Required", "notes": v[2] if len(v) > 2 else ""}, "spec:decisionRights") for k, v in spec.get("decisionRights", {}).items()]
     m["activities"] = [row({"id": a[0], "name": a[1], "processRef": a[2], "effectClass": a[3], "regions": a[4], "relatedTransitions": a[5], "services": a[6] if len(a) > 6 else [], "lifecyclePhases": [], "permittedIn": "see regions", "activityType": a[3], "nounVerb": "Verb", "permissibility": "Evaluated by the region contracts", "nameQA": dict(zip(("status", "rationale"), name_qa("activity", a[1])))}, "context:" + a[2]) for a in spec.get("activities", [])]
+    # v0.5 (Howard, 24 Sep 2026: "the builder adds back-links and says so"): a transition that names an activity the activity does not
+    # list is reconciled here, so the activity always lists every transition that names it; the build prints each back-link it adds
+    backlinks = []
+    acts_by_id = {a["id"]: a for a in m["activities"]}
+    for t in trans:
+        for aid in (t[8] if len(t) > 8 else []):
+            a = acts_by_id.get(aid)
+            if a is not None and t[0] not in a["relatedTransitions"]:
+                a["relatedTransitions"] = list(a["relatedTransitions"]) + [t[0]]; backlinks.append((aid, t[0]))
+    m["_backlinks"] = backlinks
     m["permissionRecords"] = [row({"id": p[0], "activity": p[1], "context": p[2], "outcome": p[3], "guard": p[4], "authority": p[5], "services": p[6], "evidence": p[7], "effect": p[8], "basis": p[9]}, "spec:permissions") for p in spec.get("permissions", [])]
     if not m["permissionRecords"]:
         # derive one Conditional record per (transition-causing activity, source state of a related transition)
@@ -195,8 +205,12 @@ def build(spec, overrides=None):
     for r in m["regions"]:
         if not r.get("managedElement"): qa.append({"severity": "warning", "rule": "N-002 / GA-010", "element": r["id"], "finding": "region does not name the element it manages; each region is its own FTS over one managed element"})
         if not any(s["region"] == r["id"] and s["terminal"] for s in m["subStates"]): qa.append({"severity": "note", "rule": "N-007", "element": r["id"], "finding": "region has no terminal state (non-terminating condition of the managed element; confirm)"})
+    claimed = {tid for a in m["activities"] for tid in a["relatedTransitions"]}
     for t in m["transitions"]:
         if t["level"] != "Initial" and not t.get("decisionRight"): qa.append({"severity": "warning", "rule": "N-016", "element": t["id"], "finding": "no Decision Right; every KA transition needs one (decision 21 Sep 2026)"})
+        if t["level"] != "Initial" and t["id"] not in claimed: qa.append({"severity": "warning", "rule": "N-017", "element": t["id"], "finding": "no activity claims this transition, so a requester cannot name one truthfully (requester block, 23 Sep 2026)"})
+    for aid, tid in m.pop("_backlinks", []):
+        qa.append({"severity": "note", "rule": "N-017", "element": aid, "finding": f"back-link added by the builder: {tid} names {aid}, which did not list it"})
     for d in m["decisionRights"]:
         if "REVIEW" in (d.get("notes") or ""): qa.append({"severity": "note", "rule": "N-016", "element": d["id"], "finding": d["notes"]})
     for c in m["contributions"]:

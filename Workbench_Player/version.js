@@ -1,7 +1,7 @@
 /* Build stamp — bump number/built on each deploy. version.js is loaded
    cache-busted (always fresh); each page declares window.PAGE_BUILD, and if the
    page is older than this build it force-reloads itself once (self-healing cache). */
-window.APP_VERSION = { number: "1.9.13", built: "2026-09-24 12:30 SAST" };
+window.APP_VERSION = { number: "1.9.14", built: "2026-09-24 13:00 SAST" };
 
 (function () {
   try {
@@ -30,7 +30,7 @@ window.APP_VERSION = { number: "1.9.13", built: "2026-09-24 12:30 SAST" };
         "border:1px solid rgba(47,212,192,.7);";
       document.body.appendChild(d);
     }
-    if (document.readyState !== "loading") inject();
-    else document.addEventListener("DOMContentLoaded", inject);
+    /* Visible version now comes from each page's #appVersion badge, read from
+       <meta name="version"> (the project versioning standard). Self-heal above stays. */
   } catch (e) {}
 })();

@@ -56,6 +56,8 @@
   /* host controls */
   .hostbar{flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px clamp(14px,3vw,26px);border-top:1px solid var(--line);background:rgba(9,14,26,.6);}
   .hostbar[hidden]{display:none;}
+  .resumecard{margin:10px 0 4px;padding:12px 14px;border:1px solid var(--accent);border-radius:12px;background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--ink);font-size:13.5px;line-height:1.5;}
+  #resumeFile{font-size:12px;color:var(--muted);}
   .joinov{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:rgba(5,10,20,.82);}
   .joinov[hidden]{display:none;}
   .joinov-card{position:relative;background:#fff;color:#0a1120;border-radius:24px;padding:30px 40px 26px;text-align:center;box-shadow:0 24px 80px rgba(0,0,0,.6);}
@@ -207,6 +209,7 @@
     <button class="btn" id="h-reveal" disabled>Reveal answer</button>
     <button class="btn" id="h-next" disabled>Next question</button>
     <button class="btn" id="h-save" disabled title="Download a results CSV to save into your private repo">Save results ⤓</button>
+    <button class="btn" id="h-pause" disabled title="Save progress to a file so you can resume this course another day">Pause &amp; save ⏸</button>
     <button class="btn ghost" id="h-restart">Restart</button>
     <button class="btn" id="h-qr">Show join QR</button>
     <span class="status" id="h-status"></span>
@@ -225,7 +228,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.9.8";</script>
+<script>window.PAGE_BUILD="1.9.10";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -254,7 +257,8 @@ let room=null;
 let pid = "p_"+Math.random().toString(36).slice(2,9);
 let myName="";
 let hostClassId="", hostClassName="";
-let PLAN=null; // {title, items:[{path,title,weight}], idx} when running a session/course
+let PLAN=null; // {id, title, items:[{path,title,weight}], idx} when running a session/course
+let RESUME_SCORES={}, LASTSAVE=null;   // name->{score,quizTotals} for resuming a paused course
 let ably=null, chState=null, chAns=null, chBase=null;
 
 /* host authoritative model */
@@ -363,7 +367,9 @@ async function renderHostSetup(body){
     <div class="field"><label for="hquiz">What to run</label><select id="hquiz">${runOpts||'<option value="">(library not found)</option>'}</select></div>
     <div class="field"><label for="hclass">Class for this room</label><select id="hclass"></select>
       <div class="err" id="hnote" style="color:var(--faint)"></div></div>
+    <div id="resumeWrap"></div>
     <button class="bigbtn" id="hstart">Start the room \u2192</button>
+    <div class="field" style="margin-top:12px"><label for="resumeFile">Resume a course from a saved file</label><input type="file" id="resumeFile" accept="application/json,.json"></div>
     <button class="tinylink" id="hback">Join a quiz instead</button>`;
   const qsel=document.getElementById("hquiz"), csel=document.getElementById("hclass"), note=document.getElementById("hnote");
   function selInfo(){
@@ -389,16 +395,36 @@ async function renderHostSetup(body){
     else if(matched.length>1){ note.textContent="Several classes linked \u2014 pick one."; }
     else { note.textContent="No linked class \u2014 pick one or host open."; }
   }
-  qsel.onchange=fillClasses; fillClasses();
+  qsel.onchange=()=>{ fillClasses(); refreshResume(); }; fillClasses();
+  function refreshResume(){
+    const rw=document.getElementById("resumeWrap"); if(!rw)return; rw.innerHTML="";
+    const info=selInfo(); if(info.kind!=="plan"||!info.session) return;
+    let saved=null; try{ saved=JSON.parse(localStorage.getItem("ds_prog_"+info.session.id)||"null"); }catch(e){}
+    if(!saved||!(saved.resumeIdx<info.session.quizzes.length)) return;
+    rw.innerHTML=`<div class="resumecard"><b>Saved progress found</b> — quiz ${saved.resumeIdx+1} of ${info.session.quizzes.length} · ${(saved.players||[]).length} players · saved ${esc(new Date(saved.savedAt).toLocaleString())}<div style="margin-top:9px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="bigbtn" style="width:auto;padding:10px 16px" id="resumeBtn">▶ Resume from here</button><button class="tinylink" id="resumeClear">discard saved</button></div></div>`;
+    document.getElementById("resumeBtn").onclick=()=>doResume(info.session, saved);
+    document.getElementById("resumeClear").onclick=()=>{ try{localStorage.removeItem("ds_prog_"+info.session.id);}catch(e){} refreshResume(); };
+  }
+  async function doResume(sx, saved){
+    PLAN={ id:sx.id, title:sx.title, items:sx.quizzes.map(p=>({path:p,title:(quizzes.find(x=>x.path===p)||{}).title||p,weight:1})), idx:saved.resumeIdx };
+    RESUME_SCORES={}; (saved.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
+    try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[saved.resumeIdx].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
+    hostClassId=saved.classId||""; hostClassName=saved.className||"";
+    role="host"; startHost();
+  }
+  fillClasses(); refreshResume();
+  const rf=document.getElementById("resumeFile");
+  if(rf) rf.onchange=()=>{ const fl=rf.files&&rf.files[0]; if(!fl)return; const fr=new FileReader(); fr.onload=()=>{ let saved; try{ saved=JSON.parse(fr.result); }catch(e){ note.textContent="Couldn't read that resume file."; return; } const sx=sessions.find(x=>x.id===saved.planId); if(!sx){ note.textContent="That resume file is for a course not in your library ("+(saved.planTitle||saved.planId)+")."; return; } doResume(sx, saved); }; fr.readAsText(fl); };
   document.getElementById("hback").onclick=()=>renderJoinForm(body,"");
   document.getElementById("hstart").onclick=async ()=>{
     const info=selInfo();
     if(info.kind==="plan" && info.session){
       const sx=info.session;
-      PLAN={ title:sx.title, items:sx.quizzes.map(p=>({path:p,title:(quizzes.find(x=>x.path===p)||{}).title||p,weight:1})), idx:0 };
+      RESUME_SCORES={};
+      PLAN={ id:sx.id, title:sx.title, items:sx.quizzes.map(p=>({path:p,title:(quizzes.find(x=>x.path===p)||{}).title||p,weight:1})), idx:0 };
       try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[0].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     } else {
-      PLAN=null;
+      PLAN=null; RESUME_SCORES={};
       try{ QUIZ=normalizeQuiz(await fetchAsset(info.quizPath,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     }
     const c=(r.classes||[]).find(x=>x.id===csel.value);
@@ -484,6 +510,7 @@ function refreshRoster(){
       seen.add(m.clientId);
       if(!H.players.has(m.clientId)) H.players.set(m.clientId,{name:(m.data&&m.data.name)||"Guest",score:0});
       else if(m.data&&m.data.name) H.players.get(m.clientId).name=m.data.name;
+      applyResume(H.players.get(m.clientId));
     });
     if(H.phase==="lobby"){ publishState(); renderHost(); }
     else renderHost();
@@ -493,6 +520,7 @@ function onAnswer(d){
   if(!d||H.phase!=="question"||d.qi!==H.qi)return;
   if(H.answers.has(d.pid))return;
   if(!H.players.has(d.pid))H.players.set(d.pid,{name:d.name||"Guest",score:0});
+  applyResume(H.players.get(d.pid));
   H.answers.set(d.pid,{pick:d.pick,at:Date.now()});
   H.counts=[0,0,0,0]; H.answers.forEach(a=>{if(a.pick>=0&&a.pick<4)H.counts[a.pick]++;});
   throttledPublish(); renderHost();
@@ -525,6 +553,7 @@ function wireHostButtons(){
   document.getElementById("h-next").onclick=()=>{ if(H.phase==="reveal")hostNext(); else if(H.phase==="interlude")hostNextQuiz(); };
   document.getElementById("h-restart").onclick=()=>hostRestart();
   document.getElementById("h-save").onclick=downloadResults;
+  const pb=document.getElementById("h-pause"); if(pb) pb.onclick=downloadProgress;
 }
 /* Export names, scores AND per-question results as CSV for the host to save into
    the PRIVATE repo (results/). Per-question cells are numeric: 1 correct, -1 wrong,
@@ -567,6 +596,26 @@ function downloadSessionResults(){
   a.download=`session-${room}-${date.slice(0,10)}.csv`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
+function applyResume(p){ if(!p||p._resumed)return; const s=p.name&&RESUME_SCORES[p.name.toLowerCase()]; if(s){ p.score=s.score||0; p.quizTotals=(s.quizTotals||[]).slice(); p._resumed=true; } }
+function saveProgress(){
+  if(!PLAN||!PLAN.id)return null;
+  try{
+    const vals=[...H.players.values()].filter(p=>p.name&&p.name!=="Guest");
+    const banked=vals.reduce((m,p)=>Math.max(m,(p.quizTotals||[]).length),0);
+    const players=vals.map(p=>{ const qt=(p.quizTotals||[]).slice(0,banked); return {name:p.name, score:qt.reduce((a,b)=>a+(b||0),0), quizTotals:qt}; });
+    const data={v:1, planId:PLAN.id, planTitle:PLAN.title, resumeIdx:banked, classId:hostClassId, className:hostClassName, savedAt:new Date().toISOString(), players};
+    localStorage.setItem("ds_prog_"+PLAN.id, JSON.stringify(data)); LASTSAVE=data; return data;
+  }catch(e){ return null; }
+}
+function downloadProgress(){
+  if(!PLAN){ return; }
+  const data=saveProgress()||LASTSAVE; if(!data)return;
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=`resume-${PLAN.id}-${(data.savedAt||"").slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  const st=document.getElementById("h-status"); if(st)st.textContent="Progress saved · you can resume later";
+}
 async function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};p.quizTotals=[];p._qstart=0;}); H.answers=new Map(); H.counts=[0,0,0,0];
   if(PLAN){ PLAN.idx=0; try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(PLAN.items[0].path,"quiz.sample.json"))); }catch(e){} }
   publishState(); renderHost(); }
@@ -576,6 +625,7 @@ function hostNext(){
   if(H.qi===0){ H.players.forEach(p=>{ p._qstart=p.score||0; }); }
   if(H.qi>=QUIZ.questions.length){
     H.players.forEach(p=>{ if(!p.quizTotals)p.quizTotals=[]; p.quizTotals.push((p.score||0)-(p._qstart||0)); });
+    if(PLAN) saveProgress();
     if(PLAN && PLAN.idx<PLAN.items.length-1){ H.phase="interlude"; publishState(); renderHost(); return; }
     H.phase="final"; publishState(); renderHost(); return;
   }
@@ -620,6 +670,7 @@ function syncHostBar(s){
   if(s.phase==="interlude"){ nx.disabled=false; nx.textContent="Next quiz \u2192"; }
   else { nx.disabled=s.phase!=="reveal"; nx.textContent=(s.qi>=s.total-1)?(s.plan?"End of quiz \u2192":"See results"):"Next question"; }
   document.getElementById("h-save").disabled=!(s.phase==="reveal"||s.phase==="final"||s.phase==="interlude");
+  { const pb=document.getElementById("h-pause"); if(pb) pb.disabled=!PLAN; }
   let t="";
   if(s.phase==="lobby")t=`${s.roomN} joined · waiting`;
   else if(s.phase==="question")t=`Q${s.qi+1}/${s.total} · ${s.answeredN}/${s.roomN} answered · ${Math.max(0,Math.ceil((s.endsAt-Date.now())/1000))}s`;

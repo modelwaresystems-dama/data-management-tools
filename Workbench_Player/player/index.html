@@ -227,7 +227,7 @@
 </aside>
 
 <script src="../app-config.js"></script>
-<script>window.PAGE_BUILD="1.9.8";</script>
+<script>window.PAGE_BUILD="1.9.10";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ============ Workbench Player ============
@@ -429,11 +429,17 @@ function render(){
   if(view==="lib"){ renderLibrary(); return; }
   if(view==="quiz")renderQuiz(); else if(view==="cards")renderCards(); else if(view==="map")renderMindmap(); else renderCards();
 }
-let MMDATA=null,_mmZoom=null;
-const MMCOLORS=["#2E9E6B","#E08A3C","#D9534F","#C9A227","#5B6EE1","#8B5CF6","#2E86E4","#17A673","#E4572E"];
-function ensureD3(){ return new Promise((res,rej)=>{ if(window.d3)return res(); const el=document.createElement("script"); el.src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"; el.onload=()=>res(); el.onerror=()=>rej(new Error("renderer offline")); document.head.appendChild(el); }); }
-function mmClone(n){ return { name:n.name, children:(n.children||[]).filter(x=>x&&x.name).map(mmClone) }; }
-function mmWalk(n,fn){ fn(n); (n.children||[]).forEach(c=>mmWalk(c,fn)); (n._children||[]).forEach(c=>mmWalk(c,fn)); }
+let _mm=null,_mmroot=null;
+function ensureMarkmap(){
+  return new Promise((res,rej)=>{
+    if(window.markmap&&window.markmap.Markmap&&window.d3) return res();
+    function load(src){ return new Promise((ok,no)=>{ const e=document.createElement("script"); e.src=src; e.onload=()=>ok(); e.onerror=()=>no(new Error("load failed")); document.head.appendChild(e); }); }
+    (window.d3?Promise.resolve():load("https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"))
+      .then(()=>(window.markmap&&window.markmap.Markmap)?Promise.resolve():load("https://cdn.jsdelivr.net/npm/markmap-view@0.18.10/dist/browser/index.js"))
+      .then(()=>res()).catch(rej);
+  });
+}
+function mmToNode(n){ const kids=(n.children||[]).filter(x=>x&&x.name).map(mmToNode); const o={content:esc(n.name)}; if(kids.length)o.children=kids; return o; }
 async function renderMindmap(){
   if(!MAP||MAP.error){ stage.innerHTML=`<div class="wrap"><div class="stagew">${backBar()}<div class="center"><div class="card"><h1>Couldn't load mind map</h1><p>${esc((MAP&&MAP.error)||"Missing mind map JSON")}</p></div></div></div></div>`; wireBack(); return; }
   const title=(curAsset&&curAsset.title)||MAP.name||"Mind map";
@@ -442,75 +448,22 @@ async function renderMindmap(){
     <div class="mm2-wrap"><svg id="mmSvg" class="mm2-svg"></svg><div class="mm2-hint">Drag to pan · scroll to zoom · click a node to fold</div></div>
   </div></div>`;
   wireBack();
-  try{ await ensureD3(); }catch(e){ const w=document.querySelector(".mm2-wrap"); if(w)w.innerHTML=`<div class="center" style="height:100%"><div class="card"><h1>Renderer offline</h1><p>The mind-map view needs an internet connection to load. (${esc(e.message)})</p></div></div>`; return; }
-  MMDATA=mmClone(MAP);
-  drawMindmap();
-  document.getElementById("mmExpand").onclick=()=>{ mmWalk(MMDATA,n=>{ if(n._children){ n.children=(n.children||[]).concat(n._children); n._children=null; } }); drawMindmap(); };
-  document.getElementById("mmCollapse").onclick=()=>{ (MMDATA.children||[]).forEach(c=>mmWalk(c,n=>{ if(n.children&&n.children.length){ n._children=n.children; n.children=null; } })); drawMindmap(); };
-  document.getElementById("mmFit").onclick=()=>fitMindmap();
-}
-function drawMindmap(){
-  const svgEl=document.getElementById("mmSvg"); if(!svgEl||!window.d3)return;
-  const svg=d3.select(svgEl); svg.selectAll("*").remove();
-  const g=svg.append("g");
-  const kids=(MMDATA.children||[]);
-  const mid=Math.ceil(kids.length/2);
-  const sides=[{list:kids.slice(0,mid),dir:1},{list:kids.slice(mid),dir:-1}];
-  const rowH=30, colW=210;
-  const nodes=[], links=[];
-  const rootNode={x:0,y:0,depth:0,name:MMDATA.name,isRoot:true};
-  nodes.push(rootNode);
-  sides.forEach(side=>{
-    if(!side.list.length)return;
-    const h=d3.hierarchy({name:MMDATA.name,children:side.list}, d=>d.children);
-    d3.tree().nodeSize([rowH,colW]).separation((a,b)=>a.parent===b.parent?1:1.25)(h);
-    const rootX=h.x;
-    h.each(nd=>{
-      if(nd.depth===0)return;
-      const anc=nd.ancestors().reverse()[1];
-      const bi=kids.indexOf(anc.data); const color=MMCOLORS[(bi<0?0:bi)%MMCOLORS.length];
-      const dd=nd.data;
-      const hasKids=!!((dd.children&&dd.children.length)||(dd._children&&dd._children.length));
-      const collapsed=!!(dd._children&&dd._children.length&&!(dd.children&&dd.children.length));
-      const rec={x:side.dir*(nd.depth*colW), y:nd.x-rootX, depth:nd.depth, name:dd.name, color, ref:dd, dir:side.dir, hasKids, collapsed};
-      nd._rec=rec; nodes.push(rec);
-      links.push({s:(nd.depth===1?rootNode:nd.parent._rec), t:rec, color});
-    });
-  });
-  g.selectAll("path.mm2-link").data(links).enter().append("path")
-    .attr("fill","none").attr("stroke",d=>d.color).attr("stroke-width",1.7).attr("stroke-opacity",.5)
-    .attr("d",d=>{ const s=d.s,t=d.t,mx=(s.x+t.x)/2; return `M${s.x},${s.y}C${mx},${s.y} ${mx},${t.y} ${t.x},${t.y}`; });
-  const ng=g.selectAll("g.mm2-node").data(nodes).enter().append("g")
-    .attr("transform",d=>`translate(${d.x},${d.y})`).style("cursor",d=>(d.hasKids&&!d.isRoot)?"pointer":"default");
-  ng.each(function(d){
-    const el=d3.select(this);
-    if(d.isRoot){ el.append("text").attr("class","mm2-roottx").attr("text-anchor","middle").attr("dy",".32em").text(d.name); return; }
-    const fs=d.depth===1?14:13;
-    const label=d.name+(d.collapsed?"  ⊕":"");
-    const w=Math.min(250, label.length*(fs*0.585)+24);
-    const hh=d.depth===1?28:24;
-    el.append("rect").attr("x",d.dir>0?0:-w).attr("y",-hh/2).attr("width",w).attr("height",hh).attr("rx",7)
-      .attr("fill",d.color).attr("fill-opacity",d.depth===1?1:.12)
-      .attr("stroke",d.color).attr("stroke-width",d.depth===1?0:1.3).attr("stroke-opacity",d.depth===1?0:.55);
-    el.append("text").attr("class","mm2-tx")
-      .attr("text-anchor",d.dir>0?"start":"end").attr("x",d.dir>0?11:-11).attr("dy",".32em")
-      .attr("fill",d.depth===1?"#ffffff":"#223047").attr("font-weight",d.depth===1?700:600).attr("font-size",fs)
-      .text(label);
-  });
-  ng.filter(d=>d.hasKids&&!d.isRoot).on("click",(ev,d)=>{ const dd=d.ref; if(dd.children&&dd.children.length){ dd._children=dd.children; dd.children=null; } else if(dd._children){ dd.children=dd._children; dd._children=null; } drawMindmap(); });
-  _mmZoom=d3.zoom().scaleExtent([0.2,2.5]).on("zoom",ev=>g.attr("transform",ev.transform));
-  svg.call(_mmZoom);
-  fitMindmap();
-}
-function fitMindmap(){
-  const svgEl=document.getElementById("mmSvg"); if(!svgEl||!window.d3)return;
-  const svg=d3.select(svgEl), g=svg.select("g"); if(g.empty())return;
-  let b; try{ b=g.node().getBBox(); }catch(e){ return; }
-  if(!b.width) return;
-  const vw=svgEl.clientWidth||900, vh=svgEl.clientHeight||500;
-  const scale=Math.min(vw/(b.width+120), vh/(b.height+80), 1.3);
-  const tx=vw/2-(b.x+b.width/2)*scale, ty=vh/2-(b.y+b.height/2)*scale;
-  svg.transition().duration(200).call(_mmZoom.transform, d3.zoomIdentity.translate(tx,ty).scale(scale));
+  try{ await ensureMarkmap(); }catch(e){ const w=document.querySelector(".mm2-wrap"); if(w)w.innerHTML=`<div class="center" style="height:100%"><div class="card"><h1>Renderer offline</h1><p>The mind-map view needs an internet connection the first time it loads.</p></div></div>`; return; }
+  const Markmap=window.markmap.Markmap;
+  _mmroot=mmToNode(MAP);
+  const svg=document.getElementById("mmSvg");
+  try{
+    _mm=Markmap.create(svg, {autoFit:true, duration:250, spacingVertical:12, spacingHorizontal:96, paddingX:18, nodeMinHeight:18, initialExpandLevel:-1}, _mmroot);
+  }catch(e){ const w=document.querySelector(".mm2-wrap"); if(w)w.innerHTML=`<div class="center" style="height:100%"><div class="card"><h1>Couldn't draw the mind map</h1><p>${esc(e.message)}</p></div></div>`; return; }
+  setTimeout(()=>{ try{_mm.fit();}catch(e){} }, 60);
+  document.getElementById("mmFit").onclick=()=>{ try{_mm.fit();}catch(e){} };
+  function setFold(fold){
+    (function walk(n,depth){ if(n.children&&n.children.length){ n.payload=Object.assign({},n.payload,{fold:(fold&&depth>=1)?1:0}); n.children.forEach(c=>walk(c,depth+1)); } })(_mmroot,0);
+    try{ _mm.setData(_mmroot); }catch(e){}
+    setTimeout(()=>{ try{_mm.fit();}catch(e){} }, 60);
+  }
+  document.getElementById("mmExpand").onclick=()=>setFold(false);
+  document.getElementById("mmCollapse").onclick=()=>setFold(true);
 }
 function backBar(){ return `<div class="backrow"><button class="backbtn" id="back">← Library</button></div>`; }
 function wireBack(){ const b=document.getElementById("back"); if(b)b.onclick=()=>{ view="lib"; syncSeg(); renderLibrary(); }; }

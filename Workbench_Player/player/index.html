@@ -72,6 +72,7 @@
   .badge{flex:none;font-family:"IBM Plex Mono",monospace;font-weight:700;font-size:10px;letter-spacing:.09em;text-transform:uppercase;padding:5px 9px;border-radius:7px;}
   .badge.quiz{background:color-mix(in srgb,var(--quiz) 22%,transparent);color:#9cc4f5;}
   .badge.cards{background:color-mix(in srgb,var(--cards) 22%,transparent);color:#f0d38a;}
+  .chipsep{display:inline-block;width:1px;height:18px;background:var(--line2);margin:0 4px;vertical-align:middle;}
   .badge.mindmap{background:color-mix(in srgb,var(--maps) 24%,transparent);color:#c7bdf5;}
   .mm-wrap{max-width:900px;margin:0 auto;padding:0 4px;}
   .mm-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px;}
@@ -234,7 +235,7 @@
 </aside>
 
 <script src="../app-config.js"></script>
-<script>window.PAGE_BUILD="1.9.11";</script>
+<script>window.PAGE_BUILD="1.9.12";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ============ Workbench Player ============
@@ -260,6 +261,8 @@ const stage=document.getElementById("stage");
 let view="lib";                       // lib | quiz | cards
 let MANIFEST=null, ASSETS=[];
 let libSearch="", libFilter="all";    // all | quiz | flashcards
+let libScope="training";               // training = only notebooks used in a course; all = every notebook
+let COURSE_SLUGS=null;                 // set of notebook slugs referenced by rosters courses/sessions
 let libCollapsed=new Set();           // collapsed notebook groups
 let curAsset=null;                    // {path,title,type,...} being played
 let QUIZ=null, CARDS=null, QUIZ_SRC="", MAP=null;
@@ -325,6 +328,8 @@ function syncSeg(){
 async function loadManifest(){
   try{ MANIFEST=await fetchAsset("manifest.json","../manifest.sample.json"); ASSETS=MANIFEST.assets||MANIFEST.quizzes||[]; }
   catch(e){ MANIFEST={error:e.message}; ASSETS=[]; }
+  try{ const r=await fetchAsset("rosters.json",""); const set=new Set(); (r.sessions||[]).forEach(se=>(se.quizzes||[]).forEach(p=>{ const seg=String(p).split("/")[0]; if(seg)set.add(seg); })); COURSE_SLUGS=set.size?set:null; }
+  catch(e){ COURSE_SLUGS=null; }
   renderLibrary();
 }
 function inSession(path){ return SESSION.items.some(i=>i.path===path); }
@@ -335,16 +340,18 @@ function renderLibrary(){
     return;
   }
   const q=libSearch.trim().toLowerCase();
-  let list=ASSETS.filter(a=>{
+  const inScope=a=>(libScope!=="training"||!COURSE_SLUGS)?true:COURSE_SLUGS.has(String(a.path||"").split("/")[0]);
+  const base=ASSETS.filter(inScope);
+  let list=base.filter(a=>{
     if(libFilter!=="all" && (a.type||"quiz")!==libFilter) return false;
     if(!q) return true;
     return (a.title||"").toLowerCase().includes(q) || (a.topic||"").toLowerCase().includes(q);
   });
   const topics=[]; const byTopic={};
   list.forEach(a=>{ const t=a.topic||"Uncategorised"; if(!byTopic[t]){byTopic[t]=[];topics.push(t);} byTopic[t].push(a); });
-  const totQ=ASSETS.filter(a=>(a.type||"quiz")==="quiz").length;
-  const totC=ASSETS.filter(a=>a.type==="flashcards").length;
-  const totM=ASSETS.filter(a=>a.type==="mindmap").length;
+  const totQ=base.filter(a=>(a.type||"quiz")==="quiz").length;
+  const totC=base.filter(a=>a.type==="flashcards").length;
+  const totM=base.filter(a=>a.type==="mindmap").length;
 
   let groups = topics.map(t=>{
     const collapsed=libCollapsed.has(t);
@@ -368,7 +375,7 @@ function renderLibrary(){
     </div>`;
   }).join("");
 
-  if(!list.length) groups=`<div class="empty-lib">No assets match "${esc(libSearch)}".</div>`;
+  if(!list.length) groups=`<div class="empty-lib">${ (libScope==="training"&&COURSE_SLUGS) ? "No training courses reference a notebook yet \u2014 switch to <b>All notebooks</b>, or set up a course in the Builder." : ('No assets match "'+esc(libSearch)+'".') }</div>`;
 
   stage.innerHTML=`<div class="libwrap">
     <div class="libhead">
@@ -379,6 +386,9 @@ function renderLibrary(){
         <button class="chip" data-f="quiz" aria-pressed="${libFilter==='quiz'}">Quizzes ${totQ}</button>
         <button class="chip" data-f="flashcards" aria-pressed="${libFilter==='flashcards'}">Cards ${totC}</button>
         <button class="chip" data-f="mindmap" aria-pressed="${libFilter==='mindmap'}">Maps ${totM}</button>
+        <span class="chipsep"></span>
+        <button class="chip" data-scope="training" aria-pressed="${libScope==='training'}" ${COURSE_SLUGS?"":"disabled"} title="Only notebooks used in a training course">In training</button>
+        <button class="chip" data-scope="all" aria-pressed="${libScope==='all'}">All notebooks</button>
       </div>
       <div class="libtools">
         <button id="expandAll" type="button">Expand all</button>
@@ -401,7 +411,8 @@ function renderLibrary(){
 
   const qbox=document.getElementById("libq");
   qbox.oninput=()=>{ libSearch=qbox.value; const pos=qbox.selectionStart; renderLibrary(); const nb=document.getElementById("libq"); if(nb){nb.focus(); try{nb.setSelectionRange(pos,pos);}catch(e){}} };
-  stage.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{ libFilter=c.dataset.f; renderLibrary(); });
+  stage.querySelectorAll(".chip[data-f]").forEach(c=>c.onclick=()=>{ libFilter=c.dataset.f; renderLibrary(); });
+  stage.querySelectorAll(".chip[data-scope]").forEach(c=>c.onclick=()=>{ libScope=c.dataset.scope; renderLibrary(); });
   stage.querySelectorAll(".row").forEach(r=>{
     const path=r.dataset.path, a=ASSETS.find(x=>x.path===path);
     r.querySelector('[data-act="play"]').onclick=()=>playAsset(a);

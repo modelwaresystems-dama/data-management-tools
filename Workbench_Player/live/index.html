@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.11.0">
+<meta name="version" content="1.12.0">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -33,6 +33,17 @@
   .spacer{flex:1;}
   .codepill{font-family:"IBM Plex Mono",monospace;font-weight:700;letter-spacing:.08em;background:var(--panel);border:1px solid var(--line);padding:6px 12px;border-radius:10px;color:var(--accent-ink);}
   .rolepill{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#EAF1FF;background:var(--surface2);border:1px solid var(--line2);padding:6px 12px;border-radius:999px;}
+  .progress{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);padding:9px clamp(14px,3vw,26px);border-bottom:1px solid var(--line);background:rgba(9,14,26,.5);display:flex;flex-direction:column;gap:7px;flex:none;}
+  .progress[hidden]{display:none;}
+  .pg-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+  .pg-c{color:var(--faint);text-transform:uppercase;letter-spacing:.1em;font-size:10px;}
+  .pg-line b{color:var(--ink);font-weight:600;}
+  .pg-sep{color:var(--faint);}
+  .pg-hint{color:var(--faint);}
+  .pg-dots{display:flex;gap:5px;flex-wrap:wrap;}
+  .pg-dot{width:18px;height:5px;border-radius:3px;background:var(--panel2);border:1px solid var(--line);}
+  .pg-dot.done{background:var(--accent);border-color:var(--accent);}
+  .pg-dot.now{background:var(--gold);border-color:var(--gold);}
 
   .stage{flex:1;min-height:0;display:grid;place-items:center;padding:clamp(12px,2.4vw,26px);}
   .screen{width:100%;max-width:1720px;height:100%;display:flex;flex-direction:column;}
@@ -199,6 +210,11 @@
   .hval{font-family:"IBM Plex Mono",monospace;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent-ink);width:66px;text-align:right;flex:none;}
   .rnext{color:var(--faint);margin-top:2px;font-size:13px;}
   .rempty{color:var(--faint);padding:22px;}
+  .addquiz{margin-top:10px;display:flex;flex-direction:column;gap:8px;align-items:center;border-top:1px solid var(--line);padding-top:14px;}
+  .aqlabel{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);}
+  .aqrow{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;}
+  .aqrow select{padding:10px 12px;border-radius:10px;border:1px solid var(--line2);background:var(--stage2);color:var(--ink);font-size:14px;max-width:min(360px,78vw);}
+  .aqbtn{background:var(--accent);color:#04211d;border:0;font-weight:700;}
   @media (max-width:520px){.hname{width:110px;font-size:13px}.hval{width:52px}}
 
   /* participant full-screen */
@@ -246,6 +262,7 @@
     <span class="codepill" id="codePill" hidden></span>
     <span class="rolepill" id="rolePill" hidden></span>
   </div>
+  <div class="progress" id="progress" hidden></div>
 
   <div class="stage"><div class="screen"><div id="mount" class="screen" style="height:100%"></div></div></div>
 
@@ -286,7 +303,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.11.0";</script>
+<script>window.PAGE_BUILD="1.12.0";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -448,6 +465,7 @@ function liveUnconfigured(){ return !CFG.tokenUrl; }
 
 /* ---------- landing ---------- */
 function renderLanding(preRoom, preClass){
+  { const pg=document.getElementById("progress"); if(pg) pg.hidden=true; }
   mount.innerHTML=`
     <div class="center"><div class="card">
       <h1 class="disp">${preRoom?"Join the quiz":"Run a live session"}</h1>
@@ -866,7 +884,28 @@ function renderHost(){
   syncHostBar(s);
   mount.innerHTML=projectorHTML(s);
   if(s.phase==="lobby")drawQR(s.joinUrl);
+  updateProgress();
   wireResults();
+}
+function updateProgress(){
+  const el=document.getElementById("progress"); if(!el) return;
+  if(role!=="host"){ el.hidden=true; return; }
+  const hasParent=!!(PLAN&&PLAN.course);
+  if(PLAN){
+    const course=hasParent?PLAN.course:PLAN.title;
+    const parts=[`<span class="pg-c">Course</span> <b>${esc(course)}</b>`];
+    if(hasParent) parts.push(`<span class="pg-c">Session</span> <b>${esc(PLAN.title)}</b>`);
+    const qt=PLAN.items.length, qi=PLAN.idx, qtitle=(PLAN.items[qi]&&PLAN.items[qi].title)||"";
+    parts.push(`<span class="pg-c">Quiz</span> <b>${qi+1} / ${qt}</b>${qtitle?` · ${esc(qtitle)}`:""}`);
+    if(typeof H!=="undefined"&&H&&H.phase==="question"&&QUIZ&&QUIZ.questions) parts.push(`<span class="pg-c">Question</span> <b>${H.qi+1} / ${QUIZ.questions.length}</b>`);
+    const dots=PLAN.items.map((it,i)=>`<i class="pg-dot ${i<qi?"done":(i===qi?"now":"")}"></i>`).join("");
+    el.innerHTML=`<div class="pg-line">${parts.join('<span class="pg-sep">›</span>')}</div><div class="pg-dots">${dots}</div>`;
+    el.hidden=false;
+  } else if(QUIZ&&QUIZ.title){
+    const qpart=(typeof H!=="undefined"&&H&&H.phase==="question"&&QUIZ.questions)?` <span class="pg-sep">›</span> <span class="pg-c">Question</span> <b>${H.qi+1} / ${QUIZ.questions.length}</b>`:"";
+    el.innerHTML=`<div class="pg-line"><span class="pg-c">Quiz</span> <b>${esc(QUIZ.title)}</b>${qpart} <span class="pg-sep">·</span> <span class="pg-hint">standalone quiz — to run several in a row, start the room from a <b>Course / Session</b></span></div>`;
+    el.hidden=false;
+  } else { el.hidden=true; }
 }
 function syncHostBar(s){
   document.getElementById("h-start").disabled=s.phase!=="lobby";
@@ -978,9 +1017,13 @@ function resultsPanel(kind){
   const courseTitle=hasParent?PLAN.course:sessTitle;
   const qtot=PLAN?PLAN.items.length:1, qidx=PLAN?PLAN.idx:0;
   const crumb=[];
-  crumb.push(`<span>Course: <b>${esc(courseTitle)}</b></span>`);
-  if(hasParent) crumb.push(`<span>Session: <b>${esc(sessTitle)}</b></span>`);
-  crumb.push(`<span>Quiz <b>${qidx+1}</b> of ${qtot}${kind==="final"?" \u2713 done":""}</span>`);
+  if(PLAN){
+    crumb.push(`<span>Course: <b>${esc(courseTitle)}</b></span>`);
+    if(hasParent) crumb.push(`<span>Session: <b>${esc(sessTitle)}</b></span>`);
+    crumb.push(`<span>Quiz <b>${qidx+1}</b> of ${qtot}${kind==="final"?" \u2713 done":""}</span>`);
+  } else {
+    crumb.push(`<span>Quiz: <b>${esc(sessTitle)}</b>${kind==="final"?" \u2713 done":""}</span>`);
+  }
   if(hostClassName) crumb.push(`<span>Cohort: <b>${esc(hostClassName)}</b></span>`);
   if(hasParent&&COURSE_META.done) crumb.push(`<span><b>${COURSE_META.done+1}</b> sessions in course total</span>`);
   const tabLbl={quiz:"This Quiz",session:"This Session",course:"Whole Course"};
@@ -995,11 +1038,38 @@ function resultsPanel(kind){
   return `<div class="results"><div class="rtop"><h2 class="disp">${heading}</h2><div class="rcrumb">${crumb.join("")}</div></div>`
     +`<div class="rtabs">${tabs}</div>${picker}<div class="hbars">${loading||hbarsHTML(rows)}</div>`
     +(kind==="interlude"?`<div class="mono rnext">Host: press \u201cNext quiz \u2192\u201d when ready${PLAN&&PLAN.items[PLAN.idx+1]?` \u00b7 Next: <b>${esc(PLAN.items[PLAN.idx+1].title)}</b>`:""}</div>`:"")
+    +(kind==="final"?addQuizControl():"")
     +`</div>`;
 }
 function wireResults(){
   document.querySelectorAll(".rtab").forEach(b=>b.onclick=()=>{ RV.level=b.dataset.lvl; if(RV.level==="course"&&PLAN&&PLAN.course) loadCourseOthers(); renderHost(); });
   document.querySelectorAll(".qp").forEach(b=>b.onclick=()=>{ RV.qi=+b.dataset.qi; renderHost(); });
+  const ab=document.getElementById("addQuizBtn"), asel=document.getElementById("addQuizSel");
+  if(ab&&asel) ab.onclick=()=>{ const path=asel.value; const opt=asel.options[asel.selectedIndex]; if(path) addQuizLive(path, opt?opt.textContent:path); };
+}
+function addQuizControl(){
+  const man=(typeof MANIFEST!=="undefined"&&MANIFEST)?(MANIFEST.assets||MANIFEST.quizzes||[]):[];
+  const qs=man.filter(a=>(a.type||"quiz")==="quiz");
+  if(!qs.length) return "";
+  const byTopic={},order=[];
+  qs.forEach(q=>{ const t=q.topic||"Quizzes"; if(!byTopic[t]){byTopic[t]=[];order.push(t);} byTopic[t].push(q); });
+  const opts=order.map(t=>`<optgroup label="${esc(t)}">`+byTopic[t].map(q=>`<option value="${esc(q.path)}">${esc(q.title)}</option>`).join("")+`</optgroup>`).join("");
+  return `<div class="addquiz"><div class="aqlabel">Go off-plan \u2014 add another quiz to this session</div><div class="aqrow"><select id="addQuizSel">${opts}</select><button class="btn2 aqbtn" id="addQuizBtn">+ Add &amp; run \u2192</button></div></div>`;
+}
+async function addQuizLive(path, title){
+  clearInterval(H.timer);
+  if(!PLAN){
+    // turn the standalone quiz into a live session; its total is already banked as quizTotals[0] at final
+    H.players.forEach(p=>{ if(!p.quizTotals||!p.quizTotals.length) p.quizTotals=[p.score||0]; });
+    PLAN={ id:"live-"+Date.now().toString(36), title:(QUIZ&&QUIZ.title)||"Live session", course:null,
+      items:[{path:(SOLO&&SOLO.path)||"", title:(QUIZ&&QUIZ.title)||"Quiz 1", weight:1}], idx:0 };
+    SOLO=null; SESSION=makeSession(PLAN.title);
+  }
+  PLAN.items.push({path, title:title||path, weight:1});
+  PLAN.idx=PLAN.items.length-1;
+  try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(path,"quiz.sample.json"))); }catch(e){ QUIZ={title:title||"Quiz",questions:[]}; }
+  H.qi=-1; H.answers=new Map(); H.counts=[0,0,0,0];
+  hostNext();
 }
 function revealWhy(s){
   const opts=(s.question&&s.question.options)||[], rats=s.rats||[], c=s.correct;

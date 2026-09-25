@@ -215,6 +215,12 @@ html[data-cr] .btn.primary{background:#0284c7;border-color:#0284c7}
 .crkanote{padding:8px 10px;font-size:12px;line-height:1.4}
 .crkashut{display:flex;flex-wrap:wrap;gap:6px} .crkashut .crka{flex:0 1 auto;max-width:100%} .crkashut .crkah{padding:5px 10px;flex-wrap:nowrap} .crkashut .crkan{display:none} .crkashut .crkas2{margin-left:10px}
 
+/* v0.14 evidence items */
+.wayb{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px;line-height:1.5}
+details.evd{margin:14px 0;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--panel)}
+details.evd summary{cursor:pointer}
+table.evt td{vertical-align:top}
+table.evt .cid{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint)}
 /* v0.13 server mode */
 .srvbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:8px 0 2px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:13px}
 .srvbar select,.srvbar input{font:inherit;font-size:13px;max-width:100%;min-width:0} .srvwho{min-width:0;overflow-wrap:anywhere}
@@ -227,7 +233,7 @@ html[data-cr] .btn.primary{background:#0284c7;border-color:#0284c7}
 </style></head><body>
 <header>
  <div class="hrow1"><div><h1>Digital Twin Viewer</h1><div class="dim">The digital twin of the DMBOK Data Lifecycle: every Data Asset (a data product, table or feed) and the golden records inside it, moving through the Global Data Asset Protocol and the Knowledge Area FTSs.</div></div>
- <div class="ver">Twin viewer v0.13<br>Built 24 Sep 2026, 12:20 SAST<br>Holds no data. Reads models/ and twin/ from GitHub, disk or the twin server.</div></div>
+ <div class="ver">Twin viewer v0.14<br>Built 25 Sep 2026, 15:45 SAST<br>Holds no data. Reads models/ and twin/ from GitHub, disk or the twin server.</div></div>
  <div class="bar"><button class="btn primary" id="btnGh">Load from GitHub</button><button class="btn" id="btnGhSet">GitHub settings</button><label class="btn" for="files">Load files</label><input type="file" id="files" multiple accept=".json" hidden>
  <select id="org" aria-label="organisation" hidden></select><select id="cls" aria-label="asset class"><option value="">every asset class</option></select><span id="status" class="status"></span></div>
  <div class="tabs" role="tablist"><button class="tab" data-t="heat" aria-selected="true">Heat map</button><button class="tab" data-t="replay" aria-selected="false">Replay</button><button class="tab" data-t="asset" aria-selected="false">One asset</button><button class="tab" data-t="dash" aria-selected="false">Dashboard (role workspace)</button><button class="tab" data-t="issues" aria-selected="false">Issues</button><button class="tab" data-t="influence" aria-selected="false">Influence</button></div>
@@ -606,7 +612,7 @@ function ftsSummarySvg(M, availW, opts){
       const list=(await r.json()).filter(f=>f.type==="file"&&/\.fts\.json$/i.test(f.name));
       const models=[]; for(const f of list){ const rr=await fetch(f.url,{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(rr.ok){ try{ const m=JSON.parse(await rr.text()); if(m.meta&&m.regions&&m.subStates) models.push(m); }catch(x){} } }
       status("reading the twin export from "+tdir+" ...");
-      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","events.json","records.json","issues.json","instruments.json"]){ const rr=await fetch(api(tdir+"/"+n),{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(!rr.ok){ if(n==="records.json"||n==="issues.json"||n==="instruments.json") continue; throw new Error(tdir+"/"+n+": "+explain(rr.status)); } tw[n]=JSON.parse(await rr.text()); }
+      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","events.json","records.json","issues.json","instruments.json","evidence.json"]){ const rr=await fetch(api(tdir+"/"+n),{headers:Object.assign({},H,{"Accept":"application/vnd.github.raw+json"})}); if(!rr.ok){ if(n==="records.json"||n==="issues.json"||n==="instruments.json"||n==="evidence.json") continue; throw new Error(tdir+"/"+n+": "+explain(rr.status)); } tw[n]=JSON.parse(await rr.text()); }
       ingest(models,tw,"GitHub "+c.owner+"/"+c.repo+" ("+c.branch+")");
     }catch(ex){ status("Could not load from GitHub. "+ex.message,true); }
   }
@@ -642,6 +648,9 @@ function ftsSummarySvg(M, availW, opts){
     // v0.10 (Howard, 24 Sep 2026): governing instrument versions, one instance per version of a policy or procedure
     D.inst=((tw["instruments.json"]||{}).instruments||[]); D.instById={}; D.instByScope={};
     D.inst.forEach(i=>{ D.instById[i.id]=i; (D.instByScope[i.scope]=D.instByScope[i.scope]||[]).push(i); });
+    // v0.14 (Howard, 25 Sep 2026, State Contracts register card 6): one evidence item per evidence record of each fired transition
+    D.evid=((tw["evidence.json"]||{}).evidence||[]); D.evidOf={};
+    D.evid.forEach(x=>{ [x.instanceId,x.parentId].forEach(k=>{ if(k) (D.evidOf[k]=D.evidOf[k]||[]).push(x); }); });
     D.elements={}; ((tw["elements.json"]||{}).elements||[]).forEach(x=>D.elements[x.id]=x);
     D.events=(tw["events.json"].events||[]).slice().sort((a,b)=>tms(a.at)-tms(b.at)||(a.seq-b.seq));
     D.fleet=tw["fleet.json"]||null;
@@ -797,11 +806,26 @@ fillAssets();
   }
   function openDrawer(html){ const d=$("#drawer"); d.innerHTML='<button class="btn dclose" aria-label="close">Close</button>'+html; d.hidden=false; d.querySelector(".dclose").onclick=()=>{ d.hidden=true; }; }
   function stateDrawer(a,mid,rid,sid,evs){
-    const s=D.st[sid]||{}; const m=D.models[mid]; const into=evs.filter(x=>x.model===mid&&x.region===rid&&x.fired&&x.stateAfter===sid), outof=evs.filter(x=>x.model===mid&&x.region===rid&&x.fired&&x.from===sid&&x.stateAfter!==sid);
+    const m=D.models[mid]; const s=(m.subStates||[]).find(x=>x.id===sid)||D.st[sid]||{}; const sName=id=>(((m.subStates||[]).find(x=>x.id===id))||D.st[id]||{}).name||id; const into=evs.filter(x=>x.model===mid&&x.region===rid&&x.fired&&x.stateAfter===sid), outof=evs.filter(x=>x.model===mid&&x.region===rid&&x.fired&&x.from===sid&&x.stateAfter!==sid);
     const cur=stateOf(a,mid,rid,null)===sid; const trs=(m.transitions||[]).filter(t=>t.source===sid||t.target===sid);
     openDrawer('<h3>'+e(s.name||sid)+'</h3><div class="dim mono">'+e(sid)+' · '+e(kaName(mid))+' · '+e(regName(mid,rid))+'</div><p>'+e(s.definition||"")+'</p>'+(s.invariant?'<div class="dim">Holds while in this state: '+e(s.invariant)+'</div>':'')+
       '<h4>This asset</h4><div>'+(cur?'<b>It is in this state now.</b> ':'')+(into.length?'Entered '+into.map(x=>fmtT(x.at)+' by '+x.transition).join(", ")+'. ':'')+(outof.length?'Left '+outof.map(x=>fmtT(x.at)+' by '+x.transition).join(", ")+'.':'')+(!cur&&!into.length&&!outof.length?'Never in this state.':'')+'</div>'+
-      '<h4>Transitions in and out</h4><ul class="alist">'+trs.map(t=>'<li><span class="mono">'+e(t.id)+'</span> '+e(t.name)+': '+e(sName(t.source))+' → '+e(sName(t.target))+'</li>').join("")+'</ul>');
+      // v0.14 (State Contracts register card 1, 25 Sep 2026): the same ways-out blocks as the FTS viewer's state card, with this asset's evidence
+      '<h4>Ways out</h4>'+(trs.filter(t=>t.source===sid).map(t=>wayBlock(a,mid,t)).join("")||'<div class="dim">None: a terminal state.</div>')+
+      '<h4>Ways in</h4><ul class="alist">'+trs.filter(t=>t.target===sid).map(t=>'<li><span class="mono">'+e(t.id)+'</span> '+e(t.name)+' from '+e(sName(t.source))+'</li>').join("")+'</ul>');
+  }
+  const trsOf=x=>Array.isArray(x.transitions)?x.transitions:String(x.appliesTo||x.relatesTo||"").split(/[,;\s]+/).filter(v=>/^TR-/.test(v));
+  function wayBlock(a,mid,t){
+    const m=D.models[mid]; const sName=id=>(((m.subStates||[]).find(x=>x.id===id))||D.st[id]||{}).name||id; const acts=(m.activities||[]).filter(x=>(x.relatedTransitions||[]).includes(t.id)); const dr=(m.decisionRights||[]).find(x=>x.id===t.decisionRight);
+    const pcs=(m.controls||[]).filter(c=>c.controlType==="Policy control"&&trsOf(c).includes(t.id)); const ev=(m.evidence||[]).filter(x=>trsOf(x).includes(t.id));
+    const mine=((D.evidOf||{})[a.id]||[]).filter(x=>x.model===mid&&x.transition===t.id&&tms(x.at)<=V.t);
+    const last=mine.length?mine.reduce((p,q)=>tms(q.at)>tms(p.at)?q:p):null;
+    return '<div class="wayb"><b>'+e(t.name)+'</b> → '+e(sName(t.target))+' <span class="dim mono">'+e(t.id)+'</span>'+
+      '<div>Activity: '+(acts.length?acts.map(x=>e(x.name)+': '+e(t.name)).join("; "):'<span class="dim">none (automatic)</span>')+'</div>'+
+      '<div>Decision right: '+(dr?e(dr.holderName||dr.holder)+' <span class="dim mono">'+e(dr.id)+'</span>':'<span class="dim">none</span>')+'</div>'+
+      '<div>Policy controls: '+(pcs.length?pcs.map(c=>'<span class="mono">'+e(c.id)+'</span> '+e(c.name)+(c.procedure?' <span class="dim">('+e(c.procedure)+')</span>':'')).join("; "):(t.policyControlGap?'<span class="redt">none fits: '+e(t.policyControlGap)+'</span>':'<span class="dim">none named</span>'))+'</div>'+
+      '<div>Evidence: '+(ev.length?ev.map(x=>e(x.name)+' <span class="dim mono">'+e(x.id)+'</span>').join("; "):'<span class="dim">none</span>')+'</div>'+
+      (last?'<div class="dim">This asset: recorded '+fmtT(last.at)+((last.controls||[]).some(c=>c.artefactId)?', artefacts '+(last.controls||[]).filter(c=>c.artefactId).map(c=>e(c.artefactId)).join(", "):'')+'</div>':'')+'</div>';
   }
   function transDrawer(a,mid,tid,evs){
     const t=trOf(mid,tid); const m=D.models[mid]; const mine=evs.filter(x=>x.model===mid&&x.transition===tid);
@@ -834,6 +858,12 @@ fillAssets();
     // the state vector strip
     h.push('<div class="strip">'+D.order.map(mid=>'<div class="smod'+(applies(a,mid)?'':' na')+'"><div class="smn">'+e(kaShort(mid))+'</div>'+D.models[mid].regions.map(r=>{ const s=stateOf(a,mid,r.id,null); const moved=evs.some(x=>x.model===mid&&x.region===r.id&&x.fired); const bad=evs.some(x=>x.model===mid&&x.region===r.id&&String(x.result).startsWith("blocked")); if(!regApplies(a,mid,r.id)) return '<span class="schip na" title="'+e(r.name+": not applicable to a "+a.rmdKind+" data asset")+'"><span class="mono">'+e(r.code||"")+'</span> not applicable</span>'; return '<a href="#reg-'+mid_(mid+r.id)+'" class="schip'+(moved?' moved':'')+(bad?' bad':'')+(D.shared.has(r.id)?' sh':'')+'" data-m="'+e(mid)+'" title="'+e(r.name+": "+((D.st[s]||{}).name||s||"")+(D.shared.has(r.id)?" (shared element)":""))+'"><span class="mono">'+e(r.code||"")+'</span> '+e((D.st[s]||{}).name||"")+'</a>'; }).join("")+'</div>').join("")+'</div>');
     if(refused.length) h.push('<div class="refusals"><h3>'+refused.length+' refusal'+(refused.length===1?'':'s')+' for this asset</h3>'+refused.map((ev,i)=>explainHtml(a,ev).replace('<div class="why">','<div class="why"><button class="btn sm showd" data-i="'+i+'">Show on the diagram</button>')).join("")+'</div>');
+    const evd=(D.evidOf[a.id]||[]).filter(x=>tms(x.at)<=V.t).slice().sort((x,y)=>tms(y.at)-tms(x.at));
+    if(D.evid.length) h.push('<details class="evd"'+(V.openEvid?' open':'')+'><summary><b>'+evd.length+' evidence item'+(evd.length===1?'':'s')+'</b> <span class="dim">one per evidence record of each transition that fired on this asset or its records; policy controls with '+e(a.org||'the organisation')+'\'s evidence artefact</span></summary>'+
+      (evd.length?'<div class="tscroll"><table class="tl evt"><thead><tr><th>At</th><th>Transition</th><th>Evidence</th><th>Policy controls and '+e(a.org||'organisation')+' evidence artefacts</th><th>Asked by</th></tr></thead><tbody>'+
+        evd.slice(0,400).map(x=>'<tr><td>'+fmtT(x.at)+'</td><td><span class="cid">'+e(x.transition)+'</span> '+e(x.transitionName||'')+(x.subject==='record'?' <span class="pill">record '+e(x.instanceId)+'</span>':'')+'</td><td><span class="cid">'+e(x.evidenceId)+'</span> '+e(x.evidenceName||'')+(x.generated?' <i class="dim">(generated)</i>':'')+'</td><td>'+
+          ((x.controls||[]).length?(x.controls||[]).map(c=>'<div><span class="cid">'+e(c.controlId||c.control)+'</span> '+e(c.name||'')+(c.artefactId?' · <b>'+e(c.artefactId)+'</b> '+e(c.artefact||''):'')+'</div>').join(''):'<span class="dim">none bound</span>')+'</td><td>'+e(((x.requester||{}).roleName)||((x.requester||{}).role)||x.actor||'')+'</td></tr>').join('')+
+        '</tbody></table></div>'+(evd.length>400?'<p class="dim">Showing the latest 400.</p>':''):'<p class="dim">None yet at this point in time.</p>')+'</details>');
     const recs=D.recsOf[a.id]||[];
     if(recs.length){ const mid="KA-RMD", rid="REG-RMD-GLD"; const Rg=D.reg[mid+"|"+rid]; const cnt={}; recs.forEach(r=>{ const s=recState(r,mid,rid,null); cnt[s]=(cnt[s]||0)+1; });
       h.push('<div class="recs"><h3>'+recs.length+' golden records inside this asset</h3><p class="dim">Each record is its own instance with its own Golden Record state; the asset\'s Golden Record region is their roll-up (Record Conflict when 5% or more are in conflict, Reliable when 90% or more are reliable, Matched when 90% or more are matched or reliable). A conflict roll-up raises the assurance and suspension triggers on the asset through the Global protocol. Now: <b>'+e(sName(stateOf(a,mid,rid,null)))+'</b>.</p><div class="hcells">'+(Rg?Rg.states:[]).map(s=>'<span class="hcell'+(cnt[s.id]?'':' zero')+'" style="--f:'+((cnt[s.id]||0)/recs.length).toFixed(3)+';cursor:default"><span class="hn">'+e(s.name)+'</span><span class="hv">'+(cnt[s.id]||"")+'</span></span>').join("")+'</div><div class="tscroll" style="max-height:260px;overflow:auto;margin-top:8px"><table class="tl"><thead><tr><th>Record</th><th>Name</th><th>State</th><th>Events</th><th>Last</th></tr></thead><tbody>'+recs.map(r=>{ const ev=D.events.filter(x=>x.instanceId===r.id); const last=ev[ev.length-1]; return '<tr class="'+(ev.some(x=>String(x.result).startsWith("blocked"))?'bad':'')+'"><td><a href="#" class="mono ropen" data-r="'+e(r.id)+'">'+e(r.id.split("-").pop())+'</a></td><td>'+e(r.name)+'</td><td>'+e(sName(recState(r,mid,rid,null)))+'</td><td class="n">'+ev.length+'</td><td>'+(last?e(fmtT(last.at)+" "+(last.transition||"")+" "+(last.actor||"").replace("synthetic:","")):"")+'</td></tr>'; }).join("")+'</tbody></table></div></div>'); }
@@ -844,6 +874,7 @@ fillAssets();
     pane.innerHTML=h.join("");
     $$("#pane-asset .ropen").forEach(x=>x.onclick=ev=>{ ev.preventDefault(); recordDrawer(x.dataset.r); });
     if(V.openRec){ const r=V.openRec; V.openRec=null; setTimeout(()=>recordDrawer(r),50); }
+    const ed=document.querySelector("#pane-asset details.evd"); if(ed) ed.addEventListener("toggle",()=>{ V.openEvid=ed.open; });
     $$("#pane-asset .showd").forEach(b=>b.onclick=()=>{ const ev=refused[+b.dataset.i]; showOnDiagram(ev.model,ev.region,ev.transition); });
     $$("#pane-asset details.amod").forEach(d=>{ const fill=()=>{ if(d.open){ V.openModels.add(d.dataset.m); drawModel(d.querySelector(".amodbody"),a,d.dataset.m,evs); } else V.openModels.delete(d.dataset.m); }; d.addEventListener("toggle",fill); if(d.open) fill(); });
     $$("#pane-asset .schip").forEach(c=>c.onclick=()=>{ const d=document.querySelector('details.amod[data-m="'+c.dataset.m+'"]'); if(d&&!d.open) d.open=true; });
@@ -1502,7 +1533,7 @@ fillAssets();
       SV.busy=true; const sp=SV.spaces.find(x=>x.id===sid)||{name:sid};
       if(!SV.models){ status("reading the models from the twin server ..."); const f=(await sj("/api/models")).files; SV.models=[]; for(const n of f){ const r=await fetch("/models/"+encodeURIComponent(n),{credentials:"same-origin"}); if(r.ok){ const m=await r.json(); if(m.meta&&m.regions&&m.subStates) SV.models.push(m); } } }
       status("reading "+(sp.name||sid)+" from the twin server ...");
-      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","records.json","issues.json","instruments.json"]){ try{ tw[n]=await sj("/api/"+encodeURIComponent(sid)+"/twin/"+n); }catch(x){} }
+      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","records.json","issues.json","instruments.json","evidence.json"]){ try{ tw[n]=await sj("/api/"+encodeURIComponent(sid)+"/twin/"+n); }catch(x){} }
       tw["events.json"]=(keep&&SV.space===sid&&D.events&&SV.eventsRaw)?{events:SV.eventsRaw}:await sj("/api/"+encodeURIComponent(sid)+"/twin/events.json");
       SV.eventsRaw=tw["events.json"].events; SV.seq=SV.eventsRaw.reduce((m,x)=>Math.max(m,x.seq||0),0); SV.space=sid;
       const atEnd=DV.i==null||(V.asset&&D.byId&&D.byId[V.asset]&&DV.i>=asEvents(D.byId[V.asset]).length);

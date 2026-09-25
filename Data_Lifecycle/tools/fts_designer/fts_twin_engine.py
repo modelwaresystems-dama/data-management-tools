@@ -25,6 +25,11 @@ GLOBAL_ID = "GDA-GLOBAL-PROTOCOL"
 # change that settles the scenario order. The environment variable FTS_ENFORCE_COUPLINGS=1 turns it on for a single run.
 # On from 24 Sep 2026 (Open Decisions D2 option a): the scenarios are reordered to respect the couplings; FTS_ENFORCE_COUPLINGS=0 turns it off.
 ENFORCE_COUPLINGS = os.environ.get("FTS_ENFORCE_COUPLINGS", "1") == "1"
+# State Contracts register card 9 option a (Howard, 25 Sep 2026): a step needs the procedure that implements each policy control bound
+# to its transition to be in force in the asset's organisation. Checked only where the twin knows the organisation's controls
+# (scope_controls, set by the twin from its control sets); the scenario runs and rooms made from a scenario are not checked.
+# FTS_ENFORCE_POLICY_CONTROLS=0 turns it off for a run.
+ENFORCE_POLICY_CONTROLS = os.environ.get("FTS_ENFORCE_POLICY_CONTROLS", "1") == "1"
 SHARED_SCOPE = re.compile(r"governed scope|per platform|per database|per warehouse|per master data domain|per data service", re.I)  # 22 Sep 2026: a reference data set is held by its asset, not shared per scope
 DEFAULT_FACTS = {"hold_active": False, "disposition_control_verified": True, "supersession_use_authorized": False, "use_requires_assurance": True,
                  "material_change": False, "atomic_withdrawal": False, "recipient_acceptance_evidenced": True, "enhanced_monitoring": True,
@@ -99,9 +104,19 @@ class Federation:
             for t in m.get("transitions", []):
                 if t.get("event"): self.by_event[mid].setdefault(t["event"], []).append(t["id"])
         self.dr = {mid: {d["id"]: d for d in m.get("decisionRights", [])} for mid, m in self.models.items()}
-        self.evidence_by_tr = {mid: {} for mid in self.models}
+        self.evidence_by_tr = {mid: {} for mid in self.models}; self.evidence = {}
         for mid, m in self.models.items():
-            for e in m.get("evidence", []): self.evidence_by_tr[mid].setdefault(e.get("relatesTo"), []).append(e["id"])
+            for e in m.get("evidence", []):
+                self.evidence[(mid, e["id"])] = e
+                for tid in (e.get("transitions") or [e.get("relatesTo")]): self.evidence_by_tr[mid].setdefault(tid, []).append(e["id"])
+        # State Contracts register cards 7 and 9 (25 Sep 2026): the policy controls bound to each transition
+        self.pcs_by_tr = {mid: {} for mid in self.models}; self.pcs = {}
+        for mid, m in self.models.items():
+            for c in m.get("controls", []):
+                if c.get("controlType") != "Policy control": continue
+                self.pcs[(mid, c["id"])] = c
+                for tid in c.get("transitions") or []: self.pcs_by_tr[mid].setdefault(tid, []).append(c)
+        self.scope_controls = {}   # {scope: {"PD-DOC C08": {"inForce", "procedures", "controlId", "name", "artefactId", "artefact"}}}, set by the twin
 
     @classmethod
     def load(cls, models_dir):
@@ -172,7 +187,23 @@ class Federation:
         guards = list(self.guards_by_tr[model_id].get(transition_id, []))
         if model_id == GLOBAL_ID: guards += [g for g in self.fed.get(transition_id, []) if g.get("fromModel") in self.applicable(asset)]
         if ENFORCE_COUPLINGS: guards += [g for g in self.coupled.get((model_id, transition_id), []) if g.get("fromModel") in self.applicable(asset) or g.get("fromModel") in (model_id, GLOBAL_ID)]
+        pcs = self.pcs_by_tr.get(model_id, {}).get(transition_id, [])
+        sc = self.scope_controls.get(asset.get("scope")) if ENFORCE_POLICY_CONTROLS else None
+        exempt = asset.get("controlExempt") or rid in INSTRUMENT_REGIONS.get(model_id, ())
+        if sc is not None and pcs and not exempt:
+            for c in pcs:
+                info = sc.get(f"{c.get('policyDomain')} {c.get('controlNumber')}") or {}
+                procs = info.get("procedures") or []
+                guards.append({"id": f"GRD-{c['id']}-{transition_id[3:]}", "requirement": "Required", "fromModel": model_id, "policyControl": c["id"],
+                               "value": bool(info.get("inForce")), "procedures": procs, "controlId": info.get("controlId"),
+                               "predicate": f"{c['id']} {info.get('name') or c.get('name')}: " + (("the implementing procedure " + ", ".join(procs) + (" is in force" if info.get("inForce") else " is not in force")) if procs else "no procedure of this organisation implements it")})
         for g in guards:
+            if "value" in g and g.get("policyControl"):
+                v = g["value"]
+                verdicts.append({"guard": g["id"], "verdict": v, "source": "policy control", "requirement": "Required", "contributedBy": model_id, "predicate": g["predicate"],
+                                 "policyControl": g["policyControl"], "procedures": g["procedures"], "controlId": g.get("controlId")})
+                if not v: ok = False
+                continue
             if g.get("expression"):
                 v = eval_expression(g["expression"], env); src = "expression"
                 if v is None: v, src = True, "default (expression not evaluable)"
@@ -185,7 +216,7 @@ class Federation:
         shared_region = rid in self.shared.get(model_id, ())
         return {"model": model_id, "transition": transition_id, "name": t.get("name"), "region": rid, "sharedRegion": shared_region,
                 "elementId": asset["refs"].get(rid) if shared_region else None, "sourceActive": src_active, "guards": verdicts, "eligible": ok,
-                "decisionRight": dr, "authorised": authorised, "from": t["source"], "to": t["target"], "vectorBefore": vec, "evidence": self.evidence_by_tr[model_id].get(transition_id, []),
+                "decisionRight": dr, "authorised": authorised, "from": t["source"], "to": t["target"], "vectorBefore": vec, "evidence": self.evidence_by_tr[model_id].get(transition_id, []), "policyControls": [c["id"] for c in pcs],
                 "result": "fired" if authorised else ("blocked: source not active" if not src_active else "blocked: guard false" if not ok else "blocked: not authorised"), "fired": authorised}
 
     def apply(self, asset, verdict, elements):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-twin_server.py v0.1  -  the Digital Twin server: several people on one twin, and shared simulation rooms.
+twin_server.py v0.2  -  the Digital Twin server: several people on one twin, and shared simulation rooms.
 
 Howard's decisions (Open Decisions register, 24 Sep 2026, section B):
   B1 a  people act on the live twin within the decision rights of their roles, and run what-ifs and scenarios in rooms that never
@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "fts_designer"))
 import fts_twin_engine                                      # noqa: E402
 from fts_twin import Twin, ISSUE_MODEL, now_iso             # noqa: E402
 
-VERSION = "0.1"
+VERSION = "0.2"
 SESSION_DAYS = 30
 INVITE_DAYS = 14
 log = logging.getLogger("twin_server")
@@ -160,7 +160,7 @@ class Server:
     def _import(self, twin, d):
         db = twin.store.db; db.execute("begin")
         n = 0
-        for f, key in (("instances.json", "assets"), ("elements.json", "elements"), ("records.json", "records"), ("issues.json", "issues"), ("instruments.json", "instruments")):
+        for f, key in (("instances.json", "assets"), ("elements.json", "elements"), ("records.json", "records"), ("issues.json", "issues"), ("instruments.json", "instruments"), ("evidence.json", "evidence"), ("controlsets.json", "controlSets")):
             p = os.path.join(d, f)
             if os.path.exists(p):
                 for doc in json.load(open(p, encoding="utf-8")).get(key, []):

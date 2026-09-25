@@ -200,6 +200,39 @@ COUPLING_ROLES = {'KAC-MM-01': {'emitters': [], 'kind': 'event', 'producer': 'KA
  'KAC-MM-04': {'dependents': [{'model': 'KA-MM', 'transition': 'TR-ARC-03'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'},
  'KAC-MM-05': {'dependents': [{'model': 'KA-MM', 'transition': 'TR-AST-03'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'}}
 
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-PRG-01': {'controls': [('PD-META', 'C01')], 'why': 'Defining the metadata strategy sets the scope that the Metadata Management policy approves.'},
+ 'TR-PRG-02': {'controls': [('PD-META', 'C01')], 'why': 'Approving the strategy and requirements is the policy approval act.'},
+ 'TR-PRG-03': {'controls': [('PD-META', 'C02'), ('PD-META', 'C15')],
+               'why': 'Operating needs staffed accountable roles and KPI reporting to the governance forum.'},
+ 'TR-PRG-04': {'controls': [('PD-META', 'C16')], 'why': 'Revision on a recorded trigger is the periodic and on-change policy review.'},
+ 'TR-PRG-05': {'controls': [('PD-META', 'C01'), ('PD-META', 'C16')], 'why': 'Approving the revised strategy closes the review with a policy approval.'},
+ 'TR-PRG-06': {'controls': [('PD-META', 'C01')], 'why': 'Retirement reverses the policy approval of the programme.'},
+ 'TR-ARC-01': {'controls': [('PD-META', 'C04')], 'why': 'The metamodel and store design define what business, technical and operational metadata is captured.'},
+ 'TR-ARC-02': {'controls': [('PD-META', 'C04')], 'why': 'Approving the metamodel and stores fixes the capture structure for catalogue metadata.'},
+ 'TR-ARC-03': {'controls': [('PD-META', 'C05'), ('PD-META', 'C13')],
+               'why': 'Activation puts automated integration (harvesting) and the metadata control process into operation.'},
+ 'TR-ARC-04': {'controls': [('PD-META', 'C04')], 'why': 'A metamodel or store change reopens the capture design.'},
+ 'TR-ARC-05': {'controls': [('PD-META', 'C04')], 'why': 'Approving the revised design re-fixes the capture structure.'},
+ 'TR-ARC-06': {'controls': [('PD-META', 'C04'), ('PD-META', 'C05')],
+               'why': 'Decommissioning ends harvesting and must keep captured catalogue metadata archived.'},
+ 'TR-AST-01': {'controls': [('PD-META', 'C04')], 'why': 'Scoping metadata requirements for an in-scope asset starts the capture duty for that data product.'},
+ 'TR-AST-02': {'controls': [('PD-META', 'C04'), ('PD-META', 'C05'), ('PD-META', 'C07')],
+               'why': 'Describing the asset captures and integrates its metadata and records its lineage.'},
+ 'TR-AST-03': {'controls': [('PD-META', 'C06')], 'why': 'Publication requires the description to be accepted as complete.'},
+ 'TR-AST-04': {'controls': [('PD-META', 'C08'), ('PD-META', 'C13')],
+               'why': 'A detected source, structure or process change makes lineage and metadata stale under the control process.'},
+ 'TR-AST-05': {'controls': [('PD-META', 'C05'), ('PD-META', 'C08')], 'why': 'Refresh re-integrates the description and re-verifies lineage after change.'},
+ 'TR-AST-06': {'controls': [('PD-META', 'C06')], 'why': 'Withdrawing publication reverses the acceptance gate that allowed publication.'},
+ 'TR-AST-07': {'controls': [('PD-META', 'C08'), ('PD-META', 'C13')],
+               'why': 'A change detected by the control process invalidates the unpublished description and its lineage.'},
+ 'TR-AST-08': {'controls': [('PD-META', 'C04')], 'why': 'The captured description is retained as catalogue metadata after the asset is destroyed.'},
+ 'TR-AST-09': {'controls': [('PD-META', 'C04')], 'why': 'The captured description is retained as catalogue metadata after the asset is destroyed.'},
+ 'TR-AST-10': {'controls': [('PD-META', 'C04')], 'why': 'The captured description is retained as catalogue metadata after the asset is destroyed.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-MM", "name": "Metadata Management FTS", "knowledgeArea": "Metadata Management", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Programme and the Architecture and Stores (scope level) and the Metadata of a Data Asset (one per asset) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
@@ -207,7 +240,7 @@ SPEC = {
              "note": "Three state regions, each its own FTS over one managed element of the Knowledge Area: the Metadata Programme, the Metadata Architecture and Stores, and the Metadata of a Data Asset. The KA never becomes a region of the Data Asset; the Metadata of a Data Asset reaches the Global protocol through contributions (registration, access release, custody transfer, disposition, assurance triggers), and metadata quality and security are delegated to the Data Quality and Data Security FTSs by coupling.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS,
              "assetFacts": {"MM_is_metadata_asset": {"default": False, "meaning": "the Data Asset is itself a Metadata Asset (a glossary, catalogue entry, model, lineage record, artefact or evidence record typed as a metadata asset), so Metadata Management owns its release request (Howard, 23 Sep 2026)"}}},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-MM-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "Process 5 carries no phase tag on the slide; (O) inferred by decision."},
         {"id": "SRC-MM-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating, quality and security delegation", "limitations": ""},

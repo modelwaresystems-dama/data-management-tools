@@ -244,6 +244,49 @@ COUPLING_ROLES = {'KAC-RMD-01': {'dependents': [{'model': 'KA-RMD', 'transition'
  'KAC-RMD-04': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-05'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
  'KAC-RMD-05': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-PRG-02'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'}}
 
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-PRG-01': {'controls': [], 'why': 'Gathering programme requirements is not governed by any Reference and Master Data policy control.'},
+ 'TR-PRG-02': {'controls': [('PD-MDM', 'C01'), ('PD-MDM', 'C02')],
+               'why': 'Approving governance policies and stewardship processes is policy approval and ownership assignment.'},
+ 'TR-PRG-03': {'controls': [('PD-MDM', 'C09')], 'why': 'Putting the sharing architecture into service enables publication of master data to consumers.'},
+ 'TR-PRG-04': {'controls': [('PD-MDM', 'C16')], 'why': 'A business or regulatory trigger opens the on-change review of the programme and its policies.'},
+ 'TR-PRG-05': {'controls': [('PD-MDM', 'C16'), ('PD-MDM', 'C01')], 'why': 'Approving revised policies closes the review and reapproves the policy.'},
+ 'TR-PRG-06': {'controls': [('PD-MDM', 'C16')], 'why': 'Retiring the programme is an outcome of the review.'},
+ 'TR-DOM-01': {'controls': [], 'why': 'Validating definitions against the glossary is metadata work with no Reference and Master Data control.'},
+ 'TR-DOM-02': {'controls': [('PD-MDM', 'C06')], 'why': 'Designating the system of record or reference is the system-of-record designation control.'},
+ 'TR-DOM-03': {'controls': [], 'why': 'Approving the domain data model and integration pattern is modelling work with no Reference and Master Data control.'},
+ 'TR-DOM-04': {'controls': [('PD-MDM', 'C02')], 'why': 'Assigning stewards for the domain is ownership assignment.'},
+ 'TR-DOM-05': {'controls': [('PD-MDM', 'C09')], 'why': "Implementing the sharing service publishes the domain's master data to consumers."},
+ 'TR-DOM-06': {'controls': [('PD-MDM', 'C09')], 'why': 'A change to the domain sharing service is governed by the publication control.'},
+ 'TR-DOM-07': {'controls': [('PD-MDM', 'C09')], 'why': 'Deploying the approved change to the sharing service changes publication to consumers.'},
+ 'TR-DOM-08': {'controls': [('PD-MDM', 'C09'), ('PD-MDM', 'C06')],
+               'why': 'Decommissioning the sharing service reverses publication and ends the system-of-record designation.'},
+ 'TR-REF-01': {'controls': [('PD-MDM', 'C10'), ('PD-MDM', 'C11')],
+               'why': "Validating a reference set's source, definitions and mappings is code-set governance and cross-referencing."},
+ 'TR-REF-02': {'controls': [('PD-MDM', 'C10')], 'why': 'Publishing a validated version is central versioned code-set governance.'},
+ 'TR-REF-03': {'controls': [('PD-MDM', 'C10'), ('PD-MDM', 'C12')], 'why': 'Validating a new version is a governed code-set change.'},
+ 'TR-REF-04': {'controls': [('PD-MDM', 'C10'), ('PD-MDM', 'C12')], 'why': 'Superseding the published version applies the governed code-set change.'},
+ 'TR-REF-05': {'controls': [('PD-MDM', 'C10'), ('PD-MDM', 'C12')], 'why': 'Withdrawing a set is a governed code-set change.'},
+ 'TR-REF-06': {'controls': [('PD-MDM', 'C10'), ('PD-MDM', 'C12')], 'why': 'Reinstating and revalidating a retired set is a governed code-set change.'},
+ 'TR-GLD-01': {'controls': [('PD-MDM', 'C05'), ('PD-MDM', 'C04'), ('PD-MDM', 'C07')],
+               'why': 'Matching and merging under survivorship applies the matching strategy and golden-record rules.'},
+ 'TR-GLD-02': {'controls': [('PD-MDM', 'C04'), ('PD-MDM', 'C09')],
+               'why': 'Confirming and publishing the reconciled golden record is consolidation and publication.'},
+ 'TR-GLD-03': {'controls': [('PD-MDM', 'C08')], 'why': 'A detected match or survivorship conflict enters the steward conflict workflow.'},
+ 'TR-GLD-04': {'controls': [('PD-MDM', 'C08')], 'why': 'A disputed match enters the steward conflict workflow.'},
+ 'TR-GLD-05': {'controls': [('PD-MDM', 'C08'), ('PD-MDM', 'C07')], 'why': 'Resolving the conflict and re-matching is a stewarded, audited merge decision.'},
+ 'TR-GLD-06': {'controls': [('PD-MDM', 'C07'), ('PD-MDM', 'C08')], 'why': 'Splitting a false merge is a stewarded unmerge decision.'},
+ 'TR-GLD-07': {'controls': [('PD-MDM', 'C05'), ('PD-MDM', 'C07')],
+               'why': 'Re-matching the split parts applies the matching strategy under audited merge decisions.'},
+ 'TR-GLD-08': {'controls': [('PD-MDM', 'C05'), ('PD-MDM', 'C04')], 'why': 'A source update re-applies matching and survivorship to the golden record.'},
+ 'TR-GLD-09': {'controls': [('PD-MDM', 'C07'), ('PD-MDM', 'C09')],
+               'why': 'Retiring or merging away a record is an audited merge decision that withdraws it from publication.'},
+ 'TR-GLD-10': {'controls': [('PD-MDM', 'C07'), ('PD-MDM', 'C08')], 'why': 'Retiring a conflicted duplicate is a stewarded merge decision.'},
+ 'TR-GLD-11': {'controls': [('PD-MDM', 'C07')], 'why': 'Reactivating a retired record reverses an audited retire or merge decision.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-RMD", "name": "Reference and Master Data FTS", "knowledgeArea": "Reference and Master Data", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Programme (scope level), a Master Data Domain (one per domain), a Reference Data Set (one per set) and a Golden Record (one per entity instance) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
@@ -252,7 +295,7 @@ SPEC = {
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS,
              "assetFacts": {"RMD_is_master": {"default": True, "meaning": "the asset is master data whose entities have golden records (a party, customer, product or supplier master)"},
                             "RMD_is_reference": {"default": False, "meaning": "the asset is a reference data set (a code set, catalogue or glossary) whose releases are versions"}}},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-RMD-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram gives no record-level lifecycle; the Golden Record states (candidate, matched, reliable, conflict, split, retired) are drafted from the match, merge and survivorship practice in the DMBOK chapter."},
         {"id": "SRC-RMD-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating, scenario extension", "limitations": ""},

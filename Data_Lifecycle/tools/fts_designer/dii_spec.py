@@ -240,13 +240,56 @@ COUPLING_ROLES = {'KAC-DII-01': {'dependents': [{'model': 'KA-DII', 'transition'
  'KAC-DII-06': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-05'}], 'kind': 'condition', 'producer': 'KA-DII', 'requirement': 'Required'},
  'KAC-DII-07': {'dependents': [{'model': 'KA-DSO', 'transition': 'TR-STO-06'}], 'kind': 'condition', 'producer': 'KA-DII', 'requirement': 'Required'}}
 
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-DIA-01': {'controls': [], 'why': 'Requirements analysis for the architecture precedes any interface or contract, and no PD-DINT control governs it.'},
+ 'TR-DIA-02': {'controls': [('PD-DINT', 'C07')], 'why': 'The interface standards designed here define the canonical formats for shared data.'},
+ 'TR-DIA-03': {'controls': [('PD-DINT', 'C07')], 'why': 'Approving the interface standards agrees the canonical formats for shared data.'},
+ 'TR-DIA-04': {'controls': [('PD-DINT', 'C07')], 'why': 'Rejecting the design reverses the agreement of the interface standards.'},
+ 'TR-DIA-05': {'controls': [('PD-DINT', 'C07')], 'why': 'Publishing the standards to developers puts the agreed canonical formats into use.'},
+ 'TR-DIA-06': {'controls': [('PD-DINT', 'C07')], 'why': 'Revising the architecture reopens the agreed interface standards and formats.'},
+ 'TR-DIA-07': {'controls': [('PD-DINT', 'C07')], 'why': 'Approving the revised architecture agrees the revised interface standards.'},
+ 'TR-DIA-08': {'controls': [('PD-DINT', 'C05')], 'why': 'Retirement depends on the interface inventory showing no exchange or service remains.'},
+ 'TR-EXC-01': {'controls': [], 'why': 'Recording a consumer need precedes any contract or movement, and no PD-DINT control governs it.'},
+ 'TR-EXC-02': {'controls': [], 'why': 'Source profiling is a data quality activity, and no PD-DINT control governs it.'},
+ 'TR-EXC-03': {'controls': [('PD-DINT', 'C10')], 'why': 'Mapping documents the lineage of the governed movement.'},
+ 'TR-EXC-04': {'controls': [('PD-DINT', 'C07'), ('PD-DINT', 'C11')],
+               'why': 'Orchestration is built to the agreed formats and sets the thresholds used to monitor movements.'},
+ 'TR-EXC-05': {'controls': [('PD-DINT', 'C04'), ('PD-DINT', 'C05')],
+               'why': 'Agreeing the exchange specification and access agreement is the data contract, recorded in the interface inventory.'},
+ 'TR-EXC-06': {'controls': [('PD-DINT', 'C04')], 'why': 'Rejecting or withdrawing the agreement reverses the data contract.'},
+ 'TR-EXC-07': {'controls': [('PD-DINT', 'C11'), ('PD-DINT', 'C09')],
+               'why': 'Operation starts movement monitoring and validates payloads against the contract schema.'},
+ 'TR-EXC-08': {'controls': [('PD-DINT', 'C11'), ('PD-DINT', 'C12')], 'why': 'A threshold breach found by monitoring is alerted for remediation.'},
+ 'TR-EXC-09': {'controls': [('PD-DINT', 'C12')], 'why': 'Clearing the alert once remediated closes the break.'},
+ 'TR-EXC-10': {'controls': [('PD-DINT', 'C12')], 'why': 'An unresolved alert escalates to stopping the exchange under the remediation control.'},
+ 'TR-EXC-11': {'controls': [('PD-DINT', 'C04')], 'why': 'The exchange stops because its data contract has lapsed or may no longer be relied on.'},
+ 'TR-EXC-12': {'controls': [('PD-DINT', 'C04'), ('PD-DINT', 'C11')], 'why': 'Resuming needs the contract in force and movement monitoring restarted.'},
+ 'TR-EXC-13': {'controls': [('PD-DINT', 'C05'), ('PD-DINT', 'C10')], 'why': 'Decommissioning updates the interface inventory and keeps the lineage records.'},
+ 'TR-EXC-14': {'controls': [('PD-DINT', 'C05'), ('PD-DINT', 'C10')], 'why': 'Decommissioning updates the interface inventory and keeps the lineage records.'},
+ 'TR-EXC-15': {'controls': [('PD-DINT', 'C06'), ('PD-DINT', 'C10')],
+               'why': 'A change to sources, targets or rules is a governed interface change that updates lineage.'},
+ 'TR-EXC-16': {'controls': [], 'why': 'Redefining requirements precedes any contract or movement, and no PD-DINT control governs it.'},
+ 'TR-DSV-01': {'controls': [('PD-DINT', 'C04')], 'why': 'A data service must be designed as a governed API.'},
+ 'TR-DSV-02': {'controls': [('PD-DINT', 'C04'), ('PD-DINT', 'C09')], 'why': 'The service is built and tested against its contract schema.'},
+ 'TR-DSV-03': {'controls': [('PD-DINT', 'C09')], 'why': 'Failing validation against the contract returns the service for rework.'},
+ 'TR-DSV-04': {'controls': [('PD-DINT', 'C05')], 'why': 'Publishing records the service in the interface inventory and catalogue.'},
+ 'TR-DSV-05': {'controls': [('PD-DINT', 'C06')], 'why': 'A change request opens a governed new version of the interface.'},
+ 'TR-DSV-06': {'controls': [('PD-DINT', 'C06')], 'why': 'Releasing the version is a governed interface change.'},
+ 'TR-DSV-07': {'controls': [('PD-DINT', 'C06')], 'why': 'Deprecation with a successor and deadline is a governed interface change.'},
+ 'TR-DSV-08': {'controls': [('PD-DINT', 'C06')], 'why': 'Reinstating reverses the deprecation under the same change control.'},
+ 'TR-DSV-09': {'controls': [('PD-DINT', 'C05')], 'why': 'Withdrawing the service from the catalogue reverses publication in the interface inventory.'},
+ 'TR-DSV-10': {'controls': [('PD-DINT', 'C04')], 'why': 'Redesigning a retired service is designing a governed API again.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DII", "name": "Data Integration and Interoperability FTS", "knowledgeArea": "Data Integration and Interoperability", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the DII Architecture (scope level), a Data Exchange of a Data Asset (one per flow, with the complex event thresholds and alerts as its monitoring states and the specification and access agreement as its Agreed state) and a Data Service (one per service) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Three state regions, each its own FTS over one managed element of the Knowledge Area: the DII Architecture, a Data Exchange of a Data Asset and a Data Service. The KA never becomes a region of the Data Asset; the exchange and the service reach the Global protocol through contributions (release and restoration through a service, custody transfer and external custody, supersession by a completed migration, the assurance and access-suspension triggers and the profiling service), and couple to Data Architecture, Data Security, Metadata, DQ, DG, RMD and Data Storage and Operations.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DII-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram gives the activities and deliverables but no exchange lifecycle; the Data Exchange states follow the activity sequence (define, discover and profile, map and document lineage, orchestrate, agree, implement and monitor) with alert, suspension and retirement drafted from Implement and Monitor and the CEP deliverable."},
         {"id": "SRC-DII-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (events folded into the exchange), Global gating", "limitations": ""},

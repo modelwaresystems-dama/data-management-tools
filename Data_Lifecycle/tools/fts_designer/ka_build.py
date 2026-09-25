@@ -24,7 +24,9 @@ A KA spec is a Python dict (see dg_spec.py) with:
   exceptions, evidence as in protocol_build
 Naming QA and relationships follow protocol_build.py.
 """
-import json, os, re, datetime
+import json, os, re, datetime, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fts_contracts
 from collections import Counter
 
 STATUS = "Proposed / illustrative"
@@ -169,6 +171,9 @@ def build(spec, overrides=None):
     m["artefacts"] = [row({"id": a[0], "name": a[1], "artefactType": "Deliverable (Metadata Asset)", "metadataAsset": True, "producedIn": a[2], "producingActivity": a[3], "evidenceUse": a[4]}, "context:deliverables") for a in spec.get("artefacts", [])]
     m["exceptions"] = [row({"id": x[0], "name": x[1], "transition": x[2], "basis": x[3], "authority": x[4], "conditions": x[5], "statusValues": x[6]}, "spec:exceptions") for x in spec.get("exceptions", [])]
     m["evidence"] = [row({"id": e[0], "name": e[1], "evidenceType": e[2], "relatesTo": e[3], "description": e[4], "requirement": "Required", "metadataAsset": True}, "spec:evidence") for e in spec.get("evidence", [])]
+    # v0.7 (Howard, 25 Sep 2026, State Contracts register cards 3, 4, 5 and 7, option a): entry and exit conditions per way in and way
+    # out, evidence for every transition (reused or generated) and the policy controls named in the spec; see fts_contracts.py
+    fts_contracts.derive(m, spec, origin=SRC)
     # Howard, 22 Sep 2026: every deliverable and evidence record of a Knowledge Area is a Metadata Asset. Its description lives in the
     # Metadata of a Data Asset FTS (KA-MM) and its quality is controlled in the DQ PDCA cycle (KA-DQ). Emitted for every KA model,
     # Metadata Management and Data Quality included (the rule applies to their own outputs).
@@ -233,8 +238,8 @@ def build(spec, overrides=None):
         if "REVIEW" in (d.get("notes") or ""): qa.append({"severity": "note", "rule": "N-016", "element": d["id"], "finding": d["notes"]})
     for c in m["contributions"]:
         if not c.get("expression"): qa.append({"severity": "note", "rule": "SIM-03", "element": c["id"], "finding": "contribution has no simulator expression; the guard will be answered by the user"})
-    m["qaFindings"] = qa + spec.get("qaNotes", [])
-    m["meta"]["counts"] = {k: len(m[k]) for k in ["regions", "subStates", "transitions", "events", "guards", "crossRegionConstraints", "contributions", "stateVectors", "activities", "artefacts", "roles", "services", "decisionRights", "permissionRecords", "exceptions", "evidence", "invariants", "relationships"]}
+    m["qaFindings"] = qa + spec.get("qaNotes", []) + m.get("qaFindings", [])
+    m["meta"]["counts"] = {k: len(m[k]) for k in ["regions", "subStates", "transitions", "events", "guards", "crossRegionConstraints", "contributions", "stateVectors", "activities", "artefacts", "roles", "services", "decisionRights", "permissionRecords", "exceptions", "evidence", "invariants", "relationships", "controls", "entryConditions", "exitConditions"]}
     m["meta"]["qaCounts"] = {"warnings": sum(1 for f in m["qaFindings"] if f["severity"] == "warning"), "notes": sum(1 for f in m["qaFindings"] if f["severity"] == "note")}
     if overrides: m = apply_overrides(m, overrides)
     return m
@@ -245,6 +250,8 @@ def run_spec(spec, filename, argv=None):
     ap = argparse.ArgumentParser(); ap.add_argument("out", nargs="?", default="."); ap.add_argument("--overrides")
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
+    # the private policy catalogue sits beside the models folder (spec/policy_controls.json); FTS_POLICY_CATALOG overrides it
+    os.environ.setdefault("FTS_POLICY_CATALOG", os.path.join(os.path.abspath(a.out), "..", "spec", "policy_controls.json"))
     ov_path = a.overrides or os.path.join(a.out, filename.replace(".fts.json", "_overrides.json"))
     overrides = json.load(open(ov_path, encoding="utf-8")) if os.path.exists(ov_path) else None
     m = build(spec, overrides)

@@ -1,4 +1,4 @@
-# Digital Twin server (v0.1, 24 Sep 2026)
+# Digital Twin server (v0.2, 25 Sep 2026)
 
 Several people on one twin, and shared simulation rooms. Built from Howard's answers in the Open Decisions register of 24 September 2026 (section B):
 
@@ -53,6 +53,7 @@ The first start copies the twin export into the server's database (`--seed-from`
 * Decision rights: the server finds the transition's decision right and its holder; if none of the person's roles in the asset's organisation is the holder, the request is refused before any guard is evaluated and a Low issue names the person (`source.kind: authorisation`).
 * The engine: the same `fts_twin_engine.py` as the fleet, with the Knowledge Area couplings enforced (`ENFORCE_COUPLINGS`, on since 24 Sep 2026; `FTS_ENFORCE_COUPLINGS=0` turns it off for a run). The viewer's JavaScript copy only previews; the server's answer is the one recorded.
 * Facts and overrides: admins only; an override needs a reason.
+* Policy controls (v0.2, State Contracts register, 25 Sep 2026): a step needs the procedure that implements each policy control bound to its transition to be in force in the asset's organisation; a step refused only for that raises a Low issue naming the control and the procedure. Each fired transition records evidence items, served as `evidence.json`; each organisation's controls are `controlsets.json`. Both are seeded from the export and exported with it.
 
 ## API (for the viewer and for adapters)
 

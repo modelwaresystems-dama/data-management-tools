@@ -166,6 +166,21 @@
   .chip{font-size:12px;background:var(--panel-2);border:1px solid var(--line);border-radius:14px;padding:2px 9px;color:var(--ink-soft)}
   .chip.act{border-color:transparent}
   .trlink{cursor:pointer;color:var(--accent);text-decoration:underline dotted}
+  /* v0.30 state card: ways out (State Contracts register, 25 Sep 2026) */
+  .cell.ways{grid-column:1/-1}
+  .way{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px;background:var(--panel-2)}
+  .way .wt{font-weight:600;font-size:14px;margin-bottom:6px;color:var(--ink)}
+  .way .wt .cid,.way .cid{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-right:4px}
+  .way .arr{color:var(--ink-faint)}
+  .way .wr{display:grid;grid-template-columns:128px 1fr;gap:10px;font-size:13px;padding:4px 0;color:var(--ink-soft);border-top:1px solid var(--line-soft)}
+  .way .wr > b{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;padding-top:3px}
+  .way .wr .chips{margin-top:0}
+  .way .wr .sub{font-size:11.5px;color:var(--ink-faint);margin:1px 0 4px}
+  .way .wr .none{font-size:12.5px;color:var(--ink-faint);margin:0}
+  .way .who{color:var(--ink);font-weight:600}
+  .way .pcgap{color:var(--warn)}
+  .chip.act.sup{opacity:.8}
+  @media (max-width:560px){ .way .wr{grid-template-columns:1fr;gap:2px} }
 
   /* transitions */
   .trtable{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px}
@@ -358,8 +373,8 @@
       <div class="badges" id="metaBadges"></div>
     </div>
     <div class="stamp">
-      <div>Viewer v0.29</div>
-      <div>Built 23 Sep 2026, 16:41 SAST</div>
+      <div>Viewer v0.30</div>
+      <div>Built 25 Sep 2026, 16:40 SAST</div>
       <div>Holds no data. Reads .fts.json models from GitHub or disk.</div>
     </div>
   </header>
@@ -730,7 +745,7 @@
   </dialog>
 
   <footer>
-    <span>Data State Transition Viewer · v0.29 · 23 Sep 2026, 16:41 SAST</span>
+    <span>Data State Transition Viewer · v0.30 · 25 Sep 2026, 16:40 SAST</span>
     <span class="mono" id="footStatus">No model loaded</span>
   </footer>
 </div>
@@ -7481,40 +7496,72 @@ mermaid/dist/mermaid.core.mjs:
 
   // ---------- INSPECTOR ----------
   function li(id,text,extra){ return '<li><span class="cid">'+esc(id)+'</span><span>'+esc(text)+'</span>'+(extra||"")+'</li>'; }
+  // v0.30 (Howard, 25 Sep 2026, State Contracts register cards 1, 2 and 10, option a): the card is built around the ways out. A state is
+  // left only by one of its transitions, so the activity, decision right, controls and evidence are shown per way out; the activity is
+  // named with the act it performs ("Publish and Deliver Content: Withdraw Content"); the other Knowledge Areas that read the state follow.
+  const trsOf = x => Array.isArray(x.transitions) ? x.transitions : String(x.appliesTo||x.relatesTo||"").split(/[,;\s]+/).filter(v=>/^TR-/.test(v));
+  const GLOBAL_MID = "GDA-GLOBAL-PROTOCOL";
+  function kaLabel(m){ return (m.meta&&(m.meta.knowledgeArea||m.meta.name))||(m.meta&&m.meta.modelId)||""; }
+  function globalTrName(id){ const g=MODELS.find(m=>m.meta&&m.meta.modelId===GLOBAL_MID); const t=g&&(g.transitions||[]).find(x=>x.id===id); return t?t.name:id; }
+  function wayRow(label,html){ return '<div class="wr"><b>'+esc(label)+'</b><div>'+html+'</div></div>'; }
+  function wayHtml(t,i){
+    const mid=M.meta&&M.meta.modelId;
+    const acts=(M.activities||[]).filter(a=>(a.relatedTransitions||[]).includes(t.id));
+    const causing=a=>/causing/i.test(a.effectClass||a.activityType||"");
+    const d=(M.decisionRights||[]).find(x=>x.id===t.decisionRight);
+    const ctl=(M.controls||[]).filter(c=>trsOf(c).includes(t.id));
+    const mech=ctl.filter(c=>c.controlType!=="Policy control"), pcs=ctl.filter(c=>c.controlType==="Policy control");
+    const hasPC=(M.controls||[]).some(c=>c.controlType==="Policy control");
+    const ev=(M.evidence||[]).filter(e=>trsOf(e).includes(t.id));
+    const others=[];
+    MODELS.forEach(mm=>{ if(!mm.meta||mm===M) return; (mm.kaCouplings||[]).forEach(k=>{ if(k.kind==="condition"&&(k.dependents||[]).some(x=>x.model===mid&&x.transition===t.id)) others.push('<span class="cid">'+esc(k.id)+'</span> '+esc(kaLabel(mm))+': '+esc(k.predicate||k.expression||"")); });
+      if(mid===GLOBAL_MID) (mm.contributions||[]).forEach(c=>{ if(c.globalTransition===t.id&&c.kind!=="event") others.push('<span class="cid">'+esc(c.id)+'</span> '+esc(kaLabel(mm))+' ('+esc(c.requirement||"")+'): '+esc(c.predicate||"")); }); });
+    (M.kaCouplings||[]).forEach(k=>{ if(k.kind==="condition"&&(k.dependents||[]).some(x=>x.model===mid&&x.transition===t.id)&&!others.some(o=>o.indexOf(k.id)>=0)) others.push('<span class="cid">'+esc(k.id)+'</span> '+esc(k.producer||"")+': '+esc(k.predicate||k.expression||"")); });
+    return '<div class="way"><div class="wt"><span class="cid">'+esc(t.id)+'</span> '+(i+1)+'. '+esc(t.name)+' <span class="arr">→</span> '+esc(nameOf(t.target))+'</div>'+
+      wayRow("Activity", acts.length? '<div class="chips">'+acts.map(a=>'<span class="chip act'+(causing(a)?'':' sup')+'" title="'+esc(a.id+' · '+(a.effectClass||a.activityType||""))+'">'+esc(a.name)+': '+esc(t.name)+(causing(a)?'':' <i>(supports)</i>')+'</span>').join("")+'</div>' : '<span class="none">No activity claims it'+(t.decisionRight?'':' (an automatic step)')+'.</span>')+
+      wayRow("Decision right", d? '<span class="cid">'+esc(d.id)+'</span> '+esc(d.name)+' · <b class="who">'+esc(d.holderName||roleName(d.holder))+'</b>' : '<span class="none">None: the step is automatic.</span>')+
+      (t.guardSummary? wayRow("Guard", esc(t.guardSummary)) : "")+
+      wayRow("Mechanism", mech.length? mech.map(c=>'<span class="cid">'+esc(c.id)+'</span> '+esc(c.name)).join("<br>") : '<span class="none">None.</span>')+
+      wayRow("Policy controls", pcs.length? pcs.map(c=>'<span class="cid">'+esc(c.id)+'</span> '+esc(c.name)+(c.synthetic?' <i>(synthetic)</i>':'')+'<div class="sub">'+esc([c.theme, c.procedure?'procedure '+c.procedure:'', c.evidenceArtefact?'evidence: '+c.evidenceArtefact:''].filter(Boolean).join(" · "))+'</div>').join("") :
+               (t.policyControlGap? '<span class="pcgap">None fits: '+esc(t.policyControlGap)+'</span>' : '<span class="none">'+(hasPC?'None named.':'Not mapped for this model yet.')+'</span>'))+
+      wayRow("Evidence", ev.length? ev.map(e=>'<span class="cid">'+esc(e.id)+'</span> '+esc(e.name)+(/derived:transition evidence/.test(e.trace||"")?' <i>(generated)</i>':'')).join("<br>") : '<span class="none">None.</span>')+
+      (others.length? wayRow("Also needs", others.join("<br>")) : "")+
+      '</div>';
+  }
   function renderInspector(){
     const box=$("#insp");
-    if(!selected){ box.innerHTML='<div class="empty">Select a state above to see its contract: entry conditions, invariants, permissible activities, exit conditions, transitions, artefacts, evidence, roles and decision rights.</div>'; return; }
+    if(!selected){ box.innerHTML='<div class="empty">Select a state above to see its contract: how it is entered and left, and for each way out the activity that causes it, the decision right, the controls and the evidence.</div>'; return; }
     const s=stateById(selected); if(!s){ selected=null; return renderInspector(); }
     const ec=M.entryConditions.filter(x=>x.appliesTo===s.id);
     const xc=M.exitConditions.filter(x=>x.appliesTo===s.id);
     const inv=M.invariants.filter(x=>x.appliesTo===s.id);
-    const act=M.activities.filter(x=>x.permittedIn===s.id);
     const out=M.transitions.filter(t=>t.source===s.id), inn=M.transitions.filter(t=>t.target===s.id);
     const art=M.artefacts.filter(a=>a.producedIn===s.id);
-    const ev=M.evidence.filter(e=>e.relatesTo===s.id);
-    const dr=M.decisionRights.filter(d=>d.appliesTo===s.id);
-    const ctl=M.controls.filter(c=>c.appliesTo===s.id);
-    const kai=M.kaInteractions.filter(k=>k.subState===s.id);
-    const comp=M.compositeStates.filter(c=>c.subState===s.id||(!c.subState&&c.globalState===s.id));
-    const parent=s.parent?stateById(s.parent):null;
+    const region=s.region||s.parent;
+    const workA=(M.activities||[]).filter(a=>!(a.relatedTransitions||[]).length && (a.regions||[]).includes(region));
+    (M.permissionRecords||[]).forEach(p=>{ if(p.context===s.id && !/Transition-causing/i.test(p.effect||"")){ const a=(M.activities||[]).find(x=>x.id===p.activity); if(a&&!workA.includes(a)) workA.push(a); } });
+    const mid=M.meta&&M.meta.modelId, fb=(M.meta&&M.meta.factBindings)||{};
+    const facts=Object.keys(fb).filter(f=>(fb[f].states||[]).includes(s.id));
+    const reads=[];
+    (M.contributions||[]).forEach(c=>{ const rs=c.requiredStates||{}; if(Object.values(rs).some(v=>(v||[]).includes(s.id))) reads.push({id:c.id, t:'Global '+globalTrName(c.globalTransition)+' ('+c.globalTransition+', '+(c.kind||"")+'): '+(c.predicate||"")}); });
+    if(facts.length) MODELS.forEach(mm=>{ if(!mm.meta) return; (mm.kaCouplings||[]).forEach(k=>{ const ex=String(k.expression||""); const hit=facts.find(f=>new RegExp("\\b"+f+"\\b").test(ex)); if(hit&&k.kind!=="statement"&&k.kind!=="withdrawn") reads.push({id:k.id, t:(mm===M?'':kaLabel(mm)+', ')+'reads '+hit+': '+(k.predicate||"")}); }); });
+    const comp=(M.stateVectors||[]).filter(v=>Object.values(v.vector||{}).includes(s.id));
+    const parent=s.parent&&s.parent!==region?stateById(s.parent):(region?stateById(region):null);
     const qa=s.nameQA||{};
     box.innerHTML=
-      '<div class="ih"><div><h3>'+esc(s.name)+'</h3><div class="id">'+esc(s.id)+(parent?' · in '+esc(parent.name):'')+(s.stateType?' · '+esc(s.stateType):'')+'</div></div>'+
+      '<div class="ih"><div><h3>'+esc(s.name)+'</h3><div class="id">'+esc(s.id)+(parent?' · in '+esc(parent.name):'')+(s.stateType?' · '+esc(s.stateType):'')+(s.terminal?' · terminal':'')+'</div></div>'+
         '<div class="badges" style="margin-top:0">'+(qa.status?'<span class="badge '+(/review/i.test(qa.status)?'status':'')+'">name QA: '+esc(qa.status)+'</span>':'')+(s.readiness?'<span class="badge level">readiness state</span>':'')+(s.status?'<span class="badge">'+esc(s.status)+'</span>':'')+'</div></div>'+
       '<div class="def">'+esc(s.definition||"")+(qa.rationale?'<div style="margin-top:8px;font-size:12.5px;color:var(--ink-faint)">'+esc(qa.rationale)+'</div>':'')+'</div>'+
       '<div class="grid4">'+
-        cell("Entry conditions",ec,x=>li(x.id,x.predicate,'<span class="req">'+esc(x.requirement||"")+'</span>'))+
+        cell("Entry conditions (ways in)",ec,x=>li(x.id,x.predicate,'<span class="req">'+esc(x.requirement||"")+'</span>'))+
         cell("Invariants",inv,x=>li(x.id,x.predicate,'<span class="sev '+esc(x.severity||"")+'">'+esc(x.severity||"")+'</span>'))+
-        cell("Exit conditions",xc,x=>li(x.id,x.predicate,'<span class="req">'+esc(x.requirement||"")+'</span>'))+
-        '<div class="cell"><h4>Permissible activities <span class="ct">'+act.length+'</span></h4>'+(act.length?'<div class="chips">'+act.map(a=>'<span class="chip act" title="'+esc(a.activityType||"")+'">'+esc(a.name)+'</span>').join("")+'</div><div class="none">State-preserving unless a transition contract is met.</div>':'<div class="none">None recorded.</div>')+'</div>'+
-        cell("Transitions out",out,t=>li(t.id,t.name+" → "+nameOf(t.target),'<span class="req">'+esc(t.optionality||"")+'</span>'))+
+        cell("Exit conditions (ways out)",xc,x=>li(x.id,x.predicate,'<span class="req">'+esc(x.requirement||"")+'</span>'))+
+        '<div class="cell ways"><h4>Ways out <span class="ct">'+out.length+'</span></h4>'+(out.length? out.map(wayHtml).join("") : '<div class="none">'+(s.terminal?'None: a terminal state.':'None recorded.')+'</div>')+'</div>'+
         cell("Transitions in",inn,t=>li(t.id,nameOf(t.source)+" → "+t.name,'<span class="req">'+esc(t.optionality||"")+'</span>'))+
+        '<div class="cell"><h4>Work while here <span class="ct">'+workA.length+'</span></h4>'+(workA.length?'<div class="chips">'+workA.map(a=>'<span class="chip act" title="'+esc(a.effectClass||a.activityType||"")+'">'+esc(a.name)+'</span>').join("")+'</div>':'<div class="none">No state-preserving activity in the model: every activity here causes or supports a way out.</div>')+'</div>'+
         cell("Artefacts produced",art,a=>li(a.id,a.name,'<span class="req">'+esc(a.artefactType||"")+'</span>'))+
-        cell("Evidence",ev,e=>li(e.id,e.name,'<span class="req">'+esc(e.requirement||"")+'</span>'))+
-        cell("Decision rights",dr,d=>li(d.id,d.name+" · "+roleName(d.holder),'<span class="req">'+esc(d.requirement||"")+'</span>'))+
-        cell("Controls",ctl,c=>li(c.id,c.name+" · "+(c.outcome||""),'<span class="req">'+esc(c.controlType||"")+'</span>'))+
-        '<div class="cell"><h4>Knowledge Area interactions <span class="ct">'+kai.length+'</span></h4>'+(kai.length?'<div class="chips">'+kai.map(k=>'<span class="chip" title="'+esc(k.applicability||"")+': '+esc(k.description||"")+'">'+esc(k.knowledgeArea)+(k.interactionType?' · '+esc(k.interactionType):'')+'</span>').join("")+'</div>':'<div class="none">None recorded.</div>')+'</div>'+
-        cell("Composite state",comp,c=>li(c.id,c.name+": "+(c.kaDimensions||"")))+
+        cell("Other Knowledge Areas that read this state",reads,x=>li(x.id,x.t))+
+        cell("Example configurations with this state",comp,v=>li(v.id,v.name+(v.legality?": "+v.legality:"")))+
       '</div>'+fbBox("State", s.id, s.name);
     fbWire(box);
     box.scrollIntoView({behavior:"smooth",block:"nearest"});
@@ -7537,13 +7584,13 @@ mermaid/dist/mermaid.core.mjs:
   }
   function contractHtml(t){
     const src=stateById(t.source), tgt=stateById(t.target);
-    const xc=src?M.exitConditions.filter(x=>x.appliesTo===src.id):[];
-    const ec=tgt?M.entryConditions.filter(x=>x.appliesTo===tgt.id):[];
+    const xc=src?M.exitConditions.filter(x=>x.appliesTo===src.id&&(!x.transition||x.transition===t.id)):[];
+    const ec=tgt?M.entryConditions.filter(x=>x.appliesTo===tgt.id&&(!x.transition||x.transition===t.id)):[];
     const gd=M.guards.filter(g=>g.transition===t.id).concat(federatedGuards(t.id));
-    const dr=M.decisionRights.filter(d=>d.appliesTo===t.id);
+    const dr=M.decisionRights.filter(d=>d.id===t.decisionRight||d.appliesTo===t.id);
     const ex=M.exceptions.filter(e=>e.transition===t.id);
-    const ctl=M.controls.filter(c=>c.appliesTo===t.id);
-    const ev=M.evidence.filter(e=>e.relatesTo===t.id);
+    const ctl=M.controls.filter(c=>trsOf(c).includes(t.id));
+    const ev=M.evidence.filter(e=>trsOf(e).includes(t.id));
     const global=isGlobalTr(t)&&!isInitial(t);
     let f='Eligible('+esc(t.id)+') = <b>Exit</b>('+esc(src?src.name:"source")+') ∧ <b>Guards</b> ∧ <b>Entry</b>('+esc(tgt?tgt.name:"target")+')';
     if(dr.length) f+=' ; then <b>Authorised</b> by '+dr.map(d=>esc(roleName(d.holder))).join(", ");
@@ -8286,7 +8333,7 @@ function ftsSummarySvg(M, availW, opts){
     if(svcs.length) h+='<div class="tk">Services</div><div class="tb">'+svcs.map(esc).join(", ")+'</div>';
     if(tr.effect) h+='<div class="tk">Effect</div><div class="tb">'+esc(tr.effect)+'</div>';
     const acts=(M.activities||[]).filter(a=>(a.relatedTransitions||[]).includes(tr.id)||(tr.activityRefs||[]).includes(a.id)).map(a=>a.name); if(acts.length) h+='<div class="tk">Activities</div><div class="tb">'+acts.map(esc).join(", ")+'</div>';
-    const evd=(M.evidence||[]).filter(e=>e.relatesTo===tr.id); if(evd.length) h+='<div class="tk">Evidence</div><div class="tb">'+evd.map(e=>esc(e.name)+(e.evidenceType?' <span class="tf">'+esc(e.evidenceType)+'</span>':'')+(e.description?': '+esc(e.description):'')).join("<br>")+'</div>';
+    const evd=(M.evidence||[]).filter(e=>trsOf(e).includes(tr.id)); if(evd.length) h+='<div class="tk">Evidence</div><div class="tb">'+evd.map(e=>esc(e.name)+(e.evidenceType?' <span class="tf">'+esc(e.evidenceType)+'</span>':'')+(e.description?': '+esc(e.description):'')).join("<br>")+'</div>';
     return h; }
   const VIEWS={simp:{state:()=>simp, wrap:"#simpwrap", render:()=>renderSimp(), zoomApply:()=>applySimpZoom()}, uml:{state:()=>uml, wrap:"#umlwrap", render:()=>renderUML(), zoomApply:()=>applyZoom()}, map:{state:()=>mapv, wrap:".mapouter", render:()=>{ renderMap(); }, zoomApply:()=>applyMapZoom()}};
   function topStates(){ return (M.regions&&M.regions.length)?M.regions.map(r=>({id:r.id,name:r.name})):M.globalStates.map(g=>({id:g.id,name:g.name})); }

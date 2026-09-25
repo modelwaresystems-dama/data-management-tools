@@ -192,13 +192,40 @@ COUPLING_ROLES = {'KAC-DQ-01': {'emitters': ['TR-PDCA-04', 'TR-PDCA-08'], 'kind'
  'KAC-DQ-02': {'effect': 'resolve', 'emitters': ['TR-PDCA-03'], 'kind': 'event', 'producer': 'KA-DQ', 'resolves': 'KAC-DQ-01'},
  'KAC-DQ-03': {'dependents': [{'model': 'KA-DQ', 'transition': 'TR-PDCA-11'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'}}
 
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-PRG-01': {'controls': [('PD-DQ', 'C01')], 'why': 'Defining the programme drafts the DQ policies and guidelines the policy approves.'},
+ 'TR-PRG-02': {'controls': [('PD-DQ', 'C01'), ('PD-DQ', 'C02')], 'why': 'Approval covers the DQ policies and the programme organisation and accountabilities.'},
+ 'TR-PRG-03': {'controls': [('PD-DQ', 'C02'), ('PD-DQ', 'C15')], 'why': 'Operating needs staffed accountable roles and KPI reporting to the governance forum.'},
+ 'TR-PRG-04': {'controls': [('PD-DQ', 'C16')], 'why': 'Revision on a recorded trigger is the periodic and on-change policy review.'},
+ 'TR-PRG-05': {'controls': [('PD-DQ', 'C01'), ('PD-DQ', 'C16')], 'why': 'Approving the revised programme closes the review with a policy approval.'},
+ 'TR-PRG-06': {'controls': [('PD-DQ', 'C01')], 'why': 'Retirement reverses the policy approval of the programme.'},
+ 'TR-PDCA-01': {'controls': [('PD-DQ', 'C04'), ('PD-DQ', 'C05')],
+                'why': 'Defining the expectation sets dimensions and thresholds for critical data with an assigned quality owner.'},
+ 'TR-PDCA-02': {'controls': [('PD-DQ', 'C04'), ('PD-DQ', 'C06')],
+                'why': 'Rules and thresholds are approved and published as versioned DQ rules before assessment.'},
+ 'TR-PDCA-03': {'controls': [('PD-DQ', 'C07'), ('PD-DQ', 'C08')],
+                'why': 'Conformance is confirmed by profiling and scorecard results and cadence measurement is deployed.'},
+ 'TR-PDCA-04': {'controls': [('PD-DQ', 'C10')], 'why': 'Each breach is logged as a DQ issue with severity and impact.'},
+ 'TR-PDCA-05': {'controls': [('PD-DQ', 'C10')], 'why': 'Planning uses the logged root cause and business impact to prioritise actions.'},
+ 'TR-PDCA-06': {'controls': [('PD-DQ', 'C11')], 'why': 'Executing remediation fixes issues at source.'},
+ 'TR-PDCA-07': {'controls': [('PD-DQ', 'C11')], 'why': 'The remediation is verified by reassessing the asset.'},
+ 'TR-PDCA-08': {'controls': [('PD-DQ', 'C08'), ('PD-DQ', 'C09')], 'why': 'Cadence measurement detects the breach and owners are alerted.'},
+ 'TR-PDCA-09': {'controls': [('PD-DQ', 'C08')], 'why': 'The assessment lapses when its measurement cadence or validity interval has passed.'},
+ 'TR-PDCA-10': {'controls': [('PD-DQ', 'C08')], 'why': 'Reassessment is a new measurement against the thresholds in force.'},
+ 'TR-PDCA-11': {'controls': [('PD-DQ', 'C04'), ('PD-DQ', 'C17')], 'why': 'The owner revises thresholds, with risk acceptance where a threshold is relaxed.'},
+ 'TR-PDCA-12': {'controls': [('PD-DQ', 'C04'), ('PD-DQ', 'C06')], 'why': 'The expectation is redefined and its rules re-versioned before reassessment.'},
+ 'TR-PDCA-13': {'controls': [('PD-DQ', 'C04')], 'why': 'Withdrawal reverses bringing the asset under defined thresholds.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DQ", "name": "Data Quality Management FTS", "knowledgeArea": "Data Quality Management", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Programme (scope level) and the PDCA cycle (one per Data Asset) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Two state regions, each its own FTS over one managed element of the Knowledge Area: the Data Quality Programme of the governed scope, and the plan-do-check-act quality cycle of a Data Asset, which holds that asset's Data Quality Expectation, assessment, improvement actions and monitored level. The KA never becomes a region of the Data Asset; the PDCA cycle reaches the Global Assurance region through contributions (guards and events on TR-AS-01 to TR-AS-10), and logs its non-conformances as Data Asset issues in the Data Governance issue FTS.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DQ-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics, KA triangle", "limitations": "Process 5 carries no phase tag on the slide; (P) inferred by decision."},
         {"id": "SRC-DQ-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, issue coupling, Assurance gating", "limitations": ""},

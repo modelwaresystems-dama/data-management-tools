@@ -28,7 +28,7 @@ import fts_twin_engine
 from fts_twin_engine import Federation, GLOBAL_ID, now_iso, eval_expression
 from fts_twin_store import TwinStore
 
-VERSION = "0.6"
+VERSION = "0.7"
 
 # v0.2 (Howard, 22 Sep 2026, twin structure "two levels"): the Data Asset (a table, dataset, feed or data product) carries the Global
 # vector and the per-asset Knowledge Area regions; an entity record inside it (a customer or party golden record) is its own instance
@@ -70,6 +70,8 @@ KAS13 = ("DG", "DA", "DMD", "DSO", "DII", "MM", "DQ", "DS", "DHE", "DWBI", "BDA"
 KA_DOMAINS = {"Data Governance": "DG", "Data Architecture": "DA", "Data Modelling & Design": "DMD", "Data Storage & Operations": "DSO", "Data Security": "DS",
               "Data Integration & Interoperability": "DII", "Document & Content Management": "DCM", "Reference & Master Data": "RMD",
               "Data Warehousing & BI": "DWBI", "Metadata Management": "MM", "Data Quality": "DQ",
+              # State Contracts register card 8 option a (Howard, 25 Sep 2026): records and privacy serve DCM and Data Security
+              "Records & Data Retention": "DCM", "Data Privacy & Consent": "DS",
               # Open Decisions C1 option c (Howard, 24 Sep 2026): synthetic policy domains until the workbooks carry them
               "Data Handling Ethics": "DHE", "Big Data and Data Science": "BDA"}
 # register card 13 (pending when written): policy domains that also feed the two Knowledge Areas with no domain named for them
@@ -93,8 +95,8 @@ class Twin:
             self.roles = {r["id"]: r for r in json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "role_vocabulary.json"), encoding="utf-8"))["roles"]}
         except Exception:
             self.roles = {}
-        for sc in {i.get("scope") for i in self.store.instances("instrument")}:
-            self.fed.scope_facts[sc] = self.set_facts_of(sc)[0]
+        for sc in {i.get("scope") for i in self.store.instances("instrument")} | {c.get("scope") for c in self.store.instances("controlset")}:
+            self.fed.scope_facts[sc] = self.set_facts_of(sc)[0]; self.refresh_controls(sc)
 
     # ---------------------------------------------------------------- the requester block (Howard, 23 Sep 2026)
     def requester(self, req, model_id=None, transition_id=None):
@@ -145,14 +147,19 @@ class Twin:
             el = els[v["elementId"]]; el["updatedAt"] = rec["at"]; self.store.put_instance(el)
         logged = self.store.log_event(rec)
         if v.get("fired"):
+            ev_ids = self.record_evidence(logged, asset)
+            if ev_ids: logged["evidenceItems"] = ev_ids
             self.resolve_issues(instance_id, model_id, tids[0], at=rec["at"])
             self.couple(instance_id, model_id, tids[0], env0, at=rec["at"], depth=_depth)
         else:
-            blocking = [g for g in rec["guards"] if g.get("requirement") in ISSUE_REQUIREMENTS]
+            blocking = [g for g in rec["guards"] if g.get("requirement") in ISSUE_REQUIREMENTS and not g.get("policyControl")]
+            pc_fail = [g for g in rec["guards"] if g.get("policyControl")]
             # Low severity (Howard, 23 Sep 2026): a request the asset was in no position to satisfy, with every guard answering true,
             # is a control gap in the requesting system rather than a guard failure, and is raised so it can be monitored and stopped.
+            # State Contracts card 9 (25 Sep 2026): a step refused only because a control's procedure is not in force is also Low.
             out_of_order = not blocking and not rec.get("sourceActive")
-            if blocking or out_of_order: logged["issueRaised"] = (self.raise_issue(instance_id, logged, blocking, at=rec["at"], out_of_order=out_of_order) or {}).get("id")
+            if blocking or out_of_order: logged["issueRaised"] = (self.raise_issue(instance_id, logged, blocking + pc_fail, at=rec["at"], out_of_order=out_of_order) or {}).get("id")
+            elif pc_fail and rec.get("sourceActive"): logged["issueRaised"] = (self.raise_issue(instance_id, logged, pc_fail, at=rec["at"], controls=True) or {}).get("id")
         return logged
 
     def override(self, instance_id, model_id, region_id, state_id, reason, actor=None, at=None):
@@ -209,12 +216,14 @@ class Twin:
         out["guardCount"] = len(v.get("guards", [])); out["guards"] = [g for g in v.get("guards", []) if not g.get("verdict")]; out.pop("vectorBefore", None)
         out["stateAfter"] = rec["regions"].get(model_id, {}).get(rid)
         rec["updatedAt"] = out["at"]; self.store.put_instance(rec); logged = self.store.log_event(out)
+        if v.get("fired"): self.record_evidence(logged, {**rec, "scope": parent.get("scope"), "org": parent.get("org")}, subject="record")
         # a refusal on a record is a refusal on its Data Asset: the issue is raised against the parent, naming the record
         if not v.get("fired"):
-            blocking = [g for g in out["guards"] if g.get("requirement") in ISSUE_REQUIREMENTS]
+            blocking = [g for g in out["guards"] if g.get("requirement") in ISSUE_REQUIREMENTS and not g.get("policyControl")]
+            pc_fail = [g for g in out["guards"] if g.get("policyControl")]
             ooo = not blocking and not out.get("sourceActive")
-            if blocking or ooo:
-                iss = self.raise_issue(rec["parentId"], logged, blocking, at=out["at"], out_of_order=ooo, record_id=record_id)
+            if blocking or ooo or (pc_fail and out.get("sourceActive")):
+                iss = self.raise_issue(rec["parentId"], logged, blocking + pc_fail, at=out["at"], out_of_order=ooo, record_id=record_id, controls=bool(pc_fail and not blocking and not ooo))
                 if iss: logged["issueRaised"] = iss.get("id")
         self.rollup(rec["parentId"], at=out["at"], cause=record_id)
         if v.get("fired"): self.couple(rec["parentId"], model_id, transition, env0, at=out["at"], record_id=record_id)
@@ -228,11 +237,11 @@ class Twin:
         return [i for i in self.store.instances("instrument") if not scope or i.get("scope") == scope]
 
     def new_instrument(self, iid, scope, org, domain_id, domain_name, instrument_id, kind, name, policy_id=None, version=1, owner=None, effective=None,
-                       status=None, predecessor=None, synthetic=False, at=None):
+                       status=None, predecessor=None, synthetic=False, at=None, implements=None):
         ins = {"id": iid, "kind": "instrument", "scope": scope, "org": org, "domainId": domain_id, "domainName": domain_name,
                "ka": KA_DOMAINS.get(domain_name) or (KA_DOMAIN_FEEDS.get(domain_name) if USE_FEEDS else None), "instrumentId": instrument_id,
                "instrumentKind": kind, "policyId": policy_id or (instrument_id if kind == "policy" else None), "version": version, "name": name,
-               "owner": owner, "effective": effective, "workbookStatus": status, "predecessor": predecessor, "synthetic": synthetic,
+               "owner": owner, "effective": effective, "workbookStatus": status, "predecessor": predecessor, "synthetic": synthetic, "implements": list(implements or []),
                "regions": {"KA-DG": {"REG-DG-INS": self.fed.initial["KA-DG"]["REG-DG-INS"]}, "KA-DCM": {"REG-DCM-REC": self.fed.initial["KA-DCM"]["REG-DCM-REC"]}},
                "state": self.fed.initial["KA-DG"]["REG-DG-INS"], "createdAt": at or now_iso(), "updatedAt": at or now_iso()}
         self.store.put_instance(ins); return ins
@@ -242,7 +251,7 @@ class Twin:
         els = self.store.elements(); refs = {e["regionId"]: e["id"] for e in els.values() if e.get("scope") == ins["scope"]}
         pred = self.store.get_instance(ins["predecessor"]) if ins.get("predecessor") else None
         ok = (pred is None) or pred.get("state") in (INS_S["in_force"], INS_S["withdrawn"])
-        view = {"id": ins["id"], "kind": "asset", "scope": ins["scope"], "vectors": json.loads(json.dumps(ins["regions"])), "refs": refs, "kaModels": ["KA-DG", "KA-DCM"],
+        view = {"id": ins["id"], "kind": "asset", "scope": ins["scope"], "vectors": json.loads(json.dumps(ins["regions"])), "refs": refs, "kaModels": ["KA-DG", "KA-DCM"], "controlExempt": True,
                 "facts": {"INS_is_policy": ins["instrumentKind"] == "policy", "INS_is_procedure": ins["instrumentKind"] == "procedure", "INS_predecessor_ok": ok}}
         return view, els
 
@@ -272,7 +281,7 @@ class Twin:
             if t2: self.post_instrument_event(iid, "KA-DCM", t2, actor="twin:coupling KAC-DG-01", at=at,
                                               requester={"activity": (next((a for a, x in self.acts.items() if x["model"] == "KA-DCM" and t2 in x["claims"]), "ACT-DCM-4")), "role": "ROLE-RIM", "system": "fts_twin", "purpose": "keep the superseded version under retention"},
                                               reason="KAC-DG-01: superseding a version declares its document a record")
-        if v.get("fired"): self.refresh_scope(ins["scope"], at=at, cause=iid); self.resolve_issues(iid, model_id, transition, at=at)
+        if v.get("fired"): self.record_evidence(logged, ins, subject="instrument"); self.refresh_scope(ins["scope"], at=at, cause=iid); self.resolve_issues(iid, model_id, transition, at=at)
         else:   # Open Decisions C4 option a (Howard, 24 Sep 2026): a refused step on a version raises a Low issue on that version
             iss = self.raise_instrument_issue(ins, logged, at=out["at"])
             if iss: logged["issueRaised"] = iss.get("id")
@@ -312,8 +321,50 @@ class Twin:
             if doms: facts[ka + "_policy_set_in_force"] = all(sets[d] for d in doms)
         return facts, sets
 
+    # ---------------------------------------------------------------- v0.7 policy controls and evidence (State Contracts register, 25 Sep 2026)
+    def set_controlset(self, scope, org, controls, at=None):
+        """an organisation's policy controls, keyed "<policy domain> <control number>": control ID, wording, implementing procedure and
+        evidence artefact, read from its FutureState workbook (sheets 176, 178, 180) or, for the synthetic domains, the catalogue"""
+        doc = {"id": f"CTLSET-{org}", "kind": "controlset", "scope": scope, "org": org, "controls": controls, "createdAt": at or now_iso(), "updatedAt": at or now_iso()}
+        self.store.put_instance(doc); self.refresh_controls(scope); return doc
+
+    def refresh_controls(self, scope):
+        """card 9: a control is in force when a version of the procedure that implements it is in force in the organisation"""
+        cs = next((c for c in self.store.instances("controlset") if c.get("scope") == scope), None)
+        if not cs: self.fed.scope_controls.pop(scope, None); return None
+        inf = {}
+        for i in self.instruments(scope):
+            if i.get("instrumentKind") == "procedure": inf[i["instrumentId"]] = inf.get(i["instrumentId"], False) or i.get("state") == INS_S["in_force"]
+        out = {}
+        for key, c in (cs.get("controls") or {}).items():
+            procs = [p for p in (c.get("procedures") or []) if p]
+            out[key] = {**c, "procedures": procs, "inForce": any(inf.get(p) for p in procs)}
+        self.fed.scope_controls[scope] = out; return out
+
+    def record_evidence(self, logged, inst, subject="asset"):
+        """card 6: each fired transition records one evidence item per evidence record of its transition, with the organisation's
+        evidence artefact for every policy control bound to it"""
+        if not logged or not logged.get("fired") or not logged.get("transition") or logged.get("override"): return []
+        mid = logged.get("model"); sc = self.fed.scope_controls.get((inst or {}).get("scope")) or {}
+        ctl = []
+        for cid in logged.get("policyControls") or []:
+            c = self.fed.pcs.get((mid, cid)) or {}; info = sc.get(f"{c.get('policyDomain')} {c.get('controlNumber')}") or {}
+            ctl.append({"control": cid, "controlId": info.get("controlId"), "name": info.get("name") or c.get("name"), "procedures": info.get("procedures") or [],
+                        "artefactId": info.get("artefactId"), "artefact": info.get("artefact") or c.get("evidenceArtefact")})
+        out = []
+        for k, eid in enumerate(logged.get("evidence") or [], 1):
+            e = self.fed.evidence.get((mid, eid)) or {}
+            item = {"id": f"EVI-{int(logged.get('seq') or 0):07d}-{k}", "kind": "evidence", "eventSeq": logged.get("seq"), "instanceId": logged.get("instanceId"), "subject": subject,
+                    "parentId": logged.get("parentId") or (inst or {}).get("parentId"), "scope": (inst or {}).get("scope"), "org": (inst or {}).get("org"),
+                    "model": mid, "transition": logged.get("transition"), "transitionName": logged.get("name"), "from": logged.get("from"), "to": logged.get("to"),
+                    "evidenceId": eid, "evidenceName": e.get("name"), "evidenceType": e.get("evidenceType"), "generated": "derived:transition evidence" in (e.get("trace") or ""),
+                    "decisionRight": logged.get("decisionRight"), "requester": logged.get("requester"), "actor": logged.get("actor"), "at": logged.get("at"), "controls": ctl,
+                    "createdAt": logged.get("at"), "updatedAt": logged.get("at")}
+            self.store.put_instance(item); out.append(item["id"])
+        return out
+
     def refresh_scope(self, scope, at=None, cause=None, log=True):
-        facts, sets = self.set_facts_of(scope); self.fed.scope_facts[scope] = facts
+        facts, sets = self.set_facts_of(scope); self.fed.scope_facts[scope] = facts; self.refresh_controls(scope)
         counted = [d for d in sets if POL_ROLLUP == "all" or (POL_ROLLUP == "dg" and d == "Data Governance") or (POL_ROLLUP == "ka" and (d in KA_DOMAINS or (USE_FEEDS and d in KA_DOMAIN_FEEDS)))]
         if not counted: return None
         states = [i.get("state") for i in self.instruments(scope) if i["domainName"] in counted]
@@ -427,7 +478,7 @@ class Twin:
         out = [i for i in self.store.instances("issue") if not parent_id or i.get("parentId") == parent_id]
         return [i for i in out if i.get("state") in ISSUE_OPEN] if open_only else out
 
-    def raise_issue(self, asset_id, ev, blocking, at=None, out_of_order=False, record_id=None):
+    def raise_issue(self, asset_id, ev, blocking, at=None, out_of_order=False, record_id=None, controls=False):
         """One Data Governance Data Issue for one refusal, naming the transition asked for, who asked, the decision right and its
         holder, and every Non-waivable or Required guard that answered false with the Knowledge Area that set it. An out-of-order
         request, where every guard answered true and only the source state was wrong, raises a Low severity issue instead."""
@@ -436,20 +487,24 @@ class Twin:
         n = len(self.issues(asset_id)) + 1
         mid = ev.get("model"); dr = (self.fed.dr.get(mid) or {}).get(ev.get("decisionRight")) or {}
         srcs = sorted({g.get("contributedBy") or mid for g in blocking})
-        sev = ISSUE_SEVERITY[None] if out_of_order else ("High" if any(g.get("requirement") == "Non-waivable" for g in blocking) else "Medium")
+        sev = ISSUE_SEVERITY[None] if (out_of_order or controls) else ("High" if any(g.get("requirement") == "Non-waivable" for g in blocking) else "Medium")
         issue = {"id": f"ISS-{asset_id}-{n:03d}", "kind": "issue", "parentId": asset_id, "assetName": asset.get("name"), "org": asset.get("org"), "scope": asset.get("scope"),
-                 "name": (ev.get("name") or ev.get("transition")) + (" asked for out of order on " if out_of_order else " refused on ") + (("record " + record_id + " of ") if record_id else "") + (asset.get("name") or asset_id),
+                 "name": (ev.get("name") or ev.get("transition")) + (" asked for out of order on " if out_of_order else " refused on ") + (("record " + record_id + " of ") if record_id else "") + (asset.get("name") or asset_id) + (" (procedure not in force)" if controls else ""),
                  "severity": sev, "outOfOrder": bool(out_of_order),
                  "regions": {ISSUE_MODEL: {ISSUE_REGION: self.fed.initial[ISSUE_MODEL][ISSUE_REGION]}},
                  "state": self.fed.initial[ISSUE_MODEL][ISSUE_REGION],
-                 "source": {"kind": "refusal", "eventSeq": ev.get("seq"), "model": mid, "transition": ev.get("transition"), "transitionName": ev.get("name"),
+                 "source": {"kind": "control refusal" if controls else "refusal", "eventSeq": ev.get("seq"), "model": mid, "transition": ev.get("transition"), "transitionName": ev.get("name"),
                             "region": ev.get("region"), "from": ev.get("from"), "to": ev.get("to"), "result": ev.get("result"), "at": ev.get("at"),
                             "decisionRight": ev.get("decisionRight"), "decisionRightName": dr.get("name"), "holder": dr.get("holder"), "holderName": dr.get("holderName"),
                             "requester": ev.get("requester"), "actor": ev.get("actor"), "sourceKnowledgeAreas": srcs, "sourceActive": ev.get("sourceActive"), "recordId": record_id,
                             "controlGap": ("The transition can only start from " + str(ev.get("from")) + ", and the asset was elsewhere. Every guard answered true, so nothing in the protocol refused it on its merits: the request should not have been sent. The control belongs in the requesting system." if out_of_order else None),
-                            "guards": [{k: g.get(k) for k in ("guard", "requirement", "contributedBy", "predicate")} for g in blocking]},
+                            "guards": [{k: g.get(k) for k in ("guard", "requirement", "contributedBy", "predicate", "policyControl", "procedures", "controlId") if g.get(k) is not None} for g in blocking]},
                  "createdAt": at or now_iso(), "updatedAt": at or now_iso()}
         self.store.put_instance(issue)
+        if controls:
+            reason = "raised by the twin: " + str(ev.get("transition")) + " was refused because the procedure implementing " + ", ".join(g.get("policyControl") or "?" for g in blocking) + " is not in force (Low: State Contracts card 9)"
+            self.post_issue_event(issue["id"], "TR-ISS-01", actor="twin:control refusal", at=at, requester=ISSUE_REQ["TR-ISS-01"], reason=reason)
+            return self.store.get_instance(issue["id"])
         reason = ("raised by the twin: " + str(ev.get("transition")) + " was asked for while the asset was not in a state it can start from; every guard answered true"
                   if out_of_order else
                   "raised by the twin: " + str(len(blocking)) + " " + ("guard" if len(blocking) == 1 else "guards") + " of requirement " + ", ".join(sorted({g.get("requirement") or "?" for g in blocking})) + " refused " + str(ev.get("transition")))
@@ -466,6 +521,7 @@ class Twin:
             view, els = self._inst_view(parent); view["vectors"].setdefault(ISSUE_MODEL, {}).update(iss["regions"][ISSUE_MODEL])
         else:
             els = self.store.elements(); view = self._view(iss, parent)
+        view["controlExempt"] = True   # the twin's own issue paperwork is not held up by a procedure (State Contracts, 25 Sep 2026: built as, register v2)
         v = self.fed.evaluate(view, ISSUE_MODEL, transition, els)
         if v.get("fired"): self.fed.apply(view, v, els)
         rid = v.get("region")
@@ -477,6 +533,7 @@ class Twin:
         iss["state"] = out["stateAfter"]; iss["stateName"] = self.fed.state[ISSUE_MODEL].get(out["stateAfter"], {}).get("name", out["stateAfter"])
         iss["updatedAt"] = out["at"]; self.store.put_instance(iss)
         logged = self.store.log_event(out)
+        if v.get("fired"): self.record_evidence(logged, {**iss, "scope": iss.get("scope") or (parent or {}).get("scope"), "org": iss.get("org") or (parent or {}).get("org")}, subject="issue")
         self.issue_rollup(iss["parentId"], at=out["at"], cause=issue_id)
         return logged
 
@@ -486,7 +543,7 @@ class Twin:
         out = []
         for iss in self.issues(asset_id):
             src = iss.get("source") or {}
-            if src.get("kind", "refusal") not in ("refusal", "instrument refusal"): continue
+            if src.get("kind", "refusal") not in ("refusal", "instrument refusal", "control refusal"): continue
             if src.get("transition") != transition_id or src.get("model") != model_id: continue
             if iss.get("state") not in ("STS-ISS-02", "STS-ISS-03"): continue
             if iss.get("state") == "STS-ISS-02":
@@ -553,7 +610,7 @@ class Twin:
         by_state = {}
         for r in rows:
             for code, v in r["global"].items(): by_state.setdefault(code, {}).setdefault(v["name"], 0); by_state[code][v["name"]] += 1
-        return {"generatedAt": now_iso(), "engine": f"fts_twin v{VERSION}", "couplingsEnforced": fts_twin_engine.ENFORCE_COUPLINGS, "models": len(self.fed.models), "assets": len(rows), "records": sum(len(v) for v in recs_by.values()), "elements": len(els),
+        return {"generatedAt": now_iso(), "engine": f"fts_twin v{VERSION}", "couplingsEnforced": fts_twin_engine.ENFORCE_COUPLINGS, "policyControlsEnforced": fts_twin_engine.ENFORCE_POLICY_CONTROLS, "evidenceItems": self.store.count("evidence"), "controlSets": len(self.store.instances("controlset")), "models": len(self.fed.models), "assets": len(rows), "records": sum(len(v) for v in recs_by.values()), "elements": len(els),
                 "events": sum(v["fired"] + v["refused"] + v["overrides"] for v in stats.values()), "refused": sum(v["refused"] for v in stats.values()), "overrides": sum(v["overrides"] for v in stats.values()),
                 "rejected": sum(v.get("rejected", 0) for v in stats.values()), "instruments": len(self.store.instances("instrument")),
                 "instrumentRules": {"polRollup": POL_ROLLUP, "useFeeds": USE_FEEDS, "kaDomains": KA_DOMAINS, "feeds": KA_DOMAIN_FEEDS},
@@ -574,6 +631,7 @@ class Twin:
                 {"region": rid, "regionName": self.fed.regions[mid][rid]["name"], "code": self.fed.code_of[mid][rid], "state": sid, "stateName": self.fed.state[mid].get(sid, {}).get("name", sid),
                  "initial": sid == self.fed.initial[mid].get(rid), "shared": rid in self.fed.shared.get(mid, ()), "elementId": a["refs"].get(rid) if rid in self.fed.shared.get(mid, ()) else None} for rid, sid in vec.items()]}
         return {**a, "vectorsResolved": vectors, "facts": self.fed.facts(a, els), "timeline": self.store.timeline(iid), "summary": self.fed.summary(a, els),
+                "evidence": [e for e in self.store.instances("evidence") if e.get("instanceId") == iid or e.get("parentId") == iid],
                 "records": len(self.records(iid)), "issues": self.issues(iid)}
 
     def models(self):

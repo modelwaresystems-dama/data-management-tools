@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.14.1">
+<meta name="version" content="1.14.2">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -314,7 +314,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.14.1";</script>
+<script>window.PAGE_BUILD="1.14.2";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -898,14 +898,19 @@ function saveProgress(){
 }
 function downloadProgress(){
   if(!(PLAN||SOLO)){ return; }
-  const data=saveProgress()||LASTSAVE; if(!data)return;
+  const data=saveProgress()||LASTSAVE; if(!data)return;   // always keep the browser (localStorage) copy
+  const st=document.getElementById("h-status");
+  if(REPO.on()){
+    try{ REPO.save(sessionSnapshot()); REPO.flushNow(); }catch(e){}
+    if(st) st.textContent="Saved to your private repo \u00b7 you can close and resume from Saved sessions on any machine";
+    return;
+  }
   const idPart=PLAN?PLAN.id:("solo-"+(slugify(SOLO.path)||"quiz"));
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
   a.download=`resume-${idPart}-${(data.savedAt||"").slice(0,10)}.json`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-  if((PLAN||SOLO)&&REPO.on()){ try{ REPO.save(sessionSnapshot()); REPO.flushNow(); }catch(e){} }
-  const st=document.getElementById("h-status"); if(st)st.textContent="Progress saved · you can resume later";
+  if(st) st.textContent="Progress saved to a file \u00b7 you can resume later (connect the repo to skip the file)";
 }
 async function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};p.quizTotals=[];p._qstart=0;}); H.answers=new Map(); H.counts=[0,0,0,0];
   if(PLAN){ PLAN.idx=0; try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(PLAN.items[0].path,"quiz.sample.json"))); }catch(e){} }

@@ -449,9 +449,12 @@ def build():
     qa.append({"severity": "note", "rule": "SRC-002", "element": "workbook", "finding": "The validated workbook is encrypted; permission matrix, roles, entry/exit rows, evidence and relationships are stand-ins to be merged from it."})
     qa.append({"severity": "note", "rule": "derived", "element": "events, decisionRights", "finding": f"{len(EVENTS)} event names and 10 of 11 decision-right names are drafted from the transitions; confirm against the workbook."})
     m["qaFindings"] = qa
+    # State Contracts register (Howard, 25 Sep 2026, cards 3, 4 and 5 option a): entry and exit per way in and way out, and evidence for
+    # every transition (fts_contracts.py). The Global protocol names no policy controls yet (its policy domains are an open card).
+    import fts_contracts; fts_contracts.derive(m, {}, origin="derived")
     m["meta"]["counts"] = {k: len(m[k]) for k in ["regions", "subStates", "transitions", "events", "guards", "crossRegionConstraints", "stateVectors", "activities", "services", "controls", "decisionRights", "permissionRecords", "exceptions", "evidence", "rulesGov", "rules", "invariants", "entryConditions", "exitConditions", "relationships"]}
     m["meta"]["counts"]["lifecyclePhases"] = len(PHASES)
-    m["meta"]["qaCounts"] = {"warnings": sum(1 for f in qa if f["severity"] == "warning"), "notes": sum(1 for f in qa if f["severity"] == "note")}
+    m["meta"]["qaCounts"] = {"warnings": sum(1 for f in m["qaFindings"] if f["severity"] == "warning"), "notes": sum(1 for f in m["qaFindings"] if f["severity"] == "note")}
     return m
 
 if __name__ == "__main__":

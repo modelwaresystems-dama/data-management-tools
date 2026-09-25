@@ -65,6 +65,8 @@ OOO_REQ = {"TR-AV-01": ("ROLE-DENG", "publish the product to its consumers ahead
            "TR-EX-05": ("ROLE-DBA", "clear storage under the retention schedule"),
            "TR-AV-04": ("ROLE-BA", "restore the feed for a business report"),
            "TR-PRV-03": ("ROLE-LEGAL", "action a data subject request")}
+# the private policy catalogue (spec/policy_controls.json beside the models folder): the synthetic DHE and BDA controls come from it
+CATALOG = {}
 SYSTEMS = {"Modelware": "Modelware data platform", "AGGPSA": "AGGPSA grants platform", "Nedbank": "Nedbank data platform"}
 REC_REQ = {"TR-GLD-01": ("ROLE-DENG", "match an arriving record to the master"), "TR-GLD-02": ("ROLE-DDS", "confirm the surviving record"),
            "TR-GLD-03": ("ROLE-DDS", "raise a survivorship dispute"), "TR-GLD-05": ("ROLE-DDS", "resolve the survivorship dispute"),
@@ -137,8 +139,18 @@ def read_policies(arch_dir):
         rows = lambda sh: [r for r in list(wb[sh].iter_rows(values_only=True))[4:] if r and r[0]] if sh in wb.sheetnames else []
         doms = {r[0]: r[1] for r in rows("62 · PolicyDomain")}
         pols = [{"id": r[0], "domainId": r[1], "domain": doms.get(r[1], r[1]), "statement": r[2], "owner": r[3], "effective": str(r[4] or ""), "status": r[5]} for r in rows("63 · Policy")]
-        procs = [{"id": r[0], "policyId": r[1], "name": r[2], "role": r[6]} for r in rows("180 · PolicyProcess")]
-        out[org] = {"domains": doms, "policies": pols, "procedures": procs}
+        procs = [{"id": r[0], "policyId": r[1], "name": r[2], "role": r[6], "implements": [c.strip() for c in str(r[10] or "").split(",") if c.strip()] if len(r) > 10 else []} for r in rows("180 · PolicyProcess")]
+        # State Contracts register (25 Sep 2026): each policy control (176), the procedure that implements it (180) and its evidence artefact (178)
+        arts = {r[1]: (r[0], r[3]) for r in rows("178 · PolicyEvidenceArtefact")}
+        impl = {c: pr["id"] for pr in procs for c in pr["implements"]}
+        pol_dom = {p["id"]: p["domainId"] for p in pols}
+        controls = {}
+        for r in rows("176 · PolicyControl"):
+            cid = r[0]; pid, _, num = cid.rpartition("-C")
+            if not pid or pid not in pol_dom: continue
+            controls[f"{pol_dom[pid]} C{num}"] = {"controlId": cid, "policyId": pid, "name": r[2], "procedures": [impl[cid]] if cid in impl else [],
+                                                  "artefactId": (arts.get(cid) or (None, None))[0], "artefact": (arts.get(cid) or (None, None))[1], "minimumEvidence": r[5]}
+        out[org] = {"domains": doms, "policies": pols, "procedures": procs, "controls": controls}
     return out
 
 def seed_instruments(tw, arch_dir, t0, now, counts):
@@ -172,11 +184,21 @@ def seed_instruments(tw, arch_dir, t0, now, counts):
         # Open Decisions C1 option c (Howard, 24 Sep 2026): a Data Handling Ethics and a Big Data and Data Science policy per organisation,
         # with procedures, marked synthetic until the FutureState workbooks carry them
         P = {**P, "policies": list(P.get("policies", [])), "procedures": list(P.get("procedures", []))}
-        for ka, dom, owner, prs in (("DHE", "Data Handling Ethics", "Data Ethics Practice Manager", ["Ethical use assessment", "Ethics incident handling", "Ethics awareness and training"]),
-                                    ("BDA", "Big Data and Data Science", "Big Data and Data Science Practice Manager", ["Source onboarding and alignment", "Model development and validation", "Insight review and release"])):
-            pid0 = f"POL-{ka}-SYN"
-            P["policies"].append({"id": pid0, "domainId": f"PD-SYN-{ka}", "domain": dom, "statement": dom + " policy (synthetic until the FutureState workbook carries it)", "owner": owner, "effective": "2026-01-01", "status": "Active", "synthetic": True})
-            for k, nm in enumerate(prs, 1): P["procedures"].append({"id": f"{pid0}-PR{k:02d}", "policyId": pid0, "name": dom + " \u2014 " + nm + " operating procedure (synthetic)", "role": owner, "synthetic": True})
+        # State Contracts register card 8 option a (25 Sep 2026): six procedures each, one per theme of the catalogue template, implementing
+        # the 17 synthetic controls of spec/policy_controls.json (PD-SYN-DHE, PD-SYN-BDA)
+        P["controls"] = dict(P.get("controls") or {})
+        for ka, dom, owner in (("DHE", "Data Handling Ethics", "Data Ethics Practice Manager"), ("BDA", "Big Data and Data Science", "Big Data and Data Science Practice Manager")):
+            pid0 = f"POL-{ka}-SYN"; dkey = f"PD-SYN-{ka}"; tmpl = (CATALOG.get(dkey) or {}).get("controls") or {}
+            P["policies"].append({"id": pid0, "domainId": dkey, "domain": dom, "statement": dom + " policy (synthetic until the FutureState workbook carries it)", "owner": owner, "effective": "2026-01-01", "status": "Active", "synthetic": True})
+            themes = {}
+            for num, c in sorted(tmpl.items()): themes.setdefault(c.get("procedure") or "PR01", []).append((num, c))
+            for prn, cs in sorted(themes.items()):
+                prid = f"{pid0}-{prn}"
+                P["procedures"].append({"id": prid, "policyId": pid0, "name": dom + " \u2014 " + (cs[0][1].get("theme") or prn) + " operating procedure (synthetic)", "role": owner, "synthetic": True,
+                                        "implements": [f"{pid0}-{num}" for num, _ in cs]})
+                for num, c in cs:
+                    P["controls"][f"{dkey} {num}"] = {"controlId": f"{pid0}-{num}", "policyId": pid0, "name": c.get("name"), "procedures": [prid], "artefactId": f"EV-{pid0}-{num}", "artefact": c.get("artefact"), "minimumEvidence": c.get("evidence"), "synthetic": True}
+        tw.set_controlset(scope, org, P["controls"], at=iso(t0 - datetime.timedelta(days=120)))
         for pr in P.get("procedures", []): procs_by.setdefault(pr["policyId"], []).append(pr)
         for pol in P.get("policies", []):
             from fts_twin import KA_DOMAINS, KA_DOMAIN_FEEDS, USE_FEEDS
@@ -191,18 +213,21 @@ def seed_instruments(tw, arch_dir, t0, now, counts):
             for pr in procs_by.get(pol["id"], []):
                 prs = start + datetime.timedelta(days=random.randint(1, 6))
                 vid = f"INS-{pfx}-{pr['id']}-v1"
-                tw.new_instrument(vid, scope, org, pol["domainId"], pol["domain"], pr["id"], "procedure", pr["name"], policy_id=pol["id"], version=1, owner=pr.get("role"), effective=pol["effective"], status=pol["status"], synthetic=bool(pr.get("synthetic")), at=iso(prs))
+                tw.new_instrument(vid, scope, org, pol["domainId"], pol["domain"], pr["id"], "procedure", pr["name"], policy_id=pol["id"], version=1, owner=pr.get("role"), effective=pol["effective"], status=pol["status"], synthetic=bool(pr.get("synthetic")), at=iso(prs), implements=pr.get("implements"))
                 walk(vid, "procedure", org, ka, prs, "in_force" if active else "drafted"); counts["instruments"] += 1
                 if active and random.random() < 0.10:   # a synthetic second version
                     v2s = now - datetime.timedelta(days=random.randint(15, 120)); v2 = f"INS-{pfx}-{pr['id']}-v2"
                     tw.new_instrument(v2, scope, org, pol["domainId"], pol["domain"], pr["id"], "procedure", pr["name"] + " (version 2, synthetic)", policy_id=pol["id"], version=2,
-                                      owner=pr.get("role"), predecessor=vid, synthetic=True, at=iso(v2s))
+                                      owner=pr.get("role"), predecessor=vid, synthetic=True, at=iso(v2s), implements=pr.get("implements"))
                     walk(v2, "procedure", org, ka, v2s, random.choice(["drafted", "reviewed", "in_force", "in_force"])); counts["instruments"] += 1; counts["v2"] += 1
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--models", required=True); ap.add_argument("--scenario", required=True); ap.add_argument("--architecture", required=True)
     ap.add_argument("--db", default="twin.sqlite"); ap.add_argument("--seed", type=int, default=1); ap.add_argument("--days", type=int, default=240)
     a = ap.parse_args(); random.seed(a.seed)
+    global CATALOG
+    cat = os.environ.get("FTS_POLICY_CATALOG") or os.path.join(os.path.abspath(a.models), "..", "spec", "policy_controls.json")
+    if os.path.exists(cat): CATALOG = json.load(open(cat, encoding="utf-8")).get("domains", {})
     if os.path.exists(a.db): os.remove(a.db)
     tw = Twin(a.models, a.db); fed = tw.fed; store = tw.store; req = make_req(tw)
     sc = json.load(open(a.scenario, encoding="utf-8")); products = read_products(a.architecture)

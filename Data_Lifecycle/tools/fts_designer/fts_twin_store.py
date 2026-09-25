@@ -76,7 +76,7 @@ class TwinStore:
     def snapshot(self, name, fleet=None):
         """one export file as data, in the same shape export() writes, so a viewer reads the server exactly as it reads the repo"""
         stamp = now_iso()
-        kinds = {"instances.json": ("asset", "assets"), "elements.json": ("element", "elements"), "records.json": ("record", "records"), "issues.json": ("issue", "issues"), "instruments.json": ("instrument", "instruments")}
+        kinds = {"instances.json": ("asset", "assets"), "elements.json": ("element", "elements"), "records.json": ("record", "records"), "issues.json": ("issue", "issues"), "instruments.json": ("instrument", "instruments"), "evidence.json": ("evidence", "evidence"), "controlsets.json": ("controlset", "controlSets")}
         if name in kinds:
             k, key = kinds[name]; docs = self.instances(k); return {"exportedAt": stamp, "count": len(docs), key: docs}
         if name == "events.json":
@@ -98,13 +98,17 @@ class TwinStore:
         json.dump({"exportedAt": stamp, "count": len(issues), "issues": issues}, open(os.path.join(out_dir, "issues.json"), "w", encoding="utf-8"), indent=1)
         instruments = self.instances("instrument")
         json.dump({"exportedAt": stamp, "count": len(instruments), "instruments": instruments}, open(os.path.join(out_dir, "instruments.json"), "w", encoding="utf-8"), indent=1)
+        # v0.4 (State Contracts register cards 6 and 9, 25 Sep 2026): the evidence items and each organisation's control set
+        evidence = self.instances("evidence"); csets = self.instances("controlset")
+        json.dump({"exportedAt": stamp, "count": len(evidence), "evidence": evidence}, open(os.path.join(out_dir, "evidence.json"), "w", encoding="utf-8"), indent=1)
+        json.dump({"exportedAt": stamp, "count": len(csets), "controlSets": csets}, open(os.path.join(out_dir, "controlsets.json"), "w", encoding="utf-8"), indent=1)
         json.dump({"exportedAt": stamp, "count": len(events), "events": events}, open(os.path.join(out_dir, "events.json"), "w", encoding="utf-8"), indent=1)
         if fleet is not None: json.dump({"exportedAt": stamp, **fleet}, open(os.path.join(out_dir, "fleet.json"), "w", encoding="utf-8"), indent=1)
-        return {"assets": len(assets), "records": len(records), "issues": len(issues), "instruments": len(instruments), "elements": len(elements), "events": len(events), "dir": out_dir}
+        return {"assets": len(assets), "records": len(records), "issues": len(issues), "instruments": len(instruments), "elements": len(elements), "events": len(events), "evidence": len(evidence), "controlSets": len(csets), "dir": out_dir}
 
     def import_dir(self, in_dir):
         n = 0
-        for f, key in (("instances.json", "assets"), ("elements.json", "elements"), ("records.json", "records"), ("issues.json", "issues"), ("instruments.json", "instruments")):
+        for f, key in (("instances.json", "assets"), ("elements.json", "elements"), ("records.json", "records"), ("issues.json", "issues"), ("instruments.json", "instruments"), ("evidence.json", "evidence"), ("controlsets.json", "controlSets")):
             p = os.path.join(in_dir, f)
             if os.path.exists(p):
                 for doc in json.load(open(p, encoding="utf-8")).get(key, []): self.put_instance(doc); n += 1

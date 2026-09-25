@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.13.0">
+<meta name="version" content="1.13.1">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -304,7 +304,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.13.0";</script>
+<script>window.PAGE_BUILD="1.13.1";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -362,8 +362,12 @@ function sessionSnapshot(){
   return base;
 }
 function setRepoStat(kind){ const b=document.getElementById("repoBadge"); if(!b)return;
-  b.textContent = kind==="saving"?"· saving…" : kind==="saved"?"· saved to repo" : kind==="failed"?"· repo save failed — check GitHub settings" : "";
-  b.style.color = kind==="failed"?"var(--bad)":"var(--faint)"; }
+  if(kind==="saving") b.textContent="· saving…";
+  else if(kind==="queued") b.textContent="· save queued";
+  else if(kind==="saved") b.textContent="· saved to repo";
+  else if(kind&&kind.indexOf("failed")===0){ const why=kind.slice(7); b.textContent="· repo save failed"+(why?(" ("+why+")"):" — check GitHub settings"); }
+  else b.textContent="";
+  b.style.color=(kind&&kind.indexOf("failed")===0)?"var(--bad)":"var(--faint)"; }
 const REPO=(function(){
   const GHKEY="ds_gh_cfg", LIVE="Workbench_Player/data/live-sessions";
   function raw(){ try{ return JSON.parse(localStorage.getItem(GHKEY)||"{}"); }catch(e){ return {}; } }
@@ -375,19 +379,20 @@ const REPO=(function(){
   function api(path){ const c=cfg(); return "https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+encodeURIComponent(c.repo)+"/contents/"+path.split("/").map(encodeURIComponent).join("/"); }
   const shaCache={};
   async function getSha(path){ if(shaCache[path]!==undefined) return shaCache[path]; try{ const r=await fetch(api(path)+"?ref="+encodeURIComponent(cfg().branch),{headers:hdr(),cache:"no-store"}); if(r.status===200){ const j=await r.json(); shaCache[path]=j.sha; return j.sha; } }catch(e){} shaCache[path]=null; return null; }
-  async function put(path,obj,message){ const c=cfg(); const sha=await getSha(path); const body={ message:message||("Live session "+path), content:b64(JSON.stringify(obj,null,2)), branch:c.branch }; if(sha) body.sha=sha; const r=await fetch(api(path),{method:"PUT",headers:hdr(),body:JSON.stringify(body)}); if(r.ok){ const j=await r.json(); shaCache[path]=j.content&&j.content.sha; return true; } if(r.status===409||r.status===422){ delete shaCache[path]; } throw new Error("put "+r.status); }
+  async function put(path,obj,message,_retry){ const c=cfg(); const sha=await getSha(path); const body={ message:message||("Live session "+path), content:b64(JSON.stringify(obj,null,2)), branch:c.branch }; if(sha) body.sha=sha; const r=await fetch(api(path),{method:"PUT",headers:hdr(),body:JSON.stringify(body)}); if(r.ok){ const j=await r.json(); shaCache[path]=j.content&&j.content.sha; return true; } if(r.status===409||r.status===422){ delete shaCache[path]; } if((r.status===403||r.status===429)&&!_retry){ await new Promise(res=>setTimeout(res,2800)); delete shaCache[path]; return put(path,obj,message,true); } let detail=String(r.status); try{ const j=await r.json(); if(j&&j.message) detail=r.status+" "+j.message.slice(0,80); }catch(e){} throw new Error(detail); }
   async function del(path,message){ const c=cfg(); const sha=await getSha(path); if(!sha) return; const r=await fetch(api(path),{method:"DELETE",headers:hdr(),body:JSON.stringify({message:message||("remove "+path), sha, branch:c.branch})}); if(r.ok) delete shaCache[path]; }
   async function getJson(path){ try{ const r=await fetch(api(path)+"?ref="+encodeURIComponent(cfg().branch),{headers:hdr(),cache:"no-store"}); if(r.status!==200) return null; const j=await r.json(); shaCache[path]=j.sha; return JSON.parse(unb64(j.content)); }catch(e){ return null; } }
-  let chain=Promise.resolve(); const lastBody={};
-  function save(snap){ if(!on()||!snap||!snap.id) return; const cmp=JSON.stringify(Object.assign({},snap,{savedAt:0})); if(lastBody[snap.id]===cmp) return; lastBody[snap.id]=cmp;
-    const path=LIVE+"/active/"+snap.id+".json"; setRepoStat("saving");
-    chain=chain.then(()=>put(path,snap,"Session: "+snap.name+" — q"+((snap.qi!=null?snap.qi+1:"?"))).then(()=>setRepoStat("saved")).catch(()=>{ delete lastBody[snap.id]; setRepoStat("failed"); })); }
+  const lastBody={}; let flushTimer=null, pending=null;
+  function save(snap){ if(!on()||!snap||!snap.id) return; const cmp=JSON.stringify(Object.assign({},snap,{savedAt:0})); if(lastBody[snap.id]===cmp) return; pending=snap; setRepoStat("queued"); if(!flushTimer) flushTimer=setTimeout(function(){ flushTimer=null; flush(); }, 8000); }
+  async function flush(){ if(!pending) return; const snap=pending; pending=null; const cmp=JSON.stringify(Object.assign({},snap,{savedAt:0})); lastBody[snap.id]=cmp; const path=LIVE+"/active/"+snap.id+".json"; setRepoStat("saving"); try{ await put(path,snap,"Session: "+snap.name); setRepoStat("saved"); }catch(e){ delete lastBody[snap.id]; setRepoStat("failed:"+(e.message||"")); } }
+  function flushNow(){ if(flushTimer){ clearTimeout(flushTimer); flushTimer=null; } return flush(); }
   async function listDir(sub){ let items=[]; try{ const r=await fetch(api(LIVE+"/"+sub)+"?ref="+encodeURIComponent(cfg().branch),{headers:hdr(),cache:"no-store"}); if(r.status!==200) return []; items=await r.json(); }catch(e){ return []; } if(!Array.isArray(items)) return []; const out=[]; for(const it of items){ if(!/\.json$/i.test(it.name||"")) continue; const doc=await getJson(LIVE+"/"+sub+"/"+it.name); if(doc) out.push(doc); } return out; }
   async function list(){ if(!on()) return []; const out=await listDir("active"); out.sort((a,b)=>String(b.savedAt||"").localeCompare(String(a.savedAt||""))); return out; }
   async function listAll(){ if(!on()) return []; const a=await listDir("active"), c=await listDir("completed"); return a.concat(c); }
   function load(id){ return getJson(LIVE+"/active/"+id+".json"); }
-  async function archive(snap){ if(!on()||!snap||!snap.id) return; const done=Object.assign({},snap,{status:"completed", completedAt:new Date().toISOString()}); try{ await put(LIVE+"/completed/"+snap.id+".json", done, "Completed: "+snap.name); await del(LIVE+"/active/"+snap.id+".json","Archive: "+snap.name); delete lastBody[snap.id]; setRepoStat("saved"); }catch(e){ setRepoStat("failed"); } }
-  return { on, cfg, raw, save, list, listAll, load, archive };
+  async function archive(snap){ if(!on()||!snap||!snap.id) return; if(flushTimer){ clearTimeout(flushTimer); flushTimer=null; } pending=null; const done=Object.assign({},snap,{status:"completed", completedAt:new Date().toISOString()}); try{ await put(LIVE+"/completed/"+snap.id+".json", done, "Completed: "+snap.name); await del(LIVE+"/active/"+snap.id+".json","Archive: "+snap.name); delete lastBody[snap.id]; setRepoStat("saved"); }catch(e){ setRepoStat("failed:"+(e.message||"")); } }
+  async function check(){ if(!on()) return {reason:"no token"}; const c=cfg(); try{ const r=await fetch("https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+encodeURIComponent(c.repo),{headers:hdr(),cache:"no-store"}); if(r.status===200){ const j=await r.json(); const w=!!(j.permissions&&(j.permissions.push||j.permissions.admin||j.permissions.maintain)); return {repo:(j.full_name||(c.owner+"/"+c.repo)), write:w}; } if(r.status===401||r.status===403) return {reason:"token rejected ("+r.status+")"}; if(r.status===404) return {reason:"repo not found or no access"}; return {reason:"status "+r.status}; }catch(e){ return {reason:"network error"}; } }
+  return { on, cfg, raw, save, flushNow, check, list, listAll, load, archive };
 })();
 function ghRawCfg(){ try{ return JSON.parse(localStorage.getItem("ds_gh_cfg")||"{}"); }catch(e){ return {}; } }
 function openRepoCfg(){ const m=document.getElementById("repoModal"); if(!m)return; const c=Object.assign({owner:"modelwaresystems-dama",repo:"modelware_app_storage",branch:"main"}, ghRawCfg());
@@ -582,9 +587,10 @@ async function renderHostSetup(body){
   async function renderRepoUI(){
     const rs=document.getElementById("repoState"), ru=document.getElementById("repoUnfinished");
     if(rs){ rs.innerHTML = REPO.on()
-        ? 'Saving sessions to your private repo. <button class="tinylink" type="button" id="repoCfgBtn">GitHub settings</button>'
+        ? '<span id="repoHealth" style="color:var(--faint)">Checking private repo\u2026</span> \u00b7 <button class="tinylink" type="button" id="repoCfgBtn">GitHub settings</button>'
         : '<button class="tinylink" type="button" id="repoCfgBtn">\u2699 Connect private repo to save &amp; resume sessions anywhere</button>';
-      const b=document.getElementById("repoCfgBtn"); if(b) b.onclick=openRepoCfg; }
+      const b=document.getElementById("repoCfgBtn"); if(b) b.onclick=openRepoCfg;
+      if(REPO.on()){ REPO.check().then(function(res){ const h=document.getElementById("repoHealth"); if(!h)return; if(res.repo){ h.innerHTML='<span style="color:var(--good)">\u2713 Private repo connected &amp; saving</span> \u00b7 '+esc(res.repo)+(res.write?'':' <span style="color:var(--gold)">(token may be read-only)</span>'); } else { h.innerHTML='<span style="color:var(--bad)">\u2717 Repo not reachable \u2014 '+esc(res.reason||"check GitHub settings")+'</span>'; } }); } }
     if(!ru) return; ru.innerHTML="";
     if(!REPO.on()) return;
     ru.innerHTML='<div class="sessionhdr">Saved sessions</div><div class="repohint">Loading from your private repo\u2026</div>';
@@ -856,7 +862,7 @@ function downloadProgress(){
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
   a.download=`resume-${idPart}-${(data.savedAt||"").slice(0,10)}.json`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-  if((PLAN||SOLO)&&REPO.on()){ try{ REPO.save(sessionSnapshot()); }catch(e){} }
+  if((PLAN||SOLO)&&REPO.on()){ try{ REPO.save(sessionSnapshot()); REPO.flushNow(); }catch(e){} }
   const st=document.getElementById("h-status"); if(st)st.textContent="Progress saved · you can resume later";
 }
 async function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};p.quizTotals=[];p._qstart=0;}); H.answers=new Map(); H.counts=[0,0,0,0];

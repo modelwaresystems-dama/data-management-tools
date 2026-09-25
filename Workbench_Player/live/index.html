@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.14.2">
+<meta name="version" content="1.14.3">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -314,7 +314,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.14.2";</script>
+<script>window.PAGE_BUILD="1.14.3";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -429,6 +429,7 @@ let pTimer=null, myPick=null, myAnsweredQi=-1, myLog={};
 
 /* ---------- utils ---------- */
 function initials(n){return (n||"?").split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();}
+function nameKey(n){ return (n||"").trim().toLowerCase(); }
 function color(seed){const c=["#2FD4C0","#E4572E","#E0A82E","#2E86E4","#17A673","#B57BFF","#F0685E","#4EC0A8"];let h=0;for(const ch of String(seed))h=(h*31+ch.charCodeAt(0))>>>0;return c[h%c.length];}
 /* A fun, stable emoji per participant (keyed by their id), Menti-style */
 const EMOJI=["🦊","🐼","🦁","🐙","🦄","🐸","🐵","🦉","🐧","🐝","🦋","🐬","🐢","🦖","🐳","🦈","🦩","🦚","🦜","🐨","🐯","🦓","🦒","🐷","🐰","🐹","🦝","🦔","🦇","🐺","🦌","🐌","🐞","🐠","🐦","🦆","🐓","🦃","🐥","🌟","🍕","🍔","🌮","🍩","🍦","🎸","🚀","👾","🤖","🎩","👑","💎","🔥","⚡","🌈","🍀"];
@@ -681,7 +682,7 @@ async function renderHostSetup(body){
     const lastPath = PLAN?((PLAN.items[PLAN.idx]||{}).path):(SOLO&&SOLO.path);
     try{ QUIZ=normalizeQuiz(await fetchAsset(lastPath,"quiz.sample.json")); }catch(e){ QUIZ={title:(x.name||"Quiz"),questions:[]}; }
     role="host"; startHost();
-    (x.players||[]).forEach(function(pl,i){ if(pl&&pl.name){ H.players.set("re_"+i,{name:pl.name, score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice(), lastPts:0, _resumed:true, _seed:true}); } });
+    (x.players||[]).forEach(function(pl){ if(pl&&pl.name){ const key=nameKey(pl.name); if(key) H.players.set(key,{name:pl.name, score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice(), lastPts:0, _resumed:true}); } });
     if(PLAN){ RV.level=PLAN.course?"course":"session"; RV.qi=PLAN.idx; if(PLAN.course&&REPO.on()) loadCourseOthers(); }
     H.phase="final"; publishState(); renderHost();
     if((PLAN||SOLO)&&REPO.on()){ try{ REPO.save(sessionSnapshot()); }catch(e){} }
@@ -782,25 +783,24 @@ function startHost(){
 function refreshRoster(){
   chBase.presence.get((err,members)=>{
     if(err)return;
-    const seen=new Set();
     (members||[]).forEach(m=>{
-      seen.add(m.clientId);
-      if(!H.players.has(m.clientId)) H.players.set(m.clientId,{name:(m.data&&m.data.name)||"Guest",score:0});
-      else if(m.data&&m.data.name) H.players.get(m.clientId).name=m.data.name;
-      applyResume(H.players.get(m.clientId));
+      const nm=(m.data&&m.data.name)||""; const key=nameKey(nm); if(!key) return;   // only rostered (named) players count
+      if(!H.players.has(key)) H.players.set(key,{name:nm,score:0});
+      else if(nm) H.players.get(key).name=nm;
+      applyResume(H.players.get(key));
     });
-    { const realNames=new Set(); H.players.forEach(function(p){ if(!p._seed&&p.name) realNames.add(p.name.toLowerCase()); });
-      [...H.players.entries()].forEach(function(e){ if(e[1]._seed && realNames.has((e[1].name||"").toLowerCase())) H.players.delete(e[0]); }); }
     if(H.phase==="lobby"){ publishState(); renderHost(); }
     else renderHost();
   });
 }
 function onAnswer(d){
   if(!d||H.phase!=="question"||d.qi!==H.qi)return;
-  if(H.answers.has(d.pid))return;
-  if(!H.players.has(d.pid))H.players.set(d.pid,{name:d.name||"Guest",score:0});
-  applyResume(H.players.get(d.pid));
-  H.answers.set(d.pid,{pick:d.pick,at:Date.now()});
+  const key=nameKey(d.name); if(!key) return;   // identity = the student's roster name
+  if(H.answers.has(key))return;
+  if(!H.players.has(key))H.players.set(key,{name:d.name,score:0});
+  else if(d.name) H.players.get(key).name=d.name;
+  applyResume(H.players.get(key));
+  H.answers.set(key,{pick:d.pick,at:Date.now()});
   H.counts=[0,0,0,0]; H.answers.forEach(a=>{if(a.pick>=0&&a.pick<4)H.counts[a.pick]++;});
   throttledPublish(); renderHost();
   if(H.answers.size>=H.players.size && H.players.size>0){ /* everyone answered — host may reveal */ }
@@ -1196,7 +1196,7 @@ function renderPlayerWaiting(msg){
   mount.innerHTML=`<div class="pv"><div class="pv-h"><span class="who">${esc(myName)}</span><span class="sc" id="pvsc">0 pts</span></div>
     <div class="pv-wait"><div class="pulse"></div><div class="big">You're in, ${esc(myName)}!</div><div>${esc(msg)}</div></div></div>`;
 }
-function myScore(){ if(!P||!P.leaderboard)return 0; const me=P.leaderboard.find(p=>p.pid===pid); return me?me.score:0; }
+function myScore(){ if(!P||!P.leaderboard)return 0; const me=P.leaderboard.find(p=>p.pid===nameKey(myName)); return me?me.score:0; }
 function renderPlayer(){
   if(!P){ return renderPlayerWaiting("Waiting for the host to start…"); }
   const head=`<div class="pv-h"><span class="who"><span class="me-em">${emoji(pid)}</span> ${esc(myName)}</span><span class="sc">${myScore()} pts</span></div>`;
@@ -1217,18 +1217,18 @@ function renderPlayer(){
   if(P.phase==="reveal"){
     if(myLog[P.qi]) myLog[P.qi].correct=(myLog[P.qi].pick===P.correct);
     const ok=myPick===P.correct, answered=myAnsweredQi===P.qi||myPick!=null;
-    const me=(P.leaderboard||[]).find(p=>p.pid===pid); const rank=(P.leaderboard||[]).findIndex(p=>p.pid===pid)+1;
+    const me=(P.leaderboard||[]).find(p=>p.pid===nameKey(myName)); const rank=(P.leaderboard||[]).findIndex(p=>p.pid===nameKey(myName))+1;
     const pts=me?me.lastPts:0;
     mount.innerHTML=`<div class="pv">${head}<div class="pv-fb ${ok?'ok':'no'}"><div class="badge">${!answered?'⏱ No answer':(ok?'✓ Correct!':'✗ Not quite')}</div><div class="pts">${ok?'+'+pts:'0'}</div><div class="rk">${rank>0?`You're ${ordinal(rank)} of ${P.roomN} · ${myScore()} pts`:''}</div></div></div>`;
     return;
   }
   if(P.phase==="interlude"){
-    const rank=(P.leaderboard||[]).findIndex(p=>p.pid===pid)+1;
+    const rank=(P.leaderboard||[]).findIndex(p=>p.pid===nameKey(myName))+1;
     mount.innerHTML=`<div class="pv">${head}<div class="pv-fb"><div class="badge disp">\u2713 Quiz done</div><div class="pts">${myScore()}</div><div class="rk">${rank>0?`You're ${ordinal(rank)} of ${P.roomN}`:''}${P.plan&&P.plan.nextTitle?` \u00b7 next: ${esc(P.plan.nextTitle)}`:""}</div></div></div>`;
     return;
   }
   // final — with a per-question review of what you got right/wrong
-  const rank=(P.leaderboard||[]).findIndex(p=>p.pid===pid)+1;
+  const rank=(P.leaderboard||[]).findIndex(p=>p.pid===nameKey(myName))+1;
   const qids=Object.keys(myLog).map(Number).sort((a,b)=>a-b);
   let corr=0; const chips=qids.map(qi=>{const e=myLog[qi];const ok=!!e.correct;if(ok)corr++;return `<span class="revchip ${ok?'ok':'no'}">Q${qi+1} ${ok?'✓':'✗'}</span>`;}).join("");
   mount.innerHTML=`<div class="pv">${head}<div class="pv-fb"><div class="badge disp">\u{1F3C1} Done!</div><div class="pts">${myScore()}</div><div class="rk">${corr}/${P.total||qids.length} correct${rank>0?` · rank ${ordinal(rank)} of ${P.roomN}`:''}</div>${chips?`<div class="revwrap">${chips}</div>`:''}</div></div>`;

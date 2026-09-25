@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.9.14">
+<meta name="version" content="1.9.15">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -229,7 +229,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.9.14";</script>
+<script>window.PAGE_BUILD="1.9.15";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -259,7 +259,8 @@ let pid = "p_"+Math.random().toString(36).slice(2,9);
 let myName="";
 let hostClassId="", hostClassName="";
 let PLAN=null; // {id, title, items:[{path,title,weight}], idx} when running a session/course
-let RESUME_SCORES={}, LASTSAVE=null;   // name->{score,quizTotals} for resuming a paused course
+let SOLO=null; // {path,title} when running a single quiz (still pausable/resumable)
+let RESUME_SCORES={}, LASTSAVE=null, RESUME_QI=null;   // name->{score,quizTotals} for resuming; RESUME_QI = last scored question when resuming a single quiz
 let ably=null, chState=null, chAns=null, chBase=null;
 
 /* host authoritative model */
@@ -399,33 +400,56 @@ async function renderHostSetup(body){
   qsel.onchange=()=>{ fillClasses(); refreshResume(); }; fillClasses();
   function refreshResume(){
     const rw=document.getElementById("resumeWrap"); if(!rw)return; rw.innerHTML="";
-    const info=selInfo(); if(info.kind!=="plan"||!info.session) return;
-    let saved=null; try{ saved=JSON.parse(localStorage.getItem("ds_prog_"+info.session.id)||"null"); }catch(e){}
-    if(!saved||!(saved.resumeIdx<info.session.quizzes.length)) return;
-    rw.innerHTML=`<div class="resumecard"><b>Saved progress found</b> — quiz ${saved.resumeIdx+1} of ${info.session.quizzes.length} · ${(saved.players||[]).length} players · saved ${esc(new Date(saved.savedAt).toLocaleString())}<div style="margin-top:9px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="bigbtn" style="width:auto;padding:10px 16px" id="resumeBtn">▶ Resume from here</button><button class="tinylink" id="resumeClear">discard saved</button></div></div>`;
-    document.getElementById("resumeBtn").onclick=()=>doResume(info.session, saved);
-    document.getElementById("resumeClear").onclick=()=>{ try{localStorage.removeItem("ds_prog_"+info.session.id);}catch(e){} refreshResume(); };
+    const info=selInfo();
+    if(info.kind==="plan" && info.session){
+      let saved=null; try{ saved=JSON.parse(localStorage.getItem("ds_prog_"+info.session.id)||"null"); }catch(e){}
+      if(!saved||!(saved.resumeIdx<info.session.quizzes.length)) return;
+      rw.innerHTML=`<div class="resumecard"><b>Saved progress found</b> — quiz ${saved.resumeIdx+1} of ${info.session.quizzes.length} · ${(saved.players||[]).length} players · saved ${esc(new Date(saved.savedAt).toLocaleString())}<div style="margin-top:9px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="bigbtn" style="width:auto;padding:10px 16px" id="resumeBtn">▶ Resume from here</button><button class="tinylink" id="resumeClear">discard saved</button></div></div>`;
+      document.getElementById("resumeBtn").onclick=()=>doResume(info.session, saved);
+      document.getElementById("resumeClear").onclick=()=>{ try{localStorage.removeItem("ds_prog_"+info.session.id);}catch(e){} refreshResume(); };
+      return;
+    }
+    if(info.kind==="quiz" && info.quizPath){
+      let saved=null; try{ saved=JSON.parse(localStorage.getItem(soloKey(info.quizPath))||"null"); }catch(e){}
+      if(!saved||saved.qi==null||saved.qi<0) return;
+      const nextQ=(saved.qi||0)+2;
+      rw.innerHTML=`<div class="resumecard"><b>Saved progress found</b> — resume at question ${saved.total?Math.min(nextQ,saved.total):nextQ}${saved.total?(" of "+saved.total):""} · ${(saved.players||[]).length} players · saved ${esc(new Date(saved.savedAt).toLocaleString())}<div style="margin-top:9px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="bigbtn" style="width:auto;padding:10px 16px" id="resumeBtn">▶ Resume from here</button><button class="tinylink" id="resumeClear">discard saved</button></div></div>`;
+      document.getElementById("resumeBtn").onclick=()=>doResumeSolo(info.quizPath, saved);
+      document.getElementById("resumeClear").onclick=()=>{ try{localStorage.removeItem(soloKey(info.quizPath));}catch(e){} refreshResume(); };
+      return;
+    }
   }
   async function doResume(sx, saved){
+    SOLO=null; RESUME_QI=null;
     PLAN={ id:sx.id, title:sx.title, items:sx.quizzes.map(p=>({path:p,title:(quizzes.find(x=>x.path===p)||{}).title||p,weight:1})), idx:saved.resumeIdx };
     RESUME_SCORES={}; (saved.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
     try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[saved.resumeIdx].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     hostClassId=saved.classId||""; hostClassName=saved.className||"";
     role="host"; startHost();
   }
+  async function doResumeSolo(path, saved){
+    PLAN=null;
+    SOLO={ path, title:saved.quizTitle||"" };
+    RESUME_SCORES={}; (saved.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:[]}; });
+    RESUME_QI=(saved.qi!=null?saved.qi:-1);
+    try{ QUIZ=normalizeQuiz(await fetchAsset(path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
+    hostClassId=saved.classId||""; hostClassName=saved.className||"";
+    role="host"; startHost();
+  }
   fillClasses(); refreshResume();
   const rf=document.getElementById("resumeFile");
-  if(rf) rf.onchange=()=>{ const fl=rf.files&&rf.files[0]; if(!fl)return; const fr=new FileReader(); fr.onload=()=>{ let saved; try{ saved=JSON.parse(fr.result); }catch(e){ note.textContent="Couldn't read that resume file."; return; } const sx=sessions.find(x=>x.id===saved.planId); if(!sx){ note.textContent="That resume file is for a course not in your library ("+(saved.planTitle||saved.planId)+")."; return; } doResume(sx, saved); }; fr.readAsText(fl); };
+  if(rf) rf.onchange=()=>{ const fl=rf.files&&rf.files[0]; if(!fl)return; const fr=new FileReader(); fr.onload=()=>{ let saved; try{ saved=JSON.parse(fr.result); }catch(e){ note.textContent="Couldn't read that resume file."; return; } if(saved&&saved.solo&&saved.quizPath){ doResumeSolo(saved.quizPath, saved); return; } const sx=sessions.find(x=>x.id===saved.planId); if(!sx){ note.textContent="That resume file is for a course not in your library ("+(saved.planTitle||saved.planId)+")."; return; } doResume(sx, saved); }; fr.readAsText(fl); };
   document.getElementById("hback").onclick=()=>renderJoinForm(body,"");
   document.getElementById("hstart").onclick=async ()=>{
     const info=selInfo();
     if(info.kind==="plan" && info.session){
       const sx=info.session;
-      RESUME_SCORES={};
+      RESUME_SCORES={}; SOLO=null; RESUME_QI=null;
       PLAN={ id:sx.id, title:sx.title, items:sx.quizzes.map(p=>({path:p,title:(quizzes.find(x=>x.path===p)||{}).title||p,weight:1})), idx:0 };
       try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[0].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     } else {
-      PLAN=null; RESUME_SCORES={};
+      PLAN=null; RESUME_SCORES={}; RESUME_QI=null;
+      SOLO={ path:info.quizPath, title:(quizzes.find(x=>x.path===info.quizPath)||{}).title||info.quizPath };
       try{ QUIZ=normalizeQuiz(await fetchAsset(info.quizPath,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     }
     const c=(r.classes||[]).find(x=>x.id===csel.value);
@@ -491,6 +515,7 @@ function startHost(){
   if(liveUnconfigured()){ mount.innerHTML=`<div class="center"><div class="card"><h1>Backend not set</h1><p class="sub">Set <b>tokenUrl</b> in app-config.js (your private backend's ably-token function) to host a live session — see README. No key goes in this page.</p></div></div>`; return; }
   room=newCode();
   H={phase:"lobby",qi:-1,players:new Map(),answers:new Map(),counts:[0,0,0,0],startTs:0,endsAt:0,timer:null};
+  if(SOLO && RESUME_QI!=null && RESUME_QI>=0){ H.qi=RESUME_QI; }   // resume a single quiz just past the last scored question
   connect();
   codePill.hidden=false; codePill.textContent="Room "+room;
   rolePill.hidden=false; rolePill.textContent="Projector / Host";
@@ -598,22 +623,33 @@ function downloadSessionResults(){
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
 function applyResume(p){ if(!p||p._resumed)return; const s=p.name&&RESUME_SCORES[p.name.toLowerCase()]; if(s){ p.score=s.score||0; p.quizTotals=(s.quizTotals||[]).slice(); p._resumed=true; } }
+function soloKey(path){ return "ds_prog_solo_"+(slugify(path)||"quiz"); }
 function saveProgress(){
-  if(!PLAN||!PLAN.id)return null;
   try{
-    const vals=[...H.players.values()].filter(p=>p.name&&p.name!=="Guest");
-    const banked=vals.reduce((m,p)=>Math.max(m,(p.quizTotals||[]).length),0);
-    const players=vals.map(p=>{ const qt=(p.quizTotals||[]).slice(0,banked); return {name:p.name, score:qt.reduce((a,b)=>a+(b||0),0), quizTotals:qt}; });
-    const data={v:1, planId:PLAN.id, planTitle:PLAN.title, resumeIdx:banked, classId:hostClassId, className:hostClassName, savedAt:new Date().toISOString(), players};
-    localStorage.setItem("ds_prog_"+PLAN.id, JSON.stringify(data)); LASTSAVE=data; return data;
+    if(PLAN&&PLAN.id){
+      const vals=[...H.players.values()].filter(p=>p.name&&p.name!=="Guest");
+      const banked=vals.reduce((m,p)=>Math.max(m,(p.quizTotals||[]).length),0);
+      const players=vals.map(p=>{ const qt=(p.quizTotals||[]).slice(0,banked); return {name:p.name, score:qt.reduce((a,b)=>a+(b||0),0), quizTotals:qt}; });
+      const data={v:1, planId:PLAN.id, planTitle:PLAN.title, resumeIdx:banked, classId:hostClassId, className:hostClassName, savedAt:new Date().toISOString(), players};
+      localStorage.setItem("ds_prog_"+PLAN.id, JSON.stringify(data)); LASTSAVE=data; return data;
+    }
+    if(SOLO&&SOLO.path){
+      const vals=[...H.players.values()].filter(p=>p.name&&p.name!=="Guest");
+      const players=vals.map(p=>({name:p.name, score:p.score||0}));
+      const qiDone=(H.phase==="question")?(H.qi-1):H.qi;   // count only questions already revealed/scored
+      const data={v:1, solo:true, quizPath:SOLO.path, quizTitle:SOLO.title||(QUIZ&&QUIZ.title)||"", qi:qiDone, total:(QUIZ&&QUIZ.questions&&QUIZ.questions.length)||0, classId:hostClassId, className:hostClassName, savedAt:new Date().toISOString(), players};
+      localStorage.setItem(soloKey(SOLO.path), JSON.stringify(data)); LASTSAVE=data; return data;
+    }
+    return null;
   }catch(e){ return null; }
 }
 function downloadProgress(){
-  if(!PLAN){ return; }
+  if(!(PLAN||SOLO)){ return; }
   const data=saveProgress()||LASTSAVE; if(!data)return;
+  const idPart=PLAN?PLAN.id:("solo-"+(slugify(SOLO.path)||"quiz"));
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-  a.download=`resume-${PLAN.id}-${(data.savedAt||"").slice(0,10)}.json`;
+  a.download=`resume-${idPart}-${(data.savedAt||"").slice(0,10)}.json`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   const st=document.getElementById("h-status"); if(st)st.textContent="Progress saved · you can resume later";
 }
@@ -646,6 +682,7 @@ function hostReveal(){
     p.lastPts=pts; p.score+=pts;
     if(!p.log)p.log={}; p.log[H.qi]={pick:a?a.pick:null, correct};
   });
+  if(SOLO) saveProgress();
   publishState(); renderHost();
 }
 
@@ -671,7 +708,7 @@ function syncHostBar(s){
   if(s.phase==="interlude"){ nx.disabled=false; nx.textContent="Next quiz \u2192"; }
   else { nx.disabled=s.phase!=="reveal"; nx.textContent=(s.qi>=s.total-1)?(s.plan?"End of quiz \u2192":"See results"):"Next question"; }
   document.getElementById("h-save").disabled=!(s.phase==="reveal"||s.phase==="final"||s.phase==="interlude");
-  { const pb=document.getElementById("h-pause"); if(pb) pb.disabled=!PLAN; }
+  { const pb=document.getElementById("h-pause"); if(pb) pb.disabled=!(PLAN||SOLO); }
   let t="";
   if(s.phase==="lobby")t=`${s.roomN} joined · waiting`;
   else if(s.phase==="question")t=`Q${s.qi+1}/${s.total} · ${s.answeredN}/${s.roomN} answered · ${Math.max(0,Math.ceil((s.endsAt-Date.now())/1000))}s`;

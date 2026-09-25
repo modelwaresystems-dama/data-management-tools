@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fts_twin_fleet.py v0.7  -  the twin's fleet: the Data Products of three business architectures as Data Assets, with the golden
+fts_twin_fleet.py v0.8  -  the twin's fleet: the Data Products of three business architectures as Data Assets, with the golden
 records of their party masters as records inside them. Every step goes through the twin engine, so a refusal is a real refusal.
 
   python fts_twin_fleet.py --models <dir> --scenario <banking.sim.json> --architecture <private>/twin/architecture --db twin.sqlite [--seed 1]

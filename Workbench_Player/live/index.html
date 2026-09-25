@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.14.3">
+<meta name="version" content="1.14.4">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -314,7 +314,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.14.3";</script>
+<script>window.PAGE_BUILD="1.14.4";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -406,7 +406,8 @@ const REPO=(function(){
   function load(id){ return getJson(LIVE+"/active/"+id+".json"); }
   async function archive(snap){ if(!on()||!snap||!snap.id) return; if(flushTimer){ clearTimeout(flushTimer); flushTimer=null; } pending=null; const done=Object.assign({},snap,{status:"completed", completedAt:new Date().toISOString()}); try{ await put(LIVE+"/completed/"+snap.id+".json", done, "Completed: "+snap.name); await del(LIVE+"/active/"+snap.id+".json","Archive: "+snap.name); delete lastBody[snap.id]; setRepoStat("saved"); }catch(e){ setRepoStat("failed:"+(e.message||"")); } }
   async function check(){ if(!on()) return {reason:"no token"}; const c=cfg(); try{ const r=await fetch("https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+encodeURIComponent(c.repo),{headers:hdr(),cache:"no-store"}); if(r.status===200){ const j=await r.json(); const w=!!(j.permissions&&(j.permissions.push||j.permissions.admin||j.permissions.maintain)); const db=j.default_branch||"main"; let fixed=false; if(c.branch && c.branch!==db){ /* stored branch looks wrong (e.g. a folder name) — heal to the repo default */ healBranch(db); fixed=true; } else { branchOverride=db; } return {repo:(j.full_name||(c.owner+"/"+c.repo)), write:w, branch:db, fixed:fixed}; } if(r.status===401||r.status===403) return {reason:"token rejected ("+r.status+")"}; if(r.status===404) return {reason:"repo not found or no access"}; return {reason:"status "+r.status}; }catch(e){ return {reason:"network error"}; } }
-  return { on, cfg, raw, save, flushNow, check, list, listAll, load, archive };
+  async function discard(id, completed){ if(!on()||!id) return; try{ await del(LIVE+"/"+(completed?"completed":"active")+"/"+id+".json","Discard session "+id); delete lastBody[id]; }catch(e){} }
+  return { on, cfg, raw, save, flushNow, check, discard, list, listAll, load, archive };
 })();
 function ghRawCfg(){ try{ return JSON.parse(localStorage.getItem("ds_gh_cfg")||"{}"); }catch(e){ return {}; } }
 function openRepoCfg(){ const m=document.getElementById("repoModal"); if(!m)return; const c=Object.assign({owner:"modelwaresystems-dama",repo:"modelware_app_storage",branch:"main"}, ghRawCfg());
@@ -644,7 +645,7 @@ async function renderHostSetup(body){
     const done=items.filter(function(x){return x.status==="completed";});
     const DOCS={}; items.forEach(function(x){ DOCS[x.id]=x; });
     function prog(x){ if(x.status==="completed"){ return x.kind==="course" ? ((((x.quizPaths||[]).length)||"?")+" quizzes · complete") : "quiz complete"; } return x.kind==="course" ? ("quiz "+((x.resumeIdx||0)+1)+" of "+(((x.quizPaths||[]).length)||"?")) : ("question "+(((x.qi||0)+2))+(x.total?(" of "+x.total):"")); }
-    function row(x,act,label){ return '<div class="sessrow"><div class="sessmeta"><b>'+esc(x.name||x.id)+'</b><span>'+esc(prog(x))+' \u00b7 '+((x.players||[]).length)+' players \u00b7 '+esc(new Date(x.savedAt||x.completedAt||Date.now()).toLocaleString())+'</span></div><button class="btn2 sess-act" type="button" data-id="'+esc(x.id)+'" data-act="'+act+'">'+label+'</button></div>'; }
+    function row(x,act,label){ return '<div class="sessrow"><div class="sessmeta"><b>'+esc(x.name||x.id)+'</b><span>'+esc(prog(x))+' \u00b7 '+((x.players||[]).length)+' players \u00b7 '+esc(new Date(x.savedAt||x.completedAt||Date.now()).toLocaleString())+'</span></div><div style="display:flex;gap:10px;align-items:center;flex:none"><button class="btn2 sess-act" type="button" data-id="'+esc(x.id)+'" data-act="'+act+'">'+label+'</button><button class="tinylink sess-del" type="button" data-id="'+esc(x.id)+'" data-done="'+(x.status==="completed"?"1":"")+'" style="padding:0">discard</button></div></div>'; }
     let html='<div class="sessionhdr">Saved sessions \u00b7 resume on any machine</div>';
     if(!items.length){ html+='<div class="repohint">No saved sessions yet \u2014 they appear here by their \u201cCourse \u2013 Cohort\u201d name as you run and finish rooms.</div>'; }
     else {
@@ -653,6 +654,7 @@ async function renderHostSetup(body){
     }
     ru.innerHTML=html;
     ru.querySelectorAll(".sess-act").forEach(function(b){ b.onclick=function(){ const x=DOCS[b.dataset.id]; if(!x)return; if(b.dataset.act==="reopen") doReopenRepo(x); else doResumeRepo(x); }; });
+    ru.querySelectorAll(".sess-del").forEach(function(b){ b.onclick=function(){ if(!confirm("Discard this saved session? It is removed from the private repo.")) return; REPO.discard(b.dataset.id, b.dataset.done==="1").then(function(){ renderRepoUI(); }); }; });
   }
   async function doResumeRepo(x){
     if(!x){ return; }

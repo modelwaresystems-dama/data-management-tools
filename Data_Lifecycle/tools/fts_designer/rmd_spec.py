@@ -230,6 +230,20 @@ EVIDENCE = [
 ]
 EXC = [("EXC-RMD-01", "Provisional Sharing", "TR-AV-01", "Release of a matched but not yet reconciled record to an urgent consumer.", "DR-RMD-07", "Record matched, quality assessment scheduled with a date, consumer accepts the provisional status in the conditions of use, DG informed, evidence retained; expires at the assessment date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-RMD-01': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-GLD-02'}], 'kind': 'condition', 'producer': 'KA-DQ', 'requirement': 'Required'},
+ 'KAC-RMD-02': {'emitters': ['TR-GLD-03', 'TR-GLD-04'], 'kind': 'event', 'producer': 'KA-RMD'},
+ 'KAC-RMD-03': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-01'}, {'model': 'KA-RMD', 'transition': 'TR-DOM-03'}],
+                'kind': 'condition',
+                'producer': 'KA-MM',
+                'requirement': 'Required'},
+ 'KAC-RMD-04': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-05'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
+ 'KAC-RMD-05': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-PRG-02'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'}}
+
 SPEC = {
     "meta": {"modelId": "KA-RMD", "name": "Reference and Master Data FTS", "knowledgeArea": "Reference and Master Data", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Programme (scope level), a Master Data Domain (one per domain), a Reference Data Set (one per set) and a Golden Record (one per entity instance) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
@@ -238,7 +252,7 @@ SPEC = {
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS,
              "assetFacts": {"RMD_is_master": {"default": True, "meaning": "the asset is master data whose entities have golden records (a party, customer, product or supplier master)"},
                             "RMD_is_reference": {"default": False, "meaning": "the asset is a reference data set (a code set, catalogue or glossary) whose releases are versions"}}},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-RMD-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram gives no record-level lifecycle; the Golden Record states (candidate, matched, reliable, conflict, split, retired) are drafted from the match, merge and survivorship practice in the DMBOK chapter."},
         {"id": "SRC-RMD-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating, scenario extension", "limitations": ""},

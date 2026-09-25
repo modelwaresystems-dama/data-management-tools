@@ -183,13 +183,22 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DQ-01", "Provisional Quality Acceptance", "TR-AS-03", "Conditional assurance for an urgently needed Data Asset whose initial assessment is incomplete.", "DR-DQ-04", "Expectation approved, assessment scheduled with a date, Data Owner accepts interim risk with Data Governance, monitoring active, evidence retained; expires at the assessment date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DQ-01': {'emitters': ['TR-PDCA-04', 'TR-PDCA-08'], 'kind': 'event', 'producer': 'KA-DQ'},
+ 'KAC-DQ-02': {'effect': 'resolve', 'emitters': ['TR-PDCA-03'], 'kind': 'event', 'producer': 'KA-DQ', 'resolves': 'KAC-DQ-01'},
+ 'KAC-DQ-03': {'dependents': [{'model': 'KA-DQ', 'transition': 'TR-PDCA-11'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DQ", "name": "Data Quality Management FTS", "knowledgeArea": "Data Quality Management", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Programme (scope level) and the PDCA cycle (one per Data Asset) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Two state regions, each its own FTS over one managed element of the Knowledge Area: the Data Quality Programme of the governed scope, and the plan-do-check-act quality cycle of a Data Asset, which holds that asset's Data Quality Expectation, assessment, improvement actions and monitored level. The KA never becomes a region of the Data Asset; the PDCA cycle reaches the Global Assurance region through contributions (guards and events on TR-AS-01 to TR-AS-10), and logs its non-conformances as Data Asset issues in the Data Governance issue FTS.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DQ-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics, KA triangle", "limitations": "Process 5 carries no phase tag on the slide; (P) inferred by decision."},
         {"id": "SRC-DQ-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, issue coupling, Assurance gating", "limitations": ""},

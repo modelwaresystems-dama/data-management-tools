@@ -222,13 +222,30 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DCM-01", "Provisional Publication", "TR-AV-01", "Release of captured content to a named audience before its classification is complete.", "DR-DCM-05", "Content captured into the repository, provisional access level applied by the data steward, audience named, classification scheduled with a date, Data Security informed, audit log kept; expires at the scheduled classification date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DCM-01': {'emitters': ['TR-CRS-06'], 'kind': 'event', 'producer': 'KA-DCM'},
+ 'KAC-DCM-02': {'dependents': [{'model': 'KA-DCM', 'transition': 'TR-REC-02'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
+ 'KAC-DCM-03': {'kind': 'citation', 'producer': 'KA-DCM', 'cites': {'model': 'KA-MM', 'transition': 'TR-AST-02'}, 'raises': {'model': 'KA-MM', 'event': 'EV-AST-05'}, 'onlyIf': 'MM_asset_described'},
+ 'KAC-DCM-04': {'dependents': [{'model': 'KA-DCM', 'transition': 'TR-REC-07'}], 'kind': 'condition', 'producer': 'KA-DSO', 'requirement': 'Required'},
+ 'KAC-DCM-05': {'dependents': [{'model': 'KA-DCM', 'transition': 'TR-IAR-01'}], 'kind': 'condition', 'producer': 'KA-DA', 'requirement': 'Required'},
+ 'KAC-DCM-06': {'dependents': [{'model': 'KA-DCM', 'transition': 'TR-REC-03'}],
+                'kind': 'condition',
+                'producer': 'KA-DII',
+                'qualifier': 'delivery_by_service',
+                'requirement': 'Conditional'},
+ 'KAC-DCM-07': {'dependents': [{'model': 'KA-DS', 'transition': 'TR-PRV-08'}], 'kind': 'condition', 'producer': 'KA-DCM', 'requirement': 'Required'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DCM", "name": "Document and Content Management FTS", "knowledgeArea": "Document and Content Management", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Content and Records Management Strategy (scope level), the Information Architecture and Content Repository (scope level), a Record or Content Item of a Data Asset (one per item) and a Legal Hold or e-Discovery Matter (one per matter) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Four state regions, each its own FTS over one managed element of the Knowledge Area: the Content and Records Management Strategy, the Information Architecture and Content Repository, a Record or Content Item of a Data Asset and a Legal Hold or e-Discovery Matter. The KA never becomes a region of the Data Asset; the item and the hold reach the Global protocol through contributions (destruction only after retention expiry with no active hold, preservation with a retention category assigned, release of published content or a declared record, the hold as the assurance trigger and records retention as the assurance service), all Conditional so assets with no content item are unaffected, and couple to DG, Data Security, Metadata, DSO, Data Architecture and DII.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DCM-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram lists five activities and five deliverables but no item or hold lifecycle; the Record or Content Item states are drafted from Capture and Manage, Retain, Dispose and Archive, and Publish and Deliver Content with the Managed record and Audit trail deliverables; the hold states are drafted from the e-discovery approach, the litigation driver and the E-discovery KPI. Activity 2 carries no phase tag on the diagram; (P) is inferred."},
         {"id": "SRC-DCM-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (four), Global gating, one record lifecycle with declaration as a state", "limitations": ""},

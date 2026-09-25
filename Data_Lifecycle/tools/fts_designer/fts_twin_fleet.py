@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fts_twin_fleet.py v0.6  -  the twin's fleet: the Data Products of three business architectures as Data Assets, with the golden
+fts_twin_fleet.py v0.7  -  the twin's fleet: the Data Products of three business architectures as Data Assets, with the golden
 records of their party masters as records inside them. Every step goes through the twin engine, so a refusal is a real refusal.
 
   python fts_twin_fleet.py --models <dir> --scenario <banking.sim.json> --architecture <private>/twin/architecture --db twin.sqlite [--seed 1]
@@ -169,6 +169,14 @@ def seed_instruments(tw, arch_dir, t0, now, counts):
         t += datetime.timedelta(days=random.randint(1, 5)); ev("KA-DG", "TR-INS-06" if kind == "policy" else "TR-INS-07", rq("force_" + kind, org))
     for org, (pfx, scope) in ORGS.items():
         P = pd.get(org) or {}; procs_by = {}
+        # Open Decisions C1 option c (Howard, 24 Sep 2026): a Data Handling Ethics and a Big Data and Data Science policy per organisation,
+        # with procedures, marked synthetic until the FutureState workbooks carry them
+        P = {**P, "policies": list(P.get("policies", [])), "procedures": list(P.get("procedures", []))}
+        for ka, dom, owner, prs in (("DHE", "Data Handling Ethics", "Data Ethics Practice Manager", ["Ethical use assessment", "Ethics incident handling", "Ethics awareness and training"]),
+                                    ("BDA", "Big Data and Data Science", "Big Data and Data Science Practice Manager", ["Source onboarding and alignment", "Model development and validation", "Insight review and release"])):
+            pid0 = f"POL-{ka}-SYN"
+            P["policies"].append({"id": pid0, "domainId": f"PD-SYN-{ka}", "domain": dom, "statement": dom + " policy (synthetic until the FutureState workbook carries it)", "owner": owner, "effective": "2026-01-01", "status": "Active", "synthetic": True})
+            for k, nm in enumerate(prs, 1): P["procedures"].append({"id": f"{pid0}-PR{k:02d}", "policyId": pid0, "name": dom + " \u2014 " + nm + " operating procedure (synthetic)", "role": owner, "synthetic": True})
         for pr in P.get("procedures", []): procs_by.setdefault(pr["policyId"], []).append(pr)
         for pol in P.get("policies", []):
             from fts_twin import KA_DOMAINS, KA_DOMAIN_FEEDS, USE_FEEDS
@@ -178,12 +186,12 @@ def seed_instruments(tw, arch_dir, t0, now, counts):
             start = max(t0 - datetime.timedelta(days=75), min(eff, t0 - datetime.timedelta(days=20))) - datetime.timedelta(days=random.randint(20, 30))
             active = (pol["status"] or "").lower() == "active"
             pid = f"INS-{pfx}-{pol['id']}-v1"
-            tw.new_instrument(pid, scope, org, pol["domainId"], pol["domain"], pol["id"], "policy", pol["statement"], version=1, owner=pol["owner"], effective=pol["effective"], status=pol["status"], at=iso(start))
+            tw.new_instrument(pid, scope, org, pol["domainId"], pol["domain"], pol["id"], "policy", pol["statement"], version=1, owner=pol["owner"], effective=pol["effective"], status=pol["status"], synthetic=bool(pol.get("synthetic")), at=iso(start))
             walk(pid, "policy", org, ka, start, "in_force" if active else "drafted"); counts["instruments"] += 1
             for pr in procs_by.get(pol["id"], []):
                 prs = start + datetime.timedelta(days=random.randint(1, 6))
                 vid = f"INS-{pfx}-{pr['id']}-v1"
-                tw.new_instrument(vid, scope, org, pol["domainId"], pol["domain"], pr["id"], "procedure", pr["name"], policy_id=pol["id"], version=1, owner=pr.get("role"), effective=pol["effective"], status=pol["status"], at=iso(prs))
+                tw.new_instrument(vid, scope, org, pol["domainId"], pol["domain"], pr["id"], "procedure", pr["name"], policy_id=pol["id"], version=1, owner=pr.get("role"), effective=pol["effective"], status=pol["status"], synthetic=bool(pr.get("synthetic")), at=iso(prs))
                 walk(vid, "procedure", org, ka, prs, "in_force" if active else "drafted"); counts["instruments"] += 1
                 if active and random.random() < 0.10:   # a synthetic second version
                     v2s = now - datetime.timedelta(days=random.randint(15, 120)); v2 = f"INS-{pfx}-{pr['id']}-v2"
@@ -217,7 +225,10 @@ def main():
             for rid, sid in v.items():
                 if rid in fed.shared.get(mid, ()): elements[setup["refs"][rid]]["state"] = sid
         t = t0 - datetime.timedelta(days=45)
-        for _, mid, tid in shared_steps:
+        # v0.7 (24 Sep 2026): the set-up asset stands for the scope's own records and walks the whole script, per-asset steps
+        # included, because a shared element's transition (a master data domain, say) can now be gated by a coupling on a per-asset
+        # fact (the domain's description in MM, its approved logical model, its classification); the elements keep the states it reached
+        for i, mid, tid in sorted(shared_steps + asset_steps):
             t += datetime.timedelta(hours=random.randint(2, 30)); v = fed.evaluate(setup, mid, tid, elements, sc.get("authorizations"))
             if v["fired"]: fed.apply(setup, v, elements)
         for e in elements.values(): e["updatedAt"] = iso(t); e["scope"] = scope; e["org"] = org; store.put_instance(e)
@@ -241,6 +252,15 @@ def main():
         if before == GLD["conflict"] and after == GLD["reliable"]:
             for k, t2 in enumerate(["TR-AS-08", "TR-AS-02", "TR-AV-04"]): tw.post_event(aid, GLOBAL_ID, transition=t2, actor="synthetic:reassessed and restored after the conflict", at=iso(when + datetime.timedelta(hours=2 + 4 * k)),
                                                                                         requester=req(GLOBAL_ID, t2, org, role="ROLE-DQA", purpose="reassess and restore the master after the conflict cleared"))
+    def steward_refresh(aid, ast0, t, org):
+        """Open Decisions D1 option a (Howard, 24 Sep 2026): a citation or a movement flags the metadata stale; the synthetic Technical
+        Data Steward refreshes it within hours (TR-AST-05) and, where it had been published, publishes it again (TR-AST-03)"""
+        cur = (store.get_instance(aid)["vectors"].get("KA-MM") or {}).get("REG-MM-AST")
+        if cur != "STS-AST-05" or ast0 == "STS-AST-05": return
+        t2 = t + datetime.timedelta(hours=random.randint(2, 20))
+        tw.post_event(aid, "KA-MM", transition="TR-AST-05", actor="synthetic:steward refresh", at=iso(t2), requester=req("KA-MM", "TR-AST-05", org, role="ROLE-TDS", purpose="refresh the metadata flagged stale"))
+        if ast0 == "STS-AST-04":
+            tw.post_event(aid, "KA-MM", transition="TR-AST-03", actor="synthetic:steward refresh", at=iso(t2 + datetime.timedelta(hours=1)), requester=req("KA-MM", "TR-AST-03", org, role="ROLE-TDS", purpose="publish the refreshed metadata"))
     for p in products:
         org = p["org"]; pfx, scope = ORGS[org]; aid = f"{pfx}-{p['DataProductID']}"; name = p["Name"]; ptype = p.get("ProductType")
         kas = BASE + [k for k, rule in KA_RULES if rule(ptype or "", name)]
@@ -296,7 +316,12 @@ def main():
                                                                           requester=req("KA-RMD", "TR-GLD-02", org, role="ROLE-DDS", purpose="confirm the surviving record"))
                 continue
             if (has_records or is_reference) and mid == "KA-RMD" and fed.region_of[mid].get(fed.tr[mid][tid]["target"]) == "REG-RMD-GLD": continue
+            ast0 = (store.get_instance(aid)["vectors"].get("KA-MM") or {}).get("REG-MM-AST")
+            # a step a coupling has already taken on this asset (KAC-MM-01 starts the DQ cycle when metadata is published) is not sent again
+            trd = fed.tr[mid][tid]; rgn = fed.region_of[mid].get(trd["target"])
+            if rgn and (store.get_instance(aid)["vectors"].get(mid) or {}).get(rgn) == trd["target"]: continue
             tw.post_event(aid, mid, transition=tid, actor="synthetic:scenario", at=iso(t), requester=req(mid, tid, org))
+            steward_refresh(aid, ast0, t, org)
         # records after release, in time order: arrivals, updates, disputes resolved within days, splits, retirements; on the
         # defect master a match-rule defect puts 8% of the records in conflict for a week
         if has_records and recs and cut > I_REL:
@@ -314,7 +339,8 @@ def main():
                 if callable(fn): fn(when); continue
                 if fn == "defect":
                     live = [r for r in recs if store.get_instance(r)["regions"]["KA-RMD"]["REG-RMD-GLD"] == GLD["reliable"]]
-                    hit = random.sample(live, max(1, int(len(live) * 0.08) + 1))
+                    if not live: continue
+                    hit = random.sample(live, min(len(live), max(1, int(len(live) * 0.08) + 1)))
                     for j, rid in enumerate(hit): rec_ev(aid, rid, "TR-GLD-03", "synthetic:match-rule defect", when + datetime.timedelta(minutes=j), org)
                     def fix(w, hit=hit):
                         for j, rid in enumerate(hit):

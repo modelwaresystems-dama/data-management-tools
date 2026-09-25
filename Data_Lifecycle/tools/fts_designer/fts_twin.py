@@ -24,10 +24,11 @@ import json, os, sys, argparse, datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fts_twin_engine import Federation, GLOBAL_ID, now_iso
+import fts_twin_engine
+from fts_twin_engine import Federation, GLOBAL_ID, now_iso, eval_expression
 from fts_twin_store import TwinStore
 
-VERSION = "0.4"
+VERSION = "0.6"
 
 # v0.2 (Howard, 22 Sep 2026, twin structure "two levels"): the Data Asset (a table, dataset, feed or data product) carries the Global
 # vector and the per-asset Knowledge Area regions; an entity record inside it (a customer or party golden record) is its own instance
@@ -68,10 +69,12 @@ INS_S = {"none": "STS-INS-01", "drafted": "STS-INS-02", "reviewed": "STS-INS-03"
 KAS13 = ("DG", "DA", "DMD", "DSO", "DII", "MM", "DQ", "DS", "DHE", "DWBI", "BDA", "RMD", "DCM")
 KA_DOMAINS = {"Data Governance": "DG", "Data Architecture": "DA", "Data Modelling & Design": "DMD", "Data Storage & Operations": "DSO", "Data Security": "DS",
               "Data Integration & Interoperability": "DII", "Document & Content Management": "DCM", "Reference & Master Data": "RMD",
-              "Data Warehousing & BI": "DWBI", "Metadata Management": "MM", "Data Quality": "DQ"}
+              "Data Warehousing & BI": "DWBI", "Metadata Management": "MM", "Data Quality": "DQ",
+              # Open Decisions C1 option c (Howard, 24 Sep 2026): synthetic policy domains until the workbooks carry them
+              "Data Handling Ethics": "DHE", "Big Data and Data Science": "BDA"}
 # register card 13 (pending when written): policy domains that also feed the two Knowledge Areas with no domain named for them
 KA_DOMAIN_FEEDS = {"Ethical Stewardship": "DHE", "AI Governance": "BDA", "Model Governance": "BDA", "AI Usage": "BDA"}
-USE_FEEDS = True
+USE_FEEDS = False   # Open Decisions C1 option c (Howard, 24 Sep 2026): DHE and BDA get their own synthetic policy sets instead of feeds
 # register card 14 (pending when written): what REG-DG-POL rolls up: "ka" the Knowledge Area sets, "all" every set, "dg" the DG set alone
 POL_ROLLUP = "ka"
 
@@ -110,7 +113,7 @@ class Twin:
                 "claimsTransition": (transition_id in a["claims"]) if transition_id else None}, None
 
     # ---------------------------------------------------------------- intake
-    def post_event(self, instance_id, model_id, event=None, transition=None, facts=None, actor=None, at=None, authorizations=None, requester=None):
+    def post_event(self, instance_id, model_id, event=None, transition=None, facts=None, actor=None, at=None, authorizations=None, requester=None, _depth=0, _raised=None):
         asset = self.store.get_instance(instance_id)
         if not asset or asset.get("kind") != "asset": return {"error": f"no asset instance {instance_id}"}
         if model_id not in self.fed.models: return {"error": f"no model {model_id}"}
@@ -125,10 +128,15 @@ class Twin:
                                          "guards": [], "guardCount": 0, "actor": actor, "at": at or now_iso(), "requester": requester if isinstance(requester, dict) else None})
         if facts:
             asset["facts"] = {**(asset.get("facts") or {}), **facts}
+        env0 = self.fed.facts(asset, els)
         v = self.fed.evaluate(asset, model_id, tids[0], els, authorizations)
         if v.get("fired"): self.fed.apply(asset, v, els)
         rec = {**v, "instanceId": instance_id, "event": event or self.fed.tr[model_id][tids[0]].get("event"), "actor": actor, "at": at or now_iso(), "override": False,
                "candidates": tids, "factsApplied": facts or {}, "requester": req}
+        if _raised: rec["raisedBy"] = [_raised]
+        elif v.get("fired") and model_id == GLOBAL_ID:
+            rb = self.fed.raised_by(asset, tids[0], env0)   # Influence Map Register card 4: which Knowledge Area's event contribution raised it
+            if rb: rec["raisedBy"] = rb
         # the log keeps the verdict compact: the failing guards in full, the passing ones as a count, the region moved rather than whole vectors
         rec["guardCount"] = len(v.get("guards", [])); rec["guards"] = [g for g in v.get("guards", []) if not g.get("verdict")]
         rec.pop("vectorBefore", None); rec["stateAfter"] = self.fed.full_vector(asset, model_id, els).get(v.get("region"))
@@ -138,6 +146,7 @@ class Twin:
         logged = self.store.log_event(rec)
         if v.get("fired"):
             self.resolve_issues(instance_id, model_id, tids[0], at=rec["at"])
+            self.couple(instance_id, model_id, tids[0], env0, at=rec["at"], depth=_depth)
         else:
             blocking = [g for g in rec["guards"] if g.get("requirement") in ISSUE_REQUIREMENTS]
             # Low severity (Howard, 23 Sep 2026): a request the asset was in no position to satisfy, with every guard answering true,
@@ -191,6 +200,7 @@ class Twin:
                                              "result": "rejected: " + err, "fired": False, "override": False, "guards": [], "guardCount": 0, "actor": actor, "at": at or now_iso(),
                                              "requester": requester if isinstance(requester, dict) else None})
         parent = self.store.get_instance(rec["parentId"]); els = self.store.elements(); view = self._view(rec, parent)
+        env0 = self.fed.facts(view, els)
         v = self.fed.evaluate(view, model_id, transition, els)
         if v.get("fired"): self.fed.apply(view, v, els)
         rid = v.get("region")
@@ -207,6 +217,7 @@ class Twin:
                 iss = self.raise_issue(rec["parentId"], logged, blocking, at=out["at"], out_of_order=ooo, record_id=record_id)
                 if iss: logged["issueRaised"] = iss.get("id")
         self.rollup(rec["parentId"], at=out["at"], cause=record_id)
+        if v.get("fired"): self.couple(rec["parentId"], model_id, transition, env0, at=out["at"], record_id=record_id)
         return logged
 
     def records(self, parent_id=None):
@@ -261,8 +272,29 @@ class Twin:
             if t2: self.post_instrument_event(iid, "KA-DCM", t2, actor="twin:coupling KAC-DG-01", at=at,
                                               requester={"activity": (next((a for a, x in self.acts.items() if x["model"] == "KA-DCM" and t2 in x["claims"]), "ACT-DCM-4")), "role": "ROLE-RIM", "system": "fts_twin", "purpose": "keep the superseded version under retention"},
                                               reason="KAC-DG-01: superseding a version declares its document a record")
-        if v.get("fired"): self.refresh_scope(ins["scope"], at=at, cause=iid)
+        if v.get("fired"): self.refresh_scope(ins["scope"], at=at, cause=iid); self.resolve_issues(iid, model_id, transition, at=at)
+        else:   # Open Decisions C4 option a (Howard, 24 Sep 2026): a refused step on a version raises a Low issue on that version
+            iss = self.raise_instrument_issue(ins, logged, at=out["at"])
+            if iss: logged["issueRaised"] = iss.get("id")
         return logged
+
+    def raise_instrument_issue(self, ins, ev, at=None):
+        """One Low issue per refused step on a governing instrument version: who asked, which activity, which guard refused."""
+        n = len(self.issues(ins["id"])) + 1; mid = ev.get("model"); dr = (self.fed.dr.get(mid) or {}).get(ev.get("decisionRight")) or {}
+        blocking = ev.get("guards") or []
+        issue = {"id": f"ISS-{ins['id']}-{n:03d}", "kind": "issue", "subject": "instrument", "parentId": ins["id"], "assetName": ins.get("name"), "org": ins.get("org"), "scope": ins.get("scope"),
+                 "name": (ev.get("name") or ev.get("transition")) + " refused on " + ins.get("instrumentId", "") + " v" + str(ins.get("version")),
+                 "severity": "Low", "outOfOrder": not ev.get("sourceActive"),
+                 "regions": {ISSUE_MODEL: {ISSUE_REGION: self.fed.initial[ISSUE_MODEL][ISSUE_REGION]}}, "state": self.fed.initial[ISSUE_MODEL][ISSUE_REGION],
+                 "source": {"kind": "instrument refusal", "eventSeq": ev.get("seq"), "model": mid, "transition": ev.get("transition"), "transitionName": ev.get("name"), "region": ev.get("region"),
+                            "from": ev.get("from"), "to": ev.get("to"), "result": ev.get("result"), "at": ev.get("at"), "decisionRight": ev.get("decisionRight"), "decisionRightName": dr.get("name"),
+                            "holder": dr.get("holder"), "holderName": dr.get("holderName"), "requester": ev.get("requester"), "actor": ev.get("actor"), "sourceActive": ev.get("sourceActive"),
+                            "guards": [{k: g.get(k) for k in ("guard", "requirement", "contributedBy", "predicate")} for g in blocking]},
+                 "createdAt": at or now_iso(), "updatedAt": at or now_iso()}
+        self.store.put_instance(issue)
+        self.post_issue_event(issue["id"], "TR-ISS-01", actor="twin:instrument refusal", at=at, requester=ISSUE_REQ["TR-ISS-01"],
+                              reason="raised by the twin: " + str(ev.get("transition")) + " was refused on " + ins["id"] + " (Low: a governance paperwork step, recorded so it can be asked about)")
+        return self.store.get_instance(issue["id"])
 
     def set_facts_of(self, scope):
         """{fact: bool} for every policy set of a governed scope, and the per-set detail the viewer shows"""
@@ -296,6 +328,99 @@ class Twin:
                                      "name": "roll-up of " + str(len(counted)) + " policy sets (" + str(n_in) + " in force)", "result": "rollup", "fired": True, "override": False,
                                      "from": old, "stateAfter": new, "cause": cause, "actor": "twin:rollup", "at": at or now_iso(), "guards": [], "guardCount": 0,
                                      "reason": "REG-DG-POL is the roll-up of the policy sets (" + POL_ROLLUP + ")"})
+
+    # ---------------------------------------------------------------- v0.6 the twin server's authorisation (Howard, 24 Sep 2026, Open Decisions B5)
+    def refuse_unauthorised(self, instance_id, model_id, transition, requester, person, dr, holder, scope=None, at=None):
+        """A person asked for a transition whose decision right none of their roles in that organisation holds. The request is
+        refused before any guard is evaluated, logged with the person, and raises a Low issue naming them, on the live twin and in rooms."""
+        inst = self.store.get_instance(instance_id) or {}; t = (self.fed.tr.get(model_id) or {}).get(transition) or {}
+        at = at or now_iso()
+        rec = {"instanceId": instance_id, "model": model_id, "transition": transition, "name": t.get("name"), "event": t.get("event"), "result": "refused: decision right not held",
+               "fired": False, "override": False, "guards": [], "guardCount": 0, "decisionRight": dr, "from": t.get("source"), "to": t.get("target"),
+               "actor": "person:" + str(person.get("id")), "person": {"id": person.get("id"), "name": person.get("name")}, "requester": requester, "at": at}
+        logged = self.store.log_event(rec)
+        parent = inst if inst.get("kind") in ("asset", "instrument") else self.store.get_instance(inst.get("parentId")) if inst.get("parentId") else None
+        if not parent: return logged
+        n = len(self.issues(parent["id"])) + 1; drd = (self.fed.dr.get(model_id) or {}).get(dr) or {}
+        role = (requester or {}).get("role")
+        issue = {"id": f"ISS-{parent['id']}-{n:03d}", "kind": "issue", "subject": parent.get("kind"), "parentId": parent["id"], "assetName": parent.get("name"), "org": parent.get("org"), "scope": parent.get("scope") or scope,
+                 "name": (t.get("name") or transition) + " asked for by " + str(person.get("name")) + " without the decision right", "severity": "Low", "outOfOrder": False,
+                 "regions": {ISSUE_MODEL: {ISSUE_REGION: self.fed.initial[ISSUE_MODEL][ISSUE_REGION]}}, "state": self.fed.initial[ISSUE_MODEL][ISSUE_REGION],
+                 "source": {"kind": "authorisation", "eventSeq": logged.get("seq"), "model": model_id, "transition": transition, "transitionName": t.get("name"), "from": t.get("source"), "to": t.get("target"),
+                            "decisionRight": dr, "decisionRightName": drd.get("name"), "holder": holder, "holderName": drd.get("holderName"), "requester": requester,
+                            "person": {"id": person.get("id"), "name": person.get("name"), "roles": person.get("rolesHere")}, "recordId": instance_id if inst.get("kind") == "record" else None,
+                            "controlGap": f"{person.get('name')} asked as {role}, but {dr} is held by {drd.get('holderName') or holder}, and none of their roles in this organisation holds it. The request was refused before any guard was evaluated."},
+                 "createdAt": at, "updatedAt": at}
+        self.store.put_instance(issue)
+        self.post_issue_event(issue["id"], "TR-ISS-01", actor="twin:authorisation", at=at, requester=ISSUE_REQ["TR-ISS-01"], reason="raised by the twin server: decision right not held by the person who asked")
+        logged["issueRaised"] = issue["id"]
+        return logged
+
+    # ---------------------------------------------------------------- v0.5 event couplings (Influence Map Register, 24 Sep 2026)
+    def couple(self, asset_id, model_id, transition_id, env_before, at=None, depth=0, record_id=None):
+        """After a transition fires: raise the event couplings it emits, and those whose fact has just turned true. An event into
+        the Data Governance issue FTS opens (or adds to) an issue instance; an evidence coupling resolves the issue its partner
+        raised; any other event is posted to the target Knowledge Area on the same asset, naming the coupling as its origin."""
+        if depth >= 3: return []
+        asset = self.store.get_instance(asset_id)
+        if not asset or asset.get("kind") != "asset": return []
+        els = self.store.elements(); env1 = self.fed.facts(asset, els); app = self.fed.applicable(asset)
+        ks = [k for k in self.fed.event_couplings(model_id, transition_id) if (k.get("emitterModel") or k["sourceModel"]) in app]
+        for k in self.fed.fact_couplings():
+            if k["sourceModel"] in app and k not in ks and eval_expression(k.get("expression") or "False", env1) and not eval_expression(k.get("expression") or "False", env_before):
+                ks.append(k)
+        out = []
+        for k in ks:
+            tgt_model = (k.get("raises") or {}).get("model") or k.get("targetModel"); tgt_tr = (k.get("raises") or {}).get("transition") or k.get("targetTransition")
+            if k.get("handledBy") or tgt_model not in app: continue
+            if k.get("qualifier") and not env1.get(k["qualifier"]): continue   # a qualified coupling applies only when the asset says so
+            if k.get("onlyIf") and not eval_expression(k["onlyIf"], env1): continue   # a citation flags the metadata stale only once it is described
+            tgt_event = (k.get("raises") or {}).get("event") or k.get("event")
+            raised = {"coupling": k["id"], "model": k["sourceModel"], "transition": transition_id, "recordId": record_id}
+            if k.get("effect") == "resolve": out += self.resolve_coupled(asset_id, k, at=at); continue
+            if tgt_model == ISSUE_MODEL and tgt_tr == "TR-ISS-01": out.append(self.raise_coupled_issue(asset_id, k, raised, at=at)); continue
+            tm, tt = tgt_model, tgt_tr
+            if tgt_event:   # the transition the event will pick on this asset, so the requester names the right activity and holder
+                cands = self.fed.transitions_for_event(asset, tm, tgt_event, els); tt = cands[0] if cands else tt
+            act = next((a for a, x in self.acts.items() if x["model"] == tm and tt in x["claims"]), None)
+            t = self.fed.tr.get(tm, {}).get(tt) or {}; holder = ((self.fed.dr.get(tm) or {}).get(t.get("decisionRight")) or {}).get("holder")
+            out.append(self.post_event(asset_id, tm, event=tgt_event, transition=None if tgt_event else tt, actor="twin:coupling " + k["id"], at=at,
+                                       requester={"activity": act, "role": holder, "system": "fts_twin", "purpose": "raised by coupling " + k["id"]}, _depth=depth + 1, _raised=raised))
+        return out
+
+    def raise_coupled_issue(self, asset_id, k, raised, at=None):
+        """One open issue per coupling per asset: a Knowledge Area logging the same kind of problem again adds an occurrence to the
+        issue already open rather than opening another. The issue carries no severity: the twin has no refusal to rate it by."""
+        asset = self.store.get_instance(asset_id)
+        if not asset or ISSUE_MODEL not in self.fed.applicable(asset): return None
+        same = [i for i in self.issues(asset_id, open_only=True) if (i.get("source") or {}).get("coupling") == k["id"]]
+        if same:
+            i = same[0]; i["source"]["occurrences"] = i["source"].get("occurrences", 1) + 1; i["source"]["lastAt"] = at; i["updatedAt"] = at or now_iso(); self.store.put_instance(i)
+            return i
+        n = len(self.issues(asset_id)) + 1; km = self.fed.models[k["sourceModel"]]["meta"]; t = self.fed.tr[k["sourceModel"]].get(raised["transition"]) or {}
+        issue = {"id": f"ISS-{asset_id}-{n:03d}", "kind": "issue", "parentId": asset_id, "assetName": asset.get("name"), "org": asset.get("org"), "scope": asset.get("scope"),
+                 "name": (km.get("knowledgeArea") or k["sourceModel"]) + ": " + (t.get("name") or raised["transition"]) + " on " + (("record " + raised["recordId"] + " of ") if raised.get("recordId") else "") + (asset.get("name") or asset_id),
+                 "severity": None, "outOfOrder": False, "loggedBy": k["sourceModel"],
+                 "regions": {ISSUE_MODEL: {ISSUE_REGION: self.fed.initial[ISSUE_MODEL][ISSUE_REGION]}}, "state": self.fed.initial[ISSUE_MODEL][ISSUE_REGION],
+                 "source": {"kind": "coupling", "coupling": k["id"], "model": k["sourceModel"], "transition": raised["transition"], "transitionName": t.get("name"), "recordId": raised.get("recordId"),
+                            "predicate": k.get("predicate"), "occurrences": 1, "at": at},
+                 "createdAt": at or now_iso(), "updatedAt": at or now_iso()}
+        self.store.put_instance(issue)
+        self.post_issue_event(issue["id"], "TR-ISS-01", actor="twin:coupling " + k["id"], at=at, requester={**ISSUE_REQ["TR-ISS-01"], "purpose": "logged by coupling " + k["id"]},
+                              reason=k["id"] + ": " + str(raised["transition"]) + " in " + k["sourceModel"] + " logs a Data Asset issue")
+        return self.store.get_instance(issue["id"])
+
+    def resolve_coupled(self, asset_id, k, at=None):
+        """evidence couplings (KAC-DQ-02, KAC-DS-02): the source Knowledge Area's recovery resolves the issue its partner coupling raised"""
+        out = []
+        for iss in self.issues(asset_id, open_only=True):
+            if (iss.get("source") or {}).get("coupling") != k.get("resolves"): continue
+            if iss.get("state") == "STS-ISS-02":
+                self.post_issue_event(iss["id"], "TR-ISS-02", actor="twin:coupling " + k["id"], at=at, requester=ISSUE_REQ["TR-ISS-02"], reason=k["id"] + ": resolution under way")
+                iss = self.store.get_instance(iss["id"])
+            if iss.get("state") == "STS-ISS-03":
+                out.append(self.post_issue_event(iss["id"], "TR-ISS-05", actor="twin:coupling " + k["id"], at=at, requester=ISSUE_REQ["TR-ISS-05"], reason=k["id"] + ": " + (k.get("predicate") or "")[:160]))
+        return out
 
     # ---------------------------------------------------------------- v0.3 issues raised by refusals
     def issues(self, parent_id=None, open_only=False):
@@ -336,7 +461,11 @@ class Twin:
         if not iss or iss.get("kind") != "issue": return {"error": f"no issue {issue_id}"}
         req, err = self.requester(requester, ISSUE_MODEL, transition)
         if err: return {"error": err}
-        parent = self.store.get_instance(iss["parentId"]); els = self.store.elements(); view = self._view(iss, parent)
+        parent = self.store.get_instance(iss["parentId"])
+        if parent and parent.get("kind") == "instrument":
+            view, els = self._inst_view(parent); view["vectors"].setdefault(ISSUE_MODEL, {}).update(iss["regions"][ISSUE_MODEL])
+        else:
+            els = self.store.elements(); view = self._view(iss, parent)
         v = self.fed.evaluate(view, ISSUE_MODEL, transition, els)
         if v.get("fired"): self.fed.apply(view, v, els)
         rid = v.get("region")
@@ -357,6 +486,7 @@ class Twin:
         out = []
         for iss in self.issues(asset_id):
             src = iss.get("source") or {}
+            if src.get("kind", "refusal") not in ("refusal", "instrument refusal"): continue
             if src.get("transition") != transition_id or src.get("model") != model_id: continue
             if iss.get("state") not in ("STS-ISS-02", "STS-ISS-03"): continue
             if iss.get("state") == "STS-ISS-02":
@@ -423,7 +553,7 @@ class Twin:
         by_state = {}
         for r in rows:
             for code, v in r["global"].items(): by_state.setdefault(code, {}).setdefault(v["name"], 0); by_state[code][v["name"]] += 1
-        return {"generatedAt": now_iso(), "engine": f"fts_twin v{VERSION}", "models": len(self.fed.models), "assets": len(rows), "records": sum(len(v) for v in recs_by.values()), "elements": len(els),
+        return {"generatedAt": now_iso(), "engine": f"fts_twin v{VERSION}", "couplingsEnforced": fts_twin_engine.ENFORCE_COUPLINGS, "models": len(self.fed.models), "assets": len(rows), "records": sum(len(v) for v in recs_by.values()), "elements": len(els),
                 "events": sum(v["fired"] + v["refused"] + v["overrides"] for v in stats.values()), "refused": sum(v["refused"] for v in stats.values()), "overrides": sum(v["overrides"] for v in stats.values()),
                 "rejected": sum(v.get("rejected", 0) for v in stats.values()), "instruments": len(self.store.instances("instrument")),
                 "instrumentRules": {"polRollup": POL_ROLLUP, "useFeeds": USE_FEEDS, "kaDomains": KA_DOMAINS, "feeds": KA_DOMAIN_FEEDS},
@@ -481,7 +611,7 @@ def serve(twin, port, export_dir):
                 if p == "/issueEvents": return self._send(200, twin.post_issue_event(body.get("issueId"), body.get("transition"), body.get("actor"), body.get("at"), body.get("requester"), body.get("reason")))
                 if p == "/override": return self._send(200, twin.override(body.get("instanceId"), body.get("modelId"), body.get("regionId"), body.get("stateId"), body.get("reason") or "", body.get("actor"), body.get("at")))
                 if p == "/facts": return self._send(200, twin.set_facts(body.get("instanceId"), body.get("facts") or {}, body.get("actor"), body.get("at")))
-                if p == "/export": return self._send(200, twin.export(body.get("dir") or export_dir))
+                if p == "/export": return self._send(200, twin.export(export_dir))   # 24 Sep 2026: never to a folder the caller names
                 self._send(404, {"error": "no such path"})
             except Exception as ex: self._send(500, {"error": str(ex)})
     srv = ThreadingHTTPServer(("127.0.0.1", port), H)

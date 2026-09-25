@@ -66,6 +66,25 @@ class TwinStore:
         r = self.db.execute("select doc from events where instanceId=? order by seq desc limit 1", (iid,)).fetchone()
         return json.loads(r[0]) if r else None
 
+    # ---------------------------------------------------------------- v0.3 for the twin server: the export as data, and deltas
+    def max_seq(self):
+        return self.db.execute("select coalesce(max(seq), 0) from events").fetchone()[0]
+
+    def events_since(self, seq, limit=5000):
+        return [json.loads(r[0]) | {"seq": r[1]} for r in self.db.execute("select doc, seq from events where seq > ? order by seq limit ?", (int(seq), int(limit))).fetchall()]
+
+    def snapshot(self, name, fleet=None):
+        """one export file as data, in the same shape export() writes, so a viewer reads the server exactly as it reads the repo"""
+        stamp = now_iso()
+        kinds = {"instances.json": ("asset", "assets"), "elements.json": ("element", "elements"), "records.json": ("record", "records"), "issues.json": ("issue", "issues"), "instruments.json": ("instrument", "instruments")}
+        if name in kinds:
+            k, key = kinds[name]; docs = self.instances(k); return {"exportedAt": stamp, "count": len(docs), key: docs}
+        if name == "events.json":
+            ev = [json.loads(r[0]) | {"seq": r[1]} for r in self.db.execute("select doc, seq from events order by seq").fetchall()]
+            return {"exportedAt": stamp, "count": len(ev), "events": ev}
+        if name == "fleet.json" and fleet is not None: return {"exportedAt": stamp, **fleet}
+        return None
+
     # ---------------------------------------------------------------- export and import (the repo copy)
     def export(self, out_dir, fleet=None):
         os.makedirs(out_dir, exist_ok=True); stamp = now_iso()

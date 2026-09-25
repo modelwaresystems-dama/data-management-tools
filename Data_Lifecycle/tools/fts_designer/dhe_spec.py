@@ -196,11 +196,12 @@ KA_COUPLINGS = [
     ("KAC-DHE-01", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DHE_open_incident", "A reported ethics incident and an identified practice gap are logged as Data Asset issues with source Data Handling Ethics (TR-ECI-01 and TR-GAP-01 emit EV-ISS-01).", "DG owns escalation; Data Ethics owns the remediation."),
     ("KAC-DHE-02", "KA-DG", "TR-POL-03", "", "DHE_policy_set_in_force", "The ethics policies and corporate statements are published as governance instruments (TR-EDS-06 cites the DG fact).", "Reverse coupling: a Data Ethics transition cites a DG fact."),
     ("KAC-DHE-03", "KA-DS", "TR-PRV-02", "", "DS_privacy_basis_ok", "The ethics assessment of a use cites the lawful basis of the asset (TR-EUS-01 cites the DS fact).", "Reverse coupling: a Data Ethics transition cites a DS fact."),
-    ("KAC-DHE-04", "KA-DS", "TR-INC-01", "", "DS_open_incident", "A security incident involving misuse of data is also reported as an ethics incident (TR-ECI-01 cites the DS fact).", "Reverse coupling: a Data Ethics transition cites a DS fact."),
+    ("KAC-DHE-04", "KA-DS", "TR-INC-01", "EV-ECI-01", "DS_open_incident", "A security incident flagged as misuse of data raises an ethics incident report: Data Security's Detect Incident (TR-INC-01) raises Report Incident (TR-ECI-01) here when incident_is_misuse is set.", "Howard, 24 Sep 2026 (Open Decisions A1 option a): a trigger, not a precondition; an ethics incident no longer needs an open security incident."),
     ("KAC-DHE-05", "KA-BDA", "TR-INS-02", "", "DHE_use_cleared", "The trust and ethics review of an insight cites the ethical clearance of the model's use (the BDA transition cites the Data Ethics fact).", "Forward coupling: a BDA transition cites a Data Ethics fact."),
     ("KAC-DHE-06", "KA-DWBI", "TR-PRD-04", "", "DHE_use_cleared", "A data product is released only for an ethically cleared use (the DWBI transition cites the Data Ethics fact).", "Forward coupling: a DWBI transition cites a Data Ethics fact."),
     ("KAC-DHE-07", "KA-DII", "TR-EXC-05", "", "DHE_use_cleared", "A data access agreement carries the sharing conditions of the cleared use (the DII transition cites the Data Ethics fact).", "Forward coupling: a DII transition cites a Data Ethics fact."),
     ("KAC-DHE-08", "KA-MM", "TR-AST-02", "", "DHE_use_cleared", "The conditions of a cleared use are described as metadata of the asset (the MM transition cites the Data Ethics fact).", "Forward coupling: an MM transition cites a Data Ethics fact."),
+    ("KAC-DHE-09", "KA-DHE", "TR-ECI-01", "EV-ECI-01", "True", "An ethical assessment that finds a use unacceptable raises an ethics incident report: Decline Use (TR-EUS-04) and Suspend Clearance (TR-EUS-05) raise Report Incident (TR-ECI-01) on the same asset. Community feedback is the other source: it arrives as the Report Incident request itself, with its source named on the request (system: community feedback).", "Howard, 24 Sep 2026 (Open Decisions A1 comment and D3 option a): ethics incidents typically come from an ethical assessment (report) and from community feedback; KAC-DHE-04 (security incident) withdrawn."),
 ]
 FACT_BINDINGS = {
     "DHE_strategy_in_force": {"region": "REG-DHE-EDS", "states": ["STS-EDS-06", "STS-EDS-07"]},
@@ -236,13 +237,31 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DHE-01", "Conditional Sharing Pilot", "TR-CP-04", "External custody for a named partner under interim sharing conditions before the full conditions are set.", "DR-DHE-06", "Use assessed, partner named, interim conditions recorded with monitoring, full conditions scheduled with a date, Data Security and DG informed, evidence retained; expires at the scheduled date. Never waives the release guard (CON-DHE-01 is Non-waivable).", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DHE-09': {'emitters': ['TR-EUS-04', 'TR-EUS-05'], 'kind': 'event', 'producer': 'KA-DHE', 'raises': {'model': 'KA-DHE', 'transition': 'TR-ECI-01'}},
+ 'KAC-DHE-01': {'emitters': ['TR-ECI-01', 'TR-GAP-01'], 'kind': 'event', 'producer': 'KA-DHE'},
+ 'KAC-DHE-02': {'dependents': [{'model': 'KA-DHE', 'transition': 'TR-EDS-06'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'},
+ 'KAC-DHE-03': {'dependents': [{'model': 'KA-DHE', 'transition': 'TR-EUS-01'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
+ 'KAC-DHE-04': {'kind': 'withdrawn', 'withdrawnBy': 'Howard, 24 Sep 2026, Open Decisions D3 option a: a security incident is not in itself an ethics incident'},
+ 'KAC-DHE-05': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-INS-02'}], 'kind': 'condition', 'producer': 'KA-DHE', 'requirement': 'Required'},
+ 'KAC-DHE-06': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-PRD-04'}],
+                'kind': 'condition',
+                'producer': 'KA-DHE',
+                'requirement': 'Required'},
+ 'KAC-DHE-07': {'dependents': [{'model': 'KA-DII', 'transition': 'TR-EXC-05'}], 'kind': 'condition', 'producer': 'KA-DHE', 'requirement': 'Required'},
+ 'KAC-DHE-08': {'kind': 'citation', 'producer': 'KA-DHE', 'cites': {'model': 'KA-MM', 'transition': 'TR-AST-02'}, 'raises': {'model': 'KA-MM', 'event': 'EV-AST-05'}, 'onlyIf': 'MM_asset_described'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DHE", "name": "Data Handling Ethics FTS", "knowledgeArea": "Data Handling Ethics", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Ethical Data Handling Strategy (scope level), a Practice Gap (one per gap), the Ethics Communication and Training Programme (scope level), the Ethical Use of a Data Asset (one per asset and intended use) and an Ethics Compliance Incident (one per incident) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area: the Ethical Data Handling Strategy, a Practice Gap, the Ethics Communication and Training Programme, the Ethical Use of a Data Asset and an Ethics Compliance Incident. The KA never becomes a region of the Data Asset; the use and the incident reach the Global protocol through contributions (release only for a cleared use, Non-waivable; external custody and transfer under the sharing conditions of a cleared use; restoration only with the clearance restored and no open incident; a reported incident as the access-suspension and assurance triggers; the ethics risk assessment as the assurance service) and couple to DG, Data Security, BDA, DWBI, DII and Metadata.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DHE-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram lists six activities and nine deliverables but no lifecycle for a use, a gap or an incident; the Ethical Use states are drafted from the goals (ethical handling defined, monitored, adjusted) and the responsibilities when sharing data, the Practice Gap states from Address Practices Gaps, the Incident states from the compliance / non-compliance incidents metric. Activity 3 reads 'Create and Ethical Data Handling Strategy' with no phase tag; (P) inferred."},
         {"id": "SRC-DHE-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (five, incident split out), Global gating, Non-waivable release", "limitations": ""},

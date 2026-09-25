@@ -259,13 +259,49 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DWBI-01", "Pre-release Product Access", "TR-AV-01", "Release of a built data product to a pilot audience before its release plan slot.", "DR-DWBI-06", "Product built and tested on a reconciled population, pilot audience named, release plan entry scheduled with a date, Data Security classification confirmed, DG informed, evidence retained; expires at the scheduled release date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DWBI-01': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-ARC-02'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DA',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-02': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-DWH-02'}, {'model': 'KA-DWBI', 'transition': 'TR-DWH-03'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DSO',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-03': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-POP-02'}, {'model': 'KA-DWBI', 'transition': 'TR-POP-06'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DII',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-04': {'dependents': [{'model': 'KA-MM', 'transition': 'TR-AST-03'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DWBI',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-05': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-PRD-04'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DQ',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-06': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-PRD-04'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DS',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-07': {'emitters': ['TR-POP-04', 'TR-POP-08', 'TR-DWH-05', 'TR-PRD-06'], 'kind': 'event', 'producer': 'KA-DWBI'},
+ 'KAC-DWBI-08': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-POP-01'}],
+                 'kind': 'condition',
+                 'producer': 'KA-RMD',
+                 'qualifier': 'source_is_master_data',
+                 'requirement': 'Conditional'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DWBI", "name": "Data Warehousing and Business Intelligence FTS", "knowledgeArea": "Data Warehousing and Business Intelligence", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the DW and BI Architecture (scope level), a Data Warehouse or Data Mart (one per store), the Population of a Data Asset (one per warehoused asset), a Data Product (one per product) and the BI Portfolio (scope level) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area: the DW and BI Architecture, a Data Warehouse or Data Mart, the Population of a Data Asset, a Data Product and the BI Portfolio. The KA never becomes a region of the Data Asset; the store, the population and the product reach the Global protocol through contributions (materialisation of a warehoused asset, release and restoration of a data product, supersession by a reconciled refresh, the assurance and access-suspension triggers and the reconciliation service), all Conditional so assets outside the warehouse are unaffected, and couple to Data Architecture, DSO, DII, Metadata, DQ, Data Security, DG and RMD.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DWBI-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram lists the activities and ten deliverables but no store, load or product lifecycle; the Population and Data Product states are drafted from Populate the Data Warehouse, Implement the BI Portfolio and Maintain Data Products with the Release Plan, Lineage Dictionary and BI Activity Monitoring deliverables."},
         {"id": "SRC-DWBI-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (five, BI Portfolio split out), Global gating", "limitations": ""},

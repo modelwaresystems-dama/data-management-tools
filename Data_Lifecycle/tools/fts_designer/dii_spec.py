@@ -224,13 +224,29 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DII-01", "Interim Exchange", "TR-AV-01", "Release through a data service over an orchestrated exchange whose Data Access Agreement is not yet signed.", "DR-DII-05", "Exchange orchestrated, agreement drafted with a signature date, consumer accepts the interim conditions, Data Security classification and privacy basis confirmed, DG informed, evidence retained; expires at the signature date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DII-01': {'dependents': [{'model': 'KA-DII', 'transition': 'TR-DIA-02'}, {'model': 'KA-DII', 'transition': 'TR-EXC-04'}],
+                'kind': 'condition',
+                'producer': 'KA-DA',
+                'requirement': 'Required'},
+ 'KAC-DII-02': {'dependents': [{'model': 'KA-DII', 'transition': 'TR-EXC-05'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
+ 'KAC-DII-03': {'kind': 'citation', 'producer': 'KA-DII', 'cites': {'model': 'KA-MM', 'transition': 'TR-AST-02'}, 'raises': {'model': 'KA-MM', 'event': 'EV-AST-05'}, 'onlyIf': 'MM_asset_described'},
+ 'KAC-DII-04': {'dependents': [{'model': 'KA-DQ', 'transition': 'TR-PDCA-02'}], 'kind': 'condition', 'producer': 'KA-DII', 'requirement': 'Required'},
+ 'KAC-DII-05': {'emitters': ['TR-EXC-08'], 'kind': 'event', 'producer': 'KA-DII'},
+ 'KAC-DII-06': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-05'}], 'kind': 'condition', 'producer': 'KA-DII', 'requirement': 'Required'},
+ 'KAC-DII-07': {'dependents': [{'model': 'KA-DSO', 'transition': 'TR-STO-06'}], 'kind': 'condition', 'producer': 'KA-DII', 'requirement': 'Required'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DII", "name": "Data Integration and Interoperability FTS", "knowledgeArea": "Data Integration and Interoperability", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the DII Architecture (scope level), a Data Exchange of a Data Asset (one per flow, with the complex event thresholds and alerts as its monitoring states and the specification and access agreement as its Agreed state) and a Data Service (one per service) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Three state regions, each its own FTS over one managed element of the Knowledge Area: the DII Architecture, a Data Exchange of a Data Asset and a Data Service. The KA never becomes a region of the Data Asset; the exchange and the service reach the Global protocol through contributions (release and restoration through a service, custody transfer and external custody, supersession by a completed migration, the assurance and access-suspension triggers and the profiling service), and couple to Data Architecture, Data Security, Metadata, DQ, DG, RMD and Data Storage and Operations.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DII-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram gives the activities and deliverables but no exchange lifecycle; the Data Exchange states follow the activity sequence (define, discover and profile, map and document lineage, orchestrate, agree, implement and monitor) with alert, suspension and retirement drafted from Implement and Monitor and the CEP deliverable."},
         {"id": "SRC-DII-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (events folded into the exchange), Global gating", "limitations": ""},

@@ -189,6 +189,17 @@ EVIDENCE = [
 ]
 EXC = [("EXC-MM-01", "Provisional Description", "TR-EX-01", "Registration of an urgent Data Asset with a partial description.", "DR-MM-06", "Identity, owner, classification and technical location recorded; full description scheduled with a date; steward assigned; evidence retained; expires at the scheduled date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-MM-01': {'emitters': [], 'kind': 'event', 'producer': 'KA-MM', 'trigger': 'fact'},
+ 'KAC-MM-02': {'dependents': [{'model': 'KA-DQ', 'transition': 'TR-PDCA-01'}], 'kind': 'condition', 'producer': 'KA-MM', 'requirement': 'Required'},
+ 'KAC-MM-03': {'emitters': [], 'kind': 'event', 'producer': 'KA-MM', 'trigger': 'fact'},
+ 'KAC-MM-04': {'dependents': [{'model': 'KA-MM', 'transition': 'TR-ARC-03'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'},
+ 'KAC-MM-05': {'dependents': [{'model': 'KA-MM', 'transition': 'TR-AST-03'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'}}
+
 SPEC = {
     "meta": {"modelId": "KA-MM", "name": "Metadata Management FTS", "knowledgeArea": "Metadata Management", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Programme and the Architecture and Stores (scope level) and the Metadata of a Data Asset (one per asset) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
@@ -196,7 +207,7 @@ SPEC = {
              "note": "Three state regions, each its own FTS over one managed element of the Knowledge Area: the Metadata Programme, the Metadata Architecture and Stores, and the Metadata of a Data Asset. The KA never becomes a region of the Data Asset; the Metadata of a Data Asset reaches the Global protocol through contributions (registration, access release, custody transfer, disposition, assurance triggers), and metadata quality and security are delegated to the Data Quality and Data Security FTSs by coupling.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS,
              "assetFacts": {"MM_is_metadata_asset": {"default": False, "meaning": "the Data Asset is itself a Metadata Asset (a glossary, catalogue entry, model, lineage record, artefact or evidence record typed as a metadata asset), so Metadata Management owns its release request (Howard, 23 Sep 2026)"}}},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-MM-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "Process 5 carries no phase tag on the slide; (O) inferred by decision."},
         {"id": "SRC-MM-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating, quality and security delegation", "limitations": ""},

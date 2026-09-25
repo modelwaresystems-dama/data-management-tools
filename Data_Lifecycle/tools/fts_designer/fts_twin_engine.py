@@ -20,6 +20,11 @@ Instances are plain dicts so the store can persist them as JSON:
 import json, os, glob, re, datetime
 
 GLOBAL_ID = "GDA-GLOBAL-PROTOCOL"
+# Howard, 24 Sep 2026 (Open Decisions A4 option a): the coupling guards are enforced only when this switch is on. Off, the new coupling
+# fields are carried and shown but no transition is refused for them, so the regression reads as before; it is turned on in the same
+# change that settles the scenario order. The environment variable FTS_ENFORCE_COUPLINGS=1 turns it on for a single run.
+# On from 24 Sep 2026 (Open Decisions D2 option a): the scenarios are reordered to respect the couplings; FTS_ENFORCE_COUPLINGS=0 turns it off.
+ENFORCE_COUPLINGS = os.environ.get("FTS_ENFORCE_COUPLINGS", "1") == "1"
 SHARED_SCOPE = re.compile(r"governed scope|per platform|per database|per warehouse|per master data domain|per data service", re.I)  # 22 Sep 2026: a reference data set is held by its asset, not shared per scope
 DEFAULT_FACTS = {"hold_active": False, "disposition_control_verified": True, "supersession_use_authorized": False, "use_requires_assurance": True,
                  "material_change": False, "atomic_withdrawal": False, "recipient_acceptance_evidenced": True, "enhanced_monitoring": True,
@@ -28,6 +33,9 @@ DEFAULT_FACTS = {"hold_active": False, "disposition_control_verified": True, "su
                  # governing instrument versions (Howard, 24 Sep 2026): instance facts of a version, and the set facts, which read as in
                  # force wherever no instruments are loaded (the scenario runs) so nothing that does not model instruments is blocked
                  "INS_is_policy": False, "INS_is_procedure": False, "INS_predecessor_ok": True,
+                 # qualifiers of Conditional coupling guards (Influence Map Register, 24 Sep 2026): a coupling that applies only "for
+                 # external flows" or "where delivery is by service" is enforced only when the asset says so
+                 "source_is_warehouse": False, "source_is_master_data": False, "flow_is_external": False, "delivery_by_service": False, "processes_personal_data": False, "incident_is_misuse": False,
                  **{k + "_policy_set_in_force": True for k in ("DG", "DA", "DMD", "DSO", "DII", "MM", "DQ", "DS", "DHE", "DWBI", "BDA", "RMD", "DCM")}}  # asset kinds: RMD master or reference (22 Sep 2026), Metadata Asset (23 Sep 2026)
 
 # regions held by instrument version instances, never by a Data Asset (Howard, 24 Sep 2026)
@@ -63,6 +71,29 @@ class Federation:
                 if g.get("contribution"):
                     if g.get("transition") in self.tr.get(GLOBAL_ID, {}): self.fed.setdefault(g["transition"], []).append({**g, "fromModel": mid})
                 else: self.guards_by_tr[mid].setdefault(g.get("transition"), []).append(g)
+        # v0.4 (Howard, 24 Sep 2026, Influence Map Register cards 2, 3 and 4): Knowledge Area couplings are enforced. A condition
+        # coupling becomes a guard on each dependent transition, attributed to the Knowledge Area that produces the fact; an event
+        # coupling is raised by the twin when an emitter fires (or, with no emitters, when its fact turns true); an event
+        # contribution to the Global protocol is recorded on the Global event it raised.
+        self.couplings = []; self.coupled = {}
+        for mid, m in self.models.items():
+            for k in m.get("kaCouplings", []):
+                k2 = {**k, "sourceModel": mid}; self.couplings.append(k2)
+                if k.get("kind") != "condition": continue
+                for d in k.get("dependents", []):
+                    dm, dt = d.get("model"), d.get("transition")
+                    if dt not in self.tr.get(dm, {}): continue
+                    expr = d.get("expression") or k.get("expression")
+                    if k.get("qualifier"): expr = f"(not {k['qualifier']}) or ({expr})"
+                    lst = self.coupled.setdefault((dm, dt), [])
+                    same = next((g for g in lst if g["expression"] == expr), None)
+                    if same: same["couplings"].append(k["id"]); continue
+                    lst.append({"id": f"GRD-{k['id']}-{dt[3:]}", "transition": dt, "expression": expr, "requirement": k.get("requirement") or "Required",
+                                "predicate": k.get("predicate"), "coupling": k["id"], "couplings": [k["id"]], "fromModel": d.get("producer") or k.get("producer") or mid})
+        self.event_contrib = {}
+        for mid, m in self.models.items():
+            for c in m.get("contributions", []):
+                if c.get("kind") == "event": self.event_contrib.setdefault(c.get("globalTransition"), []).append({**c, "fromModel": mid})
         self.by_event = {mid: {} for mid in self.models}
         for mid, m in self.models.items():
             for t in m.get("transitions", []):
@@ -140,12 +171,14 @@ class Federation:
         verdicts = []; ok = src_active
         guards = list(self.guards_by_tr[model_id].get(transition_id, []))
         if model_id == GLOBAL_ID: guards += [g for g in self.fed.get(transition_id, []) if g.get("fromModel") in self.applicable(asset)]
+        if ENFORCE_COUPLINGS: guards += [g for g in self.coupled.get((model_id, transition_id), []) if g.get("fromModel") in self.applicable(asset) or g.get("fromModel") in (model_id, GLOBAL_ID)]
         for g in guards:
             if g.get("expression"):
                 v = eval_expression(g["expression"], env); src = "expression"
                 if v is None: v, src = True, "default (expression not evaluable)"
             else: v, src = True, "default"
-            verdicts.append({"guard": g["id"], "verdict": v, "source": src, "requirement": g.get("requirement"), "contributedBy": g.get("fromModel"), "predicate": g.get("predicate") or g.get("constraint")})
+            verdicts.append({"guard": g["id"], "verdict": v, "source": src, "requirement": g.get("requirement"), "contributedBy": g.get("fromModel"), "predicate": g.get("predicate") or g.get("constraint"),
+                             **({"coupling": g["coupling"], "couplings": g["couplings"]} if g.get("coupling") else {})})
             if not v: ok = False
         dr = t.get("decisionRight")
         authorised = ok and (dr is None or (authorizations or {}).get(dr, True))
@@ -166,6 +199,26 @@ class Federation:
         else:
             asset["vectors"].setdefault(mid, {})[rid] = to; asset["updatedAt"] = now_iso()
         return True
+
+    def event_couplings(self, model_id, transition_id):
+        """the event couplings a fired transition emits"""
+        own = lambda k: k.get("emitterModel") or k["sourceModel"]
+        return [k for k in self.couplings if k.get("kind") == "event" and ((own(k) == model_id and transition_id in (k.get("emitters") or []))
+                                                                            or f"{model_id}:{transition_id}" in (k.get("emitters") or []))]
+
+    def fact_couplings(self):
+        """the event couplings with no emitter, raised when their fact turns true"""
+        # citations (Open Decisions D1 option a) are raised the same way: when the cited fact turns true after the description
+        return [k for k in self.couplings if (k.get("kind") == "event" and not k.get("emitters")) or k.get("kind") == "citation"]
+
+    def raised_by(self, asset, transition_id, env):
+        """the event contributions of the Knowledge Areas that manage this asset whose condition holds when a Global transition fires"""
+        out = []
+        for c in self.event_contrib.get(transition_id, []):
+            if c["fromModel"] not in self.applicable(asset): continue
+            v = eval_expression(c.get("expression") or "True", env)
+            if v: out.append({"contribution": c["id"], "model": c["fromModel"], "expression": c.get("expression")})
+        return out
 
     def transitions_for_event(self, asset, model_id, event_id, elements):
         """the transitions of the model this event triggers, the one whose source is active first"""

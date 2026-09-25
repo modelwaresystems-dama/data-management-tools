@@ -108,7 +108,7 @@ EVENTS = {
     "EV-RDY-01": ("Assessment initiation", "Request"), "EV-RDY-02": ("Assessment completion", "Assessment outcome"), "EV-RDY-03": ("Change programme launch", "Decision outcome"), "EV-RDY-04": ("Target reached", "Assessment outcome"), "EV-RDY-05": ("Reassessment due", "Time trigger"),
     "EV-POL-01": ("Instrument development initiation", "Request"), "EV-POL-02": ("Instrument approval", "Decision outcome"), "EV-POL-03": ("Instrument publication", "Decision outcome"), "EV-POL-04": ("Regulatory or compliance trigger", "Monitoring trigger"), "EV-POL-05": ("Revised instrument approval", "Decision outcome"), "EV-POL-06": ("Instrument retirement", "Decision outcome"),
     "EV-ISS-01": ("Issue logged by a Knowledge Area or raised by a refused transition", "Request"), "EV-ISS-02": ("Resolution assigned", "Decision outcome"), "EV-ISS-03": ("Escalation", "Decision outcome"), "EV-ISS-04": ("Resolution or risk acceptance", "Decision outcome"), "EV-ISS-05": ("Issue closure", "Evidence trigger"), "EV-ISS-06": ("Issue reopened", "Monitoring trigger"),
-    "EV-INS-01": ("Version drafted", "Request"), "EV-INS-02": ("Version submitted for review", "Request"), "EV-INS-03": ("Version returned for rework", "Decision outcome"), "EV-INS-04": ("Version approved", "Decision outcome"), "EV-INS-05": ("Version put in force", "Decision outcome"), "EV-INS-06": ("Successor version put in force", "Evidence trigger"), "EV-INS-07": ("Version withdrawn", "Decision outcome"),
+    "EV-INS-01": ("Version drafted", "Request"), "EV-INS-02": ("Version submitted for review", "Request"), "EV-INS-03": ("Version returned for rework", "Decision outcome"), "EV-INS-04": ("Version approved", "Decision outcome"), "EV-INS-05": ("Version put in force", "Decision outcome"), "EV-INS-08": ("Procedure version withdrawn", "Decision outcome"), "EV-INS-06": ("Successor version put in force", "Evidence trigger"), "EV-INS-07": ("Version withdrawn", "Decision outcome"),
 }
 DR = {
     "DR-DG-01": ("Approve Data Governance Strategy and Roadmap", "ROLE-DGSC", "Confirmed 22 Sep 2026: Data Governance Steering Committee; drafted as Steering Committees"), "DR-DG-02": ("Approve Operating Framework and Federation Model", "ROLE-DGSC", "Confirmed 22 Sep 2026: Data Governance Steering Committee; drafted as Steering Committees"), "DR-DG-03": ("Assign Data Owners and Stewards", "ROLE-CDS", "Confirmed 22 Sep 2026: Chief Data Steward; drafted as CDO / Chief Data Stewards"),
@@ -125,7 +125,7 @@ DR = {
     "DR-DG-16": ("Log, Triage and Reopen a Data Asset Issue", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Business Data Stewards"),
     "DR-DG-17": ("Assign Issue Resolution", "ROLE-CODS", "Confirmed 22 Sep 2026 (holder register): Coordinating Data Steward; drafted as Coordinating Data Stewards"),
     "DR-DG-18": ("Accept Issue Resolution and Close", "ROLE-DO", "Confirmed 22 Sep 2026 (holder register): Data Owner; drafted as Data Owners"),
-    "DR-DG-19": ("Approve and Put in Force a Procedure Version", "ROLE-DO", "Confirmed 24 Sep 2026 (Instrument Versions Register, card 7): Data Owner approves procedures; the Council keeps policies under DR-DG-04"),
+    "DR-DG-19": ("Approve and Put in Force a Procedure Version", "ROLE-DO", "Confirmed 24 Sep 2026 (Instrument Versions Register, card 7): Data Owner approves procedures; the Council keeps policies under DR-DG-04. Extended 24 Sep 2026 (Open Decisions C3 option a): the Data Owner also withdraws procedure versions (TR-INS-11)"),
 }
 ROLES = [
     ("ROLE-DG-S01", "Business Executives", "Supplier", "Supply business strategies and goals."), ("ROLE-DG-S02", "Data Stewards", "Supplier", "Supply stewardship knowledge; act as custodians."), ("ROLE-DG-S03", "Data Owners", "Supplier", "Own Data Assets; hold asset-level decision rights."), ("ROLE-DG-S04", "Subject Matter Experts", "Supplier", "Supply domain knowledge."), ("ROLE-DG-S05", "Maturity Assessors", "Supplier", "Supply maturity and readiness assessments."), ("ROLE-DG-S06", "Regulators", "Supplier", "Supply regulatory requirements."), ("ROLE-DG-S07", "Enterprise Architects", "Supplier", "Supply the business reference architecture."),
@@ -176,7 +176,8 @@ TRANS = [
     ("TR-INS-06", "Put Policy Version in Force", "STS-INS-04", "STS-INS-05", "EV-INS-05", "The policy version is communicated and in force; its predecessor, if any, is superseded in the same act.", "DR-DG-04", ["SVC-DG-08"], ["ACT-DG-4"]),
     ("TR-INS-07", "Put Procedure Version in Force", "STS-INS-04", "STS-INS-05", "EV-INS-05", "The procedure version is communicated and in force; its predecessor, if any, is superseded in the same act.", "DR-DG-19", ["SVC-DG-08"], ["ACT-DG-4"]),
     ("TR-INS-08", "Supersede Version", "STS-INS-05", "STS-INS-06", "EV-INS-06", "Its successor has been put in force; recorded automatically in the same act, naming the successor.", "DR-DG-04", ["SVC-DG-07"], ["ACT-DG-2.2"]),
-    ("TR-INS-09", "Withdraw Version", "STS-INS-05", "STS-INS-07", "EV-INS-07", "The version in force is retired with no successor and the reason is recorded.", "DR-DG-04", ["SVC-DG-07"], ["ACT-DG-2.2"]),
+    ("TR-INS-09", "Withdraw Policy Version", "STS-INS-05", "STS-INS-07", "EV-INS-07", "The policy version in force is retired with no successor and the reason is recorded.", "DR-DG-04", ["SVC-DG-07"], ["ACT-DG-2.2"]),
+    ("TR-INS-11", "Withdraw Procedure Version", "STS-INS-05", "STS-INS-07", "EV-INS-08", "The Data Owner retires the procedure version in force with no successor and records the reason (Howard, 24 Sep 2026, Open Decisions C3 option a).", "DR-DG-19", ["SVC-DG-07"], ["ACT-DG-3.1"]),
     ("TR-INS-10", "Withdraw Approved Version", "STS-INS-04", "STS-INS-07", "EV-INS-07", "An approved version is withdrawn before it goes in force.", "DR-DG-15", ["SVC-DG-07"], ["ACT-DG-2.2"]),
 ]
 SERVICES = [
@@ -201,7 +202,7 @@ ACTS = [
     ("ACT-DG-2.4", "Engage Change Management", "2.4", "Transition-causing", ["REG-DG-RDY"], ["TR-RDY-03"], ["SVC-DG-06"]),
     ("ACT-DG-2.5", "Engage in Issue Management", "2.5", "Transition-causing", ["REG-DG-ISS"], ["TR-ISS-01", "TR-ISS-02", "TR-ISS-03", "TR-ISS-04", "TR-ISS-05", "TR-ISS-06", "TR-ISS-07", "TR-ISS-08"], ["SVC-DG-09"]),
     ("ACT-DG-2.6", "Assess Regulatory Compliance Requirements", "2.6", "Transition-supporting", ["REG-DG-POL", "REG-DG-INS"], ["TR-POL-01", "TR-POL-04", "TR-INS-02", "TR-INS-03"], ["SVC-DG-07"]),
-    ("ACT-DG-3.1", "Sponsor Data Standards and Procedures", "3.1", "Transition-supporting", ["REG-DG-POL", "REG-DG-INS"], ["TR-POL-01", "TR-INS-01", "TR-INS-02", "TR-INS-05"], ["SVC-DG-07"]),
+    ("ACT-DG-3.1", "Sponsor Data Standards and Procedures", "3.1", "Transition-supporting", ["REG-DG-POL", "REG-DG-INS"], ["TR-POL-01", "TR-INS-01", "TR-INS-02", "TR-INS-05", "TR-INS-11"], ["SVC-DG-07"]),
     ("ACT-DG-3.2", "Develop a Business Glossary", "3.2", "State-preserving", ["REG-DG-POL"], ["TR-POL-01"], ["SVC-DG-07"]),
     ("ACT-DG-3.3", "Co-ordinate with Architecture Groups", "3.3", "Transition-supporting", ["REG-DG-POL"], ["TR-POL-01"], ["SVC-DG-07"]),
     ("ACT-DG-3.4", "Sponsor Data Asset Valuation", "3.4", "Transition-causing", ["REG-DG-STR"], ["TR-STR-04"], ["SVC-DG-02"]),
@@ -250,8 +251,8 @@ XRG = [
     ("XRG-DG-03", "A change programme is launched only against an accepted readiness baseline and an approved strategy.", ["TR-RDY-03"], "Required", "STR in ('STS-STR-03','STS-STR-04','STS-STR-05')"),
     ("XRG-DG-04", "An issue can be assigned for resolution only when stewards are assigned.", ["TR-ISS-02"], "Required", "OPM in ('STS-OPM-04','STS-OPM-05','STS-OPM-06')"),
     ("XRG-DG-05", "Value realisation requires instruments in force and the operating model in force.", ["TR-STR-04"], "Required", "POL == 'STS-POL-04' and OPM == 'STS-OPM-05'"),
-    ("XRG-DG-06", "A policy version is approved and put in force by the Data Governance Council.", ["TR-INS-04", "TR-INS-06"], "Required", "INS_is_policy"),
-    ("XRG-DG-07", "A procedure version is approved and put in force by the Data Owner.", ["TR-INS-05", "TR-INS-07"], "Required", "INS_is_procedure"),
+    ("XRG-DG-06", "A policy version is approved, put in force and withdrawn by the Data Governance Council.", ["TR-INS-04", "TR-INS-06", "TR-INS-09"], "Required", "INS_is_policy"),
+    ("XRG-DG-07", "A procedure version is approved, put in force and withdrawn by the Data Owner.", ["TR-INS-05", "TR-INS-07", "TR-INS-11"], "Required", "INS_is_procedure"),
     ("XRG-DG-08", "A version goes in force only when its document is published through the repository or declared a record.", ["TR-INS-06", "TR-INS-07"], "Required", "DCM_content_released"),
     ("XRG-DG-09", "At most one version of an instrument is in force: a version goes in force only when it has no predecessor, or its predecessor is the version in force (superseded in the same act) or was withdrawn.", ["TR-INS-06", "TR-INS-07"], "Non-waivable", "INS_predecessor_ok"),
 ]
@@ -270,6 +271,16 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DG-01", "Interim Governance Exception", "TR-EX-01", "Registration of an urgent Data Asset before the operating model reaches Assigned Roles.", "DR-DG-03", "Interim owner named, expiry set, compensating oversight by a governance body, evidence retained; never waives CON-DG-04.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DG-01': {'emitters': ['TR-INS-08'],
+               'handledBy': "instrument versions (fts_twin.py): the superseded version's own document",
+               'kind': 'event',
+               'producer': 'KA-DG'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DG", "name": "Data Governance FTS", "knowledgeArea": "Data Governance", "version": "0.3", "subjectType": KA_SUBJECT, "regionModel": "One FTS per managed element: the regions are separate machines that run concurrently and are coupled by events, facts and cross-region constraints, never a single subject.", "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area (strategy, operating model, readiness, governing instruments, Data Asset issue), derived from the DMBOK context diagram. Region 5 manages issues raised by every Knowledge Area. The KA never becomes a region of the Data Asset; each region reaches the Global protocol through contributions (guards, decision rights, services, events) listed on the Contributions sheet and federated onto the Global transitions in the viewer.",
@@ -280,7 +291,7 @@ SPEC = {
              "derivedFacts": {"<KA>_policy_set_in_force": "For each Knowledge Area (DG, DA, DMD, DSO, DII, MM, DQ, DS, DHE, DWBI, BDA, RMD, DCM): the instrument set of the policy domain named for it is in force, that is its Policy and every Procedure of that Policy has a version in force. Computed per governed scope from the REG-DG-INS instances by the twin.",
                               "POLDOM_<domain>_in_force": "The same test for every other policy domain of the organisation (Howard, 24 Sep 2026: every policy domain is its own set).",
                               "REG-DG-POL": "The scope's roll-up of the sets: Instruments in Force when every counted set is in force; otherwise Approved Instruments when any version is approved or in force, Instrument Development when any is drafted, No Governing Instruments when none exists. Instrument Review is entered only by TR-POL-04 so a successor in draft never withdraws the set in force."}},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "crossRegionConstraints": XRG, "kaCouplings": KA_COUPLINGS, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "crossRegionConstraints": XRG, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DG-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "Process 4 Embed Data Governance carries no sub-activities on the diagram."},
         {"id": "SRC-DG-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Region set, subject, start-from-definition method", "limitations": ""},

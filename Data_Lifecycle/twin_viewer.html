@@ -63,7 +63,7 @@ details.amod summary{cursor:pointer;padding:4px 0}
 .tscroll{overflow-x:auto} table.tl{border-collapse:collapse;width:100%;font-size:12.5px} .tl th,.tl td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top} .tl th{color:var(--ink-faint);font-weight:600;font-size:11.5px} .tl tr.bad td{color:var(--bad)} .tl tr.ovr td{color:var(--amber)} td.n{text-align:right;font-family:var(--mono)}
 svg.inf{width:100%;height:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 svg.inf g.in rect{fill:var(--panel-2);stroke:var(--ink)} svg.inf g.in{cursor:pointer} svg.inf .int{font-weight:600;font-size:13px;fill:var(--ink)} svg.inf .ins{font-size:10.5px;fill:var(--ink-faint)}
-svg.inf path.ie{cursor:pointer;opacity:.28} svg.inf path.ie.blk{opacity:.85} svg.inf.focus path.ie{opacity:.9} svg.inf path.ie:hover{opacity:1} svg.inf path.ie.dimmed{opacity:.04!important}
+svg.inf path.ie{cursor:pointer;opacity:.28} svg.inf path.ie.rsd{opacity:.55} svg.inf g.in.none{opacity:.45} tr.clk{cursor:pointer} tr.clk:hover td{background:var(--accent-soft)} svg.inf path.ie.blk{opacity:.85} svg.inf.focus path.ie{opacity:.9} svg.inf path.ie:hover{opacity:1} svg.inf path.ie.dimmed{opacity:.04!important}
 .mx{border-collapse:collapse;font-size:12px} .mx th,.mx td{border:1px solid var(--line);padding:3px 5px;text-align:center;min-width:44px} .mx th{color:var(--ink-faint);font-weight:600} .mx th.r{text-align:left} .mx td{background:color-mix(in srgb,var(--accent) calc(var(--f)*80%),var(--panel));cursor:pointer} .mx td.self{background:var(--panel-3)} .mx td b{color:var(--bad)} .ifilter{margin:0 0 8px}
 dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:18px;max-width:460px}
 dialog label{display:block;font-size:12px;color:var(--ink-faint);margin:8px 0 2px} dialog input{width:100%}
@@ -215,13 +215,19 @@ html[data-cr] .btn.primary{background:#0284c7;border-color:#0284c7}
 .crkanote{padding:8px 10px;font-size:12px;line-height:1.4}
 .crkashut{display:flex;flex-wrap:wrap;gap:6px} .crkashut .crka{flex:0 1 auto;max-width:100%} .crkashut .crkah{padding:5px 10px;flex-wrap:nowrap} .crkashut .crkan{display:none} .crkashut .crkas2{margin-left:10px}
 
+/* v0.13 server mode */
+.srvbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:8px 0 2px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:13px}
+.srvbar select,.srvbar input{font:inherit;font-size:13px;max-width:100%;min-width:0} .srvwho{min-width:0;overflow-wrap:anywhere}
+.srvlive{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#047857;border:1px solid #10b981;border-radius:10px;padding:1px 8px} .srvlive.off{color:#b45309;border-color:#d97706}
+.srvrooms summary{cursor:pointer} .srvform{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
+.crrun.srvsend{background:#047857} .srvres{flex:1 1 260px;border-left:1px solid #4338ca;padding-left:12px} .crfc{flex-wrap:wrap}
 @media (max-width:700px){.tabs{flex-wrap:wrap}.tab{padding:6px 10px}}
 #assetSel{max-width:100%;min-width:0} .assetbar{flex-wrap:wrap}
 .crlens label{display:flex;align-items:center;gap:6px;max-width:100%;min-width:0} .crlens select{min-width:0;max-width:100%;flex:1 1 auto}
 </style></head><body>
 <header>
  <div class="hrow1"><div><h1>Digital Twin Viewer</h1><div class="dim">The digital twin of the DMBOK Data Lifecycle: every Data Asset (a data product, table or feed) and the golden records inside it, moving through the Global Data Asset Protocol and the Knowledge Area FTSs.</div></div>
- <div class="ver">Twin viewer v0.11<br>Built 24 Sep 2026, 09:48 SAST<br>Holds no data. Reads models/ and twin/ from GitHub or disk.</div></div>
+ <div class="ver">Twin viewer v0.13<br>Built 24 Sep 2026, 12:20 SAST<br>Holds no data. Reads models/ and twin/ from GitHub, disk or the twin server.</div></div>
  <div class="bar"><button class="btn primary" id="btnGh">Load from GitHub</button><button class="btn" id="btnGhSet">GitHub settings</button><label class="btn" for="files">Load files</label><input type="file" id="files" multiple accept=".json" hidden>
  <select id="org" aria-label="organisation" hidden></select><select id="cls" aria-label="asset class"><option value="">every asset class</option></select><span id="status" class="status"></span></div>
  <div class="tabs" role="tablist"><button class="tab" data-t="heat" aria-selected="true">Heat map</button><button class="tab" data-t="replay" aria-selected="false">Replay</button><button class="tab" data-t="asset" aria-selected="false">One asset</button><button class="tab" data-t="dash" aria-selected="false">Dashboard (role workspace)</button><button class="tab" data-t="issues" aria-selected="false">Issues</button><button class="tab" data-t="influence" aria-selected="false">Influence</button></div>
@@ -622,7 +628,7 @@ function ftsSummarySvg(M, availW, opts){
     return kids.slice().sort((a,b)=>((a.id in rank)?rank[a.id]:999)-((b.id in rank)?rank[b.id]:999)||dec[a.id]-dec[b.id]);
   }
   function ingest(models,tw,src){
-    D.models={}; models.forEach(m=>D.models[m.meta.modelId]=m);
+    D.models={}; D.coupled=null; models.forEach(m=>D.models[m.meta.modelId]=m);
     D.order=Object.keys(D.models).sort((a,b)=>a===GID?-1:b===GID?1:(D.models[a].meta.knowledgeArea||a).localeCompare(D.models[b].meta.knowledgeArea||b));
     D.st={}; D.reg={};
     D.order.forEach(mid=>{ const m=D.models[mid]; m.subStates.forEach(s=>D.st[s.id]=s); m.regions.forEach(r=>{ D.reg[mid+"|"+r.id]={m:mid, r, states:orderStates(m,r.id)}; }); });
@@ -863,42 +869,68 @@ fillAssets();
 
   // ------------------------------------------------------------------ 4 the cross-FTS influence map
   function influence(){
-    // allows: a fired transition whose guards include a contribution or coupling from another FTS (from the models, for the
-    // assets that FTS applies to); blocks: a refused event whose failing guard names the contributing FTS (from the event log)
-    const byT={}; D.order.forEach(src=>{ if(src===GID) return; const m=D.models[src];
-      (m.contributions||[]).forEach(c=>{ if(c.kind!=="guard"&&c.kind!=="decisionRight") return; (byT[GID+"|"+c.globalTransition]=byT[GID+"|"+c.globalTransition]||[]).push({src, id:c.id, kind:c.kind, pred:c.predicate}); });
-      (m.kaCouplings||[]).forEach(k=>{ if(!k.targetModel||!k.targetTransition) return; (byT[k.targetModel+"|"+k.targetTransition]=byT[k.targetModel+"|"+k.targetTransition]||[]).push({src, id:k.id, kind:k.event?"event":"fact", pred:k.predicate}); }); });
-    const E={}; const add=(s,t,kind,detail)=>{ const k=s+">"+t; const x=E[k]=E[k]||{s,t,allow:0,block:0,event:0,det:{}}; x[kind]++; const d=x.det[detail]=x.det[detail]||{allow:0,block:0,event:0}; d[kind]++; };
+    // v0.12 (Influence Map Register, 24 Sep 2026). allow: a fired transition that a guard from another FTS let through, a Global
+    // contribution or a coupling condition, drawn from the Knowledge Area that produces the fact to the one whose transition it
+    // gates; solid when the twin that produced the export enforced it (fts_twin 0.5 or later), dashed when the models only declare it.
+    // raised: an event the twin records as raised by another FTS (raisedBy). block: a refused event whose failing guard names the FTS.
+    const chk=couplingsEnforced(); const byT={};
+    D.order.forEach(src=>{ if(src===GID) return; const m=D.models[src];
+      (m.contributions||[]).forEach(c=>{ if(c.kind!=="guard"&&c.kind!=="decisionRight") return; (byT[GID+"|"+c.globalTransition]=byT[GID+"|"+c.globalTransition]||[]).push({src, id:c.id, checked:true}); });
+      (m.kaCouplings||[]).forEach(k=>{
+        if(k.kind==="condition") (k.dependents||[]).forEach(d=>{ const key=d.model+"|"+d.transition; (byT[key]=byT[key]||[]).push({src:d.producer||k.producer||src, id:k.id, checked:chk}); });
+        else if(!k.kind&&!k.event&&k.targetModel&&k.targetTransition){ const key=k.targetModel+"|"+k.targetTransition; (byT[key]=byT[key]||[]).push({src, id:k.id, checked:false}); } }); });
+    const E={}; const add=(s,t,kind,detail)=>{ const k=s+">"+t; const x=E[k]=E[k]||{s,t,allow:0,decl:0,raised:0,block:0,det:{}}; x[kind]++; const d=x.det[detail]=x.det[detail]||{allow:0,decl:0,raised:0,block:0}; d[kind]++; };
     const act=pool(); const inPool=new Set(act.map(a=>a.id));
-    D.events.forEach(ev=>{ if(!inPool.has(ev.instanceId)||!ev.model||!ev.transition) return; const a=D.byId[ev.instanceId];
-      if(ev.fired && ev.result==="fired"){ (byT[ev.model+"|"+ev.transition]||[]).forEach(c=>{ if(c.src===ev.model||!applies(a,c.src)) return; add(c.src,ev.model,c.kind==="event"?"event":"allow",ev.transition+" "+(ev.name||"")+" · "+c.id); }); }
-      else if(String(ev.result).startsWith("blocked")){ (ev.guards||[]).filter(g=>g.verdict===false).forEach(g=>{ const s=g.contributedBy||ev.model; add(s,ev.model,"block",ev.transition+" "+(ev.name||"")+" · "+g.guard); }); }
+    D.events.forEach(ev=>{ const aid=inPool.has(ev.instanceId)?ev.instanceId:(ev.parentId&&inPool.has(ev.parentId)?ev.parentId:null); if(!aid||!ev.model||!ev.transition) return; const a=D.byId[aid];
+      if(ev.fired && ev.result==="fired"){
+        (byT[ev.model+"|"+ev.transition]||[]).forEach(c=>{ if(c.src===ev.model||!applies(a,c.src)) return; add(c.src,ev.model,c.checked?"allow":"decl",ev.transition+" "+(ev.name||"")+" · "+c.id); });
+        (ev.raisedBy||[]).forEach(r=>{ if(r.model&&r.model!==ev.model) add(r.model,ev.model,"raised",ev.transition+" "+(ev.name||"")+" · raised by "+(r.coupling||r.contribution||"")); }); }
+      else if(String(ev.result).startsWith("blocked")){ (ev.guards||[]).filter(g=>g.verdict===false).forEach(g=>{ const s=g.contributedBy||ev.model; add(s,ev.model,"block",ev.transition+" "+(ev.name||"")+" · "+(g.coupling||g.guard)); }); }
     });
     return Object.values(E);
   }
+  function statementsList(){ const out=[]; D.order.forEach(k=>(D.models[k].kaCouplings||[]).forEach(c=>{ if(c.kind==="statement"||c.kind==="citation"||(!c.kind&&/Metadata Asset|metadata assets/.test(c.predicate||""))) out.push([k,c]); })); return out; }
   function matrix(edges){
-    const ids=D.order, M={}; edges.forEach(x=>M[x.s+'>'+x.t]=x); const mxv=Math.max(1,...edges.map(x=>x.allow+x.event));
-    return '<div class="tscroll"><table class="mx"><thead><tr><th class="r">from ↓ · to →</th>'+ids.map(t=>'<th title="'+e(kaName(t))+'">'+e(kaShort(t))+'</th>').join('')+'</tr></thead><tbody>'+ids.map(s=>'<tr><th class="r" title="'+e(kaName(s))+'">'+e(kaShort(s))+'</th>'+ids.map(t=>{ const x=M[s+'>'+t]; const v=x?x.allow+x.event:0; return '<td class="'+(s===t?'self':'')+'" data-s="'+e(s)+'" data-t="'+e(t)+'" style="--f:'+(v?(0.15+0.85*Math.log(1+v)/Math.log(1+mxv)).toFixed(3):0)+'" title="'+e(kaShort(s)+' → '+kaShort(t)+': '+v+' allowed, '+(x?x.block:0)+' refused')+'">'+(v||'')+(x&&x.block?' <b>'+x.block+'</b>':'')+'</td>'; }).join('')+'</tr>').join('')+'</tbody></table></div>';
+    const ids=D.order, M={}; edges.forEach(x=>M[x.s+'>'+x.t]=x); const tot=x=>x.allow+x.decl+x.raised; const mxv=Math.max(1,...edges.map(tot));
+    return '<div class="tscroll"><table class="mx"><thead><tr><th class="r">from ↓ · to →</th>'+ids.map(t=>'<th title="'+e(kaName(t))+'">'+e(kaShort(t))+'</th>').join('')+'</tr></thead><tbody>'+ids.map(s=>'<tr><th class="r" title="'+e(kaName(s))+'">'+e(kaShort(s))+'</th>'+ids.map(t=>{ const x=M[s+'>'+t]; const v=x?tot(x):0; return '<td class="'+(s===t?'self':'')+'" data-s="'+e(s)+'" data-t="'+e(t)+'" style="--f:'+(v?(0.15+0.85*Math.log(1+v)/Math.log(1+mxv)).toFixed(3):0)+'" title="'+e(kaShort(s)+' → '+kaShort(t)+': '+v+' allowed, '+(x?x.block:0)+' refused')+'">'+(v||'')+(x&&x.block?' <b>'+x.block+'</b>':'')+'</td>'; }).join('')+'</tr>').join('')+'</tbody></table></div>';
   }
   function renderInfluence(){
-    const edges=influence(); const ids=D.order; const W=880, H=640, cx=W/2, cy=H/2, R=250;
+    const edges=influence(); const ids=D.order; const W=880, H=640, cx=W/2, cy=H/2, R=250; const tot=x=>x.allow+x.decl+x.raised;
+    const pl=pool(); const managed=k=>k===GID?pl.length:pl.filter(a=>applies(a,k)).length;
     const pos={}; pos[GID]={x:cx,y:cy}; const kas=ids.filter(x=>x!==GID); kas.forEach((k,i)=>{ const ang=-Math.PI/2+i*2*Math.PI/kas.length; pos[k]={x:cx+R*Math.cos(ang), y:cy+R*0.92*Math.sin(ang)}; });
-    const mx=Math.max(1,...edges.map(x=>x.allow+x.event+x.block));
-    const wOf=v=>1+5*Math.log(1+v)/Math.log(1+mx);
-    const svg=['<svg viewBox="0 0 '+W+' '+H+'" class="inf" role="img" aria-label="Influence between the FTSs"><defs><marker id="ia" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--edge)"/></marker><marker id="ib" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--bad)"/></marker></defs>'];
+    const mx=Math.max(1,...edges.map(x=>tot(x)+x.block)); const wOf=v=>1+5*Math.log(1+v)/Math.log(1+mx);
+    const svg=['<svg viewBox="0 0 '+W+' '+H+'" class="inf" role="img" aria-label="Influence between the FTSs"><defs><marker id="ia" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--edge)"/></marker><marker id="ir" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--accent)"/></marker><marker id="ib" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--bad)"/></marker></defs>'];
     const curve=(s,t,bend)=>{ const A=pos[s],B=pos[t]; const dx=B.x-A.x, dy=B.y-A.y, L=Math.hypot(dx,dy)||1; const ux=dx/L, uy=dy/L; const a0={x:A.x+ux*44,y:A.y+uy*26}, b0={x:B.x-ux*48,y:B.y-uy*30}; const mxp=(a0.x+b0.x)/2-uy*bend, myp=(a0.y+b0.y)/2+ux*bend; return 'M'+a0.x.toFixed(1)+' '+a0.y.toFixed(1)+' Q'+mxp.toFixed(1)+' '+myp.toFixed(1)+' '+b0.x.toFixed(1)+' '+b0.y.toFixed(1); };
-    edges.forEach((x,i)=>{ if(!pos[x.s]||!pos[x.t]||x.s===x.t) return; const ok=x.allow+x.event; if(ok) svg.push('<path class="ie" data-i="'+i+'" data-s="'+e(x.s)+'" data-t="'+e(x.t)+'" d="'+curve(x.s,x.t,18)+'" stroke="var(--edge)" stroke-width="'+wOf(ok).toFixed(1)+'" fill="none" marker-end="url(#ia)"><title>'+e(kaShort(x.s)+" → "+kaShort(x.t)+": "+x.allow+" transitions allowed, "+x.event+" events emitted")+'</title></path>');
-      if(x.block) svg.push('<path class="ie blk" data-i="'+i+'" data-s="'+e(x.s)+'" data-t="'+e(x.t)+'" d="'+curve(x.s,x.t,-18)+'" stroke="var(--bad)" stroke-width="'+wOf(x.block).toFixed(1)+'" fill="none" marker-end="url(#ib)"><title>'+e(kaShort(x.s)+" → "+kaShort(x.t)+": "+x.block+" transitions refused")+'</title></path>'); });
-    ids.forEach(k=>{ const p=pos[k]; const oth=edges.filter(x=>x.s===k&&x.t!==k); const out=oth.reduce((a,x)=>a+x.allow+x.event,0), blk=oth.reduce((a,x)=>a+x.block,0), own=edges.filter(x=>x.s===k&&x.t===k).reduce((a,x)=>a+x.block,0); const w=k===GID?150:124;
-      svg.push('<g class="in" data-m="'+e(k)+'" transform="translate('+p.x.toFixed(1)+' '+p.y.toFixed(1)+')"><rect x="'+(-w/2)+'" y="-26" width="'+w+'" height="52" rx="8"/><text y="-7" text-anchor="middle" class="int">'+e(kaShort(k))+'</text><text y="8" text-anchor="middle" class="ins">'+(k===GID?'gates nothing directly':out+' allowed in others')+'</text><text y="21" text-anchor="middle" class="ins" '+(blk||own?'style="fill:var(--bad)"':'')+'>'+(k===GID?own+' refused by own guards':blk+' refused in others')+'</text><title>'+e(kaName(k))+'</title></g>'); });
+    const path=(x,i,cls,v,bend,stroke,marker,dash,title)=>'<path class="ie '+cls+'" data-i="'+i+'" data-s="'+e(x.s)+'" data-t="'+e(x.t)+'" d="'+curve(x.s,x.t,bend)+'" stroke="'+stroke+'" stroke-width="'+wOf(v).toFixed(1)+'" fill="none"'+(dash?' stroke-dasharray="'+dash+'"':'')+' marker-end="url(#'+marker+')"><title>'+e(title)+'</title></path>';
+    edges.forEach((x,i)=>{ if(!pos[x.s]||!pos[x.t]||x.s===x.t) return; const nm=kaShort(x.s)+" → "+kaShort(x.t);
+      if(x.allow) svg.push(path(x,i,"ok",x.allow,14,"var(--edge)","ia","",nm+": "+x.allow+" transitions let through by a guard the twin checked"));
+      if(x.decl) svg.push(path(x,i,"decl",x.decl,22,"var(--edge)","ia","6 4",nm+": "+x.decl+" transitions under a coupling the models declare but the twin did not check"));
+      if(x.raised) svg.push(path(x,i,"rsd",x.raised,30,"var(--accent)","ir","2 3",nm+": "+x.raised+" events raised"));
+      if(x.block) svg.push(path(x,i,"blk",x.block,-18,"var(--bad)","ib","",nm+": "+x.block+" transitions refused")); });
+    ids.forEach(k=>{ const p=pos[k]; const oth=edges.filter(x=>x.s===k&&x.t!==k); const out=oth.reduce((a,x)=>a+tot(x),0), nF=oth.filter(x=>tot(x)).length, blk=oth.reduce((a,x)=>a+x.block,0), own=edges.filter(x=>x.s===k&&x.t===k).reduce((a,x)=>a+x.block,0); const w=k===GID?150:132;
+      const nm=managed(k); const none=k!==GID&&nm===0;
+      const l1=k===GID?'gates nothing directly':none?'manages none of the':out+' allowed in '+nF+' '+(nF===1?'FTS':'FTSs');
+      const l2=k===GID?own+' refused by own guards':none?pl.length+' assets in view':blk+' refused in others';
+      svg.push('<g class="in'+(none?' none':'')+'" data-m="'+e(k)+'" transform="translate('+p.x.toFixed(1)+' '+p.y.toFixed(1)+')"><rect x="'+(-w/2)+'" y="-26" width="'+w+'" height="52" rx="8"/><text y="-7" text-anchor="middle" class="int">'+e(kaShort(k))+'</text><text y="8" text-anchor="middle" class="ins">'+e(l1)+'</text><text y="21" text-anchor="middle" class="ins" '+(!none&&(blk||own)?'style="fill:var(--bad)"':'')+'>'+e(l2)+'</text><title>'+e(kaName(k)+(k===GID?'':': manages '+nm+' of the '+pl.length+' assets in view'))+'</title></g>'); });
     svg.push('</svg>');
-    const rows=edges.slice().sort((a,b)=>(b.block-a.block)||((b.allow+b.event)-(a.allow+a.event)));
-    $("#pane-influence").innerHTML='<p class="lede">How the FTSs act on each other in the twin. A grey arrow from one FTS to another means its state was a condition of transitions the other fired (a contributed guard or decision right, or a coupling), counted per asset event; a red arrow means one of its guards refused a transition in the other. Line width grows with the count. The Global protocol sits in the middle because every Knowledge Area contributes to it. Click an arrow or a box for the transitions behind it.</p><div class="split"><div>'+svg.join("")+'</div><aside class="side" id="iside"><div class="dim">Click an arrow or an FTS. Only refusals are drawn strong; click an FTS to bring its arrows forward.</div></aside></div><h3>From and to, as a matrix</h3><p class="lede">Each row is the FTS whose state acts, each column the FTS whose transition it acts on. The shade is the number of transitions it allowed; a red figure is the number it refused. The diagonal is an FTS refusing its own transitions (its cross-region guards, or a transition tried from the wrong state).</p>'+matrix(edges)+'<h3>Every pair</h3><div class="tscroll"><table class="tl"><thead><tr><th>From</th><th>To</th><th>Allowed</th><th>Events emitted</th><th>Refused</th></tr></thead><tbody>'+rows.map((x,i)=>'<tr><td>'+e(kaShort(x.s))+'</td><td>'+e(kaShort(x.t))+'</td><td class="n">'+x.allow+'</td><td class="n">'+x.event+'</td><td class="n'+(x.block?' redt':'')+'">'+x.block+'</td></tr>').join("")+'</tbody></table></div>';
+    const filt=[V.org?('organisation '+V.org):'every organisation', V.cls?('class '+V.cls):'every asset class'].join(', ');
+    const rows=edges.slice().sort((a,b)=>(b.block-a.block)||(tot(b)-tot(a)));
+    const st=statementsList(); const chk=couplingsEnforced();
+    $("#pane-influence").innerHTML='<div class="who"><b>'+pl.length+' of '+D.assets.length+' assets in view</b> · '+e(filt)+(pl.length<D.assets.length?' · the counts below cover only these; change the filters above to see the rest':'')+'</div>'+
+      '<p class="lede">How the FTSs act on each other in the twin, counted per asset event. An arrow runs from the FTS whose state is the condition to the FTS whose transition it gates. <b>Solid grey</b>: a guard the twin checked let the transition through (a Global contribution'+(chk?', or a Knowledge Area coupling':'')+'). '+(chk?'':'<b>Dashed grey</b>: a Knowledge Area coupling the models declare but the twin that made this export did not check (exports before fts_twin 0.5). ')+'<b>Dotted blue</b>: an event the other FTS raised (an event contribution or event coupling). <b>Red</b>: one of its guards refused a transition. Line width grows with the count. Click an arrow, a box, or any row for the transitions behind it.</p><div class="split"><div>'+svg.join("")+'</div><aside class="side" id="iside"><div class="dim">Click an arrow or an FTS.</div></aside></div>'+
+      '<h3>From and to, as a matrix</h3><p class="lede">Each row is the FTS whose state acts, each column the FTS whose transition it acts on. The shade is the number of transitions it allowed or raised; a red figure is the number it refused. The diagonal is an FTS refusing its own transitions.</p>'+matrix(edges)+
+      '<h3>Every pair</h3><div class="tscroll"><table class="tl"><thead><tr><th>From</th><th>To</th><th>Allowed, checked</th><th>Allowed, declared only</th><th>Raised</th><th>Refused</th></tr></thead><tbody>'+rows.map(x=>'<tr class="clk" data-i="'+edges.indexOf(x)+'"><td>'+e(kaShort(x.s))+'</td><td>'+e(kaShort(x.t))+'</td><td class="n">'+x.allow+'</td><td class="n">'+x.decl+'</td><td class="n">'+x.raised+'</td><td class="n'+(x.block?' redt':'')+'">'+x.block+'</td></tr>').join("")+'</tbody></table></div>'+
+      (st.length?'<h3>Citations and statements ('+st.length+')</h3><p class="lede">Not conditions of any transition, so not drawn as allowing anything. A <b>citation</b> says what the metadata description records from another Knowledge Area; when the cited fact turns true after the description, the twin flags the metadata stale (drawn as raised). A <b>statement</b> says that a Knowledge Area\'s artefacts and evidence are Metadata Assets.</p><div class="tscroll"><table class="tl"><thead><tr><th>Knowledge Area</th><th>Statement</th><th>About</th></tr></thead><tbody>'+st.map(([k,c])=>'<tr><td>'+e(kaShort(k))+'</td><td class="mono">'+e(c.id)+'<div class="dim">'+e(c.kind||"statement")+'</div></td><td>'+e(c.predicate||"")+'</td></tr>').join("")+'</tbody></table></div>':'');
     const side=$("#iside");
-    function showPair(i){ const x=edges[i]; $("#pane-influence svg.inf").classList.add("focus"); $$("#pane-influence .ie").forEach(q=>q.classList.toggle("dimmed",q.dataset.i!==String(i))); side.innerHTML='<h3>'+e(kaShort(x.s))+' → '+e(kaShort(x.t))+'</h3><div class="dim">'+x.allow+' allowed · '+x.event+' events · '+x.block+' refused</div><table class="tl"><thead><tr><th>Transition · guard or coupling</th><th>Allowed</th><th>Refused</th></tr></thead><tbody>'+Object.entries(x.det).sort((a,b)=>(b[1].block-a[1].block)||(b[1].allow+b[1].event-a[1].allow-a[1].event)).map(([k,v])=>'<tr><td>'+e(k)+'</td><td class="n">'+(v.allow+v.event)+'</td><td class="n'+(v.block?' redt':'')+'">'+v.block+'</td></tr>').join("")+'</tbody></table>'; }
+    function showPair(i){ const x=edges[i]; if(!x) return; $("#pane-influence svg.inf").classList.add("focus"); $$("#pane-influence .ie").forEach(q=>q.classList.toggle("dimmed",q.dataset.i!==String(i))); side.innerHTML='<h3>'+e(kaShort(x.s))+' → '+e(kaShort(x.t))+'</h3><div class="dim">'+x.allow+' allowed, checked · '+x.decl+' declared only · '+x.raised+' raised · '+x.block+' refused</div><table class="tl"><thead><tr><th>Transition · guard, coupling or contribution</th><th>Allowed</th><th>Raised</th><th>Refused</th></tr></thead><tbody>'+Object.entries(x.det).sort((a,b)=>(b[1].block-a[1].block)||(b[1].allow+b[1].decl+b[1].raised-a[1].allow-a[1].decl-a[1].raised)).map(([k,v])=>'<tr><td>'+e(k)+'</td><td class="n">'+(v.allow+v.decl)+(v.decl?' <span class="dim">declared</span>':'')+'</td><td class="n">'+v.raised+'</td><td class="n'+(v.block?' redt':'')+'">'+v.block+'</td></tr>').join("")+'</tbody></table>'; side.scrollIntoView({block:'nearest'}); }
     $$("#pane-influence path.ie").forEach(p=>p.onclick=()=>showPair(+p.dataset.i));
-    $$("#pane-influence .mx td").forEach(td=>td.onclick=()=>{ const i=edges.findIndex(x=>x.s===td.dataset.s&&x.t===td.dataset.t); if(i<0){ side.innerHTML='<div class="dim">'+e(kaShort(td.dataset.s))+' does not act on '+e(kaShort(td.dataset.t))+' in this fleet.</div>'; return; } showPair(i); side.scrollIntoView({block:'nearest'}); });
-    $$("#pane-influence g.in").forEach(g=>g.onclick=()=>{ const k=g.dataset.m; $("#pane-influence svg.inf").classList.add("focus"); $$("#pane-influence .ie").forEach(q=>q.classList.toggle("dimmed",q.dataset.s!==k&&q.dataset.t!==k)); const o=edges.filter(x=>x.s===k), i=edges.filter(x=>x.t===k); side.innerHTML='<h3>'+e(kaName(k))+'</h3><p class="dim">Acts on '+o.length+' FTSs, acted on by '+i.length+'.</p><table class="tl"><thead><tr><th>Direction</th><th>FTS</th><th>Allowed</th><th>Refused</th></tr></thead><tbody>'+o.map(x=>'<tr><td>acts on</td><td>'+e(kaShort(x.t))+'</td><td class="n">'+(x.allow+x.event)+'</td><td class="n'+(x.block?' redt':'')+'">'+x.block+'</td></tr>').concat(i.map(x=>'<tr><td>acted on by</td><td>'+e(kaShort(x.s))+'</td><td class="n">'+(x.allow+x.event)+'</td><td class="n'+(x.block?' redt':'')+'">'+x.block+'</td></tr>')).join("")+'</tbody></table>'; });
+    $$("#pane-influence tr.clk").forEach(tr=>tr.onclick=()=>showPair(+tr.dataset.i));
+    $$("#pane-influence .mx td").forEach(td=>td.onclick=()=>{ const i=edges.findIndex(x=>x.s===td.dataset.s&&x.t===td.dataset.t); if(i<0){ side.innerHTML='<div class="dim">'+e(kaShort(td.dataset.s))+' does not act on '+e(kaShort(td.dataset.t))+' in these assets.</div>'; return; } showPair(i); });
+    $$("#pane-influence g.in").forEach(g=>g.onclick=()=>{ const k=g.dataset.m; $("#pane-influence svg.inf").classList.add("focus"); $$("#pane-influence .ie").forEach(q=>q.classList.toggle("dimmed",q.dataset.s!==k&&q.dataset.t!==k));
+      const o=edges.filter(x=>x.s===k&&x.t!==k), i=edges.filter(x=>x.t===k&&x.s!==k); const nm=managed(k);
+      side.innerHTML='<h3>'+e(kaName(k))+'</h3><p class="dim">'+(k===GID?'':'Manages '+nm+' of the '+pl.length+' assets in view. ')+'Acts on '+o.length+' FTSs, acted on by '+i.length+'. Click a row for its transitions.</p>'+(k!==GID&&!nm?'<p class="dim">None of the assets in view is in this Knowledge Area\'s scope, so nothing of it can be counted here.</p>':'')+
+        '<table class="tl"><thead><tr><th>Direction</th><th>FTS</th><th>Allowed</th><th>Raised</th><th>Refused</th></tr></thead><tbody>'+o.map(x=>'<tr class="clk" data-i="'+edges.indexOf(x)+'"><td>acts on</td><td>'+e(kaShort(x.t))+'</td><td class="n">'+(x.allow+x.decl)+'</td><td class="n">'+x.raised+'</td><td class="n'+(x.block?' redt':'')+'">'+x.block+'</td></tr>').concat(i.map(x=>'<tr class="clk" data-i="'+edges.indexOf(x)+'"><td>acted on by</td><td>'+e(kaShort(x.s))+'</td><td class="n">'+(x.allow+x.decl)+'</td><td class="n">'+x.raised+'</td><td class="n'+(x.block?' redt':'')+'">'+x.block+'</td></tr>')).join("")+'</tbody></table>';
+      side.querySelectorAll("tr.clk").forEach(tr=>tr.onclick=()=>showPair(+tr.dataset.i)); });
   }
 
   // ------------------------------------------------------------------ 5 the operational dashboard (Howard, 22 Sep 2026)
@@ -907,7 +939,8 @@ fillAssets();
   // and what-if controls that run through the real guards (a dry run: nothing is written to the twin).
   const DEFAULT_FACTS={hold_active:false, disposition_control_verified:true, supersession_use_authorized:false, use_requires_assurance:true, material_change:false,
     atomic_withdrawal:false, recipient_acceptance_evidenced:true, enhanced_monitoring:true, time_bounded_authority:true, post_event_review_planned:true,
-    RMD_is_master:true, RMD_is_reference:false, MM_is_metadata_asset:false};
+    RMD_is_master:true, RMD_is_reference:false, MM_is_metadata_asset:false,
+    source_is_warehouse:false, source_is_master_data:false, flow_is_external:false, delivery_by_service:false, processes_personal_data:false};
   function pyToJs(x){ let s=String(x);
     s=s.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s+not\s+in\s*\(([^)]*)\)/g,"(![$2].includes($1))");
     s=s.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s+in\s*\(([^)]*)\)/g,"([$2].includes($1))");
@@ -919,9 +952,19 @@ fillAssets();
     [GID].concat(D.order.filter(m=>m!==GID&&applies(a,m))).forEach(mid=>{ const vec=vectorOf(a,mid,ov); const fb=(D.models[mid].meta||{}).factBindings||{};
       Object.entries(fb).forEach(([f,b])=>{ env[f]=((b.states)||[]).includes(vec[b.region]); }); });
     Object.assign(env, a.facts||{}, (ov&&ov.facts)||{}); return env; }
+  // v0.12 (Influence Map Register, 24 Sep 2026): the engine's coupling guards, built the same way as fts_twin_engine v0.4: a condition
+  // coupling is a guard on each dependent transition, attributed to the Knowledge Area that produces the fact
+  function coupledIdx(){ if(D.coupled) return D.coupled; const C={};
+    D.order.forEach(k=>(D.models[k].kaCouplings||[]).forEach(c=>{ if(c.kind!=="condition") return;
+      (c.dependents||[]).forEach(d=>{ if(!D.models[d.model]||!trOf(d.model,d.transition).id) return; let ex=d.expression||c.expression; if(c.qualifier) ex="(not "+c.qualifier+") or ("+ex+")";
+        const key=d.model+"|"+d.transition; const lst=C[key]=C[key]||[]; const same=lst.find(g=>g.expression===ex); if(same){ same.couplings.push(c.id); return; }
+        lst.push({id:"GRD-"+c.id+"-"+d.transition.slice(3), transition:d.transition, expression:ex, requirement:c.requirement||"Required", predicate:c.predicate, coupling:c.id, couplings:[c.id], fromModel:d.producer||c.producer||k}); }); }));
+    return D.coupled=C; }
+  const couplingsEnforced=()=>{ const f=D.fleet||{}; if(typeof f.couplingsEnforced==="boolean") return f.couplingsEnforced; const v=parseFloat(String(f.engine||"").replace(/[^0-9.]/g,"")); return v>=0.5; };
   function guardsFor(a,mid,tid){
     const out=(D.models[mid].guards||[]).filter(g=>!g.contribution&&g.transition===tid).map(g=>Object.assign({},g));
     if(mid===GID) D.order.forEach(k=>{ if(k===GID||!applies(a,k)) return; (D.models[k].guards||[]).forEach(g=>{ if(g.contribution&&g.transition===tid) out.push(Object.assign({},g,{fromModel:k})); }); });
+    (coupledIdx()[mid+"|"+tid]||[]).forEach(g=>{ if(applies(a,g.fromModel)||g.fromModel===mid||g.fromModel===GID) out.push(Object.assign({},g)); });
     return out; }
   function verdict(a,mid,tid,ov){
     const t=trOf(mid,tid); if(!t.id) return null; const vec=vectorOf(a,mid,ov); const rid=D.models[mid].subStates.find(s=>s.id===t.target); const region=rid?(rid.region||rid.parent):null;
@@ -1052,9 +1095,24 @@ fillAssets();
             (D.models[k].contributions||[]).forEach(c=>{ if(c.kind!=="event"||!c.globalTransition) return; if(evalExpr(c.expression,f0)!==true&&evalExpr(c.expression,f1)===true){
               const tgt=viaEvent(w,GID,c.globalTransition); step.emits.push({id:c.id, from:k, to:GID, tid:tgt, predicate:c.predicate});
               q.push({mid:GID, tid:tgt, depth:it.depth+1, cause:c.id, causeFrom:k, requester:{role:"raised by "+kaShort(k), activity:c.id}}); } });
-            (D.models[k].kaCouplings||[]).forEach(c=>{ if(!c.event||!c.targetTransition||!w.vec[c.targetModel]||c.id==="KAC-DG-01") return; if(evalExpr(c.expression,f0)!==true&&evalExpr(c.expression,f1)===true){
-              const tgt=viaEvent(w,c.targetModel,c.targetTransition); step.emits.push({id:c.id, from:k, to:c.targetModel, tid:tgt, predicate:c.predicate});
-              q.push({mid:c.targetModel, tid:tgt, depth:it.depth+1, cause:c.id, causeFrom:k, requester:{role:"raised by "+kaShort(k), activity:c.id}}); } }); }); };
+            // v0.13: the engine's event rules (fts_twin 0.6): event couplings raised by their emitters (own model, another model, or
+            // "MODEL:TR"), or by their fact when they name no emitter; citations flag the metadata stale when the cited fact turns true
+            // after the description; qualifiers and onlyIf as in the engine; evidence couplings resolve the issue their partner raised
+            (D.models[k].kaCouplings||[]).forEach(c=>{ const kind=c.kind||(c.event?"event":"condition");
+              if(kind==="condition"||kind==="statement"||kind==="withdrawn"||c.handledBy||c.id==="KAC-DG-01") return;
+              const tm=(c.raises&&c.raises.model)||c.targetModel; if(!tm||!w.vec[tm]) return;
+              const em=c.emitters||[]; const flip=evalExpr(c.expression,f0)!==true&&evalExpr(c.expression,f1)===true;
+              const hit=kind==="citation"?flip:em.length?(!it.inst&&((((c.emitterModel||k)===it.mid)&&em.includes(it.tid))||em.includes(it.mid+":"+it.tid))):flip;
+              if(!hit) return;
+              if(c.qualifier&&f1[c.qualifier]!==true) return;
+              if(c.onlyIf&&evalExpr(c.onlyIf,f1)!==true) return;
+              if(c.effect==="resolve"){ step.emits.push({id:c.id, from:k, to:tm, tid:c.targetTransition, predicate:c.predicate, resolves:c.resolves});
+                const cur=w.vec["KA-DG"]&&w.vec["KA-DG"]["REG-DG-ISS"]; if(cur==="STS-ISS-02"||cur==="STS-ISS-03"){ step.issueRoll={from:cur, to:"STS-ISS-05"}; w.vec["KA-DG"]["REG-DG-ISS"]="STS-ISS-05"; } return; }
+              const ev=(c.raises&&c.raises.event)||c.event; let tid=(c.raises&&c.raises.transition)||c.targetTransition;
+              if(ev){ const first=(D.models[tm].transitions||[]).find(x=>x.event===ev); if(first) tid=viaEvent(w,tm,first.id); }
+              if(!tid||!trOf(tm,tid).id) return;
+              step.emits.push({id:c.id, from:k, to:tm, tid, predicate:c.predicate});
+              q.push({mid:tm, tid, depth:it.depth+1, cause:c.id, causeFrom:k, requester:{role:"raised by "+kaShort(k), activity:c.id}}); }); }); };
       while(q.length&&n<40){ const it=q.shift(); const key=(it.inst||"")+"|"+it.mid+"|"+it.tid; if(it.depth>0&&seen.has(key)) continue; seen.add(key);
         const f0=factsW(a,w);
         if(it.inst){ // a step on a governing instrument version
@@ -1263,7 +1321,8 @@ fillAssets();
     // forecast
     const pv=DV.preview;
     h.push('<div class="crfc"><div><div class="crfch">PREDICTIVE IMPACT FORECAST'+(DV.pick?': '+e(DV.pick.label):'')+'</div><div class="crfct">'+(pv?forecastText(a,pv):DV.pick?'':'Choose an incident, an action, an activity or an event. The forecast runs it through the real guards from the replay point, then follows every event contribution and coupling the models define; nothing is written to the twin.')+'</div></div>'+
-      '<div class="crfcb">'+(DV.pick?'<button class="crrun" data-run="1">RUN SCENARIO</button>':'')+(DV.sb?'<button class="crreset" data-reset="1">RESET</button>':'')+'</div></div>');
+      (SV.on&&SV.last?'<div class="srvres"><div class="crfch">SENT TO '+e(((SV.spaces.find(x=>x.id===SV.space)||{}).name||"THE TWIN").toUpperCase())+'</div>'+serverResultHtml()+'</div>':'')+
+      '<div class="crfcb">'+(DV.pick?'<button class="crrun" data-run="1">RUN SCENARIO</button>':'')+(DV.pick&&SV.on&&SV.me?'<button class="crrun srvsend" data-send="1" title="the server decides with its engine and your roles; everyone sees the result">SEND TO '+e(((SV.spaces.find(x=>x.id===SV.space)||{}).name||"THE TWIN").toUpperCase())+'</button>':'')+(DV.sb?'<button class="crreset" data-reset="1">RESET</button>':'')+'</div></div>');
     if(DV.sb) h.push(cascadeHtml(DV.sb));
     h.push('</div></div>'); return h.join(""); }
 
@@ -1344,6 +1403,7 @@ fillAssets();
       DV.pick=null; DV.preview=null; if(DV.anim) return; DV.anim=true;
       const tick=()=>{ if(!DV.sb){ DV.anim=false; return; } if(DV.sb.shown<DV.sb.steps.length){ DV.sb.shown++; if(V.tab==="dash") renderDash(); setTimeout(tick,750); } else { DV.anim=false; if(V.tab==="dash") renderDash(); } };
       tick(); });
+    pane.querySelectorAll("[data-send]").forEach(b=>b.onclick=()=>{ if(DV.pick) serverSend(a,DV.pick); });
     pane.querySelectorAll("[data-reset]").forEach(b=>b.onclick=()=>{ DV.sb=null; DV.pick=null; DV.preview=null; DV.sbMeta={}; renderDash(); });
   }
 
@@ -1351,6 +1411,9 @@ fillAssets();
   // ------------------------------------------------------------------ v0.7 Issues: the Data Governance issues refusals raised
   const issOpen=i=>["STS-ISS-02","STS-ISS-03","STS-ISS-04"].indexOf(i.state)>=0;
   const sevCls=s=>s==="High"?"high":s==="Medium"?"med":"low";
+  // v0.12: an issue a Knowledge Area logged through an event coupling has no severity (there is no refusal to rate it by)
+  const sevTxt=i=>i.severity||("logged by "+kaShort(i.loggedBy||((i.source||{}).model)||"KA"));
+  const isCoupled=i=>(i.source||{}).kind==="coupling";
   function issueRows(){
     const ids=new Set(pool().map(a=>a.id));
     return (D.issues||[]).filter(i=>ids.has(i.parentId)).filter(i=>V.issOpen?issOpen(i):true)
@@ -1361,7 +1424,7 @@ fillAssets();
     if(!all.length){ pane.innerHTML='<p class="lede">No issues in this export. Issues are raised by the twin when a transition is refused by a Non-waivable or Required guard; an export made before 23 September 2026 has none.</p>'; return; }
     const rows=issueRows(); const ids=new Set(pool().map(a=>a.id)); const mine=all.filter(i=>ids.has(i.parentId));
     const nOpen=mine.filter(issOpen).length, nHigh=mine.filter(i=>i.severity==="High").length;
-    const nMed=mine.filter(i=>i.severity==="Medium").length, nLow=mine.filter(i=>i.severity==="Low").length;
+    const nMed=mine.filter(i=>i.severity==="Medium").length, nLow=mine.filter(i=>i.severity==="Low").length, nLog=mine.filter(isCoupled).length;
     const inPool=id=>ids.has(id)||(D.recById[id]&&ids.has(D.recById[id].parentId));
     const refusals=D.events.filter(x=>String(x.result).startsWith("blocked")&&inPool(x.instanceId));
     const h=['<p class="lede">A refusal is a governance event. Every refusal raises one Data Governance Data Issue against the Data Asset, naming the transition that was asked for, the activity and role that asked, the decision right and its holder, and every guard that said no with the Knowledge Area that set it. Severity follows what refused it: <b>High</b> when a Non-waivable guard answered false, <b>Medium</b> when a Required one did, and <b>Low</b> when every guard answered true and only the state of the asset was wrong. A Low issue is not a guard failure; it is a request that should never have been sent, so the control belongs in the system that sent it. The issue is its own instance carrying the Issue Management region of Data Governance, so several can be open on one asset at once, and the asset\'s own issue state is the most severe of them. The twin assigns and resolves an issue when the refused transition later fires; closing it stays with the Data Owner under DR-DG-18.</p>'];
@@ -1370,6 +1433,7 @@ fillAssets();
       '<div class="kpi"><div class="kn">'+nHigh+'</div><div class="kl">high (a Non-waivable guard said no)</div></div>'+
       '<div class="kpi"><div class="kn">'+nMed+'</div><div class="kl">medium (a Required guard said no)</div></div>'+
       '<div class="kpi"><div class="kn">'+nLow+'</div><div class="kl">low: asked for out of order</div></div>'+
+      '<div class="kpi"><div class="kn">'+nLog+'</div><div class="kl">logged by a Knowledge Area (an event coupling)</div></div>'+
       '<div class="kpi"><div class="kn">'+refusals.length+'</div><div class="kl">refusals in all</div></div></div>'+
       (nLow?'<p class="dim">The '+nLow+' low-severity '+(nLow===1?'issue is a request':'issues are requests')+' the asset was in no position to satisfy: every guard answered true and the transition simply cannot start from the state the asset was in. Nothing in the protocol refused '+(nLow===1?'it':'them')+' on the merits, so the fix is a control in the system that sent the request, not a change to a guard.</p>':''));
     h.push('<div class="bar"><label class="dim"><input type="checkbox" id="issOnlyOpen"'+(V.issOpen?" checked":"")+'> show only open issues</label></div>');
@@ -1377,9 +1441,9 @@ fillAssets();
       rows.map(i=>{ const q=(i.source||{}).requester||{}; const a=D.byId[i.parentId]||{};
         return '<tr class="'+(issOpen(i)?"bad":"")+'"><td><a href="#" class="mono issopen" data-iss="'+e(i.id)+'">'+e(i.id)+'</a></td>'+
           '<td>'+e(i.parentId)+' '+e(a.name||i.assetName||"")+'<div class="dim">'+e(a.org||i.org||"")+'</div></td>'+
-          '<td><span class="sev '+sevCls(i.severity)+'">'+e(i.severity)+'</span></td>'+
+          '<td><span class="sev '+sevCls(i.severity)+'">'+e(sevTxt(i))+'</span></td>'+
           '<td>'+e(i.stateName||i.state||"")+'</td>'+
-          '<td><span class="mono">'+e((i.source||{}).transition||"")+'</span> '+e((i.source||{}).transitionName||"")+'<div class="dim">'+e(i.outOfOrder?("the asset was not in a state it can start from"+((i.source||{}).recordId?", on record "+(i.source||{}).recordId:"")):(((i.source||{}).guards||[]).length+" guard"+((((i.source||{}).guards||[]).length)===1?"":"s")+" refused it, from "+(((i.source||{}).sourceKnowledgeAreas)||[]).map(kaShort).join(", ")))+'</div></td>'+
+          '<td><span class="mono">'+e((i.source||{}).transition||"")+'</span> '+e((i.source||{}).transitionName||"")+'<div class="dim">'+e(isCoupled(i)?("not a refusal: "+kaName((i.source||{}).model)+" logged it through "+(i.source||{}).coupling+(((i.source||{}).occurrences||1)>1?", "+(i.source||{}).occurrences+" times":"")):i.outOfOrder?("the asset was not in a state it can start from"+((i.source||{}).recordId?", on record "+(i.source||{}).recordId:"")):(((i.source||{}).guards||[]).length+" guard"+((((i.source||{}).guards||[]).length)===1?"":"s")+" refused it, from "+(((i.source||{}).sourceKnowledgeAreas)||[]).map(kaShort).join(", ")))+'</div></td>'+
           '<td>'+e(q.roleName||q.role||"not recorded")+'<div class="dim mono">'+e(q.activity||"")+'</div></td>'+
           '<td>'+e((i.source||{}).holderName||(i.source||{}).holder||"")+'<div class="dim mono">'+e((i.source||{}).decisionRight||"")+'</div></td>'+
           '<td>'+e(fmtT(i.createdAt))+'</td></tr>'; }).join("")+'</tbody></table></div>');
@@ -1391,7 +1455,9 @@ fillAssets();
     const ev=D.events.find(x=>x.seq===src.eventSeq);
     const tl=D.events.filter(x=>x.instanceId===iid);
     const h=['<h3>'+e(i.id)+'</h3><div class="dim">'+e(i.name)+'</div>'+
-      '<p><span class="sev '+sevCls(i.severity)+'">'+e(i.severity)+'</span> · now <b>'+e(i.stateName||i.state)+'</b> · raised '+e(fmtT(i.createdAt))+' against <b>'+e(i.parentId)+'</b> '+e(a.name||i.assetName||"")+'</p>'];
+      '<p><span class="sev '+sevCls(i.severity)+'">'+e(sevTxt(i))+'</span> · now <b>'+e(i.stateName||i.state)+'</b> · raised '+e(fmtT(i.createdAt))+' against <b>'+e(i.parentId)+'</b> '+e(a.name||i.assetName||"")+'</p>'];
+    if(isCoupled(i)){ h.push('<h4>What was logged</h4><div class="raised">'+e(kaName(src.model))+' logged this issue through <span class="mono">'+e(src.coupling)+'</span> when <span class="mono">'+e(src.transition)+'</span> '+e(src.transitionName||"")+' fired'+(src.recordId?' on record '+e(src.recordId):'')+'. '+e(src.predicate||"")+(src.occurrences>1?' It has happened '+src.occurrences+' times while the issue has been open; the twin keeps one open issue per coupling per asset.':'')+'</div>');
+      h.push('<h4>The issue\'s own life</h4><table class="tl"><tbody>'+tl.map(x=>'<tr><td class="mono">'+e(fmtT(x.at))+'</td><td>'+e((x.transition||"")+" "+(x.name||""))+'</td><td>'+e(sName(x.stateAfter))+'</td><td class="dim">'+e(x.reason||x.actor||"")+'</td></tr>').join("")+'</tbody></table>'); openDrawer(h.join("")); return; }
     h.push('<h4>The request that was refused</h4>'+whoAskedHtml(ev||{requester:src.requester}));
     h.push('<div>Asked for <span class="mono">'+e(src.transition)+'</span> '+e(src.transitionName||"")+' in '+e(kaName(src.model||GID))+', which would have moved '+e(regName(src.model||GID,src.region))+' from <b>'+e(sName(src.from))+'</b> to <b>'+e(sName(src.to))+'</b>. Decision right '+e(src.decisionRight||"none")+' '+e(src.decisionRightName||"")+', held by <b>'+e(src.holderName||src.holder||"not stated")+'</b>.</div>');
     h.push(src.controlGap?'<h4>Why it was refused</h4><div class="raised">'+e(src.controlGap)+'</div>':'<h4>Why it was refused</h4><ol class="gl">'+(src.guards||[]).map(g=>'<li><div><span class="mono">'+e(g.guard)+'</span> · set by '+e(g.contributedBy?kaName(g.contributedBy):"the Global protocol itself")+' · <b>'+e(g.requirement||"")+'</b>'+(g.requirement==="Non-waivable"?' (no exception can override it)':'')+'</div><div>'+e(g.predicate||"")+'</div></li>').join("")+'</ol>');
@@ -1417,9 +1483,72 @@ fillAssets();
     $("#assetPrev").onclick=()=>{ const L=pool(); const i=L.findIndex(a=>a.id===V.asset); if(i>0){ V.asset=L[i-1].id; $("#assetSel").value=V.asset; render(); } };
     $("#assetNext").onclick=()=>{ const L=pool(); const i=L.findIndex(a=>a.id===V.asset); if(i>=0&&i<L.length-1){ V.asset=L[i+1].id; $("#assetSel").value=V.asset; render(); } };
     $("#assetRef").onclick=()=>{ const r=pool().filter(a=>D.events.some(x=>x.instanceId===a.id&&String(x.result).startsWith("blocked"))); const i=r.findIndex(a=>a.id===V.asset); const n=r[(i+1)%r.length]; if(n){ V.asset=n.id; $("#assetSel").value=V.asset; render(); } };
-    const c=ghGet(); if(c.token) ghLoad(); else status("Load from GitHub (the same settings and token as the FTS viewer) or choose the models and the twin export from disk.");
+    serverDetect().then(on=>{ if(on) return; const c=ghGet(); if(c.token) ghLoad(); else status("Load from GitHub (the same settings and token as the FTS viewer) or choose the models and the twin export from disk."); });
   }
-  window.__twin={D,V,ingest};
+
+  // ------------------------------------------------------------------ v0.13 server mode (Howard, 24 Sep 2026, Open Decisions B1 to B9)
+  // Opened from the twin server, the viewer reads the live twin or a room through the server's API, updates as others act (the
+  // server's stream), and sends a person's requests to the server, which decides with the Python engine and the person's roles.
+  const SV={on:false, me:null, space:"live", spaces:[], models:null, seq:0, es:null, timer:null, busy:false, last:null, scenarios:[]};
+  async function sj(u,o){ const r=await fetch(u,Object.assign({credentials:"same-origin",headers:{"Content-Type":"application/json"}},o||{})); let j=null; try{ j=await r.json(); }catch(x){} if(!r.ok) throw new Error((j&&j.error)||("the server answered "+r.status)); return j; }
+  async function serverDetect(){
+    if(!/^https?:$/.test(location.protocol)) return false;
+    try{ const r=await fetch("/api/whoami",{credentials:"same-origin"}); if(r.status===401){ SV.on=true; SV.me=null; srvBar(); status("This is the twin server. Open the invite link Howard sent you to sign in.",true); return true; } if(!r.ok) return false; const j=await r.json(); SV.on=true; SV.me=j.person; SV.enforced=j.couplingsEnforced;
+      const mine=[...new Set(Object.values(SV.me.roles||{}).flat())]; if(mine.length&&!mine.includes(DV.role)) DV.role=mine[0]; }catch(x){ return false; }
+    try{ SV.spaces=(await sj("/api/spaces")).spaces; SV.scenarios=(await sj("/api/scenarios")).files; }catch(x){}
+    srvBar(); await serverLoad(SV.space); srvStream(); return true; }
+  async function serverLoad(sid, keep){
+    try{
+      SV.busy=true; const sp=SV.spaces.find(x=>x.id===sid)||{name:sid};
+      if(!SV.models){ status("reading the models from the twin server ..."); const f=(await sj("/api/models")).files; SV.models=[]; for(const n of f){ const r=await fetch("/models/"+encodeURIComponent(n),{credentials:"same-origin"}); if(r.ok){ const m=await r.json(); if(m.meta&&m.regions&&m.subStates) SV.models.push(m); } } }
+      status("reading "+(sp.name||sid)+" from the twin server ...");
+      const tw={}; for(const n of ["fleet.json","instances.json","elements.json","records.json","issues.json","instruments.json"]){ try{ tw[n]=await sj("/api/"+encodeURIComponent(sid)+"/twin/"+n); }catch(x){} }
+      tw["events.json"]=(keep&&SV.space===sid&&D.events&&SV.eventsRaw)?{events:SV.eventsRaw}:await sj("/api/"+encodeURIComponent(sid)+"/twin/events.json");
+      SV.eventsRaw=tw["events.json"].events; SV.seq=SV.eventsRaw.reduce((m,x)=>Math.max(m,x.seq||0),0); SV.space=sid;
+      const atEnd=DV.i==null||(V.asset&&D.byId&&D.byId[V.asset]&&DV.i>=asEvents(D.byId[V.asset]).length);
+      ingest(SV.models,tw,"twin server · "+(sp.name||sid)); if(atEnd) DV.i=null; srvBar();
+    }catch(ex){ status("Could not read from the twin server. "+ex.message,true); }
+    SV.busy=false; }
+  async function serverRefresh(){ if(SV.busy) return; SV.busy=true;
+    try{ const d=await sj("/api/"+encodeURIComponent(SV.space)+"/delta?since="+SV.seq); SV.busy=false; if(!d.events.length) return; SV.eventsRaw=(SV.eventsRaw||[]).concat(d.events); await serverLoad(SV.space,true); }
+    catch(ex){ SV.busy=false; status("The twin server stopped answering: "+ex.message,true); } }
+  function srvStream(){ if(SV.es) SV.es.close(); try{ SV.es=new EventSource("/api/stream"); }catch(x){ return; }
+    SV.es.onmessage=m=>{ let j={}; try{ j=JSON.parse(m.data); }catch(x){ return; }
+      if(j.kind==="rooms"){ sj("/api/spaces").then(r=>{ SV.spaces=r.spaces; if(!SV.spaces.some(x=>x.id===SV.space)){ SV.space="live"; serverLoad("live"); } else srvBar(); }).catch(()=>{}); return; }
+      if(j.kind==="events"&&j.space===SV.space&&j.seq>SV.seq){ clearTimeout(SV.timer); SV.timer=setTimeout(serverRefresh,900); } };
+    SV.es.onerror=()=>{ const b=$("#srvLive"); if(b){ b.textContent="reconnecting"; b.className="srvlive off"; } };
+    SV.es.onopen=()=>{ const b=$("#srvLive"); if(b){ b.textContent="live"; b.className="srvlive"; } }; }
+  function rolesText(p){ return Object.entries((p&&p.roles)||{}).map(([sc,r])=>(sc==="*"?"everywhere":sc)+": "+r.join(", ")).join(" · "); }
+  function srvBar(){ let el=$("#srvbar"); if(!el){ el=document.createElement("div"); el.id="srvbar"; el.className="srvbar"; const h=$("header .bar"); h.parentNode.insertBefore(el,h.nextSibling); }
+    if(!SV.me){ el.innerHTML='<b>Twin server</b> <span class="dim">not signed in: open your invite link</span>'; return; }
+    const sp=SV.spaces.find(x=>x.id===SV.space)||{id:"live",name:"Live twin",kind:"live"}; const room=sp.kind==="room"; const mine=room&&(SV.me.admin||sp.owner===SV.me.id);
+    el.innerHTML='<span class="srvwho"><b>'+e(SV.me.name)+'</b> <span class="dim">'+e(rolesText(SV.me))+'</span></span>'+
+      '<label class="dim">Acting on <select id="srvSpace">'+SV.spaces.map(x=>'<option value="'+e(x.id)+'"'+(x.id===SV.space?' selected':'')+'>'+e(x.kind==="room"?"Room: "+x.name+(x.ownerName?" ("+x.ownerName+")":""):x.name)+'</option>').join("")+'</select></label>'+
+      '<span id="srvLive" class="srvlive">live</span>'+
+      '<details class="srvrooms"'+(SV.roomsOpen?' open':'')+'><summary>Rooms</summary><div class="srvform"><input id="srvRoomName" placeholder="room name" aria-label="room name"><select id="srvScen" aria-label="start from"><option value="">a copy of the live twin now</option>'+SV.scenarios.map(f=>'<option value="'+e(f)+'">scenario '+e(f.replace(/\.sim\.json$/,""))+'</option>').join("")+'</select><button class="btn" id="srvNew">Open a room</button></div>'+
+        (room&&sp.from==="scenario"?'<div class="srvform"><span class="dim">Scenario '+e(sp.scenarioId||"")+': step '+(sp.position||0)+' of '+((sp.script||[]).length)+'</span>'+(mine?'<button class="btn" id="srvStep">Next step</button><button class="btn" id="srvStep10">Next 10</button>':'')+'</div>':'')+
+        (room?'<div class="srvform"><input id="srvSaveName" placeholder="scenario name" aria-label="scenario name"><button class="btn" id="srvSave">Save this room as a scenario</button>'+(mine?'<button class="btn" id="srvClose">Close this room</button>':'')+'</div>':'')+
+        '<div id="srvMsg" class="dim">'+e(SV.msg||"")+'</div></details>'+
+      (SV.me.admin?'<a class="btn" href="/admin">People</a><button class="btn" id="srvExport">Export the live twin now</button>':'')+'<button class="btn" id="srvOut">Sign out</button>';
+    const msg=t=>{ SV.msg=t; SV.roomsOpen=true; const m=$("#srvMsg"); if(m) m.textContent=t; };
+    const det=el.querySelector("details"); if(det) det.ontoggle=()=>{ SV.roomsOpen=det.open; };
+    $("#srvSpace").onchange=ev=>{ DV.i=null; serverLoad(ev.target.value); };
+    $("#srvNew").onclick=async()=>{ try{ const r=await sj("/api/rooms",{method:"POST",body:JSON.stringify({name:$("#srvRoomName").value||null, scenario:$("#srvScen").value||null})}); SV.spaces=(await sj("/api/spaces")).spaces; DV.i=null; await serverLoad(r.id); }catch(ex){ msg(ex.message); } };
+    const step=async n=>{ try{ let last=null; for(let k=0;k<n;k++){ last=await sj("/api/rooms/"+encodeURIComponent(SV.space)+"/step",{method:"POST"}); if(last.done) break; } SV.spaces=(await sj("/api/spaces")).spaces; msg(last&&last.done?"The scenario has no more steps.":"Step "+last.step+" of "+last.of+": "+last.item+" "+(last.result||"")); srvBar(); }catch(ex){ msg(ex.message); } };
+    if($("#srvStep")) $("#srvStep").onclick=()=>step(1); if($("#srvStep10")) $("#srvStep10").onclick=()=>step(10);
+    if($("#srvSave")) $("#srvSave").onclick=async()=>{ try{ const r=await sj("/api/rooms/"+encodeURIComponent(SV.space)+"/save",{method:"POST",body:JSON.stringify({name:$("#srvSaveName").value||null, instanceId:V.asset})}); msg("Saved as "+r.file+" ("+r.steps+" steps)."); SV.scenarios=(await sj("/api/scenarios")).files; }catch(ex){ msg(ex.message); } };
+    if($("#srvClose")) $("#srvClose").onclick=async()=>{ try{ await sj("/api/rooms/"+encodeURIComponent(SV.space),{method:"DELETE"}); SV.spaces=(await sj("/api/spaces")).spaces; await serverLoad("live"); }catch(ex){ msg(ex.message); } };
+    if($("#srvExport")) $("#srvExport").onclick=async()=>{ try{ const r=await sj("/api/export",{method:"POST"}); status("Exported "+r.assets+" assets and "+r.events+" events to the private repo's twin folder. Commit and push it when you are ready."); }catch(ex){ status(ex.message,true); } };
+    $("#srvOut").onclick=async()=>{ try{ await sj("/api/signout",{method:"POST"}); }catch(x){} location.reload(); }; }
+  // a person's request, sent to the server: the steps the user chose (not the cascade, which the server's engine works out itself)
+  async function serverSend(a,pick){
+    const steps=pick.inc?(DV.preview&&DV.preview.steps||[]).filter(x=>x.user).map(x=>({mid:x.mid,tid:x.tid})):pick.insNew?null:[{mid:pick.mid,tid:pick.tid,inst:pick.inst}];
+    if(!steps){ SV.last={err:"Drafting a new version happens in the sandbox only; on the server, draft it as a step on the instrument once it exists."}; renderDash(); return; }
+    const out=[]; for(const x of steps){ try{ const r=await sj("/api/"+encodeURIComponent(SV.space)+"/act",{method:"POST",body:JSON.stringify({instanceId:x.inst||a.id, modelId:x.mid, transition:x.tid, purpose:"sent from the Dashboard"})}); out.push(r); if(!r.fired) break; }catch(ex){ out.push({error:ex.message}); break; } }
+    SV.last={out}; DV.pick=null; DV.preview=null; renderDash(); serverRefresh(); }
+  function serverResultHtml(){ const L=SV.last; if(!L) return ''; if(L.err) return '<div class="crfct">'+e(L.err)+'</div>';
+    return '<div class="crfct">'+L.out.map(r=>r.error?'<div class="red">'+e(r.error)+'</div>':'<div><span class="mono">'+e(r.transition||"")+'</span> '+e(r.name||"")+' <b class="'+(r.fired?'green':'red')+'">'+e(r.fired?'fired':(r.result||'refused'))+'</b>'+(r.requester&&r.requester.roleName?' <span class="faint">as '+e(r.requester.roleName)+'</span>':'')+(r.issueRaised?' · raised <span class="mono">'+e(r.issueRaised)+'</span>':'')+'</div>').join("")+'</div>'; }
+  window.__twin={D,V,ingest,SV};
   init();
 })();
 

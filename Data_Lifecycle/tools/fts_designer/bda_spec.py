@@ -275,13 +275,42 @@ EVIDENCE = [
 ]
 EXC = [("EXC-BDA-01", "Pilot Model Deployment", "TR-MDL-05", "Deployment of a model validated on a partial holdout to a monitored pilot before full validation.", "DR-BDA-07", "Pilot scope and audience named, monitoring thresholds set, full validation scheduled with a date, privacy basis confirmed, DG informed, evidence retained; expires at the scheduled validation date. Never waives the trust and ethics review of an insight (CON-BDA-04 is Non-waivable).", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-BDA-01': {'emitters': ['TR-MDL-06', 'TR-SRC-06', 'TR-PLT-05', 'TR-INS-03', 'TR-INS-06'], 'kind': 'event', 'producer': 'KA-BDA'},
+ 'KAC-BDA-02': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-SRC-04'}, {'model': 'KA-BDA', 'transition': 'TR-SRC-11'}],
+                'kind': 'condition',
+                'producer': 'KA-DII',
+                'requirement': 'Required'},
+ 'KAC-BDA-03': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-SRC-01'}, {'model': 'KA-BDA', 'transition': 'TR-MDL-05'}],
+                'kind': 'condition',
+                'producer': 'KA-DS',
+                'requirement': 'Required'},
+ 'KAC-BDA-04': {'kind': 'citation', 'producer': 'KA-BDA', 'cites': {'model': 'KA-MM', 'transition': 'TR-AST-02'}, 'raises': {'model': 'KA-MM', 'event': 'EV-AST-05'}, 'onlyIf': 'MM_asset_described'},
+ 'KAC-BDA-05': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-MDL-03'}], 'kind': 'condition', 'producer': 'KA-DQ', 'requirement': 'Required'},
+ 'KAC-BDA-06': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-PLT-02'}], 'kind': 'condition', 'producer': 'KA-DSO', 'requirement': 'Required'},
+ 'KAC-BDA-07': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-SRC-05'}],
+                'kind': 'condition',
+                'producer': 'KA-DWBI',
+                'qualifier': 'source_is_warehouse',
+                'requirement': 'Conditional'},
+ 'KAC-BDA-08': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-BDS-02'}], 'kind': 'condition', 'producer': 'KA-DA', 'requirement': 'Required'},
+ 'KAC-BDA-09': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-SRC-01'}],
+                'kind': 'condition',
+                'producer': 'KA-RMD',
+                'qualifier': 'source_is_master_data',
+                'requirement': 'Conditional'}}
+
 SPEC = {
     "meta": {"modelId": "KA-BDA", "name": "Big Data and Data Science FTS", "knowledgeArea": "Big Data and Data Science", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Big Data Strategy and Standards (scope level), a Big Data Platform (one per platform), a Data Source (one per source), an Analytical Model (one per hypothesis or model) and a Data Insight (one per finding) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area: the Big Data Strategy and Standards, a Big Data Platform, a Data Source, an Analytical Model and a Data Insight. The KA never becomes a region of the Data Asset; the source, the model and the insight reach the Global protocol through contributions (registration and materialisation of an acquired source, release of a model output or insight after the trust and ethics review, supersession by an enhanced model, the assurance trigger on drift, source alert or platform breach, and model validation as the assurance service), all Conditional except the Non-waivable review guard, so assets outside big data are unaffected, and couple to DG, DII, Data Security, Metadata, DQ, DSO, DWBI, Data Architecture and RMD.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-BDA-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes, deliverables, role players, techniques, tools, metrics", "limitations": "The deck names the KA Big Data and Analytics; Howard names it Big Data and Data Science. The context diagram lists seven activities and six deliverables but no platform, source, model or insight lifecycle; the states are drafted from the activities, deliverables (Data Sourcing Plan, Acquired Data Sources, Initial data analysis and hypotheses, Data insights and findings, Enhancement Plan), the build, buy or rent input and the goal to publish in an appropriate, trusted and ethical manner. The Acquired Data Sources deliverable has no explicit acquisition lifecycle on the diagram."},
         {"id": "SRC-BDA-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (five, platform split out), Global gating, trust and ethics review as a hard gate", "limitations": ""},

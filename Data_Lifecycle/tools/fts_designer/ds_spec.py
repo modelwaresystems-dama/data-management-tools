@@ -191,7 +191,7 @@ KA_COUPLINGS = [
     ("KAC-DS-01", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DS_open_incident", "Every detected security incident is also logged as a Data Asset issue in the Data Governance issue FTS with source Data Security (TR-INC-01 emits EV-ISS-01).", "Decision 21 Sep 2026: own FTS plus DG issue. DG owns escalation and residual-risk acceptance."),
     ("KAC-DS-02", "KA-DG", "TR-ISS-05", "EV-ISS-04", "DS_incident_closed", "Closure of the incident evidences resolution of the DG issue (TR-INC-04 or TR-INC-05 emits EV-ISS-04).", "Evidence, not a guard."),
     ("KAC-DS-03", "KA-DG", "TR-POL-03", "", "DS_policy_set_in_force", "Data security policies and standards are governing instruments: TR-POL-03 here is a Data Governance instrument publication.", "Reverse coupling: a DS transition cites a DG fact."),
-    ("KAC-DS-04", "KA-MM", "TR-AST-02", "", "DS_classified", "The documented security classification is recorded as a security attribute in the asset's metadata (technique: Data Security Attributes in Metadata); the Metadata of a Data Asset is Described only with the classification attribute present.", "Reverse coupling: an MM transition cites a DS fact."),
+    ("KAC-DS-04", "KA-MM", "TR-AST-02", "", "MM_asset_described", "An asset is classified only once its metadata description is complete: classification depends on what the description says the asset holds (TR-CLS-02 cites the MM fact). The resulting classification is then recorded as a security attribute in the asset's metadata.", "Howard, 24 Sep 2026 (Open Decisions A3): the MM Describe Asset should not wait for the Data Security classification; classification depends on the complete metadata description. Reversed from the 21 Sep draft, in which MM Describe Asset required DS_classified."),
     ("KAC-DS-05", "KA-MM", "TR-AST-03", "", "DS_protected", "Published metadata about a Data Asset is itself protected under the asset's classification (metadata security, MM goal 4).", "Closes the KAC-MM-05 placeholder."),
     ("KAC-DS-06", "KA-DQ", "TR-PDCA-03", "", "DS_privacy_basis_ok", "Quality assessment that processes personal data (profiling) runs only under a privacy basis in force.", "Reverse coupling: a DQ transition cites a DS fact."),
 ]
@@ -243,13 +243,29 @@ REGULATORY_FACTS = [
     ("REG-GDPR-05", "GDPR (EU)", "Breach notification", "Article 33: notify the supervisory authority within 72 hours of becoming aware; Article 34: communicate to data subjects without undue delay where high risk.", "STS-INC-04 Notified Incident; TR-INC-03", "first pass 22 Sep 2026: matches Article 33(1), 'without undue delay and, where feasible, not later than 72 hours after having become aware of it', unless unlikely to result in a risk; Article 34(1) communication to data subjects 'without undue delay' where likely to result in a high risk; source gdpr-info.eu/art-33-gdpr and art-34-gdpr. Legal reviewer to confirm."),
 ]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DS-01': {'emitters': ['TR-INC-01'], 'kind': 'event', 'producer': 'KA-DS'},
+ 'KAC-DS-02': {'effect': 'resolve', 'emitters': ['TR-INC-04', 'TR-INC-05'], 'kind': 'event', 'producer': 'KA-DS', 'resolves': 'KAC-DS-01'},
+ 'KAC-DS-03': {'dependents': [{'model': 'KA-DS', 'transition': 'TR-POL-03'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'},
+ 'KAC-DS-04': {'dependents': [{'model': 'KA-DS', 'transition': 'TR-CLS-02'}], 'kind': 'condition', 'producer': 'KA-MM', 'requirement': 'Required'},
+ 'KAC-DS-05': {'dependents': [{'model': 'KA-MM', 'transition': 'TR-AST-03'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
+ 'KAC-DS-06': {'dependents': [{'model': 'KA-DQ', 'transition': 'TR-PDCA-03'}],
+               'kind': 'condition',
+               'producer': 'KA-DS',
+               'qualifier': 'processes_personal_data',
+               'requirement': 'Conditional'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DS", "name": "Data Security FTS (including Data Privacy)", "knowledgeArea": "Data Security", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: Policy and Standards (scope level), Classification, Protection and Privacy Basis (one per Data Asset) and Security Incident (one per incident) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area: Security Policy and Standards; Security Classification of a Data Asset; Protection of a Data Asset; Privacy Basis of a Data Asset (Data Privacy); Security Incident. The KA never becomes a region of the Data Asset; the asset-level regions reach the Global protocol through contributions (access release, restoration, emergency access, external custody, destruction, and the suspend, withdraw, destroy and material-change triggers), and every incident is also a Data Governance issue.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regulatoryFacts": REGULATORY_FACTS, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regulatoryFacts": REGULATORY_FACTS, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DS-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, requirement sources, inputs, processes, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram lists no sub-activities; the privacy lifecycle (lawful basis, consent, subject rights, retention) is drafted from the goals and requirement sources, not from a DMBOK activity list."},
         {"id": "SRC-DS-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, incident handling, Global gating", "limitations": ""},

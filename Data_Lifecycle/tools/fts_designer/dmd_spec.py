@@ -202,13 +202,28 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DMD-01", "Provisional Physical Model", "TR-EX-02", "Materialisation of an asset whose physical model is managed but whose deployment verification is outstanding.", "DR-DMD-05", "Physical model managed, deployment verification scheduled with a date, DG informed, evidence retained; expires at the verification date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DMD-01': {'dependents': [{'model': 'KA-DMD', 'transition': 'TR-STD-02'}, {'model': 'KA-DMD', 'transition': 'TR-STD-05'}],
+                'kind': 'condition',
+                'producer': 'KA-DG',
+                'requirement': 'Required'},
+ 'KAC-DMD-02': {'emitters': ['TR-CDM-03', 'TR-LDM-03', 'TR-PDM-03'], 'kind': 'event', 'producer': 'KA-DMD'},
+ 'KAC-DMD-03': {'dependents': [{'model': 'KA-DMD', 'transition': 'TR-CDM-01'}], 'kind': 'condition', 'producer': 'KA-DA', 'requirement': 'Required'},
+ 'KAC-DMD-04': {'dependents': [{'model': 'KA-DA', 'transition': 'TR-CNF-02'}], 'kind': 'condition', 'producer': 'KA-DMD', 'requirement': 'Required'},
+ 'KAC-DMD-05': {'kind': 'citation', 'producer': 'KA-DMD', 'cites': {'model': 'KA-MM', 'transition': 'TR-AST-02'}, 'raises': {'model': 'KA-MM', 'event': 'EV-AST-05'}, 'onlyIf': 'MM_asset_described'},
+ 'KAC-DMD-06': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-03'}], 'kind': 'condition', 'producer': 'KA-DMD', 'requirement': 'Required'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DMD", "name": "Data Modelling and Design FTS", "knowledgeArea": "Data Modelling and Design", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Modelling Standards and Plan (scope level) and the Conceptual, Logical and Physical Data Model of a Data Asset (one per asset, one FTS per level) run concurrently and are coupled by cross-region constraints (each level derives from the approved level above), facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Four state regions, each its own FTS over one managed element of the Knowledge Area: the Modelling Standards and Plan and the Conceptual, Logical and Physical Data Model of a Data Asset. The three model levels share one lifecycle pattern (draft, reviewed, approved, managed, revision, superseded; the physical level adds deployed) and are chained by cross-region constraints. The KA never becomes a region of the Data Asset; the models reach the Global protocol through contributions (registration on the conceptual model, materialisation on the deployed physical model, the assurance material-change trigger on a physical revision and the validation measurement as an assurance service), and couple to DG, Data Architecture, Metadata and Reference and Master Data.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DMD-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram lists the activities (plan, build, review, manage) and the three deliverables but no version lifecycle; the shared level lifecycle (draft, reviewed, approved, managed, revision, superseded) is drafted from Review and Manage the Data Models."},
         {"id": "SRC-DMD-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (one FTS per model level), Global gating", "limitations": ""},

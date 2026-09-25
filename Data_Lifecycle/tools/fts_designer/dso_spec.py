@@ -215,7 +215,7 @@ KA_COUPLINGS = [
     ("KAC-DSO-04", "KA-DS", "TR-PRT-06", "", "DS_sanitised", "An instance is purged only after sanitisation (TR-STO-09 and TR-STO-10 cite the DS fact).", "Reverse coupling."),
     ("KAC-DSO-05", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DSO_environment_degraded", "An OLA breach is logged as a Data Asset issue with source Data Storage and Operations (TR-ENV-05 emits EV-ISS-01).", "DG owns escalation; DSO owns the restoration."),
     ("KAC-DSO-07", "KA-DS", "TR-CLS-02", "", "DS_classified", "A test dataset is masked to the asset's security classification (TR-TST-04 cites the DS fact).", "Reverse coupling: a DSO transition cites a DS fact."),
-    ("KAC-DSO-06", "KA-MM", "TR-AST-05", "", "DSO_instance_migrating", "A completed migration, replication or versioning refreshes the asset's technical metadata and lineage (the MM transition cites the DSO fact when TR-STO-07 fires).", "Forward coupling: an MM transition cites a DSO fact."),
+    ("KAC-DSO-06", "KA-MM", "TR-AST-04", "EV-AST-05", "DSO_instance_migrating", "Any movement of the stored instance (archive, restore, completed migration, replication) raises the metadata refresh: the asset's technical metadata and lineage are flagged stale (EV-AST-05) so that Refresh Metadata (TR-AST-05) follows.", "Howard, 24 Sep 2026 (Open Decisions A2 option a, comment: any Data Asset movement should raise this event). Refresh can only start from Stale Metadata, so the movement raises the stale flag and the steward's refresh follows."),
 ]
 FACT_BINDINGS = {
     "DSO_technology_adopted": {"region": "REG-DSO-TEC", "states": ["STS-TEC-04", "STS-TEC-05"]},
@@ -258,13 +258,33 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DSO-01", "Emergency Load", "TR-EX-02", "Materialisation of an asset into a degraded environment for an urgent business need.", "DR-DSO-03", "Breach open with a restoration date, instance protected on load, consumer accepts the degraded OLA, DG informed, evidence retained; expires at the restoration date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DSO-01': {'dependents': [{'model': 'KA-DSO', 'transition': 'TR-ENV-02'}], 'kind': 'condition', 'producer': 'KA-DA', 'requirement': 'Required'},
+ 'KAC-DSO-02': {'dependents': [{'model': 'KA-DMD', 'transition': 'TR-PDM-10'},
+                               {'expression': 'DMD_physical_deployed', 'model': 'KA-DSO', 'producer': 'KA-DMD', 'transition': 'TR-STO-01'}],
+                'kind': 'condition',
+                'producer': 'KA-DSO',
+                'requirement': 'Required'},
+ 'KAC-DSO-03': {'dependents': [{'model': 'KA-DSO', 'transition': 'TR-STO-01'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
+ 'KAC-DSO-04': {'dependents': [{'model': 'KA-DSO', 'transition': 'TR-STO-09'}, {'model': 'KA-DSO', 'transition': 'TR-STO-10'}],
+                'kind': 'condition',
+                'producer': 'KA-DS',
+                'requirement': 'Required'},
+ 'KAC-DSO-05': {'emitters': ['TR-ENV-05'], 'kind': 'event', 'producer': 'KA-DSO'},
+ 'KAC-DSO-06': {'emitters': ['TR-STO-04', 'TR-STO-05', 'TR-STO-07', 'TR-STO-12', 'GDA-GLOBAL-PROTOCOL:TR-CP-04', 'GDA-GLOBAL-PROTOCOL:TR-CP-05', 'KA-DII:TR-EXC-07'], 'kind': 'event', 'producer': 'KA-DSO'},
+ 'KAC-DSO-07': {'dependents': [{'model': 'KA-DSO', 'transition': 'TR-TST-04'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DSO", "name": "Data Storage and Operations FTS", "knowledgeArea": "Data Storage and Operations", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: a Database Technology (one per technology), a Database Environment (one per environment), the Stored Instance of a Data Asset (one per asset), the Business Continuity Plan of an environment and a Test Dataset (one per dataset) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area: a Database Technology, a Database Environment, the Stored Instance of a Data Asset, the Business Continuity Plan and a Test Dataset. The KA never becomes a region of the Data Asset; the environment, the stored instance and the plan reach the Global protocol through contributions (materialisation, active and preservation custody, restoration, the custody transfer trigger, destruction and custody closure, the assurance trigger and the monitoring service), and couple to Data Architecture, Data Modelling and Design, Data Security, DG and Metadata.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DSO-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram gives the activities and deliverables but no instance lifecycle; the Stored Instance states (loaded, protected, archived, in migration, purged) are drafted from the Data Lifecycle Management technique and activities 2.3, 2.4 and 2.6. Test Dataset states (requested, provisioned, masked, refresh due, retired) are drafted from activity 2.5 on Howard's decision to give test datasets their own FTS."},
         {"id": "SRC-DSO-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating", "limitations": ""},

@@ -212,13 +212,35 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DA-01", "Provisional Placement", "TR-EX-02", "Materialisation of an asset whose lifecycle review is scheduled but not complete.", "DR-DA-06", "Asset placed, review scheduled with a date, remediation owner named, DG informed, evidence retained; expires at the review date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DA-01': {'dependents': [{'model': 'KA-DA', 'transition': 'TR-EDA-03'}, {'model': 'KA-DA', 'transition': 'TR-EDA-07'}],
+               'kind': 'condition',
+               'producer': 'KA-DG',
+               'requirement': 'Required'},
+ 'KAC-DA-02': {'emitters': ['TR-CNF-03', 'TR-CNF-11'], 'kind': 'event', 'producer': 'KA-DA'},
+ 'KAC-DA-03': {'dependents': [{'model': 'KA-DA', 'transition': 'TR-EDM-04'}, {'model': 'KA-DA', 'transition': 'TR-EDM-06'}],
+               'kind': 'condition',
+               'producer': 'KA-MM',
+               'requirement': 'Required'},
+ 'KAC-DA-04': {'kind': 'citation', 'producer': 'KA-DA', 'cites': {'model': 'KA-MM', 'transition': 'TR-AST-02'}, 'raises': {'model': 'KA-MM', 'event': 'EV-AST-05'}, 'onlyIf': 'MM_asset_described'},
+ 'KAC-DA-05': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-03'}], 'kind': 'condition', 'producer': 'KA-DA', 'requirement': 'Required'},
+ 'KAC-DA-06': {'dependents': [{'model': 'KA-DA', 'transition': 'TR-CNF-01'}],
+               'kind': 'condition',
+               'producer': 'KA-DS',
+               'qualifier': 'flow_is_external',
+               'requirement': 'Conditional'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DA", "name": "Data Architecture FTS", "knowledgeArea": "Data Architecture", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Enterprise Data Architecture (scope level), the Enterprise Data Model (scope level, versioned), the Implementation Roadmap (scope level) and the Architectural Conformance of a Data Asset (one per asset) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Four state regions, each its own FTS over one managed element of the Knowledge Area: the Enterprise Data Architecture (master blueprint), the Enterprise Data Model (split out as its own versioned blueprint), the Implementation Roadmap and the Architectural Conformance of a Data Asset. The KA never becomes a region of the Data Asset; the blueprints and the per-asset conformance reach the Global protocol through contributions (registration, materialisation, external custody, the assurance suspension trigger and the conformance review service), and couple to DG, Metadata, Reference and Master Data and Data Security.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DA-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram gives no per-asset conformance lifecycle; the Conformance states (placed, conforming, exception, non-conforming, reassessment due) are drafted from the Lifecycle Reviews technique and the Architecture standards compliance rates metric."},
         {"id": "SRC-DA-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating", "limitations": ""},

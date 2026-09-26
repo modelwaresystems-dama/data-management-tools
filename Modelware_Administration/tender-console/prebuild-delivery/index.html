@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Pre-Build &amp; Delivery</title>
-<meta name="version" content="1.2.0">
+<meta name="version" content="1.3.0">
 <style>
   :root{color-scheme:light;
     --bg:#f3f5f8;--surface:#fff;--surface-2:#eceff4;--surface-3:#e3e7ee;
@@ -97,6 +97,23 @@
   .chiptoggle[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink)}
   .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 15px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
   .toast.show{opacity:1}.toast.err{background:var(--red)}
+  .hbtns{display:flex;gap:8px;align-items:center}
+  .gear{appearance:none;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-soft);border-radius:8px;padding:5px 11px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+  .gear:hover{border-color:var(--accent-line);color:var(--accent-ink)}
+  .settings{margin:14px 0 0;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:var(--shadow)}
+  .settings h3{margin:0 0 4px;font-size:15px;font-weight:750}
+  .settings .sub{font-size:12.5px;color:var(--ink-faint);margin:0 0 12px}
+  .field{margin-bottom:10px}
+  .field label{display:block;font-size:11.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:4px}
+  .field input{width:100%;font:inherit;font-size:14px;color:var(--ink);background:var(--surface-2);border:1.5px solid var(--line-strong);border-radius:8px;padding:8px 10px}
+  .field input:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  .field .hint{font-size:11.5px;color:var(--ink-faint);margin-top:3px}
+  .srow{display:flex;gap:10px;flex-wrap:wrap}.srow .field{flex:1 1 160px}
+  .sbtns{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+  .btn{appearance:none;border:0;border-radius:8px;padding:9px 16px;font:inherit;font-weight:700;font-size:13px;cursor:pointer}
+  .btn.primary{background:var(--accent);color:#fff}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn.primary{color:#08221f}} :root[data-theme="dark"] .btn.primary{color:#08221f}
+  .btn.ghost{background:var(--surface-2);color:var(--ink);border:1px solid var(--line-strong)}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -112,10 +129,25 @@
       <div class="ipflag"><span class="pill bg">Background IP = 0 paid days</span><span class="pill fg">Foreground = consumes LoE</span></div>
       <div class="conn" id="conn"><span class="d"></span><span id="connTxt">Checking connection…</span></div>
     </div>
-    <span class="verbadge" id="appVersion"></span>
+    <div class="hbtns"><button class="gear" id="connectBtn" type="button">Connect</button><span class="verbadge" id="appVersion"></span></div>
   </header>
 
   <div id="banner"></div>
+
+  <div class="settings" id="settings" hidden>
+    <h3>Connect to your data repo</h3>
+    <p class="sub">The same connection your Tender Console uses — saved in this browser only, and shared with the Console (connect in either place, both connect). Your token is never committed.</p>
+    <div class="srow">
+      <div class="field"><label>GitHub owner</label><input id="setOwner" type="text" autocomplete="off" placeholder="modelwaresystems-dama"></div>
+      <div class="field"><label>Repository</label><input id="setRepo" type="text" autocomplete="off" placeholder="modelware_app_storage"></div>
+    </div>
+    <div class="srow">
+      <div class="field"><label>Branch</label><input id="setBranch" type="text" autocomplete="off" placeholder="main"></div>
+      <div class="field"><label>Data folder (in the repo)</label><input id="setPath" type="text" autocomplete="off" placeholder="tender-console-data/data"></div>
+    </div>
+    <div class="field"><label>Fine-grained token</label><input id="setToken" type="password" autocomplete="off" placeholder="github_pat_…"><div class="hint">Scope: Contents · Read and write on the data repo. Stored in this browser's localStorage, shared with the Tender Console.</div></div>
+    <div class="sbtns"><button class="btn primary" id="saveBtn" type="button">Save &amp; connect</button><button class="btn ghost" id="testBtn" type="button">Test</button><button class="btn ghost" id="cancelBtn" type="button">Close</button></div>
+  </div>
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" aria-selected="true" data-pane="overview">Overview</button>
@@ -276,10 +308,29 @@ function applyTendersMilestones(tj){
     }
   }catch(e){}
 }
+function testConn(){return fetch(API+"/repos/"+cfg.owner+"/"+cfg.repo,{headers:ghHeaders(false)}).then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error((j&&j.message)||("HTTP "+r.status));});return r.json();});}
+function fillSettings(){document.getElementById("setOwner").value=cfg.owner||"";document.getElementById("setRepo").value=cfg.repo||"";document.getElementById("setBranch").value=cfg.branch||"main";document.getElementById("setPath").value=cfg.path||"tender-console-data/data";document.getElementById("setToken").value=cfg.token||"";}
+function openSettings(){fillSettings();document.getElementById("settings").hidden=false;}
+function closeSettings(){document.getElementById("settings").hidden=true;}
+function saveSettings(){
+  var owner=document.getElementById("setOwner").value.trim(),repo=document.getElementById("setRepo").value.trim();
+  if(!repo&&/[\/\\]/.test(owner)){var parts=owner.split(/[\/\\]/).filter(Boolean);owner=parts[0]||"";repo=parts[1]||"";}
+  cfg.owner=owner;cfg.repo=repo;cfg.branch=document.getElementById("setBranch").value.trim()||"main";cfg.path=(document.getElementById("setPath").value.trim()||"tender-console-data/data").replace(/^\/+|\/+$/g,"");cfg.token=document.getElementById("setToken").value.trim();
+  if(!configured()){toast("Fill owner, repo and token",true);return;}
+  try{localStorage.setItem(CFG_KEY,JSON.stringify(cfg));}catch(e){}
+  closeSettings();pdSha=null;boot();
+}
+function testSettings(){
+  var o=document.getElementById("setOwner").value.trim(),r=document.getElementById("setRepo").value.trim(),tk=document.getElementById("setToken").value.trim();
+  if(!o||!r||!tk){toast("Fill owner, repo and token first",true);return;}
+  var saved={owner:cfg.owner,repo:cfg.repo,token:cfg.token,branch:cfg.branch};
+  cfg.owner=o;cfg.repo=r;cfg.token=tk;cfg.branch=document.getElementById("setBranch").value.trim()||"main";
+  testConn().then(function(repo){toast("Connected to "+repo.full_name+(repo.private?" (private)":" — WARNING: repo is public"));}).catch(function(e){toast("Test failed: "+((e&&e.message)||"error"),true);}).then(function(){cfg.owner=saved.owner;cfg.repo=saved.repo;cfg.token=saved.token;cfg.branch=saved.branch;});
+}
 function boot(){
   document.getElementById("appVersion").textContent="v"+document.querySelector('meta[name="version"]').content;
   seedModel();renderAll();
-  if(!configured()){setConn("err","Not connected");banner("Not connected to your data repo. Open the <b>Tender Console</b> in this browser and connect it in <b>Settings</b> (owner, repo, token) — this module shares that connection. Showing embedded seed until then; edits won't be saved.");return;}
+  if(!configured()){setConn("err","Not connected");banner("Not connected yet. Fill the connection below (or click <b>Connect</b> top-right) — it uses the same owner / repo / token as your Tender Console, saved in this browser. Showing sample data until then; edits won't be saved.");openSettings();return;}
   setConn("","Loading "+cfg.owner+"/"+cfg.repo+"…");
   Promise.all([ghGet(pathFor(PD_FILE)),ghGet(pathFor(TENDERS_FILE))]).then(function(res){
     var pdRes=res[0],tRes=res[1];
@@ -291,6 +342,10 @@ function boot(){
   }).catch(function(e){setConn("err","Load failed");banner("Could not read the data repo: "+((e&&e.message)||"error")+". Check the connection in the Tender Console Settings.");});
 }
 boot();
+document.getElementById("connectBtn").addEventListener("click",openSettings);
+document.getElementById("saveBtn").addEventListener("click",saveSettings);
+document.getElementById("testBtn").addEventListener("click",testSettings);
+document.getElementById("cancelBtn").addEventListener("click",closeSettings);
 </script>
 </body>
 </html>

@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="version" content="1.0.0">
+<title>Quiz Editor · datasherpa</title>
+<script src="../app-config.js"></script>
+<style>
+  :root{ --bg:#0b1017; --panel:#141b25; --panel2:#0f151d; --ink:#e8edf3; --mut:#93a0b1; --faint:#6b7686;
+    --line:#232d3a; --accent:#19c3a6; --accent-ink:#8fe6d7; --bad:#f0796b; --good:#19c3a6; --amber:#e0a83e; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  header{position:sticky;top:0;z-index:10;background:rgba(11,16,23,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .logo{width:34px;height:34px;border-radius:9px;background:var(--accent);display:grid;place-items:center;color:#04211c;font-weight:800;font-size:15px}
+  header h1{font-size:17px;margin:0;font-weight:700}
+  header .sub{color:var(--faint);font-size:13px}
+  .ver{margin-left:auto;font-size:11px;color:var(--faint);border:1px solid var(--line);border-radius:20px;padding:3px 9px}
+  .wrap{max-width:900px;margin:0 auto;padding:22px 16px 100px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:16px 18px;margin:14px 0}
+  label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-bottom:6px}
+  select,input[type=text],textarea{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px 12px;font:inherit}
+  select:focus,input:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  textarea{resize:vertical;min-height:44px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  .row>div{flex:1;min-width:150px}
+  button{font:inherit;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:9px 14px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);color:#04211c;border-color:var(--accent);font-weight:700}
+  button.ghost{background:transparent}
+  button.danger{color:var(--bad);border-color:transparent;padding:4px 8px}
+  button:disabled{opacity:.5;cursor:default}
+  .status{font-size:13px;margin-left:6px}
+  .status.ok{color:var(--good)} .status.err{color:var(--bad)} .status.warn{color:var(--amber)}
+  .qcard{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:16px 18px;margin:14px 0}
+  .qcard.badq{border-color:var(--bad)}
+  .qnum{font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+  .opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;background:var(--panel2)}
+  .opt.correct{border-color:var(--good);background:rgba(25,195,166,.07)}
+  .opt .ck{display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:4px}
+  .opt .ck input{width:18px;height:18px;accent-color:var(--good)}
+  .opt .ck span{font-size:10px;color:var(--faint)}
+  .opt .fields{flex:1}
+  .opt .fields textarea.rat{margin-top:6px;min-height:34px;font-size:13px;color:var(--mut)}
+  .toolbar{position:fixed;left:0;right:0;bottom:0;background:rgba(11,16,23,.96);border-top:1px solid var(--line);padding:12px 16px;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap}
+  .hint{color:var(--faint);font-size:13px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--mut)}
+  details.cfg summary{cursor:pointer;color:var(--mut);font-size:13px}
+  a{color:var(--accent-ink)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">ds</div>
+  <div><h1>Quiz Editor</h1><div class="sub">Fix questions, options, correct answers, rationales &amp; hints</div></div>
+  <span class="ver" id="verBadge"></span>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="quizSel">Quiz to edit</label>
+        <select id="quizSel"><option value="">Loading library…</option></select>
+      </div>
+      <div style="flex:0 0 auto;min-width:auto">
+        <button class="primary" id="loadBtn" disabled>Open quiz</button>
+      </div>
+    </div>
+    <div id="repoLine" class="status" style="margin-top:10px"></div>
+    <details class="cfg" style="margin-top:10px">
+      <summary>GitHub connection (where saves go)</summary>
+      <div class="row" style="margin-top:10px">
+        <div><label>Owner</label><input type="text" id="cOwner"></div>
+        <div><label>Repo</label><input type="text" id="cRepo"></div>
+        <div><label>Branch</label><input type="text" id="cBranch"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><label>Fine-grained token (Contents: read &amp; write) — stored only in this browser</label><input type="text" id="cToken" placeholder="leave blank to keep the saved token"></div>
+        <div style="flex:0 0 auto;min-width:auto"><button id="cfgSave">Save connection</button></div>
+      </div>
+      <div class="hint" style="margin-top:8px">Same token the Live page uses. It never leaves your browser and is sent only to api.github.com.</div>
+    </details>
+  </div>
+
+  <div id="editorHead" style="display:none"></div>
+  <div id="questions"></div>
+</div>
+
+<div class="toolbar" id="toolbar" style="display:none">
+  <span class="hint" id="dirtyState">No changes yet</span>
+  <button class="ghost" id="addQ">+ Add question</button>
+  <button class="ghost" id="reloadBtn">Reload (discard)</button>
+  <button class="primary" id="saveBtn">Save to repo</button>
+  <span class="status" id="saveStatus"></span>
+</div>
+<script>
+const CFG = window.APP_CONFIG || {};
+const GHKEY = "ds_gh_cfg";
+const DATA_PREFIX = "Workbench_Player/data/";
+let MANIFEST=null, CURRENT=null; // CURRENT = {path, sha, data, title}
+let dirty=false;
+
+document.getElementById("verBadge").textContent = "v"+(document.querySelector('meta[name="version"]').content||"1.0.0");
+
+/* ---------- config ---------- */
+function ghRaw(){ try{ return JSON.parse(localStorage.getItem(GHKEY)||"{}"); }catch(e){ return {}; } }
+function ghCfg(){ const c=ghRaw(); return { owner:c.owner||"modelwaresystems-dama", repo:c.repo||"modelware_app_storage", branch:c.branch||"main", token:c.token||"" }; }
+function fillCfg(){ const c=ghCfg(); cOwner.value=c.owner; cRepo.value=c.repo; cBranch.value=c.branch; cToken.value=""; cToken.placeholder=c.token?"saved — leave blank to keep":"fine-grained token · Contents: read & write"; }
+const cOwner=document.getElementById("cOwner"), cRepo=document.getElementById("cRepo"), cBranch=document.getElementById("cBranch"), cToken=document.getElementById("cToken");
+document.getElementById("cfgSave").onclick=()=>{ const prev=ghRaw(); const c={ owner:cOwner.value.trim()||"modelwaresystems-dama", repo:cRepo.value.trim()||"modelware_app_storage", branch:cBranch.value.trim()||"main", token:(cToken.value.trim()||prev.token||"") }; localStorage.setItem(GHKEY, JSON.stringify(c)); fillCfg(); showRepoLine(); };
+
+/* ---------- GitHub Contents API ---------- */
+function ghApi(path){ const c=ghCfg(); return "https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+encodeURIComponent(c.repo)+"/contents/"+path.split("/").map(encodeURIComponent).join("/"); }
+function ghHdr(){ return { "Authorization":"Bearer "+ghCfg().token, "Accept":"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28" }; }
+function b64e(s){ return btoa(unescape(encodeURIComponent(s))); }
+function b64d(s){ try{ return decodeURIComponent(escape(atob((s||"").replace(/\n/g,"")))); }catch(e){ return ""; } }
+async function ghGet(path){ const c=ghCfg(); const r=await fetch(ghApi(path)+"?ref="+encodeURIComponent(c.branch),{headers:ghHdr(),cache:"no-store"}); if(r.status!==200){ let m=""; try{m=(await r.json()).message||"";}catch(e){} throw new Error("GET "+r.status+" "+m); } const j=await r.json(); return { sha:j.sha, json:JSON.parse(b64d(j.content)) }; }
+async function ghPut(path,obj,sha,msg){ const c=ghCfg(); const body={ message:msg, content:b64e(JSON.stringify(obj,null,2)), branch:c.branch }; if(sha) body.sha=sha; const r=await fetch(ghApi(path),{method:"PUT",headers:ghHdr(),body:JSON.stringify(body)}); if(!r.ok){ let m=""; try{m=(await r.json()).message||"";}catch(e){} throw new Error("PUT "+r.status+" "+m); } return await r.json(); }
+
+async function showRepoLine(){
+  const el=document.getElementById("repoLine"); const c=ghCfg();
+  if(!c.token){ el.className="status warn"; el.textContent="No GitHub token set — open the connection panel below and paste your token (Contents: read & write)."; return; }
+  el.className="status"; el.textContent="Checking repo access…";
+  try{ const r=await fetch("https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+encodeURIComponent(c.repo),{headers:ghHdr(),cache:"no-store"});
+    if(r.status===200){ const j=await r.json(); const w=!!(j.permissions&&(j.permissions.push||j.permissions.admin||j.permissions.maintain)); el.className=w?"status ok":"status warn"; el.textContent=w?("✓ Connected to "+(j.full_name)+" ("+ (j.default_branch||c.branch) +") — edits will save here"):("Connected to "+j.full_name+" but the token is read-only — saves will fail."); }
+    else if(r.status===401||r.status===403){ el.className="status err"; el.textContent="Token rejected ("+r.status+") — check it has Contents read & write on this repo."; }
+    else if(r.status===404){ el.className="status err"; el.textContent="Repo not found or no access ("+c.owner+"/"+c.repo+")."; }
+    else { el.className="status err"; el.textContent="Repo check failed ("+r.status+")."; }
+  }catch(e){ el.className="status err"; el.textContent="Network error checking repo."; }
+}
+
+/* ---------- manifest / quiz list ---------- */
+function assetUrl(path){ const base=CFG.assetApi||""; if(!base) return ""; return base+(base.includes("?")?"&":"?")+"path="+encodeURIComponent(path); }
+async function loadManifest(){
+  const sel=document.getElementById("quizSel");
+  if(!CFG.assetApi){ sel.innerHTML='<option value="">No asset backend configured (app-config.js)</option>'; return; }
+  try{
+    const r=await fetch(assetUrl("manifest.json"),{cache:"no-store"}); if(!r.ok) throw new Error(r.status);
+    MANIFEST=await r.json();
+    const quizzes=(MANIFEST.assets||MANIFEST.quizzes||[]).filter(a=>(a.type||"quiz")==="quiz");
+    const byTopic={},order=[];
+    quizzes.forEach(q=>{ const t=q.topic||"Quizzes"; if(!byTopic[t]){byTopic[t]=[];order.push(t);} byTopic[t].push(q); });
+    sel.innerHTML='<option value="">Choose a quiz…</option>'+order.map(t=>'<optgroup label="'+esc(t)+'">'+byTopic[t].map(q=>'<option value="'+esc(q.path)+'">'+esc(q.title||q.path)+'</option>').join("")+'</optgroup>').join("");
+    document.getElementById("loadBtn").disabled=false;
+  }catch(e){ sel.innerHTML='<option value="">Could not load the quiz library ('+esc(String(e.message||e))+')</option>'; }
+}
+
+/* ---------- render editor ---------- */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function markDirty(){ dirty=true; const d=document.getElementById("dirtyState"); d.textContent="Unsaved changes"; d.style.color="var(--amber)"; }
+
+async function openQuiz(path){
+  const c=ghCfg();
+  if(!c.token){ showRepoLine(); alert("Set your GitHub token first (connection panel)."); return; }
+  const status=document.getElementById("repoLine"); status.className="status"; status.textContent="Loading quiz from repo…";
+  try{
+    const got=await ghGet(DATA_PREFIX+path);
+    CURRENT={ path:path, sha:got.sha, data:got.json, title:(got.json&&got.json.title)||path };
+    if(!CURRENT.data.questions) CURRENT.data.questions=[];
+    dirty=false; renderEditor();
+    status.className="status ok"; status.textContent="Loaded “"+esc(CURRENT.title)+"” — "+CURRENT.data.questions.length+" questions";
+  }catch(e){ status.className="status err"; status.textContent="Couldn't load that quiz: "+esc(String(e.message||e)); }
+}
+
+function renderEditor(){
+  const head=document.getElementById("editorHead");
+  head.style.display="block";
+  head.innerHTML='<div class="card"><label>Quiz title</label><input type="text" id="quizTitle" value="'+esc(CURRENT.data.title||"")+'"><div class="hint" style="margin-top:8px">File: <span class="mono">'+esc(DATA_PREFIX+CURRENT.path)+'</span></div></div>';
+  document.getElementById("quizTitle").oninput=e=>{ CURRENT.data.title=e.target.value; markDirty(); };
+  const host=document.getElementById("questions"); host.innerHTML="";
+  CURRENT.data.questions.forEach((q,qi)=>host.appendChild(questionCard(q,qi)));
+  document.getElementById("toolbar").style.display="flex";
+  document.getElementById("dirtyState").textContent = dirty?"Unsaved changes":"No changes yet";
+  document.getElementById("dirtyState").style.color = dirty?"var(--amber)":"var(--faint)";
+}
+
+function questionCard(q,qi){
+  const card=document.createElement("div"); card.className="qcard"; card.dataset.qi=qi;
+  const opts=(q.answerOptions||q.options||[]);
+  q.answerOptions=opts;
+  card.innerHTML='<div class="qnum">Question '+(qi+1)+' <span class="pill">'+opts.length+' options</span>'
+    +'<button class="danger" data-act="delQ" style="margin-left:auto">Delete question</button></div>'
+    +'<label>Question text</label><textarea data-f="q">'+esc(q.question||q.q||"")+'</textarea>'
+    +'<div class="opts"></div>'
+    +'<div style="margin:8px 0"><button class="ghost" data-act="addOpt">+ Add option</button></div>'
+    +'<label style="margin-top:6px">Hint (optional)</label><input type="text" data-f="hint" value="'+esc(q.hint||"")+'">';
+  const optsBox=card.querySelector(".opts");
+  opts.forEach((o,oi)=>optsBox.appendChild(optionRow(q,qi,o,oi)));
+  // wire
+  card.querySelector('[data-f="q"]').oninput=e=>{ q.question=e.target.value; markDirty(); };
+  card.querySelector('[data-f="hint"]').oninput=e=>{ q.hint=e.target.value; markDirty(); };
+  card.querySelector('[data-act="delQ"]').onclick=()=>{ if(!confirm("Delete this whole question?"))return; CURRENT.data.questions.splice(qi,1); renderEditor(); markDirty(); };
+  card.querySelector('[data-act="addOpt"]').onclick=()=>{ opts.push({text:"",isCorrect:false,rationale:""}); renderEditor(); markDirty(); };
+  return card;
+}
+
+function optionRow(q,qi,o,oi){
+  const row=document.createElement("div"); row.className="opt"+(o.isCorrect?" correct":"");
+  row.innerHTML='<div class="ck"><input type="radio" name="correct-'+qi+'" '+(o.isCorrect?"checked":"")+'><span>correct</span></div>'
+    +'<div class="fields"><input type="text" data-f="otext" value="'+esc(o.text||"")+'" placeholder="Answer option text">'
+    +'<textarea class="rat" data-f="orat" placeholder="Why this is right / wrong (rationale)">'+esc(o.rationale||"")+'</textarea></div>'
+    +'<button class="danger" data-act="delOpt">✕</button>';
+  row.querySelector('input[type=radio]').onchange=()=>{ (q.answerOptions||[]).forEach(x=>x.isCorrect=false); o.isCorrect=true; renderEditor(); markDirty(); };
+  row.querySelector('[data-f="otext"]').oninput=e=>{ o.text=e.target.value; markDirty(); };
+  row.querySelector('[data-f="orat"]').oninput=e=>{ o.rationale=e.target.value; markDirty(); };
+  row.querySelector('[data-act="delOpt"]').onclick=()=>{ if((q.answerOptions||[]).length<=2){ alert("A question needs at least 2 options."); return; } q.answerOptions.splice(oi,1); renderEditor(); markDirty(); };
+  return row;
+}
+
+/* ---------- validate + save ---------- */
+function validate(){
+  const errs=[]; const qs=CURRENT.data.questions||[];
+  document.querySelectorAll(".qcard").forEach(c=>c.classList.remove("badq"));
+  qs.forEach((q,qi)=>{
+    const opts=q.answerOptions||[];
+    const nCorrect=opts.filter(o=>o.isCorrect).length;
+    const nFilled=opts.filter(o=>(o.text||"").trim()).length;
+    let bad=false;
+    if(!(q.question||"").trim()){ errs.push("Q"+(qi+1)+": question text is empty"); bad=true; }
+    if(nFilled<2){ errs.push("Q"+(qi+1)+": needs at least 2 non-empty options"); bad=true; }
+    if(nCorrect!==1){ errs.push("Q"+(qi+1)+": mark exactly one correct answer (has "+nCorrect+")"); bad=true; }
+    if(bad){ const card=document.querySelector('.qcard[data-qi="'+qi+'"]'); if(card) card.classList.add("badq"); }
+  });
+  if(!qs.length) errs.push("The quiz has no questions.");
+  return errs;
+}
+
+async function save(){
+  const st=document.getElementById("saveStatus");
+  const errs=validate();
+  if(errs.length){ st.className="status err"; st.textContent=errs.length+" problem(s): "+errs.slice(0,3).join(" · ")+(errs.length>3?" …":""); return; }
+  // clean payload: drop UI-only empties
+  const out={ title:CURRENT.data.title, questions:CURRENT.data.questions.map(q=>({
+    question:(q.question||"").trim(),
+    answerOptions:(q.answerOptions||[]).filter(o=>(o.text||"").trim()).map(o=>({ text:o.text.trim(), isCorrect:!!o.isCorrect, rationale:(o.rationale||"").trim() })),
+    hint:(q.hint||"").trim()
+  })) };
+  st.className="status"; st.textContent="Saving…";
+  document.getElementById("saveBtn").disabled=true;
+  try{
+    const res=await ghPut(DATA_PREFIX+CURRENT.path, out, CURRENT.sha, "Quiz edit: "+CURRENT.title);
+    CURRENT.sha = (res.content&&res.content.sha)||CURRENT.sha;
+    CURRENT.data = out;
+    dirty=false;
+    st.className="status ok"; st.textContent="✓ Saved to repo. It goes live on the next deploy of the private backend.";
+    document.getElementById("dirtyState").textContent="Saved"; document.getElementById("dirtyState").style.color="var(--good)";
+  }catch(e){
+    let msg=String(e.message||e);
+    if(/409|422/.test(msg)) msg="the file changed on the server since you opened it — reload and redo your edit.";
+    st.className="status err"; st.textContent="Save failed: "+esc(msg);
+  }finally{ document.getElementById("saveBtn").disabled=false; }
+}
+
+/* ---------- wire ---------- */
+document.getElementById("loadBtn").onclick=()=>{ const p=document.getElementById("quizSel").value; if(!p) return; if(dirty&&!confirm("Discard unsaved changes and open another quiz?"))return; openQuiz(p); };
+document.getElementById("reloadBtn").onclick=()=>{ if(CURRENT) openQuiz(CURRENT.path); };
+document.getElementById("addQ").onclick=()=>{ if(!CURRENT)return; CURRENT.data.questions.push({question:"",answerOptions:[{text:"",isCorrect:true,rationale:""},{text:"",isCorrect:false,rationale:""}],hint:""}); renderEditor(); markDirty(); window.scrollTo(0,document.body.scrollHeight); };
+document.getElementById("saveBtn").onclick=save;
+window.addEventListener("beforeunload",e=>{ if(dirty){ e.preventDefault(); e.returnValue=""; } });
+
+fillCfg(); showRepoLine(); loadManifest();
+</script>
+</body>
+</html>

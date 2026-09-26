@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.15.1">
+<meta name="version" content="1.16.0">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -314,7 +314,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.15.1";</script>
+<script>window.PAGE_BUILD="1.16.0";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -345,7 +345,7 @@ let myName="";
 let hostClassId="", hostClassName="";
 let PLAN=null; // {id, title, items:[{path,title,weight}], idx} when running a session/course
 let SOLO=null; // {path,title} when running a single quiz (still pausable/resumable)
-let RESUME_SCORES={}, LASTSAVE=null, RESUME_QI=null;   // name->{score,quizTotals} for resuming; RESUME_QI = last scored question when resuming a single quiz
+let RESUME_SCORES={}, LASTSAVE=null, RESUME_QI=null, RESUME_HOSTMAX=-1;   // name->{score,quizTotals} for resuming; RESUME_QI = last scored question when resuming a single quiz; RESUME_HOSTMAX = furthest quiz the host reached
 /* ---------- Private-repo session sync (GitHub Contents API) ----------
    Reuses the same fine-grained token the Course Builder stores (ds_gh_cfg).
    Live sessions live under Workbench_Player/data/live-sessions/active and are
@@ -362,7 +362,7 @@ function sessionSnapshot(){
   if(PLAN){
     const banked=vals.reduce((m,p)=>Math.max(m,(p.quizTotals||[]).length),0);
     base.kind="course"; base.planId=PLAN.id; base.planTitle=PLAN.title; base.course=PLAN.course||null; base.quizPaths=PLAN.items.map(i=>i.path);
-    base.resumeIdx=banked; base.qi=H.qi;
+    base.hostMax=(H&&H.hostMax!=null?H.hostMax:(banked-1)); base.resumeIdx=Math.max(banked, base.hostMax+1); base.qi=H.qi;
     base.players=vals.map(p=>{ const qt=(p.quizTotals||[]).slice(0,banked); return {name:p.name, score:qt.reduce((a,b)=>a+(b||0),0), quizTotals:qt}; });
   } else if(SOLO){
     base.kind="solo"; base.quizPath=SOLO.path; base.quizTitle=SOLO.title;
@@ -407,7 +407,7 @@ const REPO=(function(){
     (prior.players||[]).forEach(p=>fold(p.name, p.quizTotals, p.score));
     (snap.players||[]).forEach(p=>fold(p.name, p.quizTotals, p.score));
     out.players=Object.values(by).map(e=>{ if(snap.kind==="course"){ const qt=e.quizTotals.map(v=>v||0); return {name:e.name, score:qt.reduce((a,b)=>a+(b||0),0), quizTotals:qt}; } return {name:e.name, score:e.score||0}; });
-    if(snap.kind==="course"){ let ri=Math.max(snap.resumeIdx||0, prior.resumeIdx||0); out.players.forEach(p=>{ ri=Math.max(ri,(p.quizTotals||[]).length); }); out.resumeIdx=ri; }
+    if(snap.kind==="course"){ const hm=Math.max((snap.hostMax==null?-1:snap.hostMax),(prior.hostMax==null?-1:prior.hostMax)); let ri=Math.max(snap.resumeIdx||0, prior.resumeIdx||0, hm+1); out.players.forEach(p=>{ ri=Math.max(ri,(p.quizTotals||[]).length); }); out.resumeIdx=ri; out.hostMax=Math.max(hm, ri-1); }
     return out;
   }
   const lastBody={}; let flushTimer=null, pending=null;
@@ -675,8 +675,8 @@ async function renderHostSetup(body){
     const note=document.getElementById("hnote"); if(note) note.textContent="Loading saved session\u2026";
     SESSION={ id:x.id, name:x.name||x.id }; hostClassId=x.classId||""; hostClassName=x.className||""; RESUME_SCORES={};
     if(x.kind==="course"){
-      PLAN={ id:x.planId, title:x.planTitle, course:(x.course||null), items:(x.quizPaths||[]).map(p=>({path:p,title:(quizzes.find(q=>q.path===p)||{}).title||p,weight:1})), idx:(x.resumeIdx||0) };
-      SOLO=null; RESUME_QI=null;
+      PLAN={ id:x.planId, title:x.planTitle, course:(x.course||null), items:(x.quizPaths||[]).map(p=>({path:p,title:(quizzes.find(q=>q.path===p)||{}).title||p,weight:1})), idx:Math.min((x.resumeIdx||0), Math.max(0,((x.quizPaths||[]).length-1))) };
+      SOLO=null; RESUME_QI=null; RESUME_HOSTMAX=(x.hostMax!=null?x.hostMax:((x.resumeIdx!=null?x.resumeIdx:1)-1));
       (x.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
       try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[PLAN.idx].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     } else {
@@ -692,7 +692,7 @@ async function renderHostSetup(body){
     SESSION={ id:x.id, name:x.name||x.id }; hostClassId=x.classId||""; hostClassName=x.className||""; RESUME_SCORES={}; RESUME_QI=null;
     if(x.kind==="course"){
       PLAN={ id:x.planId, title:x.planTitle, course:(x.course||null), items:(x.quizPaths||[]).map(function(p){return {path:p,title:(quizzes.find(function(q){return q.path===p;})||{}).title||p,weight:1};}), idx:Math.max(0,((x.quizPaths||[]).length-1)) };
-      SOLO=null;
+      SOLO=null; RESUME_HOSTMAX=(x.hostMax!=null?x.hostMax:Math.max(0,((x.quizPaths||[]).length-1)));
     } else { SOLO={ path:x.quizPath, title:x.quizTitle||"" }; PLAN=null; }
     (x.players||[]).forEach(function(pl){ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
     const lastPath = PLAN?((PLAN.items[PLAN.idx]||{}).path):(SOLO&&SOLO.path);
@@ -781,7 +781,8 @@ function startHost(){
   shuffleQuiz(QUIZ);
   if(liveUnconfigured()){ mount.innerHTML=`<div class="center"><div class="card"><h1>Backend not set</h1><p class="sub">Set <b>tokenUrl</b> in app-config.js (your private backend's ably-token function) to host a live session — see README. No key goes in this page.</p></div></div>`; return; }
   room=newCode();
-  H={phase:"lobby",qi:-1,players:new Map(),answers:new Map(),counts:[0,0,0,0],startTs:0,endsAt:0,timer:null};
+  H={phase:"lobby",qi:-1,players:new Map(),answers:new Map(),counts:[0,0,0,0],startTs:0,endsAt:0,timer:null,hostMax:-1};
+  if(typeof RESUME_HOSTMAX==="number"&&RESUME_HOSTMAX>=0){ H.hostMax=RESUME_HOSTMAX; } RESUME_HOSTMAX=-1;
   if(SOLO && RESUME_QI!=null && RESUME_QI>=0){ H.qi=RESUME_QI; }   // resume a single quiz just past the last scored question
   connect();
   codePill.hidden=false; codePill.textContent="Room "+room;
@@ -937,6 +938,7 @@ function hostNext(){
   if(H.qi===0){ H.players.forEach(p=>{ p._qstart=p.score||0; }); }
   if(H.qi>=QUIZ.questions.length){
     H.players.forEach(p=>{ if(!p.quizTotals)p.quizTotals=[]; const qidx=PLAN?PLAN.idx:0; while(p.quizTotals.length<qidx)p.quizTotals.push(0); p.quizTotals[qidx]=(p.score||0)-(p._qstart||0); });
+    if(PLAN){ H.hostMax=Math.max((H.hostMax==null?-1:H.hostMax), PLAN.idx); }
     if(PLAN) saveProgress();
     if(PLAN && PLAN.idx<PLAN.items.length-1){ H.phase="interlude"; RV.level="session"; RV.qi=PLAN.idx; publishState(); renderHost(); if(REPO.on())loadAgg(); return; }
     H.phase="final"; RV.level=(PLAN&&PLAN.course)?"course":(PLAN?"session":"quiz"); RV.qi=PLAN?Math.max(0,PLAN.idx):0; publishState(); renderHost();

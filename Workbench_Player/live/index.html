@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.16.0">
+<meta name="version" content="1.17.0">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -314,7 +314,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.16.0";</script>
+<script>window.PAGE_BUILD="1.17.0";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -561,15 +561,20 @@ async function renderHostSetup(body){
   const quizzes=(man.assets||man.quizzes||[]).filter(a=>(a.type||"quiz")==="quiz");
   const sessions=r.sessions||[];
   const curPath=new URLSearchParams(location.search).get("quiz")||CFG.quizPath||(quizzes[0]&&quizzes[0].path)||"";
-  let runOpts="";
-  if(sessions.length){
-    runOpts+='<optgroup label="Courses & sessions (run cumulatively)">'+sessions.map(x=>`<option value="plan:${esc(x.id)}">${esc(x.title)} \u00b7 ${x.quizzes.length} quizzes</option>`).join("")+'</optgroup>';
+  const byCourse={},courseOrder=[];
+  sessions.forEach(x=>{ const c=x.course||"Sessions"; if(!byCourse[c]){byCourse[c]=[];courseOrder.push(c);} byCourse[c].push(x); });
+  const byTopic={},topicOrder=[];
+  quizzes.forEach(q=>{ const t=q.topic||"Quizzes"; if(!byTopic[t]){byTopic[t]=[];topicOrder.push(t);} byTopic[t].push(q); });
+  const courseOpts = courseOrder.map(c=>`<option value="c:${esc(c)}">${esc(c)}</option>`).join("")
+      + (quizzes.length?`<option value="__quizzes__">Single quizzes (no course)</option>`:"");
+  function runOptionsFor(cv){
+    if(cv==="__quizzes__"||!cv){ return topicOrder.map(t=>`<optgroup label="${esc(t)}">`+byTopic[t].map(q=>`<option value="quiz:${esc(q.path)}" ${q.path===curPath?"selected":""}>${esc(q.title)}</option>`).join("")+`</optgroup>`).join(""); }
+    const name=cv.replace(/^c:/,""); const days=byCourse[name]||[];
+    return days.map(x=>`<option value="plan:${esc(x.id)}">${esc(x.title)} \u00b7 ${x.quizzes.length} ${x.quizzes.length===1?"quiz":"quizzes"}</option>`).join("");
   }
-  const byTopic={},order=[];
-  quizzes.forEach(q=>{ const t=q.topic||"Quizzes"; if(!byTopic[t]){byTopic[t]=[];order.push(t);} byTopic[t].push(q); });
-  runOpts+=order.map(t=>`<optgroup label="${esc(t)}">`+byTopic[t].map(q=>`<option value="quiz:${esc(q.path)}" ${q.path===curPath?"selected":""}>${esc(q.title)}</option>`).join("")+`</optgroup>`).join("");
   body.innerHTML=`
-    <div class="field"><label for="hquiz">What to run</label><select id="hquiz">${runOpts||'<option value="">(library not found)</option>'}</select></div>
+    <div class="field"><label for="hcourse">Course</label><select id="hcourse">${courseOpts||'<option value="">(library not found)</option>'}</select></div>
+    <div class="field"><label for="hquiz">Session (Day) to run \u2014 quizzes run in delivery order</label><select id="hquiz"></select></div>
     <div class="field"><label for="hclass">Class for this room</label><select id="hclass"></select>
       <div class="err" id="hnote" style="color:var(--faint)"></div></div>
     <div id="repoState" class="repostate"></div>
@@ -602,7 +607,11 @@ async function renderHostSetup(body){
     else if(matched.length>1){ note.textContent="Several classes linked \u2014 pick one."; }
     else { note.textContent="No linked class \u2014 pick one or host open."; }
   }
-  qsel.onchange=()=>{ fillClasses(); refreshResume(); }; fillClasses();
+  const ccsel=document.getElementById("hcourse");
+  function fillRun(){ if(qsel) qsel.innerHTML=runOptionsFor(ccsel?ccsel.value:""); }
+  if(ccsel) ccsel.onchange=()=>{ fillRun(); fillClasses(); refreshResume(); };
+  qsel.onchange=()=>{ fillClasses(); refreshResume(); };
+  fillRun(); fillClasses();
   function refreshResume(){
     const rw=document.getElementById("resumeWrap"); if(!rw)return; rw.innerHTML="";
     const info=selInfo();
@@ -967,6 +976,14 @@ function hostReveal(){
   publishState(); renderHost();
 }
 
+async function jumpToQuiz(i){
+  if(!PLAN||i<0||i>=PLAN.items.length) return;
+  clearInterval(H.timer); PLAN.idx=i;
+  const item=PLAN.items[i];
+  try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(item.path,"quiz.sample.json"))); }catch(e){ QUIZ={title:item.title,questions:[]}; }
+  H.qi=-1; H.answers=new Map(); H.counts=[0,0,0,0];
+  hostNext();
+}
 async function hostNextQuiz(){
   if(!PLAN) return;
   clearInterval(H.timer); PLAN.idx++;
@@ -1151,15 +1168,28 @@ function resultsPanel(kind){
   const loading=(RV.level==="course"&&hasParent&&_courseLoading)?'<div class="rempty">Adding up the whole course\u2026</div>':"";
   return `<div class="results"><div class="rtop"><h2 class="disp">${heading}</h2><div class="rcrumb">${crumb.join("")}</div></div>`
     +`<div class="rtabs">${tabs}</div>${picker}<div class="hbars">${loading||hbarsHTML(rows)}</div>`
-    +(kind==="interlude"?`<div class="mono rnext">Host: press \u201cNext quiz \u2192\u201d when ready${PLAN&&PLAN.items[PLAN.idx+1]?` \u00b7 Next: <b>${esc(PLAN.items[PLAN.idx+1].title)}</b>`:""}</div>`:"")
-    +(kind==="final"?addQuizControl():"")
+    +(kind==="interlude"?`<div class="mono rnext">Host: press \u201cNext quiz \u2192\u201d when ready${PLAN&&PLAN.items[PLAN.idx+1]?` \u00b7 Next: <b>${esc(PLAN.items[PLAN.idx+1].title)}</b>`:""}</div>`+jumpControl():"")
+    +(kind==="final"?jumpControl()+addQuizControl():"")
     +`</div>`;
 }
 function wireResults(){
   document.querySelectorAll(".rtab").forEach(b=>b.onclick=()=>{ RV.level=b.dataset.lvl; if(REPO.on()&&_aggFor!==SESSION.id) loadAgg(); renderHost(); });
   document.querySelectorAll(".qp").forEach(b=>b.onclick=()=>{ RV.qi=+b.dataset.qi; renderHost(); });
+  document.querySelectorAll(".jumpq").forEach(b=>b.onclick=()=>jumpToQuiz(+b.dataset.ji));
   const ab=document.getElementById("addQuizBtn"), asel=document.getElementById("addQuizSel");
   if(ab&&asel) ab.onclick=()=>{ const path=asel.value; const opt=asel.options[asel.selectedIndex]; if(path) addQuizLive(path, opt?opt.textContent:path); };
+}
+function jumpControl(){
+  if(!PLAN||!PLAN.items||PLAN.items.length<2) return "";
+  const btns=PLAN.items.map((it,i)=>{
+    const done=(typeof H!=="undefined"&&H&&H.hostMax!=null&&i<=H.hostMax), cur=(i===PLAN.idx);
+    const bg=cur?"#19c3a6":(done?"rgba(255,255,255,.05)":"transparent");
+    const bd=cur?"#19c3a6":"rgba(255,255,255,.20)";
+    const col=cur?"#04211c":"inherit";
+    const op=(done&&!cur)?"opacity:.7;":"";
+    return `<button class="jumpq" data-ji="${i}" style="padding:7px 12px;border-radius:9px;border:1px solid ${bd};background:${bg};color:${col};font:inherit;font-size:13px;cursor:pointer;${op}">${i+1}. ${esc(it.title)}${(done&&!cur)?" \u2713":""}</button>`;
+  }).join("");
+  return `<div style="margin-top:16px"><div class="mono" style="font-size:12px;color:var(--faint);opacity:.8;margin-bottom:8px">Run a specific quiz \u2014 jump to match the class:</div><div style="display:flex;flex-wrap:wrap;gap:8px">${btns}</div></div>`;
 }
 function addQuizControl(){
   const man=(typeof MANIFEST!=="undefined"&&MANIFEST)?(MANIFEST.assets||MANIFEST.quizzes||[]):[];

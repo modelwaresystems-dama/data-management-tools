@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.20.0">
+<meta name="version" content="1.21.0">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -316,7 +316,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.20.0";</script>
+<script>window.PAGE_BUILD="1.21.0";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -369,7 +369,7 @@ function sessionSnapshot(){
     const banked=vals.reduce((m,p)=>Math.max(m,(p.quizTotals||[]).length),0);
     base.kind="course"; base.planId=PLAN.id; base.planTitle=PLAN.title; base.course=PLAN.course||null; base.quizPaths=PLAN.items.map(i=>i.path);
     base.hostMax=(H&&H.hostMax!=null?H.hostMax:(banked-1)); base.resumeIdx=Math.max(banked, base.hostMax+1); base.qi=H.qi;
-    base.players=vals.map(p=>{ const qt=(p.quizTotals||[]).slice(0,banked); return {name:p.name, score:qt.reduce((a,b)=>a+(b||0),0), quizTotals:qt}; });
+    base.players=vals.map(p=>{ const qt=(p.quizTotals||[]).slice(0,banked); return {name:p.name, score:qt.reduce((a,b)=>a+(b||0),0), quizTotals:qt, qStats:(p.qStats||[]).slice(0,banked)}; });
   } else if(SOLO){
     base.kind="solo"; base.quizPath=SOLO.path; base.quizTitle=SOLO.title;
     base.qi=(H.phase==="question")?(H.qi-1):H.qi; base.total=(QUIZ&&QUIZ.questions&&QUIZ.questions.length)||0;
@@ -406,13 +406,13 @@ const REPO=(function(){
     if(!snap) return snap;
     if(!prior || !prior.players || prior.kind!==snap.kind) return snap;
     const out=Object.assign({}, snap); const by={};
-    function fold(name, qts, score){ const k=(name||"").trim().toLowerCase(); if(!k||name==="Guest") return;
-      if(!by[k]) by[k]={name:name, quizTotals:[], score:0}; const e=by[k]; if(name) e.name=name;
-      if(snap.kind==="course"){ (qts||[]).forEach((v,i)=>{ e.quizTotals[i]=Math.max(e.quizTotals[i]||0, v||0); }); }
+    function fold(name, qts, score, qst){ const k=(name||"").trim().toLowerCase(); if(!k||name==="Guest") return;
+      if(!by[k]) by[k]={name:name, quizTotals:[], score:0, qStats:[]}; const e=by[k]; if(name) e.name=name;
+      if(snap.kind==="course"){ (qts||[]).forEach((v,i)=>{ e.quizTotals[i]=Math.max(e.quizTotals[i]||0, v||0); }); (qst||[]).forEach((v,i)=>{ if(v){ const cur=e.qStats[i]; if(!cur || (v.a||0)>(cur.a||0) || ((v.a||0)===(cur.a||0)&&(v.c||0)>(cur.c||0))) e.qStats[i]=v; } }); }
       else { e.score=Math.max(e.score||0, score||0); } }
-    (prior.players||[]).forEach(p=>fold(p.name, p.quizTotals, p.score));
-    (snap.players||[]).forEach(p=>fold(p.name, p.quizTotals, p.score));
-    out.players=Object.values(by).map(e=>{ if(snap.kind==="course"){ const qt=e.quizTotals.map(v=>v||0); return {name:e.name, score:qt.reduce((a,b)=>a+(b||0),0), quizTotals:qt}; } return {name:e.name, score:e.score||0}; });
+    (prior.players||[]).forEach(p=>fold(p.name, p.quizTotals, p.score, p.qStats));
+    (snap.players||[]).forEach(p=>fold(p.name, p.quizTotals, p.score, p.qStats));
+    out.players=Object.values(by).map(e=>{ if(snap.kind==="course"){ const qt=e.quizTotals.map(v=>v||0); return {name:e.name, score:qt.reduce((a,b)=>a+(b||0),0), quizTotals:qt, qStats:e.qStats}; } return {name:e.name, score:e.score||0}; });
     if(snap.kind==="course"){ const hm=Math.max((snap.hostMax==null?-1:snap.hostMax),(prior.hostMax==null?-1:prior.hostMax)); let ri=Math.max(snap.resumeIdx||0, prior.resumeIdx||0, hm+1); out.players.forEach(p=>{ ri=Math.max(ri,(p.quizTotals||[]).length); }); out.resumeIdx=ri; out.hostMax=Math.max(hm, ri-1); }
     return out;
   }
@@ -652,7 +652,7 @@ async function renderHostSetup(body){
   async function doResume(sx, saved){
     SOLO=null; RESUME_QI=null;
     PLAN={ id:sx.id, title:sx.title, course:(sx.course||null), items:sx.quizzes.map(p=>({path:p,title:(quizzes.find(x=>x.path===p)||{}).title||p,weight:1})), idx:saved.resumeIdx };
-    RESUME_SCORES={}; (saved.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
+    RESUME_SCORES={}; (saved.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice(), qStats:(pl.qStats||[]).slice()}; });
     try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[saved.resumeIdx].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     hostClassId=saved.classId||""; hostClassName=saved.className||""; SESSION=makeSession(sx.title);
     role="host"; startHost();
@@ -703,7 +703,7 @@ async function renderHostSetup(body){
       PLAN={ id:x.planId, title:x.planTitle, course:(x.course||null), items:(x.quizPaths||[]).map(p=>({path:p,title:(quizzes.find(q=>q.path===p)||{}).title||p,weight:1})), idx:Math.min((x.resumeIdx||0), Math.max(0,((x.quizPaths||[]).length-1))) };
       SOLO=null; RESUME_QI=null; RESUME_HOSTMAX=(x.hostMax!=null?x.hostMax:((x.resumeIdx!=null?x.resumeIdx:1)-1));
       COURSE_NAME=(x.course||""); COURSE_DAYS = x.course ? sessions.filter(z=>z.course===x.course) : [];
-      (x.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
+      (x.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice(), qStats:(pl.qStats||[]).slice()}; });
       try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[PLAN.idx].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     } else {
       SOLO={ path:x.quizPath, title:x.quizTitle||"" }; PLAN=null; RESUME_QI=(x.qi!=null?x.qi:-1);
@@ -721,11 +721,11 @@ async function renderHostSetup(body){
       SOLO=null; RESUME_HOSTMAX=(x.hostMax!=null?x.hostMax:Math.max(0,((x.quizPaths||[]).length-1)));
       COURSE_NAME=(x.course||""); COURSE_DAYS = x.course ? sessions.filter(z=>z.course===x.course) : [];
     } else { SOLO={ path:x.quizPath, title:x.quizTitle||"" }; PLAN=null; }
-    (x.players||[]).forEach(function(pl){ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
+    (x.players||[]).forEach(function(pl){ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice(), qStats:(pl.qStats||[]).slice()}; });
     const lastPath = PLAN?((PLAN.items[PLAN.idx]||{}).path):(SOLO&&SOLO.path);
     try{ QUIZ=normalizeQuiz(await fetchAsset(lastPath,"quiz.sample.json")); }catch(e){ QUIZ={title:(x.name||"Quiz"),questions:[]}; }
     role="host"; startHost();
-    (x.players||[]).forEach(function(pl){ if(pl&&pl.name){ const key=nameKey(pl.name); if(key) H.players.set(key,{name:pl.name, score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice(), lastPts:0, _resumed:true}); } });
+    (x.players||[]).forEach(function(pl){ if(pl&&pl.name){ const key=nameKey(pl.name); if(key) H.players.set(key,{name:pl.name, score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice(), qStats:(pl.qStats||[]).slice(), lastPts:0, _resumed:true}); } });
     if(PLAN){ RV.level=PLAN.course?"course":"session"; RV.qi=PLAN.idx; } if((PLAN||SOLO)&&REPO.on()) loadAgg();
     H.phase="final"; publishState(); renderHost();
     if((PLAN||SOLO)&&REPO.on()){ try{ REPO.save(sessionSnapshot()); }catch(e){} }
@@ -924,7 +924,7 @@ function downloadSessionResults(){
   a.download=`session-${room}-${date.slice(0,10)}.csv`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
-function applyResume(p){ if(!p||p._resumed)return; const s=p.name&&RESUME_SCORES[p.name.toLowerCase()]; if(s){ p.score=s.score||0; p.quizTotals=(s.quizTotals||[]).slice(); p._resumed=true; } }
+function applyResume(p){ if(!p||p._resumed)return; const s=p.name&&RESUME_SCORES[p.name.toLowerCase()]; if(s){ p.score=s.score||0; p.quizTotals=(s.quizTotals||[]).slice(); p.qStats=(s.qStats||[]).slice(); p._resumed=true; } }
 function soloKey(path){ return "ds_prog_solo_"+(slugify(path)||"quiz"); }
 function saveProgress(){
   try{
@@ -961,7 +961,7 @@ function downloadProgress(){
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   if(st) st.textContent="Progress saved to a file \u00b7 you can resume later (connect the repo to skip the file)";
 }
-async function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};p.quizTotals=[];p._qstart=0;}); H.answers=new Map(); H.counts=[0,0,0,0];
+async function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};p.quizTotals=[];p.qStats=[];p._qstart=0;}); H.answers=new Map(); H.counts=[0,0,0,0];
   if(PLAN){ PLAN.idx=0; try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(PLAN.items[0].path,"quiz.sample.json"))); }catch(e){} }
   publishState(); renderHost(); }
 function hostNext(){
@@ -969,7 +969,8 @@ function hostNext(){
   H.qi++;
   if(H.qi===0){ H.players.forEach(p=>{ p._qstart=p.score||0; }); }
   if(H.qi>=QUIZ.questions.length){
-    H.players.forEach(p=>{ if(!p.quizTotals)p.quizTotals=[]; const qidx=PLAN?PLAN.idx:0; while(p.quizTotals.length<qidx)p.quizTotals.push(0); p.quizTotals[qidx]=(p.score||0)-(p._qstart||0); });
+    H.players.forEach(p=>{ if(!p.quizTotals)p.quizTotals=[]; const qidx=PLAN?PLAN.idx:0; while(p.quizTotals.length<qidx)p.quizTotals.push(0); p.quizTotals[qidx]=(p.score||0)-(p._qstart||0);
+      if(!p.qStats)p.qStats=[]; while(p.qStats.length<qidx)p.qStats.push({a:0,c:0,n:0}); const _N=(QUIZ&&QUIZ.questions&&QUIZ.questions.length)||0; let _A=0,_C=0; for(let i=0;i<_N;i++){ const e=p.log&&p.log[i]; if(e&&e.pick!=null)_A++; if(e&&e.correct)_C++; } p.qStats[qidx]={a:_A,c:_C,n:_N}; });
     if(PLAN){ H.hostMax=Math.max((H.hostMax==null?-1:H.hostMax), PLAN.idx); }
     if(PLAN) saveProgress();
     if(PLAN && PLAN.idx<PLAN.items.length-1){ H.phase="interlude"; RV.level="session"; RV.qi=PLAN.idx; publishState(); renderHost(); if(REPO.on())loadAgg(); return; }
@@ -1222,13 +1223,13 @@ async function switchDay(day){
   if(!doc && REPO.on()){ try{ const all=await REPO.listAll(); doc=all.find(x=>x&&x.id===SESSION.id)||null; }catch(e){} }
   let hm=-1;
   if(doc){
-    (doc.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
+    (doc.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice(), qStats:(pl.qStats||[]).slice()}; });
     hm=(doc.hostMax!=null?doc.hostMax:((doc.resumeIdx!=null?doc.resumeIdx:1)-1));
     PLAN.idx=Math.min((doc.resumeIdx||0), Math.max(0,PLAN.items.length-1));
   }
   clearInterval(H.timer);
   H={phase:"lobby",qi:-1,players:new Map(),answers:new Map(),counts:[0,0,0,0],startTs:0,endsAt:0,timer:null,hostMax:hm};
-  if(doc){ (doc.players||[]).forEach(pl=>{ if(pl&&pl.name){ const k=nameKey(pl.name); if(k) H.players.set(k,{name:pl.name,score:pl.score||0,quizTotals:(pl.quizTotals||[]).slice(),lastPts:0,_resumed:true}); } }); }
+  if(doc){ (doc.players||[]).forEach(pl=>{ if(pl&&pl.name){ const k=nameKey(pl.name); if(k) H.players.set(k,{name:pl.name,score:pl.score||0,quizTotals:(pl.quizTotals||[]).slice(),qStats:(pl.qStats||[]).slice(),lastPts:0,_resumed:true}); } }); }
   try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[PLAN.idx].path,"quiz.sample.json")); }catch(e){ QUIZ={title:((PLAN.items[PLAN.idx]||{}).title)||"Quiz",questions:[]}; }
   RV.level=PLAN.course?"course":"session"; RV.qi=PLAN.idx;
   try{ refreshRoster(); }catch(e){}

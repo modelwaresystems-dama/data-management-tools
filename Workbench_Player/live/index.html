@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.17.0">
+<meta name="version" content="1.18.0">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -314,7 +314,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.17.0";</script>
+<script>window.PAGE_BUILD="1.18.0";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -345,6 +345,7 @@ let myName="";
 let hostClassId="", hostClassName="";
 let PLAN=null; // {id, title, items:[{path,title,weight}], idx} when running a session/course
 let SOLO=null; // {path,title} when running a single quiz (still pausable/resumable)
+let COURSE_DAYS=[], COURSE_NAME="", DAY_DOCS={}; // Days of the current course, and their saved status
 let RESUME_SCORES={}, LASTSAVE=null, RESUME_QI=null, RESUME_HOSTMAX=-1;   // name->{score,quizTotals} for resuming; RESUME_QI = last scored question when resuming a single quiz; RESUME_HOSTMAX = furthest quiz the host reached
 /* ---------- Private-repo session sync (GitHub Contents API) ----------
    Reuses the same fine-grained token the Course Builder stores (ds_gh_cfg).
@@ -542,6 +543,8 @@ function renderJoinScreen(preRoom, preClass){
   renderJoinForm(document.getElementById("landingBody"), preRoom||"", preClass||"");
 }
 let MANIFEST=null;
+function sessIdFor(title){ return (slugify(title)||"session")+"__"+(slugify(hostClassName||"")||"open"); }
+function titleForPath(p){ const man=(typeof MANIFEST!=="undefined"&&MANIFEST)?(MANIFEST.assets||MANIFEST.quizzes||[]):[]; const q=man.find(x=>x.path===p); return (q&&q.title)||p; }
 async function loadManifest(){ if(MANIFEST)return MANIFEST; try{MANIFEST=await fetchAsset("manifest.json","");}catch(e){MANIFEST={assets:[]};} return MANIFEST; }
 function slugify(s){ return (s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
 function classesForQuiz(r, quizPath, quizTopic){
@@ -686,6 +689,7 @@ async function renderHostSetup(body){
     if(x.kind==="course"){
       PLAN={ id:x.planId, title:x.planTitle, course:(x.course||null), items:(x.quizPaths||[]).map(p=>({path:p,title:(quizzes.find(q=>q.path===p)||{}).title||p,weight:1})), idx:Math.min((x.resumeIdx||0), Math.max(0,((x.quizPaths||[]).length-1))) };
       SOLO=null; RESUME_QI=null; RESUME_HOSTMAX=(x.hostMax!=null?x.hostMax:((x.resumeIdx!=null?x.resumeIdx:1)-1));
+      COURSE_NAME=(x.course||""); COURSE_DAYS = x.course ? sessions.filter(z=>z.course===x.course) : [];
       (x.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
       try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[PLAN.idx].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     } else {
@@ -702,6 +706,7 @@ async function renderHostSetup(body){
     if(x.kind==="course"){
       PLAN={ id:x.planId, title:x.planTitle, course:(x.course||null), items:(x.quizPaths||[]).map(function(p){return {path:p,title:(quizzes.find(function(q){return q.path===p;})||{}).title||p,weight:1};}), idx:Math.max(0,((x.quizPaths||[]).length-1)) };
       SOLO=null; RESUME_HOSTMAX=(x.hostMax!=null?x.hostMax:Math.max(0,((x.quizPaths||[]).length-1)));
+      COURSE_NAME=(x.course||""); COURSE_DAYS = x.course ? sessions.filter(z=>z.course===x.course) : [];
     } else { SOLO={ path:x.quizPath, title:x.quizTitle||"" }; PLAN=null; }
     (x.players||[]).forEach(function(pl){ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
     const lastPath = PLAN?((PLAN.items[PLAN.idx]||{}).path):(SOLO&&SOLO.path);
@@ -721,9 +726,10 @@ async function renderHostSetup(body){
       const sx=info.session;
       RESUME_SCORES={}; SOLO=null; RESUME_QI=null;
       PLAN={ id:sx.id, title:sx.title, course:(sx.course||null), items:sx.quizzes.map(p=>({path:p,title:(quizzes.find(x=>x.path===p)||{}).title||p,weight:1})), idx:0 };
+      COURSE_NAME=(sx.course||""); COURSE_DAYS = sx.course ? sessions.filter(z=>z.course===sx.course) : [sx];
       try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[0].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     } else {
-      PLAN=null; RESUME_SCORES={}; RESUME_QI=null;
+      PLAN=null; RESUME_SCORES={}; RESUME_QI=null; COURSE_DAYS=[]; COURSE_NAME="";
       SOLO={ path:info.quizPath, title:(quizzes.find(x=>x.path===info.quizPath)||{}).title||info.quizPath };
       try{ QUIZ=normalizeQuiz(await fetchAsset(info.quizPath,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
     }
@@ -731,6 +737,7 @@ async function renderHostSetup(body){
     if(c){ hostClassId=c.id; hostClassName=c.name; } else { hostClassId=""; hostClassName=""; }
     SESSION=makeSession(PLAN?PLAN.title:(SOLO?SOLO.title:"Session"));
     role="host"; startHost();
+    if(REPO.on()) refreshDayStatus();
   };
 }
 async function renderJoinForm(body, preRoom, preClass){
@@ -1068,7 +1075,7 @@ function projectorHTML(s){
         <div class="joiners"><div class="cnt"><b>${s.roomN}</b> in the room</div><div class="chips">${chips||'<span style="color:var(--faint);font-size:14px">Waiting for people to join…</span>'}</div></div>
       </div>
       <div class="art"><div class="qr" id="qrbox"></div><div class="mono" style="color:var(--faint);font-size:13px">${esc(s.category||"")}</div></div>
-    </div>`;
+    </div>${dayControl()}`;
   }
   if(s.phase==="question"){
     const sec=Math.max(0,Math.ceil((s.endsAt-Date.now())/1000)), frac=Math.max(0,(s.endsAt-Date.now())/(DURATION*1000));
@@ -1168,16 +1175,57 @@ function resultsPanel(kind){
   const loading=(RV.level==="course"&&hasParent&&_courseLoading)?'<div class="rempty">Adding up the whole course\u2026</div>':"";
   return `<div class="results"><div class="rtop"><h2 class="disp">${heading}</h2><div class="rcrumb">${crumb.join("")}</div></div>`
     +`<div class="rtabs">${tabs}</div>${picker}<div class="hbars">${loading||hbarsHTML(rows)}</div>`
-    +(kind==="interlude"?`<div class="mono rnext">Host: press \u201cNext quiz \u2192\u201d when ready${PLAN&&PLAN.items[PLAN.idx+1]?` \u00b7 Next: <b>${esc(PLAN.items[PLAN.idx+1].title)}</b>`:""}</div>`+jumpControl():"")
-    +(kind==="final"?jumpControl()+addQuizControl():"")
+    +(kind==="interlude"?`<div class="mono rnext">Host: press \u201cNext quiz \u2192\u201d when ready${PLAN&&PLAN.items[PLAN.idx+1]?` \u00b7 Next: <b>${esc(PLAN.items[PLAN.idx+1].title)}</b>`:""}</div>`+jumpControl()+dayControl():"")
+    +(kind==="final"?jumpControl()+dayControl()+addQuizControl():"")
     +`</div>`;
 }
 function wireResults(){
   document.querySelectorAll(".rtab").forEach(b=>b.onclick=()=>{ RV.level=b.dataset.lvl; if(REPO.on()&&_aggFor!==SESSION.id) loadAgg(); renderHost(); });
   document.querySelectorAll(".qp").forEach(b=>b.onclick=()=>{ RV.qi=+b.dataset.qi; renderHost(); });
   document.querySelectorAll(".jumpq").forEach(b=>b.onclick=()=>jumpToQuiz(+b.dataset.ji));
+  document.querySelectorAll(".dayq").forEach(b=>b.onclick=()=>{ const d=(COURSE_DAYS||[]).find(x=>x.id===b.dataset.did); if(d) switchDay(d); });
   const ab=document.getElementById("addQuizBtn"), asel=document.getElementById("addQuizSel");
   if(ab&&asel) ab.onclick=()=>{ const path=asel.value; const opt=asel.options[asel.selectedIndex]; if(path) addQuizLive(path, opt?opt.textContent:path); };
+}
+async function refreshDayStatus(){
+  if(!REPO.on()||!COURSE_DAYS||COURSE_DAYS.length<2) return;
+  try{ const all=await REPO.listAll(); const m={}; all.forEach(x=>{ if(x&&x.id) m[x.id]=(x.status==="completed")?"done":"active"; }); DAY_DOCS=m; }catch(e){}
+  try{ if(typeof H!=="undefined"&&H) renderHost(); }catch(e){}
+}
+async function switchDay(day){
+  if(!day||!(PLAN||SOLO)) return;
+  const target=sessIdFor(day.title);
+  if(SESSION&&SESSION.id===target) return;
+  if(REPO.on()){ try{ REPO.save(sessionSnapshot()); await REPO.flushNow(); }catch(e){} }
+  PLAN={ id:day.id, title:day.title, course:(day.course||COURSE_NAME||null), items:(day.quizzes||[]).map(p=>({path:p,title:titleForPath(p),weight:1})), idx:0 };
+  SOLO=null; SESSION=makeSession(PLAN.title); RESUME_SCORES={};
+  let doc=null; try{ doc=await REPO.load(SESSION.id); }catch(e){}
+  if(!doc && REPO.on()){ try{ const all=await REPO.listAll(); doc=all.find(x=>x&&x.id===SESSION.id)||null; }catch(e){} }
+  let hm=-1;
+  if(doc){
+    (doc.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice()}; });
+    hm=(doc.hostMax!=null?doc.hostMax:((doc.resumeIdx!=null?doc.resumeIdx:1)-1));
+    PLAN.idx=Math.min((doc.resumeIdx||0), Math.max(0,PLAN.items.length-1));
+  }
+  clearInterval(H.timer);
+  H={phase:"lobby",qi:-1,players:new Map(),answers:new Map(),counts:[0,0,0,0],startTs:0,endsAt:0,timer:null,hostMax:hm};
+  if(doc){ (doc.players||[]).forEach(pl=>{ if(pl&&pl.name){ const k=nameKey(pl.name); if(k) H.players.set(k,{name:pl.name,score:pl.score||0,quizTotals:(pl.quizTotals||[]).slice(),lastPts:0,_resumed:true}); } }); }
+  try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[PLAN.idx].path,"quiz.sample.json")); }catch(e){ QUIZ={title:((PLAN.items[PLAN.idx]||{}).title)||"Quiz",questions:[]}; }
+  RV.level=PLAN.course?"course":"session"; RV.qi=PLAN.idx;
+  try{ refreshRoster(); }catch(e){}
+  if(REPO.on()){ loadAgg(); refreshDayStatus(); }
+  publishState(); renderHost();
+}
+function dayControl(){
+  if(!COURSE_DAYS||COURSE_DAYS.length<2) return "";
+  const cur=(SESSION&&SESSION.id)||"";
+  const chips=COURSE_DAYS.map(d=>{
+    const sid=sessIdFor(d.title), isCur=(sid===cur), st=DAY_DOCS[sid]||"";
+    const dot=isCur?"\u25C9":(st==="done"?"\u25CF":(st==="active"?"\u25D0":"\u25CB"));
+    const bg=isCur?"#19c3a6":"transparent", bd=isCur?"#19c3a6":"rgba(255,255,255,.20)", col=isCur?"#04211c":"inherit";
+    return `<button class="dayq" data-did="${esc(d.id)}" ${isCur?"disabled":""} style="padding:7px 12px;border-radius:9px;border:1px solid ${bd};background:${bg};color:${col};font:inherit;font-size:13px;cursor:${isCur?"default":"pointer"}">${dot} ${esc(d.title)}</button>`;
+  }).join("");
+  return `<div style="margin-top:16px"><div class="mono" style="font-size:12px;color:var(--faint);opacity:.8;margin-bottom:8px">Days in this course \u2014 switch anytime, players stay in the room (\u25C9 now \u00b7 \u25D0 in progress \u00b7 \u25CF done \u00b7 \u25CB not started):</div><div style="display:flex;flex-wrap:wrap;gap:8px">${chips}</div></div>`;
 }
 function jumpControl(){
   if(!PLAN||!PLAN.items||PLAN.items.length<2) return "";

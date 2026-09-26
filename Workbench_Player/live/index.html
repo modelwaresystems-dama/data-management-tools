@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.19.0">
+<meta name="version" content="1.20.0">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>datasherpa · Live Quiz</title>
@@ -281,6 +281,8 @@
     <span class="lbl">Host</span>
     <button class="btn primary" id="h-start">Start round</button>
     <button class="btn" id="h-reveal" disabled>Reveal answer</button>
+    <button class="btn" id="h-subtime" disabled title="Give 10 fewer seconds">\u221210s</button>
+    <button class="btn" id="h-addtime" disabled title="Give 10 more seconds">+10s</button>
     <button class="btn" id="h-next" disabled>Next question</button>
     <button class="btn" id="h-save" disabled title="Download a results CSV to save into your private repo">Save results ⤓</button>
     <button class="btn" id="h-pause" disabled title="Save progress to a file so you can resume this course another day">Pause &amp; save ⏸</button>
@@ -314,7 +316,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.19.0";</script>
+<script>window.PAGE_BUILD="1.20.0";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -331,6 +333,9 @@ async function fetchAsset(pathRel, devFallback){
 const OPTS=[{k:"a",gl:"▲"},{k:"b",gl:"◆"},{k:"c",gl:"●"},{k:"d",gl:"■"}];
 function OM(i){return OPTS[i]||{k:["a","b","c","d"][i%4],gl:String.fromCharCode(65+(i%26))};}
 const DURATION = Math.max(5, CFG.questionSeconds||20);
+function loadTimer(){ let o={}; try{ o=JSON.parse(localStorage.getItem("ds_quiz_opts")||"{}"); }catch(e){} return { seconds:Math.max(5,Math.min(300,+(o.seconds)||DURATION)), untimed:!!o.untimed, flat:!!o.flat }; }
+function saveTimer(){ try{ localStorage.setItem("ds_quiz_opts", JSON.stringify(TIMER)); }catch(e){} }
+let TIMER = loadTimer();
 const mount=document.getElementById("mount");
 const hostbar=document.getElementById("hostbar");
 const codePill=document.getElementById("codePill");
@@ -580,6 +585,14 @@ async function renderHostSetup(body){
     <div class="field"><label for="hquiz">Session (Day) to run \u2014 quizzes run in delivery order</label><select id="hquiz"></select></div>
     <div class="field"><label for="hclass">Class for this room</label><select id="hclass"></select>
       <div class="err" id="hnote" style="color:var(--faint)"></div></div>
+    <div class="field"><label>Question timing &amp; scoring</label>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+        <label style="text-transform:none;letter-spacing:0;color:var(--ink);font-size:14px;margin:0;display:flex;align-items:center;gap:8px">Seconds / question <input type="number" id="hsecs" min="5" max="300" step="5" style="width:80px" value="${TIMER.seconds}"></label>
+        <label style="text-transform:none;letter-spacing:0;color:var(--ink);font-size:14px;margin:0;display:flex;align-items:center;gap:8px"><input type="checkbox" id="huntimed" ${TIMER.untimed?"checked":""}> No timer (reveal manually)</label>
+        <label style="text-transform:none;letter-spacing:0;color:var(--ink);font-size:14px;margin:0;display:flex;align-items:center;gap:8px"><input type="checkbox" id="hflat" ${TIMER.flat?"checked":""}> Flat points (no speed bonus)</label>
+      </div>
+      <div class="err" style="color:var(--faint)">For mixed-language classes use a longer time or No timer, and Flat points so reading speed does not decide the score. You can also adjust time live with +/\u221210s.</div>
+    </div>
     <div id="repoState" class="repostate"></div>
     <div id="repoUnfinished"></div>
     <div id="resumeWrap"></div>
@@ -735,6 +748,7 @@ async function renderHostSetup(body){
     }
     const c=(r.classes||[]).find(x=>x.id===csel.value);
     if(c){ hostClassId=c.id; hostClassName=c.name; } else { hostClassId=""; hostClassName=""; }
+    { const se=document.getElementById("hsecs"), un=document.getElementById("huntimed"), fl=document.getElementById("hflat"); TIMER.seconds=Math.max(5,Math.min(300,+(se&&se.value)||TIMER.seconds)); TIMER.untimed=!!(un&&un.checked); TIMER.flat=!!(fl&&fl.checked); saveTimer(); }
     SESSION=makeSession(PLAN?PLAN.title:(SOLO?SOLO.title:"Session"));
     role="host"; startHost();
     if(REPO.on()) refreshDayStatus();
@@ -848,7 +862,7 @@ function hostStateForWire(){
   if(H.phase==="question"){
     const q=QUIZ.questions[H.qi];
     base.question={q:q.q, options:q.options};   // NOTE: correct index intentionally omitted until reveal
-    base.endsAt=H.endsAt;
+    base.endsAt=H.endsAt; base.untimed=!!TIMER.untimed;
   }
   if(H.phase==="reveal"||H.phase==="final"||H.phase==="interlude"){
     if(H.phase==="reveal"){ const q=QUIZ.questions[H.qi]; base.question={q:q.q,options:q.options}; base.correct=q.correct; base.why=q.why; base.context=q.context||""; base.rats=q.rats||[]; }
@@ -866,6 +880,8 @@ function wireHostButtons(){
   document.getElementById("h-restart").onclick=()=>hostRestart();
   document.getElementById("h-save").onclick=downloadResults;
   const pb=document.getElementById("h-pause"); if(pb) pb.onclick=downloadProgress;
+  const at=document.getElementById("h-addtime"); if(at) at.onclick=()=>{ if(H&&H.phase==="question"&&!TIMER.untimed){ H.endsAt+=10000; publishState(); renderHost(); } };
+  const stb=document.getElementById("h-subtime"); if(stb) stb.onclick=()=>{ if(H&&H.phase==="question"&&!TIMER.untimed){ H.endsAt=Math.max(Date.now()+2000,H.endsAt-10000); publishState(); renderHost(); } };
 }
 /* Export names, scores AND per-question results as CSV for the host to save into
    the PRIVATE repo (results/). Per-question cells are numeric: 1 correct, -1 wrong,
@@ -963,10 +979,10 @@ function hostNext(){
     return;
   }
   H.phase="question"; H.answers=new Map(); H.counts=[0,0,0,0];
-  H.startTs=Date.now(); H.endsAt=H.startTs+DURATION*1000;
+  H.startTs=Date.now(); H.endsAt = TIMER.untimed ? 0 : (H.startTs+TIMER.seconds*1000);
   publishState(); renderHost();
   H.timer=setInterval(()=>{
-    if(Date.now()>=H.endsAt){ hostReveal(); } else renderHost();
+    if(!TIMER.untimed && H.endsAt && Date.now()>=H.endsAt){ hostReveal(); } else renderHost();
   },200);
 }
 function hostReveal(){
@@ -974,7 +990,7 @@ function hostReveal(){
   const q=QUIZ.questions[H.qi];
   H.players.forEach((p,id)=>{
     const a=H.answers.get(id); let pts=0; const correct=!!(a && a.pick===q.correct);
-    if(correct){ const frac=Math.max(0,Math.min(1,1-(a.at-H.startTs)/(DURATION*1000))); pts=Math.round((600+400*frac)*((PLAN&&PLAN.items[PLAN.idx]&&PLAN.items[PLAN.idx].weight)||1)); }
+    if(correct){ let base0; if(TIMER.flat||TIMER.untimed){ base0=1000; } else { const frac=Math.max(0,Math.min(1,1-(a.at-H.startTs)/(TIMER.seconds*1000))); base0=600+400*frac; } pts=Math.round(base0*((PLAN&&PLAN.items[PLAN.idx]&&PLAN.items[PLAN.idx].weight)||1)); }
     p.lastPts=pts; p.score+=pts;
     if(!p.log)p.log={}; p.log[H.qi]={pick:a?a.pick:null, correct};
   });
@@ -1031,6 +1047,7 @@ function updateProgress(){
 function syncHostBar(s){
   document.getElementById("h-start").disabled=s.phase!=="lobby";
   document.getElementById("h-reveal").disabled=s.phase!=="question";
+  { const en=(s.phase==="question"&&!s.untimed); const at=document.getElementById("h-addtime"),stb=document.getElementById("h-subtime"); if(at)at.disabled=!en; if(stb)stb.disabled=!en; }
   const nx=document.getElementById("h-next");
   if(s.phase==="interlude"){ nx.disabled=false; nx.textContent="Next quiz \u2192"; }
   else { nx.disabled=s.phase!=="reveal"; nx.textContent=(s.qi>=s.total-1)?(s.plan?"End of quiz \u2192":"See results"):"Next question"; }
@@ -1038,7 +1055,7 @@ function syncHostBar(s){
   { const pb=document.getElementById("h-pause"); if(pb) pb.disabled=!(PLAN||SOLO); }
   let t="";
   if(s.phase==="lobby")t=`${s.roomN} joined · waiting`;
-  else if(s.phase==="question")t=`Q${s.qi+1}/${s.total} · ${s.answeredN}/${s.roomN} answered · ${Math.max(0,Math.ceil((s.endsAt-Date.now())/1000))}s`;
+  else if(s.phase==="question")t=`Q${s.qi+1}/${s.total} · ${s.answeredN}/${s.roomN} answered · ${s.untimed?"no timer":(Math.max(0,Math.ceil((s.endsAt-Date.now())/1000))+"s")}`;
   else if(s.phase==="reveal")t=`Q${s.qi+1}/${s.total} revealed`;
   else if(s.phase==="interlude")t="Quiz complete \u00b7 press Next quiz";
   else t="Final results";
@@ -1078,11 +1095,13 @@ function projectorHTML(s){
     </div>${jumpControl()}${dayControl()}`;
   }
   if(s.phase==="question"){
-    const sec=Math.max(0,Math.ceil((s.endsAt-Date.now())/1000)), frac=Math.max(0,(s.endsAt-Date.now())/(DURATION*1000));
+    const untimed=!!s.untimed;
+    const sec=untimed?0:Math.max(0,Math.ceil((s.endsAt-Date.now())/1000)), frac=untimed?1:Math.max(0,(s.endsAt-Date.now())/(TIMER.seconds*1000));
+    const ringOut=untimed?'<div class="ring"><span class="num" style="font-size:22px">\u221E</span></div>':ringHTML(sec,frac);
     const tot=Math.max(1,s.answeredN);
     const tiles=s.question.options.map((o,i)=>`<div class="tile ${OM(i).k}"><span class="gl">${OM(i).gl}</span><span class="tx">${esc(o)}</span><span class="fill" style="width:${(s.counts[i]/tot)*100}%"></span><span class="ct">${s.counts[i]}</span></div>`).join("");
     const qn=(s.plan&&s.plan.quizTitle)||s.title||"";
-    return `<div class="qhead"><span class="qmeta">Question <b>${s.qi+1}</b> / ${s.total}${s.plan?` \u00b7 Quiz ${s.plan.idx+1}/${s.plan.total}`:""}</span><span class="cat">${esc(s.category||"")}</span>${ringHTML(sec,frac)}</div>
+    return `<div class="qhead"><span class="qmeta">Question <b>${s.qi+1}</b> / ${s.total}${s.plan?` \u00b7 Quiz ${s.plan.idx+1}/${s.plan.total}`:""}</span><span class="cat">${esc(s.category||"")}</span>${ringOut}</div>
       ${qn?`<div class="qname">${esc(qn)}</div>`:""}
       <div class="qtext disp">${esc(s.question.q)}</div>
       <div class="grid">${tiles}</div>
@@ -1290,7 +1309,7 @@ function startPlayer(){
   // rewind delivers the last state if a round is already in progress
   renderPlayerWaiting("Connecting…");
   clearInterval(pTimer); pTimer=setInterval(()=>{
-    if(P&&P.phase==="question"){ const el=document.querySelector(".pv-timer"); if(el) el.textContent=Math.max(0,Math.ceil((P.endsAt-Date.now())/1000))+"s left"; }
+    if(P&&P.phase==="question"){ const el=document.querySelector(".pv-timer"); if(el) el.textContent=P.untimed?"Answer when ready":(Math.max(0,Math.ceil((P.endsAt-Date.now())/1000))+"s left"); }
   },250);
 }
 function onState(s){
@@ -1319,7 +1338,7 @@ function renderPlayer(){
     if(myPick==null && myAnsweredQi!==P.qi){
       const btns=P.question.options.map((o,i)=>`<button class="pv-opt ${OM(i).k}" data-i="${i}"><span class="gl">${OM(i).gl}</span>${esc(o)}</button>`).join("");
       const qn=(P.plan&&P.plan.quizTitle)||P.title||"";
-      mount.innerHTML=`<div class="pv">${head}${qn?`<div class="pv-quizname">${esc(qn)}</div>`:""}<div class="pv-timer">${sec}s left</div><div class="pv-q disp">${esc(P.question.q)}</div><div class="pv-opts">${btns}</div></div>`;
+      mount.innerHTML=`<div class="pv">${head}${qn?`<div class="pv-quizname">${esc(qn)}</div>`:""}<div class="pv-timer">${P.untimed?"Answer when ready":(sec+"s left")}</div><div class="pv-q disp">${esc(P.question.q)}</div><div class="pv-opts">${btns}</div></div>`;
       mount.querySelectorAll(".pv-opt").forEach(b=>b.onclick=()=>sendAnswer(parseInt(b.dataset.i,10)));
     } else {
       const o=P.question.options[myPick];

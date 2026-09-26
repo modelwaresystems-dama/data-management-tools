@@ -5,6 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
+<meta name="version" content="1.8.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -512,8 +513,8 @@
 "use strict";
 (function(){
   /* ---------- constants ---------- */
-  var APP_VERSION="1.7.0";           // bump on every change
-  var APP_BUILD="2026-09-22 AI concepts";  // date/time of this build
+  var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
+  var APP_BUILD="2026-09-26 ESA";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -1185,6 +1186,7 @@
       cv:{baseRef:"",tailoredRef:"",coverageRef:""},outcome:{result:"pending",notes:""},notes:"",createdAt:new Date().toISOString()};
     $("tmTitle").textContent=t?"Edit tender":"New tender";
     var e=editingT;
+    if(!e.esa)e.esa={status:"none"};
     var statusOpts=STATUSES.map(function(s){return '<option value="'+s+'"'+(e.status===s?' selected':'')+'>'+s+'</option>';}).join("");
     var goOpts=GO.map(function(g){return '<option value="'+g+'"'+((e.goNoGo.decision||'undecided')===g?' selected':'')+'>'+g+'</option>';}).join("");
     var outOpts=["pending","won","lost","withdrawn"].map(function(o){return '<option value="'+o+'"'+((e.outcome.result||'pending')===o?' selected':'')+'>'+o+'</option>';}).join("");
@@ -1209,10 +1211,11 @@
       '<div class="field"><label>Base CV</label><input id="f_base" type="text" value="'+esc(e.cv.baseRef)+'" placeholder="cvs/base/Howard_Diesel_CV.pdf"></div>'+
       '<div class="field"><label>Tailored CV</label><input id="f_tailored" type="text" value="'+esc(e.cv.tailoredRef)+'" placeholder="cvs/tailored/'+esc(e.id)+'/CV.pdf"></div>'+
       '<div class="field"><label>Coverage map</label><input id="f_coverage" type="text" value="'+esc(e.cv.coverageRef)+'"></div></fieldset>'+
+      '<fieldset><legend>Expert Services Agreement (ESA) <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(drafted by the CV/ESA skill)</span></legend><div id="tmEsa"></div></fieldset>'+
       '<fieldset><legend>Outcome</legend><div class="two"><div class="field"><label>Result</label><select id="f_outcome">'+outOpts+'</select></div>'+
       '<div class="field"><label>&nbsp;</label><input id="f_outnotes" type="text" value="'+esc(e.outcome.notes)+'" placeholder="What went wrong / right (for trend analysis)"></div></div></fieldset>'+
       '<div class="field"><label>Notes</label><textarea id="f_notes">'+esc(e.notes)+'</textarea></div>';
-    renderReqs();renderComps();renderTmFit();renderTmSfia();
+    renderReqs();renderComps();renderTmFit();renderTmSfia();renderTmEsa();
     $("addReq").onclick=function(){editingT.requirements.push({text:"",weight:""});renderReqs();};
     $("addComp").onclick=function(){editingT.compliance.push({label:"",done:false});renderComps();};
     $("tmDelete").style.display=t?"":"none";
@@ -1224,6 +1227,33 @@
   function renderComps(){
     $("compList").innerHTML=editingT.compliance.map(function(c,i){return '<div class="checkrow"><input type="checkbox" data-compd="'+i+'"'+(c.done?' checked':'')+'><input type="text" data-comp="'+i+'" value="'+esc(c.label)+'" placeholder="Compliance item"><button class="btn sm rm" type="button" data-comprm="'+i+'">✕</button></div>';}).join("")||'<div class="hint">No checklist items yet.</div>';
   }
+  var ESA_CLAUSE_TITLES={"scope-boundaries":"Scope & responsibility boundaries","named-key-expert":"Named Key Expert","milestone-deliverables":"Milestone deliverables","level-of-effort":"Level of effort","acceptance":"Acceptance (own scope)","payment-protection":"Payment protection & longstop","dependencies":"Dependencies & schedule relief","change-control":"Change control","background-ip":"Modelware Background IP","separation":"Separation & pro-rata","order-of-precedence":"Order of precedence","continuity":"Continuity of base agreement"};
+  var ESA_STATUS=["none","drafting","proposed","negotiating","signed","na"];
+  function esaMoney(n){var v=parseFloat(n);return isNaN(v)?"":v.toLocaleString("en-US");}
+  function renderTmEsa(){
+    var el=$("tmEsa");if(!el)return;
+    var esa=(editingT&&editingT.esa)||{status:"none"};
+    var st=esa.status||"none";
+    var opts=ESA_STATUS.map(function(s){return '<option value="'+s+'"'+(st===s?' selected':'')+'>'+s+'</option>';}).join("");
+    var head='<div class="two"><div class="field"><label>ESA status</label><select id="f_esastatus">'+opts+'</select></div>'+
+      '<div class="field"><label>Role</label><input type="text" value="'+esc(esa.role||"")+'" disabled placeholder="set by the skill"></div></div>';
+    var c=esa.commercial||{},parties=esa.parties||{},cs=esa.clauseSet||{};
+    var hasData=esa.role||parties.consultant||parties.client||(esa.milestones&&esa.milestones.length)||c.loeDays;
+    if(!hasData){el.innerHTML=head+'<div class="hint">No ESA drafted yet. The <b>rfp-cv-tailor</b> skill drafts the ESA (.docx + Annex A) from this tender and the Modelware Standard Clauses, then fills this panel. Set a status here to start tracking; commit &amp; push to publish.</div>';return;}
+    var partyRows=[["Expert",parties.expert],["Rep",parties.expertRep],["Consultant",parties.consultant],["Client",parties.client]].filter(function(r){return r[1];}).map(function(r){return '<span class="pill" style="background:var(--surface-2);color:var(--ink-soft)">'+esc(r[0])+': '+esc(r[1])+'</span>';}).join(" ");
+    var comm=(c.loeDays||c.dailyRate)?('<div class="hint" style="margin:6px 0">'+(c.loeDays?esc(c.loeDays)+' days':'')+(c.dailyRate?' × '+esc(c.currency||"USD")+' '+esaMoney(c.dailyRate):'')+(c.maxFee?' = <b>'+esc(c.currency||"USD")+' '+esaMoney(c.maxFee)+'</b> max fee':'')+'</div>'):'';
+    var inc=cs.included||[];
+    var clauseChips=inc.map(function(id){return '<span class="pill" title="'+esc(id)+'" style="background:var(--glacier-soft);color:var(--glacier)">'+esc(ESA_CLAUSE_TITLES[id]||id)+'</span>';}).join(" ");
+    var clauseLine=inc.length?('<div style="margin:6px 0"><div class="hint">Standard clauses ('+inc.length+') · set '+esc(cs.version||"?")+'</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px">'+clauseChips+'</div></div>'):'';
+    var ms=(esa.milestones||[]).map(function(m){
+      var outs=(m.outputs||[]).map(function(o){return '<div style="display:flex;gap:7px;align-items:baseline;font-size:.85rem;margin-top:2px"><span style="color:'+(o.done?'var(--good)':'var(--ink-faint)')+'">'+(o.done?'✓':'○')+'</span><span>'+esc(o.text||"")+'</span>'+(o.reqRef?' <span class="pill" style="background:var(--surface-2);color:var(--ink-faint)">'+esc(o.reqRef)+'</span>':'')+'</div>';}).join("");
+      return '<div style="border:1px solid var(--line-soft);border-radius:9px;padding:9px 11px;margin-top:6px"><div style="font-weight:650;font-size:.9rem">'+esc(m.id?m.id+" — ":"")+esc(m.name||"")+(m.days?' <span class="hint" style="font-weight:400">('+esc(m.days)+' d'+(m.fee?' · '+esc(c.currency||"USD")+' '+esaMoney(m.fee):'')+')</span>':'')+'</div>'+outs+'</div>';
+    }).join("");
+    var msWrap=ms?('<div style="margin-top:8px"><div class="hint">Milestone deliverables</div>'+ms+'</div>'):'';
+    var docs=esa.docs||{};
+    var docLinks=[["ESA",docs.esaRef],["Annex A",docs.annexRef],["Redline",docs.redlineRef]].filter(function(d){return d[1];}).map(function(d){return '<div class="hint">'+esc(d[0])+': <code>'+esc(d[1])+'</code></div>';}).join("");
+    el.innerHTML=head+(partyRows?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 4px">'+partyRows+'</div>':'')+comm+clauseLine+msWrap+(docLinks?'<div style="margin-top:8px">'+docLinks+'</div>':'');
+  }
   function collectTender(){
     var e=editingT;
     e.client=$("f_client").value.trim();e.sector=$("f_sector").value.trim();e.title=$("f_title").value.trim();
@@ -1231,6 +1261,7 @@
     e.goNoGo={decision:$("f_go").value,reason:$("f_goreason").value.trim()};
     e.owner=$("f_owner")?$("f_owner").value:(e.owner||"");
     e.cv={baseRef:$("f_base").value.trim(),tailoredRef:$("f_tailored").value.trim(),coverageRef:$("f_coverage").value.trim()};
+    if($("f_esastatus")){e.esa=e.esa||{status:"none"};e.esa.status=$("f_esastatus").value;e.esa.updatedAt=new Date().toISOString();}
     e.outcome={result:$("f_outcome").value,notes:$("f_outnotes").value.trim()};
     e.notes=$("f_notes").value.trim();
     e.updatedAt=new Date().toISOString();

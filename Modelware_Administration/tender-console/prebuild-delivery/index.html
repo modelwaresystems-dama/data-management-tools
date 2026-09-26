@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Pre-Build &amp; Delivery</title>
-<meta name="version" content="1.3.0">
+<meta name="version" content="1.4.0">
 <style>
   :root{color-scheme:light;
     --bg:#f3f5f8;--surface:#fff;--surface-2:#eceff4;--surface-3:#e3e7ee;
@@ -114,6 +114,19 @@
   .btn.primary{background:var(--accent);color:#fff}
   @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn.primary{color:#08221f}} :root[data-theme="dark"] .btn.primary{color:#08221f}
   .btn.ghost{background:var(--surface-2);color:var(--ink);border:1px solid var(--line-strong)}
+  .ideliv{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 15px;margin-top:12px;box-shadow:var(--shadow)}
+  .ideliv .ih{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+  .ideliv .ih h3{font-size:14.5px;margin:0;font-weight:700}
+  .gate{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .gate.ready{background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--accent-line)}
+  .gate.blocked{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-line)}
+  .irow{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .irow:last-child{border-bottom:0}
+  .irow .im{flex:1 1 auto;min-width:0}
+  .irow .iname{font-size:13.5px;font-weight:600}
+  .irow .isub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .req{font-size:10px;font-weight:800;color:var(--red);letter-spacing:.03em}
+  .warnpill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-line);white-space:nowrap}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -153,6 +166,7 @@
     <button class="tab" role="tab" aria-selected="true" data-pane="overview">Overview</button>
     <button class="tab" role="tab" aria-selected="false" data-pane="prep">Preparation</button>
     <button class="tab" role="tab" aria-selected="false" data-pane="delivery">Delivery</button>
+    <button class="tab" role="tab" aria-selected="false" data-pane="inputs">Inputs &amp; Evidence</button>
   </div>
 
   <section class="pane" id="pane-overview">
@@ -174,6 +188,11 @@
   <section class="pane" id="pane-delivery" hidden>
     <div class="filters" id="delFilters"></div>
     <div id="delList"></div>
+  </section>
+
+  <section class="pane" id="pane-inputs" hidden>
+    <div class="note">Each deliverable's Template declares the Inputs it needs (SIPOC). Gather the evidence — a deliverable is <b>Blocked</b> until its <b>required</b> inputs are <b>Verified</b>, and it can't be marked Ready/Submitted/Accepted until then. Listed in input-dependency (build) order.</div>
+    <div id="inputsList"></div>
   </section>
 </div>
 <div class="toast" id="toast"></div>
@@ -282,14 +301,36 @@ function renderDelivery(){
     items.forEach(function(o){var st=outStatus(o.key),row=el("div","row");
       var clsPill='<span class="pill '+(o.cls==="build-now"?"buildnow":o.cls)+'">'+(o.cls==="build-now"?"Build-now":o.cls==="draft"?"Draft":"Hold")+'</span>';
       var ipPill='<span class="pill '+(o.ip==="Background"?"bg":"fg")+'">'+(o.ip||"")+'</span>';
-      row.innerHTML='<span class="st-dot st-'+st.replace("-","")+'"></span><div class="main"><div class="name">'+o.name+'</div><div class="tags">'+ipPill+clsPill+'<span class="pill fw">DMBOK '+(o.dmbok||"")+'</span><span class="pill fw">DCAM '+(o.dcam||"")+'</span>'+(o.regs&&o.regs!=="—"?'<span class="pill fw">Reg: '+o.regs+'</span>':'')+'</div></div>';
+      row.innerHTML='<span class="st-dot st-'+st.replace("-","")+'"></span><div class="main"><div class="name">'+o.name+'</div><div class="tags">'+ipPill+clsPill+(reqVerified(o.key)?'':'<span class="warnpill">⚠ inputs</span>')+'<span class="pill fw">DMBOK '+(o.dmbok||"")+'</span><span class="pill fw">DCAM '+(o.dcam||"")+'</span>'+(o.regs&&o.regs!=="—"?'<span class="pill fw">Reg: '+o.regs+'</span>':'')+'</div></div>';
       var ctrl=el("div","ctrl"),sel=el("select");DSTATUS.forEach(function(v){var op=el("option",null,DSTATUS_LBL[v]);op.value=v;if(v===st)op.selected=true;sel.appendChild(op);});
-      sel.addEventListener("change",function(){if(!PD.outputEnrichment[o.key])PD.outputEnrichment[o.key]={};PD.outputEnrichment[o.key].status=sel.value;renderDelivery();renderOverview();queueSave();});
+      sel.addEventListener("change",function(){var nv=sel.value;if((nv==="ready"||nv==="submitted"||nv==="accepted")&&!reqVerified(o.key)){toast("Blocked: verify required inputs first (Inputs & Evidence tab)",true);sel.value=outStatus(o.key);return;}if(!PD.outputEnrichment[o.key])PD.outputEnrichment[o.key]={};PD.outputEnrichment[o.key].status=nv;renderDelivery();renderOverview();renderInputs();queueSave();});
       ctrl.appendChild(sel);row.appendChild(ctrl);grp.appendChild(row);});
     root.appendChild(grp);
   });
 }
-function renderAll(){renderOverview();renderPrep();renderDelivery();}
+var ESTATUS=["needed","requested","received","verified"],ESTATUS_LBL={needed:"Needed",requested:"Requested",received:"Received",verified:"Verified"};
+function outInputs(key){var e=enr(key);return e.inputs||[];}
+function reqVerified(key){var req=outInputs(key).filter(function(i){return i.required;});return req.length?req.every(function(i){return i.status==="verified";}):true;}
+function buildKeys(){return (PD&&PD.buildOrder&&PD.buildOrder.length)?PD.buildOrder.filter(function(k){return OUTPUTS.some(function(o){return o.key===k;});}):OUTPUTS.map(function(o){return o.key;});}
+function outByKey(k){return OUTPUTS.filter(function(o){return o.key===k;})[0];}
+function renderInputs(){
+  var root=document.getElementById("inputsList");if(!root)return;root.innerHTML="";
+  buildKeys().forEach(function(k){var o=outByKey(k);if(!o)return;var ins=outInputs(k),ready=reqVerified(k);
+    var card=el("div","ideliv"),head=el("div","ih");
+    head.innerHTML='<h3>M'+o.m+' · '+o.name+'</h3><span class="gate '+(ready?"ready":"blocked")+'">'+(ready?"Inputs ready":"Blocked")+'</span>';
+    card.appendChild(head);
+    if(!ins.length){card.appendChild(el("div","isub",'<span style="color:var(--ink-faint);font-size:12.5px">No inputs defined yet'+(configured()?"":" — connect to load from your repo")+'.</span>'));root.appendChild(card);return;}
+    ins.forEach(function(inp){var row=el("div","irow");
+      var sub='<span class="pill fw">'+inp.type+'</span><span>from '+(inp.supplier||"?")+'</span>'+(inp.required?'<span class="req">REQUIRED</span>':'<span style="color:var(--ink-faint)">optional</span>')+(inp.evidence?'<span>· evidence: '+inp.evidence+'</span>':'');
+      row.innerHTML='<div class="im"><div class="iname">'+inp.name+'</div><div class="isub">'+sub+'</div></div>';
+      var ctrl=el("div","ctrl"),sel=el("select");ESTATUS.forEach(function(v){var op=el("option",null,ESTATUS_LBL[v]);op.value=v;if(v===(inp.status||"needed"))op.selected=true;sel.appendChild(op);});
+      sel.addEventListener("change",function(){inp.status=sel.value;renderInputs();renderDelivery();renderOverview();queueSave();});
+      ctrl.appendChild(sel);row.appendChild(ctrl);card.appendChild(row);
+    });
+    root.appendChild(card);
+  });
+}
+function renderAll(){renderOverview();renderPrep();renderDelivery();renderInputs();}
 
 /* ============ connection + persistence ============ */
 function setConn(cls,txt){var c=document.getElementById("conn");c.className="conn"+(cls?" "+cls:"");document.getElementById("connTxt").textContent=txt;}

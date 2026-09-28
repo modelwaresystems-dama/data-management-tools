@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-dg_spec.py  -  Data Governance FTS v0.2: five state regions, each its own FTS over one managed element of the
+dg_spec.py  -  Data Governance FTS v0.5 (v0.2 base; v0.4 adds seven per-asset regions, v0.5 the register v3 answers, 28 Sep 2026): five state regions, each its own FTS over one managed element of the
 Knowledge Area, derived from the DMBOK Data Governance context diagram (deck pages 18 to 21) and aligned to the
 Global Data Asset Protocol.
 
@@ -346,8 +346,153 @@ POLICY_CONTROLS = {'TR-STR-01': {'controls': [],
  'TR-INS-11': {'controls': [('PD-DATA', 'C10')], 'why': 'Withdrawing a procedure version is recorded in the register, reversing its entry into force.'},
  'TR-INS-10': {'controls': [('PD-DATA', 'C10')], 'why': 'Withdrawing an approved version before it is in force is recorded in the register.'}}
 
+# ---------------------------------------------------------------------------------------------------------------
+# v0.4 (Howard, 28 Sep 2026, DG Reconstruction register v1 r2 a, v2 s2 c and s8 a): seven per-asset regions, one
+# instance per Data Asset (per change request for DCR). They carry the Data Strategy proposal and enhancement, the
+# stewardship and policy controls embedded from the operating model, the business term binding, the standards
+# conformance evidence and the valuation, and reach the Global protocol through CON-DG-18 to CON-DG-35. Source of the
+# content: D:\KA FTS Definitions\DG_Global_FTS_Reconstructed.xlsx (DMBOK2R Chapter 3, pages cited there).
+SRC_RECON = "DG_Global_FTS_Reconstructed.xlsx, 28 Sep 2026 (DMBOK2R Chapter 3 pp.71 to 93; DG Reconstruction register v1 and v2)"
+REGIONS += [
+    ("REG-DG-DAP", "Data Asset Proposal", "DAP", "Whether the Data Strategy has identified a new Data Asset.", "STS-DAP-01", "Exactly one active state per proposed Data Asset.",
+     "Data Asset proposal: a new Data Asset identified by the Data Strategy", {"instanceScope": "One instance per proposed Data Asset.", "elementKind": "Per-asset element", "contributesTo": "Existence: identification brings the Digital Twin into being (TR-INIT-EX).", "source": SRC_RECON}),
+    ("REG-DG-DCR", "Data Asset Change Request", "DCR", "Whether an enhancement to an existing Data Asset identified by the Data Strategy is raised and how it was approved.", "STS-DCR-01", "Exactly one active state per change request.",
+     "Data Asset change request: an enhancement to an existing Data Asset", {"instanceScope": "One instance per change request on a registered Data Asset.", "elementKind": "Per-asset case", "contributesTo": "Existence (replacement triggers TR-EX-03) and Assurance (material change triggers TR-AS-05 or TR-AS-06).", "source": SRC_RECON}),
+    ("REG-DG-STW", "Data Asset Stewardship Assignment", "STW", "Whether the Data Asset has a designated Data Owner and an assigned Data Steward.", "STS-STW-01", "Exactly one active state per Data Asset.",
+     "Owner and steward accountable for one Data Asset", {"instanceScope": "One instance per Data Asset.", "elementKind": "Per-asset element", "contributesTo": "Existence (owner gates TR-EX-01) and Custody (steward triggers TR-CP-01; gates TR-CP-04 and TR-CP-05).", "source": SRC_RECON}),
+    ("REG-DG-PCB", "Data Asset Policy Control Binding", "PCB", "Whether the controls of the policies that apply to the Data Asset are bound and active.", "STS-PCB-01", "Exactly one active state per Data Asset.",
+     "Policy controls bound to and operated on one Data Asset", {"instanceScope": "One instance per registered Data Asset.", "elementKind": "Per-asset element", "contributesTo": "Existence, Availability and Custody (active controls gate TR-EX-02, TR-EX-05, TR-EX-06, TR-AV-01, TR-CP-01, TR-CP-04, TR-CP-05) and Assurance (control evidence for TR-AS-02).", "source": SRC_RECON}),
+    ("REG-DG-GLS", "Data Asset Business Term Binding", "GLS", "Whether the business terms that give the Data Asset its meaning are bound to it.", "STS-GLS-01", "Exactly one active state per Data Asset.",
+     "Business glossary terms bound to one Data Asset (its conceptual meaning)", {"instanceScope": "One instance per Data Asset.", "elementKind": "Per-asset metadata", "contributesTo": "Existence: registration needs the asset described (TR-EX-01).", "source": SRC_RECON}),
+    ("REG-DG-SPE", "Data Asset Standards Conformance Evidence", "SPE", "Whether the Data Asset has evidence of conformance with the standards and procedures that apply to it.", "STS-SPE-01", "Exactly one active state per Data Asset.",
+     "Conformance evidence for one Data Asset against the standards and procedures sponsored by Data Governance", {"instanceScope": "One instance per registered Data Asset.", "elementKind": "Per-asset evidence", "contributesTo": "Assurance: Confirm Assurance reads the evidence and is blocked by a recorded nonconformance (TR-AS-02).", "source": SRC_RECON}),
+    ("REG-DG-VAL", "Data Asset Valuation", "VAL", "Whether a value estimate is recorded for the Data Asset.", "STS-VAL-01", "Exactly one active state per Data Asset.",
+     "Value estimate of one Data Asset", {"instanceScope": "One instance per Data Asset.", "elementKind": "Per-asset evidence", "contributesTo": "None directly: the valuation reads Availability (value comes from use).", "source": SRC_RECON}),
+]
+_R = "DG Reconstruction, 28 Sep 2026"
+STATES += [
+    ("STS-DAP-01", "REG-DG-DAP", "No Proposal", True, False, "The Data Strategy has not identified this Data Asset.", "Nothing is proposed.", [_R]),
+    ("STS-DAP-03", "REG-DG-DAP", "Realised Proposal", False, True, "The proposed Data Asset has been registered (Global TR-EX-01); the proposal has done its work.", "The proposal and the registration that realised it remain traceable.", [_R]),
+    ("STS-DAP-02", "REG-DG-DAP", "Proposed Data Asset", False, False, "The Data Strategy identifies the Data Asset with its purpose and sponsor; its Digital Twin exists in Proposal.", "Purpose, sponsor and the strategy that proposed it remain traceable.", ["deliverable:Data Strategy", "p.34", "p.71"]),
+    ("STS-DCR-01", "REG-DG-DCR", "No Change Request", True, False, "No enhancement is requested.", "Nothing is requested.", [_R]),
+    ("STS-DCR-02", "REG-DG-DCR", "Raised Change Request", False, False, "An enhancement to the Data Asset is raised from the Data Strategy, discovery, a project or a term revision.", "Requester, asset and change remain identifiable.", ["p.82", "p.86", "p.92"]),
+    ("STS-DCR-03", "REG-DG-DCR", "Approved Replacement", False, True, "The change is approved as a replacement of the current version.", "Approval, successor and approving authority remain traceable.", [_R]),
+    ("STS-DCR-04", "REG-DG-DCR", "Approved Material Change", False, True, "The change is approved and is material to the assurance claim.", "Approval and the reason it is material remain traceable.", [_R]),
+    ("STS-DCR-05", "REG-DG-DCR", "Approved Minor Change", False, True, "The change is approved and is not material.", "Approval and the materiality check remain traceable.", [_R]),
+    ("STS-STW-01", "REG-DG-STW", "No Accountable Owner", True, False, "No Data Owner is designated for the Data Asset.", "The absence of an owner remains visible.", [_R]),
+    ("STS-STW-02", "REG-DG-STW", "Owner Designated", False, False, "A Data Owner is designated and approved by the Data Governance Office (p.86).", "The owner and the approving body remain current.", ["p.84", "p.86"]),
+    ("STS-STW-03", "REG-DG-STW", "Stewarded", False, False, "The Data Owner has designated a Data Steward, who accepts accountability for the Data Asset (p.86).", "Owner and steward remain current and accountable.", ["p.78", "p.86"]),
+    ("STS-PCB-01", "REG-DG-PCB", "No Controls Bound", True, False, "No policy controls are bound to the Data Asset.", "Nothing is bound.", [_R]),
+    ("STS-PCB-02", "REG-DG-PCB", "Controls Bound", False, False, "The controls of the applicable policies are bound to the Data Asset but not yet operating.", "The bound controls and the policies they come from remain traceable.", ["p.83", "p.87"]),
+    ("STS-PCB-03", "REG-DG-PCB", "Controls Active", False, False, "The bound controls operate on the Data Asset and produce evidence.", "Each active control, its operator and its evidence remain current.", ["p.93"]),
+    ("STS-GLS-01", "REG-DG-GLS", "No Terms Bound", True, False, "No business terms are bound to the Data Asset.", "Nothing is bound.", [_R]),
+    ("STS-GLS-02", "REG-DG-GLS", "Terms Bound", False, False, "Business terms from the glossary are bound to the Data Asset, giving it its business meaning.", "Each bound term, its definition and its steward remain current.", ["p.92"]),
+    ("STS-SPE-01", "REG-DG-SPE", "No Conformance Evidence", True, False, "No evidence of conformance with standards and procedures is recorded.", "Nothing is recorded.", [_R]),
+    ("STS-SPE-02", "REG-DG-SPE", "Conforming", False, False, "Evidence shows the Data Asset conforms to the standards and procedures that apply.", "Evidence, standard and assessor remain traceable.", ["p.91"]),
+    ("STS-SPE-03", "REG-DG-SPE", "Nonconforming", False, False, "A nonconformance with a standard or procedure is recorded.", "The nonconformance and the standard remain traceable.", ["p.91"]),
+    ("STS-VAL-01", "REG-DG-VAL", "No Valuation", True, False, "No value estimate is recorded.", "Nothing is recorded.", [_R]),
+    ("STS-VAL-02", "REG-DG-VAL", "Valued", False, False, "A value estimate of the Data Asset is recorded using the approved valuation method.", "Method, basis and date remain traceable.", ["p.80", "p.93"]),
+]
+EVENTS.update({
+    "EV-DAP-01": ("New Data Asset identified in the Data Strategy", "Decision outcome"),
+    "EV-DCR-01": ("Change request raised", "Request"), "EV-DCR-02": ("Replacement approved", "Decision outcome"), "EV-DCR-03": ("Material change approved", "Decision outcome"), "EV-DCR-04": ("Minor change approved", "Decision outcome"),
+    "EV-STW-01": ("Data Owner designated", "Decision outcome"), "EV-STW-02": ("Data Steward assigned", "Decision outcome"), "EV-STW-03": ("Steward vacancy recorded", "Monitoring trigger"),
+    "EV-PCB-01": ("Policy controls bound", "Decision outcome"), "EV-PCB-02": ("Policy controls activated", "Decision outcome"),
+    "EV-GLS-01": ("Business terms bound", "Decision outcome"),
+    "EV-SPE-01": ("Conformance evidence recorded", "Evidence trigger"), "EV-SPE-02": ("Nonconformance recorded", "Assessment outcome"),
+    "EV-VAL-01": ("Valuation recorded", "Evidence trigger"),
+    "EV-DAP-02": ("Proposal withdrawn in a Data Strategy revision", "Decision outcome"),
+    "EV-DAP-03": ("Data Asset registered (Global TR-EX-01 fired)", "State change notification"),
+    "EV-PCB-03": ("Governing policy version superseded", "Monitoring trigger"),
+    "EV-GLS-02": ("Bound business term revised", "Monitoring trigger"),
+    "EV-SPE-03": ("Nonconformance corrected", "Evidence trigger"),
+    "EV-VAL-02": ("Valuation refreshed", "Evidence trigger"),
+})
+DR.update({
+    "DR-DG-20": ("Approve a Minor Data Asset Change", "ROLE-DO", "Confirmed 28 Sep 2026 (DG Reconstruction register t5 b): the Data Owner approves minor changes"),
+    "DR-DG-26": ("Approve a Data Asset Replacement or Material Change", "ROLE-DGC", "Confirmed 28 Sep 2026 (DG Reconstruction register t5 b): the Data Governance Council approves replacements and material changes, which affect other assets and consumers"),
+    "DR-DG-21": ("Raise a Data Asset Change Request", "ROLE-BDS", "Confirmed 28 Sep 2026 (DG Reconstruction register t5 b): Business Data Steward"),
+    "DR-DG-22": ("Designate a Data Steward", "ROLE-DO", "Confirmed 28 Sep 2026 (DG Reconstruction register t5 b): 'Data owners will designate Data Stewards' (DMBOK2R p.86)"),
+    "DR-DG-23": ("Bind and Activate Policy Controls on a Data Asset", "ROLE-DO", "Confirmed 28 Sep 2026 (DG Reconstruction register t5 b): the Data Owner"),
+    "DR-DG-24": ("Approve Business Term Binding", "ROLE-BDS", "Confirmed 28 Sep 2026 (DG Reconstruction register t5 b): Business Data Stewards are responsible for glossary content (DMBOK2R p.92)"),
+    "DR-DG-25": ("Record Standards Conformance", "ROLE-DGC", "Confirmed 28 Sep 2026 (DG Reconstruction register t5 b): audited by the DGC or a Data Standards Steering Committee (DMBOK2R p.91)"),
+})
+TRANS += [
+    ("TR-DAP-01", "Identify New Data Asset in the Data Strategy", "STS-DAP-01", "STS-DAP-02", "EV-DAP-01", "The Data Strategy names the Data Asset with its purpose and sponsor.", "DR-DG-01", ["SVC-DG-01"], ["ACT-DG-1.1"]),
+    ("TR-DCR-01", "Raise Change Request for an Existing Data Asset", "STS-DCR-01", "STS-DCR-02", "EV-DCR-01", "The asset is registered and the requested change is described.", "DR-DG-21", ["SVC-DG-01"], ["ACT-DG-1.1"]),
+    ("TR-DCR-02", "Approve Replacement", "STS-DCR-02", "STS-DCR-03", "EV-DCR-02", "A successor is identified and the change replaces the current version.", "DR-DG-26", ["SVC-DG-01"], ["ACT-DG-1.1"]),
+    ("TR-DCR-03", "Approve Material Change", "STS-DCR-02", "STS-DCR-04", "EV-DCR-03", "The change is material to identity, representation, custody or use.", "DR-DG-26", ["SVC-DG-01"], ["ACT-DG-1.1"]),
+    ("TR-DCR-04", "Approve Minor Change", "STS-DCR-02", "STS-DCR-05", "EV-DCR-04", "The change is not material to the assurance claim.", "DR-DG-20", ["SVC-DG-01"], ["ACT-DG-1.1"]),
+    ("TR-STW-01", "Designate Data Owner", "STS-STW-01", "STS-STW-02", "EV-STW-01", "An owner role exists under the operating model and the Data Governance Office approves the owner.", "DR-DG-03", ["SVC-DG-04"], ["ACT-DG-2.1"]),
+    ("TR-STW-02", "Assign Data Steward", "STS-STW-02", "STS-STW-03", "EV-STW-02", "The Data Owner designates a steward who accepts accountability.", "DR-DG-22", ["SVC-DG-04"], ["ACT-DG-4"]),
+    ("TR-STW-03", "Record Stewardship Vacancy", "STS-STW-03", "STS-STW-02", "EV-STW-03", "The steward has left the role and no successor is designated.", "DR-DG-12", ["SVC-DG-04"], ["ACT-DG-4"]),
+    ("TR-PCB-01", "Bind Policy Controls", "STS-PCB-01", "STS-PCB-02", "EV-PCB-01", "The asset is registered and the applicable policies and their controls are identified.", "DR-DG-23", ["SVC-DG-08"], ["ACT-DG-4"]),
+    ("TR-PCB-02", "Activate Policy Controls", "STS-PCB-02", "STS-PCB-03", "EV-PCB-02", "Each bound control has an operator and produces evidence.", "DR-DG-23", ["SVC-DG-08"], ["ACT-DG-4"]),
+    ("TR-GLS-01", "Bind Business Terms to Data Asset", "STS-GLS-01", "STS-GLS-02", "EV-GLS-01", "The terms are defined in the glossary with their steward.", "DR-DG-24", ["SVC-DG-07"], ["ACT-DG-3.2"]),
+    ("TR-SPE-01", "Record Standards Conformance Evidence", "STS-SPE-01", "STS-SPE-02", "EV-SPE-01", "The asset is measured against the standards that apply and conforms.", "DR-DG-25", ["SVC-DG-08"], ["ACT-DG-3.1"]),
+    ("TR-SPE-02", "Record Standards Nonconformance", "STS-SPE-02", "STS-SPE-03", "EV-SPE-02", "A measurement or audit finds a nonconformance.", "DR-DG-25", ["SVC-DG-08"], ["ACT-DG-3.1"]),
+    ("TR-VAL-01", "Record Data Asset Valuation", "STS-VAL-01", "STS-VAL-02", "EV-VAL-01", "The approved valuation method is applied to the asset.", "DR-DG-09", ["SVC-DG-02"], ["ACT-DG-3.4"]),
+    ("TR-DAP-02", "Withdraw Data Asset Proposal", "STS-DAP-02", "STS-DAP-01", "EV-DAP-02", "A revision of the Data Strategy no longer identifies the Data Asset and it was never registered.", "DR-DG-01", ["SVC-DG-01"], ["ACT-DG-1.1"]),
+    ("TR-DAP-03", "Realise Data Asset Proposal", "STS-DAP-02", "STS-DAP-03", "EV-DAP-03", "Register Asset (Global TR-EX-01) has fired for this Data Asset.", "DR-DG-01", ["SVC-DG-01"], ["ACT-DG-1.1"]),
+    ("TR-PCB-03", "Rebind Controls after Policy Change", "STS-PCB-03", "STS-PCB-02", "EV-PCB-03", "A policy that applies to the asset has a new version in force and its controls must be bound again.", "DR-DG-23", ["SVC-DG-08"], ["ACT-DG-4"]),
+    ("TR-GLS-02", "Unbind Revised Business Terms", "STS-GLS-02", "STS-GLS-01", "EV-GLS-02", "A bound term is revised in the glossary and the binding must be confirmed again.", "DR-DG-24", ["SVC-DG-07"], ["ACT-DG-3.2"]),
+    ("TR-SPE-03", "Record Corrected Conformance", "STS-SPE-03", "STS-SPE-02", "EV-SPE-03", "The nonconformance is corrected and new evidence shows conformance.", "DR-DG-25", ["SVC-DG-08"], ["ACT-DG-3.1"]),
+    ("TR-VAL-02", "Refresh Data Asset Valuation", "STS-VAL-02", "STS-VAL-02", "EV-VAL-02", "The approved valuation method is applied again on its review cycle.", "DR-DG-09", ["SVC-DG-02"], ["ACT-DG-3.4"]),
+]
+CONTRIB += [
+    ("CON-DG-18", "TR-INIT-EX", "event", {"DAP": ["STS-DAP-02"]}, "A Data Asset identified in the Data Strategy brings its Digital Twin into being in Proposal.", "DG_asset_proposed", "Conditional", "DG Reconstruction DG-RL-005 to 008."),
+    ("CON-DG-19", "TR-EX-01", "guard", {"STW": ["STS-STW-02", "STS-STW-03"]}, "The Data Asset has a designated Data Owner.", "DG_owner_designated", "Required", "Per-asset owner; CON-DG-01 keeps the organisation-level roles (register s5 b)."),
+    ("CON-DG-20", "TR-EX-01", "guard", {"GLS": ["STS-GLS-02"]}, "The business terms that give the asset its meaning are bound.", "DG_terms_bound", "Required", "Register s2 comment: the glossary gives the asset its meaning."),
+    ("CON-DG-21", "TR-EX-03", "event", {"DCR": ["STS-DCR-03"]}, "An approved replacement supersedes the current version.", "DG_replacement_approved", "Conditional", ""),
+    ("CON-DG-22", "TR-AS-05", "event", {"DCR": ["STS-DCR-04"]}, "An approved material change suspends the assurance claim until reassessed.", "DG_material_change_approved", "Conditional", ""),
+    ("CON-DG-23", "TR-AS-06", "event", {"DCR": ["STS-DCR-04"]}, "An approved material change suspends conditional assurance until reassessed.", "DG_material_change_approved", "Conditional", ""),
+    ("CON-DG-24", "TR-CP-01", "event", {"STW": ["STS-STW-03"]}, "Assigning the steward establishes active custody of the materialised asset.", "DG_asset_stewarded", "Conditional", ""),
+    ("CON-DG-25", "TR-CP-04", "guard", {"STW": ["STS-STW-03"]}, "An accountable steward is assigned before external custody.", "DG_asset_stewarded", "Required", ""),
+    ("CON-DG-26", "TR-CP-05", "guard", {"STW": ["STS-STW-03"]}, "An accountable steward is assigned before a custody transfer.", "DG_asset_stewarded", "Required", ""),
+    ("CON-DG-27", "TR-EX-02", "guard", {"PCB": ["STS-PCB-03"]}, "Minimum policy controls are active on the asset.", "DG_controls_active", "Required", ""),
+    ("CON-DG-28", "TR-AV-01", "guard", {"PCB": ["STS-PCB-03"]}, "Policy controls are active before access is released.", "DG_controls_active", "Required", ""),
+    ("CON-DG-29", "TR-CP-01", "guard", {"PCB": ["STS-PCB-03"]}, "Protection controls are active when custody is established.", "DG_controls_active", "Required", ""),
+    ("CON-DG-30", "TR-EX-05", "guard", {"PCB": ["STS-PCB-03"]}, "Disposition controls are active before destruction.", "DG_controls_active", "Required", ""),
+    ("CON-DG-31", "TR-EX-06", "guard", {"PCB": ["STS-PCB-03"]}, "Disposition controls are active before destruction of a superseded asset.", "DG_controls_active", "Required", ""),
+    ("CON-DG-32", "TR-CP-04", "guard", {"PCB": ["STS-PCB-03"]}, "Controls are active before external custody.", "DG_controls_active", "Required", ""),
+    ("CON-DG-33", "TR-CP-05", "guard", {"PCB": ["STS-PCB-03"]}, "Controls are active before a custody transfer.", "DG_controls_active", "Required", ""),
+    ("CON-DG-34", "TR-AS-02", "service", {"PCB": ["STS-PCB-03"], "SPE": ["STS-SPE-02"]}, "Operating controls and standards conformance supply the evidence Confirm Assurance cites.", "DG_controls_active and DG_standards_conforming", "Conditional", ""),
+    ("CON-DG-35", "TR-AS-02", "guard", {"SPE": ["STS-SPE-01", "STS-SPE-02"]}, "No nonconformance with a standard is recorded.", "DG_no_nonconformance", "Required", ""),
+]
+FACT_BINDINGS.update({
+    "DG_asset_proposed": {"region": "REG-DG-DAP", "states": ["STS-DAP-02"]},
+    "DG_owner_designated": {"region": "REG-DG-STW", "states": ["STS-STW-02", "STS-STW-03"]},
+    "DG_asset_stewarded": {"region": "REG-DG-STW", "states": ["STS-STW-03"]},
+    "DG_terms_bound": {"region": "REG-DG-GLS", "states": ["STS-GLS-02"]},
+    "DG_replacement_approved": {"region": "REG-DG-DCR", "states": ["STS-DCR-03"]},
+    "DG_material_change_approved": {"region": "REG-DG-DCR", "states": ["STS-DCR-04"]},
+    "DG_controls_active": {"region": "REG-DG-PCB", "states": ["STS-PCB-03"]},
+    "DG_standards_conforming": {"region": "REG-DG-SPE", "states": ["STS-SPE-02"]},
+    "DG_no_nonconformance": {"region": "REG-DG-SPE", "states": ["STS-SPE-01", "STS-SPE-02"]},
+})
+_ADD = {"ACT-DG-1.1": (["REG-DG-DAP", "REG-DG-DCR"], ["TR-DAP-01", "TR-DCR-01", "TR-DCR-02", "TR-DCR-03", "TR-DCR-04"], None),
+        "ACT-DG-2.1": (["REG-DG-STW"], ["TR-STW-01"], None),
+        "ACT-DG-3.1": (["REG-DG-SPE"], ["TR-SPE-01", "TR-SPE-02"], "Transition-causing"),
+        "ACT-DG-3.2": (["REG-DG-GLS"], ["TR-GLS-01"], "Transition-causing"),
+        "ACT-DG-3.4": (["REG-DG-VAL"], ["TR-VAL-01"], None),
+        "ACT-DG-4": (["REG-DG-STW", "REG-DG-PCB"], ["TR-STW-02", "TR-STW-03", "TR-PCB-01", "TR-PCB-02"], None)}
+for _i, _a in enumerate(ACTS):
+    if _a[0] in _ADD:
+        _rg, _tr, _cls = _ADD[_a[0]]
+        _trs = [t for t in _a[5] if not (_a[0] == "ACT-DG-3.2" and t == "TR-POL-01")] + _tr
+        ACTS[_i] = (_a[0], _a[1], _a[2], _cls or _a[3], _a[4] + _rg, _trs, _a[6])
+_INIT = {r[0]: r[4] for r in REGIONS}
+for _v in VECTORS:
+    for _rid in ("REG-DG-DAP", "REG-DG-DCR", "REG-DG-STW", "REG-DG-PCB", "REG-DG-GLS", "REG-DG-SPE", "REG-DG-VAL"):
+        _v[2].setdefault(_rid, _INIT[_rid])
+for _t in ["TR-DAP-01", "TR-DCR-01", "TR-DCR-02", "TR-DCR-03", "TR-DCR-04", "TR-STW-01", "TR-STW-02", "TR-STW-03", "TR-PCB-01", "TR-PCB-02", "TR-GLS-01", "TR-SPE-01", "TR-SPE-02", "TR-VAL-01"]:
+    POLICY_CONTROLS.setdefault(_t, {"controls": [], "why": "Drafted 28 Sep 2026 (DG Reconstruction): policy controls for this per-asset transition not yet mapped; REVIEW."})
+POLICY_CONTROLS["TR-STW-01"] = {"controls": [("PD-DATA", "C04")], "why": "The Data Owner is designated for the asset and recorded in the stewardship RACI."}
+POLICY_CONTROLS["TR-STW-02"] = {"controls": [("PD-DATA", "C05")], "why": "The Data Steward is assigned for the asset and recorded in the stewardship RACI."}
+POLICY_CONTROLS["TR-STW-03"] = {"controls": [("PD-DATA", "C05")], "why": "A steward vacancy reverses the stewardship assignment."}
+
 SPEC = {
-    "meta": {"modelId": "KA-DG", "name": "Data Governance FTS", "knowledgeArea": "Data Governance", "version": "0.3", "subjectType": KA_SUBJECT, "regionModel": "One FTS per managed element: the regions are separate machines that run concurrently and are coupled by events, facts and cross-region constraints, never a single subject.", "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
+    "meta": {"modelId": "KA-DG", "name": "Data Governance FTS", "knowledgeArea": "Data Governance", "version": "0.5", "subjectType": KA_SUBJECT, "regionModel": "One FTS per managed element: the regions are separate machines that run concurrently and are coupled by events, facts and cross-region constraints, never a single subject.", "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area (strategy, operating model, readiness, governing instruments, Data Asset issue), derived from the DMBOK context diagram. Region 5 manages issues raised by every Knowledge Area. The KA never becomes a region of the Data Asset; each region reaches the Global protocol through contributions (guards, decision rights, services, events) listed on the Contributions sheet and federated onto the Global transitions in the viewer.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS,
              "assetFacts": {"INS_is_policy": {"default": False, "meaning": "the instrument version is a Policy (the Council approves it)"},
@@ -363,6 +508,9 @@ SPEC = {
         {"id": "SRC-DG-003", "source": SRC_PROTOCOL, "type": "Alignment target", "location": "Private repo models/", "use": "Global transition IDs for contributions", "limitations": ""},
     ],
     "qaNotes": [
+        {"severity": "note", "rule": "decision", "element": "ACT-DG-3.1, ACT-DG-3.2", "finding": "One class per activity (DG Reconstruction register t4 a, 28 Sep 2026): 3.1 and 3.2 are Transition-causing because they fire TR-SPE and TR-GLS. Their supporting links to the policy and instrument transitions are recorded in DG_Global_FTS_Reconstructed.xlsx (06 Transition Analysis), not in this model."},
+        {"severity": "note", "rule": "decision", "element": "DR-DG-20, DR-DG-26", "finding": "Register t5 b, 28 Sep 2026: the Data Governance Council approves replacements and material changes (DR-DG-26 on TR-DCR-02, TR-DCR-03); the Data Owner approves minor changes (DR-DG-20 on TR-DCR-04). DR-DG-21 to DR-DG-25 confirmed as drafted."},
+        {"severity": "note", "rule": "decision", "element": "REG-DG-DAP", "finding": "Register t6 a, 28 Sep 2026: the proposal ends in Realised Proposal when Register Asset fires (TR-DAP-03). A proposal withdrawn before registration (TR-DAP-02) leaves the Global twin in Proposal, because the Global FTS has no transition out of Proposal other than TR-EX-01 (open item DG-OPEN-006)."},
         {"severity": "note", "rule": "capture", "element": "process:4", "finding": "Embed Data Governance (C,O) has no sub-activities on the DMBOK context diagram; ACT-DG-4 is scoped from the region definitions (decision 21 Sep 2026)."},
         {"severity": "note", "rule": "GA-005", "element": "KA-DG", "finding": "Regions STR, OPM, RDY and POL manage scope-level elements that change rarely relative to a Data Asset; they gate Global transitions as preconditions (contributions), which is the loose coupling GA-009 asks for. Region ISS manages one case per issue and is the only region instantiated per Data Asset event."},
         {"severity": "note", "rule": "N-016", "element": "DR-DG-08..18", "finding": "Decision Rights DR-DG-08 to DR-DG-18 exist so that every transition carries one (decision 21 Sep 2026); holders confirmed 22 Sep 2026 on the holder register."},

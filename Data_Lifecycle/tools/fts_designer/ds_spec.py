@@ -9,7 +9,7 @@ of a Data Asset; 3 Protection of a Data Asset; 4 Privacy Basis of personal data 
 Incident (one instance per incident).
 Decisions 21 Sep 2026: a Security Incident has its own FTS and also logs a Data Governance issue; Data Security
 gates access release, external custody and destruction, and emits the withdraw, destroy, suspend and
-material-change triggers; every transition carries a Decision Right (holders drafted, REVIEW).
+material-change triggers; every transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python ds_spec.py [out_dir] [--overrides spec/data_security_overrides.json]   -> data_security.fts.json
 """
@@ -97,15 +97,15 @@ EVENTS = {
     "EV-INC-01": ("Incident detection", "Monitoring trigger"), "EV-INC-02": ("Containment confirmed", "Evidence trigger"), "EV-INC-03": ("Notification decision", "Decision outcome"), "EV-INC-04": ("Incident closure", "Decision outcome"), "EV-INC-05": ("Incident reopened", "Monitoring trigger"),
 }
 DR = {
-    "DR-DS-01": ("Approve Data Security Policy and Standards", "ROLE-DS-S01", "REVIEW: drafted holder"),
-    "DR-DS-02": ("Publish, Review and Retire Security Instruments", "ROLE-DS-P02", "REVIEW: drafted holder"),
-    "DR-DS-03": ("Assign and Change a Security Classification", "ROLE-DS-P01", "REVIEW: drafted holder"),
-    "DR-DS-04": ("Accept Residual Security Risk and Confirm Protection", "ROLE-DS-P02", "REVIEW: drafted holder"),
-    "DR-DS-05": ("Declare and Close a Control Deficiency", "ROLE-DS-P03", "REVIEW: drafted holder"),
-    "DR-DS-06": ("Establish, Lapse and Re-establish a Privacy Basis", "ROLE-DS-P01", "REVIEW: drafted holder"),
-    "DR-DS-07": ("Answer a Data Subject Request", "ROLE-DS-P01", "REVIEW: drafted holder"),
-    "DR-DS-08": ("Declare, Contain, Notify and Close a Security Incident", "ROLE-DS-P02", "REVIEW: drafted holder"),
-    "DR-DS-09": ("Confirm Sanitisation", "ROLE-DS-P02", "REVIEW: drafted holder"),
+    "DR-DS-01": ("Approve Data Security Policy and Standards", "ROLE-DGC", "Confirmed 22 Sep 2026 (holder register): Data Governance Council; drafted as IT Steering Committee"),
+    "DR-DS-02": ("Publish, Review and Retire Security Instruments", "ROLE-ISO", "Confirmed 22 Sep 2026 (holder register): Information Security Officer; drafted as Information Security Team"),
+    "DR-DS-03": ("Assign and Change a Security Classification", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Data Stewards"),
+    "DR-DS-04": ("Accept Residual Security Risk and Confirm Protection", "ROLE-DO", "Confirmed 22 Sep 2026 (holder register): Data Owner; drafted as Information Security Team"),
+    "DR-DS-05": ("Declare and Close a Control Deficiency", "ROLE-AUDIT", "Confirmed 22 Sep 2026 (holder register): Internal Audit; drafted as Internal Auditors"),
+    "DR-DS-06": ("Establish, Lapse and Re-establish a Privacy Basis", "ROLE-DPRO", "Confirmed 23 Sep 2026: Data Protection Officer; held by the Business Data Steward from 22 Sep 2026, moved when the role was added; drafted as Data Stewards"),
+    "DR-DS-07": ("Answer a Data Subject Request", "ROLE-DPRO", "Confirmed 23 Sep 2026: Data Protection Officer; held by the Business Data Steward from 22 Sep 2026, moved when the role was added; drafted as Data Stewards"),
+    "DR-DS-08": ("Declare, Contain, Notify and Close a Security Incident", "ROLE-ISO", "Confirmed 22 Sep 2026 (holder register): Information Security Officer; drafted as Information Security Team"),
+    "DR-DS-09": ("Confirm Sanitisation", "ROLE-ISO", "Confirmed 22 Sep 2026 (holder register): Information Security Officer; drafted as Information Security Team"),
 }
 ROLES = [
     ("ROLE-DS-S01", "IT Steering Committee", "Supplier", "Sponsor and approve the security policy."), ("ROLE-DS-S02", "Enterprise Architects", "Supplier", "Supply architecture standards and the security architecture."), ("ROLE-DS-S03", "Government", "Supplier", "Supply regulation and acts."), ("ROLE-DS-S04", "Regulatory Bodies", "Supplier", "Supply regulatory requirements and receive notifications."),
@@ -184,18 +184,21 @@ CONTRIB = [
     ("CON-DS-12", "TR-AS-05", "event", {"PRT": ["STS-PRT-04"], "INC": ["STS-INC-02"]}, "A control deficiency or a detected incident is a control failure affecting the assurance claim.", "DS_control_deficiency or DS_open_incident", "Conditional", "DS emits EV-AS-05."),
     ("CON-DS-13", "TR-AS-06", "event", {"PRT": ["STS-PRT-04"], "INC": ["STS-INC-02"]}, "A control deficiency or a detected incident breaches a condition of conditional assurance.", "DS_control_deficiency or DS_open_incident", "Conditional", ""),
     ("CON-DS-14", "TR-AS-02", "service", {"PRT": ["STS-PRT-03"]}, "Security Audit supplies the control evidence (access history, audit reports) that assurance confirmation cites.", "SVC-DS-05", "Conditional", "Assurance service; artefacts ART-DS-07, ART-DS-08."),
+    ("CON-DS-15", "TR-AV-02", "event", {"CLS": ["STS-CLS-04"]}, "A changed classification (reclassification due) requires access to be restricted until the asset is reclassified.", "DS_reclassification_due", "Conditional", "Data Security emits EV-AV-02 when TR-CLS-03 fires (Howard, 22 Sep: the obvious contribution on TR-AV-02)."),
+    ("CON-DS-16", "TR-AV-10", "event", {"PRV": ["STS-PRV-05"]}, "A lapsed privacy basis withdraws restricted access as well as released and suspended access.", "DS_privacy_basis_lapsed", "Conditional", "Howard, 23 Sep 2026: TR-AV-10 had no contribution of any kind; Data Security detects the lapse, as it does on TR-AV-05 and TR-AV-06. Data Security emits EV-AV-05 when TR-PRV-05 fires."),
 ]
 KA_COUPLINGS = [
     ("KAC-DS-01", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DS_open_incident", "Every detected security incident is also logged as a Data Asset issue in the Data Governance issue FTS with source Data Security (TR-INC-01 emits EV-ISS-01).", "Decision 21 Sep 2026: own FTS plus DG issue. DG owns escalation and residual-risk acceptance."),
     ("KAC-DS-02", "KA-DG", "TR-ISS-05", "EV-ISS-04", "DS_incident_closed", "Closure of the incident evidences resolution of the DG issue (TR-INC-04 or TR-INC-05 emits EV-ISS-04).", "Evidence, not a guard."),
-    ("KAC-DS-03", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "Data security policies and standards are governing instruments: TR-POL-03 here is a Data Governance instrument publication.", "Reverse coupling: a DS transition cites a DG fact."),
-    ("KAC-DS-04", "KA-MM", "TR-AST-02", "", "DS_classified", "The documented security classification is recorded as a security attribute in the asset's metadata (technique: Data Security Attributes in Metadata); the Metadata of a Data Asset is Described only with the classification attribute present.", "Reverse coupling: an MM transition cites a DS fact."),
+    ("KAC-DS-03", "KA-DG", "TR-POL-03", "", "DS_policy_set_in_force", "Data security policies and standards are governing instruments: TR-POL-03 here is a Data Governance instrument publication.", "Reverse coupling: a DS transition cites a DG fact."),
+    ("KAC-DS-04", "KA-MM", "TR-AST-02", "", "MM_asset_described", "An asset is classified only once its metadata description is complete: classification depends on what the description says the asset holds (TR-CLS-02 cites the MM fact). The resulting classification is then recorded as a security attribute in the asset's metadata.", "Howard, 24 Sep 2026 (Open Decisions A3): the MM Describe Asset should not wait for the Data Security classification; classification depends on the complete metadata description. Reversed from the 21 Sep draft, in which MM Describe Asset required DS_classified."),
     ("KAC-DS-05", "KA-MM", "TR-AST-03", "", "DS_protected", "Published metadata about a Data Asset is itself protected under the asset's classification (metadata security, MM goal 4).", "Closes the KAC-MM-05 placeholder."),
     ("KAC-DS-06", "KA-DQ", "TR-PDCA-03", "", "DS_privacy_basis_ok", "Quality assessment that processes personal data (profiling) runs only under a privacy basis in force.", "Reverse coupling: a DQ transition cites a DS fact."),
 ]
 FACT_BINDINGS = {
     "DS_instruments_in_force": {"region": "REG-DS-POL", "states": ["STS-POL-04", "STS-POL-05"]},
     "DS_classified": {"region": "REG-DS-CLS", "states": ["STS-CLS-03", "STS-CLS-04"]},
+    "DS_reclassification_due": {"region": "REG-DS-CLS", "states": ["STS-CLS-04"]},
     "DS_protected": {"region": "REG-DS-PRT", "states": ["STS-PRT-03"]},
     "DS_control_deficiency": {"region": "REG-DS-PRT", "states": ["STS-PRT-04"]},
     "DS_sanitised": {"region": "REG-DS-PRT", "states": ["STS-PRT-05"]},
@@ -228,17 +231,79 @@ EXC = [("EXC-DS-01", "Provisional Protection", "TR-AV-01", "Release of access to
 REGULATORY_FACTS = [
     # Decision 21 Sep 2026: Privacy Basis states stay regulation-neutral; the regulations' obligations are recorded here as facts
     # the guards and time triggers cite. Statutory periods are to be verified against the current text of each Act.
-    ("REG-POPIA-01", "POPIA (South Africa)", "Lawful processing conditions", "Sections 8 to 25: accountability, processing limitation (consent, justification, objection), purpose specification, further processing limitation, information quality, openness, security safeguards, data subject participation.", "STS-PRV-03 Basis in Force; TR-PRV-02", "verify"),
-    ("REG-POPIA-02", "POPIA (South Africa)", "Consent and objection", "Section 11: processing with consent, or on another justification; the data subject may withdraw consent or object at any time.", "EV-PRV-05; TR-PRV-05", "verify"),
-    ("REG-POPIA-03", "POPIA (South Africa)", "Data subject participation", "Sections 23 to 25: access and correction requests (Information Regulator forms); response within a reasonable time, PAIA periods applied in practice.", "STS-PRV-04 Open Subject Request; TR-PRV-03, TR-PRV-04", "verify period"),
-    ("REG-POPIA-04", "POPIA (South Africa)", "Retention", "Section 14: records not retained longer than necessary for the purpose, subject to lawful exceptions; destroy or de-identify afterwards.", "EV-PRV-05 retention expiry; TR-PRV-08", "verify"),
-    ("REG-POPIA-05", "POPIA (South Africa)", "Security compromise notification", "Section 22: notify the Information Regulator and the data subjects as soon as reasonably possible after discovery of a compromise.", "STS-INC-04 Notified Incident; TR-INC-03", "verify"),
-    ("REG-GDPR-01", "GDPR (EU)", "Lawful bases", "Article 6: consent, contract, legal obligation, vital interests, public task, legitimate interests; Article 9 conditions for special categories.", "STS-PRV-03 Basis in Force; TR-PRV-02", "verify"),
-    ("REG-GDPR-02", "GDPR (EU)", "Consent withdrawal and objection", "Article 7(3) consent may be withdrawn at any time; Article 21 right to object.", "EV-PRV-05; TR-PRV-05", "verify"),
-    ("REG-GDPR-03", "GDPR (EU)", "Data subject rights response period", "Article 12(3): respond without undue delay and within one month, extendable by two further months for complex requests; Articles 15 to 22 rights (access, rectification, erasure, restriction, portability, objection).", "STS-PRV-04 Open Subject Request; TR-PRV-03, TR-PRV-04, TR-PRV-06", "verify"),
-    ("REG-GDPR-04", "GDPR (EU)", "Storage limitation and erasure", "Article 5(1)(e) storage limitation; Article 17 right to erasure.", "EV-PRV-05 retention expiry; TR-PRV-06, TR-PRV-08", "verify"),
-    ("REG-GDPR-05", "GDPR (EU)", "Breach notification", "Article 33: notify the supervisory authority within 72 hours of becoming aware; Article 34: communicate to data subjects without undue delay where high risk.", "STS-INC-04 Notified Incident; TR-INC-03", "verify"),
+    ("REG-POPIA-01", "POPIA (South Africa)", "Lawful processing conditions", "Sections 8 to 25: accountability, processing limitation (consent, justification, objection), purpose specification, further processing limitation, information quality, openness, security safeguards, data subject participation.", "STS-PRV-03 Basis in Force; TR-PRV-02", "first pass 22 Sep 2026: sections 8 to 25 are the eight conditions for lawful processing (s.8 accountability; s.9 to 12 processing limitation; s.13 purpose specification; s.15 further processing; s.16 information quality; s.17 and 18 openness; s.19 to 22 security safeguards; s.23 to 25 data subject participation); source popia.co.za section texts. Legal reviewer to confirm."),
+    ("REG-POPIA-02", "POPIA (South Africa)", "Consent and objection", "Section 11: processing with consent, or on another justification; the data subject may withdraw consent or object at any time.", "EV-PRV-05; TR-PRV-05", "first pass 22 Sep 2026: matches s.11(1)(a) to (f) grounds, s.11(2)(b) consent may be withdrawn at any time, s.11(3) objection on reasonable grounds and to direct marketing; source popia.co.za/section-11. Legal reviewer to confirm."),
+    ("REG-POPIA-03", "POPIA (South Africa)", "Data subject participation", "Sections 23 to 25: access and correction requests (Information Regulator forms); response within a reasonable time, PAIA periods applied in practice.", "STS-PRV-04 Open Subject Request; TR-PRV-03, TR-PRV-04", "first pass 22 Sep 2026: s.23(1) access 'within a reasonable time' and 'in a reasonable manner and format', prescribed fee with written estimate; s.23(4) applies the PAIA Chapter 4 refusal grounds; POPIA fixes no day count, the 30-day PAIA s.25 period is the practice reference; source popia.co.za/section-23. Period still to be confirmed by the legal reviewer."),
+    ("REG-POPIA-04", "POPIA (South Africa)", "Retention", "Section 14: records not retained longer than necessary for the purpose, subject to lawful exceptions; destroy or de-identify afterwards.", "EV-PRV-05 retention expiry; TR-PRV-08", "first pass 22 Sep 2026: matches s.14(1) not retained longer than necessary, exceptions s.14(1)(a) to (d), s.14(4) destroy, delete or de-identify as soon as reasonably practicable, s.14(5) in a manner that prevents reconstruction; source popia.co.za/section-14. Legal reviewer to confirm."),
+    ("REG-POPIA-05", "POPIA (South Africa)", "Security compromise notification", "Section 22: notify the Information Regulator and the data subjects as soon as reasonably possible after discovery of a compromise.", "STS-INC-04 Notified Incident; TR-INC-03", "first pass 22 Sep 2026: matches s.22(1) and (2), notify the Regulator and the data subject 'as soon as reasonably possible after the discovery of the compromise', delay only where law enforcement or the Regulator so determines; source popia.co.za/section-22. Legal reviewer to confirm."),
+    ("REG-GDPR-01", "GDPR (EU)", "Lawful bases", "Article 6: consent, contract, legal obligation, vital interests, public task, legitimate interests; Article 9 conditions for special categories.", "STS-PRV-03 Basis in Force; TR-PRV-02", "first pass 22 Sep 2026: Article 6(1)(a) to (f) lawful bases and Article 9 special categories as stated; source gdpr-info.eu. Legal reviewer to confirm."),
+    ("REG-GDPR-02", "GDPR (EU)", "Consent withdrawal and objection", "Article 7(3) consent may be withdrawn at any time; Article 21 right to object.", "EV-PRV-05; TR-PRV-05", "first pass 22 Sep 2026: Article 7(3) withdrawal at any time and Article 21 right to object as stated; source gdpr-info.eu. Legal reviewer to confirm."),
+    ("REG-GDPR-03", "GDPR (EU)", "Data subject rights response period", "Article 12(3): respond without undue delay and within one month, extendable by two further months for complex requests; Articles 15 to 22 rights (access, rectification, erasure, restriction, portability, objection).", "STS-PRV-04 Open Subject Request; TR-PRV-03, TR-PRV-04, TR-PRV-06", "first pass 22 Sep 2026: matches Article 12(3), 'without undue delay and in any event within one month of receipt of the request', extendable 'by two further months where necessary', the data subject informed of the extension within one month; Articles 15 to 22 as stated; source gdpr-info.eu/art-12-gdpr. Legal reviewer to confirm."),
+    ("REG-GDPR-04", "GDPR (EU)", "Storage limitation and erasure", "Article 5(1)(e) storage limitation; Article 17 right to erasure.", "EV-PRV-05 retention expiry; TR-PRV-06, TR-PRV-08", "first pass 22 Sep 2026: Article 5(1)(e) storage limitation and Article 17 erasure as stated; source gdpr-info.eu. Legal reviewer to confirm."),
+    ("REG-GDPR-05", "GDPR (EU)", "Breach notification", "Article 33: notify the supervisory authority within 72 hours of becoming aware; Article 34: communicate to data subjects without undue delay where high risk.", "STS-INC-04 Notified Incident; TR-INC-03", "first pass 22 Sep 2026: matches Article 33(1), 'without undue delay and, where feasible, not later than 72 hours after having become aware of it', unless unlikely to result in a risk; Article 34(1) communication to data subjects 'without undue delay' where likely to result in a high risk; source gdpr-info.eu/art-33-gdpr and art-34-gdpr. Legal reviewer to confirm."),
 ]
+
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DS-01': {'emitters': ['TR-INC-01'], 'kind': 'event', 'producer': 'KA-DS'},
+ 'KAC-DS-02': {'effect': 'resolve', 'emitters': ['TR-INC-04', 'TR-INC-05'], 'kind': 'event', 'producer': 'KA-DS', 'resolves': 'KAC-DS-01'},
+ 'KAC-DS-03': {'dependents': [{'model': 'KA-DS', 'transition': 'TR-POL-03'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'},
+ 'KAC-DS-04': {'dependents': [{'model': 'KA-DS', 'transition': 'TR-CLS-02'}], 'kind': 'condition', 'producer': 'KA-MM', 'requirement': 'Required'},
+ 'KAC-DS-05': {'dependents': [{'model': 'KA-MM', 'transition': 'TR-AST-03'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
+ 'KAC-DS-06': {'dependents': [{'model': 'KA-DQ', 'transition': 'TR-PDCA-03'}],
+               'kind': 'condition',
+               'producer': 'KA-DS',
+               'qualifier': 'processes_personal_data',
+               'requirement': 'Conditional'}}
+
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-POL-01': {'controls': [('PD-SEC', 'C01')], 'why': 'Gathering requirements is the first stage of approving the Data Security policy and standards.'},
+ 'TR-POL-02': {'controls': [('PD-SEC', 'C01')], 'why': 'The step approves the Data Security policy and standards.'},
+ 'TR-POL-03': {'controls': [('PD-SEC', 'C01')], 'why': 'The step publishes the approved security instruments.'},
+ 'TR-POL-04': {'controls': [('PD-SEC', 'C16')], 'why': 'A recorded trigger opens a review of the security policy on change.'},
+ 'TR-POL-05': {'controls': [('PD-SEC', 'C16'), ('PD-SEC', 'C01')], 'why': 'The review concludes with approval of the revised policy and standards.'},
+ 'TR-POL-06': {'controls': [('PD-SEC', 'C16'), ('PD-SEC', 'C01')], 'why': 'Retirement follows a review and reverses the policy approval.'},
+ 'TR-CLS-01': {'controls': [('PD-SEC', 'C04')], 'why': 'Assessing an in-scope asset starts its sensitivity classification.'},
+ 'TR-CLS-02': {'controls': [('PD-SEC', 'C04')], 'why': 'Deciding and recording the classification is classifying the asset by sensitivity.'},
+ 'TR-CLS-03': {'controls': [('PD-SEC', 'C04')], 'why': 'A change in content, use or rules makes the classification due for reassessment.'},
+ 'TR-CLS-04': {'controls': [('PD-SEC', 'C04')], 'why': 'The asset is reclassified by sensitivity and the result recorded.'},
+ 'TR-CLS-05': {'controls': [('PD-SEC', 'C04')], 'why': 'Retiring the classification reverses the classification act.'},
+ 'TR-PRT-01': {'controls': [('PD-SEC', 'C17')], 'why': 'The step assesses security risk for the classified asset.'},
+ 'TR-PRT-02': {'controls': [('PD-SEC', 'C05'), ('PD-SEC', 'C07'), ('PD-SEC', 'C17')],
+               'why': 'Protection needs access and encryption controls in place and the residual risk accepted.'},
+ 'TR-PRT-03': {'controls': [('PD-SEC', 'C13')], 'why': 'Finding a missing or ineffective control is compliance monitoring that logs an exception.'},
+ 'TR-PRT-04': {'controls': [('PD-SEC', 'C17'), ('PD-SEC', 'C13')],
+               'why': 'Remediating the deficient control is risk treatment and closes the logged exception.'},
+ 'TR-PRT-05': {'controls': [('PD-SEC', 'C17'), ('PD-SEC', 'C04')],
+               'why': 'A classification change requires the security risk and required controls to be reassessed.'},
+ 'TR-PRT-06': {'controls': [('PD-SEC', 'C08')], 'why': 'Sanitisation includes revoking keys under the key management standard.'},
+ 'TR-PRT-07': {'controls': [('PD-SEC', 'C08')], 'why': 'Sanitisation includes revoking keys under the key management standard.'},
+ 'TR-PRT-08': {'controls': [('PD-SEC', 'C14')], 'why': 'Closing the record requires the sanitisation evidence to be retained as assurance evidence.'},
+ 'TR-PRV-01': {'controls': [('PD-PRIV', 'C04')], 'why': 'Personal data identified by classification needs a lawful basis to be established.'},
+ 'TR-PRV-02': {'controls': [('PD-PRIV', 'C04'), ('PD-PRIV', 'C05'), ('PD-PRIV', 'C07')],
+               'why': 'The step records the lawful basis and purpose and captures consent where required.'},
+ 'TR-PRV-03': {'controls': [('PD-PRIV', 'C11'), ('PD-PRIV', 'C10')], 'why': 'A rights request is logged with its deadline for fulfilment.'},
+ 'TR-PRV-04': {'controls': [('PD-PRIV', 'C10'), ('PD-PRIV', 'C11')],
+               'why': 'The rights request is fulfilled within the statutory period and its resolution evidenced.'},
+ 'TR-PRV-05': {'controls': [('PD-PRIV', 'C05'), ('PD-PRIV', 'C09')],
+               'why': 'Consent withdrawal is captured and personal data is not kept beyond purpose or retention.'},
+ 'TR-PRV-06': {'controls': [('PD-PRIV', 'C10'), ('PD-PRIV', 'C12')], 'why': 'An upheld erasure or objection request is fulfilled and propagated downstream.'},
+ 'TR-PRV-07': {'controls': [('PD-PRIV', 'C04'), ('PD-PRIV', 'C05')],
+               'why': 'A new lawful basis or renewed consent must be recorded before further processing.'},
+ 'TR-PRV-08': {'controls': [('PD-PRIV', 'C09')], 'why': 'Destroying or anonymising personal data once its basis lapses is minimising retention to purpose.'},
+ 'TR-INC-01': {'controls': [('PD-SEC', 'C12'), ('PD-SEC', 'C11')], 'why': 'Access monitoring flags the event and the incident is detected and logged.'},
+ 'TR-INC-02': {'controls': [('PD-SEC', 'C12')], 'why': 'Containment and impact assessment are part of security incident handling.'},
+ 'TR-INC-03': {'controls': [('PD-SEC', 'C12')], 'why': 'Reporting the incident to the regulator and subjects within timelines is incident reporting.'},
+ 'TR-INC-04': {'controls': [('PD-SEC', 'C12')], 'why': 'Remediation and review complete the incident within its timelines.'},
+ 'TR-INC-05': {'controls': [('PD-SEC', 'C12')], 'why': 'Remediation and review complete the incident within its timelines.'},
+ 'TR-INC-06': {'controls': [('PD-SEC', 'C12'), ('PD-SEC', 'C14')], 'why': 'Closure evidence of the incident is retained as assurance evidence.'},
+ 'TR-INC-07': {'controls': [('PD-SEC', 'C12')], 'why': 'Reopening a recurring incident returns it to incident detection and handling.'}}
 
 SPEC = {
     "meta": {"modelId": "KA-DS", "name": "Data Security FTS (including Data Privacy)", "knowledgeArea": "Data Security", "version": "0.1", "subjectType": KA_SUBJECT,
@@ -246,7 +311,7 @@ SPEC = {
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area: Security Policy and Standards; Security Classification of a Data Asset; Protection of a Data Asset; Privacy Basis of a Data Asset (Data Privacy); Security Incident. The KA never becomes a region of the Data Asset; the asset-level regions reach the Global protocol through contributions (access release, restoration, emergency access, external custody, destruction, and the suspend, withdraw, destroy and material-change triggers), and every incident is also a Data Governance issue.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regulatoryFacts": REGULATORY_FACTS, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regulatoryFacts": REGULATORY_FACTS, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DS-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, requirement sources, inputs, processes, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram lists no sub-activities; the privacy lifecycle (lawful basis, consent, subject rights, retention) is drafted from the goals and requirement sources, not from a DMBOK activity list."},
         {"id": "SRC-DS-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, incident handling, Global gating", "limitations": ""},

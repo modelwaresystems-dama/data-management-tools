@@ -24,7 +24,9 @@ A KA spec is a Python dict (see dg_spec.py) with:
   exceptions, evidence as in protocol_build
 Naming QA and relationships follow protocol_build.py.
 """
-import json, os, re, datetime
+import json, os, re, datetime, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fts_contracts
 from collections import Counter
 
 STATUS = "Proposed / illustrative"
@@ -118,7 +120,12 @@ def build(spec, overrides=None):
         if c[2] in ("guard", "decisionRight", "control"):
             m["guards"].append(row({"id": "GRD-" + c[0], "name": f"{meta.get('knowledgeArea')} contribution {c[0]}", "transition": c[1], "predicate": c[4], "scope": f"{meta.get('knowledgeArea')} (federated)", "requirement": c[6], "expression": c[5], "contribution": c[0]}, "spec:contributions"))
     m["regulatoryFacts"] = [row({"id": r[0], "regulation": r[1], "topic": r[2], "obligation": r[3], "modelReference": r[4], "verification": r[5] if len(r) > 5 else ""}, "spec:regulatoryFacts") for r in spec.get("regulatoryFacts", [])]
-    m["kaCouplings"] = [row({"id": k[0], "targetModel": k[1], "targetTransition": k[2], "event": k[3], "expression": k[4], "predicate": k[5], "note": k[6] if len(k) > 6 else ""}, "spec:kaCouplings") for k in spec.get("kaCouplings", [])]
+    # v0.6 (Howard, 24 Sep 2026, Influence Map Register card 2 option a): every coupling carries its role from the spec's
+    # couplingRoles: kind (condition, event, statement), the producing Knowledge Area, and the dependent transitions (conditions)
+    # or emitter transitions (events). The twin engine turns every condition into a guard on its dependent transitions.
+    croles = spec.get("couplingRoles", {})
+    m["kaCouplings"] = [row({"id": k[0], "targetModel": k[1], "targetTransition": k[2], "event": k[3], "expression": k[4], "predicate": k[5], "note": k[6] if len(k) > 6 else "",
+                             **croles.get(k[0], {})}, "spec:kaCouplings") for k in spec.get("kaCouplings", [])]
     m["kaInteractions"] = [row({"id": "KAI-" + c[0][4:], "subState": c[1], "knowledgeArea": meta.get("knowledgeArea"), "interactionType": c[2], "applicability": c[6], "description": c[4], "notes": "requires " + json.dumps(c[3])}, "spec:contributions") for c in contrib]
     m["kaMatrix"] = []
     m["stateVectors"] = [row({"id": v[0], "name": v[1], "vector": v[2], "legality": v[3], "vectorType": "Example configuration"}, "spec:stateVectors") for v in spec.get("stateVectors", [])]
@@ -128,26 +135,65 @@ def build(spec, overrides=None):
     m["serviceFamilies"] = [{"family": f, "question": "", "outputs": f"{n} services"} for f, n in fam.items()]
     m["controls"] = [row({"id": s["id"].replace("SVC", "CTRL"), "name": s["name"], "controlType": "Mechanism (control service)", "appliesTo": ", ".join(s["usedByTransitions"]), "objective": s["trigger"], "outcome": s["output"], "service": s["id"]}, "spec:services control family") for s in m["services"] if s["family"] == "Control"]
     m["roles"] = [row({"id": r[0], "name": r[1], "accountability": r[2], "responsibility": r[3], "appliesTo": ""}, "context:role players") for r in spec.get("roles", [])]
-    m["decisionRights"] = [row({"id": k, "name": v[0], "holder": v[1], "appliesTo": ", ".join(t[0] for t in trans if t[6] == k) + ("; " + ", ".join(c[1] for c in contrib if c[2] == "decisionRight" and k in (c[4] or "")) if any(c[2] == "decisionRight" and k in (c[4] or "") for c in contrib) else ""), "definition": v[0] + ".", "requirement": "Required", "notes": v[2] if len(v) > 2 else ""}, "spec:decisionRights") for k, v in spec.get("decisionRights", {}).items()]
+    # v0.4: holders come from the shared role vocabulary (role_vocabulary.json, confirmed 22 Sep 2026); the
+    # holders used by this KA are added to its roles as Decision-Right Holders beside the context-diagram role players
+    _voc = {r["id"]: r for r in json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "role_vocabulary.json"), encoding="utf-8"))["roles"]}
+    for hid in sorted({v[1] for v in spec.get("decisionRights", {}).values()}):
+        if hid in _voc and not any(r["id"] == hid for r in m["roles"]):
+            m["roles"].append(row({"id": hid, "name": _voc[hid]["name"], "accountability": "Decision-Right Holder", "responsibility": _voc[hid]["definition"], "appliesTo": ", ".join(k for k, v in spec["decisionRights"].items() if v[1] == hid)}, "role_vocabulary.json"))
+    m["decisionRights"] = [row({"id": k, "name": v[0], "holder": v[1], "holderName": _voc.get(v[1], {}).get("name", v[1]), "appliesTo": ", ".join(t[0] for t in trans if t[6] == k) + ("; " + ", ".join(c[1] for c in contrib if c[2] == "decisionRight" and k in (c[4] or "")) if any(c[2] == "decisionRight" and k in (c[4] or "") for c in contrib) else ""), "definition": v[0] + ".", "requirement": "Required", "notes": v[2] if len(v) > 2 else ""}, "spec:decisionRights") for k, v in spec.get("decisionRights", {}).items()]
     m["activities"] = [row({"id": a[0], "name": a[1], "processRef": a[2], "effectClass": a[3], "regions": a[4], "relatedTransitions": a[5], "services": a[6] if len(a) > 6 else [], "lifecyclePhases": [], "permittedIn": "see regions", "activityType": a[3], "nounVerb": "Verb", "permissibility": "Evaluated by the region contracts", "nameQA": dict(zip(("status", "rationale"), name_qa("activity", a[1])))}, "context:" + a[2]) for a in spec.get("activities", [])]
+    # v0.5 (Howard, 24 Sep 2026: "the builder adds back-links and says so"): a transition that names an activity the activity does not
+    # list is reconciled here, so the activity always lists every transition that names it; the build prints each back-link it adds
+    backlinks = []
+    acts_by_id = {a["id"]: a for a in m["activities"]}
+    for t in trans:
+        for aid in (t[8] if len(t) > 8 else []):
+            a = acts_by_id.get(aid)
+            if a is not None and t[0] not in a["relatedTransitions"]:
+                a["relatedTransitions"] = list(a["relatedTransitions"]) + [t[0]]; backlinks.append((aid, t[0]))
+    m["_backlinks"] = backlinks
     m["permissionRecords"] = [row({"id": p[0], "activity": p[1], "context": p[2], "outcome": p[3], "guard": p[4], "authority": p[5], "services": p[6], "evidence": p[7], "effect": p[8], "basis": p[9]}, "spec:permissions") for p in spec.get("permissions", [])]
     if not m["permissionRecords"]:
-        # derive one Conditional record per (transition-causing activity, source state of a related transition)
-        n = 0; tr_by = {t[0]: t for t in trans}
-        for a in spec.get("activities", []):
-            if "Transition-causing" not in a[3]: continue
-            for tid in a[5]:
+        # v0.8 (Howard, 29 Sep 2026, DG Reconstruction register p2 a): derived AFTER the back-links, so every activity a transition
+        # names gets a record in that transition's source state; supporting and state-preserving activities get one record per state
+        # of each region they work in, never a region id, so a per-state view (the viewer, the twin) can find them
+        n = 0; tr_by = {t[0]: t for t in trans}; seen = set()
+        for a in m["activities"]:
+            for tid in a["relatedTransitions"]:
                 t = tr_by.get(tid)
-                if not t: continue
-                n += 1
-                m["permissionRecords"].append(row({"id": f"PRM-{meta['modelId'][3:]}-{n:02d}", "activity": a[0], "context": t[2], "outcome": "Conditional", "guard": t[5], "authority": t[6] or "None", "services": t[7] if len(t) > 7 else [], "evidence": "", "effect": f"Transition-causing ({tid})", "basis": "derived from the related transition's contract"}, "derived:permissions"))
-        for a in spec.get("activities", []):
-            if "Transition-causing" in a[3]: continue
-            n += 1
-            m["permissionRecords"].append(row({"id": f"PRM-{meta['modelId'][3:]}-{n:02d}", "activity": a[0], "context": a[4][0] if a[4] else "", "outcome": "Permitted", "guard": "Region invariant holds.", "authority": "None", "services": a[6] if len(a) > 6 else [], "evidence": "", "effect": a[3], "basis": "derived: state-preserving or transition-supporting work permitted in any state of its region"}, "derived:permissions"))
-    m["artefacts"] = [row({"id": a[0], "name": a[1], "artefactType": "Deliverable", "producedIn": a[2], "producingActivity": a[3], "evidenceUse": a[4]}, "context:deliverables") for a in spec.get("artefacts", [])]
+                if not t or t[2] not in region_of or (a["id"], tid) in seen: continue
+                seen.add((a["id"], tid)); n += 1
+                causes = "Transition-causing" in a["effectClass"] or a["id"] in (t[8] if len(t) > 8 else [])
+                m["permissionRecords"].append(row({"id": f"PRM-{meta['modelId'][3:]}-{n:02d}", "activity": a["id"], "context": t[2], "outcome": "Conditional", "guard": t[5], "authority": t[6] or "None", "services": t[7] if len(t) > 7 else [], "evidence": "", "effect": ("Transition-causing (%s)" if causes else "Transition-supporting (%s)") % tid, "basis": "derived from the related transition's contract"}, "derived:permissions"))
+        for a in m["activities"]:
+            if "Transition-causing" in a["effectClass"]: continue
+            for rid in a["regions"]:
+                for sid in [x[0] for x in states if x[1] == rid]:
+                    if any(p["activity"] == a["id"] and p["context"] == sid for p in m["permissionRecords"]): continue
+                    n += 1
+                    m["permissionRecords"].append(row({"id": f"PRM-{meta['modelId'][3:]}-{n:02d}", "activity": a["id"], "context": sid, "outcome": "Permitted", "guard": "Region invariant holds.", "authority": "None", "services": a["services"], "evidence": "", "effect": a["effectClass"], "basis": "derived: state-preserving or transition-supporting work permitted in every state of its region"}, "derived:permissions"))
+    m["artefacts"] = [row({"id": a[0], "name": a[1], "artefactType": "Deliverable (Metadata Asset)", "metadataAsset": True, "producedIn": a[2], "producingActivity": a[3], "evidenceUse": a[4]}, "context:deliverables") for a in spec.get("artefacts", [])]
     m["exceptions"] = [row({"id": x[0], "name": x[1], "transition": x[2], "basis": x[3], "authority": x[4], "conditions": x[5], "statusValues": x[6]}, "spec:exceptions") for x in spec.get("exceptions", [])]
-    m["evidence"] = [row({"id": e[0], "name": e[1], "evidenceType": e[2], "relatesTo": e[3], "description": e[4], "requirement": "Required"}, "spec:evidence") for e in spec.get("evidence", [])]
+    m["evidence"] = [row({"id": e[0], "name": e[1], "evidenceType": e[2], "relatesTo": e[3], "description": e[4], "requirement": "Required", "metadataAsset": True}, "spec:evidence") for e in spec.get("evidence", [])]
+    # v0.7 (Howard, 25 Sep 2026, State Contracts register cards 3, 4, 5 and 7, option a): entry and exit conditions per way in and way
+    # out, evidence for every transition (reused or generated) and the policy controls named in the spec; see fts_contracts.py
+    fts_contracts.derive(m, spec, origin=SRC)
+    # Howard, 22 Sep 2026: every deliverable and evidence record of a Knowledge Area is a Metadata Asset. Its description lives in the
+    # Metadata of a Data Asset FTS (KA-MM) and its quality is controlled in the DQ PDCA cycle (KA-DQ). Emitted for every KA model,
+    # Metadata Management and Data Quality included (the rule applies to their own outputs).
+    if m["artefacts"] or m["evidence"]:
+        ka = meta["modelId"][3:]; n0 = len(m["kaCouplings"]); nart = len(m["artefacts"]); nevd = len(m["evidence"])
+        self_note = " The rule applies to this Knowledge Area's own outputs." if ka in ("MM", "DQ") else ""
+        m["kaCouplings"].append(row({"id": f"KAC-{ka}-{n0+1:02d}", "targetModel": "KA-MM", "targetTransition": "TR-AST-02", "event": "", "expression": "MM_asset_described",
+            "predicate": f"Every artefact ({nart}) and evidence record ({nevd}) of this Knowledge Area is a Metadata Asset: each is described in the Metadata of a Data Asset FTS, and the describing transition cites this model's artefact and evidence IDs.",
+            "note": "Generated by ka_build.py from Howard's rule (22 Sep 2026): all deliverables and evidence are metadata. Forward coupling: the MM transition cites this KA's artefacts and evidence." + self_note,
+            "kind": "statement", "producer": meta["modelId"], "statementOf": "the Knowledge Area's artefacts and evidence are Metadata Assets described in KA-MM; not a condition of any transition (Influence Map Register, 24 Sep 2026)"}, "derived:metadata-assets"))
+        m["kaCouplings"].append(row({"id": f"KAC-{ka}-{n0+2:02d}", "targetModel": "KA-DQ", "targetTransition": "TR-PDCA-02", "event": "", "expression": "DQ_conforming",
+            "predicate": f"The quality of this Knowledge Area's metadata assets ({nart} artefacts, {nevd} evidence records) is controlled in the Data Quality PDCA cycle as for any Data Asset; a non-conforming metadata asset is a DQ non-conformance.",
+            "note": "Generated by ka_build.py from Howard's rule (22 Sep 2026). Reverse coupling: this KA's outputs cite the DQ conformance fact." + self_note,
+            "kind": "statement", "producer": "KA-DQ", "statementOf": "the quality of the Knowledge Area's metadata assets is controlled in the KA-DQ PDCA cycle; not a condition of any transition (Influence Map Register, 24 Sep 2026)"}, "derived:metadata-assets"))
+        m["meta"]["metadataAssets"] = {"rule": "Every artefact and evidence record of a Knowledge Area is a Metadata Asset, described in KA-MM (Metadata of a Data Asset) and quality-controlled in KA-DQ (PDCA cycle).", "artefacts": nart, "evidence": nevd, "decidedBy": "Howard Diesel, 22 Sep 2026"}
     m["rulesGov"] = spec.get("rulesGov", []); m["conformance"] = spec.get("conformance", []); m["recommendations"] = []; m["editorialDecisions"] = []; m["namingStandard"] = spec.get("namingStandard", [])
     m["sources"] = srcs
     # relationships and trace
@@ -176,14 +222,29 @@ def build(spec, overrides=None):
     for r in m["regions"]:
         if not r.get("managedElement"): qa.append({"severity": "warning", "rule": "N-002 / GA-010", "element": r["id"], "finding": "region does not name the element it manages; each region is its own FTS over one managed element"})
         if not any(s["region"] == r["id"] and s["terminal"] for s in m["subStates"]): qa.append({"severity": "note", "rule": "N-007", "element": r["id"], "finding": "region has no terminal state (non-terminating condition of the managed element; confirm)"})
+    claimed = {tid for a in m["activities"] for tid in a["relatedTransitions"]}
     for t in m["transitions"]:
         if t["level"] != "Initial" and not t.get("decisionRight"): qa.append({"severity": "warning", "rule": "N-016", "element": t["id"], "finding": "no Decision Right; every KA transition needs one (decision 21 Sep 2026)"})
+        if t["level"] != "Initial" and t["id"] not in claimed: qa.append({"severity": "warning", "rule": "N-017", "element": t["id"], "finding": "no activity claims this transition, so a requester cannot name one truthfully (requester block, 23 Sep 2026)"})
+    own_tr = {t["id"] for t in m["transitions"]}
+    for k in m["kaCouplings"]:
+        kind = k.get("kind")
+        if kind not in ("condition", "event", "statement", "citation", "withdrawn"): qa.append({"severity": "warning", "rule": "N-018", "element": k["id"], "finding": "coupling has no role (condition, event or statement) in couplingRoles; the twin cannot enforce or raise it"}); continue
+        if kind == "condition":
+            if not k.get("dependents"): qa.append({"severity": "warning", "rule": "N-018", "element": k["id"], "finding": "condition coupling names no dependent transition"})
+            for d in k.get("dependents", []):
+                if d.get("model") == meta["modelId"] and d.get("transition") not in own_tr: qa.append({"severity": "warning", "rule": "N-018", "element": k["id"], "finding": f"dependent transition {d.get('transition')} is not a transition of this model"})
+        if kind == "event":
+            for e in k.get("emitters", []):
+                if ":" not in e and k.get("emitterModel", meta["modelId"]) == meta["modelId"] and e not in own_tr: qa.append({"severity": "warning", "rule": "N-018", "element": k["id"], "finding": f"emitter {e} is not a transition of this model"})
+    for aid, tid in m.pop("_backlinks", []):
+        qa.append({"severity": "note", "rule": "N-017", "element": aid, "finding": f"back-link added by the builder: {tid} names {aid}, which did not list it"})
     for d in m["decisionRights"]:
         if "REVIEW" in (d.get("notes") or ""): qa.append({"severity": "note", "rule": "N-016", "element": d["id"], "finding": d["notes"]})
     for c in m["contributions"]:
         if not c.get("expression"): qa.append({"severity": "note", "rule": "SIM-03", "element": c["id"], "finding": "contribution has no simulator expression; the guard will be answered by the user"})
-    m["qaFindings"] = qa + spec.get("qaNotes", [])
-    m["meta"]["counts"] = {k: len(m[k]) for k in ["regions", "subStates", "transitions", "events", "guards", "crossRegionConstraints", "contributions", "stateVectors", "activities", "artefacts", "roles", "services", "decisionRights", "permissionRecords", "exceptions", "evidence", "invariants", "relationships"]}
+    m["qaFindings"] = qa + spec.get("qaNotes", []) + m.get("qaFindings", [])
+    m["meta"]["counts"] = {k: len(m[k]) for k in ["regions", "subStates", "transitions", "events", "guards", "crossRegionConstraints", "contributions", "stateVectors", "activities", "artefacts", "roles", "services", "decisionRights", "permissionRecords", "exceptions", "evidence", "invariants", "relationships", "controls", "entryConditions", "exitConditions"]}
     m["meta"]["qaCounts"] = {"warnings": sum(1 for f in m["qaFindings"] if f["severity"] == "warning"), "notes": sum(1 for f in m["qaFindings"] if f["severity"] == "note")}
     if overrides: m = apply_overrides(m, overrides)
     return m
@@ -194,6 +255,8 @@ def run_spec(spec, filename, argv=None):
     ap = argparse.ArgumentParser(); ap.add_argument("out", nargs="?", default="."); ap.add_argument("--overrides")
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
+    # the private policy catalogue sits beside the models folder (spec/policy_controls.json); FTS_POLICY_CATALOG overrides it
+    os.environ.setdefault("FTS_POLICY_CATALOG", os.path.join(os.path.abspath(a.out), "..", "spec", "policy_controls.json"))
     ov_path = a.overrides or os.path.join(a.out, filename.replace(".fts.json", "_overrides.json"))
     overrides = json.load(open(ov_path, encoding="utf-8")) if os.path.exists(ov_path) else None
     m = build(spec, overrides)

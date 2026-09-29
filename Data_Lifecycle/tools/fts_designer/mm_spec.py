@@ -11,7 +11,7 @@ Decisions 21 Sep 2026: the Metadata of a Data Asset gates Global registration (d
 (published), custody transfer and disposition (lineage and dependencies known) and stale metadata emits the
 material-change trigger for Assurance; metadata quality and security are handled by the Data Quality PDCA
 cycle and the Data Security FTS (metadata is itself a Data Asset), so this model keeps no quality or security
-states and couples to them instead; every transition carries a Decision Right (holders drafted, REVIEW).
+states and couples to them instead; every transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python mm_spec.py [out_dir] [--overrides spec/metadata_management_overrides.json]   -> metadata_management.fts.json
 """
@@ -82,13 +82,13 @@ EVENTS = {
     "EV-AST-01": ("Data Asset brought into metadata scope", "Request"), "EV-AST-02": ("Metadata requirements agreed", "Decision outcome"), "EV-AST-03": ("Metadata integrated", "Evidence trigger"), "EV-AST-04": ("Metadata publication", "Decision outcome"), "EV-AST-05": ("Source or structure change detected", "Monitoring trigger"), "EV-AST-06": ("Metadata refresh completed", "Evidence trigger"), "EV-AST-07": ("Publication withdrawal", "Decision outcome"), "EV-AST-08": ("Data Asset destroyed or custody closed", "Monitoring trigger"),
 }
 DR = {
-    "DR-MM-01": ("Approve Metadata Strategy and Requirements", "ROLE-MM-S03", "REVIEW: drafted holder"),
-    "DR-MM-02": ("Activate, Revise and Retire the Programme", "ROLE-MM-S02", "REVIEW: drafted holder"),
-    "DR-MM-03": ("Approve Metadata Architecture, Metamodel and Standards", "ROLE-MM-P03", "REVIEW: drafted holder"),
-    "DR-MM-04": ("Activate, Revise and Retire Metadata Stores", "ROLE-MM-S02", "REVIEW: drafted holder"),
-    "DR-MM-05": ("Bring a Data Asset into Metadata Scope and Agree its Requirements", "ROLE-MM-S01", "REVIEW: drafted holder"),
-    "DR-MM-06": ("Accept Integrated Metadata and Authorize Publication", "ROLE-MM-P01", "REVIEW: drafted holder"),
-    "DR-MM-07": ("Declare Metadata Stale, Refreshed or Archived", "ROLE-MM-P01", "REVIEW: drafted holder"),
+    "DR-MM-01": ("Approve Metadata Strategy and Requirements", "ROLE-DGC", "Confirmed 22 Sep 2026 (holder register): Data Governance Council; drafted as Data Governance Bodies"),
+    "DR-MM-02": ("Activate, Revise and Retire the Programme", "ROLE-PM-MM", "Confirmed 22 Sep 2026 (holder register): Metadata Management Practice Manager; drafted as Data Managers"),
+    "DR-MM-03": ("Approve Metadata Architecture, Metamodel and Standards", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Data Architects"),
+    "DR-MM-04": ("Activate, Revise and Retire Metadata Stores", "ROLE-PM-MM", "Confirmed 22 Sep 2026 (holder register): Metadata Management Practice Manager; drafted as Data Managers"),
+    "DR-MM-05": ("Bring a Data Asset into Metadata Scope and Agree its Requirements", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Business Data Stewards"),
+    "DR-MM-06": ("Accept Integrated Metadata and Authorize Publication", "ROLE-TDS", "Confirmed 22 Sep 2026 (holder register): Technical Data Steward; drafted as Data Stewards"),
+    "DR-MM-07": ("Declare Metadata Stale, Refreshed or Archived", "ROLE-TDS", "Confirmed 22 Sep 2026 (holder register): Technical Data Steward; drafted as Data Stewards"),
 }
 ROLES = [
     ("ROLE-MM-S01", "Business Data Stewards", "Supplier", "Supply business metadata and requirements."), ("ROLE-MM-S02", "Data Managers", "Supplier", "Sponsor the programme and stores."), ("ROLE-MM-S03", "Data Governance Bodies", "Supplier", "Supply governance metadata; approve strategy and standards."), ("ROLE-MM-S04", "Data Modelers", "Supplier", "Supply logical and physical structures."), ("ROLE-MM-S05", "Database Administrators", "Supplier", "Supply technical and operational metadata."),
@@ -153,12 +153,13 @@ CONTRIB = [
     ("CON-MM-08", "TR-AS-06", "event", {"AST": ["STS-AST-05"]}, "Stale metadata breaches a condition of conditional assurance.", "MM_metadata_stale", "Conditional", "MM emits EV-AS-05 when TR-AST-04 fires."),
     ("CON-MM-09", "TR-AS-01", "guard", {"AST": ["STS-AST-03", "STS-AST-04"]}, "Assessment criteria draw on the asset's technical and business metadata.", "MM_asset_described", "Conditional", "Conditional: assessment may proceed on partial description with the gap recorded."),
     ("CON-MM-10", "TR-EX-05", "service", {"AST": ["STS-AST-04"]}, "Impact analysis from published metadata informs the disposition decision.", "SVC-MM-06", "Conditional", "Control service; artefact ART-MM-08."),
+    ("CON-MM-11", "TR-AV-01", "event", {"AST": ["STS-AST-04"]}, "Published metadata of a Metadata Asset is the request to release access to that asset.", "MM_is_metadata_asset and MM_metadata_published", "Conditional", "Howard, 23 Sep 2026: eleven Knowledge Areas gated TR-AV-01 and none raised it. Each Knowledge Area that owns an asset kind now raises the release request for the assets of its kind. Metadata Management owns the Metadata Asset (Howard, 23 Sep 2026: 'this should include Metadata Assets'); the asset fact MM_is_metadata_asset marks an asset that is itself a metadata asset, so the event fires for those and not for every asset whose metadata is published. CON-MM-02 remains the Required guard on every release."),
 ]
 KA_COUPLINGS = [
     ("KAC-MM-01", "KA-DQ", "TR-PDCA-01", "EV-PDCA-01", "MM_metadata_published", "Metadata is itself a Data Asset: the metadata of the governed scope enters the Data Quality PDCA cycle (metadata quality scorecard), so this model keeps no quality states.", "Decision 21 Sep 2026: reuse the DQ FTS."),
     ("KAC-MM-02", "KA-DQ", "TR-PDCA-01", "", "MM_metadata_published", "The DQ cycle's inputs Business Metadata, Technical Metadata and Data Lineage are available for a Data Asset only when its metadata is published.", "Reverse coupling: a DQ transition cites an MM fact."),
     ("KAC-MM-03", "KA-DG", "TR-ISS-01", "EV-ISS-01", "MM_metadata_stale", "A metadata issue (input Metadata Issues) is logged as a Data Asset issue in the Data Governance issue FTS with source Metadata Management.", "DG owns escalation; MM owns the refresh."),
-    ("KAC-MM-04", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "Metadata Standards are governing instruments: their publication is a Data Governance instrument publication (TR-POL-03), which TR-ARC-03 cites.", "Reverse coupling: an MM transition cites a DG fact."),
+    ("KAC-MM-04", "KA-DG", "TR-POL-03", "", "MM_policy_set_in_force", "Metadata Standards are governing instruments: their publication is a Data Governance instrument publication (TR-POL-03), which TR-ARC-03 cites.", "Reverse coupling: an MM transition cites a DG fact."),
     ("KAC-MM-05", "KA-DS", "TR-AST-03", "", "DS_protected", "Protection of metadata stores and of published metadata (goal 4, security) is handled by the Data Security FTS: publication (TR-AST-03) cites the asset's protection, and the classification attribute is part of the description (see KAC-DS-04, KAC-DS-05).", "Reverse coupling: an MM transition cites a DS fact."),
 ]
 FACT_BINDINGS = {
@@ -188,13 +189,58 @@ EVIDENCE = [
 ]
 EXC = [("EXC-MM-01", "Provisional Description", "TR-EX-01", "Registration of an urgent Data Asset with a partial description.", "DR-MM-06", "Identity, owner, classification and technical location recorded; full description scheduled with a date; steward assigned; evidence retained; expires at the scheduled date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-MM-01': {'emitters': [], 'kind': 'event', 'producer': 'KA-MM', 'trigger': 'fact'},
+ 'KAC-MM-02': {'dependents': [{'model': 'KA-DQ', 'transition': 'TR-PDCA-01'}], 'kind': 'condition', 'producer': 'KA-MM', 'requirement': 'Required'},
+ 'KAC-MM-03': {'emitters': [], 'kind': 'event', 'producer': 'KA-MM', 'trigger': 'fact'},
+ 'KAC-MM-04': {'dependents': [{'model': 'KA-MM', 'transition': 'TR-ARC-03'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'},
+ 'KAC-MM-05': {'dependents': [{'model': 'KA-MM', 'transition': 'TR-AST-03'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'}}
+
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-PRG-01': {'controls': [('PD-META', 'C01')], 'why': 'Defining the metadata strategy sets the scope that the Metadata Management policy approves.'},
+ 'TR-PRG-02': {'controls': [('PD-META', 'C01')], 'why': 'Approving the strategy and requirements is the policy approval act.'},
+ 'TR-PRG-03': {'controls': [('PD-META', 'C02'), ('PD-META', 'C15')],
+               'why': 'Operating needs staffed accountable roles and KPI reporting to the governance forum.'},
+ 'TR-PRG-04': {'controls': [('PD-META', 'C16')], 'why': 'Revision on a recorded trigger is the periodic and on-change policy review.'},
+ 'TR-PRG-05': {'controls': [('PD-META', 'C01'), ('PD-META', 'C16')], 'why': 'Approving the revised strategy closes the review with a policy approval.'},
+ 'TR-PRG-06': {'controls': [('PD-META', 'C01')], 'why': 'Retirement reverses the policy approval of the programme.'},
+ 'TR-ARC-01': {'controls': [('PD-META', 'C04')], 'why': 'The metamodel and store design define what business, technical and operational metadata is captured.'},
+ 'TR-ARC-02': {'controls': [('PD-META', 'C04')], 'why': 'Approving the metamodel and stores fixes the capture structure for catalogue metadata.'},
+ 'TR-ARC-03': {'controls': [('PD-META', 'C05'), ('PD-META', 'C13')],
+               'why': 'Activation puts automated integration (harvesting) and the metadata control process into operation.'},
+ 'TR-ARC-04': {'controls': [('PD-META', 'C04')], 'why': 'A metamodel or store change reopens the capture design.'},
+ 'TR-ARC-05': {'controls': [('PD-META', 'C04')], 'why': 'Approving the revised design re-fixes the capture structure.'},
+ 'TR-ARC-06': {'controls': [('PD-META', 'C04'), ('PD-META', 'C05')],
+               'why': 'Decommissioning ends harvesting and must keep captured catalogue metadata archived.'},
+ 'TR-AST-01': {'controls': [('PD-META', 'C04')], 'why': 'Scoping metadata requirements for an in-scope asset starts the capture duty for that data product.'},
+ 'TR-AST-02': {'controls': [('PD-META', 'C04'), ('PD-META', 'C05'), ('PD-META', 'C07')],
+               'why': 'Describing the asset captures and integrates its metadata and records its lineage.'},
+ 'TR-AST-03': {'controls': [('PD-META', 'C06')], 'why': 'Publication requires the description to be accepted as complete.'},
+ 'TR-AST-04': {'controls': [('PD-META', 'C08'), ('PD-META', 'C13')],
+               'why': 'A detected source, structure or process change makes lineage and metadata stale under the control process.'},
+ 'TR-AST-05': {'controls': [('PD-META', 'C05'), ('PD-META', 'C08')], 'why': 'Refresh re-integrates the description and re-verifies lineage after change.'},
+ 'TR-AST-06': {'controls': [('PD-META', 'C06')], 'why': 'Withdrawing publication reverses the acceptance gate that allowed publication.'},
+ 'TR-AST-07': {'controls': [('PD-META', 'C08'), ('PD-META', 'C13')],
+               'why': 'A change detected by the control process invalidates the unpublished description and its lineage.'},
+ 'TR-AST-08': {'controls': [('PD-META', 'C04')], 'why': 'The captured description is retained as catalogue metadata after the asset is destroyed.'},
+ 'TR-AST-09': {'controls': [('PD-META', 'C04')], 'why': 'The captured description is retained as catalogue metadata after the asset is destroyed.'},
+ 'TR-AST-10': {'controls': [('PD-META', 'C04')], 'why': 'The captured description is retained as catalogue metadata after the asset is destroyed.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-MM", "name": "Metadata Management FTS", "knowledgeArea": "Metadata Management", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Programme and the Architecture and Stores (scope level) and the Metadata of a Data Asset (one per asset) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Three state regions, each its own FTS over one managed element of the Knowledge Area: the Metadata Programme, the Metadata Architecture and Stores, and the Metadata of a Data Asset. The KA never becomes a region of the Data Asset; the Metadata of a Data Asset reaches the Global protocol through contributions (registration, access release, custody transfer, disposition, assurance triggers), and metadata quality and security are delegated to the Data Quality and Data Security FTSs by coupling.",
-             "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+             "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS,
+             "assetFacts": {"MM_is_metadata_asset": {"default": False, "meaning": "the Data Asset is itself a Metadata Asset (a glossary, catalogue entry, model, lineage record, artefact or evidence record typed as a metadata asset), so Metadata Management owns its release request (Howard, 23 Sep 2026)"}}},
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-MM-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "Process 5 carries no phase tag on the slide; (O) inferred by decision."},
         {"id": "SRC-MM-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating, quality and security delegation", "limitations": ""},

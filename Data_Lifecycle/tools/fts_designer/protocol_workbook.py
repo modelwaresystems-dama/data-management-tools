@@ -106,13 +106,31 @@ def export(m, out):
     sheet(wb, "GRCA Services", ["Service ID", "Family", "Service", "Trigger", "Output", "Used by transitions", "Used by activities", "Status", "Source"],
           [[s["id"], s["family"], s["name"], s["trigger"], s["output"], s.get("usedByTransitions", []), s.get("usedByActivities", []), S(s), O(s)] for s in m.get("services", [])], [12, 12, 34, 40, 40, 40, 30, 20, 40])
     sheet(wb, "Service Families", ["Family", "Fundamental question", "Typical outputs"], [[f["family"], f["question"], f["outputs"]] for f in m.get("serviceFamilies", [])], [14, 60, 70])
-    sheet(wb, "Controls", ["Control ID", "Control", "Type", "Applies to", "Trigger / objective", "Result", "Service", "Status", "Source"], [[c["id"], c["name"], g(c, "controlType"), g(c, "appliesTo"), g(c, "objective"), g(c, "outcome"), g(c, "service"), S(c), O(c)] for c in m["controls"]], [10, 34, 24, 30, 40, 30, 12, 20, 40])
+    sheet(wb, "Controls", ["Control ID", "Control", "Type", "Applies to", "Trigger / objective", "Result", "Service", "Policy domain", "Control number", "Theme", "Implementing procedure (template)", "Evidence artefact (template)", "Status", "Source"],
+          [[c["id"], c["name"], g(c, "controlType"), g(c, "appliesTo"), g(c, "objective"), g(c, "outcome"), g(c, "service"), g(c, "policyDomain"), g(c, "controlNumber"), g(c, "theme"), g(c, "procedure"), g(c, "evidenceArtefact"), S(c), O(c)] for c in m["controls"]],
+          [12, 40, 22, 30, 40, 30, 12, 14, 10, 30, 12, 34, 20, 40],
+          note="Mechanism: a control service the model uses. Policy control: a control of the Knowledge Area policy in the FutureState workbooks, named by domain and number (State Contracts register, 25 Sep 2026); the twin resolves each organisation's own wording, procedure and evidence artefact.")
+    # State Contracts register card 7 option a (Howard, 25 Sep 2026): the drafted mapping, one row per transition, for review
+    cid = {c["id"]: c for c in m["controls"]}
+    tcm = []
+    for t in m["transitions"]:
+        if t.get("level") == "Initial" or t.get("source") == "[Initial]": continue
+        pcs = t.get("policyControls")
+        if pcs is None and not t.get("policyControlGap"): continue
+        pcs = pcs or []
+        tcm.append([t["id"], t["name"], g(t, "region"), "; ".join(x["control"] for x in pcs), "; ".join(cid.get(x["control"], {}).get("name", "") for x in pcs),
+                    "; ".join(sorted({str(cid.get(x["control"], {}).get("procedure") or "") for x in pcs} - {""})), "; ".join(cid.get(x["control"], {}).get("evidenceArtefact") or "" for x in pcs),
+                    (pcs[0]["why"] if pcs else t.get("policyControlGap", "")), "Proposed (drafted 25 Sep 2026)" if pcs else "Gap: no control fits", ""])
+    if tcm:
+        sheet(wb, "Transition Control Map", ["Transition ID", "Transition", "Region", "Policy controls", "Control wording (template)", "Implementing procedures (template)", "Evidence artefacts (template)", "Why", "Status", "Your review"],
+              tcm, [12, 30, 16, 26, 60, 14, 40, 60, 22, 30],
+              note="Drafted for Howard's review (State Contracts register card 7 option a, 25 Sep 2026). Change a mapping in the Knowledge Area spec (POLICY_CONTROLS) and rebuild; the twin checks that the procedure implementing each control is in force (card 9).")
     sheet(wb, "Decision Rights", ["Decision Right ID", "Decision right", "Holder role", "Applies to transitions", "Definition", "Service", "Notes", "Status", "Source"], [[d["id"], d["name"], g(d, "holder"), g(d, "appliesTo"), g(d, "definition"), g(d, "service"), g(d, "notes"), S(d), O(d)] for d in m["decisionRights"]], [12, 40, 14, 30, 60, 12, 50, 20, 40])
     sheet(wb, "Permission Records", ["Permission ID", "Activity", "Context (state / vector)", "Outcome", "Guard", "Authority", "Services", "Evidence", "Effect", "Basis", "Status", "Source"],
           [[p["id"], p["activity"], p["context"], p["outcome"], p["guard"], p["authority"], p.get("services", []), p.get("evidence"), p.get("effect"), p.get("basis"), S(p), O(p)] for p in m.get("permissionRecords", [])], [10, 10, 16, 14, 60, 30, 34, 30, 26, 30, 20, 40],
           note="The report's worked examples and the definitions of the Availability states. The full permission matrix is in the validated workbook, which could not be read (encrypted).")
     sheet(wb, "Exceptions", ["Exception ID", "Exception", "Transition", "Basis", "Authority", "Conditions", "Status values", "Status", "Source"], [[x["id"], x["name"], g(x, "transition"), g(x, "basis"), g(x, "authority"), g(x, "conditions"), g(x, "statusValues"), S(x), O(x)] for x in m["exceptions"]], [10, 36, 12, 40, 30, 70, 30, 20, 40])
-    sheet(wb, "Evidence", ["Evidence ID", "Evidence", "Type", "Relates to", "Description", "Requirement", "Status", "Source"], [[e["id"], e["name"], g(e, "evidenceType"), g(e, "relatesTo"), g(e, "description"), g(e, "requirement"), S(e), O(e)] for e in m["evidence"]], [10, 36, 22, 12, 70, 12, 20, 40])
+    sheet(wb, "Evidence", ["Evidence ID", "Evidence", "Type", "Relates to", "Description", "Requirement", "Status", "Source"], [[e["id"], e["name"], g(e, "evidenceType"), ", ".join(e.get("transitions") or []) or g(e, "relatesTo"), g(e, "description"), g(e, "requirement"), S(e), O(e)] for e in m["evidence"]], [10, 36, 22, 12, 70, 12, 20, 40])
     if m.get("conformance"): sheet(wb, "Conformance Clauses", ["Clause ID", "Title", "Candidate normative text (SHALL is proposed, not approved)"], [[c["id"], c["title"], c["clause"]] for c in m.get("conformance", [])], [10, 30, 110])
     if m.get("recommendations"): sheet(wb, "Recommendations", ["ID", "Recommendation", "Proposed decision", "Suggested disposition"], [[r["id"], r["title"], r["proposedDecision"], r["suggestedDisposition"]] for r in m.get("recommendations", [])], [8, 40, 80, 26])
     if m.get("editorialDecisions"): sheet(wb, "Editorial Decisions", ["Decision ID", "Question for the Board", "Recommended decision", "If deferred"], [[e["id"], e["question"], e["recommended"], e["ifDeferred"]] for e in m.get("editorialDecisions", [])], [10, 50, 60, 50])

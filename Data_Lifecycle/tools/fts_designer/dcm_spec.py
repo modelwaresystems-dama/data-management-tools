@@ -11,7 +11,7 @@ state of the one lifecycle); 4 a Legal Hold or e-discovery matter (one per matte
 Decisions 22 Sep 2026: DCM gates Global destruction (retention expired and no active hold), preservation (retention rule
 assigned) and release of published content or a declared record; a hold raised emits the Assurance trigger and blocks
 disposition; records retention and the audit trail is an assurance service; guards are Conditional so assets with no
-content item are unaffected; every transition carries a Decision Right (holders drafted, REVIEW).
+content item are unaffected; every transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python dcm_spec.py [out_dir] [--overrides spec/document_content_management_overrides.json]   -> document_content_management.fts.json
 """
@@ -94,14 +94,14 @@ EVENTS = {
     "EV-HLD-01": ("Hold identification", "Request"), "EV-HLD-02": ("Preservation notice", "Decision outcome"), "EV-HLD-03": ("Hold withdrawal", "Decision outcome"), "EV-HLD-04": ("Discovery request", "Request"), "EV-HLD-05": ("Discovery completion", "Evidence trigger"), "EV-HLD-06": ("Hold release", "Decision outcome"), "EV-HLD-07": ("Hold record closure", "Decision outcome"),
 }
 DR = {
-    "DR-DCM-01": ("Approve the Content and Records Strategy and Handling Policies", "ROLE-DCM-P02", "REVIEW: drafted holder"),
-    "DR-DCM-02": ("Plan, Develop, Review and Retire the Strategy and Policies", "ROLE-DCM-P03", "REVIEW: drafted holder"),
-    "DR-DCM-03": ("Approve the Information Architecture and its Changes", "ROLE-DCM-P02", "REVIEW: drafted holder"),
-    "DR-DCM-04": ("Define, Change and Retire the Information Architecture and Repository", "ROLE-DCM-P04", "REVIEW: drafted holder"),
-    "DR-DCM-05": ("Capture, Classify, Publish and Withdraw Content", "ROLE-DCM-P04", "REVIEW: drafted holder"),
-    "DR-DCM-06": ("Declare, Archive, Retrieve and Extend a Record", "ROLE-DCM-P03", "REVIEW: drafted holder"),
-    "DR-DCM-07": ("Dispose of a Record or Discard Content", "ROLE-DCM-P03", "REVIEW: drafted holder"),
-    "DR-DCM-08": ("Identify, Issue, Release and Close a Legal Hold", "ROLE-DCM-S01", "REVIEW: drafted holder"),
+    "DR-DCM-01": ("Approve the Content and Records Strategy and Handling Policies", "ROLE-PM-DCM", "Confirmed 22 Sep 2026 (holder register): Document and Content Management Practice Manager; drafted as Data management professional"),
+    "DR-DCM-02": ("Plan, Develop, Review and Retire the Strategy and Policies", "ROLE-RIM", "Confirmed 22 Sep 2026 (holder register): Records and Information Manager; drafted as Records management staff"),
+    "DR-DCM-03": ("Approve the Information Architecture and its Changes", "ROLE-PM-DCM", "Confirmed 22 Sep 2026 (holder register): Document and Content Management Practice Manager; drafted as Data management professional"),
+    "DR-DCM-04": ("Define, Change and Retire the Information Architecture and Repository", "ROLE-RIM", "Confirmed 22 Sep 2026 (holder register): Records and Information Manager; drafted as Content management staff"),
+    "DR-DCM-05": ("Capture, Classify, Publish and Withdraw Content", "ROLE-RIM", "Confirmed 22 Sep 2026 (holder register): Records and Information Manager; drafted as Content management staff"),
+    "DR-DCM-06": ("Declare, Archive, Retrieve and Extend a Record", "ROLE-RIM", "Confirmed 22 Sep 2026 (holder register): Records and Information Manager; drafted as Records management staff"),
+    "DR-DCM-07": ("Dispose of a Record or Discard Content", "ROLE-RIM", "Confirmed 22 Sep 2026 (holder register): Records and Information Manager; drafted as Records management staff"),
+    "DR-DCM-08": ("Identify, Issue, Release and Close a Legal Hold", "ROLE-LEGAL", "Confirmed 22 Sep 2026 (holder register): Legal Counsel; drafted as Legal team"),
 }
 ROLES = [
     ("ROLE-DCM-S01", "Legal team", "Supplier", "Supplies legal retention requirements, holds and the e-discovery obligations."), ("ROLE-DCM-S02", "Business team", "Supplier", "Supplies the business strategy and content needs."), ("ROLE-DCM-S03", "IT team", "Supplier", "Supplies the IT strategy and platforms."), ("ROLE-DCM-S04", "External party", "Supplier", "Supplies content and documents from outside the organisation."),
@@ -174,6 +174,7 @@ CONTRIB = [
     ("CON-DCM-04", "TR-AV-01", "guard", {"REC": ["STS-REC-04", "STS-REC-05"]}, "Access to a document or content asset is released only to content published through the repository under the handling policy or to a declared record under active management.", "DCM_content_released or not DCM_record_active", "Conditional", "Archived, expired and disposed items are not released; assets with no content item are unaffected."),
     ("CON-DCM-05", "TR-AS-05", "event", {"HLD": ["STS-HLD-03"]}, "A hold raised over the asset's records is a material change affecting the assurance claim: disposition is suspended and e-discovery obligations apply.", "DCM_hold_active", "Conditional", "DCM emits EV-AS-05 when TR-HLD-02 or TR-HLD-09 fires."),
     ("CON-DCM-06", "TR-AS-02", "service", {"REC": ["STS-REC-05", "STS-REC-06"]}, "Records Retention and Audit Trail supplies assurance evidence for the asset's records (declaration, retention status, audit log, compliance audit metric).", "SVC-DCM-06", "Conditional", "Assurance service; evidence EVD-DCM-06."),
+    ("CON-DCM-07", "TR-AV-01", "event", {"REC": ["STS-REC-04", "STS-REC-05"]}, "Content published through the repository, or a record declared under active management, is the request to release access to it.", "DCM_record_active and DCM_content_released", "Conditional", "Howard, 23 Sep 2026: eleven Knowledge Areas gated TR-AV-01 and none raised it. Each Knowledge Area that owns an asset kind now raises the release request for the assets of its kind. Document and Content Management owns the record or content item; DCM emits EV-AV-01 when TR-REC-04 or TR-REC-05 fires."),
 ]
 KA_COUPLINGS = [
     ("KAC-DCM-01", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DCM_strategy_in_force", "A handling policy breach, a failed compliance audit or a missed hold is logged as a Data Asset issue with source Document and Content Management (TR-CRS-06 emits EV-ISS-01 on an audit finding).", "DG owns escalation; DCM owns the remediation."),
@@ -221,13 +222,90 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DCM-01", "Provisional Publication", "TR-AV-01", "Release of captured content to a named audience before its classification is complete.", "DR-DCM-05", "Content captured into the repository, provisional access level applied by the data steward, audience named, classification scheduled with a date, Data Security informed, audit log kept; expires at the scheduled classification date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DCM-01': {'emitters': ['TR-CRS-06'], 'kind': 'event', 'producer': 'KA-DCM'},
+ 'KAC-DCM-02': {'dependents': [{'model': 'KA-DCM', 'transition': 'TR-REC-02'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
+ 'KAC-DCM-03': {'kind': 'citation', 'producer': 'KA-DCM', 'cites': {'model': 'KA-MM', 'transition': 'TR-AST-02'}, 'raises': {'model': 'KA-MM', 'event': 'EV-AST-05'}, 'onlyIf': 'MM_asset_described'},
+ 'KAC-DCM-04': {'dependents': [{'model': 'KA-DCM', 'transition': 'TR-REC-07'}], 'kind': 'condition', 'producer': 'KA-DSO', 'requirement': 'Required'},
+ 'KAC-DCM-05': {'dependents': [{'model': 'KA-DCM', 'transition': 'TR-IAR-01'}], 'kind': 'condition', 'producer': 'KA-DA', 'requirement': 'Required'},
+ 'KAC-DCM-06': {'dependents': [{'model': 'KA-DCM', 'transition': 'TR-REC-03'}],
+                'kind': 'condition',
+                'producer': 'KA-DII',
+                'qualifier': 'delivery_by_service',
+                'requirement': 'Conditional'},
+ 'KAC-DCM-07': {'dependents': [{'model': 'KA-DS', 'transition': 'TR-PRV-08'}], 'kind': 'condition', 'producer': 'KA-DCM', 'requirement': 'Required'}}
+
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-CRS-01': {'controls': [('PD-REC', 'C04'), ('PD-REC', 'C05'), ('PD-REC', 'C06')],
+               'why': 'Drafting record classes and the retention schedule from legal requirements is retention scheduling, appraisal and legal mapping.'},
+ 'TR-CRS-02': {'controls': [('PD-DOC', 'C01')], 'why': 'Drafting the content strategy and handling policies is authoring the content management policy.'},
+ 'TR-CRS-03': {'controls': [('PD-DOC', 'C01'), ('PD-REC', 'C01'), ('PD-REC', 'C04')],
+               'why': 'Approving the strategy, policies and retention schedule is policy approval for both domains plus the retention schedule.'},
+ 'TR-CRS-04': {'controls': [('PD-DOC', 'C01'), ('PD-REC', 'C01')],
+               'why': 'Rejecting the strategy and policies is the negative outcome of the policy approval control.'},
+ 'TR-CRS-05': {'controls': [('PD-DOC', 'C01'), ('PD-REC', 'C01'), ('PD-REC', 'C04')],
+               'why': 'Publishing the policies and bringing the retention schedule into force is policy publication and schedule maintenance.'},
+ 'TR-CRS-06': {'controls': [('PD-DOC', 'C16'), ('PD-REC', 'C16')], 'why': 'An audit finding or legal change opens the periodic and on-change policy review.'},
+ 'TR-CRS-07': {'controls': [('PD-DOC', 'C16'), ('PD-REC', 'C16'), ('PD-DOC', 'C01')],
+               'why': 'Approving and republishing reviewed policies closes the policy review and republishes the policy.'},
+ 'TR-CRS-08': {'controls': [('PD-DOC', 'C16'), ('PD-REC', 'C16')], 'why': 'Retiring the strategy is an outcome of the policy review.'},
+ 'TR-IAR-01': {'controls': [('PD-DOC', 'C07')], 'why': 'Defining the repository design and tagging scheme sets up the managed repository.'},
+ 'TR-IAR-02': {'controls': [('PD-DOC', 'C07')], 'why': 'Approving the information architecture approves the managed repository design.'},
+ 'TR-IAR-03': {'controls': [('PD-DOC', 'C07')], 'why': 'Withdrawing the definition reverses the repository design step.'},
+ 'TR-IAR-04': {'controls': [('PD-DOC', 'C07')], 'why': 'Bringing the content repository into service establishes the managed repository.'},
+ 'TR-IAR-05': {'controls': [('PD-DOC', 'C07')], 'why': 'A taxonomy change or repository migration is a change to the managed repository.'},
+ 'TR-IAR-06': {'controls': [('PD-DOC', 'C07')],
+               'why': 'Approving the change with items migrated without loss keeps the repository the single source of truth.'},
+ 'TR-IAR-07': {'controls': [('PD-DOC', 'C07')], 'why': 'Decommissioning the repository retires the managed repository.'},
+ 'TR-REC-01': {'controls': [('PD-DOC', 'C07')], 'why': 'Capturing an item into the repository in service holds it in a managed repository.'},
+ 'TR-REC-02': {'controls': [('PD-DOC', 'C04')],
+               'why': 'Assigning record class, security classification and tags is classifying content by sensitivity and record type.'},
+ 'TR-REC-03': {'controls': [('PD-DOC', 'C05'), ('PD-DOC', 'C08'), ('PD-DOC', 'C09')],
+               'why': 'Publishing to an audience under the handling policy and access level applies handling, distribution and access controls.'},
+ 'TR-REC-04': {'controls': [('PD-DOC', 'C08'), ('PD-DOC', 'C09')],
+               'why': 'Withdrawing an item from its audience reverses its controlled distribution and access.'},
+ 'TR-REC-05': {'controls': [('PD-REC', 'C10'), ('PD-DOC', 'C10')], 'why': 'Declaring a record changes its lifecycle state and starts its retention schedule.'},
+ 'TR-REC-06': {'controls': [('PD-REC', 'C10'), ('PD-DOC', 'C10')],
+               'why': 'Declaring a published item a record changes its lifecycle state and starts its retention schedule.'},
+ 'TR-REC-07': {'controls': [('PD-REC', 'C10')], 'why': 'Moving a record to archive is a governed lifecycle state change.'},
+ 'TR-REC-08': {'controls': [('PD-REC', 'C10'), ('PD-DOC', 'C09')],
+               'why': 'Restoring an archived record on an entitled request is a lifecycle change gated by the content access model.'},
+ 'TR-REC-09': {'controls': [('PD-REC', 'C10'), ('PD-REC', 'C04')],
+               'why': 'The end of the retention period under the schedule moves the record to retention expired.'},
+ 'TR-REC-10': {'controls': [('PD-REC', 'C10'), ('PD-REC', 'C04')],
+               'why': 'The end of the retention period under the schedule moves the archived record to retention expired.'},
+ 'TR-REC-11': {'controls': [('PD-REC', 'C07'), ('PD-REC', 'C08'), ('PD-REC', 'C12')],
+               'why': 'Disposal needs a hold check, an authorised disposition and a destruction certificate.'},
+ 'TR-REC-12': {'controls': [('PD-REC', 'C05'), ('PD-REC', 'C10')],
+               'why': 'Extending retention anchors the record to a new obligation and changes its lifecycle state.'},
+ 'TR-REC-13': {'controls': [('PD-DOC', 'C11'), ('PD-REC', 'C12')],
+               'why': 'Discarding non-record content is secure content disposal after reconciling against holds.'},
+ 'TR-HLD-01': {'controls': [('PD-REC', 'C11')], 'why': 'Identifying and scoping a hold matter starts the legal hold tracking.'},
+ 'TR-HLD-02': {'controls': [('PD-REC', 'C11'), ('PD-DOC', 'C12')],
+               'why': 'Issuing the preservation notice applies the legal hold and suspends disposal of content in scope.'},
+ 'TR-HLD-03': {'controls': [('PD-REC', 'C11')], 'why': 'Withdrawing an identified hold reverses the hold identification.'},
+ 'TR-HLD-04': {'controls': [('PD-REC', 'C11')], 'why': 'Discovery proceeds under an active tracked legal hold.'},
+ 'TR-HLD-05': {'controls': [('PD-REC', 'C11')], 'why': 'Completing discovery returns to the active tracked legal hold.'},
+ 'TR-HLD-06': {'controls': [('PD-REC', 'C11'), ('PD-DOC', 'C12')], 'why': 'Releasing the hold reverses the legal hold and lets disposal resume.'},
+ 'TR-HLD-07': {'controls': [('PD-REC', 'C11'), ('PD-DOC', 'C12')],
+               'why': 'Releasing the hold during discovery reverses the legal hold and lets disposal resume.'},
+ 'TR-HLD-08': {'controls': [('PD-REC', 'C11')], 'why': 'Closing and retaining the hold record completes legal hold tracking.'},
+ 'TR-HLD-09': {'controls': [('PD-REC', 'C11'), ('PD-DOC', 'C12')], 'why': 'Reinstating a hold reapplies the legal hold and suspends disposal again.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DCM", "name": "Document and Content Management FTS", "knowledgeArea": "Document and Content Management", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Content and Records Management Strategy (scope level), the Information Architecture and Content Repository (scope level), a Record or Content Item of a Data Asset (one per item) and a Legal Hold or e-Discovery Matter (one per matter) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Four state regions, each its own FTS over one managed element of the Knowledge Area: the Content and Records Management Strategy, the Information Architecture and Content Repository, a Record or Content Item of a Data Asset and a Legal Hold or e-Discovery Matter. The KA never becomes a region of the Data Asset; the item and the hold reach the Global protocol through contributions (destruction only after retention expiry with no active hold, preservation with a retention category assigned, release of published content or a declared record, the hold as the assurance trigger and records retention as the assurance service), all Conditional so assets with no content item are unaffected, and couple to DG, Data Security, Metadata, DSO, Data Architecture and DII.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DCM-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram lists five activities and five deliverables but no item or hold lifecycle; the Record or Content Item states are drafted from Capture and Manage, Retain, Dispose and Archive, and Publish and Deliver Content with the Managed record and Audit trail deliverables; the hold states are drafted from the e-discovery approach, the litigation driver and the E-discovery KPI. Activity 2 carries no phase tag on the diagram; (P) is inferred."},
         {"id": "SRC-DCM-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (four), Global gating, one record lifecycle with declaration as a state", "limitations": ""},

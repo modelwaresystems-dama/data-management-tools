@@ -14,7 +14,7 @@ materialisation (ingested and aligned on a platform in service), release of a mo
 insight published after the trust and ethics review, which is a hard gate: structural path plus a Non-waivable guard),
 supersession by an enhanced model (event) and the assurance trigger on model drift, a source alert or a platform breach;
 model validation is an assurance service; guards are Conditional so assets outside big data are unaffected; every
-transition carries a Decision Right (holders drafted, REVIEW).
+transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python bda_spec.py [out_dir] [--overrides spec/big_data_data_science_overrides.json]   -> big_data_data_science.fts.json
 """
@@ -112,15 +112,15 @@ EVENTS = {
     "EV-INS-01": ("Insight draft", "Evidence trigger"), "EV-INS-02": ("Trust and ethics review pass", "Decision outcome"), "EV-INS-03": ("Trust and ethics review failure", "Decision outcome"), "EV-INS-04": ("Insight publication", "Decision outcome"), "EV-INS-05": ("Insight supersession", "Decision outcome"), "EV-INS-06": ("Insight withdrawal", "Decision outcome"), "EV-INS-07": ("Insight redraft", "Request"),
 }
 DR = {
-    "DR-BDA-01": ("Approve the Big Data Strategy and Standards", "ROLE-BDA-P06", "REVIEW: drafted holder"),
-    "DR-BDA-02": ("Define, Review and Retire the Strategy and Standards", "ROLE-BDA-P06", "REVIEW: drafted holder"),
-    "DR-BDA-03": ("Decide, Provision, Scale and Decommission a Platform", "ROLE-BDA-P01", "REVIEW: drafted holder"),
-    "DR-BDA-04": ("Choose, Acquire and Retire a Data Source", "ROLE-BDA-P03", "REVIEW: drafted holder"),
-    "DR-BDA-05": ("Ingest, Align and Refresh a Data Source", "ROLE-BDA-P02", "REVIEW: drafted holder"),
-    "DR-BDA-06": ("Develop, Explore, Validate and Enhance a Model", "ROLE-BDA-P04", "REVIEW: drafted holder"),
-    "DR-BDA-07": ("Deploy, Monitor and Retire a Model", "ROLE-BDA-P05", "REVIEW: drafted holder"),
-    "DR-BDA-08": ("Review an Insight for Trust and Ethics", "ROLE-BDA-P06", "REVIEW: drafted holder"),
-    "DR-BDA-09": ("Draft, Publish, Supersede and Withdraw an Insight", "ROLE-BDA-P05", "REVIEW: drafted holder"),
+    "DR-BDA-01": ("Approve the Big Data Strategy and Standards", "ROLE-PM-BDA", "Confirmed 22 Sep 2026 (holder register): Big Data and Data Science Practice Manager; drafted as DM Managers"),
+    "DR-BDA-02": ("Define, Review and Retire the Strategy and Standards", "ROLE-PM-BDA", "Confirmed 22 Sep 2026 (holder register): Big Data and Data Science Practice Manager; drafted as DM Managers"),
+    "DR-BDA-03": ("Decide, Provision, Scale and Decommission a Platform", "ROLE-BDPA", "Confirmed 22 Sep 2026 (holder register): Big Data Platform Architect; drafted as Big Data Platform Architects"),
+    "DR-BDA-04": ("Choose, Acquire and Retire a Data Source", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Data SMEs"),
+    "DR-BDA-05": ("Ingest, Align and Refresh a Data Source", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Ingestion Architects"),
+    "DR-BDA-06": ("Develop, Explore, Validate and Enhance a Model", "ROLE-DSCI", "Confirmed 22 Sep 2026 (holder register): Data Scientist; drafted as Data Scientists"),
+    "DR-BDA-07": ("Deploy, Monitor and Retire a Model", "ROLE-DSCI", "Confirmed 22 Sep 2026 (holder register): Data Scientist; drafted as Analytic Design Lead"),
+    "DR-BDA-08": ("Review an Insight for Trust and Ethics", "ROLE-PM-BDA", "Confirmed 22 Sep 2026 (holder register): Big Data and Data Science Practice Manager; drafted as DM Managers"),
+    "DR-BDA-09": ("Draft, Publish, Supersede and Withdraw an Insight", "ROLE-DSCI", "Confirmed 22 Sep 2026 (holder register): Data Scientist; drafted as Analytic Design Lead"),
 }
 ROLES = [
     ("ROLE-BDA-S01", "Big Data Platform Architects", "Supplier", "Supply platform options and the build, buy or rent decision tree."), ("ROLE-BDA-S02", "Data Scientists", "Supplier", "Supply hypotheses and methods."), ("ROLE-BDA-S03", "Data Producers", "Supplier", "Supply internal data sources."), ("ROLE-BDA-S04", "Data Suppliers", "Supplier", "Supply external data sources."), ("ROLE-BDA-S05", "Information Consumers", "Supplier", "Supply questions and feedback."),
@@ -209,6 +209,12 @@ CONTRIB = [
     ("CON-BDA-05", "TR-EX-03", "event", {"MDL": ["STS-MDL-07"]}, "An enhanced model deployed supersedes the previous model version.", "BDA_model_enhancing", "Conditional", "BDA emits EV-EX-03 when TR-MDL-10 deploys the enhanced version."),
     ("CON-BDA-06", "TR-AS-05", "event", {"MDL": ["STS-MDL-06"], "SRC": ["STS-SRC-06"], "PLT": ["STS-PLT-05"]}, "Model drift, a source alert or a platform breach is a material change affecting the assurance claim.", "BDA_model_drift or BDA_source_alert or BDA_platform_scaling", "Conditional", "BDA emits EV-AS-05 when TR-MDL-06, TR-SRC-06 or TR-PLT-05 fires."),
     ("CON-BDA-07", "TR-AS-02", "service", {"MDL": ["STS-MDL-04", "STS-MDL-05"]}, "Model Validation and Monitoring supplies assurance evidence for a model output or insight.", "SVC-BDA-06", "Conditional", "Assurance service; evidence EVD-BDA-08."),
+    ("CON-BDA-08", "TR-CP-01", "guard", {"PLT": ["STS-PLT-04", "STS-PLT-05"], "SRC": ["STS-SRC-02", "STS-SRC-03", "STS-SRC-04", "STS-SRC-05", "STS-SRC-06"]}, "An acquired source is taken into active custody only on a platform in service.", "BDA_platform_in_service or not BDA_source_active", "Conditional", "Howard, 22 Sep (custody register): BDA gates Custody through the platform, the source and the model."),
+    ("CON-BDA-09", "TR-CP-02", "guard", {"SRC": ["STS-SRC-07"], "MDL": ["STS-MDL-08"]}, "Preservation custody is entered only once the source and the model that used it are retired; an aligned source or a deployed model keeps the asset in active custody.", "(BDA_source_retired or not BDA_source_active) and (BDA_model_retired or not BDA_model_active)", "Conditional", "Applies per asset instance; an asset with neither a source nor a model is unaffected."),
+    ("CON-BDA-10", "TR-CP-05", "event", {"PLT": ["STS-PLT-06"]}, "Decommissioning the platform (TR-PLT-07 or TR-PLT-08) triggers a custody transfer of the data it held to another custodian.", "BDA_platform_decommissioned", "Conditional", "Event emitted into the Global protocol; the DSO, DII and DG guards on TR-CP-05 still decide."),
+    ("CON-BDA-11", "TR-CP-10", "guard", {"SRC": ["STS-SRC-01", "STS-SRC-02", "STS-SRC-03", "STS-SRC-07"], "MDL": ["STS-MDL-01", "STS-MDL-02", "STS-MDL-03", "STS-MDL-04", "STS-MDL-08"]}, "Custody is closed after destruction only when no ingested source and no deployed model still uses the asset.", "not BDA_source_ingested and not BDA_model_deployed", "Conditional", "A destroyed asset with an ingested source or a deployed model is a dangling dependency."),
+    ("CON-BDA-12", "TR-CP-03", "guard", {"PLT": ["STS-PLT-04", "STS-PLT-05"], "SRC": ["STS-SRC-02", "STS-SRC-03", "STS-SRC-04", "STS-SRC-05", "STS-SRC-06"]}, "A preserved source is restored to active custody only onto a platform in service.", "BDA_platform_in_service or not BDA_source_active", "Conditional", "Mirror of CON-BDA-08 for the restore path."),
+    ("CON-BDA-13", "TR-AV-01", "event", {"INS": ["STS-INS-04"]}, "A published insight is the request to release access to it.", "BDA_insight_active and BDA_insight_published", "Conditional", "Howard, 23 Sep 2026: eleven Knowledge Areas gated TR-AV-01 and none raised it. Each Knowledge Area that owns an asset kind now raises the release request for the assets of its kind. Big Data and Data Science owns the analytical model and the insight; BDA emits EV-AV-01 when TR-INS-04 fires. CON-BDA-04 still refuses a release the trust and ethics review has not passed."),
 ]
 KA_COUPLINGS = [
     ("KAC-BDA-01", "KA-DG", "TR-ISS-01", "EV-ISS-01", "BDA_model_drift", "Model drift, a source alert, a platform breach and a rejected or withdrawn insight are logged as Data Asset issues with source Big Data and Data Science (TR-MDL-06, TR-SRC-06, TR-PLT-05, TR-INS-03 and TR-INS-06 emit EV-ISS-01).", "DG owns escalation; BDA owns the remediation."),
@@ -222,6 +228,9 @@ KA_COUPLINGS = [
     ("KAC-BDA-09", "KA-RMD", "TR-DOM-05", "", "RMD_domain_shared", "Master data is chosen as a source from a shared domain (TR-SRC-01 cites the RMD fact for master data sources).", "Reverse coupling: a BDA transition cites an RMD fact."),
 ]
 FACT_BINDINGS = {
+    "BDA_platform_decommissioned": {"region": "REG-BDA-PLT", "states": ["STS-PLT-06"]},
+    "BDA_source_retired": {"region": "REG-BDA-SRC", "states": ["STS-SRC-07"]},
+    "BDA_model_retired": {"region": "REG-BDA-MDL", "states": ["STS-MDL-08"]},
     "BDA_strategy_in_force": {"region": "REG-BDA-BDS", "states": ["STS-BDS-05", "STS-BDS-06"]},
     "BDA_platform_in_service": {"region": "REG-BDA-PLT", "states": ["STS-PLT-04", "STS-PLT-05"]},
     "BDA_platform_scaling": {"region": "REG-BDA-PLT", "states": ["STS-PLT-05"]},
@@ -266,13 +275,101 @@ EVIDENCE = [
 ]
 EXC = [("EXC-BDA-01", "Pilot Model Deployment", "TR-MDL-05", "Deployment of a model validated on a partial holdout to a monitored pilot before full validation.", "DR-BDA-07", "Pilot scope and audience named, monitoring thresholds set, full validation scheduled with a date, privacy basis confirmed, DG informed, evidence retained; expires at the scheduled validation date. Never waives the trust and ethics review of an insight (CON-BDA-04 is Non-waivable).", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-BDA-01': {'emitters': ['TR-MDL-06', 'TR-SRC-06', 'TR-PLT-05', 'TR-INS-03', 'TR-INS-06'], 'kind': 'event', 'producer': 'KA-BDA'},
+ 'KAC-BDA-02': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-SRC-04'}, {'model': 'KA-BDA', 'transition': 'TR-SRC-11'}],
+                'kind': 'condition',
+                'producer': 'KA-DII',
+                'requirement': 'Required'},
+ 'KAC-BDA-03': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-SRC-01'}, {'model': 'KA-BDA', 'transition': 'TR-MDL-05'}],
+                'kind': 'condition',
+                'producer': 'KA-DS',
+                'requirement': 'Required'},
+ 'KAC-BDA-04': {'kind': 'citation', 'producer': 'KA-BDA', 'cites': {'model': 'KA-MM', 'transition': 'TR-AST-02'}, 'raises': {'model': 'KA-MM', 'event': 'EV-AST-05'}, 'onlyIf': 'MM_asset_described'},
+ 'KAC-BDA-05': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-MDL-03'}], 'kind': 'condition', 'producer': 'KA-DQ', 'requirement': 'Required'},
+ 'KAC-BDA-06': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-PLT-02'}], 'kind': 'condition', 'producer': 'KA-DSO', 'requirement': 'Required'},
+ 'KAC-BDA-07': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-SRC-05'}],
+                'kind': 'condition',
+                'producer': 'KA-DWBI',
+                'qualifier': 'source_is_warehouse',
+                'requirement': 'Conditional'},
+ 'KAC-BDA-08': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-BDS-02'}], 'kind': 'condition', 'producer': 'KA-DA', 'requirement': 'Required'},
+ 'KAC-BDA-09': {'dependents': [{'model': 'KA-BDA', 'transition': 'TR-SRC-01'}],
+                'kind': 'condition',
+                'producer': 'KA-RMD',
+                'qualifier': 'source_is_master_data',
+                'requirement': 'Conditional'}}
+
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-BDS-01': {'controls': [('PD-SYN-BDA', 'C01')], 'why': 'Recording business needs is the first step of the strategy the policy approves.'},
+ 'TR-BDS-02': {'controls': [('PD-SYN-BDA', 'C01')], 'why': 'Drafting the strategy and standards drafts the policy instruments.'},
+ 'TR-BDS-03': {'controls': [('PD-SYN-BDA', 'C01')], 'why': 'Approving the strategy and standards is the policy approval act.'},
+ 'TR-BDS-04': {'controls': [('PD-SYN-BDA', 'C01')], 'why': 'Rejection is the negative outcome of the policy approval act.'},
+ 'TR-BDS-05': {'controls': [('PD-SYN-BDA', 'C01'), ('PD-SYN-BDA', 'C15')], 'why': 'Standards are published and usage metrics are defined for KPI reporting.'},
+ 'TR-BDS-06': {'controls': [('PD-SYN-BDA', 'C16')], 'why': 'A review on a recorded trigger is the on-change policy review.'},
+ 'TR-BDS-07': {'controls': [('PD-SYN-BDA', 'C01'), ('PD-SYN-BDA', 'C16')], 'why': 'The review closes with approval and publication of the revised standards.'},
+ 'TR-BDS-08': {'controls': [('PD-SYN-BDA', 'C01')], 'why': 'Retirement reverses the policy approval of the strategy.'},
+ 'TR-PLT-01': {'controls': [], 'why': 'PD-SYN-BDA has no platform theme; platform selection and operation sit outside C04 to C12.'},
+ 'TR-PLT-02': {'controls': [], 'why': 'PD-SYN-BDA has no platform theme; platform selection and operation sit outside C04 to C12.'},
+ 'TR-PLT-03': {'controls': [], 'why': 'PD-SYN-BDA has no platform theme; platform selection and operation sit outside C04 to C12.'},
+ 'TR-PLT-04': {'controls': [], 'why': 'PD-SYN-BDA has no platform theme; platform selection and operation sit outside C04 to C12.'},
+ 'TR-PLT-05': {'controls': [('PD-SYN-BDA', 'C13')], 'why': 'A capacity breach is logged as an issue with an assurance trigger under compliance monitoring.'},
+ 'TR-PLT-06': {'controls': [('PD-SYN-BDA', 'C13')], 'why': 'Completing scaling closes the logged breach under compliance monitoring.'},
+ 'TR-PLT-07': {'controls': [], 'why': 'PD-SYN-BDA has no platform theme; platform selection and operation sit outside C04 to C12.'},
+ 'TR-PLT-08': {'controls': [], 'why': 'PD-SYN-BDA has no platform theme; platform selection and operation sit outside C04 to C12.'},
+ 'TR-PLT-09': {'controls': [], 'why': 'PD-SYN-BDA has no platform theme; platform selection and operation sit outside C04 to C12.'},
+ 'TR-SRC-01': {'controls': [('PD-SYN-BDA', 'C04')], 'why': 'Choosing a source is its approval for data science use.'},
+ 'TR-SRC-02': {'controls': [('PD-SYN-BDA', 'C04'), ('PD-SYN-BDA', 'C06')],
+               'why': 'Acquisition puts the licence in place, which sets the permitted use of the dataset.'},
+ 'TR-SRC-03': {'controls': [('PD-SYN-BDA', 'C04')], 'why': 'Rejection is the negative outcome of source approval.'},
+ 'TR-SRC-04': {'controls': [('PD-SYN-BDA', 'C05')], 'why': 'Ingestion is the first part of aligning and profiling the source before modelling.'},
+ 'TR-SRC-05': {'controls': [('PD-SYN-BDA', 'C05'), ('PD-SYN-BDA', 'C06')], 'why': 'Alignment readies the data for analysis and records its lineage.'},
+ 'TR-SRC-06': {'controls': [('PD-SYN-BDA', 'C05'), ('PD-SYN-BDA', 'C13')],
+               'why': 'Schema or quality drift breaks alignment and is logged with an assurance trigger.'},
+ 'TR-SRC-07': {'controls': [('PD-SYN-BDA', 'C05')], 'why': 'Realignment restores the aligned and profiled source.'},
+ 'TR-SRC-08': {'controls': [('PD-SYN-BDA', 'C04'), ('PD-SYN-BDA', 'C06')], 'why': 'Retirement reverses source approval and keeps its lineage record.'},
+ 'TR-SRC-09': {'controls': [('PD-SYN-BDA', 'C04'), ('PD-SYN-BDA', 'C06')], 'why': 'Retirement reverses source approval and keeps its lineage record.'},
+ 'TR-SRC-10': {'controls': [('PD-SYN-BDA', 'C04')], 'why': 'A retired source is reassessed for approval.'},
+ 'TR-SRC-11': {'controls': [('PD-SYN-BDA', 'C05')], 'why': 'A new delivery must be realigned before modelling.'},
+ 'TR-MDL-01': {'controls': [('PD-SYN-BDA', 'C07')], 'why': 'The hypothesis and method are recorded in the experiment log.'},
+ 'TR-MDL-02': {'controls': [('PD-SYN-BDA', 'C07')], 'why': 'Exploration records method, data and initial analysis.'},
+ 'TR-MDL-03': {'controls': [('PD-SYN-BDA', 'C08')], 'why': 'Holdout, bias and fitness checks are the model validation.'},
+ 'TR-MDL-04': {'controls': [('PD-SYN-BDA', 'C07')], 'why': 'A revised hypothesis is recorded as a new experiment.'},
+ 'TR-MDL-05': {'controls': [('PD-SYN-BDA', 'C06'), ('PD-SYN-BDA', 'C09'), ('PD-SYN-BDA', 'C11')],
+               'why': 'Deployment needs an approved model version, use within permitted source use, and active monitoring.'},
+ 'TR-MDL-06': {'controls': [('PD-SYN-BDA', 'C11'), ('PD-SYN-BDA', 'C13')], 'why': 'Model monitoring flags drift, which is logged with an assurance trigger.'},
+ 'TR-MDL-07': {'controls': [('PD-SYN-BDA', 'C08'), ('PD-SYN-BDA', 'C11')], 'why': 'The retrained model is re-validated and returns to monitored use.'},
+ 'TR-MDL-08': {'controls': [('PD-SYN-BDA', 'C07'), ('PD-SYN-BDA', 'C09')], 'why': 'Enhancement opens a new recorded experiment and model version.'},
+ 'TR-MDL-09': {'controls': [('PD-SYN-BDA', 'C07'), ('PD-SYN-BDA', 'C09')], 'why': 'Enhancement opens a new recorded experiment and model version.'},
+ 'TR-MDL-10': {'controls': [('PD-SYN-BDA', 'C08'), ('PD-SYN-BDA', 'C09')], 'why': 'The enhanced version is validated and approved as the superseding version.'},
+ 'TR-MDL-11': {'controls': [('PD-SYN-BDA', 'C11')], 'why': 'The model is retired from use with a retirement record.'},
+ 'TR-MDL-12': {'controls': [('PD-SYN-BDA', 'C11')], 'why': 'Monitoring leads to retirement of a failing model.'},
+ 'TR-MDL-13': {'controls': [('PD-SYN-BDA', 'C07')], 'why': 'An abandoned experiment is closed in the experiment log with its learnings.'},
+ 'TR-MDL-14': {'controls': [('PD-SYN-BDA', 'C07')], 'why': 'Redevelopment restarts from a recorded hypothesis.'},
+ 'TR-INS-01': {'controls': [('PD-SYN-BDA', 'C07')], 'why': 'The draft finding is drawn from a recorded experiment and model.'},
+ 'TR-INS-02': {'controls': [('PD-SYN-BDA', 'C10')], 'why': 'The trust and ethics review is the insight review before release.'},
+ 'TR-INS-03': {'controls': [('PD-SYN-BDA', 'C10')], 'why': 'Rejection is the failed outcome of the insight review.'},
+ 'TR-INS-04': {'controls': [('PD-SYN-BDA', 'C10')], 'why': 'Only a reviewed insight may be released.'},
+ 'TR-INS-05': {'controls': [('PD-SYN-BDA', 'C10')], 'why': 'Superseding reverses the release of the earlier insight.'},
+ 'TR-INS-06': {'controls': [('PD-SYN-BDA', 'C10'), ('PD-SYN-BDA', 'C11')],
+               'why': 'An insight failing on trust, accuracy or privacy grounds is retired from use.'},
+ 'TR-INS-07': {'controls': [('PD-SYN-BDA', 'C07')], 'why': 'Redrafting draws a new finding from the current model.'},
+ 'TR-INS-08': {'controls': [('PD-SYN-BDA', 'C07')], 'why': 'Redrafting draws a new finding from the current model.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-BDA", "name": "Big Data and Data Science FTS", "knowledgeArea": "Big Data and Data Science", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Big Data Strategy and Standards (scope level), a Big Data Platform (one per platform), a Data Source (one per source), an Analytical Model (one per hypothesis or model) and a Data Insight (one per finding) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area: the Big Data Strategy and Standards, a Big Data Platform, a Data Source, an Analytical Model and a Data Insight. The KA never becomes a region of the Data Asset; the source, the model and the insight reach the Global protocol through contributions (registration and materialisation of an acquired source, release of a model output or insight after the trust and ethics review, supersession by an enhanced model, the assurance trigger on drift, source alert or platform breach, and model validation as the assurance service), all Conditional except the Non-waivable review guard, so assets outside big data are unaffected, and couple to DG, DII, Data Security, Metadata, DQ, DSO, DWBI, Data Architecture and RMD.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-BDA-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes, deliverables, role players, techniques, tools, metrics", "limitations": "The deck names the KA Big Data and Analytics; Howard names it Big Data and Data Science. The context diagram lists seven activities and six deliverables but no platform, source, model or insight lifecycle; the states are drafted from the activities, deliverables (Data Sourcing Plan, Acquired Data Sources, Initial data analysis and hypotheses, Data insights and findings, Enhancement Plan), the build, buy or rent input and the goal to publish in an appropriate, trusted and ethical manner. The Acquired Data Sources deliverable has no explicit acquisition lifecycle on the diagram."},
         {"id": "SRC-BDA-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (five, platform split out), Global gating, trust and ethics review as a hard gate", "limitations": ""},

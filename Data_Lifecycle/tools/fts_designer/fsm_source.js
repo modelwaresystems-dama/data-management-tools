@@ -109,13 +109,17 @@ function fsmSource(M, opts){
 
   const L=["stateDiagram-v2","direction "+opts.direction];
   function name(s){ return q(s.name)+(opts.ids?" ("+s.id+")":""); }
+  // 29 Sep 2026 (DG Reconstruction register p1 a): an activity shows in a state when it has a permission record there (the
+  // Knowledge Area and Global builders do not set permittedIn to a state); permittedIn is still read for models that set it
+  const prmCtx={}; (M.permissionRecords||[]).forEach(p=>{ if(p && p.outcome!=="Not applicable" && p.context && p.activity){ (prmCtx[p.context]=prmCtx[p.context]||new Set()).add(p.activity); } });
+  function actsIn(sid){ return (M.activities||[]).filter(x=>x.permittedIn===sid || (prmCtx[sid] && prmCtx[sid].has(x.id))); }
   function contract(s, pad){
     if(!opts.contracts) return;
     const id=mid(s.id);
     const ec=(M.entryConditions||[]).filter(x=>x.appliesTo===s.id).length;
     const xc=(M.exitConditions||[]).filter(x=>x.appliesTo===s.id).length;
     const inv=(M.invariants||[]).filter(x=>x.appliesTo===s.id).length;
-    const acts=(M.activities||[]).filter(x=>x.permittedIn===s.id);
+    const acts=actsIn(s.id);
     if(ec) L.push(pad+id+" : entry / ["+ec+" entry condition"+(ec===1?"":"s")+"]");
     if(acts.length){ const lab=acts.map(actLabel); const shown=(opts.labelMode==="full"?lab.slice(0,4):lab.slice(0,8)).join(", ")+(lab.length>(opts.labelMode==="full"?4:8)?" +"+(lab.length-(opts.labelMode==="full"?4:8))+" more":""); L.push(pad+id+" : do / "+q(shown)); }
     if(xc) L.push(pad+id+" : exit / ["+xc+" exit condition"+(xc===1?"":"s")+"]");
@@ -127,7 +131,7 @@ function fsmSource(M, opts){
     const ec=(M.entryConditions||[]).filter(x=>x.appliesTo===s.id).length;
     const xc=(M.exitConditions||[]).filter(x=>x.appliesTo===s.id).length;
     const inv=(M.invariants||[]).filter(x=>x.appliesTo===s.id).length;
-    const acts=(M.activities||[]).filter(x=>x.permittedIn===s.id).length;
+    const acts=actsIn(s.id).length;
     const parts=[]; if(ec) parts.push("entry / ["+ec+"]"); if(acts) parts.push("do / "+acts+" activities"); if(xc) parts.push("exit / ["+xc+"]"); if(inv) parts.push("{invariant × "+inv+"}");
     if(parts.length) L.push(pad+"note right of "+mid(s.id)+" : "+parts.join("  "));
   }
@@ -183,7 +187,7 @@ function fsmSource(M, opts){
   M.globalStates.filter(g=>g.terminal && drawn(g.id)).forEach(g=>L.push(mid(g.id)+" --> [*]"));
   }
   // activities legend (for drawn states)
-  (M.activities||[]).forEach(a=>{ if(drawn(a.permittedIn) || drawn(visibleRep(a.permittedIn)||"")) legend.activities.push({code:code.act[a.id], id:a.id, name:a.name, state:byId(a.permittedIn)?byId(a.permittedIn).name:a.permittedIn, type:a.activityType||""}); });
+  (M.activities||[]).forEach(a=>{ const sts=[...new Set([a.permittedIn].concat(Object.keys(prmCtx).filter(k=>prmCtx[k].has(a.id))))].filter(sid=>sid && (drawn(sid) || drawn(visibleRep(sid)||""))); sts.forEach(sid=>legend.activities.push({code:code.act[a.id], id:a.id, name:a.name, state:byId(sid)?byId(sid).name:sid, stateId:sid, type:a.activityType||""})); });
   // styling
   L.push("classDef readiness fill:#e8f0fb,stroke:#2b5fa8,color:#1b202b");
   L.push("classDef focus fill:#dff3ef,stroke:#0f6e64,color:#1b202b,stroke-width:2px");

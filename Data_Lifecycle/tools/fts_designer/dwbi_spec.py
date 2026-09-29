@@ -12,7 +12,7 @@ Decisions 21 Sep 2026: DWBI gates Global materialisation of a warehoused asset (
 loaded and reconciled), release of a data product (released under the release plan with lineage in the dictionary),
 supersession by a refreshed population; a failed load or a monitoring breach emits the Assurance trigger; load
 reconciliation is an assurance service; guards are Conditional so assets outside the warehouse are unaffected; every
-transition carries a Decision Right (holders drafted, REVIEW).
+transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python dwbi_spec.py [out_dir] [--overrides spec/data_warehousing_bi_overrides.json]   -> data_warehousing_bi.fts.json
 """
@@ -107,14 +107,14 @@ EVENTS = {
     "EV-BIP-01": ("Portfolio planning", "Request"), "EV-BIP-02": ("Portfolio approval", "Decision outcome"), "EV-BIP-03": ("Portfolio activation", "Decision outcome"), "EV-BIP-04": ("Portfolio review trigger", "Monitoring trigger"), "EV-BIP-05": ("Reviewed portfolio approval", "Decision outcome"), "EV-BIP-06": ("Portfolio retirement", "Decision outcome"), "EV-BIP-07": ("Plan rejection", "Decision outcome"),
 }
 DR = {
-    "DR-DWBI-01": ("Approve the DW and BI Architecture", "ROLE-DWBI-P02", "REVIEW: drafted holder"),
-    "DR-DWBI-02": ("Understand Requirements, Maintain and Retire the Architecture", "ROLE-DWBI-P02", "REVIEW: drafted holder"),
-    "DR-DWBI-03": ("Develop, Release, Tune and Retire a Warehouse or Mart", "ROLE-DWBI-P03", "REVIEW: drafted holder"),
-    "DR-DWBI-04": ("Design, Load, Reconcile, Refresh and Retire a Population", "ROLE-DWBI-P03", "REVIEW: drafted holder"),
-    "DR-DWBI-05": ("Specify, Build and Change a Data Product", "ROLE-DWBI-P01", "REVIEW: drafted holder"),
-    "DR-DWBI-06": ("Release, Confirm Adoption and Retire a Data Product", "ROLE-DWBI-P01", "REVIEW: drafted holder"),
-    "DR-DWBI-07": ("Raise and Resolve a Monitoring Alert", "ROLE-DWBI-P03", "REVIEW: drafted holder"),
-    "DR-DWBI-08": ("Approve, Activate, Review and Retire the BI Portfolio Plans", "ROLE-DWBI-P01", "REVIEW: drafted holder"),
+    "DR-DWBI-01": ("Approve the DW and BI Architecture", "ROLE-PM-DWBI", "Confirmed 22 Sep 2026 (holder register): Data Warehousing and Business Intelligence Practice Manager; drafted as Architects and Analysts"),
+    "DR-DWBI-02": ("Understand Requirements, Maintain and Retire the Architecture", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Architects and Analysts"),
+    "DR-DWBI-03": ("Develop, Release, Tune and Retire a Warehouse or Mart", "ROLE-DENG", "Confirmed 22 Sep 2026 (holder register): Data Engineer; drafted as DW/BI Specialists (BI Platform, Data Storage, Information Management)"),
+    "DR-DWBI-04": ("Design, Load, Reconcile, Refresh and Retire a Population", "ROLE-DENG", "Confirmed 22 Sep 2026 (holder register): Data Engineer; drafted as DW/BI Specialists (BI Platform, Data Storage, Information Management)"),
+    "DR-DWBI-05": ("Specify, Build and Change a Data Product", "ROLE-DPO", "Confirmed 22 Sep 2026 (holder register): Data Product Owner; drafted as Sponsors and Product Owner"),
+    "DR-DWBI-06": ("Release, Confirm Adoption and Retire a Data Product", "ROLE-DPO", "Confirmed 22 Sep 2026 (holder register): Data Product Owner; drafted as Sponsors and Product Owner"),
+    "DR-DWBI-07": ("Raise and Resolve a Monitoring Alert", "ROLE-DENG", "Confirmed 22 Sep 2026 (holder register): Data Engineer; drafted as DW/BI Specialists (BI Platform, Data Storage, Information Management)"),
+    "DR-DWBI-08": ("Approve, Activate, Review and Retire the BI Portfolio Plans", "ROLE-PM-DWBI", "Confirmed 22 Sep 2026 (holder register): Data Warehousing and Business Intelligence Practice Manager; drafted as Sponsors and Product Owner"),
 }
 ROLES = [
     ("ROLE-DWBI-S01", "Business Executive", "Supplier", "Supplies business requirements and priorities."), ("ROLE-DWBI-S02", "Governance Body", "Supplier", "Supplies governance activities and policies."), ("ROLE-DWBI-S03", "Enterprise Architecture", "Supplier", "Supplies the enterprise and data architectures."), ("ROLE-DWBI-S04", "Data Producers", "Supplier", "Supply the internal data feeds."), ("ROLE-DWBI-S05", "Information Consumers", "Supplier", "Supply information needs and feedback."), ("ROLE-DWBI-S06", "Subject Matter Experts", "Supplier", "Supply business meaning."),
@@ -202,6 +202,11 @@ CONTRIB = [
     ("CON-DWBI-05", "TR-AS-05", "event", {"POP": ["STS-POP-05"], "DWH": ["STS-DWH-05"], "PRD": ["STS-PRD-06", "STS-PRD-08"]}, "A failed load, a warehouse performance breach or a product alert is a material change affecting the assurance claim.", "DWBI_load_failed or DWBI_warehouse_tuning or DWBI_product_alert", "Conditional", "DWBI emits EV-AS-05 when TR-POP-04, TR-POP-08, TR-DWH-05, TR-PRD-06 or TR-PRD-13 fires."),
     ("CON-DWBI-06", "TR-AS-02", "service", {"POP": ["STS-POP-04"]}, "Load Reconciliation and Lineage Recording supplies assurance evidence for the warehoused asset.", "SVC-DWBI-05", "Conditional", "Assurance service; evidence EVD-DWBI-04."),
     ("CON-DWBI-07", "TR-AV-03", "event", {"PRD": ["STS-PRD-08"]}, "A product data or performance alert suspends access to the product until resolved; a usage alert does not.", "DWBI_product_data_alert", "Conditional", "DWBI emits EV-AV-03 when TR-PRD-13 fires (Howard, 21 Sep: suspend only on a data issue)."),
+    ("CON-DWBI-08", "TR-CP-01", "guard", {"DWH": ["STS-DWH-04", "STS-DWH-05"], "POP": ["STS-POP-02", "STS-POP-03", "STS-POP-04", "STS-POP-05", "STS-POP-06"]}, "A warehouse population is taken into active custody only in a warehouse in production.", "DWBI_warehouse_in_production or not DWBI_population_active", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
+    ("CON-DWBI-09", "TR-CP-02", "guard", {"POP": ["STS-POP-04", "STS-POP-06"]}, "A population enters preservation custody only when reconciled; a failed load is never preserved.", "DWBI_population_reconciled or not DWBI_population_active", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
+    ("CON-DWBI-10", "TR-CP-05", "event", {"DWH": ["STS-DWH-06"]}, "Retirement of a warehouse (TR-DWH-07 or TR-DWH-08) triggers the custody transfer of the populations it held.", "DWBI_warehouse_retired", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep): event emitted into the Global protocol; the DSO, DII and DG guards on TR-CP-05 still decide."),
+    ("CON-DWBI-11", "TR-CP-10", "guard", {"POP": ["STS-POP-01", "STS-POP-07"], "PRD": ["STS-PRD-01", "STS-PRD-07"]}, "Custody is closed after destruction only when no live population or data product still depends on the asset.", "not DWBI_population_active and not DWBI_product_active", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
+    ("CON-DWBI-12", "TR-AV-01", "event", {"PRD": ["STS-PRD-04"]}, "A data product released under the release plan is the request to release access to it.", "DWBI_product_active and DWBI_product_released", "Conditional", "Howard, 23 Sep 2026: eleven Knowledge Areas gated TR-AV-01 and none raised it. Each Knowledge Area that owns an asset kind now raises the release request for the assets of its kind. Data Warehousing and BI owns the data product; DWBI emits EV-AV-01 when TR-PRD-04 fires."),
 ]
 KA_COUPLINGS = [
     ("KAC-DWBI-01", "KA-DA", "TR-EDA-05", "", "DA_architecture_in_force", "The DW and BI architecture is defined within the Enterprise Data Architecture in force (TR-ARC-02 cites the DA fact).", "Reverse coupling: a DWBI transition cites a DA fact."),
@@ -214,6 +219,7 @@ KA_COUPLINGS = [
     ("KAC-DWBI-08", "KA-RMD", "TR-DOM-05", "", "RMD_domain_shared", "Master and reference data are populated into the warehouse from a shared domain (TR-POP-01 cites the RMD fact for master data feeds).", "Reverse coupling: a DWBI transition cites an RMD fact."),
 ]
 FACT_BINDINGS = {
+    "DWBI_warehouse_retired": {"region": "REG-DWBI-DWH", "states": ["STS-DWH-06"]},
     "DWBI_architecture_in_force": {"region": "REG-DWBI-ARC", "states": ["STS-ARC-04", "STS-ARC-05"]},
     "DWBI_warehouse_in_production": {"region": "REG-DWBI-DWH", "states": ["STS-DWH-04", "STS-DWH-05"]},
     "DWBI_warehouse_tuning": {"region": "REG-DWBI-DWH", "states": ["STS-DWH-05"]},
@@ -253,13 +259,103 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DWBI-01", "Pre-release Product Access", "TR-AV-01", "Release of a built data product to a pilot audience before its release plan slot.", "DR-DWBI-06", "Product built and tested on a reconciled population, pilot audience named, release plan entry scheduled with a date, Data Security classification confirmed, DG informed, evidence retained; expires at the scheduled release date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DWBI-01': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-ARC-02'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DA',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-02': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-DWH-02'}, {'model': 'KA-DWBI', 'transition': 'TR-DWH-03'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DSO',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-03': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-POP-02'}, {'model': 'KA-DWBI', 'transition': 'TR-POP-06'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DII',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-04': {'dependents': [{'model': 'KA-MM', 'transition': 'TR-AST-03'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DWBI',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-05': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-PRD-04'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DQ',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-06': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-PRD-04'}],
+                 'kind': 'condition',
+                 'producer': 'KA-DS',
+                 'requirement': 'Required'},
+ 'KAC-DWBI-07': {'emitters': ['TR-POP-04', 'TR-POP-08', 'TR-DWH-05', 'TR-PRD-06'], 'kind': 'event', 'producer': 'KA-DWBI'},
+ 'KAC-DWBI-08': {'dependents': [{'model': 'KA-DWBI', 'transition': 'TR-POP-01'}],
+                 'kind': 'condition',
+                 'producer': 'KA-RMD',
+                 'qualifier': 'source_is_master_data',
+                 'requirement': 'Conditional'}}
+
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-ARC-01': {'controls': [], 'why': 'Gathering warehouse requirements is not governed by any Data Warehousing and BI policy control.'},
+ 'TR-ARC-02': {'controls': [], 'why': 'Defining the warehouse architecture falls outside the BI policy controls, which cover sources, metrics and provenance.'},
+ 'TR-ARC-03': {'controls': [], 'why': 'Approving the warehouse architecture is not governed by any BI policy control.'},
+ 'TR-ARC-04': {'controls': [], 'why': 'Rejecting the architecture reverses a step no BI policy control governs.'},
+ 'TR-ARC-05': {'controls': [], 'why': 'Architecture maintenance is not a policy review and no BI control governs it.'},
+ 'TR-ARC-06': {'controls': [], 'why': 'Approving maintained architecture is not governed by any BI policy control.'},
+ 'TR-ARC-07': {'controls': [], 'why': 'Retiring the architecture is not governed by any BI policy control.'},
+ 'TR-DWH-01': {'controls': [], 'why': 'Agreeing warehouse requirements is not governed by any BI policy control.'},
+ 'TR-DWH-02': {'controls': [], 'why': 'Developing and accepting a store is not governed by any BI policy control.'},
+ 'TR-DWH-03': {'controls': [('PD-BI', 'C13')], 'why': 'Release requires monitoring to be active, which is the BI monitoring control.'},
+ 'TR-DWH-04': {'controls': [], 'why': 'Returning the store reverses development, which no BI policy control governs.'},
+ 'TR-DWH-05': {'controls': [('PD-BI', 'C13')], 'why': 'A detected breach logged as an issue with an assurance trigger is monitoring and exception logging.'},
+ 'TR-DWH-06': {'controls': [('PD-BI', 'C13')], 'why': 'Returning within targets closes the monitored exception.'},
+ 'TR-DWH-07': {'controls': [('PD-BI', 'C12')], 'why': 'Migrating or retiring the products of a retired store is a material change needing provenance review.'},
+ 'TR-DWH-08': {'controls': [('PD-BI', 'C12')], 'why': 'Replacing a store and migrating its products is a material change needing provenance review.'},
+ 'TR-DWH-09': {'controls': [], 'why': 'Re-agreeing requirements for a rebuilt store is not governed by any BI policy control.'},
+ 'TR-POP-01': {'controls': [], 'why': 'Designing the population process is not governed by any BI policy control.'},
+ 'TR-POP-02': {'controls': [], 'why': 'Running a load is not governed by any BI policy control.'},
+ 'TR-POP-03': {'controls': [('PD-BI', 'C10')], 'why': 'Reconciling the load records its lineage, which is the provenance recording control.'},
+ 'TR-POP-04': {'controls': [('PD-BI', 'C13')], 'why': 'A failed load logged as an issue with an assurance trigger is monitoring and exception logging.'},
+ 'TR-POP-05': {'controls': [('PD-BI', 'C13')], 'why': 'Remediating and rerunning the load closes the logged exception.'},
+ 'TR-POP-06': {'controls': [], 'why': 'Running a refresh load is not governed by any BI policy control.'},
+ 'TR-POP-07': {'controls': [('PD-BI', 'C10')], 'why': 'Reconciling the refresh updates the recorded lineage.'},
+ 'TR-POP-08': {'controls': [('PD-BI', 'C13')], 'why': 'A failed refresh logged as an issue is monitoring and exception logging.'},
+ 'TR-POP-09': {'controls': [('PD-BI', 'C10')], 'why': 'Retiring the population retains its lineage under the provenance recording control.'},
+ 'TR-POP-10': {'controls': [('PD-BI', 'C10')], 'why': 'Retiring a failed population is governed like any population retirement.'},
+ 'TR-POP-11': {'controls': [], 'why': 'Redesigning a population process is not governed by any BI policy control.'},
+ 'TR-PRD-01': {'controls': [], 'why': 'Specifying a product with its owner is not governed by any BI policy control.'},
+ 'TR-PRD-02': {'controls': [('PD-BI', 'C04')], 'why': 'Building the product on reconciled populations requires it to draw from certified data.'},
+ 'TR-PRD-03': {'controls': [('PD-BI', 'C04')], 'why': 'Returning the product for rework reverses the build step.'},
+ 'TR-PRD-04': {'controls': [('PD-BI', 'C10'), ('PD-BI', 'C11')], 'why': 'Releasing the product with its lineage records and surfaces provenance to consumers.'},
+ 'TR-PRD-05': {'controls': [('PD-BI', 'C15')], 'why': 'Confirming adoption against usage and satisfaction metrics is KPI measurement and reporting.'},
+ 'TR-PRD-06': {'controls': [('PD-BI', 'C13')], 'why': 'A monitoring flag logged as an issue with an assurance trigger is monitoring and exception logging.'},
+ 'TR-PRD-13': {'controls': [('PD-BI', 'C13')], 'why': 'A monitoring flag logged as an issue with assurance triggers is monitoring and exception logging.'},
+ 'TR-PRD-14': {'controls': [('PD-BI', 'C13')], 'why': 'Resolving and verifying the data alert closes the logged exception.'},
+ 'TR-PRD-15': {'controls': [('PD-BI', 'C11')], 'why': 'Withdrawing the product reverses its release and changes the status shown to consumers.'},
+ 'TR-PRD-07': {'controls': [('PD-BI', 'C13')], 'why': 'Resolving the usage alert closes the logged exception.'},
+ 'TR-PRD-08': {'controls': [('PD-BI', 'C12')], 'why': 'A change request to a released product is a material change needing provenance review.'},
+ 'TR-PRD-09': {'controls': [('PD-BI', 'C11')], 'why': 'Withdrawing the product and redirecting consumers reverses its release.'},
+ 'TR-PRD-10': {'controls': [('PD-BI', 'C11')], 'why': 'Withdrawing the product reverses its release and changes the status shown to consumers.'},
+ 'TR-PRD-11': {'controls': [('PD-BI', 'C11')], 'why': 'Withdrawing an unadopted product reverses its release.'},
+ 'TR-PRD-12': {'controls': [], 'why': 'Respecifying a retired product is governed like specification, which no BI control covers.'},
+ 'TR-BIP-01': {'controls': [], 'why': 'Drafting adoption and release plans is not governed by any BI policy control.'},
+ 'TR-BIP-02': {'controls': [], 'why': 'Approving the portfolio plans is not governed by any BI policy control.'},
+ 'TR-BIP-03': {'controls': [], 'why': 'Rejecting the portfolio plans reverses a step no BI policy control governs.'},
+ 'TR-BIP-04': {'controls': [('PD-BI', 'C13')], 'why': 'Activating the portfolio requires BI activity monitoring to be active.'},
+ 'TR-BIP-05': {'controls': [], 'why': 'A portfolio plan review is not a policy review and no BI control governs it.'},
+ 'TR-BIP-06': {'controls': [], 'why': 'Approving reviewed portfolio plans is not governed by any BI policy control.'},
+ 'TR-BIP-07': {'controls': [], 'why': 'Retiring the portfolio is not governed by any BI policy control.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DWBI", "name": "Data Warehousing and Business Intelligence FTS", "knowledgeArea": "Data Warehousing and Business Intelligence", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the DW and BI Architecture (scope level), a Data Warehouse or Data Mart (one per store), the Population of a Data Asset (one per warehoused asset), a Data Product (one per product) and the BI Portfolio (scope level) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area: the DW and BI Architecture, a Data Warehouse or Data Mart, the Population of a Data Asset, a Data Product and the BI Portfolio. The KA never becomes a region of the Data Asset; the store, the population and the product reach the Global protocol through contributions (materialisation of a warehoused asset, release and restoration of a data product, supersession by a reconciled refresh, the assurance and access-suspension triggers and the reconciliation service), all Conditional so assets outside the warehouse are unaffected, and couple to Data Architecture, DSO, DII, Metadata, DQ, Data Security, DG and RMD.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DWBI-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram lists the activities and ten deliverables but no store, load or product lifecycle; the Population and Data Product states are drafted from Populate the Data Warehouse, Implement the BI Portfolio and Maintain Data Products with the Release Plan, Lineage Dictionary and BI Activity Monitoring deliverables."},
         {"id": "SRC-DWBI-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (five, BI Portfolio split out), Global gating", "limitations": ""},

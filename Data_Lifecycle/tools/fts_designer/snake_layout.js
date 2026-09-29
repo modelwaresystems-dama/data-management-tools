@@ -31,8 +31,13 @@ function snakeSvg(G, tops, availW, opts){
     const ids=new Set(kids.map(k=>k.id)); const fwd={}; kids.forEach(k=>fwd[k.id]=[]);
     G.edges.forEach(e=>{ if(!e.inner && ids.has(e.a) && ids.has(e.b) && e.a!==e.b) fwd[e.a].push(e.b); });
     const startId=(G.initials.find(i=>ids.has(i)))||(kids.find(k=>k.initial)||kids[0]).id;
-    const order=[]; const seen=new Set(); const q=[startId]; while(q.length){ const x=q.shift(); if(seen.has(x)) continue; seen.add(x); order.push(x); fwd[x].forEach(b=>{ if(!seen.has(b)) q.push(b); }); }
-    kids.forEach(k=>{ if(!seen.has(k.id)) order.push(k.id); });
+    // reading order: rank each state by its longest simple path from the initial state (so a retired, superseded or withdrawn
+    // state reached early by a short cut still sits after the states it follows in the main flow); ties keep the model's declared order
+    const declared={}; kids.forEach((k,i)=>declared[k.id]=i);
+    const rank={}; rank[startId]=0;
+    if(kids.length<=14){ const onPath=new Set(); (function dfs(x,d){ onPath.add(x); fwd[x].forEach(b=>{ if(onPath.has(b)) return; if(!(b in rank)||rank[b]<d+1) rank[b]=d+1; dfs(b,d+1); }); onPath.delete(x); })(startId,0); }
+    else { const q=[startId]; while(q.length){ const x=q.shift(); fwd[x].forEach(b=>{ if(!(b in rank)){ rank[b]=rank[x]+1; q.push(b); } }); } }
+    const order=kids.map(k=>k.id).sort((a,b)=>((a in rank)?rank[a]:999)-((b in rank)?rank[b]:999)||declared[a]-declared[b]);
     // pass 1: rows and x (typewriter wrap), then justify each row to the band width
     const bandX=MARG+PAD, x0=bandX+BANDPAD+40, xEnd=bandX+bandW-BANDPAD; let rx=x0, row=0; const rows=[[]];
     order.forEach(id=>{ const lines=wrapName(nodes[id].name); const w=boxW(lines); if(rx+w>xEnd && rows[row].length){ rx=x0; row++; rows.push([]); } pos[id]={x:rx,w,h:BOXH,row,lines}; rows[row].push(id); rx+=w+GAPX; });
@@ -67,7 +72,7 @@ function snakeSvg(G, tops, availW, opts){
       else if(p.kind==="downchan"){ const L0=laneY(A.row,p.l0), L1=laneY(B.row-1,p.l1), cx=chanX("R",p.c); const xa=A.cx+off, xb=B.cx-off; d=seg([[xa,A.y+A.h],[xa,L0],[cx,L0],[cx,L1],[xb,L1],[xb,B.y-2]]); lx=(xa+cx)/2; ly=L0-6; }
       else if(p.kind==="up"){ const L0=laneY(B.row,p.l0); const xa=A.cx-off, xb=B.cx+off; d=seg([[xa,A.y],[xa,L0],[xb,L0],[xb,B.y+B.h+2]]); lx=(xa+xb)/2; ly=L0-6; }
       else { const L0=laneY(A.row-1,p.l0), L1=laneY(B.row,p.l1), cx=chanX("L",p.c); const xa=A.cx-off, xb=B.cx+off; d=seg([[xa,A.y],[xa,L0],[cx,L0],[cx,L1],[xb,L1],[xb,B.y+B.h+2]]); lx=(xa+cx)/2; ly=L0-6; }
-      out.push('<path class="transition" d="'+d+'" fill="none" stroke="var(--ink,#333)" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#fts-arrow)"/>');
+      out.push('<path class="transition"'+(e.id?' data-tr="'+esc(e.id)+'"':'')+' data-a="'+esc(e.a)+'" data-b="'+esc(e.b)+'" d="'+d+'" fill="none" stroke="var(--ink,#333)" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#fts-arrow)"/>');
       const tw=String(e.label).length*6.6+10;
       lab.push('<g class="edgeLabel" style="cursor:help"><rect x="'+(lx-tw/2)+'" y="'+(ly-9)+'" width="'+tw+'" height="16" rx="3" fill="var(--panel,#fff)" fill-opacity="0.92"/><text x="'+lx+'" y="'+(ly+3)+'" text-anchor="middle" font-size="11" fill="var(--ink,#111)">'+esc(e.label)+'</text></g>'); });
     y=bandY+bandH+22;
@@ -78,4 +83,36 @@ function snakeSvg(G, tops, availW, opts){
   const frame='<rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+(H-2*MARG)+'" rx="8" fill="var(--panel,#fff)" stroke="var(--ink,#333)"/><rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+TITLE+'" rx="8" fill="var(--panel-3,#e6e9ee)" stroke="var(--ink,#333)"/><text x="'+(MARG+inner/2)+'" y="'+(MARG+TITLE/2+5)+'" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink,#111)">'+esc(opts.title||G.protocolName)+'</text>';
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" width="'+W+'" style="font-family:Segoe UI,system-ui,sans-serif;max-width:none"><defs><marker id="fts-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink,#333)"/></marker></defs>'+frame+out.join("")+lab.join("")+'</svg>';
 }
-if(typeof module!=="undefined") module.exports={snakeSvg};
+
+// ftsSummarySvg: the Knowledge Area's FTSs with their internal states collapsed, one card per region: managed element, region ID,
+// instance scope, initial state, terminal states, state and transition counts, the Global transitions the region's states gate and the
+// cross-region guards it takes part in. Used at the head of the reference section before the individual FTSs (fts_docs.py and the viewer).
+function ftsSummarySvg(M, availW, opts){
+  opts=opts||{}; const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const W=Math.max(700, availW|0), MARG=16, TITLE=30, GAP=14, CW=Math.max(250, Math.floor((W-2*MARG-GAP*3)/3)), LH=15;
+  const regs=(M.regions&&M.regions.length)?M.regions:(M.globalStates||[]).map(g=>({id:g.id,name:g.name}));
+  const sub=M.subStates||[]; const regOf=id=>{ const st=sub.find(x=>x.id===id); return st?(st.region||st.parent):null; };
+  const sName=id=>{ const st=sub.find(x=>x.id===id); return st?st.name:id; };
+  const wrap=(text,max)=>{ const words=String(text).split(/\s+/); const lines=[]; let cur=""; words.forEach(w=>{ if((cur+" "+w).trim().length>max && cur){ lines.push(cur); cur=w; } else cur=(cur+" "+w).trim(); }); if(cur) lines.push(cur); return lines; };
+  const cpc=Math.floor((CW-20)/6.6);
+  const cards=regs.map(r=>{ const code=r.code||String(r.id).split("-").pop();
+    const states=sub.filter(x=>(x.region||x.parent)===r.id); const trs=(M.transitions||[]).filter(t=>!t.id.startsWith("TR-INIT")&&(regOf(t.target)===r.id||regOf(t.source)===r.id));
+    const init=r.initialState?sName(r.initialState):(states.find(x=>x.initial)||{}).name||""; const term=states.filter(x=>x.terminal).map(x=>x.name);
+    const gates=[]; (M.contributions||[]).forEach(c=>{ if(Object.keys(c.requiredStates||{}).includes(code) && !gates.includes(c.globalTransition)) gates.push(c.globalTransition); });
+    const xrg=(M.crossRegionConstraints||[]).filter(x=>{ const ap=x.transitions||x.appliesTo||[]; return Array.isArray(ap)&&ap.some(t=>trs.some(tt=>tt.id===t)); }).map(x=>x.id);
+    const lines=[]; lines.push(["b",wrap(r.managedElement&&r.managedElement!==r.name?r.name:r.name,cpc)]); lines.push(["m",[r.id+(r.instanceScope?" · "+r.instanceScope:"")]]);
+    lines.push(["n",wrap("Starts: "+init+(term.length?". Ends: "+term.join(", "):". No terminal state"),cpc)]);
+    lines.push(["n",[states.length+" states · "+trs.length+" transitions"]]);
+    if((M.contributions||[]).length) lines.push(["n",wrap("Gates: "+(gates.length?gates.join(", "):"no Global transition"),cpc)]);
+    if(xrg.length) lines.push(["n",wrap("Cross-region: "+xrg.join(", "),cpc)]);
+    const h=16+lines.reduce((a,[k,ls])=>a+ls.length*LH,0)+8; return {r,lines,h}; });
+  // lay the cards out in rows of three, equal height per row
+  const out=[]; let y=MARG+TITLE+16, x=MARG; const rows=[]; cards.forEach((c,i)=>{ if(i%3===0) rows.push([]); rows[rows.length-1].push(c); });
+  rows.forEach(row=>{ const rh=Math.max(...row.map(c=>c.h)); x=MARG; row.forEach(c=>{ out.push('<g class="statediagram-cluster fts-collapsed-frame"><rect x="'+x+'" y="'+y+'" width="'+CW+'" height="'+rh+'" rx="8" fill="var(--panel-2,#eef1f5)" stroke="var(--ink-faint,#888)" stroke-dasharray="6 4"/></g>');
+      let ty=y+18; c.lines.forEach(([k,ls])=>{ ls.forEach(l=>{ out.push('<text x="'+(x+10)+'" y="'+ty+'" font-size="'+(k==="b"?13:k==="m"?10.5:11.5)+'" '+(k==="b"?'font-weight="600" fill="var(--ink,#111)"':k==="m"?'font-family="Consolas, Menlo, monospace" fill="var(--ink-faint,#5f6f78)"':'fill="var(--ink,#1e2a30)"')+'>'+esc(l)+'</text>'); ty+=LH; }); });
+      x+=CW+GAP; }); y+=rh+GAP; });
+  const H=y+MARG-GAP+8; const inner=W-2*MARG;
+  const frame='<rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+(H-2*MARG)+'" rx="8" fill="var(--panel,#fff)" stroke="var(--ink,#333)"/><rect x="'+MARG+'" y="'+MARG+'" width="'+inner+'" height="'+TITLE+'" rx="8" fill="var(--panel-3,#e6e9ee)" stroke="var(--ink,#333)"/><text x="'+(W/2)+'" y="'+(MARG+20)+'" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink,#111)">'+esc(opts.title||"")+'</text>';
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" width="'+W+'" style="font-family:Segoe UI,system-ui,sans-serif;max-width:none">'+frame+out.join("")+'</svg>';
+}
+if(typeof module!=="undefined") module.exports={snakeSvg, ftsSummarySvg};

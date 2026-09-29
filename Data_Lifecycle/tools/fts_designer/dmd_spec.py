@@ -10,7 +10,7 @@ per model level, each per asset, with draft, reviewed, approved, managed, revisi
 Decisions 21 Sep 2026: DMD gates Global registration (approved conceptual model) and materialisation (reviewed,
 approved and deployed physical model); a physical model revision emits the Assurance material-change trigger; model
 validation measurement is an assurance service; every Return for Rework logs a DG Data Asset issue; every transition
-carries a Decision Right (holders drafted, REVIEW).
+carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python dmd_spec.py [out_dir] [--overrides spec/data_modelling_design_overrides.json]   -> data_modelling_design.fts.json
 """
@@ -96,12 +96,12 @@ for code, name, adj, sub, what, ctx in LEVELS:
     EVENTS.update({f"EV-{code}-01": (f"{name} initiation", "Request"), f"EV-{code}-02": (f"{name} review completion", "Assessment outcome"), f"EV-{code}-03": (f"{name} review rejection", "Decision outcome"), f"EV-{code}-04": (f"{name} approval", "Decision outcome"), f"EV-{code}-05": (f"{name} publication", "Decision outcome"), f"EV-{code}-06": (f"{name} change request", "Request"), f"EV-{code}-07": (f"{name} supersession", "Decision outcome")})
 EVENTS["EV-PDM-08"] = ("Physical Data Model deployment", "Evidence trigger")
 DR = {
-    "DR-DMD-01": ("Approve the Modelling Standards and Plan", "ROLE-DMD-P02", "REVIEW: drafted holder"),
-    "DR-DMD-02": ("Activate, Revise and Retire the Modelling Standards", "ROLE-DMD-P02", "REVIEW: drafted holder"),
-    "DR-DMD-03": ("Initiate and Revise a Data Model", "ROLE-DMD-P02", "REVIEW: drafted holder"),
-    "DR-DMD-04": ("Review a Data Model and Record its Validation Measurement", "ROLE-DMD-P01", "REVIEW: drafted holder"),
-    "DR-DMD-05": ("Approve or Reject a Data Model Version", "ROLE-DMD-P02", "REVIEW: drafted holder"),
-    "DR-DMD-06": ("Publish, Supersede and Re-model a Data Model", "ROLE-DMD-P02", "REVIEW: drafted holder"),
+    "DR-DMD-01": ("Approve the Modelling Standards and Plan", "ROLE-PM-DMD", "Confirmed 22 Sep 2026 (holder register): Data Modelling and Design Practice Manager; drafted as Data Modelers"),
+    "DR-DMD-02": ("Activate, Revise and Retire the Modelling Standards", "ROLE-DMOD", "Confirmed 22 Sep 2026 (holder register): Data Modeller; drafted as Data Modelers"),
+    "DR-DMD-03": ("Initiate and Revise a Data Model", "ROLE-DMOD", "Confirmed 22 Sep 2026 (holder register): Data Modeller; drafted as Data Modelers"),
+    "DR-DMD-04": ("Review a Data Model and Record its Validation Measurement", "ROLE-BA", "Confirmed 22 Sep 2026 (holder register): Business Analyst; drafted as Business Analysts"),
+    "DR-DMD-05": ("Approve or Reject a Data Model Version", "ROLE-PM-DMD", "Confirmed 22 Sep 2026 (holder register): Data Modelling and Design Practice Manager; drafted as Data Modelers"),
+    "DR-DMD-06": ("Publish, Supersede and Re-model a Data Model", "ROLE-DMOD", "Confirmed 22 Sep 2026 (holder register): Data Modeller; drafted as Data Modelers"),
 }
 ROLES = [
     ("ROLE-DMD-S01", "Business Professionals", "Supplier", "Supply business requirements and vocabulary."), ("ROLE-DMD-S02", "Business Analysts", "Supplier", "Supply analysed requirements."), ("ROLE-DMD-S03", "Data Architects", "Supplier", "Supply the data architecture and enterprise data model."), ("ROLE-DMD-S04", "Database Administrators and Developers", "Supplier", "Supply existing databases and physical constraints."), ("ROLE-DMD-S05", "Subject Matter Experts", "Supplier", "Supply business meaning."), ("ROLE-DMD-S06", "Data Stewards", "Supplier", "Supply data standards and definitions."), ("ROLE-DMD-S07", "Metadata Administrators", "Supplier", "Supply existing models and metadata."),
@@ -159,9 +159,12 @@ CONTRIB = [
     ("CON-DMD-02", "TR-EX-02", "guard", {"PDM": ["STS-PDM-06", "STS-PDM-07"]}, "An asset is materialised only under a reviewed, approved physical data model deployed as the schema of its store.", "DMD_physical_deployed", "Required", "Materialize Asset cites the deployed physical model version; the logical model is implied by XRG-DMD-03."),
     ("CON-DMD-03", "TR-AS-05", "event", {"PDM": ["STS-PDM-07"]}, "A physical model revision is a material change affecting the assurance claim.", "DMD_physical_revision", "Conditional", "DMD emits EV-AS-05 when TR-PDM-06 fires."),
     ("CON-DMD-04", "TR-AS-02", "service", {"PDM": ["STS-PDM-06"]}, "The Data Model Review and Validation Measurement supplies assurance evidence for the asset's model.", "SVC-DMD-03", "Conditional", "Assurance service; evidence EVD-DMD-04."),
+    ("CON-DMD-05", "TR-CP-01", "guard", {"PDM": ["STS-PDM-06", "STS-PDM-07"]}, "A custodian accepts accountability for a stored asset only when a deployed physical data model describes what is held.", "DMD_physical_deployed or not DMD_model_managed", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep): assets with no managed physical model are unaffected."),
+    ("CON-DMD-06", "TR-CP-04", "guard", {"LDM": ["STS-LDM-04", "STS-LDM-05", "STS-LDM-06"]}, "An asset is placed in external custody only with an approved logical data model as the data contract handed to the external custodian.", "DMD_logical_approved or not DMD_model_managed", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
+    ("CON-DMD-07", "TR-CP-05", "guard", {"LDM": ["STS-LDM-04", "STS-LDM-05", "STS-LDM-06"]}, "A custody transfer is initiated only when the transfer package is described by an approved logical data model.", "DMD_logical_approved or not DMD_model_managed", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
 ]
 KA_COUPLINGS = [
-    ("KAC-DMD-01", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "The modelling standards are governing instruments published under Data Governance (TR-STD-02 and TR-STD-05 cite the DG fact).", "Reverse coupling: a DMD transition cites a DG fact."),
+    ("KAC-DMD-01", "KA-DG", "TR-POL-03", "", "DMD_policy_set_in_force", "The modelling standards are governing instruments published under Data Governance (TR-STD-02 and TR-STD-05 cite this Knowledge Area's own instrument set (Howard, 24 Sep 2026: one policy with its procedures per Knowledge Area, each set its own fact)).", "Reverse coupling: a DMD transition cites a DG fact."),
     ("KAC-DMD-02", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DMD_review_rejected", "Every review rejection is logged as a Data Asset issue with source Data Modelling and Design (TR-CDM-03, TR-LDM-03 and TR-PDM-03 emit EV-ISS-01).", "DG owns escalation; DMD owns the rework; the issue closes when the model is approved."),
     ("KAC-DMD-03", "KA-DA", "TR-EDM-04", "", "DA_model_published", "A conceptual model is drafted within the published enterprise data model (TR-CDM-01 cites the DA fact).", "Reverse coupling: a DMD transition cites a DA fact."),
     ("KAC-DMD-04", "KA-DA", "TR-CNF-02", "", "DMD_physical_deployed", "The architectural conformance review of an asset cites its approved physical model (the DA transition cites the DMD fact).", "Forward coupling: a DA transition cites a DMD fact."),
@@ -199,13 +202,75 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DMD-01", "Provisional Physical Model", "TR-EX-02", "Materialisation of an asset whose physical model is managed but whose deployment verification is outstanding.", "DR-DMD-05", "Physical model managed, deployment verification scheduled with a date, DG informed, evidence retained; expires at the verification date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DMD-01': {'dependents': [{'model': 'KA-DMD', 'transition': 'TR-STD-02'}, {'model': 'KA-DMD', 'transition': 'TR-STD-05'}],
+                'kind': 'condition',
+                'producer': 'KA-DG',
+                'requirement': 'Required'},
+ 'KAC-DMD-02': {'emitters': ['TR-CDM-03', 'TR-LDM-03', 'TR-PDM-03'], 'kind': 'event', 'producer': 'KA-DMD'},
+ 'KAC-DMD-03': {'dependents': [{'model': 'KA-DMD', 'transition': 'TR-CDM-01'}], 'kind': 'condition', 'producer': 'KA-DA', 'requirement': 'Required'},
+ 'KAC-DMD-04': {'dependents': [{'model': 'KA-DA', 'transition': 'TR-CNF-02'}], 'kind': 'condition', 'producer': 'KA-DMD', 'requirement': 'Required'},
+ 'KAC-DMD-05': {'kind': 'citation', 'producer': 'KA-DMD', 'cites': {'model': 'KA-MM', 'transition': 'TR-AST-02'}, 'raises': {'model': 'KA-MM', 'event': 'EV-AST-05'}, 'onlyIf': 'MM_asset_described'},
+ 'KAC-DMD-06': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-03'}], 'kind': 'condition', 'producer': 'KA-DMD', 'requirement': 'Required'}}
+
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-STD-01': {'controls': [('PD-DMOD', 'C07')], 'why': 'Planning produces the modelling standards to be published.'},
+ 'TR-STD-02': {'controls': [('PD-DMOD', 'C07')], 'why': 'The modelling standards are approved for publication.'},
+ 'TR-STD-03': {'controls': [('PD-DMOD', 'C07')], 'why': 'The standards are published to the modelling tools and checklists.'},
+ 'TR-STD-04': {'controls': [('PD-DMOD', 'C07')], 'why': 'A revision reopens the published standards.'},
+ 'TR-STD-05': {'controls': [('PD-DMOD', 'C07')], 'why': 'Revised standards are approved for publication.'},
+ 'TR-STD-06': {'controls': [('PD-DMOD', 'C07')], 'why': 'Retiring the standards reverses their publication.'},
+ 'TR-CDM-01': {'controls': [('PD-DMOD', 'C04')], 'why': 'The conceptual model is built and grounded in the glossary.'},
+ 'TR-CDM-02': {'controls': [('PD-DMOD', 'C04'), ('PD-DMOD', 'C12')],
+               'why': 'The review checks the conceptual model and reconciles its names and definitions with the glossary.'},
+ 'TR-CDM-03': {'controls': [('PD-DMOD', 'C04')], 'why': 'Rework is part of maintaining the conceptual model.'},
+ 'TR-CDM-04': {'controls': [('PD-DMOD', 'C04')], 'why': 'The conceptual model version is approved.'},
+ 'TR-CDM-05': {'controls': [('PD-DMOD', 'C04')], 'why': 'The approved conceptual model is published as the maintained version.'},
+ 'TR-CDM-06': {'controls': [('PD-DMOD', 'C04')], 'why': 'A change request opens a new conceptual model version.'},
+ 'TR-CDM-07': {'controls': [('PD-DMOD', 'C04'), ('PD-DMOD', 'C12')], 'why': 'The revised conceptual model is reviewed and reconciled with the glossary.'},
+ 'TR-CDM-08': {'controls': [('PD-DMOD', 'C04')], 'why': 'Withdrawing the conceptual model reverses its maintenance and retains it.'},
+ 'TR-CDM-09': {'controls': [('PD-DMOD', 'C04')], 'why': 'The conceptual model is re-drafted from its retained version.'},
+ 'TR-LDM-01': {'controls': [('PD-DMOD', 'C04'), ('PD-DMOD', 'C11')],
+               'why': 'The logical model is built from the conceptual model with elements bound to governed definitions.'},
+ 'TR-LDM-02': {'controls': [('PD-DMOD', 'C04'), ('PD-DMOD', 'C10'), ('PD-DMOD', 'C12')],
+               'why': 'The review checks naming conformance and reconciles names and definitions with the glossary.'},
+ 'TR-LDM-03': {'controls': [('PD-DMOD', 'C04')], 'why': 'Rework is part of maintaining the logical model.'},
+ 'TR-LDM-04': {'controls': [('PD-DMOD', 'C04'), ('PD-DMOD', 'C05')], 'why': 'Approving the logical model is the sign-off required before physical design.'},
+ 'TR-LDM-05': {'controls': [('PD-DMOD', 'C04')], 'why': 'The approved logical model is published as the maintained version.'},
+ 'TR-LDM-06': {'controls': [('PD-DMOD', 'C06')], 'why': 'A change request opens a governed change to a shared logical model.'},
+ 'TR-LDM-07': {'controls': [('PD-DMOD', 'C06'), ('PD-DMOD', 'C12')], 'why': 'The logical model change is reviewed and reconciled with the glossary.'},
+ 'TR-LDM-08': {'controls': [('PD-DMOD', 'C06')], 'why': 'Withdrawing or replacing a shared logical model is a governed change.'},
+ 'TR-LDM-09': {'controls': [('PD-DMOD', 'C04')], 'why': 'The logical model is re-drafted from its retained version.'},
+ 'TR-PDM-01': {'controls': [('PD-DMOD', 'C05'), ('PD-DMOD', 'C07')],
+               'why': 'Physical design starts from an approved logical model and follows the physical design standards.'},
+ 'TR-PDM-02': {'controls': [('PD-DMOD', 'C08'), ('PD-DMOD', 'C10')],
+               'why': 'The physical design is reviewed for conformance, reuse and naming before deployment.'},
+ 'TR-PDM-03': {'controls': [('PD-DMOD', 'C08'), ('PD-DMOD', 'C09')], 'why': 'Review findings require the non-conformant design to be remediated.'},
+ 'TR-PDM-04': {'controls': [('PD-DMOD', 'C08')], 'why': 'Approval closes the physical design review.'},
+ 'TR-PDM-05': {'controls': [('PD-DMOD', 'C08')], 'why': 'Only a reviewed and approved physical design is published for deployment.'},
+ 'TR-PDM-06': {'controls': [('PD-DMOD', 'C07')], 'why': 'A new physical model version is drafted to the physical design standards.'},
+ 'TR-PDM-07': {'controls': [('PD-DMOD', 'C08'), ('PD-DMOD', 'C10')],
+               'why': 'The revised physical design is reviewed for conformance and naming before deployment.'},
+ 'TR-PDM-08': {'controls': [('PD-DMOD', 'C08')], 'why': 'Withdrawing a deployed physical model reverses its reviewed deployment.'},
+ 'TR-PDM-09': {'controls': [('PD-DMOD', 'C05'), ('PD-DMOD', 'C07')],
+               'why': 'The physical model is re-drafted from an approved logical model to the standards.'},
+ 'TR-PDM-10': {'controls': [('PD-DMOD', 'C08')], 'why': 'Deployment is permitted only for the reviewed and managed design and is verified against it.'},
+ 'TR-PDM-11': {'controls': [('PD-DMOD', 'C08')], 'why': 'Withdrawing an undeployed physical model reverses its reviewed publication.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DMD", "name": "Data Modelling and Design FTS", "knowledgeArea": "Data Modelling and Design", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Modelling Standards and Plan (scope level) and the Conceptual, Logical and Physical Data Model of a Data Asset (one per asset, one FTS per level) run concurrently and are coupled by cross-region constraints (each level derives from the approved level above), facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Four state regions, each its own FTS over one managed element of the Knowledge Area: the Modelling Standards and Plan and the Conceptual, Logical and Physical Data Model of a Data Asset. The three model levels share one lifecycle pattern (draft, reviewed, approved, managed, revision, superseded; the physical level adds deployed) and are chained by cross-region constraints. The KA never becomes a region of the Data Asset; the models reach the Global protocol through contributions (registration on the conceptual model, materialisation on the deployed physical model, the assurance material-change trigger on a physical revision and the validation measurement as an assurance service), and couple to DG, Data Architecture, Metadata and Reference and Master Data.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DMD-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram lists the activities (plan, build, review, manage) and the three deliverables but no version lifecycle; the shared level lifecycle (draft, reviewed, approved, managed, revision, superseded) is drafted from Review and Manage the Data Models."},
         {"id": "SRC-DMD-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements (one FTS per model level), Global gating", "limitations": ""},

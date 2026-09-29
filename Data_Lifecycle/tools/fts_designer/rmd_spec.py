@@ -10,7 +10,7 @@ per master entity, for example one customer), which is the Customer Master asset
 Decisions 21 Sep 2026: RMD gates Global registration (validated definitions, assessed source), materialisation
 (data model and integration pattern), access release (sharing service published, conditions of use agreed) and
 supersession (new reference version or merged golden record); a match conflict or split emits the Assurance
-material-change trigger; every transition carries a Decision Right (holders drafted, REVIEW).
+material-change trigger; every transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python rmd_spec.py [out_dir] [--overrides spec/reference_master_data_overrides.json]   -> reference_master_data.fts.json
 """
@@ -94,14 +94,14 @@ EVENTS = {
     "EV-GLD-01": ("Match completion", "Assessment outcome"), "EV-GLD-02": ("Reconciliation and quality confirmation", "Assessment outcome"), "EV-GLD-03": ("Conflict detection", "Monitoring trigger"), "EV-GLD-04": ("Conflict resolution", "Decision outcome"), "EV-GLD-05": ("Split decision", "Decision outcome"), "EV-GLD-06": ("Record retirement", "Decision outcome"), "EV-GLD-07": ("Re-match after split", "Assessment outcome"), "EV-GLD-08": ("Source update", "Monitoring trigger"),
 }
 DR = {
-    "DR-RMD-01": ("Approve Shared Data Approach, Processes and Policies", "ROLE-RMD-P05", "REVIEW: drafted holder"),
-    "DR-RMD-02": ("Activate, Revise and Retire the Programme", "ROLE-RMD-P05", "REVIEW: drafted holder"),
-    "DR-RMD-03": ("Bring a Domain into Scope and Validate its Definitions", "ROLE-RMD-P03", "REVIEW: drafted holder"),
-    "DR-RMD-04": ("Designate Sources and Approve the Domain Model", "ROLE-RMD-P05", "REVIEW: drafted holder"),
-    "DR-RMD-05": ("Assign Domain Stewardship and Publish the Sharing Service", "ROLE-RMD-P03", "REVIEW: drafted holder"),
-    "DR-RMD-06": ("Publish, Supersede and Retire a Reference Data Version", "ROLE-RMD-P03", "REVIEW: drafted holder"),
-    "DR-RMD-07": ("Confirm Match, Merge, Split and Retirement of a Golden Record", "ROLE-RMD-P03", "REVIEW: drafted holder"),
-    "DR-RMD-08": ("Declare and Resolve a Golden Record Conflict", "ROLE-RMD-P06", "REVIEW: drafted holder"),
+    "DR-RMD-01": ("Approve Shared Data Approach, Processes and Policies", "ROLE-PM-RMD", "Confirmed 22 Sep 2026 (holder register): Reference and Master Data Practice Manager; drafted as Data Architects"),
+    "DR-RMD-02": ("Activate, Revise and Retire the Programme", "ROLE-PM-RMD", "Confirmed 22 Sep 2026 (holder register): Reference and Master Data Practice Manager; drafted as Data Architects"),
+    "DR-RMD-03": ("Bring a Domain into Scope and Validate its Definitions", "ROLE-DDS", "Confirmed 22 Sep 2026 (holder register): Domain Data Steward; drafted as Data Stewards"),
+    "DR-RMD-04": ("Designate Sources and Approve the Domain Model", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Data Architects"),
+    "DR-RMD-05": ("Assign Domain Stewardship and Publish the Sharing Service", "ROLE-EDS", "Confirmed 22 Sep 2026 (holder register): Enterprise Data Steward; drafted as Data Stewards"),
+    "DR-RMD-06": ("Publish, Supersede and Retire a Reference Data Version", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Data Stewards"),
+    "DR-RMD-07": ("Confirm Match, Merge, Split and Retirement of a Golden Record", "ROLE-BDS", "Confirmed 22 Sep 2026 (holder register): Business Data Steward; drafted as Data Stewards"),
+    "DR-RMD-08": ("Declare and Resolve a Golden Record Conflict", "ROLE-DQA", "Confirmed 22 Sep 2026 (holder register): Data Quality Analyst; drafted as Data Quality Analysts"),
 }
 ROLES = [
     ("ROLE-RMD-S01", "Subject Matter Experts", "Supplier", "Supply definitions and business rules."), ("ROLE-RMD-S02", "Data Stewards", "Supplier", "Supply stewardship knowledge and requirements."), ("ROLE-RMD-S03", "Application Developers", "Supplier", "Supply source records and consuming applications."), ("ROLE-RMD-S04", "Data Providers", "Supplier", "Supply purchased and open data and code sets."), ("ROLE-RMD-S05", "Business Analysts", "Supplier", "Supply cross-functional requirements."), ("ROLE-RMD-S06", "Infrastructure Systems Analysts", "Supplier", "Supply platform constraints."),
@@ -169,31 +169,39 @@ ARTEFACTS = [
 CONTRIB = [
     ("CON-RMD-01", "TR-EX-01", "guard", {"DOM": ["STS-DOM-02", "STS-DOM-03", "STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]}, "A master record or reference set is registered only under validated definitions for its domain.", "RMD_definitions_validated", "Required", "Register Asset for shared data cites the validated definitions."),
     ("CON-RMD-02", "TR-EX-01", "guard", {"DOM": ["STS-DOM-03", "STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]}, "Registration requires an assessed, designated source for the domain.", "RMD_source_assessed", "Required", ""),
-    ("CON-RMD-03", "TR-EX-02", "guard", {"DOM": ["STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"], "GLD": ["STS-GLD-02", "STS-GLD-03"]}, "A golden record is materialised only under an approved domain model and integration pattern and once matched and merged.", "RMD_domain_modelled and RMD_record_matched", "Required", "Materialize Asset = the merged golden record exists in the hub."),
-    ("CON-RMD-04", "TR-AV-01", "guard", {"DOM": ["STS-DOM-06"], "GLD": ["STS-GLD-03"]}, "Access to a golden record is released only through a published sharing service under conditions of use and only when the record is Reliable.", "RMD_domain_shared and RMD_record_reliable", "Required", "Reference sets: RMD_version_published applies instead (CON-RMD-05)."),
-    ("CON-RMD-05", "TR-AV-01", "guard", {"REF": ["STS-REF-03", "STS-REF-04"]}, "Access to a reference data set is released only when a version is published under conditions of use.", "RMD_version_published or RMD_record_reliable", "Conditional", "Applies to reference data assets; the golden record guard applies to master records."),
+    ("CON-RMD-03", "TR-EX-02", "guard", {"DOM": ["STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"], "GLD": ["STS-GLD-02", "STS-GLD-03"]}, "A master data asset is materialised only under an approved domain model and integration pattern and once its golden records are matched and merged.", "not RMD_is_master or (RMD_domain_modelled and RMD_record_matched)", "Required", "Materialize Asset = the merged golden records exist in the hub. Howard, 22 Sep 2026: applies to master data assets only (asset fact RMD_is_master); a reference data set is gated by CON-RMD-16."),
+    ("CON-RMD-04", "TR-AV-01", "guard", {"DOM": ["STS-DOM-06"], "GLD": ["STS-GLD-03"]}, "Access to a master data asset is released only through a published sharing service under conditions of use and only when its golden records are Reliable.", "not RMD_is_master or (RMD_domain_shared and RMD_record_reliable)", "Required", "Howard, 22 Sep 2026: master data assets only (RMD_is_master); reference data sets are gated by CON-RMD-05."),
+    ("CON-RMD-05", "TR-AV-01", "guard", {"REF": ["STS-REF-03", "STS-REF-04"]}, "Access to a reference data set is released only when a version is published under conditions of use.", "not RMD_is_reference or RMD_version_published", "Required", "Howard, 22 Sep 2026: reference data assets only (asset fact RMD_is_reference); the Reference Data Set region is one per set, held by the asset, not shared per scope."),
     ("CON-RMD-06", "TR-EX-03", "event", {"REF": ["STS-REF-04"], "GLD": ["STS-GLD-06"]}, "A new reference version, or a merge of this golden record into another, supersedes the asset.", "RMD_version_pending or RMD_record_retired", "Conditional", "RMD emits EV-EX-03 when TR-REF-04 or TR-GLD-09 (merge) fires."),
     ("CON-RMD-07", "TR-EX-04", "event", {"GLD": ["STS-GLD-05"]}, "A split reinstates a superseded record as its own asset.", "RMD_record_split", "Conditional", "RMD emits EV-EX-04 when TR-GLD-06 fires."),
     ("CON-RMD-08", "TR-AS-05", "event", {"GLD": ["STS-GLD-04"]}, "A golden record conflict is a material change affecting the assurance claim.", "RMD_record_conflict", "Conditional", "RMD emits EV-AS-05 when TR-GLD-03 fires."),
     ("CON-RMD-09", "TR-AV-03", "event", {"GLD": ["STS-GLD-04"]}, "A golden record conflict requires access suspension until resolved.", "RMD_record_conflict", "Conditional", "RMD emits EV-AV-03 when TR-GLD-03 fires."),
-    ("CON-RMD-10", "TR-AV-04", "guard", {"GLD": ["STS-GLD-03"]}, "Suspended access is restored only when the record is Reliable again.", "RMD_record_reliable", "Required", ""),
+    ("CON-RMD-10", "TR-AV-04", "guard", {"GLD": ["STS-GLD-03"]}, "Suspended access to a master data asset is restored only when its golden records are Reliable again.", "not RMD_is_master or RMD_record_reliable", "Required", "Master data assets only (RMD_is_master)."),
     ("CON-RMD-11", "TR-EX-05", "event", {"GLD": ["STS-GLD-06"], "REF": ["STS-REF-05"]}, "Retirement of a record or set with no dependency is a disposition trigger.", "RMD_record_retired or RMD_set_retired", "Conditional", "RMD emits EV-EX-05 when TR-GLD-09 or TR-REF-05 fires and retention allows."),
     ("CON-RMD-12", "TR-AS-02", "service", {"GLD": ["STS-GLD-03"]}, "Reconciliation and Quality Confirmation supplies the assurance evidence for a golden record.", "SVC-RMD-08", "Conditional", "Assurance service; artefact ART-RMD-03."),
+    ("CON-RMD-13", "TR-CP-01", "guard", {"DOM": ["STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]}, "A master domain is taken into active custody only once its stewardship is defined.", "RMD_stewardship_defined or not RMD_domain_scoped", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep): non-master assets are unaffected."),
+    ("CON-RMD-14", "TR-CP-04", "guard", {"DOM": ["STS-DOM-06", "STS-DOM-07"]}, "A master domain is placed in external custody only as a Shared Domain.", "RMD_domain_shared or not RMD_domain_scoped", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
+    ("CON-RMD-15", "TR-CP-10", "guard", {"GLD": ["STS-GLD-01", "STS-GLD-06"]}, "Custody of a golden record is closed after destruction only when the record is retired.", "RMD_record_retired or not RMD_record_matched", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
+    ("CON-RMD-16", "TR-EX-02", "guard", {"REF": ["STS-REF-02", "STS-REF-03", "STS-REF-04"]}, "A reference data set is materialised only once its source is assessed and its definitions and values are validated.", "not RMD_is_reference or RMD_set_validated", "Required", "Howard, 22 Sep 2026: the reference data counterpart of CON-RMD-03."),
+    ("CON-RMD-17", "TR-AV-01", "event", {"DOM": ["STS-DOM-06"], "REF": ["STS-REF-03", "STS-REF-04"]}, "A master data domain published for sharing, or a published version of a reference data set, is the request to release access to that asset.", "(RMD_is_master and RMD_domain_shared) or (RMD_is_reference and RMD_version_published)", "Conditional", "Howard, 23 Sep 2026: eleven Knowledge Areas gated TR-AV-01 and none raised it. Each Knowledge Area that owns an asset kind now raises the release request for the assets of its kind. Reference and Master Data owns master data assets and reference data sets; RMD emits EV-AV-01 when TR-DOM-05 or TR-REF-04 fires."),
 ]
 KA_COUPLINGS = [
     ("KAC-RMD-01", "KA-DQ", "TR-PDCA-03", "", "DQ_conforming", "A golden record is Reliable only when its DQ PDCA cycle is at Conforming Quality (TR-GLD-02 cites the DQ fact).", "Reverse coupling: an RMD transition cites a DQ fact."),
     ("KAC-RMD-02", "KA-DG", "TR-ISS-01", "EV-ISS-01", "RMD_record_conflict", "A golden record conflict is logged as a Data Asset issue in the DG issue FTS with source Reference and Master Data (TR-GLD-03 and TR-GLD-04 emit EV-ISS-01).", "DG owns escalation; RMD owns the resolution."),
     ("KAC-RMD-03", "KA-MM", "TR-AST-02", "", "MM_asset_described", "Domain definitions are validated against the glossary and recorded as business metadata; the domain's model is technical metadata (TR-DOM-01 and TR-DOM-03 cite the Metadata FTS).", "Reverse coupling: an RMD transition cites an MM fact."),
     ("KAC-RMD-04", "KA-DS", "TR-CLS-02", "", "DS_classified", "A domain's sharing service is published only for classified data; the conditions-of-use agreement carries the classification and, for personal data, the privacy basis (TR-DOM-05 cites DS facts).", "Reverse coupling: an RMD transition cites DS facts."),
-    ("KAC-RMD-05", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "The programme's governance policies are governing instruments published under Data Governance (TR-PRG-02 cites the DG fact).", "Reverse coupling."),
+    ("KAC-RMD-05", "KA-DG", "TR-POL-03", "", "RMD_policy_set_in_force", "The programme's governance policies are governing instruments published under Data Governance (TR-PRG-02 cites the DG fact).", "Reverse coupling."),
 ]
 FACT_BINDINGS = {
+    "RMD_domain_scoped": {"region": "REG-RMD-DOM", "states": ["STS-DOM-02", "STS-DOM-03", "STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]},
+    "RMD_stewardship_defined": {"region": "REG-RMD-DOM", "states": ["STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]},
     "RMD_programme_operating": {"region": "REG-RMD-PRG", "states": ["STS-PRG-04", "STS-PRG-05"]},
     "RMD_definitions_validated": {"region": "REG-RMD-DOM", "states": ["STS-DOM-02", "STS-DOM-03", "STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]},
     "RMD_source_assessed": {"region": "REG-RMD-DOM", "states": ["STS-DOM-03", "STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]},
     "RMD_domain_modelled": {"region": "REG-RMD-DOM", "states": ["STS-DOM-04", "STS-DOM-05", "STS-DOM-06", "STS-DOM-07"]},
     "RMD_domain_shared": {"region": "REG-RMD-DOM", "states": ["STS-DOM-06", "STS-DOM-07"]},
     "RMD_version_published": {"region": "REG-RMD-REF", "states": ["STS-REF-03", "STS-REF-04"]},
+    "RMD_set_validated": {"region": "REG-RMD-REF", "states": ["STS-REF-02", "STS-REF-03", "STS-REF-04"]},
     "RMD_version_pending": {"region": "REG-RMD-REF", "states": ["STS-REF-04"]},
     "RMD_set_retired": {"region": "REG-RMD-REF", "states": ["STS-REF-05"]},
     "RMD_record_matched": {"region": "REG-RMD-GLD", "states": ["STS-GLD-02", "STS-GLD-03"]},
@@ -222,13 +230,72 @@ EVIDENCE = [
 ]
 EXC = [("EXC-RMD-01", "Provisional Sharing", "TR-AV-01", "Release of a matched but not yet reconciled record to an urgent consumer.", "DR-RMD-07", "Record matched, quality assessment scheduled with a date, consumer accepts the provisional status in the conditions of use, DG informed, evidence retained; expires at the assessment date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-RMD-01': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-GLD-02'}], 'kind': 'condition', 'producer': 'KA-DQ', 'requirement': 'Required'},
+ 'KAC-RMD-02': {'emitters': ['TR-GLD-03', 'TR-GLD-04'], 'kind': 'event', 'producer': 'KA-RMD'},
+ 'KAC-RMD-03': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-01'}, {'model': 'KA-RMD', 'transition': 'TR-DOM-03'}],
+                'kind': 'condition',
+                'producer': 'KA-MM',
+                'requirement': 'Required'},
+ 'KAC-RMD-04': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-05'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
+ 'KAC-RMD-05': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-PRG-02'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'}}
+
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-PRG-01': {'controls': [], 'why': 'Gathering programme requirements is not governed by any Reference and Master Data policy control.'},
+ 'TR-PRG-02': {'controls': [('PD-MDM', 'C01'), ('PD-MDM', 'C02')],
+               'why': 'Approving governance policies and stewardship processes is policy approval and ownership assignment.'},
+ 'TR-PRG-03': {'controls': [('PD-MDM', 'C09')], 'why': 'Putting the sharing architecture into service enables publication of master data to consumers.'},
+ 'TR-PRG-04': {'controls': [('PD-MDM', 'C16')], 'why': 'A business or regulatory trigger opens the on-change review of the programme and its policies.'},
+ 'TR-PRG-05': {'controls': [('PD-MDM', 'C16'), ('PD-MDM', 'C01')], 'why': 'Approving revised policies closes the review and reapproves the policy.'},
+ 'TR-PRG-06': {'controls': [('PD-MDM', 'C16')], 'why': 'Retiring the programme is an outcome of the review.'},
+ 'TR-DOM-01': {'controls': [], 'why': 'Validating definitions against the glossary is metadata work with no Reference and Master Data control.'},
+ 'TR-DOM-02': {'controls': [('PD-MDM', 'C06')], 'why': 'Designating the system of record or reference is the system-of-record designation control.'},
+ 'TR-DOM-03': {'controls': [], 'why': 'Approving the domain data model and integration pattern is modelling work with no Reference and Master Data control.'},
+ 'TR-DOM-04': {'controls': [('PD-MDM', 'C02')], 'why': 'Assigning stewards for the domain is ownership assignment.'},
+ 'TR-DOM-05': {'controls': [('PD-MDM', 'C09')], 'why': "Implementing the sharing service publishes the domain's master data to consumers."},
+ 'TR-DOM-06': {'controls': [('PD-MDM', 'C09')], 'why': 'A change to the domain sharing service is governed by the publication control.'},
+ 'TR-DOM-07': {'controls': [('PD-MDM', 'C09')], 'why': 'Deploying the approved change to the sharing service changes publication to consumers.'},
+ 'TR-DOM-08': {'controls': [('PD-MDM', 'C09'), ('PD-MDM', 'C06')],
+               'why': 'Decommissioning the sharing service reverses publication and ends the system-of-record designation.'},
+ 'TR-REF-01': {'controls': [('PD-MDM', 'C10'), ('PD-MDM', 'C11')],
+               'why': "Validating a reference set's source, definitions and mappings is code-set governance and cross-referencing."},
+ 'TR-REF-02': {'controls': [('PD-MDM', 'C10')], 'why': 'Publishing a validated version is central versioned code-set governance.'},
+ 'TR-REF-03': {'controls': [('PD-MDM', 'C10'), ('PD-MDM', 'C12')], 'why': 'Validating a new version is a governed code-set change.'},
+ 'TR-REF-04': {'controls': [('PD-MDM', 'C10'), ('PD-MDM', 'C12')], 'why': 'Superseding the published version applies the governed code-set change.'},
+ 'TR-REF-05': {'controls': [('PD-MDM', 'C10'), ('PD-MDM', 'C12')], 'why': 'Withdrawing a set is a governed code-set change.'},
+ 'TR-REF-06': {'controls': [('PD-MDM', 'C10'), ('PD-MDM', 'C12')], 'why': 'Reinstating and revalidating a retired set is a governed code-set change.'},
+ 'TR-GLD-01': {'controls': [('PD-MDM', 'C05'), ('PD-MDM', 'C04'), ('PD-MDM', 'C07')],
+               'why': 'Matching and merging under survivorship applies the matching strategy and golden-record rules.'},
+ 'TR-GLD-02': {'controls': [('PD-MDM', 'C04'), ('PD-MDM', 'C09')],
+               'why': 'Confirming and publishing the reconciled golden record is consolidation and publication.'},
+ 'TR-GLD-03': {'controls': [('PD-MDM', 'C08')], 'why': 'A detected match or survivorship conflict enters the steward conflict workflow.'},
+ 'TR-GLD-04': {'controls': [('PD-MDM', 'C08')], 'why': 'A disputed match enters the steward conflict workflow.'},
+ 'TR-GLD-05': {'controls': [('PD-MDM', 'C08'), ('PD-MDM', 'C07')], 'why': 'Resolving the conflict and re-matching is a stewarded, audited merge decision.'},
+ 'TR-GLD-06': {'controls': [('PD-MDM', 'C07'), ('PD-MDM', 'C08')], 'why': 'Splitting a false merge is a stewarded unmerge decision.'},
+ 'TR-GLD-07': {'controls': [('PD-MDM', 'C05'), ('PD-MDM', 'C07')],
+               'why': 'Re-matching the split parts applies the matching strategy under audited merge decisions.'},
+ 'TR-GLD-08': {'controls': [('PD-MDM', 'C05'), ('PD-MDM', 'C04')], 'why': 'A source update re-applies matching and survivorship to the golden record.'},
+ 'TR-GLD-09': {'controls': [('PD-MDM', 'C07'), ('PD-MDM', 'C09')],
+               'why': 'Retiring or merging away a record is an audited merge decision that withdraws it from publication.'},
+ 'TR-GLD-10': {'controls': [('PD-MDM', 'C07'), ('PD-MDM', 'C08')], 'why': 'Retiring a conflicted duplicate is a stewarded merge decision.'},
+ 'TR-GLD-11': {'controls': [('PD-MDM', 'C07')], 'why': 'Reactivating a retired record reverses an audited retire or merge decision.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-RMD", "name": "Reference and Master Data FTS", "knowledgeArea": "Reference and Master Data", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Programme (scope level), a Master Data Domain (one per domain), a Reference Data Set (one per set) and a Golden Record (one per entity instance) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Four state regions, each its own FTS over one managed element of the Knowledge Area: the Master and Reference Data Programme, a Master Data Domain, a Reference Data Set and a Golden Record. The Golden Record is the Customer Master asset the scenarios run. The KA never becomes a region of the Data Asset; the domain, set and record reach the Global protocol through contributions (registration, materialisation, access release and restoration, supersession, reinstatement, disposition and the assurance and suspension triggers), and couple to DQ, DG, Metadata and Data Security.",
-             "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+             "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS,
+             "assetFacts": {"RMD_is_master": {"default": True, "meaning": "the asset is master data whose entities have golden records (a party, customer, product or supplier master)"},
+                            "RMD_is_reference": {"default": False, "meaning": "the asset is a reference data set (a code set, catalogue or glossary) whose releases are versions"}}},
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-RMD-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram gives no record-level lifecycle; the Golden Record states (candidate, matched, reliable, conflict, split, retired) are drafted from the match, merge and survivorship practice in the DMBOK chapter."},
         {"id": "SRC-RMD-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating, scenario extension", "limitations": ""},

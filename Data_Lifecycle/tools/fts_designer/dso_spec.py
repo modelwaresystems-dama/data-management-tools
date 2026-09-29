@@ -12,7 +12,7 @@ Decisions 21 Sep 2026: DSO gates Global materialisation (environment in service,
 (environment in service under a tested continuity plan), preservation custody (archive copy), restoration of active
 custody (restored and protected instance), destruction and custody closure (purge confirmed); a migration or
 replication is a custody transfer trigger; an OLA breach or a continuity invocation emits the Assurance trigger;
-monitoring is an assurance service; every transition carries a Decision Right (holders drafted, REVIEW).
+monitoring is an assurance service; every transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python dso_spec.py [out_dir] [--overrides spec/data_storage_operations_overrides.json]   -> data_storage_operations.fts.json
 """
@@ -102,14 +102,14 @@ EVENTS = {
     "EV-BCP-01": ("Continuity planning", "Request"), "EV-BCP-02": ("Test success", "Assessment outcome"), "EV-BCP-03": ("Test failure", "Assessment outcome"), "EV-BCP-04": ("Continuity event", "Monitoring trigger"), "EV-BCP-05": ("Recovery confirmation", "Evidence trigger"), "EV-BCP-06": ("Post-incident review", "Decision outcome"), "EV-BCP-07": ("Plan revision trigger", "Monitoring trigger"), "EV-BCP-08": ("Plan retirement", "Decision outcome"),
 }
 DR = {
-    "DR-DSO-01": ("Evaluate, Adopt and Retire a Database Technology", "ROLE-DSO-P02", "REVIEW: drafted holder"),
-    "DR-DSO-02": ("Approve Environment Requirements and Development", "ROLE-DSO-P02", "REVIEW: drafted holder"),
-    "DR-DSO-03": ("Accept an Environment into Service, Declare Degradation and Decommission", "ROLE-DSO-P01", "REVIEW: drafted holder"),
-    "DR-DSO-04": ("Load, Protect, Archive and Restore a Stored Instance", "ROLE-DSO-P01", "REVIEW: drafted holder"),
-    "DR-DSO-05": ("Approve and Verify Migration, Replication and Versioning", "ROLE-DSO-P01", "REVIEW: drafted holder"),
-    "DR-DSO-06": ("Confirm the Purge of a Stored Instance", "ROLE-DSO-P01", "REVIEW: drafted holder"),
-    "DR-DSO-07": ("Approve, Test, Invoke and Stand Down the Continuity Plan", "ROLE-DSO-P01", "REVIEW: drafted holder"),
-    "DR-DSO-08": ("Provision, Mask, Refresh and Retire a Test Dataset", "ROLE-DSO-P01", "REVIEW: drafted holder"),
+    "DR-DSO-01": ("Evaluate, Adopt and Retire a Database Technology", "ROLE-PM-DSO", "Confirmed 22 Sep 2026 (holder register): Data Storage and Operations Practice Manager; drafted as Data Architect"),
+    "DR-DSO-02": ("Approve Environment Requirements and Development", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Data Architect"),
+    "DR-DSO-03": ("Accept an Environment into Service, Declare Degradation and Decommission", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
+    "DR-DSO-04": ("Load, Protect, Archive and Restore a Stored Instance", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
+    "DR-DSO-05": ("Approve and Verify Migration, Replication and Versioning", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
+    "DR-DSO-06": ("Confirm the Purge of a Stored Instance", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
+    "DR-DSO-07": ("Approve, Test, Invoke and Stand Down the Continuity Plan", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
+    "DR-DSO-08": ("Provision, Mask, Refresh and Retire a Test Dataset", "ROLE-DBA", "Confirmed 22 Sep 2026 (holder register): Database Administrator; drafted as Database Administrator"),
 }
 ROLES = [
     ("ROLE-DSO-S01", "Data Architect", "Supplier", "Supplies the data architecture and technology direction."), ("ROLE-DSO-S02", "Data Modeler", "Supplier", "Supplies the physical data models."), ("ROLE-DSO-S03", "Software Developer", "Supplier", "Supplies application requirements and change scripts."), ("ROLE-DSO-S04", "Application Testing Team", "Supplier", "Supplies test requirements and datasets."),
@@ -205,6 +205,8 @@ CONTRIB = [
     ("CON-DSO-09", "TR-AS-05", "event", {"ENV": ["STS-ENV-05"], "BCP": ["STS-BCP-04"]}, "An OLA breach or a continuity invocation is a material change affecting the assurance claim.", "DSO_environment_degraded or DSO_continuity_invoked", "Conditional", "DSO emits EV-AS-05 when TR-ENV-05 or TR-BCP-04 fires."),
     ("CON-DSO-10", "TR-AS-02", "service", {"ENV": ["STS-ENV-04"]}, "Database Performance and Availability Monitoring supplies assurance evidence for the stored asset.", "SVC-DSO-03", "Conditional", "Assurance service; evidence EVD-DSO-04."),
     ("CON-DSO-11", "TR-AV-01", "guard", {"TST": ["STS-TST-04"]}, "A test dataset is released to the testing team only when masked to the asset's classification.", "DSO_test_dataset_masked or not DSO_test_dataset_active", "Conditional", "Applies to the test dataset as its own asset instance; a production asset with no test dataset is unaffected."),
+    ("CON-DSO-12", "TR-CP-07", "guard", {"STO": ["STS-STO-02", "STS-STO-03", "STS-STO-04", "STS-STO-06", "STS-STO-07"]}, "An external transfer completes only when the instance migration has completed or been rolled back (no instance is in migration).", "not DSO_instance_migrating", "Required", "Howard, 22 Sep: the obvious contribution on TR-CP-07."),
+    ("CON-DSO-13", "TR-CP-09", "guard", {"STO": ["STS-STO-01", "STS-STO-06"]}, "Custody after transfer is closed only when the local stored instance is purged.", "DSO_instance_purged or not DSO_instance_loaded", "Conditional", "Howard, 22 Sep: the obvious contribution on TR-CP-09."),
 ]
 KA_COUPLINGS = [
     ("KAC-DSO-01", "KA-DA", "TR-EDA-05", "", "DA_architecture_in_force", "An environment is developed within the data architecture in force (TR-ENV-02 cites the DA fact).", "Reverse coupling: a DSO transition cites a DA fact."),
@@ -213,7 +215,7 @@ KA_COUPLINGS = [
     ("KAC-DSO-04", "KA-DS", "TR-PRT-06", "", "DS_sanitised", "An instance is purged only after sanitisation (TR-STO-09 and TR-STO-10 cite the DS fact).", "Reverse coupling."),
     ("KAC-DSO-05", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DSO_environment_degraded", "An OLA breach is logged as a Data Asset issue with source Data Storage and Operations (TR-ENV-05 emits EV-ISS-01).", "DG owns escalation; DSO owns the restoration."),
     ("KAC-DSO-07", "KA-DS", "TR-CLS-02", "", "DS_classified", "A test dataset is masked to the asset's security classification (TR-TST-04 cites the DS fact).", "Reverse coupling: a DSO transition cites a DS fact."),
-    ("KAC-DSO-06", "KA-MM", "TR-AST-05", "", "DSO_instance_migrating", "A completed migration, replication or versioning refreshes the asset's technical metadata and lineage (the MM transition cites the DSO fact when TR-STO-07 fires).", "Forward coupling: an MM transition cites a DSO fact."),
+    ("KAC-DSO-06", "KA-MM", "TR-AST-04", "EV-AST-05", "DSO_instance_migrating", "Any movement of the stored instance (archive, restore, completed migration, replication) raises the metadata refresh: the asset's technical metadata and lineage are flagged stale (EV-AST-05) so that Refresh Metadata (TR-AST-05) follows.", "Howard, 24 Sep 2026 (Open Decisions A2 option a, comment: any Data Asset movement should raise this event). Refresh can only start from Stale Metadata, so the movement raises the stale flag and the steward's refresh follows."),
 ]
 FACT_BINDINGS = {
     "DSO_technology_adopted": {"region": "REG-DSO-TEC", "states": ["STS-TEC-04", "STS-TEC-05"]},
@@ -256,13 +258,105 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DSO-01", "Emergency Load", "TR-EX-02", "Materialisation of an asset into a degraded environment for an urgent business need.", "DR-DSO-03", "Breach open with a restoration date, instance protected on load, consumer accepts the degraded OLA, DG informed, evidence retained; expires at the restoration date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DSO-01': {'dependents': [{'model': 'KA-DSO', 'transition': 'TR-ENV-02'}], 'kind': 'condition', 'producer': 'KA-DA', 'requirement': 'Required'},
+ 'KAC-DSO-02': {'dependents': [{'model': 'KA-DMD', 'transition': 'TR-PDM-10'},
+                               {'expression': 'DMD_physical_deployed', 'model': 'KA-DSO', 'producer': 'KA-DMD', 'transition': 'TR-STO-01'}],
+                'kind': 'condition',
+                'producer': 'KA-DSO',
+                'requirement': 'Required'},
+ 'KAC-DSO-03': {'dependents': [{'model': 'KA-DSO', 'transition': 'TR-STO-01'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'},
+ 'KAC-DSO-04': {'dependents': [{'model': 'KA-DSO', 'transition': 'TR-STO-09'}, {'model': 'KA-DSO', 'transition': 'TR-STO-10'}],
+                'kind': 'condition',
+                'producer': 'KA-DS',
+                'requirement': 'Required'},
+ 'KAC-DSO-05': {'emitters': ['TR-ENV-05'], 'kind': 'event', 'producer': 'KA-DSO'},
+ 'KAC-DSO-06': {'emitters': ['TR-STO-04', 'TR-STO-05', 'TR-STO-07', 'TR-STO-12', 'GDA-GLOBAL-PROTOCOL:TR-CP-04', 'GDA-GLOBAL-PROTOCOL:TR-CP-05', 'KA-DII:TR-EXC-07'], 'kind': 'event', 'producer': 'KA-DSO'},
+ 'KAC-DSO-07': {'dependents': [{'model': 'KA-DSO', 'transition': 'TR-TST-04'}], 'kind': 'condition', 'producer': 'KA-DS', 'requirement': 'Required'}}
+
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-TEC-01': {'controls': [], 'why': 'PD-DSO has no control for technology selection, adoption or retirement, so nothing governs this step.'},
+ 'TR-TEC-02': {'controls': [], 'why': 'PD-DSO has no control for technology selection, adoption or retirement, so nothing governs this step.'},
+ 'TR-TEC-03': {'controls': [], 'why': 'PD-DSO has no control for technology selection, adoption or retirement, so nothing governs this step.'},
+ 'TR-TEC-04': {'controls': [], 'why': 'PD-DSO has no control for technology selection, adoption or retirement, so nothing governs this step.'},
+ 'TR-TEC-05': {'controls': [('PD-DSO', 'C07')], 'why': 'Monitoring a technology in service is part of monitoring and logging production data operations.'},
+ 'TR-TEC-06': {'controls': [], 'why': 'PD-DSO has no control for technology selection, adoption or retirement, so nothing governs this step.'},
+ 'TR-TEC-07': {'controls': [], 'why': 'PD-DSO has no control for technology selection, adoption or retirement, so nothing governs this step.'},
+ 'TR-TEC-08': {'controls': [], 'why': 'PD-DSO has no control for technology selection, adoption or retirement, so nothing governs this step.'},
+ 'TR-ENV-01': {'controls': [('PD-DSO', 'C04'), ('PD-DSO', 'C10')],
+               'why': 'Agreeing environment service levels and sizing sets availability and recovery standards and plans capacity.'},
+ 'TR-ENV-02': {'controls': [], 'why': 'PD-DSO has no change implementation or environment build control; the step is governed by the existing mechanism only.'},
+ 'TR-ENV-03': {'controls': [('PD-DSO', 'C04'), ('PD-DSO', 'C07')],
+               'why': 'Acceptance tests the environment against its availability standard and starts operational monitoring.'},
+ 'TR-ENV-04': {'controls': [('PD-DSO', 'C04')],
+               'why': 'A failed acceptance against the availability standard returns the environment, the reverse of acceptance.'},
+ 'TR-ENV-05': {'controls': [('PD-DSO', 'C07'), ('PD-DSO', 'C09')], 'why': 'Monitoring detects the breach and the failure is alerted and escalated.'},
+ 'TR-ENV-06': {'controls': [('PD-DSO', 'C08')], 'why': 'Restoring service after a failure follows the operational incident response.'},
+ 'TR-ENV-07': {'controls': [('PD-DSO', 'C12')], 'why': 'Decommissioning an environment is a material change that requires a continuity review.'},
+ 'TR-ENV-08': {'controls': [('PD-DSO', 'C12')], 'why': 'Replacing a degraded environment is a material change that requires a continuity review.'},
+ 'TR-ENV-09': {'controls': [('PD-DSO', 'C04'), ('PD-DSO', 'C10')],
+               'why': 'Re-agreeing requirements sets availability standards and plans capacity, as for a new environment.'},
+ 'TR-STO-01': {'controls': [('PD-DSO', 'C07')], 'why': 'Loading data into a production environment is a scheduled, logged production data operation.'},
+ 'TR-STO-02': {'controls': [('PD-DSO', 'C05'), ('PD-DSO', 'C04')],
+               'why': 'Protection means a verified backup taken to schedule within the set recovery objectives.'},
+ 'TR-STO-03': {'controls': [('PD-DSO', 'C05'), ('PD-DSO', 'C09')],
+               'why': 'A failed backup verification is a backup control failure that must be alerted and escalated.'},
+ 'TR-STO-04': {'controls': [('PD-DSO', 'C05'), ('PD-DSO', 'C06')],
+               'why': 'Archiving takes and verifies a copy whose retention must align with the retention schedule.'},
+ 'TR-STO-05': {'controls': [('PD-DSO', 'C05')], 'why': 'Restoring from the archive copy is a recovery under the backup and recovery control.'},
+ 'TR-STO-06': {'controls': [('PD-DSO', 'C07')], 'why': 'Starting an approved migration or replication plan is a scheduled production data operation.'},
+ 'TR-STO-07': {'controls': [('PD-DSO', 'C07'), ('PD-DSO', 'C05')],
+               'why': 'Cut-over is a logged production operation and the target must be backed up and verified.'},
+ 'TR-STO-08': {'controls': [('PD-DSO', 'C07')], 'why': 'Rolling back reverses the migration operation under the same operations control.'},
+ 'TR-STO-09': {'controls': [('PD-DSO', 'C06')], 'why': 'Purging the instance and its backups must follow the retention schedule for backups.'},
+ 'TR-STO-10': {'controls': [('PD-DSO', 'C06')], 'why': 'The archive copy is purged at the end of retention in line with the retention schedule.'},
+ 'TR-STO-11': {'controls': [('PD-DSO', 'C07')], 'why': 'Reloading a purged asset is a production load operation like the first load.'},
+ 'TR-STO-12': {'controls': [('PD-DSO', 'C04'), ('PD-DSO', 'C07')],
+               'why': 'Replication is an availability measure verified against the set lag and run as a monitored operation.'},
+ 'TR-STO-13': {'controls': [('PD-DSO', 'C04'), ('PD-DSO', 'C07')], 'why': 'Withdrawing replication reverses the availability measure under the same controls.'},
+ 'TR-STO-14': {'controls': [('PD-DSO', 'C07')], 'why': 'Starting an approved migration of a replicated instance is a scheduled production data operation.'},
+ 'TR-TST-01': {'controls': [],
+               'why': 'Test data provisioning, masking and purge are not covered by any PD-DSO control; masking sits in PD-SEC, which is not allowed here.'},
+ 'TR-TST-02': {'controls': [('PD-DSO', 'C07')], 'why': 'Copying a subset out of a protected production instance is a logged production data operation.'},
+ 'TR-TST-03': {'controls': [],
+               'why': 'Test data provisioning, masking and purge are not covered by any PD-DSO control; masking sits in PD-SEC, which is not allowed here.'},
+ 'TR-TST-04': {'controls': [],
+               'why': 'Test data provisioning, masking and purge are not covered by any PD-DSO control; masking sits in PD-SEC, which is not allowed here.'},
+ 'TR-TST-05': {'controls': [],
+               'why': 'Test data provisioning, masking and purge are not covered by any PD-DSO control; masking sits in PD-SEC, which is not allowed here.'},
+ 'TR-TST-06': {'controls': [('PD-DSO', 'C07')], 'why': 'Re-provisioning from the production source is a logged production data operation.'},
+ 'TR-TST-07': {'controls': [],
+               'why': 'Test data provisioning, masking and purge are not covered by any PD-DSO control; masking sits in PD-SEC, which is not allowed here.'},
+ 'TR-TST-08': {'controls': [],
+               'why': 'Test data provisioning, masking and purge are not covered by any PD-DSO control; masking sits in PD-SEC, which is not allowed here.'},
+ 'TR-TST-09': {'controls': [],
+               'why': 'Test data provisioning, masking and purge are not covered by any PD-DSO control; masking sits in PD-SEC, which is not allowed here.'},
+ 'TR-BCP-01': {'controls': [('PD-DSO', 'C11'), ('PD-DSO', 'C04')],
+               'why': 'Drafting the plan from agreed recovery objectives is maintaining the continuity plan to the recovery standard.'},
+ 'TR-BCP-02': {'controls': [('PD-DSO', 'C11')], 'why': 'A recovery test that meets objectives is testing the continuity plan.'},
+ 'TR-BCP-03': {'controls': [('PD-DSO', 'C11')], 'why': 'A failed scheduled test takes the plan out of force under the plan testing control.'},
+ 'TR-BCP-04': {'controls': [('PD-DSO', 'C11'), ('PD-DSO', 'C08')], 'why': 'A continuity event invokes the tested plan and the incident response.'},
+ 'TR-BCP-05': {'controls': [('PD-DSO', 'C11'), ('PD-DSO', 'C08')], 'why': "Recovery is confirmed against the plan's objectives as part of incident response."},
+ 'TR-BCP-06': {'controls': [('PD-DSO', 'C12')], 'why': 'The post-incident review of continuity confirms the plan stands.'},
+ 'TR-BCP-07': {'controls': [('PD-DSO', 'C12'), ('PD-DSO', 'C11')], 'why': 'The post-incident continuity review requires the plan to be revised and retested.'},
+ 'TR-BCP-08': {'controls': [('PD-DSO', 'C12'), ('PD-DSO', 'C11')], 'why': 'A material change triggers a continuity review, plan revision and retest.'},
+ 'TR-BCP-09': {'controls': [('PD-DSO', 'C11'), ('PD-DSO', 'C12')],
+               'why': 'Retiring the plan reverses plan maintenance after the material change of decommissioning.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DSO", "name": "Data Storage and Operations FTS", "knowledgeArea": "Data Storage and Operations", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: a Database Technology (one per technology), a Database Environment (one per environment), the Stored Instance of a Data Asset (one per asset), the Business Continuity Plan of an environment and a Test Dataset (one per dataset) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Five state regions, each its own FTS over one managed element of the Knowledge Area: a Database Technology, a Database Environment, the Stored Instance of a Data Asset, the Business Continuity Plan and a Test Dataset. The KA never becomes a region of the Data Asset; the environment, the stored instance and the plan reach the Global protocol through contributions (materialisation, active and preservation custody, restoration, the custody transfer trigger, destruction and custody closure, the assurance trigger and the monitoring service), and couple to Data Architecture, Data Modelling and Design, Data Security, DG and Metadata.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DSO-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram gives the activities and deliverables but no instance lifecycle; the Stored Instance states (loaded, protected, archived, in migration, purged) are drafted from the Data Lifecycle Management technique and activities 2.3, 2.4 and 2.6. Test Dataset states (requested, provisioned, masked, refresh due, retired) are drafted from activity 2.5 on Howard's decision to give test datasets their own FTS."},
         {"id": "SRC-DSO-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating", "limitations": ""},

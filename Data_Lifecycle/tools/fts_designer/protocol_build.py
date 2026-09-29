@@ -45,7 +45,7 @@ EFFECT_CLASSES = [
 # (id, name, effect class, phases [drafted], related transitions [drafted], services [drafted])
 ACTIVITIES = [
     ("ACT-01", "Define Asset Purpose", "State-preserving / transition-supporting", ["LC-01"], [], ["SVC-GOV-01", "SVC-RSK-01"]),
-    ("ACT-02", "Register Data Asset", "Transition-causing", ["LC-01", "LC-02"], ["TR-EX-01"], ["SVC-CTL-01", "SVC-GOV-02"]),
+    ("ACT-02", "Register Data Asset", "Transition-causing", ["LC-01", "LC-02"], ["TR-EX-01", "TR-EX-07"], ["SVC-CTL-01", "SVC-GOV-02"]),
     ("ACT-03", "Create or Acquire Data", "Transition-causing", ["LC-02"], ["TR-EX-02", "TR-CP-01"], ["SVC-CTL-02", "SVC-RSK-02"]),
     ("ACT-04", "Assess Risk", "State-preserving / transition-supporting", ["LC-01", "LC-02", "LC-03", "LC-04", "LC-05", "LC-06"], [], ["SVC-RSK-02", "SVC-RSK-03", "SVC-RSK-04", "SVC-RSK-05"]),
     ("ACT-05", "Operate Controls", "State-preserving", ["LC-03"], [], ["SVC-CTL-03", "SVC-CTL-04", "SVC-CTL-05"]),
@@ -62,6 +62,12 @@ ACTIVITIES = [
     ("ACT-16", "Supersede Asset", "Transition-causing", ["LC-05", "LC-06"], ["TR-EX-03", "TR-EX-04"], ["SVC-GOV-04", "SVC-CTL-05"]),
     ("ACT-17", "Destroy Asset", "Transition-causing", ["LC-06"], ["TR-EX-05", "TR-EX-06", "TR-CP-10"], ["SVC-GOV-05", "SVC-CTL-06"]),
     ("ACT-18", "Authorize Exception", "State-preserving / transition-supporting", ["LC-01", "LC-02", "LC-03", "LC-04", "LC-05", "LC-06"], [], ["SVC-GOV-02", "SVC-RSK-05"]),
+    # v0.2.2 (Howard, 23 Sep 2026): the Availability release, restriction, withdrawal and emergency transitions were claimed by no
+    # activity, so a requester could not name one truthfully. ACT-09 Access Data and ACT-10 Share Data are State-preserving and
+    # cannot cause a transition; these two are the acts that exercise DR-06 and DR-08. TR-AS-09 and TR-AS-10 stay unclaimed by
+    # design: assurance expiry is a time trigger raised by Data Quality (CON-DQ-09, CON-DQ-10), not an act anyone performs.
+    ("ACT-19", "Release, Restrict or Withdraw Access", "Transition-causing", ["LC-03", "LC-04"], ["TR-AV-01", "TR-AV-02", "TR-AV-05", "TR-AV-06", "TR-AV-07", "TR-AV-10"], ["SVC-GOV-03", "SVC-CTL-04"]),
+    ("ACT-20", "Grant and Close Emergency Access", "Transition-causing", ["LC-03", "LC-04"], ["TR-AV-08", "TR-AV-09"], ["SVC-GOV-02", "SVC-RSK-05", "SVC-CTL-04"]),
 ]
 
 # ------------------------------------------------------------------ Layer 2: protocol regions
@@ -78,6 +84,8 @@ STATES = [
     ("STS-EX-03", "REG-EX", "Material Existence", False, False, "The governed Data Asset exists in at least one controlled representation.", "At least one authoritative representation remains identifiable and controlled."),
     ("STS-EX-04", "REG-EX", "Supersession", False, False, "The asset still exists but a successor is designated for the governed purpose.", "Successor relationship and permitted residual uses remain explicit."),
     ("STS-EX-05", "REG-EX", "Destruction", False, True, "The governed asset instance has reached an authorized irreversible termination condition.", "Destruction evidence and residual metadata remain protected and traceable."),
+    # v0.2.3 (Howard, 29 Sep 2026, DG Reconstruction register u6 a): a proposal dropped before registration needs its own end
+    ("STS-EX-06", "REG-EX", "Withdrawn Proposal", False, True, "The intended Data Asset was withdrawn before registration; it was never registered or materialized.", "The proposal, the withdrawal decision and its authority remain traceable."),
     ("STS-AS-01", "REG-AS", "No Current Assurance", True, False, "No valid Assurance Result presently supports the required claim.", "The absence or expiry of assurance remains visible."),
     ("STS-AS-02", "REG-AS", "Assessment", False, False, "The Data Asset is undergoing evaluation against defined assurance criteria.", "Scope, criteria, assessor and evidence set remain identifiable."),
     ("STS-AS-03", "REG-AS", "Assurance Confirmation", False, False, "Applicable criteria are satisfied by a current valid Assurance Result.", "Assurance scope, validity and supporting evidence remain current."),
@@ -104,6 +112,7 @@ TRANSITIONS = [
     ("TR-EX-04", "Reinstate Asset", "STS-EX-04", "STS-EX-03", "EV-EX-04", "Supersession decision is revoked; asset remains intact and use conditions are reassessed.", "DR-03"),
     ("TR-EX-05", "Destroy Materialized Asset", "STS-EX-03", "STS-EX-05", "EV-EX-05", "Disposition is due; no active hold; custody is controlled; destruction authorization granted.", "DR-04"),
     ("TR-EX-06", "Destroy Superseded Asset", "STS-EX-04", "STS-EX-05", "EV-EX-05", "Disposition is due; no active hold; successor traceability is retained; authorization granted.", "DR-04"),
+    ("TR-EX-07", "Withdraw Proposal", "STS-EX-01", "STS-EX-06", "EV-EX-07", "The proposal is withdrawn before registration; the withdrawal decision and its reason are recorded.", "DR-01"),
     ("TR-AS-01", "Initiate Assessment", "STS-AS-01", "STS-AS-02", "EV-AS-01", "Assurance criteria, scope, assessor and evidence request are defined.", "DR-05"),
     ("TR-AS-02", "Confirm Assurance", "STS-AS-02", "STS-AS-03", "EV-AS-02", "Required criteria pass and evidence is sufficient, current and attributable.", "DR-05"),
     ("TR-AS-03", "Grant Conditional Assurance", "STS-AS-02", "STS-AS-04", "EV-AS-03", "Residual limitations are acceptable; conditions, monitoring and expiry are authorized.", "DR-05"),
@@ -138,7 +147,7 @@ TRANSITIONS = [
 # Event names: the report gives IDs only; names drafted from the transitions they trigger (confirm from the workbook).
 EVENTS = {
     "EV-EX-01": ("Registration request", "Request"), "EV-EX-02": ("Materialization request", "Request"), "EV-EX-03": ("Supersession decision", "Decision outcome"),
-    "EV-EX-04": ("Supersession revocation", "Decision outcome"), "EV-EX-05": ("Disposition due", "Obligation trigger"),
+    "EV-EX-04": ("Supersession revocation", "Decision outcome"), "EV-EX-05": ("Disposition due", "Obligation trigger"), "EV-EX-07": ("Proposal withdrawal decision", "Decision outcome"),
     "EV-AS-01": ("Assessment initiation", "Request"), "EV-AS-02": ("Assessment pass", "Assessment outcome"), "EV-AS-03": ("Conditional assessment outcome", "Assessment outcome"),
     "EV-AS-04": ("Assessment failure", "Assessment outcome"), "EV-AS-05": ("Material change or control failure", "Monitoring trigger"), "EV-AS-06": ("Reassessment authorization", "Decision outcome"), "EV-AS-07": ("Assurance expiry", "Time trigger"),
     "EV-AV-01": ("Release request", "Request"), "EV-AV-02": ("Restriction decision", "Decision outcome"), "EV-AV-03": ("Incident or control failure", "Monitoring trigger"), "EV-AV-04": ("Suspension resolution", "Decision outcome"),
@@ -174,6 +183,7 @@ CFG = [
     ("CFG-004", "Preserved superseded asset", ["STS-EX-04", "STS-AS-04", "STS-AV-01", "STS-CP-03"], "Legal where residual use is restricted and preservation obligations continue."),
     ("CFG-005", "Transfer in progress", ["STS-EX-03", "STS-AS-03", "STS-AV-03", "STS-CP-05"], "Legal while custody transfer is pending and normal access is suspended."),
     ("CFG-006", "Terminal asset record", ["STS-EX-05", "STS-AS-01", "STS-AV-04", "STS-CP-06"], "Legal terminal configuration; only residual metadata/evidence remains."),
+    ("CFG-007", "Withdrawn proposal", ["STS-EX-06", "STS-AS-01", "STS-AV-01", "STS-CP-01"], "Legal terminal configuration: the asset was never registered; only the proposal and its withdrawal record remain."),
 ]
 # ------------------------------------------------------------------ Layer 3: GRCA services
 SERVICES = [
@@ -205,7 +215,7 @@ FAMILIES = {"Governance": ("Who has authority, under what policy and accountabil
             "Assurance": ("What confidence is justified against defined claims and criteria?", "Assurance plan/result, evidence-validity result, monitoring alert. Evidence sits within Assurance.")}
 # GRCA applicability per transition (drafted from the guard summaries and the service catalogue; workbook holds the record of truth)
 TR_SERVICES = {
-    "TR-EX-01": ["SVC-CTL-01", "SVC-GOV-02"], "TR-EX-02": ["SVC-CTL-02", "SVC-CTL-03", "SVC-GOV-02"], "TR-EX-03": ["SVC-GOV-04", "SVC-RSK-04", "SVC-CTL-05"],
+    "TR-EX-01": ["SVC-CTL-01", "SVC-GOV-02"], "TR-EX-07": ["SVC-GOV-02"], "TR-EX-02": ["SVC-CTL-02", "SVC-CTL-03", "SVC-GOV-02"], "TR-EX-03": ["SVC-GOV-04", "SVC-RSK-04", "SVC-CTL-05"],
     "TR-EX-04": ["SVC-GOV-04", "SVC-RSK-04"], "TR-EX-05": ["SVC-GOV-05", "SVC-CTL-06", "SVC-RSK-05", "SVC-ASR-03"], "TR-EX-06": ["SVC-GOV-05", "SVC-CTL-06", "SVC-RSK-05", "SVC-ASR-03"],
     "TR-AS-01": ["SVC-ASR-01"], "TR-AS-02": ["SVC-ASR-02", "SVC-ASR-03", "SVC-ASR-04"], "TR-AS-03": ["SVC-ASR-04", "SVC-RSK-05", "SVC-GOV-02"], "TR-AS-04": ["SVC-ASR-04"],
     "TR-AS-05": ["SVC-ASR-05", "SVC-CTL-05"], "TR-AS-06": ["SVC-ASR-05"], "TR-AS-07": ["SVC-ASR-01", "SVC-GOV-02"], "TR-AS-08": ["SVC-ASR-01", "SVC-GOV-02"], "TR-AS-09": ["SVC-ASR-05"], "TR-AS-10": ["SVC-ASR-05"],
@@ -238,6 +248,7 @@ EVIDENCE = [
     ("EVD-06", "Custody closure evidence", "Chain-of-custody evidence", "TR-CP-09", "Closure basis and chain-of-custody record."),
     ("EVD-07", "Superseded asset destruction evidence", "Control evidence", "TR-EX-06", "Verified disposition control result, DR-04 authorization, successor traceability retained."),
     ("EVD-08", "Custody closure after destruction evidence", "Chain-of-custody evidence", "TR-CP-10", "Destruction evidence reference and closure basis; chain of custody retained."),
+    ("EVD-09", "Proposal withdrawal record", "Decision evidence", "TR-EX-07", "Withdrawal decision, reason and DR-01 authorization record."),
 ]
 CONFORMANCE = [
     ("N-001", "Architecture conformance", "A conformant profile SHALL distinguish the Data Lifecycle, Formal Data Asset Protocol and GRCA Services as separate but traceable layers."),
@@ -329,7 +340,7 @@ def build():
         d["origin"] = origin; d["trace"] = trace; d["status"] = STATUS; return d
     m = {"meta": {
         "modelId": "GDA-GLOBAL-PROTOCOL", "name": "Global Data Asset Architecture: Formal Data Asset Protocol (Global FTS)", "level": "global", "knowledgeArea": None,
-        "version": "0.2.1", "schemaVersion": "0.3", "status": STATUS, "subjectType": "Data Asset (governed identity and its controlled representations)", "parallelRegions": True,
+        "version": "0.2.3", "schemaVersion": "0.3", "status": STATUS, "subjectType": "Data Asset (governed identity and its controlled representations)", "parallelRegions": True,
         "layers": [
             {"id": "L1", "name": "Data Lifecycle", "question": "What work is performed with or on the Data Asset?", "constructs": "Phases, activities, purpose, intended outcomes, iteration", "boundary": "Non-executable; does not itself authorize work or define asset state."},
             {"id": "L2", "name": "Formal Data Asset Protocol (Global FTS)", "question": "What durable conditions hold and what state changes are permissible?", "constructs": "Regions, states, events, transitions, guards, invariants, state vector", "boundary": "Does not absorb lifecycle work or internal GRCA workflows."},
@@ -356,7 +367,7 @@ def build():
     m["events"] = [row({"id": k, "name": v[0], "eventType": v[1], "meaning": "Triggers " + ", ".join(t[0] for t in TRANSITIONS if t[4] == k) + ".", "notes": "Name drafted from the transitions it triggers; confirm from the workbook."}, SRC_REPORT, "report:transition tables; derived:event name") for k, v in EVENTS.items()]
     m["transitions"] = []
     for t in TRANSITIONS:
-        m["transitions"].append(row({"id": t[0], "name": t[1], "level": "Sub-State", "region": REGIONS[[r[2] for r in REGIONS].index(t[0][3:5])][0], "source": t[2], "target": t[3], "event": t[4], "transitionType": "Regional State Transition", "transitionKind": "external", "optionality": "Conditional", "guardSummary": t[5], "decisionRight": t[6], "services": TR_SERVICES.get(t[0], []), "crossRegionConstraints": [x[0] for x in XRG if t[0] in x[2]], "reversibility": "Irreversible" if t[3] in ("STS-EX-05", "STS-CP-06") else "Reversible by a further transition", "nameQA": dict(zip(("status", "rationale"), name_qa("transition", t[1])))}, SRC_REPORT, "report:annexA"))
+        m["transitions"].append(row({"id": t[0], "name": t[1], "level": "Sub-State", "region": REGIONS[[r[2] for r in REGIONS].index(t[0][3:5])][0], "source": t[2], "target": t[3], "event": t[4], "transitionType": "Regional State Transition", "transitionKind": "external", "optionality": "Conditional", "guardSummary": t[5], "decisionRight": t[6], "services": TR_SERVICES.get(t[0], []), "crossRegionConstraints": [x[0] for x in XRG if t[0] in x[2]], "reversibility": "Irreversible" if t[3] in ("STS-EX-05", "STS-EX-06", "STS-CP-06") else "Reversible by a further transition", "nameQA": dict(zip(("status", "rationale"), name_qa("transition", t[1])))}, SRC_REPORT, "report:annexA"))
     for t in m["transitions"]:
         if t["id"] == "TR-AV-10":
             t["origin"] = "Decision 20 Sep 2026 (AskUserQuestion): add Restricted to Withdrawn so a never-released asset can satisfy XRG-006 before destruction"; t["trace"] = "decision:availability-withdrawal"
@@ -377,7 +388,13 @@ def build():
     m["serviceFamilies"] = [{"family": k, "question": v[0], "outputs": v[1]} for k, v in FAMILIES.items()]
     m["controls"] = [row({"id": s[0].replace("SVC-CTL", "CTRL"), "name": s[2], "controlType": "Mechanism (control service)", "appliesTo": ", ".join(t for t, l in TR_SERVICES.items() if s[0] in l), "objective": s[3], "outcome": s[4], "service": s[0]}, SRC_REPORT, "report:9.2 control family") for s in SERVICES if s[1] == "Control"]
     m["roles"] = []
-    m["decisionRights"] = [row({"id": k, "name": v, "holder": "", "appliesTo": ", ".join(t[0] for t in TRANSITIONS if t[6] == k), "definition": f"Authorize {', '.join(t[1] for t in TRANSITIONS if t[6] == k)}.", "requirement": "Required", "service": DR_SERVICE[k], "notes": "Holder role not stated in the report; DR-04's name is the report's, the others are drafted from the transitions they authorize."}, SRC_REPORT + " (names partly derived)", "report:annexA decision column; derived:name") for k, v in DECISION_RIGHTS.items()]
+    # 22 Sep 2026 (holder register card H1 a): holders from the shared role vocabulary, DMBOK reference roles not the report's
+    _v = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "role_vocabulary.json"), encoding="utf-8"))
+    _gh = {g["id"]: g for g in _v.get("globalMapping", [])}
+    m["decisionRights"] = [row({"id": k, "name": v, "holder": _gh.get(k, {}).get("holder", ""), "holderName": _gh.get(k, {}).get("holderName", ""), "appliesTo": ", ".join(t[0] for t in TRANSITIONS if t[6] == k), "definition": f"Authorize {', '.join(t[1] for t in TRANSITIONS if t[6] == k)}.", "requirement": "Required", "service": DR_SERVICE[k], "notes": ("Holder confirmed 22 Sep 2026 (holder register card H1): " + _gh[k]["holderName"] + "; a DMBOK reference role, as the report states no holder. " if k in _gh else "Holder role not stated in the report. ") + "DR-04's name is the report's, the others are drafted from the transitions they authorize."}, SRC_REPORT + " (names partly derived)", "report:annexA decision column; derived:name") for k, v in DECISION_RIGHTS.items()]
+    _R = {r["id"]: r for r in _v["roles"]}
+    for hid in sorted({d["holder"] for d in m["decisionRights"] if d["holder"]}):
+        m["roles"].append(row({"id": hid, "name": _R[hid]["name"], "accountability": "Decision-Right Holder", "responsibility": _R[hid]["definition"], "appliesTo": ", ".join(d["id"] for d in m["decisionRights"] if d["holder"] == hid)}, "role_vocabulary.json", "holder register card H1"))
     m["permissionRecords"] = [row({"id": p[0], "activity": p[1], "context": p[2], "outcome": p[3], "guard": p[4], "authority": p[5], "services": p[6], "evidence": p[7], "effect": p[8], "basis": p[9]}, SRC_REPORT if "Worked" in p[9] else SRC_WB, "report:10 worked examples; derived" if "Worked" in p[9] else "derived:state definition") for p in PERMISSIONS]
     m["exceptions"] = [row({"id": x[0], "name": x[1], "transition": x[2], "basis": x[3], "authority": x[4], "conditions": x[5], "statusValues": x[6]}, SRC_REPORT, "report:9.4; 10.4") for x in EXCEPTIONS]
     m["evidence"] = [row({"id": e[0], "name": e[1], "evidenceType": e[2], "relatesTo": e[3], "description": e[4], "requirement": "Required"}, SRC_REPORT, "report:worked examples; derived") for e in EVIDENCE]
@@ -437,9 +454,12 @@ def build():
     qa.append({"severity": "note", "rule": "SRC-002", "element": "workbook", "finding": "The validated workbook is encrypted; permission matrix, roles, entry/exit rows, evidence and relationships are stand-ins to be merged from it."})
     qa.append({"severity": "note", "rule": "derived", "element": "events, decisionRights", "finding": f"{len(EVENTS)} event names and 10 of 11 decision-right names are drafted from the transitions; confirm against the workbook."})
     m["qaFindings"] = qa
+    # State Contracts register (Howard, 25 Sep 2026, cards 3, 4 and 5 option a): entry and exit per way in and way out, and evidence for
+    # every transition (fts_contracts.py). The Global protocol names no policy controls yet (its policy domains are an open card).
+    import fts_contracts; fts_contracts.derive(m, {}, origin="derived")
     m["meta"]["counts"] = {k: len(m[k]) for k in ["regions", "subStates", "transitions", "events", "guards", "crossRegionConstraints", "stateVectors", "activities", "services", "controls", "decisionRights", "permissionRecords", "exceptions", "evidence", "rulesGov", "rules", "invariants", "entryConditions", "exitConditions", "relationships"]}
     m["meta"]["counts"]["lifecyclePhases"] = len(PHASES)
-    m["meta"]["qaCounts"] = {"warnings": sum(1 for f in qa if f["severity"] == "warning"), "notes": sum(1 for f in qa if f["severity"] == "note")}
+    m["meta"]["qaCounts"] = {"warnings": sum(1 for f in m["qaFindings"] if f["severity"] == "warning"), "notes": sum(1 for f in m["qaFindings"] if f["severity"] == "note")}
     return m
 
 if __name__ == "__main__":

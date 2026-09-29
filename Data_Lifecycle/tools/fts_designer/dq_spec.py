@@ -8,7 +8,7 @@ Howard's managed elements (21 Sep 2026): 1 the Data Quality Programme; 2 the PDC
 holds every quality assessment task for that asset, including its Data Quality Expectation.
 Decisions 21 Sep 2026: Non-conforming Quality logs a Data Asset issue in the Data Governance issue FTS (EV-ISS-01,
 source Data Quality); the assessed level gates the Global Assurance region (assessment, confirmation, suspension,
-expiry); every transition carries a Decision Right (holders drafted, flagged REVIEW).
+expiry); every transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary).
 
 Usage: python dq_spec.py [out_dir] [--overrides spec/data_quality_overrides.json]   -> data_quality.fts.json
 """
@@ -74,12 +74,12 @@ EVENTS = {
     "EV-PDCA-01": ("Data Asset brought into quality scope", "Request"), "EV-PDCA-02": ("Expectation approval", "Decision outcome"), "EV-PDCA-03": ("Assessment pass", "Assessment outcome"), "EV-PDCA-04": ("Assessment failure", "Assessment outcome"), "EV-PDCA-05": ("Improvement plan confirmation", "Decision outcome"), "EV-PDCA-06": ("Remediation authorization", "Decision outcome"), "EV-PDCA-07": ("Remediation completion", "Evidence trigger"), "EV-PDCA-08": ("Monitoring breach", "Monitoring trigger"), "EV-PDCA-09": ("Measurement validity lapse", "Time trigger"), "EV-PDCA-10": ("Reassessment authorization", "Decision outcome"), "EV-PDCA-11": ("Expectation revision", "Decision outcome"), "EV-PDCA-12": ("Data Asset withdrawn from quality scope", "Decision outcome"),
 }
 DR = {
-    "DR-DQ-01": ("Approve Data Quality Strategy, Framework and Policies", "ROLE-DQ-P01", "REVIEW: drafted holder"),
-    "DR-DQ-02": ("Activate, Revise and Retire the Programme", "ROLE-DQ-P08", "REVIEW: drafted holder"),
-    "DR-DQ-03": ("Bring a Data Asset into or out of Quality Scope", "ROLE-DQ-P04", "REVIEW: drafted holder"),
-    "DR-DQ-04": ("Approve the Data Quality Expectation and Rules", "ROLE-DQ-P04", "REVIEW: drafted holder"),
-    "DR-DQ-05": ("Declare the Assessment or Monitoring Outcome", "ROLE-DQ-P08", "REVIEW: drafted holder"),
-    "DR-DQ-06": ("Confirm and Authorize Improvement Actions", "ROLE-DQ-P04", "REVIEW: drafted holder"),
+    "DR-DQ-01": ("Approve Data Quality Strategy, Framework and Policies", "ROLE-CDO", "Confirmed 22 Sep 2026 (holder register): Chief Data Officer; drafted as CDO"),
+    "DR-DQ-02": ("Activate, Revise and Retire the Programme", "ROLE-PM-DQ", "Confirmed 22 Sep 2026 (holder register): Data Quality Practice Manager; drafted as DQ Managers"),
+    "DR-DQ-03": ("Bring a Data Asset into or out of Quality Scope", "ROLE-DO", "Confirmed 22 Sep 2026 (holder register): Data Owner; drafted as Data Owners"),
+    "DR-DQ-04": ("Approve the Data Quality Expectation and Rules", "ROLE-DO", "Confirmed 22 Sep 2026 (holder register): Data Owner; drafted as Data Owners"),
+    "DR-DQ-05": ("Declare the Assessment or Monitoring Outcome", "ROLE-PM-DQ", "Confirmed 22 Sep 2026 (holder register): Data Quality Practice Manager; drafted as DQ Managers"),
+    "DR-DQ-06": ("Confirm and Authorize Improvement Actions", "ROLE-DO", "Confirmed 22 Sep 2026 (holder register): Data Owner; drafted as Data Owners"),
 }
 ROLES = [
     ("ROLE-DQ-S01", "Business Management", "Supplier", "Supply consumer requirements and business impact."), ("ROLE-DQ-S02", "Subject Matter Experts", "Supplier", "Supply business rules and expectations."), ("ROLE-DQ-S03", "Data Architects", "Supplier", "Supply data requirements and lineage."), ("ROLE-DQ-S04", "Data Modelers", "Supplier", "Supply data models and rules."), ("ROLE-DQ-S05", "System Specialists", "Supplier", "Supply sources, stores and technical metadata."), ("ROLE-DQ-S06", "Data Stewards", "Supplier", "Supply stewardship knowledge and expectations."), ("ROLE-DQ-S07", "Business Process Analysts", "Supplier", "Supply process context for root causes."),
@@ -149,6 +149,8 @@ CONTRIB = [
     ("CON-DQ-09", "TR-AS-09", "event", {"PDCA": ["STS-PDCA-08"]}, "A lapsed quality measurement is the expiry trigger for assurance.", "DQ_assessment_lapsed", "Conditional", "DQ emits EV-AS-07 when TR-PDCA-09 fires."),
     ("CON-DQ-10", "TR-AS-10", "event", {"PDCA": ["STS-PDCA-08"]}, "A lapsed quality measurement is the expiry trigger for conditional assurance.", "DQ_assessment_lapsed", "Conditional", "DQ emits EV-AS-07 when TR-PDCA-09 fires."),
     ("CON-DQ-11", "TR-AS-02", "service", {"PDCA": ["STS-PDCA-06"]}, "Quality Measurement and Monitoring supplies the control evidence that assurance confirmation cites.", "SVC-DQ-06", "Conditional", "Control service; evidence ART-DQ-06."),
+    ("CON-DQ-12", "TR-CP-02", "guard", {"PDCA": ["STS-PDCA-01", "STS-PDCA-02", "STS-PDCA-03", "STS-PDCA-04", "STS-PDCA-05", "STS-PDCA-06", "STS-PDCA-08"]}, "An asset in Non-conforming Quality is remediated or its assessment accepted before it enters preservation custody; unmanaged and conforming assets pass.", "not DQ_non_conforming", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep): preservation freezes the asset, so the quality state at that moment is the archive's quality."),
+    ("CON-DQ-13", "TR-CP-05", "guard", {"PDCA": ["STS-PDCA-01", "STS-PDCA-02", "STS-PDCA-03", "STS-PDCA-04", "STS-PDCA-05", "STS-PDCA-06", "STS-PDCA-08"]}, "No custody transfer of data known to be non-conforming without remediation.", "not DQ_non_conforming", "Conditional", "Howard, 22 Sep (open decisions record, Custody sweep)."),
 ]
 # Couplings to other Knowledge Area FTSs (not Global transitions): DQ raises its issues in the DG issue FTS.
 KA_COUPLINGS = [
@@ -181,13 +183,49 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DQ-01", "Provisional Quality Acceptance", "TR-AS-03", "Conditional assurance for an urgently needed Data Asset whose initial assessment is incomplete.", "DR-DQ-04", "Expectation approved, assessment scheduled with a date, Data Owner accepts interim risk with Data Governance, monitoring active, evidence retained; expires at the assessment date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DQ-01': {'emitters': ['TR-PDCA-04', 'TR-PDCA-08'], 'kind': 'event', 'producer': 'KA-DQ'},
+ 'KAC-DQ-02': {'effect': 'resolve', 'emitters': ['TR-PDCA-03'], 'kind': 'event', 'producer': 'KA-DQ', 'resolves': 'KAC-DQ-01'},
+ 'KAC-DQ-03': {'dependents': [{'model': 'KA-DQ', 'transition': 'TR-PDCA-11'}], 'kind': 'condition', 'producer': 'KA-DG', 'requirement': 'Required'}}
+
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-PRG-01': {'controls': [('PD-DQ', 'C01')], 'why': 'Defining the programme drafts the DQ policies and guidelines the policy approves.'},
+ 'TR-PRG-02': {'controls': [('PD-DQ', 'C01'), ('PD-DQ', 'C02')], 'why': 'Approval covers the DQ policies and the programme organisation and accountabilities.'},
+ 'TR-PRG-03': {'controls': [('PD-DQ', 'C02'), ('PD-DQ', 'C15')], 'why': 'Operating needs staffed accountable roles and KPI reporting to the governance forum.'},
+ 'TR-PRG-04': {'controls': [('PD-DQ', 'C16')], 'why': 'Revision on a recorded trigger is the periodic and on-change policy review.'},
+ 'TR-PRG-05': {'controls': [('PD-DQ', 'C01'), ('PD-DQ', 'C16')], 'why': 'Approving the revised programme closes the review with a policy approval.'},
+ 'TR-PRG-06': {'controls': [('PD-DQ', 'C01')], 'why': 'Retirement reverses the policy approval of the programme.'},
+ 'TR-PDCA-01': {'controls': [('PD-DQ', 'C04'), ('PD-DQ', 'C05')],
+                'why': 'Defining the expectation sets dimensions and thresholds for critical data with an assigned quality owner.'},
+ 'TR-PDCA-02': {'controls': [('PD-DQ', 'C04'), ('PD-DQ', 'C06')],
+                'why': 'Rules and thresholds are approved and published as versioned DQ rules before assessment.'},
+ 'TR-PDCA-03': {'controls': [('PD-DQ', 'C07'), ('PD-DQ', 'C08')],
+                'why': 'Conformance is confirmed by profiling and scorecard results and cadence measurement is deployed.'},
+ 'TR-PDCA-04': {'controls': [('PD-DQ', 'C10')], 'why': 'Each breach is logged as a DQ issue with severity and impact.'},
+ 'TR-PDCA-05': {'controls': [('PD-DQ', 'C10')], 'why': 'Planning uses the logged root cause and business impact to prioritise actions.'},
+ 'TR-PDCA-06': {'controls': [('PD-DQ', 'C11')], 'why': 'Executing remediation fixes issues at source.'},
+ 'TR-PDCA-07': {'controls': [('PD-DQ', 'C11')], 'why': 'The remediation is verified by reassessing the asset.'},
+ 'TR-PDCA-08': {'controls': [('PD-DQ', 'C08'), ('PD-DQ', 'C09')], 'why': 'Cadence measurement detects the breach and owners are alerted.'},
+ 'TR-PDCA-09': {'controls': [('PD-DQ', 'C08')], 'why': 'The assessment lapses when its measurement cadence or validity interval has passed.'},
+ 'TR-PDCA-10': {'controls': [('PD-DQ', 'C08')], 'why': 'Reassessment is a new measurement against the thresholds in force.'},
+ 'TR-PDCA-11': {'controls': [('PD-DQ', 'C04'), ('PD-DQ', 'C17')], 'why': 'The owner revises thresholds, with risk acceptance where a threshold is relaxed.'},
+ 'TR-PDCA-12': {'controls': [('PD-DQ', 'C04'), ('PD-DQ', 'C06')], 'why': 'The expectation is redefined and its rules re-versioned before reassessment.'},
+ 'TR-PDCA-13': {'controls': [('PD-DQ', 'C04')], 'why': 'Withdrawal reverses bringing the asset under defined thresholds.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DQ", "name": "Data Quality Management FTS", "knowledgeArea": "Data Quality Management", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Programme (scope level) and the PDCA cycle (one per Data Asset) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Two state regions, each its own FTS over one managed element of the Knowledge Area: the Data Quality Programme of the governed scope, and the plan-do-check-act quality cycle of a Data Asset, which holds that asset's Data Quality Expectation, assessment, improvement actions and monitored level. The KA never becomes a region of the Data Asset; the PDCA cycle reaches the Global Assurance region through contributions (guards and events on TR-AS-01 to TR-AS-10), and logs its non-conformances as Data Asset issues in the Data Governance issue FTS.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DQ-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics, KA triangle", "limitations": "Process 5 carries no phase tag on the slide; (P) inferred by decision."},
         {"id": "SRC-DQ-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, issue coupling, Assurance gating", "limitations": ""},

@@ -11,7 +11,7 @@ Asset (one per asset).
 Decisions 21 Sep 2026: DA gates Global registration (blueprint in force, model published, asset placed in the
 enterprise data model and data flows), materialisation (conforming or approved exception) and external custody (the
 flow is in the blueprint); a blueprint revision that affects the asset emits the Assurance suspension trigger; every
-transition carries a Decision Right (holders drafted, REVIEW).
+transition carries a Decision Right (holders confirmed 22 Sep 2026 from the shared role vocabulary, role_vocabulary.json).
 
 Usage: python da_spec.py [out_dir] [--overrides spec/data_architecture_overrides.json]   -> data_architecture.fts.json
 """
@@ -90,13 +90,13 @@ EVENTS = {
     "EV-CNF-01": ("Asset placement", "Request"), "EV-CNF-02": ("Conformance confirmation", "Assessment outcome"), "EV-CNF-03": ("Deviation finding", "Assessment outcome"), "EV-CNF-04": ("Exception approval", "Decision outcome"), "EV-CNF-05": ("Remediation confirmation", "Assessment outcome"), "EV-CNF-06": ("Exception expiry", "Time trigger"), "EV-CNF-07": ("Blueprint revision affecting the asset", "Monitoring trigger"), "EV-CNF-08": ("Placement removal", "Decision outcome"),
 }
 DR = {
-    "DR-DA-01": ("Approve the Enterprise Data Architecture and its Standards", "ROLE-DA-P01", "REVIEW: drafted holder"),
-    "DR-DA-02": ("Evaluate, Bring into Force, Revise and Retire the Architecture", "ROLE-DA-P01", "REVIEW: drafted holder"),
-    "DR-DA-03": ("Approve, Publish and Supersede an Enterprise Data Model Version", "ROLE-DA-P01", "REVIEW: drafted holder"),
-    "DR-DA-04": ("Approve, Execute, Deliver and Re-plan the Roadmap", "ROLE-DA-P01", "REVIEW: drafted holder"),
-    "DR-DA-05": ("Place an Asset and Confirm its Conformance", "ROLE-DA-P02", "REVIEW: drafted holder"),
-    "DR-DA-06": ("Grant, Expire and Close a Conformance Exception", "ROLE-DA-P01", "REVIEW: drafted holder"),
-    "DR-DA-07": ("Declare an Asset Non-conforming", "ROLE-DA-P01", "REVIEW: drafted holder"),
+    "DR-DA-01": ("Approve the Enterprise Data Architecture and its Standards", "ROLE-PM-DA", "Confirmed 22 Sep 2026 (holder register): Data Architecture Practice Manager; drafted as Enterprise Data Architects"),
+    "DR-DA-02": ("Evaluate, Bring into Force, Revise and Retire the Architecture", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Enterprise Data Architects"),
+    "DR-DA-03": ("Approve, Publish and Supersede an Enterprise Data Model Version", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Enterprise Data Architects"),
+    "DR-DA-04": ("Approve, Execute, Deliver and Re-plan the Roadmap", "ROLE-PM-DA", "Confirmed 22 Sep 2026 (holder register): Data Architecture Practice Manager; drafted as Enterprise Data Architects"),
+    "DR-DA-05": ("Place an Asset and Confirm its Conformance", "ROLE-DMOD", "Confirmed 22 Sep 2026 (holder register): Data Modeller; drafted as Data Modelers"),
+    "DR-DA-06": ("Grant, Expire and Close a Conformance Exception", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Enterprise Data Architects"),
+    "DR-DA-07": ("Declare an Asset Non-conforming", "ROLE-DARCH", "Confirmed 22 Sep 2026 (holder register): Data Architect; drafted as Enterprise Data Architects"),
 }
 ROLES = [
     ("ROLE-DA-S01", "Enterprise Architects", "Supplier", "Supply the Enterprise and Business Architecture and IT standards."), ("ROLE-DA-S02", "Data Stewards", "Supplier", "Supply data requirements and asset knowledge."), ("ROLE-DA-S03", "Subject Matter Experts", "Supplier", "Supply business meaning and value chains."), ("ROLE-DA-S04", "Data Analysts", "Supplier", "Supply analysis of existing specifications and flows."),
@@ -170,7 +170,7 @@ CONTRIB = [
     ("CON-DA-07", "TR-AS-02", "service", {"CNF": ["STS-CNF-03"]}, "The Architectural Conformance Review supplies assurance evidence for the asset.", "SVC-DA-06", "Conditional", "Assurance service; evidence EVD-DA-06."),
 ]
 KA_COUPLINGS = [
-    ("KAC-DA-01", "KA-DG", "TR-POL-03", "", "DG_instruments_in_force", "The architecture standards are governing instruments published under Data Governance (TR-EDA-03 and TR-EDA-07 cite the DG fact).", "Reverse coupling: a DA transition cites a DG fact."),
+    ("KAC-DA-01", "KA-DG", "TR-POL-03", "", "DA_policy_set_in_force", "The architecture standards are governing instruments published under Data Governance (TR-EDA-03 and TR-EDA-07 cite this Knowledge Area's own instrument set (Howard, 24 Sep 2026: one policy with its procedures per Knowledge Area, each set its own fact)).", "Reverse coupling: a DA transition cites a DG fact."),
     ("KAC-DA-02", "KA-DG", "TR-ISS-01", "EV-ISS-01", "DA_non_conforming", "A deviation without exception is logged as a Data Asset issue in the DG issue FTS with source Data Architecture (TR-CNF-03 and TR-CNF-11 emit EV-ISS-01).", "DG owns escalation; DA owns the remediation or exception."),
     ("KAC-DA-03", "KA-MM", "TR-ARC-03", "", "MM_stores_operating", "The enterprise data model is published through the metadata stores; publication requires operating stores (TR-EDM-04 and TR-EDM-06 cite the MM fact).", "Reverse coupling: a DA transition cites an MM fact."),
     ("KAC-DA-04", "KA-MM", "TR-AST-02", "", "DA_asset_placed", "An asset's placement (subject area, flows, value chain) is recorded as its business and technical metadata when the asset is described (the MM transition cites the DA fact).", "Forward coupling: an MM transition cites a DA fact."),
@@ -212,13 +212,79 @@ EVIDENCE = [
 ]
 EXC = [("EXC-DA-01", "Provisional Placement", "TR-EX-02", "Materialisation of an asset whose lifecycle review is scheduled but not complete.", "DR-DA-06", "Asset placed, review scheduled with a date, remediation owner named, DG informed, evidence retained; expires at the review date.", "Draft / Approved / Expired / Closed")]
 
+# Coupling roles (Howard, 24 Sep 2026, Influence Map Register card 2 option a): each coupling says which Knowledge Area produces
+# the fact and which transitions depend on it. kind condition: the twin engine adds the fact as a guard on every dependent
+# transition (Required, or Conditional with a qualifier fact that must be true for the guard to apply). kind event: the
+# emitter transitions raise the event in the target Knowledge Area (effect resolve: evidence that resolves the issue the
+# named coupling raised). Generated from the coupling text and the fact names, then kept here as the source of truth.
+COUPLING_ROLES = {'KAC-DA-01': {'dependents': [{'model': 'KA-DA', 'transition': 'TR-EDA-03'}, {'model': 'KA-DA', 'transition': 'TR-EDA-07'}],
+               'kind': 'condition',
+               'producer': 'KA-DG',
+               'requirement': 'Required'},
+ 'KAC-DA-02': {'emitters': ['TR-CNF-03', 'TR-CNF-11'], 'kind': 'event', 'producer': 'KA-DA'},
+ 'KAC-DA-03': {'dependents': [{'model': 'KA-DA', 'transition': 'TR-EDM-04'}, {'model': 'KA-DA', 'transition': 'TR-EDM-06'}],
+               'kind': 'condition',
+               'producer': 'KA-MM',
+               'requirement': 'Required'},
+ 'KAC-DA-04': {'kind': 'citation', 'producer': 'KA-DA', 'cites': {'model': 'KA-MM', 'transition': 'TR-AST-02'}, 'raises': {'model': 'KA-MM', 'event': 'EV-AST-05'}, 'onlyIf': 'MM_asset_described'},
+ 'KAC-DA-05': {'dependents': [{'model': 'KA-RMD', 'transition': 'TR-DOM-03'}], 'kind': 'condition', 'producer': 'KA-DA', 'requirement': 'Required'},
+ 'KAC-DA-06': {'dependents': [{'model': 'KA-DA', 'transition': 'TR-CNF-01'}],
+               'kind': 'condition',
+               'producer': 'KA-DS',
+               'qualifier': 'flow_is_external',
+               'requirement': 'Conditional'}}
+
+# State Contracts register (Howard, 25 Sep 2026, cards 7 and 8 option a): each transition names the policy controls that govern it, by
+# policy domain and control number of the Knowledge Area policy in the FutureState workbooks (the wording and the implementing
+# procedure are resolved per organisation from the private catalogue spec/policy_controls.json and the workbooks). Drafted
+# 25 Sep 2026 for Howard's review (status Proposed); an empty list means no control of the allowed domains fits the step.
+POLICY_CONTROLS = {'TR-EDA-01': {'controls': [('PD-DARCH', 'C04')], 'why': 'Evaluating existing specifications is the first step in maintaining the target data architecture.'},
+ 'TR-EDA-02': {'controls': [('PD-DARCH', 'C04'), ('PD-DARCH', 'C05')],
+               'why': 'The architecture and its standards are designed as the target and reference architecture.'},
+ 'TR-EDA-03': {'controls': [('PD-DARCH', 'C04'), ('PD-DARCH', 'C05')],
+               'why': 'The blueprint and its standards are approved as the target architecture and technology standards.'},
+ 'TR-EDA-04': {'controls': [('PD-DARCH', 'C04')], 'why': 'Rejecting the design returns it within target architecture maintenance.'},
+ 'TR-EDA-05': {'controls': [('PD-DARCH', 'C04'), ('PD-DARCH', 'C05')], 'why': 'The approved blueprint and standards are published for use.'},
+ 'TR-EDA-06': {'controls': [('PD-DARCH', 'C06')], 'why': 'Opening a revision starts a governed change to the target architecture.'},
+ 'TR-EDA-07': {'controls': [('PD-DARCH', 'C06')], 'why': 'The revised blueprint is approved as a governed architecture change.'},
+ 'TR-EDA-08': {'controls': [('PD-DARCH', 'C06')], 'why': 'Retiring the blueprint is a governed change to the target architecture.'},
+ 'TR-EDM-01': {'controls': [('PD-DARCH', 'C04')], 'why': 'The enterprise data model is scoped as part of the target data architecture.'},
+ 'TR-EDM-02': {'controls': [('PD-DARCH', 'C04')], 'why': 'The model version is approved under the target architecture standards.'},
+ 'TR-EDM-03': {'controls': [('PD-DARCH', 'C04')], 'why': 'Rejecting the model version returns it within target architecture maintenance.'},
+ 'TR-EDM-04': {'controls': [('PD-DARCH', 'C04')], 'why': 'Publishing the approved model makes it the current target architecture model.'},
+ 'TR-EDM-05': {'controls': [('PD-DARCH', 'C06')], 'why': 'A new model version is a governed change to the target architecture.'},
+ 'TR-EDM-06': {'controls': [('PD-DARCH', 'C06')], 'why': 'Superseding the published version is a governed architecture change with impact flagging.'},
+ 'TR-EDM-07': {'controls': [('PD-DARCH', 'C06')], 'why': 'Withdrawing the model is a governed change to the target architecture.'},
+ 'TR-RMP-01': {'controls': [('PD-DARCH', 'C04')], 'why': 'The roadmap sequences delivery of the target data architecture from its gaps.'},
+ 'TR-RMP-02': {'controls': [('PD-DARCH', 'C04')], 'why': 'The roadmap sequences delivery of the target data architecture from its gaps.'},
+ 'TR-RMP-03': {'controls': [('PD-DARCH', 'C04')], 'why': 'Rejecting the roadmap reverses its planning under target architecture maintenance.'},
+ 'TR-RMP-04': {'controls': [('PD-DARCH', 'C04')], 'why': 'The roadmap sequences delivery of the target data architecture from its gaps.'},
+ 'TR-RMP-05': {'controls': [('PD-DARCH', 'C15')], 'why': 'Delivery is confirmed by measured business value reported to the governance forum.'},
+ 'TR-RMP-06': {'controls': [('PD-DARCH', 'C04'), ('PD-DARCH', 'C06')], 'why': 'Re-planning follows a scope, priority or architecture change.'},
+ 'TR-RMP-07': {'controls': [('PD-DARCH', 'C04')], 'why': 'The roadmap sequences delivery of the target data architecture from its gaps.'},
+ 'TR-RMP-08': {'controls': [('PD-DARCH', 'C04')], 'why': 'The roadmap sequences delivery of the target data architecture from its gaps.'},
+ 'TR-CNF-01': {'controls': [('PD-DARCH', 'C10'), ('PD-DARCH', 'C11')],
+               'why': 'Placement records the asset in the store and interface inventory and in the governed data flows.'},
+ 'TR-CNF-02': {'controls': [('PD-DARCH', 'C07')], 'why': 'A conformance review confirms the asset meets the standards in force.'},
+ 'TR-CNF-03': {'controls': [('PD-DARCH', 'C07')], 'why': 'A conformance review finds the deviation.'},
+ 'TR-CNF-04': {'controls': [('PD-DARCH', 'C08')], 'why': 'A dated exception is recorded and time-bound in the architecture exception register.'},
+ 'TR-CNF-05': {'controls': [('PD-DARCH', 'C12'), ('PD-DARCH', 'C07')], 'why': 'The non-conformant asset is remediated and a conformance review confirms it.'},
+ 'TR-CNF-06': {'controls': [('PD-DARCH', 'C08'), ('PD-DARCH', 'C09')], 'why': 'The time-bound exception expires without its remediation closed.'},
+ 'TR-CNF-07': {'controls': [('PD-DARCH', 'C09')], 'why': 'Exception remediation is tracked to closure and conformance confirmed.'},
+ 'TR-CNF-08': {'controls': [('PD-DARCH', 'C06')], 'why': 'An architecture change flags affected assets for reassessment.'},
+ 'TR-CNF-09': {'controls': [('PD-DARCH', 'C06')], 'why': 'An architecture change flags the asset under exception for reassessment.'},
+ 'TR-CNF-10': {'controls': [('PD-DARCH', 'C07')], 'why': 'A new conformance review confirms conformance to the revised blueprint.'},
+ 'TR-CNF-11': {'controls': [('PD-DARCH', 'C07')], 'why': 'A new conformance review finds a deviation against the revised blueprint.'},
+ 'TR-CNF-12': {'controls': [('PD-DARCH', 'C10')], 'why': 'The disposed or descoped asset is removed from the store and interface inventory.'},
+ 'TR-CNF-13': {'controls': [('PD-DARCH', 'C12'), ('PD-DARCH', 'C10')], 'why': 'The non-conformant asset is retired and removed from the inventory.'}}
+
 SPEC = {
     "meta": {"modelId": "KA-DA", "name": "Data Architecture FTS", "knowledgeArea": "Data Architecture", "version": "0.1", "subjectType": KA_SUBJECT,
              "regionModel": "One FTS per managed element: the Enterprise Data Architecture (scope level), the Enterprise Data Model (scope level, versioned), the Implementation Roadmap (scope level) and the Architectural Conformance of a Data Asset (one per asset) run concurrently and are coupled by cross-region constraints, facts and events, never a single subject.",
              "source": SRC_DECK + "; " + SRC_HOWARD + "; " + SRC_PROTOCOL,
              "note": "Four state regions, each its own FTS over one managed element of the Knowledge Area: the Enterprise Data Architecture (master blueprint), the Enterprise Data Model (split out as its own versioned blueprint), the Implementation Roadmap and the Architectural Conformance of a Data Asset. The KA never becomes a region of the Data Asset; the blueprints and the per-asset conformance reach the Global protocol through contributions (registration, materialisation, external custody, the assurance suspension trigger and the conformance review service), and couple to DG, Metadata, Reference and Master Data and Data Security.",
              "definition": CONTEXT["definition"], "factBindings": FACT_BINDINGS},
-    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
+    "context": CONTEXT, "regions": REGIONS, "states": STATES, "transitions": TRANS, "events": EVENTS, "decisionRights": DR, "roles": ROLES, "artefacts": ARTEFACTS, "activities": ACTS, "services": SERVICES, "contributions": CONTRIB, "kaCouplings": KA_COUPLINGS, "couplingRoles": COUPLING_ROLES, "policyControls": POLICY_CONTROLS, "crossRegionConstraints": XRG, "stateVectors": VECTORS, "evidence": EVIDENCE, "exceptions": EXC,
     "sources": [
         {"id": "SRC-DA-001", "source": SRC_DECK, "type": "Primary (image pages, captured)", "location": "Chat upload; OneDrive Data Lifecycle folder", "use": "Definition, goals, drivers, inputs, processes and sub-activities, deliverables, role players, techniques, tools, metrics", "limitations": "The context diagram gives no per-asset conformance lifecycle; the Conformance states (placed, conforming, exception, non-conforming, reassessment due) are drafted from the Lifecycle Reviews technique and the Architecture standards compliance rates metric."},
         {"id": "SRC-DA-002", "source": SRC_HOWARD, "type": "Design direction", "location": "Chat", "use": "Managed elements, Global gating", "limitations": ""},

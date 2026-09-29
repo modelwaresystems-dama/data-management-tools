@@ -155,19 +155,24 @@ def build(spec, overrides=None):
     m["_backlinks"] = backlinks
     m["permissionRecords"] = [row({"id": p[0], "activity": p[1], "context": p[2], "outcome": p[3], "guard": p[4], "authority": p[5], "services": p[6], "evidence": p[7], "effect": p[8], "basis": p[9]}, "spec:permissions") for p in spec.get("permissions", [])]
     if not m["permissionRecords"]:
-        # derive one Conditional record per (transition-causing activity, source state of a related transition)
-        n = 0; tr_by = {t[0]: t for t in trans}
-        for a in spec.get("activities", []):
-            if "Transition-causing" not in a[3]: continue
-            for tid in a[5]:
+        # v0.8 (Howard, 29 Sep 2026, DG Reconstruction register p2 a): derived AFTER the back-links, so every activity a transition
+        # names gets a record in that transition's source state; supporting and state-preserving activities get one record per state
+        # of each region they work in, never a region id, so a per-state view (the viewer, the twin) can find them
+        n = 0; tr_by = {t[0]: t for t in trans}; seen = set()
+        for a in m["activities"]:
+            for tid in a["relatedTransitions"]:
                 t = tr_by.get(tid)
-                if not t: continue
-                n += 1
-                m["permissionRecords"].append(row({"id": f"PRM-{meta['modelId'][3:]}-{n:02d}", "activity": a[0], "context": t[2], "outcome": "Conditional", "guard": t[5], "authority": t[6] or "None", "services": t[7] if len(t) > 7 else [], "evidence": "", "effect": f"Transition-causing ({tid})", "basis": "derived from the related transition's contract"}, "derived:permissions"))
-        for a in spec.get("activities", []):
-            if "Transition-causing" in a[3]: continue
-            n += 1
-            m["permissionRecords"].append(row({"id": f"PRM-{meta['modelId'][3:]}-{n:02d}", "activity": a[0], "context": a[4][0] if a[4] else "", "outcome": "Permitted", "guard": "Region invariant holds.", "authority": "None", "services": a[6] if len(a) > 6 else [], "evidence": "", "effect": a[3], "basis": "derived: state-preserving or transition-supporting work permitted in any state of its region"}, "derived:permissions"))
+                if not t or t[2] not in region_of or (a["id"], tid) in seen: continue
+                seen.add((a["id"], tid)); n += 1
+                causes = "Transition-causing" in a["effectClass"] or a["id"] in (t[8] if len(t) > 8 else [])
+                m["permissionRecords"].append(row({"id": f"PRM-{meta['modelId'][3:]}-{n:02d}", "activity": a["id"], "context": t[2], "outcome": "Conditional", "guard": t[5], "authority": t[6] or "None", "services": t[7] if len(t) > 7 else [], "evidence": "", "effect": ("Transition-causing (%s)" if causes else "Transition-supporting (%s)") % tid, "basis": "derived from the related transition's contract"}, "derived:permissions"))
+        for a in m["activities"]:
+            if "Transition-causing" in a["effectClass"]: continue
+            for rid in a["regions"]:
+                for sid in [x[0] for x in states if x[1] == rid]:
+                    if any(p["activity"] == a["id"] and p["context"] == sid for p in m["permissionRecords"]): continue
+                    n += 1
+                    m["permissionRecords"].append(row({"id": f"PRM-{meta['modelId'][3:]}-{n:02d}", "activity": a["id"], "context": sid, "outcome": "Permitted", "guard": "Region invariant holds.", "authority": "None", "services": a["services"], "evidence": "", "effect": a["effectClass"], "basis": "derived: state-preserving or transition-supporting work permitted in every state of its region"}, "derived:permissions"))
     m["artefacts"] = [row({"id": a[0], "name": a[1], "artefactType": "Deliverable (Metadata Asset)", "metadataAsset": True, "producedIn": a[2], "producingActivity": a[3], "evidenceUse": a[4]}, "context:deliverables") for a in spec.get("artefacts", [])]
     m["exceptions"] = [row({"id": x[0], "name": x[1], "transition": x[2], "basis": x[3], "authority": x[4], "conditions": x[5], "statusValues": x[6]}, "spec:exceptions") for x in spec.get("exceptions", [])]
     m["evidence"] = [row({"id": e[0], "name": e[1], "evidenceType": e[2], "relatesTo": e[3], "description": e[4], "requirement": "Required", "metadataAsset": True}, "spec:evidence") for e in spec.get("evidence", [])]

@@ -6,10 +6,10 @@
    ============================================================ */
 window.APP_CONFIG = {
   // Mints short-lived Ably tokens (the real Ably API key stays server-side, never here):
-  tokenUrl: "https://modelware-quiz-api.netlify.app/.netlify/functions/ably-token",
+  tokenUrl: "https://workbook-player.howard-217.workers.dev/ably-token",
 
   // Serves private quiz/flashcard JSON, CORS-locked to your app's origin:
-  assetApi: "https://modelware-quiz-api.netlify.app/.netlify/functions/asset",
+  assetApi: "https://workbook-player.howard-217.workers.dev/asset",
 
   // Which private assets this deployment loads (relative to the backend's data/ dir):
   quizPath:  "dama-dmbok-data-management-and-lifecycle-overview/Ch 01. Data Management Quiz.json",

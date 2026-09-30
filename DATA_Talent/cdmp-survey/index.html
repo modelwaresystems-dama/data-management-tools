@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.0.1">
 <title>CDMP Survey — Modelware</title>
 <style>
 :root{
@@ -442,12 +442,16 @@ function doSubmit(){
   var endpoint=(SURVEY.config&&SURVEY.config.endpoint)||'';
   if(!endpoint){ showThanks(payload, true); return; }
   fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+    .then(function(r){ return r.text().then(function(body){
+        if(!r.ok){ var d=body; try{ var j=JSON.parse(body); d=j.detail||j.error||body; }catch(_){}
+          throw new Error('HTTP '+r.status+(d?' — '+d:'')); }
+        return body; }); })
     .then(function(){ markSubmitted(); showThanks(payload,false); })
     .catch(function(e){
       btn.disabled=false; btn.textContent='Submit response';
-      var n=document.createElement('div'); n.className='banner'; n.style.color='var(--crit)';
-      n.textContent='Submission failed ('+String(e.message||e)+'). Your answers are still saved here — please try again.';
+      var old=document.getElementById('submitErr'); if(old) old.remove();
+      var n=document.createElement('div'); n.id='submitErr'; n.className='banner'; n.style.color='var(--crit)';
+      n.textContent='Submission failed — '+String(e.message||e)+'. Your answers are still saved here.';
       btn.parentNode.after(n);
     });
 }

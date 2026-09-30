@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.0.1">
+<meta name="version" content="1.1.0">
 <title>CDMP Survey — Modelware</title>
 <style>
 :root{
@@ -158,7 +158,17 @@ document.getElementById('appVersion').textContent =
   document.querySelector('meta[name="version"]').content;
 
 var SURVEY=null, STEP=0, ANSWERS={}, EMAIL="", STARTED=Date.now(), TOKEN="", SUBMITTED=false;
+var TS_TOKEN=null, TS_WIDGET=null, TS_LOADING=false;
 var app=document.getElementById('app');
+
+function loadTurnstile(cb){
+  if(window.turnstile){cb();return;}
+  window.__tsReady=function(){cb();};
+  if(TS_LOADING)return; TS_LOADING=true;
+  var s=document.createElement('script');
+  s.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=__tsReady';
+  s.async=true;s.defer=true;document.head.appendChild(s);
+}
 
 function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
@@ -179,6 +189,7 @@ fetch('survey.json',{cache:'no-store'}).then(function(r){
   restore();
   SUBMITTED = lsGet('cdmp-survey:submitted:'+SURVEY.id)==='1';
   document.getElementById('savedNote').hidden=false;
+  if(SUBMITTED && SURVEY.config && SURVEY.config.lockAfterSubmit){ renderLocked(); return; }
   render();
 }).catch(function(e){
   app.innerHTML='<div class="fatal"><b>Couldn’t load the survey.</b><br>survey.json is missing or unreadable ('+String(e.message||e)+'). If you just deployed, give GitHub Pages a minute and refresh.</div>';
@@ -418,6 +429,8 @@ function renderReview(){
       '<p>Leave your email only if you want follow-up about the CDMP pathway. Blank is completely fine and keeps your response anonymous.</p>'+
       '<input type="email" id="emailField" placeholder="you@example.com (optional)" value="'+esc(EMAIL)+'"></div>';
   }
+  var siteKey=cfg.turnstileSiteKey||'';
+  if(siteKey){ html+='<div class="contact" style="border-style:solid"><h3>Quick check</h3><p>A one-tap check that you’re human — keeps automated submissions out.</p><div id="tsWidget"></div></div>'; }
   html+='<div class="nav"><button class="btn ghost" id="prevBtn">← Back</button>'+
     '<button class="btn primary" id="submitBtn">Submit response</button></div></div>';
   app.innerHTML=html;
@@ -425,6 +438,15 @@ function renderReview(){
   if(ef){ ef.addEventListener('input',function(){ EMAIL=ef.value.trim(); save(); }); }
   document.getElementById('prevBtn').onclick=function(){ STEP=SURVEY.sections.length; save(); render(); };
   document.getElementById('submitBtn').onclick=doSubmit;
+  if(siteKey){
+    TS_TOKEN=null;
+    loadTurnstile(function(){
+      try{ TS_WIDGET=window.turnstile.render('#tsWidget',{sitekey:siteKey,
+        callback:function(t){TS_TOKEN=t;},
+        'expired-callback':function(){TS_TOKEN=null;},
+        'error-callback':function(){TS_TOKEN=null;}}); }catch(e){}
+    });
+  }
 }
 
 function buildPayload(){
@@ -437,8 +459,17 @@ function buildPayload(){
 }
 
 function doSubmit(){
-  var btn=document.getElementById('submitBtn'); btn.disabled=true; btn.textContent='Submitting…';
+  var btn=document.getElementById('submitBtn');
+  var siteKey=(SURVEY.config&&SURVEY.config.turnstileSiteKey)||'';
+  if(siteKey && !TS_TOKEN){
+    var old=document.getElementById('submitErr'); if(old) old.remove();
+    var w=document.createElement('div'); w.id='submitErr'; w.className='banner'; w.style.color='var(--crit)';
+    w.textContent='Please complete the quick human check above, then submit.';
+    btn.parentNode.after(w); return;
+  }
+  btn.disabled=true; btn.textContent='Submitting…';
   var payload=buildPayload();
+  if(siteKey) payload.turnstileToken=TS_TOKEN;
   var endpoint=(SURVEY.config&&SURVEY.config.endpoint)||'';
   if(!endpoint){ showThanks(payload, true); return; }
   fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
@@ -472,6 +503,13 @@ function showThanks(payload, preview){
   app.innerHTML=html;
   document.getElementById('progressWrap').hidden=true;
   document.getElementById('savedNote').hidden=true;
+}
+
+function renderLocked(){
+  var pw=document.getElementById('progressWrap'); if(pw)pw.hidden=true;
+  var sn=document.getElementById('savedNote'); if(sn)sn.hidden=true;
+  app.innerHTML='<div class="thanks"><div class="tick">✓</div><h2>Already completed</h2>'+
+    '<p>Our records show this survey was already submitted from this device. Thank you — there’s no need to complete it again.</p></div>';
 }
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }

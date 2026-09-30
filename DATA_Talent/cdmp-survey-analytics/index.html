@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.0.0">
+<meta name="version" content="2.0.2">
 <title>CDMP Survey Analytics — Modelware</title>
 <style>
 :root{
@@ -52,8 +52,15 @@ input:focus{outline:none;border-color:var(--accent);background:var(--surface)}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 @media (prefers-color-scheme:dark){.btn.primary{color:#06201d}}
 .btn:disabled{opacity:.5;cursor:default}
-.status{font-family:var(--ff-mono);font-size:12px;margin-left:auto}
+.status{font-family:var(--ff-mono);font-size:12px}
 .status.err{color:var(--crit)} .status.ok{color:var(--good)}
+details.panel > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+details.panel > summary::-webkit-details-marker{display:none}
+.conn-h{font-family:var(--ff-display);font-size:18px;font-weight:600;display:flex;align-items:center;gap:9px}
+.conn-h::before{content:"";width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .2s;flex-shrink:0}
+details.panel[open] > summary .conn-h::before{transform:rotate(45deg)}
+details.panel > summary .status{margin-left:auto}
+details.panel[open] > summary{margin-bottom:8px}
 .forget{color:var(--crit);background:transparent;border:none;font-size:12.5px;cursor:pointer;text-decoration:underline}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:15px;box-shadow:var(--shadow)}
@@ -89,8 +96,8 @@ details.ft .items{padding:0 14px 12px}
 <div class="wrap">
   <header class="top"><div><div class="brand">Modelware · CDMP Survey</div><h1>Response Analytics</h1></div><span class="ver">v<span id="appVersion"></span> · admin</span></header>
 
-  <section class="panel" id="connPanel">
-    <h2>Read the results from GitHub</h2>
+  <details class="panel" id="connPanel" open>
+    <summary><span class="conn-h">Read the results from GitHub</span><span class="status" id="status"></span></summary>
     <p class="sub">Reads the private responses folder plus the survey definition (for its labels and analysis model).
       Private repos need a fine-grained token with <b>Contents: Read-only</b> — your existing reader token works.
       The token stays in this browser and is sent only to api.github.com.</p>
@@ -102,8 +109,8 @@ details.ft .items{padding:0 14px 12px}
       <div><label class="fld" for="f_model">Survey definition URL</label><input id="f_model" value="../cdmp-survey/survey.json"></div>
       <div style="grid-column:1/-1"><label class="fld" for="f_token">Token — read-only</label><input id="f_token" type="password" placeholder="github_pat_…"></div>
     </div>
-    <div class="row-btns"><button class="btn primary" id="loadBtn">Load results</button><button class="forget" id="forgetBtn">Forget token</button><span class="status" id="status"></span></div>
-  </section>
+    <div class="row-btns"><button class="btn primary" id="loadBtn">Load results</button><button class="forget" id="forgetBtn">Forget token</button></div>
+  </details>
 
   <div id="dash" class="hidden">
     <div class="kpis section-gap" id="kpis"></div>
@@ -130,6 +137,7 @@ function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 function lsDel(k){try{localStorage.removeItem(k);}catch(e){}}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function pct(n,d){return d?Math.round(n/d*100):0;}
+function notOther(x){return String(x.label).toLowerCase()!=='other';}
 function mean(a){var s=0,n=0;for(var i=0;i<a.length;i++){if(a[i]!=null){s+=a[i];n++;}}return n?s/n:null;}
 
 /* ---------- model helpers (all derived from survey.json) ---------- */
@@ -196,12 +204,9 @@ function render(agg,rows){
   if(!agg.cmpN.a&&!agg.cmpN.b){$('cmpBars').innerHTML='<div class="empty">No respondents in either group yet — fills in as they reply.</div>';}
   else{renderGrouped($('cmpBars'),MODEL.analysis.indices.map(function(x){return {label:x.label+' ('+arrow(x.dir)+')',a:agg.indexMeans[x.id].a,b:agg.indexMeans[x.id].b,aLab:segLabel(cmp.a),bLab:segLabel(cmp.b)};}));}
   // distributions
-  $('distros').innerHTML=(MODEL.analysis.distributions||[]).map(function(qid){return '<section class="panel section-gap"><div class="viz-title">'+esc(qText(qid))+'</div><div class="bars" id="dist-'+qid+'"></div></section>';}).join('');
-  (MODEL.analysis.distributions||[]).forEach(function(qid){
-    var d=agg.distros[qid], multi=QBY[qid]&&QBY[qid].type==='multi';
-    var data=Object.keys(d).map(function(k){return {label:optLabel(qid,k),value:d[k]};}).sort(function(a,b){return b.value-a.value;});
-    renderBars($('dist-'+qid),data,{fmt:function(x){return multi?String(x.value):x.value+' ('+pct(x.value,agg.n)+'%)';}});
-  });
+  var dl=(MODEL.analysis.distributions||[]).map(function(qid){var d=agg.distros[qid];return {qid:qid,multi:QBY[qid]&&QBY[qid].type==='multi',data:Object.keys(d).map(function(k){return {label:optLabel(qid,k),value:d[k]};}).filter(notOther).sort(function(a,b){return b.value-a.value;})};}).filter(function(x){return x.data.length;});
+  $('distros').innerHTML=dl.map(function(x){return '<section class="panel section-gap"><div class="viz-title">'+esc(qText(x.qid))+'</div><div class="bars" id="dist-'+x.qid+'"></div></section>';}).join('');
+  dl.forEach(function(x){renderBars($('dist-'+x.qid),x.data,{fmt:function(v){return x.multi?String(v.value):v.value+' ('+pct(v.value,agg.n)+'%)';}});});
   // free text
   $('freeText').innerHTML=agg.textQs.map(function(qid){var items=agg.free[qid];if(!items.length)return '';
     return '<details class="ft"><summary>'+esc(qText(qid))+' ('+items.length+')</summary><div class="items">'+items.map(function(it){return '<div class="ft-item"><span class="seg">'+esc(segLabel(it.seg))+'</span>'+esc(it.text)+'</div>';}).join('')+'</div></details>';}).join('')||'<div class="empty">No free-text answers yet.</div>';
@@ -238,7 +243,8 @@ async function loadResults(){
     setStatus('Loaded '+rows.length+' responses.','ok');
     if(!rows.length){$('dash').classList.add('hidden');$('loadBtn').disabled=false;return;}
     render(aggregate(rows),rows);
-  }catch(e){setStatus(String(e.message||e),'err');}finally{$('loadBtn').disabled=false;}
+    $('connPanel').open=false;
+  }catch(e){setStatus(String(e.message||e),'err');$('connPanel').open=true;}finally{$('loadBtn').disabled=false;}
 }
 
 /* ---------- exports ---------- */
@@ -273,7 +279,7 @@ function publicAggregate(){
     segments:Object.keys(agg.segments).filter(function(k){return agg.segments[k]>0;}).map(function(k){return {id:k,label:segLabel(k),count:agg.segments[k]};}),
     compare:{aLabel:segLabel(cmp.a),bLabel:segLabel(cmp.b),aN:agg.cmpN.a,bN:agg.cmpN.b},
     indices:MODEL.analysis.indices.map(function(x){return {id:x.id,label:x.label,dir:x.dir,overall:agg.indexMeans[x.id].all,a:agg.indexMeans[x.id].a,b:agg.indexMeans[x.id].b};}),
-    distributions:(MODEL.analysis.distributions||[]).map(function(qid){return {id:qid,label:qText(qid),items:Object.keys(agg.distros[qid]).map(function(k){return {label:optLabel(qid,k),count:agg.distros[qid][k]};}).sort(function(a,b){return b.count-a.count;})};})};
+    distributions:(MODEL.analysis.distributions||[]).map(function(qid){return {id:qid,label:qText(qid),items:Object.keys(agg.distros[qid]).map(function(k){return {label:optLabel(qid,k),count:agg.distros[qid][k]};}).filter(function(x){return String(x.label).toLowerCase()!=='other';}).sort(function(a,b){return b.count-a.count;})};})};
   download('aggregate.json',JSON.stringify(out,null,2),'application/json');
   setStatus('Public aggregate downloaded — commit it to the results-page folder. No raw responses or free-text included.','ok');
 }

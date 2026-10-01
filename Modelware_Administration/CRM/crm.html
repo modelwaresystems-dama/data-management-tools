@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="da75feadb341" data-built="1 Oct 2026" data-version="1.48.0">
+<meta name="crm-build" content="7ae51616ac25" data-built="1 Oct 2026" data-version="1.49.0">
 <!-- Repo versioning standard: the Asset Navigator build reads this. Written by
      dev/stamp-build.py from the crm-build line above, never typed twice. -->
-<meta name="version" content="1.48.0">
+<meta name="version" content="1.49.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1946,6 +1946,24 @@ function invoiceLineMismatch(inv){
    carries `derived` so the screen can say "on 30-day terms" rather than
    presenting an inference as a fact. An invoice with no issue date either is
    still genuinely undated. */
+/* SPLITTING A VAT-INCLUSIVE AMOUNT (1 Oct 2026).
+
+   The arithmetic never put VAT in a commission base \u2014 but the DATA could,
+   and did: R14,905 typed into the net box with VAT left blank is
+   R12,960.87 of work plus R1,944.13 of VAT, and 20% of it paid R2,981
+   instead of R2,592.17. Nothing on the invoice said so, because an invoice
+   with no VAT is perfectly legal on an export.
+
+   This is the arithmetic that undoes it, kept in core so the dialog and the
+   tests use one function. */
+var DEFAULT_VAT_RATE = 0.15;
+function splitVatInclusive(amount, rate){
+  var a = round2(amount), r = (rate == null ? DEFAULT_VAT_RATE : +rate);
+  if (!(a > 0) || !(r > 0)) return { net:a, vat:0, rate:r };
+  var net = round2(a / (1 + r));
+  return { net:net, vat:round2(a - net), rate:r };
+}
+
 var DEFAULT_TERMS_DAYS = 30;
 function effectiveDue(inv){
   if (!inv) return { date:null, derived:false };
@@ -5534,6 +5552,7 @@ var API = {
   openFollowups:openFollowups, followupsFor:followupsFor, openFollowupsFor:openFollowupsFor,
   stepsToHandOver:stepsToHandOver, strandedSteps:strandedSteps,
   effectiveDue:effectiveDue, DEFAULT_TERMS_DAYS:DEFAULT_TERMS_DAYS,
+  splitVatInclusive:splitVatInclusive, DEFAULT_VAT_RATE:DEFAULT_VAT_RATE,
   suggestDomain:suggestDomain, emailDomain:emailDomain,
   normEmail:normEmail, mergeEmails:mergeEmails, contactEmails:contactEmails,
   contactHasEmail:contactHasEmail, contactByEmail:contactByEmail,
@@ -8774,6 +8793,36 @@ function invoicePopover(anchorEl, d, inv){
     h("label", { class:"fld" }, h("span", { text:"of which resale" }), thru)));
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"VAT" }), vat));
 
+  /* THE VAT-INCLUSIVE AMOUNT, CAUGHT WHERE IT IS TYPED.
+
+     R14,905 in the net box with VAT blank is how commission came to be paid on
+     the VAT \u2014 not through the arithmetic, which has never touched it, but
+     through the data. The app cannot know: an invoice with no VAT is right on
+     an export and wrong on a local sale. So it says what the number would be
+     if the amount includes VAT, and splits it on one press. */
+  var vatRate = h("input", { type:"text", value:String(C.round2(
+      ((App.config && App.config.vatRate) != null ? App.config.vatRate : C.DEFAULT_VAT_RATE) * 100)),
+    "aria-label":"VAT rate %", style:"width:70px" });
+  var splitBtn = h("button", { class:"btn btn-sm", type:"button" }, "Split it");
+  var vatHint = h("div", { class:"note vat-hint", style:"color:var(--warn);display:none" });
+  var vatRow = h("div", { class:"vat-split", style:"display:none;align-items:baseline;gap:8px;margin:-4px 0 8px" },
+    splitBtn, h("span", { class:"k", text:"at" }), vatRate, h("span", { class:"k", text:"%" }));
+  var splitRate = function (){
+    var raw = String(vatRate.value || "").replace(/[^\d.]/g, "");
+    return raw === "" ? null : C.round2(+raw) / 100;
+  };
+  vatRate.addEventListener("input", function (){ repaint(); });
+  splitBtn.addEventListener("click", function (){
+    var sp = C.splitVatInclusive(C.money(net.value), splitRate());
+    if (!(sp.net > 0)) return;
+    net.value = String(sp.net); vat.value = String(sp.vat);
+    repaint();
+    toast("Split into " + C.fmtMoneyExact(sp.net, cur.value) + " plus " +
+          C.fmtMoneyExact(sp.vat, cur.value) + " VAT.");
+  });
+  box.appendChild(vatRow);
+  box.appendChild(vatHint);
+
   /* Who is paid on this invoice (F7). Almost always the deal owner, so that is
      what the empty option SAYS rather than leaving it to be inferred — the same
      move the commission box makes with the deal's rate. FNB is the case that
@@ -8956,6 +9005,19 @@ function invoicePopover(anchorEl, d, inv){
                 (own ? " (this invoice only \u2014 the deal says " + pct(d.commissionRate) + ")" : "") +
                 ", once it is settled in full");
     if (t > n) bits.push("resale is more than the net \u2014 check the split");
+    /* Shown only where it could be wrong: an amount with no VAT beside it. */
+    var noVat = !(v > 0.005) && n > 0 && !lines.length;
+    vatRow.style.display = noVat ? "flex" : "none";
+    vatHint.style.display = noVat ? "" : "none";
+    if (noVat){
+      var sp = C.splitVatInclusive(n, splitRate());
+      vatHint.textContent = "No VAT on this invoice. Right for an export or a zero-rated sale. " +
+        "If " + C.fmtMoneyExact(n, cur.value) + " already INCLUDES VAT, the work is " +
+        C.fmtMoneyExact(sp.net, cur.value) + " plus " + C.fmtMoneyExact(sp.vat, cur.value) +
+        " VAT" + (r ? ", and the commission should be " +
+          C.fmtMoneyExact(C.round2((sp.net - t) * r), cur.value) + " rather than " +
+          C.fmtMoneyExact(C.round2(base * r), cur.value) : "") + ".";
+    }
     if (earner.value && earner.value !== d.owner)
       bits.push("earned by " + userName(earner.value) + ", not " + userName(d.owner));
     explain.textContent = bits.join(". ") + ".";
@@ -9091,10 +9153,22 @@ function commissionCell(deal, m, st_){
   if (cm.parts.length === 1){
     var only = cm.parts[0];
     box.appendChild(h("div", { text:word(only.commission, only.rate) }));
+    /* THE BASE, ALWAYS SAID. "20% on this invoice" left the reader to assume
+       which number the 20% was of, and when the net silently held a
+       VAT-inclusive amount the assumption was wrong by the VAT. */
+    if (only.rate != null)
+      box.appendChild(h("div", { class:"note",
+        text: pct(only.rate) + " of " + C.fmtMoneyExact(only.base, cur) +
+              (st_.invoice.vat > 0.005 ? "  (VAT excluded)" : "") }));
     if (only.overridden)
       box.appendChild(h("div", { class:"note", text: m.rate == null
-        ? pct(only.rate) + " on this invoice"
+        ? "rate set on this invoice"
         : pct(only.rate) + ", not " + pct(m.rate) }));
+    /* The data defect, named where the money is read. */
+    if (only.rate != null && !(st_.invoice.vat > 0.005) &&
+        !(st_.invoice.lines && st_.invoice.lines.length))
+      box.appendChild(h("div", { class:"note", style:"color:var(--warn)",
+        text:"no VAT recorded \u2014 if this amount includes VAT, the base is too high. Edit to split it." }));
     return box;
   }
 

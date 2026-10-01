@@ -21,12 +21,20 @@ def fp(text):
     return hashlib.sha256(pat.sub(lambda mm: '<meta name="crm-build" content="" data-built="%s" data-version="%s">'
                                   % (mm.group(2), mm.group(3)), text, count=1).encode("utf-8")).hexdigest()[:12]
 if a.check:
+    vm = re.search(r'<meta name="version" content="([^"]*)">', s)
+    if vm and vm.group(1) != m.group(3):
+        print("STALE  the repo version meta says %s, the build line says %s" % (vm.group(1), m.group(3)))
+        sys.exit(1)
     got = fp(s)
     print(("OK  " if got == m.group(1) else "STALE  ") + "stamp %s, file hashes to %s (v%s, %s)"
           % (m.group(1), got, m.group(3), m.group(2)))
     sys.exit(0 if got == m.group(1) else 1)
 ver = a.version or m.group(3); date = a.date or m.group(2)
 s = pat.sub('<meta name="crm-build" content="" data-built="%s" data-version="%s">' % (date, ver), s, count=1)
+# The repo's versioning standard: one number, written in both places by this
+# script so it is never typed twice (project rule 1-2).
+vpat = re.compile(r'<meta name="version" content="[^"]*">')
+if vpat.search(s): s = vpat.sub('<meta name="version" content="%s">' % ver, s, count=1)
 h = fp(s)
 s = s.replace('<meta name="crm-build" content=""', '<meta name="crm-build" content="%s"' % h, 1)
 io.open(a.file, "w", encoding="utf-8").write(s)

@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="2a5b0e0291e8" data-built="21 Sep 2026" data-version="1.45.0">
+<meta name="crm-build" content="e6c0615b253f" data-built="1 Oct 2026" data-version="1.46.0">
+<!-- Repo versioning standard: the Asset Navigator build reads this. Written by
+     dev/stamp-build.py from the crm-build line above, never typed twice. -->
+<meta name="version" content="1.46.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -163,6 +166,15 @@ label.fld.chk > input{width:auto;margin:0}
   display:flex;align-items:baseline;gap:9px;margin-bottom:8px;
   font-family:var(--mono);font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)
 }
+button.band-head{
+  width:100%;background:none;border:0;padding:4px 0;margin-bottom:4px;cursor:pointer;
+  text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted)
+}
+button.band-head:hover{color:var(--ink)}
+button.band-head:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.band-head .tw{font-size:10px;width:10px;flex:0 0 10px}
+.band-head .shut{text-transform:none;letter-spacing:0;font-size:11.5px;color:var(--muted)}
 .band-head .n{font-weight:600;color:var(--ink)}
 .band-overdue .band-head .n{color:var(--overdue)}
 .band-list{display:flex;flex-direction:column;gap:6px}
@@ -5636,6 +5648,12 @@ var LS = {
      else rather than silently hidden. Same reasoning as openCos storing the
      open cards: store the exception, never the default. */
   shutSettings: "crm.settings.shut",
+  /* Which Today bands are SHUT. Same reasoning as the Settings sections: store
+     the exception, never the default, so a band added later arrives open. "No
+     next step" is sixteen rows deep on a real pipeline, and scrolling past it
+     every morning to reach the three things actually due is the friction that
+     stops Today being read at all. */
+  shutBands:    "crm.today.shut",
   /* How the debtors book is cut — by the person who chases it, or by the
      customer who owes it. A view preference; it never reaches the repo. */
   debtorGroup: "crm.debtors.group",
@@ -6661,19 +6679,68 @@ function noNextStepRow(d){
   return row;
 }
 
-function band(cls, label, count, rows, emptyText){
-  var sec = h("section", { class:"band " + cls },
-    h("div", { class:"band-head" },
-      h("span", { text:label }),
-      h("span", { class:"n", text:"· " + count })));
+function bandShut(){
+  var set = {};
+  (lsGet(LS.shutBands, []) || []).forEach(function (k){ set[k] = 1; });
+  return set;
+}
+
+function band(cls, label, count, rows, emptyText, foot){
+  var sec = h("section", { class:"band " + cls });
+  var shut = bandShut();
+  /* A band with nothing in it is one line and cannot be in the way, so it keeps
+     the plain heading \u2014 there is nothing to collapse and a control that does
+     nothing is worse than no control. */
+  var foldable = rows.length > 0;
+  var isOpen = !(foldable && shut[cls]);
+
   var list = h("div", { class:"band-list", role:"list" });
   if (rows.length) rows.forEach(function (r){ list.appendChild(r); });
   else if (emptyText) list.appendChild(h("div", { class:"note", text:emptyText }));
-  if (cls === "band-none" && rows.length){
-    var voidWrap = h("div", { class:"void" });
-    voidWrap.appendChild(list);
-    sec.appendChild(voidWrap);
-  } else sec.appendChild(list);
+  var body = (cls === "band-none" && rows.length)
+    ? h("div", { class:"void" }, list)
+    : list;
+  /* The line that explains the band belongs INSIDE it: left outside, a
+     collapsed band leaves its own footnote stranded on the page explaining
+     something nobody can see. */
+  if (foot){
+    var wrap = h("div");
+    wrap.appendChild(body);
+    wrap.appendChild(foot);
+    body = wrap;
+  }
+
+  if (!foldable){
+    sec.appendChild(h("div", { class:"band-head" },
+      h("span", { text:label }),
+      h("span", { class:"n", text:"\u00b7 " + count })));
+    sec.appendChild(body);
+    return sec;
+  }
+
+  var tw = h("span", { class:"tw", "aria-hidden":"true", text: isOpen ? "\u25be" : "\u25b8" });
+  var hid = h("span", { class:"shut",
+    text: isOpen ? "" : "\u2014 " + count + " hidden" });
+  var head = h("button", { class:"band-head", type:"button",
+                           "aria-expanded": isOpen ? "true" : "false",
+                           title: (isOpen ? "Hide " : "Show ") + label },
+    tw, h("span", { text:label }), h("span", { class:"n", text:"\u00b7 " + count }), hid);
+  body.style.display = isOpen ? "" : "none";
+
+  head.addEventListener("click", function (){
+    isOpen = !isOpen;
+    var set = bandShut();
+    if (isOpen) delete set[cls]; else set[cls] = 1;
+    lsSet(LS.shutBands, Object.keys(set));
+    head.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    head.title = (isOpen ? "Hide " : "Show ") + label;
+    tw.textContent = isOpen ? "\u25be" : "\u25b8";
+    hid.textContent = isOpen ? "" : "\u2014 " + count + " hidden";
+    body.style.display = isOpen ? "" : "none";
+  });
+
+  sec.appendChild(head);
+  sec.appendChild(body);
   return sec;
 }
 
@@ -6748,11 +6815,11 @@ function viewToday(el){
             h("span", { class: u.daysToStart <= 2 ? "late" : "", text:when }),
             h("span", { text:" \u00b7 " + money + " \u00b7 " + userName(d.owner) }))));
     });
-    el.appendChild(band("band-seats", "Unpaid before the course", seats.length, srows, null));
-    el.appendChild(h("div", { class:"note", style:"margin:-4px 0 14px",
-      text:"Direct seats are paid before attending. These start within " +
-           ((App.config.thresholds && App.config.thresholds.unpaidSeatDays) || C.UNPAID_SEAT_DAYS) +
-           " days, or already have, and are not fully paid." }));
+    el.appendChild(band("band-seats", "Unpaid before the course", seats.length, srows, null,
+      h("div", { class:"note", style:"margin:6px 0 0",
+        text:"Direct seats are paid before attending. These start within " +
+             ((App.config.thresholds && App.config.thresholds.unpaidSeatDays) || C.UNPAID_SEAT_DAYS) +
+             " days, or already have, and are not fully paid." })));
   }
 
   if (b.total === 0){
@@ -6777,12 +6844,12 @@ function viewToday(el){
   el.appendChild(band("band-today", "Due today", b.dueToday.length, dt,
     b.dueToday.length ? null : "Nothing scheduled for today."));
   el.appendChild(band("band-none", "No next step", b.noNextStep.length, nn,
-    b.noNextStep.length ? null : "Every open deal has a next step."));
-
-  if (b.noNextStep.length)
-    el.appendChild(h("div", { class:"note",
-      text:"An open deal with no next step is a defect, not a gap in your day. " +
-           "It is drawn as an absence because that is what it is." }));
+    b.noNextStep.length ? null : "Every open deal has a next step.",
+    b.noNextStep.length
+      ? h("div", { class:"note", style:"margin-top:8px",
+          text:"An open deal with no next step is a defect, not a gap in your day. " +
+               "It is drawn as an absence because that is what it is." })
+      : null));
 }
 
 /* ---------------- row actions ---------------- */

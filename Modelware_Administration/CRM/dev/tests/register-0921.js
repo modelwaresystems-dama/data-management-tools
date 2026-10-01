@@ -10,7 +10,9 @@ let pass = 0, fail = 0; const fails = [];
 const ok = (c, m, extra) => { if (c){ pass++; console.log('  \x1b[32m✓\x1b[0m ' + m); }
   else { fail++; fails.push(m + (extra ? '  [' + extra + ']' : '')); console.log('  \x1b[31m✗ ' + m + '\x1b[0m' + (extra ? '  [' + String(extra).slice(0, 300) + ']' : '')); } };
 const describe = t => console.log('\n\x1b[1m' + t + '\x1b[0m');
-const T = '2026-09-21';
+/* Everything is relative to the app's own today, so these keep working on any
+   day they are run. (They did not, the first time: a hard-coded 21 Sep made the
+   suite pass on the 21st and fail on the 1st.) */
 
 (async () => {
   const file = path.resolve(process.argv[2] || 'crm.html');
@@ -20,10 +22,9 @@ const T = '2026-09-21';
     const errs = []; page.on('pageerror', e => errs.push(String(e)));
     await page.goto('file://' + file); await page.waitForTimeout(900);
 
-    const seed = () => page.evaluate((T) => {
+    const seed = () => page.evaluate(() => {
       Array.from(document.querySelectorAll('#layers > *')).forEach(n => n.remove());
       const A = window.CRMApp.App, E = window.CRMApp.emit;
-      A.today = T;
       A.config = Object.assign({}, A.config, { thresholds:Object.assign({}, A.config.thresholds),
         currencies:['ZAR','USD'], users:[
         { id:'howard', name:'Howard Diesel', email:'howard@modelwaresystems.com' },
@@ -31,14 +32,15 @@ const T = '2026-09-21';
         { id:'debbie', name:'Debbie Diesel', sales:true } ] });
       A.lens = null; A.scope = 'team'; A.events = []; A.seq = 0; A.me = 'howard';
       window.CRMApp.refold();
-    }, T);
+      return window.CRMApp.App.today;
+    });
 
     /* ---------------- B2 ---------------- */
     describe(vp.tag + ' — B2: an unpaid direct seat shows on Today, seven days out');
-    await seed();
-    const b2 = await page.evaluate(async (T) => {
+    const TODAY = await seed();
+    const b2 = await page.evaluate(async () => {
       const A = window.CRMApp.App, E = window.CRMApp.emit, C = window.CRMCore;
-      const add = C.addDays;
+      const T = A.today, add = C.addDays;
       E('company.created', { companyId:'ind', name:'Individual', isHolder:true });
       const mk = (id, name, starts, ch, extra) => E('deal.created', Object.assign({ dealId:id, companyId:'ind', name,
         owner:'debbie', stage:'proposal', channel:ch, courseStartsOn:starts }, extra || {}));
@@ -78,9 +80,9 @@ const T = '2026-09-21';
       await new Promise(r => setTimeout(r, 250));
       Array.from(document.querySelectorAll('#layers > *')).forEach(n => n.remove());
       return { ids: list.map(x => x.deal.id).join(','), mine: mine.length, txt, ptxt: ptxt.slice(0, 1500),
-               hasInput: !!inp, saved: A.st.deals.s8.courseStartsOn,
+               hasInput: !!inp, saved: A.st.deals.s8.courseStartsOn, want: C.addDays(A.today, 5),
                after: C.unpaidSeats(A.st, A.config, T, { scope:'team' }).map(x => x.deal.id).join(',') };
-    }, T);
+    });
     ok(b2.ids === 's6,s2,s1', 'shows the started-unpaid seat first, then 3 days, then 7 days', b2.ids);
     ok(!/s3/.test(b2.ids), '…not a seat that is paid');
     ok(!/s4/.test(b2.ids), '…not one eight days out');
@@ -92,21 +94,22 @@ const T = '2026-09-21';
     ok(/not invoiced/.test(b2.txt) && /14 905/.test(b2.txt), '…and what is owed, or that nothing is invoiced', b2.txt);
     ok(/Course starts/.test(b2.ptxt), 'the deal panel shows the course start', b2.ptxt.slice(0, 300));
     ok(b2.hasInput, 'the Edit form has a Course starts field');
-    ok(b2.saved === '2026-09-26', '…which saves a typed "+5" as a date', b2.saved);
+    ok(b2.saved === b2.want, '…which saves a typed "+5" as a date five days out', b2.saved + ' want ' + b2.want);
     ok(/s8/.test(b2.after), '…and the seat is on Today straight away', b2.after);
 
     /* ---------------- N3 ---------------- */
     describe(vp.tag + ' — N3: no due date means 30 days from issue, said as derived');
     await seed();
-    const n3 = await page.evaluate(async (T) => {
+    const n3 = await page.evaluate(async () => {
       const A = window.CRMApp.App, E = window.CRMApp.emit, C = window.CRMCore;
+      const T = A.today, issued = C.addDays(T, -72), stated = C.addDays(T, 10);
       E('company.created', { companyId:'ts', name:'Tools & Solutions' });
       E('deal.created', { dealId:'d1', companyId:'ts', name:'DCAM', owner:'paul', stage:'won' });
-      /* issued 21 Jul, no due date: derived due 20 Aug, 32 days late on 21 Sep */
-      E('invoice.raised', { invoiceId:'i1', dealId:'d1', number:'INV9000389', issuedOn:'2026-07-21',
+      /* issued 72 days ago, no due date: derived due is 42 days past, so the 31–60 bucket */
+      E('invoice.raised', { invoiceId:'i1', dealId:'d1', number:'INV9000389', issuedOn:issued,
                             currency:'USD', net:12000, vat:0, passThrough:0 });
       /* a stated due date always wins, even if it is later than 30 days */
-      E('invoice.raised', { invoiceId:'i2', dealId:'d1', number:'INV2', issuedOn:'2026-07-21', dueDate:'2026-10-01',
+      E('invoice.raised', { invoiceId:'i2', dealId:'d1', number:'INV2', issuedOn:issued, dueDate:stated,
                             currency:'USD', net:1000, vat:0, passThrough:0 });
       /* no issue date given: the fold records the day it was entered, so it
          too ages on derived terms rather than falling out of the book */
@@ -124,11 +127,12 @@ const T = '2026-09-21';
       const ptxt = (document.querySelector('.panel') || {}).textContent || '';
       Array.from(document.querySelectorAll('#layers > *')).forEach(n => n.remove());
       return { e1, e2, e3, aged:r.aged, derived:r.derived, stored: inv.i1.dueDate || null,
+               wantE1: C.addDays(issued, 30), wantE2: stated, wantShown: C.fmtDay(C.addDays(issued, 30)),
                aggDerived: agg.derived, ledDerived: led.derived, ledCount: led.derivedCount,
                flags: (C.flags ? '' : ''), body, ptxt: ptxt.slice(0, 2000) };
-    }, T);
-    ok(n3.e1.date === '2026-08-20' && n3.e1.derived, 'an invoice with no due date is due 30 days from issue, marked derived', JSON.stringify(n3.e1));
-    ok(n3.e2.date === '2026-10-01' && !n3.e2.derived, 'a stated due date always wins', JSON.stringify(n3.e2));
+    });
+    ok(n3.e1.date === n3.wantE1 && n3.e1.derived, 'an invoice with no due date is due 30 days from issue, marked derived', JSON.stringify(n3.e1));
+    ok(n3.e2.date === n3.wantE2 && !n3.e2.derived, 'a stated due date always wins', JSON.stringify(n3.e2));
     ok(n3.e3.date && n3.e3.derived, 'an invoice entered with no issue date ages from the day it was recorded, still marked derived', JSON.stringify(n3.e3));
     ok(n3.stored === null, 'the derived date is never written back to the invoice');
     ok(n3.aged.d60 === 12000, '$12,000 now sits in the 31–60 bucket instead of nowhere', JSON.stringify(n3.aged));
@@ -137,12 +141,12 @@ const T = '2026-09-21';
        'every reader carries how much is aged on derived terms', [n3.derived, n3.aggDerived, n3.ledDerived, n3.ledCount].join(','));
     ok(/aged on 30-day terms from issue/.test(n3.body), 'the Debtors row says so', n3.body.slice(0, 400));
     ok(/is aged on 30-day terms from its issue date/.test(n3.body), '…and so does the Sage footing, with what it does to the reconciliation');
-    ok(/treated as due 20 Aug/.test(n3.ptxt), 'the deal panel shows the date it is treated as due', n3.ptxt.slice(0, 600));
+    ok(n3.ptxt.indexOf('treated as due ' + n3.wantShown) >= 0, 'the deal panel shows the date it is treated as due', n3.ptxt.slice(0, 600));
 
     /* ---------------- N2 ---------------- */
     describe(vp.tag + ' — N2: domains drafted from contacts, set only when ticked');
     await seed();
-    const n2 = await page.evaluate(async (T) => {
+    const n2 = await page.evaluate(async () => {
       const A = window.CRMApp.App, E = window.CRMApp.emit, C = window.CRMCore;
       E('company.created', { companyId:'sarb', name:'SARB' });
       E('contact.created', { contactId:'c1', companyId:'sarb', name:'Johan B', email:'johan.b@resbank.co.za' });
@@ -177,7 +181,7 @@ const T = '2026-09-21';
       return { sug, none, clash, label, beforeSarb, btnText,
                sarb: A.st.companies.sarb.domain, mcb: A.st.companies.mcb.domain, fnb2: A.st.companies.fnb2.domain,
                section: (document.querySelector('#content').textContent || '').slice(0, 50) };
-    }, T);
+    });
     ok(n2.sug && n2.sug.domain === 'resbank.co.za', 'SARB is proposed resbank.co.za from its contacts', JSON.stringify(n2.sug));
     ok(n2.sug && n2.sug.from.join(',') === 'Johan B,Thandi', '…naming who it came from, and ignoring the gmail address', JSON.stringify(n2.sug));
     ok(n2.none === null, 'webmail and our own domain are never proposed', JSON.stringify(n2.none));
@@ -192,7 +196,7 @@ const T = '2026-09-21';
     /* ---------------- N1 ---------------- */
     describe(vp.tag + ' — N1: a partner company can be created from the deal');
     await seed();
-    const n1 = await page.evaluate(async (T) => {
+    const n1 = await page.evaluate(async () => {
       const A = window.CRMApp.App, E = window.CRMApp.emit;
       E('company.created', { companyId:'com', name:'Comotion' });
       E('deal.created', { dealId:'dc', companyId:'com', name:'DMBOK advisory', owner:'howard', stage:'proposal' });
@@ -227,7 +231,7 @@ const T = '2026-09-21';
       await run('Comotion', '');
       const self = A.st.deals.dc.partnerCompanyId;
       return { first, again, before, self, nxId: nx[0] && nx[0].id };
-    }, T);
+    });
     ok(n1.first.r1.hasNew && n1.first.r1.shown, 'the Partner list offers a company not in the CRM yet, and asks for its name');
     ok(n1.first.count === 1 && n1.first.partner === n1.nxId, 'Nexus Data is created and becomes the partner on the deal', JSON.stringify(n1.first));
     ok(n1.first.isPartner === true, '…marked a partner, where the next deal can find it');

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.21.18">
+<meta name="version" content="1.21.21">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -41,7 +41,7 @@
   .prog{height:4px;background:var(--surface);flex:none;}
   .prog .in{height:100%;background:var(--accent);width:0;transition:width .3s;}
   .wrap{flex:1;min-height:0;display:grid;place-items:center;padding:clamp(14px,3vw,26px);}
-  .stagew{width:100%;max-width:760px;height:100%;display:flex;flex-direction:column;}
+  .stagew{width:100%;max-width:1080px;height:100%;display:flex;flex-direction:column;overflow-y:auto;padding-right:4px;}
   h1.t{font-family:"Sora",sans-serif;font-size:20px;margin:0 0 2px;}
   .meta{color:var(--faint);font-family:"IBM Plex Mono",monospace;font-size:12px;margin-bottom:16px;}
 
@@ -158,7 +158,7 @@
   .opt.wrong{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,var(--surface));}
   .opt:disabled{cursor:default;}
   .opt .rmark{margin-left:auto;font-weight:800;}
-  .why{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:14px 16px;color:#FFFFFF;font-size:15px;line-height:1.6;max-height:46vh;overflow-y:auto;}
+  .why{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;padding:14px 16px;color:#FFFFFF;font-size:15px;line-height:1.6;}
   .why::-webkit-scrollbar{width:9px;}
   .why::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px;}
   .why::-webkit-scrollbar-track{background:transparent;}
@@ -219,6 +219,9 @@
   .why .wrow.no{color:#44536B!important;}
   .qhint{background:#FFF6E0;border:1px solid #E7C675;color:#6B5310;border-radius:8px;padding:8px 11px;margin:7px 0 10px;font-size:14px;line-height:1.5;}
   .mm2-hint{color:#6B7280!important;}
+  .hintzone{margin:0 0 16px;}
+  .hintbtn{border:1px solid #E7C675;background:#FFF9EC;color:#6B5310;font-weight:700;font-size:14px;padding:9px 14px;border-radius:9px;cursor:pointer;}
+  .hintbtn:hover{background:#FDEFC9;}
 </style>
 </head>
 <body>
@@ -253,7 +256,7 @@
 </aside>
 
 <script src="../app-config.js"></script>
-<script>window.PAGE_BUILD="1.21.18";</script>
+<script>window.PAGE_BUILD="1.21.21";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ============ Workbench Player ============
@@ -282,9 +285,10 @@ let libSearch="", libFilter="all";    // all | quiz | flashcards
 let libScope="training";               // training = only notebooks used in a course; all = every notebook
 let COURSE_SLUGS=null;                 // set of notebook slugs referenced by rosters courses/sessions
 let libCollapsed=new Set();           // collapsed notebook groups
+let libDefaulted=false;               // collapse every group on the first populated render
 let curAsset=null;                    // {path,title,type,...} being played
 let QUIZ=null, CARDS=null, QUIZ_SRC="", MAP=null;
-let qi=0, chosen=null, score=0, answers=[];
+let qi=0, chosen=null, score=0, answers=[], hintShown=false;
 let ci=0, flipped=false;
 
 /* selection for the Training Session */
@@ -367,6 +371,7 @@ function renderLibrary(){
   });
   const topics=[]; const byTopic={};
   list.forEach(a=>{ const t=a.topic||"Uncategorised"; if(!byTopic[t]){byTopic[t]=[];topics.push(t);} byTopic[t].push(a); });
+  if(!libDefaulted && topics.length){ topics.forEach(t=>libCollapsed.add(t)); libDefaulted=true; }  // start collapsed by default
   const totQ=base.filter(a=>(a.type||"quiz")==="quiz").length;
   const totC=base.filter(a=>a.type==="flashcards").length;
   const totM=base.filter(a=>a.type==="mindmap").length;
@@ -436,7 +441,7 @@ function renderLibrary(){
 
 /* ---------- play a chosen asset ---------- */
 async function playAsset(a){
-  curAsset=a; QUIZ=null; CARDS=null; MAP=null; qi=0;chosen=null;score=0;answers=[]; ci=0;flipped=false;
+  curAsset=a; QUIZ=null; CARDS=null; MAP=null; qi=0;chosen=null;score=0;answers=[];hintShown=false; ci=0;flipped=false;
   const type=a.type||"quiz";
   stage.innerHTML=`<div class="wrap"><div class="stagew"><div class="center"><div class="card"><h1>Loading…</h1><p>${esc(a.title)}</p></div></div></div></div>`;
   try{
@@ -657,6 +662,7 @@ function renderQuiz(){
     <div class="meta">${esc(QUIZ.category||(curAsset&&curAsset.topic)||"")}</div>
     <div class="qn">Question ${qi+1} of ${N}</div>
     <div class="qtext disp">${esc(q.q)}</div>
+    ${(!answered && q.hint)?`<div class="hintzone">${hintShown?`<div class="qhint">\ud83d\udca1 Hint: ${esc(q.hint)}</div>`:`<button class="hintbtn" id="showHint" type="button">\ud83d\udca1 Show hint</button>`}</div>`:""}
     <div class="opts">${opts}</div>
     ${answered?whyHTML(q):""}
     <div class="navrow">
@@ -666,7 +672,8 @@ function renderQuiz(){
   </div></div>`;
   wireBack();
   if(!answered){ stage.querySelectorAll(".opt").forEach(b=>b.onclick=()=>{ chosen=parseInt(b.dataset.i,10); if(chosen===q.correct)score++; answers.push({qi,pick:chosen,ok:chosen===q.correct}); render(); }); }
-  const nx=document.getElementById("next"); if(nx)nx.onclick=()=>{ qi++; chosen=null; render(); };
+  const sh=document.getElementById("showHint"); if(sh)sh.onclick=()=>{ hintShown=true; render(); };
+  const nx=document.getElementById("next"); if(nx)nx.onclick=()=>{ qi++; chosen=null; hintShown=false; render(); };
 }
 function renderResult(){
   const N=QUIZ.questions.length, pct=Math.round(score/N*100), R=70,CC=2*Math.PI*R,off=CC*(1-score/N);
@@ -678,7 +685,7 @@ function renderResult(){
     <div class="navrow" style="justify-content:center"><button class="btn primary" id="again">Try again</button><button class="btn" id="tolib">← Back to Library</button></div>
   </div></div></div>`;
   wireBack();
-  document.getElementById("again").onclick=()=>{ shuffleQuiz(QUIZ); qi=0;chosen=null;score=0;answers=[];render(); };
+  document.getElementById("again").onclick=()=>{ shuffleQuiz(QUIZ); qi=0;chosen=null;score=0;answers=[];hintShown=false;render(); };
   document.getElementById("tolib").onclick=()=>{ view="lib"; syncSeg(); renderLibrary(); };
 }
 

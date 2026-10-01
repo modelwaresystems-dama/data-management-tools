@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.1.0">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <title>Quiz Editor · datasherpa</title>
 <script src="../app-config.js"></script>
@@ -107,6 +107,8 @@
 
 <div class="toolbar" id="toolbar" style="display:none">
   <span class="hint" id="dirtyState">No changes yet</span>
+  <button class="ghost" id="expWord" title="Download a Word-openable answer key">⬇ Word</button>
+  <button class="ghost" id="expPdf" title="Open the print dialog → Save as PDF (answer key)">⬇ PDF</button>
   <button class="ghost" id="addQ">+ Add question</button>
   <button class="ghost" id="reloadBtn">Reload (discard)</button>
   <button class="primary" id="saveBtn">Save to repo</button>
@@ -177,7 +179,7 @@ async function openQuiz(path){
     CURRENT={ path:path, sha:got.sha, data:got.json, title:(got.json&&got.json.title)||path };
     if(!CURRENT.data.questions) CURRENT.data.questions=[];
     dirty=false; renderEditor();
-    status.className="status ok"; status.textContent="Loaded “"+esc(CURRENT.title)+"” — "+CURRENT.data.questions.length+" questions";
+    status.className="status ok"; status.textContent="Loaded “"+CURRENT.title+"” — "+CURRENT.data.questions.length+" questions";
   }catch(e){ status.className="status err"; status.textContent="Couldn't load that quiz: "+esc(String(e.message||e)); }
 }
 
@@ -275,6 +277,77 @@ document.getElementById("loadBtn").onclick=()=>{ const p=document.getElementById
 document.getElementById("reloadBtn").onclick=()=>{ if(CURRENT) openQuiz(CURRENT.path); };
 document.getElementById("addQ").onclick=()=>{ if(!CURRENT)return; CURRENT.data.questions.push({question:"",answerOptions:[{text:"",isCorrect:true,rationale:""},{text:"",isCorrect:false,rationale:""}],hint:""}); renderEditor(); markDirty(); window.scrollTo(0,document.body.scrollHeight); };
 document.getElementById("saveBtn").onclick=save;
+
+/* ---------- Export answer key (Word / PDF), client-side ---------- */
+function _slug(s){ return String(s||"quiz").replace(/[^\w\- ]+/g,"").replace(/\s+/g,"-").slice(0,80)||"quiz"; }
+function buildAnswerKeyHTML(){
+  if(!CURRENT||!CURRENT.data){ return null; }
+  const d=CURRENT.data, title=d.title||CURRENT.title||"Quiz";
+  const qs=(d.questions||[]);
+  const esc2=esc;
+  let body="";
+  qs.forEach((q,qi)=>{
+    const qtext=q.question||q.q||"";
+    const opts=(q.answerOptions||q.options||[]);
+    let ol="";
+    opts.forEach((o,oi)=>{
+      const letter=String.fromCharCode(65+oi);
+      const ok=!!o.isCorrect;
+      const rat=(o.rationale||"").trim();
+      ol+='<div class="opt'+(ok?' ok':'')+'">'
+        + '<span class="ol">'+letter+'.</span> '
+        + '<span class="otx">'+esc2(o.text||"")+'</span>'
+        + (ok?' <span class="tag">✓ correct</span>':'')
+        + (rat?'<div class="rat">'+esc2(rat)+'</div>':'')
+        + '</div>';
+    });
+    const hint=(q.hint||"").trim();
+    body+='<div class="q">'
+      + '<div class="qh">Question '+(qi+1)+'</div>'
+      + '<div class="qt">'+esc2(qtext)+'</div>'
+      + (hint?'<div class="hint">💡 Hint: '+esc2(hint)+'</div>':'')
+      + '<div class="opts">'+ol+'</div>'
+      + '</div>';
+  });
+  const css='body{font-family:Calibri,Arial,Helvetica,sans-serif;color:#15233b;margin:28px;line-height:1.45;}'
+    + 'h1{font-size:20pt;margin:0 0 2px;} .meta{color:#5a6880;font-size:10pt;margin:0 0 18px;}'
+    + '.q{margin:0 0 16px;padding:0 0 12px;border-bottom:1px solid #dde4ef;page-break-inside:avoid;}'
+    + '.qh{font-size:9pt;letter-spacing:.08em;text-transform:uppercase;color:#0a6f62;font-weight:700;margin:0 0 3px;}'
+    + '.qt{font-size:12.5pt;font-weight:700;margin:0 0 7px;}'
+    + '.hint{background:#FFF6E0;border:1px solid #E7C675;color:#6B5310;border-radius:6px;padding:5px 9px;font-size:10.5pt;margin:0 0 9px;}'
+    + '.opt{margin:0 0 7px;padding:6px 9px;border:1px solid #e1e8f2;border-radius:6px;font-size:11pt;}'
+    + '.opt.ok{background:#e9f7f0;border-color:#1E8F5A;}'
+    + '.ol{font-weight:800;margin-right:4px;} .otx{font-weight:600;}'
+    + '.tag{color:#1E8F5A;font-weight:700;font-size:9.5pt;margin-left:4px;}'
+    + '.rat{color:#44536B;font-size:10pt;margin-top:3px;}'
+    + '@media print{.noprint{display:none!important;}}';
+  const head='<meta charset="utf-8"><title>'+esc2(title)+'</title><style>'+css+'</style>';
+  const docbody='<h1>'+esc2(title)+'</h1><div class="meta">Answer key · '+qs.length+' question'+(qs.length!==1?'s':'')+' · '+esc2(new Date().toLocaleDateString())+'</div>'+body;
+  return {title:title, head:head, body:docbody};
+}
+function exportWord(){
+  const h=buildAnswerKeyHTML(); if(!h){ alert("Load a quiz first."); return; }
+  const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head>'+h.head+'</head><body>'+h.body+'</body></html>';
+  const blob=new Blob(['﻿'+html],{type:"application/msword"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=_slug(h.title)+"-answer-key.doc";
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
+}
+function exportPDF(){
+  const h=buildAnswerKeyHTML(); if(!h){ alert("Load a quiz first."); return; }
+  const html='<!doctype html><html><head>'+h.head+'</head><body>'+h.body
+    + '<scr'+'ipt>window.onload=function(){setTimeout(function(){window.focus();window.print();},250);};<\/scr'+'ipt>'
+    + '</body></html>';
+  const w=window.open("","_blank");
+  if(w){ w.document.open(); w.document.write(html); w.document.close(); return; }
+  // popup blocked -> fall back to an in-page print section
+  let host=document.getElementById("printHost");
+  if(!host){ host=document.createElement("div"); host.id="printHost"; document.body.appendChild(host); }
+  host.innerHTML='<style>@media print{body>*{display:none!important;}#printHost{display:block!important;}}@media screen{#printHost{display:none;}}</style>'+h.body;
+  setTimeout(()=>{ window.print(); },200);
+}
+var _ew=document.getElementById("expWord"); if(_ew) _ew.onclick=exportWord;
+var _ep=document.getElementById("expPdf"); if(_ep) _ep.onclick=exportPDF;
+
 window.addEventListener("beforeunload",e=>{ if(dirty){ e.preventDefault(); e.returnValue=""; } });
 
 fillCfg(); showRepoLine(); loadManifest();

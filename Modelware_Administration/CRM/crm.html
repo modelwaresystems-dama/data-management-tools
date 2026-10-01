@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="e6c0615b253f" data-built="1 Oct 2026" data-version="1.46.0">
+<meta name="crm-build" content="a5bfb78f801a" data-built="1 Oct 2026" data-version="1.47.0">
 <!-- Repo versioning standard: the Asset Navigator build reads this. Written by
      dev/stamp-build.py from the crm-build line above, never typed twice. -->
-<meta name="version" content="1.46.0">
+<meta name="version" content="1.47.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -904,12 +904,23 @@ function foldEvents(events){
       case "contact.created":
         st.contacts[p.contactId] = { id:p.contactId, companyId:p.companyId || null,
           name:p.name || "(unnamed)", email:p.email || "", phone:p.phone || "",
+          /* The primary plus any alternates the row carried. Always present,
+             always normalised, primary first. */
+          emails: mergeEmails(p.email, p.emails, p.altEmails),
           role:p.role || "", partnerRef:partnerRef(p.partnerRef), createdAt:e.ts };
         break;
       case "contact.updated":
         if (st.contacts[p.contactId]){
-          assign(st.contacts[p.contactId], p, ["companyId","name","email","phone","role","partnerRef"]);
-          if ("partnerRef" in p) st.contacts[p.contactId].partnerRef = partnerRef(p.partnerRef);
+          var ctU = st.contacts[p.contactId];
+          assign(ctU, p, ["companyId","name","email","phone","role","partnerRef"]);
+          if ("partnerRef" in p) ctU.partnerRef = partnerRef(p.partnerRef);
+          /* `emails` REPLACES the set, `addEmails` adds to it \u2014 two different
+             intentions, and collapsing them would make removing an address
+             impossible. The primary is always in the set either way, so a
+             changed primary can never fall out of the index. */
+          if (p.emails !== undefined) ctU.emails = mergeEmails(ctU.email, p.emails);
+          else if (p.addEmails !== undefined) ctU.emails = mergeEmails(ctU.email, ctU.emails, p.addEmails);
+          else ctU.emails = mergeEmails(ctU.email, ctU.emails);
         }
         break;
 
@@ -2995,6 +3006,56 @@ var WEBMAIL = { "gmail.com":1, "googlemail.com":1, "yahoo.com":1, "yahoo.co.uk":
   "me.com":1, "aol.com":1, "proton.me":1, "protonmail.com":1, "gmx.com":1,
   "mweb.co.za":1, "telkomsa.net":1, "webmail.co.za":1, "vodamail.co.za":1,
   "yahoo.co.za":1, "ymail.com":1, "zoho.com":1, "mail.com":1 };
+/* ONE PERSON, SEVERAL ADDRESSES (ruled 1 Oct 2026 by Howard).
+
+   Matching is by email. A person who writes from work AND from a personal
+   address was indexed under one of them, so mail from the other matched
+   nobody, the importer took her for a new person, and a duplicate contact
+   appeared \u2014 with the interaction logged against the duplicate rather than
+   the deal. Amanda Emmanuel, oldmutual.com and gmail.com, is the live case.
+
+   So a contact carries `emails`: the primary plus any alternates, normalised.
+   The primary stays the display address. A contact folded from older events
+   that only carried `email` reads as `emails = [email]`, so nothing migrates. */
+function normEmail(x){
+  var t = String(x || "").trim();
+  var m = /<([^>]+)>/.exec(t);               /* "Amanda <a@b.com>" */
+  if (m) t = m[1];
+  return t.trim().toLowerCase();
+}
+/* The primary first, then the rest, de-duplicated. Takes any mix of strings
+   and arrays so callers never have to normalise twice. */
+function mergeEmails(){
+  var out = [], seen = {};
+  var add = function (x){
+    if (x == null) return;
+    if (Array.isArray(x)) return x.forEach(add);
+    var n = normEmail(x);
+    if (n && !seen[n]){ seen[n] = 1; out.push(n); }
+  };
+  for (var i = 0; i < arguments.length; i++) add(arguments[i]);
+  return out;
+}
+/* Every address this contact answers to. The ONLY way any reader should ask. */
+function contactEmails(c){
+  if (!c) return [];
+  return mergeEmails(c.email, c.emails);
+}
+function contactHasEmail(c, email){
+  var e = normEmail(email);
+  return !!e && contactEmails(c).indexOf(e) >= 0;
+}
+/* Who owns this address, if anybody. One email resolves to exactly one
+   contact \u2014 that invariant is what the collision guard protects. */
+function contactByEmail(st, email){
+  var e = normEmail(email);
+  if (!e) return null;
+  var hit = null;
+  Object.keys(st.contacts || {}).forEach(function (k){
+    if (!hit && contactHasEmail(st.contacts[k], e)) hit = st.contacts[k]; });
+  return hit;
+}
+
 function emailDomain(e){
   var m = /@([^@\s>]+)\s*>?\s*$/.exec(String(e || "").trim());
   return m ? m[1].toLowerCase().replace(/\.+$/, "") : "";
@@ -3566,6 +3627,10 @@ var TRIAGE_ROW_FIELDS = {
   expectedClose:1, outcome:1, lostReason:1, moveContact:1,
   kind:1, occurredAt:1, messageId:1, interactionId:1, summary:1, note:1,
   contactId:1, contactName:1, contactEmail:1, contactRole:1, contactPhone:1,
+  /* Other addresses the same person writes from. They join that contact's
+     index and NEVER the company one \u2014 a personal address is a valid person
+     and never a customer. */
+  contactAltEmails:1,
   contacts:1, nextStep:1,
   quotes:1, purchaseOrders:1, invoices:1, payments:1,
   /* The five training channels. `channel` is how the sale reached us;
@@ -3577,7 +3642,7 @@ var TRIAGE_ROW_FIELDS = {
      deal and the wrong one gets closed. */
   completes:1
 };
-var TRIAGE_CONTACT_FIELDS  = { name:1, email:1, role:1, phone:1 };
+var TRIAGE_CONTACT_FIELDS  = { name:1, email:1, role:1, phone:1, altEmails:1 };
 var TRIAGE_NEXTSTEP_FIELDS = { what:1, dueDate:1, owner:1 };
 var TRIAGE_QUOTE_FIELDS    = { number:1, amount:1, currency:1, issuedOn:1, status:1,
                                note:1, supersededBy:1 };
@@ -3994,7 +4059,7 @@ function importTriage(text, st, cfg, ctx){
                  Both are shown, because a list of what WAS closed with no list of
                  what was passed over reads as "everything is handled". */
               completions:[], nearMisses:[],
-              summary:{ rows:0, logged:0, followups:0, unmatched:0, duplicates:0,
+              summary:{ rows:0, logged:0, followups:0, unmatched:0, duplicates:0, altEmails:0,
                         revised:0, contacts:0, dealChanges:0, completed:0, nearMisses:0,
                         pos:0, quotes:0, invoices:0, payments:0, alreadyMoney:0 } };
   /* our own side, so colleagues on a thread never become customer contacts */
@@ -4002,9 +4067,11 @@ function importTriage(text, st, cfg, ctx){
   ((cfg && cfg.users) || []).forEach(function (u){
     if (u.email) ourEmails[triageNorm(u.email)] = true; });
   (ctx.ourEmails || []).forEach(function (e){ ourEmails[triageNorm(e)] = true; });
+  /* EVERY address a contact answers to, not just the primary \u2014 otherwise the
+     second address matches nobody and the row creates a duplicate person. */
   var ctByEmail = {};
   Object.keys(st.contacts || {}).forEach(function (k){
-    if (st.contacts[k].email) ctByEmail[triageNorm(st.contacts[k].email)] = k; });
+    contactEmails(st.contacts[k]).forEach(function (e){ ctByEmail[e] = k; }); });
 
   var parsed = parseTriageBatch(text);
   if (parsed.error){ out.errors.push(parsed.error); return out; }
@@ -4042,7 +4109,9 @@ function importTriage(text, st, cfg, ctx){
     var own = d.contactId ? st.contacts[d.contactId] : null;
     if (own){
       if (own.name)  byName[triageNorm(own.name) + "␟" + triageNorm(d.name)] = d;
-      if (own.email) byName[triageNorm(own.email) + "␟" + triageNorm(d.name)] = d;
+      /* Every address, so a reply from the personal one still finds the deal. */
+      contactEmails(own).forEach(function (e){
+        byName[e + "␟" + triageNorm(d.name)] = d; });
     }
     /* The partner side of a partner-led deal. Gary mails about SBSA from
        masterdata.co.za and signs as MasterData; the batch will say either. If
@@ -4136,6 +4205,56 @@ function importTriage(text, st, cfg, ctx){
       return;
     }
 
+    /* OTHER ADDRESSES THE SAME PERSON WRITES FROM.
+
+       Amanda holds the Career Coaching deal under her work address and replies
+       from gmail. Her gmail matched nothing, so the importer took her for a new
+       person, made a bare duplicate contact, and the interaction never reached
+       the deal. A row may now name her other addresses; they join HER contact,
+       and the next sweep matches them by itself.
+
+       Everything here refuses rather than guesses, because an address silently
+       re-pointed at the wrong person sends somebody else's mail into this
+       customer's history. */
+    var altAdded = [];
+    var altWanted = r.contactAltEmails == null ? []
+      : mergeEmails(Array.isArray(r.contactAltEmails) ? r.contactAltEmails : [r.contactAltEmails]);
+    if (altWanted.length){
+      var altOn = (normEmail(r.contactEmail) && ctByEmail[normEmail(r.contactEmail)]) ||
+                  deal.contactId || null;
+      if (!altOn){
+        out.errors.push(where + ": carries other email addresses but names nobody to put them on. " +
+          "Give the row a contactEmail the CRM already knows, or set the contact on the deal first.");
+        return;
+      }
+      var altNew = [];
+      for (var ai = 0; ai < altWanted.length; ai++){
+        var ae = altWanted[ai];
+        if (ourEmails[ae]){
+          out.errors.push(where + ": " + ae + " is one of ours, and our own people never become " +
+            "customer contacts.");
+          return;
+        }
+        var holder = ctByEmail[ae];
+        if (holder && holder !== altOn){
+          out.errors.push(where + ": " + ae + " already belongs to " +
+            ((st.contacts[holder] || {}).name || "another contact") + ", so it cannot also be " +
+            ((st.contacts[altOn] || {}).name || "this contact") + "\u2019s. One address is one person \u2014 " +
+            "merge them by hand and re-run this row.");
+          return;
+        }
+        if (!holder) altNew.push(ae);
+      }
+      if (altNew.length){
+        altNew.forEach(function (e){ ctByEmail[e] = altOn; });
+        out.events.push({ id:"ev_cte_" + triageHash(altOn + "\u241f" + altNew.join(",")),
+          type:"contact.updated", actor:actor,
+          payload:{ contactId:altOn, addEmails:altNew } });
+        altAdded = altNew;
+        out.summary.altEmails = (out.summary.altEmails || 0) + altNew.length;
+      }
+    }
+
     var key = r.messageId || (r.dealId || deal.id) + "|" + when + "|" + r.summary;
     var stem = triageHash(String(key));
     var ixId = r.interactionId || "ix_mail_" + stem;
@@ -4192,7 +4311,8 @@ function importTriage(text, st, cfg, ctx){
     }
     seenIx[ixId] = { summary:r.summary, occurredAt:when, kind:kind };
 
-    var row = { dealId:deal.id, dealName:deal.name,
+    var row = { addedEmails: altAdded.length ? altAdded : undefined,
+                dealId:deal.id, dealName:deal.name,
                 company:(st.companies[deal.companyId] || {}).name || "",
                 kind:kind, occurredAt:when, summary:r.summary, nextStep:null,
                 revises: isRevision ? { summary:prev.summary, occurredAt:prev.occurredAt } : null };
@@ -4570,7 +4690,8 @@ function importTriage(text, st, cfg, ctx){
       ctByEmail[key] = cid;
       mine.push({ id:"ev_ct_" + triageHash(cid), type:"contact.created", actor:actor,
         payload:{ contactId:cid, companyId:deal.companyId, name:nm || em,
-                  email:em, phone:String(c.phone || "").trim(), role:c.role || "" } });
+                  email:em, emails:mergeEmails(em, c.altEmails),
+                  phone:String(c.phone || "").trim(), role:c.role || "" } });
       row.addedContacts = (row.addedContacts || []).concat([nm || em]);
       /* Counted even on a revision. The contact really is created either way,
          and a count that disagrees with what happened is worse than no count. */
@@ -4655,7 +4776,7 @@ function triageCreate(rows, st, cfg, ctx){
     coByName[triageNorm(st.companies[k].name)] = st.companies[k].id; });
   var ctByEmail = {};
   Object.keys(st.contacts).forEach(function (k){
-    if (st.contacts[k].email) ctByEmail[triageNorm(st.contacts[k].email)] = st.contacts[k].id; });
+    contactEmails(st.contacts[k]).forEach(function (e){ ctByEmail[e] = st.contacts[k].id; }); });
   var seenCo = {}, seenDeal = {};
 
   /* Where private buyers live. One holder company, reused; a person is never
@@ -4729,12 +4850,46 @@ function triageCreate(rows, st, cfg, ctx){
     var contactId = null;
     var cEmail = String(r.contactEmail || "").trim();
     var cName  = String(r.contactName || "").trim();
-    if (cEmail && ctByEmail[triageNorm(cEmail)]) contactId = ctByEmail[triageNorm(cEmail)];
-    else if (cEmail || cName){
+    /* The other addresses this person writes from. On a contact being CREATED
+       they are seeded straight onto it; on one that already exists they are
+       added, and an address already belonging to somebody else refuses the row
+       rather than being quietly re-pointed. */
+    var cAlts = r.contactAltEmails == null ? []
+      : mergeEmails(Array.isArray(r.contactAltEmails) ? r.contactAltEmails : [r.contactAltEmails]);
+    var clash = null, clashOwner = null;
+    cAlts.forEach(function (ae){
+      var h2 = ctByEmail[ae];
+      if (h2 && (!cEmail || h2 !== ctByEmail[normEmail(cEmail)])){ clash = ae; clashOwner = h2; }
+    });
+    if (cEmail && ctByEmail[normEmail(cEmail)]){
+      contactId = ctByEmail[normEmail(cEmail)];
+      if (clash && clashOwner !== contactId){
+        out.errors.push("Row " + (i+1) + ": " + clash + " already belongs to " +
+          ((st.contacts[clashOwner] || {}).name || "another contact") +
+          ". One address is one person, so this row is not imported.");
+        return;
+      }
+      var add = cAlts.filter(function (ae){ return !ctByEmail[ae]; });
+      if (add.length){
+        add.forEach(function (ae){ ctByEmail[ae] = contactId; });
+        out.events.push({ id:"ev_cte_" + triageHash(contactId + "\u241f" + add.join(",")),
+          type:"contact.updated", actor:actor,
+          payload:{ contactId:contactId, addEmails:add } });
+      }
+    } else if (cEmail || cName){
+      if (clash){
+        out.errors.push("Row " + (i+1) + ": " + clash + " already belongs to " +
+          ((st.contacts[clashOwner] || {}).name || "another contact") +
+          ". One address is one person, so this row is not imported.");
+        return;
+      }
       contactId = "ct_" + triageHash(triageNorm(cEmail || (coKey + "|" + cName)));
+      cAlts.forEach(function (ae){ ctByEmail[ae] = contactId; });
+      if (cEmail) ctByEmail[normEmail(cEmail)] = contactId;
       out.events.push({ id:"ev_ct_" + triageHash(contactId), type:"contact.created", actor:actor,
         payload:{ contactId:contactId, companyId:coId, name:cName || cEmail,
-                  email:cEmail, phone:String(r.contactPhone || "").trim(), role:r.contactRole || "" } });
+                  email:cEmail, emails:mergeEmails(cEmail, cAlts),
+                  phone:String(r.contactPhone || "").trim(), role:r.contactRole || "" } });
     }
 
     /* The partner side. Some work reaches the customer through a reseller or a
@@ -4770,9 +4925,9 @@ function triageCreate(rows, st, cfg, ctx){
         if (!pc) return;
         var pe = String(pc.email || "").trim(), pn = String(pc.name || "").trim();
         if (!pe && !pn) return;
-        var pid = (pe && ctByEmail[triageNorm(pe)]) ||
+        var pid = (pe && ctByEmail[normEmail(pe)]) ||
                   ("ct_" + triageHash(triageNorm(pe || (pKey + "|" + pn))));
-        if (!(pe && ctByEmail[triageNorm(pe)]))
+        if (!(pe && ctByEmail[normEmail(pe)]))
           out.events.push({ id:"ev_ct_" + triageHash(pid), type:"contact.created", actor:actor,
             payload:{ contactId:pid, companyId:partnerId, name:pn || pe, email:pe,
                       phone:String(pc.phone || "").trim(), role:pc.role || "" } });
@@ -4796,9 +4951,9 @@ function triageCreate(rows, st, cfg, ctx){
           "If the person sells through that company, set “channelFor” on the company instead.");
         return;
       }
-      partnerPersonId = (pPersonEmail && ctByEmail[triageNorm(pPersonEmail)]) ||
+      partnerPersonId = (pPersonEmail && ctByEmail[normEmail(pPersonEmail)]) ||
                         ("ct_" + triageHash(triageNorm(pPersonEmail || pPerson)));
-      if (!(pPersonEmail && ctByEmail[triageNorm(pPersonEmail)])){
+      if (!(pPersonEmail && ctByEmail[normEmail(pPersonEmail)])){
         /* She lives in the holder like every other independent. Creating the
            holder here if it does not exist yet, rather than filing her nowhere. */
         var hId = holderExisting;
@@ -5239,11 +5394,12 @@ function parsePaste(raw, opts){
 function parseEmailPaste(raw){ return parsePaste(raw); }
 
 function matchContact(st, email, name){
-  var e = String(email||"").toLowerCase();
+  var e = normEmail(email);
   var found = null;
   for (var k in st.contacts){
     var c = st.contacts[k];
-    if (e && String(c.email||"").toLowerCase() === e){ found = c; break; }
+    /* ANY address the person answers to, not just the primary. */
+    if (e && contactHasEmail(c, e)){ found = c; break; }
   }
   if (!found && name){
     var n = String(name).toLowerCase();
@@ -5252,6 +5408,10 @@ function matchContact(st, email, name){
   }
   if (!found && e){
     var dom = e.split("@")[1] || "";
+    /* A personal address is a valid CONTACT address and never a company one.
+       Without this, an unknown gmail sender would match whichever company
+       somebody once typed a free-mail domain against. */
+    if (WEBMAIL[dom]) return { contact:null, company:null, deal:null };
     for (var k3 in st.companies){
       var co = st.companies[k3];
       if (co.domain && dom && String(co.domain).toLowerCase().replace(/^www\./,"") === dom)
@@ -5349,6 +5509,8 @@ var API = {
   stepsToHandOver:stepsToHandOver, strandedSteps:strandedSteps,
   effectiveDue:effectiveDue, DEFAULT_TERMS_DAYS:DEFAULT_TERMS_DAYS,
   suggestDomain:suggestDomain, emailDomain:emailDomain,
+  normEmail:normEmail, mergeEmails:mergeEmails, contactEmails:contactEmails,
+  contactHasEmail:contactHasEmail, contactByEmail:contactByEmail,
   unpaidSeats:unpaidSeats, UNPAID_SEAT_DAYS:UNPAID_SEAT_DAYS,
   interactionsFor:interactionsFor, interactionsForCompany:interactionsForCompany,
   companySummary:companySummary,
@@ -10154,6 +10316,68 @@ function partnerRefPopover(anchorEl, rec, kind){
 
 
 
+/* ONE PERSON, SEVERAL ADDRESSES.
+
+   A person who writes from work and from home was two contacts, because
+   matching is by address. The alternates live on the contact; this is where
+   they are typed. Refuses an address that already belongs to somebody else:
+   one email is one person, and re-pointing it silently would route their mail
+   into the wrong history. */
+function altEmailPopover(anchorEl, ct){
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Other addresses \u2014 " + ct.name }));
+  box.appendChild(h("div", { class:"note",
+    text:"Mail from any of these is logged against " + ct.name +
+         ". The first one stays the address shown everywhere." }));
+  var primary = C.normEmail(ct.email);
+  if (primary)
+    box.appendChild(h("div", { class:"mono", style:"font-size:11.5px;margin:6px 0",
+      text:primary + "   (primary)" }));
+  var alt = C.contactEmails(ct).filter(function (e){ return e !== primary; });
+  var ta = h("textarea", { rows:"3", "aria-label":"Other addresses",
+    placeholder:"one address per line" });
+  ta.value = alt.join("\n");
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Other addresses" }), ta));
+  var warn = h("div", { class:"note", style:"color:var(--overdue)" });
+  box.appendChild(warn);
+
+  var read = function (){
+    return C.mergeEmails(String(ta.value || "").split(/[\n,;]+/))
+      .filter(function (e){ return e !== primary; });
+  };
+  var check = function (){
+    warn.textContent = "";
+    var bad = read().filter(function (e){ return e.indexOf("@") < 0; });
+    if (bad.length){ warn.textContent = bad.join(", ") + " is not an email address."; return false; }
+    var taken = null, by = null;
+    read().forEach(function (e){
+      var own = C.contactByEmail(App.st, e);
+      if (own && own.id !== ct.id){ taken = e; by = own.name; }
+    });
+    if (taken){
+      warn.textContent = taken + " already belongs to " + by +
+        ". One address is one person \u2014 merge the two records instead.";
+      return false;
+    }
+    return true;
+  };
+  ta.addEventListener("input", check);
+
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      if (!check()) return;
+      var list = read();
+      emit("contact.updated", { contactId:ct.id, emails:list });
+      closeLayers("pop"); render();
+      toast(list.length
+        ? ct.name + " also writes from " + list.join(", ") + "."
+        : ct.name + " has no other addresses on file.");
+    } }, "Save")));
+  openPopover(anchorEl, box, { width:360 });
+}
+
 /* Money — the book. Deliberately its own screen rather than more columns on the
    pipeline: selling and collecting are different jobs, often different people,
    and the questions are different too. "Who owes us?" and "what have I earned?"
@@ -11129,6 +11353,22 @@ function viewCompanies(el){
             h("div", { class:"mono", style:"font-size:11px;color:var(--muted)", text:c.role || "" }),
             c.email ? h("div", { style:"font-size:11.5px" },
               h("a", { href:"mailto:" + c.email }, c.email)) : null,
+            /* The other addresses the same person writes from. Shown on the
+               card because mail arriving from one of them is why their history
+               lands here rather than on a duplicate. */
+            (function (){
+              var alt = C.contactEmails(c).filter(function (e){ return e !== C.normEmail(c.email); });
+              return alt.length
+                ? h("div", { class:"mono", style:"font-size:11px;color:var(--muted)",
+                             title:"Mail from these reaches this person too",
+                             text:"also " + alt.join(", ") })
+                : null;
+            })(),
+            h("div", { style:"margin-top:3px" },
+              h("a", { href:"#", style:"font-size:11.5px",
+                onclick:(function (cc){ return function (e){
+                  e.preventDefault(); altEmailPopover(e.currentTarget, cc); }; })(c) },
+                "other addresses")),
             c.phone ? h("div", { class:"mono", style:"font-size:11px;color:var(--muted)", text:c.phone }) : null,
             /* Offered on people in the HOLDER, because that is where somebody
                who trades as themselves ends up by default and where being one
@@ -12028,6 +12268,12 @@ function viewSettings(el){
               : "—" }),
             r.addedContacts
               ? h("div", { class:"note", text:"+ " + r.addedContacts.join(", ") })
+              : null,
+            /* Said out loud: an address joining an existing person is a change
+               to who future mail matches, which is not a detail. */
+            r.addedEmails
+              ? h("div", { class:"note", style:"color:var(--warn)",
+                  text:"also writes from " + r.addedEmails.join(", ") })
               : null)));
       });
       tReport.appendChild(h("table", { class:"tbl", style:"margin-top:8px" },

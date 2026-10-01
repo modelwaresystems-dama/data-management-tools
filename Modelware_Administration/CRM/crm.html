@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="a5bfb78f801a" data-built="1 Oct 2026" data-version="1.47.0">
+<meta name="crm-build" content="da75feadb341" data-built="1 Oct 2026" data-version="1.48.0">
 <!-- Repo versioning standard: the Asset Navigator build reads this. Written by
      dev/stamp-build.py from the crm-build line above, never typed twice. -->
-<meta name="version" content="1.47.0">
+<meta name="version" content="1.48.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1972,20 +1972,25 @@ function invoiceState(st, inv){
      comes off the customer's balance in the ledger and stays out of the ageing,
      because a credit has no age; the ledger names that gap rather than smearing
      it across a bucket. */
-  var credited = 0;
+  var credited = 0, creditedNet = 0;
   Object.keys(st.creditNotes || {}).forEach(function (k){
     var cn = st.creditNotes[k];
     if (cn.status === "cancelled") return;
     if (cn.againstInvoiceId !== inv.id) return;
-    credited += round2(round2(cn.net) + round2(cn.vat));
+    credited    += round2(round2(cn.net) + round2(cn.vat));
+    /* The NET of the credit, kept apart. What the customer owes moves by the
+       gross; what anybody EARNS moves by the net, because commission has never
+       been paid on VAT. Taking the gross off a net base was quietly docking the
+       earner the VAT on every credit note. */
+    creditedNet += round2(cn.net);
   });
-  credited = round2(credited);
+  credited = round2(credited); creditedNet = round2(creditedNet);
   var balance = round2(gross - paid - credited);
   var cancelled = inv.status === "cancelled";
   /* Settled means the balance is gone. A cent over is still settled — customers
      round, and a deal that can never be marked paid is worse than a cent. */
   var settled = !cancelled && gross > 0 && balance <= 0;
-  return { invoice:inv, gross:gross, paid:paid, credited:credited,
+  return { invoice:inv, gross:gross, paid:paid, credited:credited, creditedNet:creditedNet,
            balance: cancelled ? 0 : balance,
            settled:settled, cancelled:cancelled,
            net:net, passThrough:pt,
@@ -2002,7 +2007,7 @@ function invoiceState(st, inv){
               The base is what actually came in: net, less what we collect for
               somebody else, less what we credited back. Floored at zero,
               because a credit larger than the invoice earns nobody a negative. */
-           commissionBase: Math.max(0, round2(net - pt - credited)),
+           commissionBase: Math.max(0, round2(net - pt - creditedNet)),
            /* Kept so a screen can say what changed and why, rather than just
               showing a smaller number than the invoice. */
            commissionBaseBeforeCredit: round2(net - pt) };
@@ -2098,7 +2103,9 @@ function commissionParts(deal, inv, state){
        so the guess would move real money between rate bands. */
     var gross = 0;
     inv.lines.forEach(function (l){ gross = round2(gross + round2(l.net - l.passThrough)); });
-    var credited = state ? (state.credited || 0) : 0;
+    /* The NET of the credit, for the same reason the base uses it: these are
+       commissionable amounts, and VAT is not one. */
+    var credited = state ? (state.creditedNet != null ? state.creditedNet : state.credited || 0) : 0;
     var keep = gross > 0 ? Math.max(0, round2(gross - credited)) / gross : 1;
     return inv.lines.map(function (l){
       var r = lineRate(deal, inv, l);
@@ -2865,6 +2872,11 @@ function moneyBook(st, cfg, today, opts){
   var me = opts.user;
   var book = { invoiced:{}, paid:{}, outstanding:{}, overdue:{},
                earnedByUser:{}, pendingByUser:{}, overdueInvoices:[],
+               /* Every invoice that pays somebody, with the arithmetic shown:
+                  net, VAT, resale, credited, base, rate. Finance asked whether
+                  commission was being paid on the VAT; a total nobody can take
+                  apart cannot answer that, so the screen now shows its working. */
+               commissionRows:[], commissionBase:{}, vatExcluded:{}, noVat:[],
                undated:[], uninvoicedWon:[],
                /* Split, because they are opposite situations wearing one label.
                   A won deal with a signed PO needs somebody to raise an invoice.
@@ -2948,6 +2960,20 @@ function moneyBook(st, cfg, today, opts){
         var bag = s.settled ? book.earnedByUser : book.pendingByUser;
         bag[who] = bag[who] || {};
         bag[who][c] = round2((bag[who][c] || 0) + cm.total);
+        book.commissionRows.push({ deal:d, state:s, invoice:s.invoice, currency:c,
+          who:who, settled:s.settled, parts:cm.parts, commission:cm.total,
+          net:s.net, vat:round2(s.invoice.vat), passThrough:s.passThrough,
+          creditedNet:s.creditedNet, base:s.commissionBase, rate:invoiceRate(d, s.invoice).rate });
+        add(book.commissionBase, c, s.commissionBase);
+        /* The VAT that is deliberately NOT in anybody's commission. Said as a
+           figure, because "excludes VAT" in a footnote is a claim and this is
+           the evidence for it. */
+        add(book.vatExcluded, c, round2(s.invoice.vat));
+        /* An invoice carrying no VAT at all. Legitimate on an export, and the
+           signature of a VAT-inclusive amount typed into the net box — which
+           WOULD pay commission on the VAT, through the data rather than the
+           arithmetic. */
+        if (round2(s.invoice.vat) === 0) book.noVat.push({ deal:d, state:s, currency:c });
       }
     });
   });
@@ -10636,7 +10662,9 @@ function viewMoney(el){
   var com = h("section", { class:"pane" },
     h("h3", { text:"Commission" }),
     h("div", { class:"sub",
-      text:"Earned when the invoice is settled in full.Excludes VAT and resale items." }));
+      text:"Earned when the invoice is settled in full. The base is the invoice NET, " +
+           "less anything we collect for somebody else and anything credited back. " +
+           "VAT is never in it." }));
   if (!ids.length){
     com.appendChild(h("div", { class:"empty",
       text:"No deal carries a commission rate yet. Set one on a deal with Edit." }));
@@ -10653,6 +10681,72 @@ function viewMoney(el){
       h("th", { class:"num", text:"Pending" }))), ct));
     com.appendChild(h("div", { class:"note",
       text:"Pending is what is riding on invoices that have not been settled. It is not owed to anybody yet." }));
+
+    /* SHOW THE WORKING.
+
+       Finance asked whether commission was being calculated on the amount PLUS
+       the VAT. The arithmetic says no \u2014 but a total nobody can take apart
+       cannot be checked, and "excludes VAT" in a footnote is a claim, not
+       evidence. So every invoice that pays somebody is listed with its net, its
+       VAT, what was credited, the base the rate was applied to, and the result.
+       The VAT column adds up to money that is in nobody's commission. */
+    var work = h("section", { class:"pane", style:"margin-top:16px" },
+      h("h3", { text:"How every commission figure is made up" }),
+      h("div", { class:"sub",
+        text:"One line per invoice that pays somebody. Base = net \u2212 resale \u2212 credited. " +
+             "The rate is applied to the base, never to the VAT-inclusive total." }));
+    var wt = h("table", { class:"tbl", style:"margin-top:10px" }, h("thead", null, h("tr", null,
+      h("th", { text:"Invoice" }), h("th", { text:"Person" }),
+      h("th", { class:"num", text:"Net" }),
+      h("th", { class:"num", title:"Never part of the base", text:"VAT" }),
+      h("th", { class:"num", title:"Collected for somebody else", text:"Resale" }),
+      h("th", { class:"num", text:"Credited" }),
+      h("th", { class:"num", text:"Base" }), h("th", { class:"num", text:"Rate" }),
+      h("th", { class:"num", text:"Commission" }), h("th", { text:"" }))));
+    var wb = h("tbody");
+    var money0 = function (v, cur){ return Math.abs(v) < 0.005 ? "\u2014" : C.fmtMoneyExact(v, cur); };
+    book.commissionRows.slice()
+      .sort(function (a, b){ return b.commission - a.commission; })
+      .forEach(function (r){
+        var party = C.dealParty(App.st, r.deal);
+        wb.appendChild(h("tr", { onclick:(function (id){ return function (){ openDeal(id); }; })(r.deal.id) },
+          h("td", null,
+            h("div", { text:r.invoice.number || "(no number)" }),
+            h("div", { class:"note", style:"font-size:11.5px",
+                       text:(party.name || "") + " \u00b7 " + r.deal.name })),
+          h("td", { text:userName(r.who) }),
+          h("td", { class:"num", text:money0(r.net, r.currency) }),
+          h("td", { class:"num", style: r.vat > 0.005 ? "color:var(--muted)" : "",
+                    text: r.vat > 0.005 ? money0(r.vat, r.currency) + "  (out)" : "\u2014" }),
+          h("td", { class:"num", text:money0(r.passThrough, r.currency) }),
+          h("td", { class:"num", text:money0(r.creditedNet || 0, r.currency) }),
+          h("td", { class:"num", style:"font-weight:600", text:money0(r.base, r.currency) }),
+          h("td", { class:"num", text: r.rate == null ? "mixed" : (C.round2(r.rate * 100) + "%") }),
+          h("td", { class:"num", style:"font-weight:600", text:money0(r.commission, r.currency) }),
+          h("td", { class:"note", text: r.settled ? "earned" : "pending" })));
+      });
+    work.appendChild(h("table", { class:"tbl", style:"margin-top:10px" }, wt.firstChild, wb));
+    work.appendChild(h("div", { class:"note", style:"margin-top:8px",
+      text:"VAT left out of commission altogether: " + curLine(book.vatExcluded) +
+           " \u00b7 total base commission was calculated on: " + curLine(book.commissionBase) + "." }));
+    /* The one way the VAT could still reach a commission: not through the
+       arithmetic, through the data. */
+    if (book.noVat.length)
+      work.appendChild(h("div", { class:"note", style:"margin-top:6px;color:var(--warn)" },
+        h("div", { text: (book.noVat.length === 1
+            ? "One of these invoices carries"
+            : book.noVat.length + " of these invoices carry") + " no VAT at all. That is right for " +
+          "an export or a zero-rated sale \u2014 and it is also what a VAT-INCLUSIVE amount typed " +
+          "into the net box looks like, which would pay commission on the VAT through the " +
+          "data rather than the arithmetic. Worth checking against the invoice:" }),
+        h("div", { style:"margin-top:4px",
+          text: book.noVat.slice(0, 12).map(function (x){
+            return (x.state.invoice.number || "(no number)") + " " +
+                   C.fmtMoneyExact(x.state.net, x.currency); }).join(" \u00b7 ") +
+                (book.noVat.length > 12 ? " \u2026and " + (book.noVat.length - 12) + " more" : "") })));
+    el.appendChild(com);
+    el.appendChild(work);
+    return;
   }
   el.appendChild(com);
 }

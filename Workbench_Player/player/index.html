@@ -223,6 +223,11 @@
   .hintzone{margin:0 0 16px;}
   .hintbtn{border:1px solid #E7C675;background:#FFF9EC;color:#6B5310;font-weight:700;font-size:14px;padding:9px 14px;border-radius:9px;cursor:pointer;}
   .hintbtn:hover{background:#FDEFC9;}
+  .cover{display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px;margin:auto 0;padding:10px 0 20px;}
+  .cover img{width:100%;max-width:1100px;height:auto;border-radius:16px;border:1px solid var(--line);box-shadow:0 10px 30px rgba(22,38,66,.14);}
+  .cover .covt{margin:6px 0 0;font-size:clamp(22px,3.2vw,30px);}
+  .cover .covm{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);}
+  .cover .covbtn{margin-top:6px;}
 </style>
 </head>
 <body>
@@ -289,7 +294,7 @@ let libCollapsed=new Set();           // collapsed notebook groups
 let libDefaulted=false;               // collapse every group on the first populated render
 let curAsset=null;                    // {path,title,type,...} being played
 let QUIZ=null, CARDS=null, QUIZ_SRC="", MAP=null;
-let qi=0, chosen=null, score=0, answers=[], hintShown=false;
+let qi=0, chosen=null, score=0, answers=[], hintShown=false, quizStarted=false;
 let ci=0, flipped=false;
 
 /* selection for the Training Session */
@@ -307,7 +312,7 @@ function normalizeQuiz(raw){
   if(!raw||!raw.questions||!raw.questions.length) return raw;
   const nlm = raw.questions[0].answerOptions!=null;
   if(!nlm) return raw;
-  return { title:raw.title||"Quiz", category:raw.category||"",
+  return { title:raw.title||"Quiz", category:raw.category||"", image:raw.image||"",
     questions: raw.questions.map(q=>{ const o=q.answerOptions||[]; let c=o.findIndex(x=>x.isCorrect); if(c<0)c=0;
       return { q:cleanText(q.question), options:o.map(x=>cleanText(x.text)), correct:c,
                why:cleanText((o[c]&&o[c].rationale)||q.hint||""), rats:o.map(x=>cleanText(x.rationale||"")), context:cleanText(q.context||""), hint:cleanText(q.hint||"") }; }) };
@@ -442,7 +447,7 @@ function renderLibrary(){
 
 /* ---------- play a chosen asset ---------- */
 async function playAsset(a){
-  curAsset=a; QUIZ=null; CARDS=null; MAP=null; qi=0;chosen=null;score=0;answers=[];hintShown=false; ci=0;flipped=false;
+  curAsset=a; QUIZ=null; CARDS=null; MAP=null; qi=0;chosen=null;score=0;answers=[];hintShown=false;quizStarted=false; ci=0;flipped=false;
   const type=a.type||"quiz";
   stage.innerHTML=`<div class="wrap"><div class="stagew"><div class="center"><div class="card"><h1>Loading…</h1><p>${esc(a.title)}</p></div></div></div></div>`;
   try{
@@ -644,7 +649,23 @@ function whyHTML(q){
   const hint=q.hint?`<div class="qhint">\ud83d\udca1 Hint: ${esc(q.hint)}</div>`:"";
   return `<div class="why"><b>Explanation</b>${hint}${ctx}${correct}${wrong?`<div class="wsep">Why the other answers are wrong</div>${wrong}`:""}</div>`;
 }
+function renderQuizCover(){
+  setProg(0);
+  const N=QUIZ.questions.length;
+  stage.innerHTML=`<div class="wrap"><div class="stagew">
+    ${backBar()}
+    <div class="cover">
+      <img src="${QUIZ.image}" alt="${esc(QUIZ.title||'Quiz')}">
+      <h1 class="disp covt">${esc(QUIZ.title||"Quiz")}</h1>
+      <div class="covm">${esc((curAsset&&curAsset.topic)||QUIZ.category||"")} · ${N} question${N!==1?'s':''}</div>
+      <button class="btn primary covbtn" id="startQuiz">Start quiz →</button>
+    </div>
+  </div></div>`;
+  wireBack();
+  const sb=document.getElementById("startQuiz"); if(sb)sb.onclick=()=>{ quizStarted=true; render(); };
+}
 function renderQuiz(){
+  if(QUIZ && !QUIZ.error && QUIZ.image && !quizStarted){ return renderQuizCover(); }
   if(!QUIZ||QUIZ.error){ stage.innerHTML=`<div class="wrap"><div class="stagew">${backBar()}<div class="center"><div class="card"><h1>Couldn't load quiz</h1><p>${esc(QUIZ&&QUIZ.error||"Missing quiz JSON")} (${esc(QUIZ_SRC)})</p></div></div></div></div>`; wireBack(); return; }
   const N=QUIZ.questions.length;
   if(qi>=N){ setProg(1); return renderResult(); }
@@ -686,7 +707,7 @@ function renderResult(){
     <div class="navrow" style="justify-content:center"><button class="btn primary" id="again">Try again</button><button class="btn" id="tolib">← Back to Library</button></div>
   </div></div></div>`;
   wireBack();
-  document.getElementById("again").onclick=()=>{ shuffleQuiz(QUIZ); qi=0;chosen=null;score=0;answers=[];hintShown=false;render(); };
+  document.getElementById("again").onclick=()=>{ shuffleQuiz(QUIZ); qi=0;chosen=null;score=0;answers=[];hintShown=false;quizStarted=true;render(); };
   document.getElementById("tolib").onclick=()=>{ view="lib"; syncSeg(); renderLibrary(); };
 }
 

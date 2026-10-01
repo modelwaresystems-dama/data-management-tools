@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.21.12">
+<meta name="version" content="1.21.13">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -138,6 +138,8 @@
   select,input,textarea{background:#FFFFFF!important;color:#142033!important;border-color:var(--line2)!important;}
   select option,optgroup{background:#FFFFFF!important;color:#142033!important;}
   ::placeholder{color:#8A98AC!important;opacity:1;}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line2);border-top-color:var(--accent);border-radius:50%;animation:dsspin .8s linear infinite;vertical-align:-1px;}
+  @keyframes dsspin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -205,7 +207,7 @@
   </div>
   <div class="foot">datasherpa · Workbench</div>
 
-<script>window.PAGE_BUILD="1.21.12";</script>
+<script>window.PAGE_BUILD="1.21.13";</script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
@@ -400,6 +402,23 @@ document.getElementById("g_save").onclick=()=>{
   localStorage.setItem(GHKEY,JSON.stringify(c));
   closeGh();
 };
+function courseSig(c){ return (c.sessions||[]).map(function(ss){return slug(ss.title||"")+"::"+((ss.quizzes||[]).map(function(q){return q.path;}).join("|"));}).join(";;"); }
+function rostersSigFor(r, cid){ var days=(r.sessions||[]).filter(function(x){return x.courseId===cid;}); if(!days.length) return null; return days.map(function(ss){return slug(ss.title||"")+"::"+((ss.quizzes||[]).join("|"));}).join(";;"); }
+async function pollRosterBuild(course, link){
+  var after=document.getElementById("after"); after.style.display="block";
+  var want=courseSig(course), cid=course.id, t0=Date.now();
+  var savedLine="✓ Saved <code>"+esc(cid)+".course.json</code>"+(link?" · <a href=\""+esc(link)+"\" target=\"_blank\" rel=\"noopener\" style=\"color:var(--accent-ink)\">commit</a>":"")+".";
+  async function tick(){
+    var r=null; try{ r=await fetchAsset("rosters.json",""); }catch(e){}
+    var have=r?rostersSigFor(r,cid):null;
+    var secs=Math.round((Date.now()-t0)/1000);
+    if(have && have===want){ after.innerHTML=savedLine+"<br><b style=\"color:var(--good)\">✓ Roster built — <b>"+esc(course.title)+"</b> is now in the host picker.</b>"; return; }
+    if(secs>240){ after.innerHTML=savedLine+"<br>⏳ Still building the roster for <b>"+esc(course.title)+"</b> — taking longer than usual; it will appear in the host picker once the GitHub build finishes. You can leave this page."; setTimeout(tick,20000); return; }
+    after.innerHTML=savedLine+"<br><span class=\"spin\"></span> Building the roster for <b>"+esc(course.title)+"</b>… <span style=\"color:var(--faint)\">(usually 1–2 min · "+secs+"s)</span>";
+    setTimeout(tick,8000);
+  }
+  tick();
+}
 async function ghSave(){
   const c=ghCfg();
   if(!titleEl.value.trim()) return;
@@ -420,7 +439,7 @@ async function ghSave(){
     if(sha) body.sha=sha;
     const r=await fetch(url,{method:"PUT",headers,body:JSON.stringify(body)});
     if(r.ok){ const j=await r.json(); const link=(j.commit&&j.commit.html_url)||"";
-      after.innerHTML=`✓ Saved to <code>${esc(c.owner)}/${esc(c.repo)}</code> at <code>${esc(path)}</code> on <code>${esc(c.branch)}</code>.`+(link?` <a href="${esc(link)}" target="_blank" rel="noopener" style="color:var(--accent-ink)">View commit →</a>`:"")+` Committed on GitHub — no push needed. The roster rebuilds automatically in about a minute.`;
+      pollRosterBuild(course, link);
     } else {
       let m=String(r.status); try{ const j=await r.json(); if(j.message) m=r.status+" · "+j.message; }catch(e){}
       after.innerHTML=`⚠ Couldn't save (${esc(m)}). Open <b>GitHub settings</b> to fix the token/repo, or use <b>Download file</b>.`;

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.22.4">
+<meta name="version" content="1.22.5">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -337,7 +337,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.22.4";</script>
+<script>window.PAGE_BUILD="1.22.5";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -963,11 +963,13 @@ function startHost(){
 function refreshRoster(){
   chBase.presence.get((err,members)=>{
     if(err)return;
+    H.players.forEach(p=>{ p.present=false; });   // presence.get is authoritative for who is connected RIGHT NOW
     (members||[]).forEach(m=>{
       const nm=(m.data&&m.data.name)||""; const key=nameKey(nm); if(!key) return;   // only rostered (named) players count
       if(!H.players.has(key)) H.players.set(key,{name:nm,score:0});
       else if(nm) H.players.get(key).name=nm;
       applyResume(H.players.get(key));
+      H.players.get(key).present=true;   // in the room this run
     });
     if(H.phase==="lobby"){ publishState(); renderHost(); }
     else { throttledPublish(); renderHost(); }   // mid-question: a late joiner must get the CURRENT state immediately, not rely on Ably rewind
@@ -980,6 +982,7 @@ function onAnswer(d){
   if(!H.players.has(key))H.players.set(key,{name:d.name,score:0});
   else if(d.name) H.players.get(key).name=d.name;
   applyResume(H.players.get(key));
+  { const _p=H.players.get(key); _p.present=true; _p.acted=true; }   // active this run
   H.answers.set(key,{pick:d.pick,at:Date.now()});
   H.counts=[0,0,0,0]; H.answers.forEach(a=>{if(a.pick>=0&&a.pick<4)H.counts[a.pick]++;});
   throttledPublish(); renderHost();
@@ -990,7 +993,7 @@ let _pt=null; function throttledPublish(){ if(_pt)return; _pt=setTimeout(()=>{_p
 function hostStateForWire(){
   const total=QUIZ.questions.length;
   const base={code:room, title:QUIZ.title, category:QUIZ.category, phase:H.phase, qi:H.qi, total,
-              roomN:H.players.size, answeredN:H.answers.size, counts:H.counts.slice(),
+              roomN:[...H.players.values()].filter(inRun).length, answeredN:H.answers.size, counts:H.counts.slice(),
               joinBase:joinBase(), joinUrl:joinBase()+"?room="+room+(hostClassId?("&class="+encodeURIComponent(hostClassId)):""), classId:hostClassId, className:hostClassName};
   if(H.phase==="question"){
     const q=QUIZ.questions[H.qi];
@@ -999,7 +1002,7 @@ function hostStateForWire(){
   }
   if(H.phase==="reveal"||H.phase==="final"||H.phase==="interlude"){
     if(H.phase==="reveal"){ const q=QUIZ.questions[H.qi]; base.question={q:q.q,options:q.options}; base.correct=q.correct; base.why=q.why; base.context=q.context||""; base.rats=q.rats||[]; }
-    base.leaderboard=[...H.players.entries()].map(([id,p])=>({pid:id,name:p.name,score:p.score,lastPts:p.lastPts||0})).sort((a,b)=>b.score-a.score);
+    base.leaderboard=[...H.players.entries()].filter(([id,p])=>inRun(p)).map(([id,p])=>({pid:id,name:p.name,score:p.score,lastPts:p.lastPts||0})).sort((a,b)=>b.score-a.score);
   }
   if(PLAN){ base.plan={title:PLAN.title, idx:PLAN.idx, total:PLAN.items.length, quizTitle:(QUIZ&&QUIZ.title)||"", nextTitle:(PLAN.items[PLAN.idx+1]&&PLAN.items[PLAN.idx+1].title)||""}; }
   return base;
@@ -1058,6 +1061,7 @@ function downloadSessionResults(){
   a.download=`session-${room}-${date.slice(0,10)}.csv`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
+function inRun(p){ return !!(p && p.name && p.name!=="Guest" && (p.present || p.acted)); }   // currently doing it, not carried over
 function applyResume(p){ if(!p||p._resumed)return; const s=p.name&&RESUME_SCORES[p.name.toLowerCase()]; if(s){ p.score=s.score||0; p.quizTotals=(s.quizTotals||[]).slice(); p.qStats=(s.qStats||[]).slice(); p._resumed=true; } }
 function soloKey(path){ return "ds_prog_solo_"+(slugify(path)||"quiz"); }
 function saveProgress(){
@@ -1095,8 +1099,9 @@ function downloadProgress(){
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   if(st) st.textContent="Progress saved to a file \u00b7 you can resume later (connect the repo to skip the file)";
 }
-async function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};p.quizTotals=[];p.qStats=[];p._qstart=0;}); H.answers=new Map(); H.counts=[0,0,0,0];
+async function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};p.quizTotals=[];p.qStats=[];p._qstart=0;p.acted=false;}); H.answers=new Map(); H.counts=[0,0,0,0];
   if(PLAN){ PLAN.idx=0; try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(PLAN.items[0].path,"quiz.sample.json"))); }catch(e){} }
+  refreshRoster();   // re-derive who's actually still in the room
   publishState(); renderHost(); }
 function appendQuizHistory(qidx){
   if(!REPO.on()) return;
@@ -1254,7 +1259,7 @@ function toggleJoinQR(){ document.getElementById("joinOverlay").hidden?showJoinQ
 function ringHTML(sec,frac){const R=25,C=2*Math.PI*R,off=C*(1-frac),col=sec>6?"var(--accent)":"var(--bad)";return `<div class="ring"><svg width="58" height="58"><circle cx="29" cy="29" r="${R}" fill="none" stroke="var(--line)" stroke-width="6"/><circle cx="29" cy="29" r="${R}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg><span class="num">${sec}</span></div>`;}
 function projectorHTML(s){
   if(s.phase==="lobby"){
-    const chips=[...H.players.entries()].map(([id,p])=>`<span class="chip"><span class="av" style="background:${color(id)};font-size:14px">${emoji(id)}</span>${esc(p.name)}</span>`).join("");
+    const chips=[...H.players.entries()].filter(([id,p])=>inRun(p)).map(([id,p])=>`<span class="chip"><span class="av" style="background:${color(id)};font-size:14px">${emoji(id)}</span>${esc(p.name)}</span>`).join("");
     return `<div class="lobby">
       <div class="join">
         <h2>Join the live quiz</h2>

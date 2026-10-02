@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.22.5">
+<meta name="version" content="1.22.7">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -209,6 +209,7 @@
   .rtabs{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
   .rtab{font-family:"Sora",sans-serif;font-weight:700;font-size:14px;padding:9px 17px;border-radius:11px;border:1px solid var(--line2);background:var(--panel);color:var(--muted);cursor:pointer;}
   .rtab.on{background:var(--accent);color:#04211d;border-color:var(--accent);}
+  .rtab.one{cursor:default;background:transparent;border-color:transparent;color:var(--faint);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;}
   .rsize{display:flex;gap:6px;justify-content:center;}
   .rsbtn{font-family:"IBM Plex Mono",monospace;font-weight:700;font-size:12px;padding:5px 11px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--muted);cursor:pointer;}
   .rsbtn:hover{border-color:var(--accent);color:var(--accent-ink);}
@@ -337,7 +338,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.22.5";</script>
+<script>window.PAGE_BUILD="1.22.7";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -1322,8 +1323,14 @@ function buildSessAgg(){
   function fold(name, qts, qss){ const k=nameKey(name); if(!k||name==="Guest") return; if(!agg[k]) agg[k]={name:name, quiz:[], ans:[]}; else if(name) agg[k].name=name;
     (qts||[]).forEach((v,i)=>{ agg[k].quiz[i]=Math.max(agg[k].quiz[i]||0, v||0); });
     (qss||[]).forEach((v,i)=>{ if(v){ agg[k].ans[i]=Math.max(agg[k].ans[i]||0, v.a||0); } }); }
-  if(SESSION_STORE && SESSION_STORE.id===SESSION.id) (SESSION_STORE.players||[]).forEach(pl=>fold(pl.name, (pl.quizTotals&&pl.quizTotals.length)?pl.quizTotals:[pl.score||0], pl.qStats||[]));
-  if(typeof H!=="undefined"&&H&&H.players) H.players.forEach(p=>{ if(p.name&&p.name!=="Guest") fold(p.name, (p.quizTotals&&p.quizTotals.length)?p.quizTotals:[p.score||0], p.qStats||[]); });
+  // Who is actually in the run being shown? If anyone is live (present or answered this run),
+  // restrict the board to them so a 1-participant run never shows players carried in from
+  // earlier instances of the same session+cohort. When nobody is live (re-opening a past
+  // session to review), fall back to showing everyone in the saved record.
+  const liveKeys=new Set(); let anyLive=false;
+  if(typeof H!=="undefined"&&H&&H.players) H.players.forEach(p=>{ if(inRun(p)){ anyLive=true; liveKeys.add(nameKey(p.name)); } });
+  if(SESSION_STORE && SESSION_STORE.id===SESSION.id) (SESSION_STORE.players||[]).forEach(pl=>{ if(anyLive && !liveKeys.has(nameKey(pl.name))) return; fold(pl.name, (pl.quizTotals&&pl.quizTotals.length)?pl.quizTotals:[pl.score||0], pl.qStats||[]); });
+  if(typeof H!=="undefined"&&H&&H.players) H.players.forEach(p=>{ if(!p.name||p.name==="Guest") return; if(anyLive && !inRun(p)) return; fold(p.name, (p.quizTotals&&p.quizTotals.length)?p.quizTotals:[p.score||0], p.qStats||[]); });
   Object.keys(agg).forEach(k=>{ agg[k].total=agg[k].quiz.reduce((s,v)=>s+(v||0),0); agg[k].ansTotal=agg[k].ans.reduce((s,v)=>s+(v||0),0); });
   return agg;
 }
@@ -1353,7 +1360,14 @@ function hbarsHTML(rows){
 }
 function resultsPanel(kind){
   const hasParent=!!(PLAN&&PLAN.course);
-  let levels; if(!PLAN){ levels=["quiz"]; } else if(hasParent){ levels=["quiz","session","course"]; } else { levels=["quiz","course"]; }
+  const multiQuiz=!!(PLAN&&PLAN.items&&PLAN.items.length>1);
+  const otherSessions=(COURSE_META&&COURSE_META.done)>0;
+  // Only offer a scope tab when it would show something different from the narrower one:
+  //  - "session" sums the session's quizzes -> only meaningful with >1 quiz
+  //  - "course" adds OTHER sessions of the same course -> only meaningful if any exist
+  let levels=["quiz"];
+  if(hasParent){ if(multiQuiz) levels.push("session"); if(otherSessions) levels.push("course"); }
+  else if(PLAN && multiQuiz){ levels.push("course"); }   // standalone multi-quiz session: quiz vs whole session
   if(levels.indexOf(RV.level)<0) RV.level=levels[levels.length-1];
   const sessTitle=PLAN?PLAN.title:((QUIZ&&QUIZ.title)||"Quiz");
   const courseTitle=hasParent?PLAN.course:sessTitle;
@@ -1369,9 +1383,11 @@ function resultsPanel(kind){
   if(hostClassName) crumb.push(`<span>Cohort: <b>${esc(hostClassName)}</b></span>`);
   if(hasParent&&COURSE_META.done) crumb.push(`<span><b>${COURSE_META.done+1}</b> sessions in course total</span>`);
   const tabLbl={quiz:"This Quiz",session:"This Session",course:"Whole Course"};
-  const tabs=levels.map(l=>`<button class="rtab ${RV.level===l?"on":""}" data-lvl="${l}">${tabLbl[l]}</button>`).join("");
+  const tabs=(levels.length>1)
+    ? levels.map(l=>`<button class="rtab ${RV.level===l?"on":""}" data-lvl="${l}">${tabLbl[l]}</button>`).join("")
+    : `<span class="rtab one" aria-current="true">${multiQuiz?"This Quiz":"Results"}</span>`;
   let picker="";
-  if(RV.level==="quiz"&&PLAN){ if(RV.qi>=PLAN.items.length)RV.qi=PLAN.items.length-1; if(RV.qi<0)RV.qi=0;
+  if(RV.level==="quiz"&&PLAN&&multiQuiz){ if(RV.qi>=PLAN.items.length)RV.qi=PLAN.items.length-1; if(RV.qi<0)RV.qi=0;
     picker=`<div class="quizpick">`+PLAN.items.map((it,i)=>`<button class="qp ${i===RV.qi?"on":""}" data-qi="${i}">Q${i+1}</button>`).join("")+`</div><div class="qptitle">${esc((PLAN.items[RV.qi]&&PLAN.items[RV.qi].title)||("Quiz "+(RV.qi+1)))}</div>`;
   }
   const rows=resultRows(RV.level, hasParent);

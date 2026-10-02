@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="47741f902102" data-built="2 Oct 2026" data-version="1.51.0">
+<meta name="crm-build" content="d7d5253c1a7b" data-built="2 Oct 2026" data-version="1.52.0">
 <!-- Repo versioning standard: the Asset Navigator build reads this. Written by
      dev/stamp-build.py from the crm-build line above, never typed twice. -->
-<meta name="version" content="1.51.0">
+<meta name="version" content="1.52.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -815,12 +815,48 @@ function money(v){
 function foldEvents(events){
   var st = { companies:{}, contacts:{}, deals:{}, followups:{}, interactions:{},
              invoices:{}, payments:{}, quotes:{}, pos:{}, creditNotes:{},
-             clients:{}, lastTs:null, eventCount:0 };
+             clients:{}, userAliases:{}, lastTs:null, eventCount:0 };
   var ordered = sortEvents(events || []);
+
+  /* ONE PERSON, ONE ID.
+
+     "Your user id" in Settings is free text, and it is the id every event this
+     browser writes is stamped with \u2014 and the name of the file it writes to.
+     Paul typed "paul bolton"; config.json calls him "paul". So his work was
+     logged by somebody who is not on the roster: his follow-ups belonged to
+     nobody, his rows never appeared in anybody's "mine", and the version table
+     showed "Paul Bolton \u2014 never opened" beside a stranger with the same name.
+
+     An alias says the two ids are one person. It is read BEFORE the fold, not
+     during it, so it applies to everything that person ever wrote rather than
+     only to what came after somebody noticed. */
+  ordered.forEach(function (e){
+    if (!e || !e.payload) return;
+    if (e.type === "user.aliased" && e.payload.from && e.payload.to)
+      st.userAliases[String(e.payload.from)] = String(e.payload.to);
+    if (e.type === "user.unaliased" && e.payload.from)
+      delete st.userAliases[String(e.payload.from)];
+  });
+  var aliasOf = function (id){
+    var seen = {}, cur = id;
+    while (cur && st.userAliases[cur] && !seen[cur]){ seen[cur] = true; cur = st.userAliases[cur]; }
+    return cur;
+  };
+  st.aliasOf = aliasOf;
 
   for (var i = 0; i < ordered.length; i++){
     var e = ordered[i]; if (!e || !e.type) continue;
     var p = e.payload || {};
+    /* The actor and anything naming a person are resolved up front, so every
+       case below reads one id for one human without knowing aliases exist. */
+    if (e.actor && st.userAliases[e.actor]) e = Object.assign({}, e, { actor:aliasOf(e.actor) });
+    (function (){
+      var who = ["owner", "earner", "actor", "user"];
+      var hit = who.some(function (k){ return p[k] && st.userAliases[p[k]]; });
+      if (!hit) return;
+      p = Object.assign({}, p);
+      who.forEach(function (k){ if (p[k] && st.userAliases[p[k]]) p[k] = aliasOf(p[k]); });
+    })();
     st.lastTs = e.ts; st.eventCount++;
 
     switch (e.type){
@@ -12674,8 +12710,36 @@ function viewSettings(el){
   gh.appendChild(h("div", { class:"row2" },
     (function (){ f.branch = h("input", { type:"text", value:App.gh.branch||"main", "aria-label":"Branch" });
        return h("label", { class:"fld" }, h("span", { text:"Branch" }), f.branch); })(),
-    (function (){ f.user = h("input", { type:"text", value:App.gh.user||"", placeholder:"howard", "aria-label":"Your user id" });
-       return h("label", { class:"fld" }, h("span", { text:"Your user id" }), f.user); })()));
+    (function (){
+       /* THE FIELD THAT COST PAUL A FORTNIGHT.
+
+          This is not a label: it is the id stamped on every event this browser
+          writes and the name of the file it writes to. Typed free-hand, "paul
+          bolton" became a person who is not on the roster, writing to a file
+          nobody expected. So the roster is offered, and an id that is not on it
+          is said out loud before anything is written. */
+       var ids = users().map(function (u){ return u.id; });
+       var listId = "me-ids-" + C.uid("l");
+       f.user = h("input", { type:"text", value:App.gh.user||"", placeholder:"howard",
+                             list: ids.length ? listId : null, "aria-label":"Your user id" });
+       var dl = h("datalist", { id:listId });
+       users().forEach(function (u){ dl.appendChild(h("option", { value:u.id }, u.name)); });
+       var warn = h("span", { class:"note", style:"color:var(--overdue)" });
+       var checkMe = function (){
+         var v = String(f.user.value || "").trim();
+         if (!v || !ids.length || ids.indexOf(v) >= 0){ warn.textContent = ""; return true; }
+         var guess = C.resolveUser(App.config, v);
+         warn.textContent = "\u201c" + v + "\u201d is not an id in config.json" +
+           (guess ? " \u2014 did you mean \u201c" + guess + "\u201d?" : "") +
+           " Everything you write would be logged by somebody who is not on the team, " +
+           "and into events/" + v + ".jsonl.";
+         return false;
+       };
+       f.checkMe = checkMe;
+       f.user.addEventListener("input", checkMe);
+       setTimeout(checkMe, 0);
+       return h("label", { class:"fld" }, h("span", { text:"Your user id" }), f.user, dl, warn);
+     })()));
   (function (){
     f.path = h("input", { type:"text", value:App.gh.path||"", placeholder:"CRM_Data",
                           "aria-label":"Folder in repo" });
@@ -12727,6 +12791,12 @@ function viewSettings(el){
                  token:f.token.value.trim() };
       lsSet(LS.gh, App.gh);
       if (!ghConfigured()){ toast("Owner, repo, user id and token are all needed.", "err"); return; }
+      /* Refused here rather than warned about afterwards: by the time the first
+         event is written the wrong id is already in the log. */
+      if (f.checkMe && !f.checkMe()){
+        toast("That user id is not in config.json \u2014 pick one from the list.", "err");
+        return;
+      }
       App.workspace = "team"; lsSet(LS.ws, "team");
       try {
         await pullTeam();
@@ -13471,14 +13541,51 @@ function viewSettings(el){
         h("td", { class:"mono", text: c ? String(c.build).slice(0,8) : "—" }),
         h("td", { class:"mono", text: c ? C.fmtDayYear(String(c.seenAt).slice(0,10)) : "—" })));
     });
-    /* somebody logging events who is not in the roster still deserves a row */
-    Object.keys(seen).forEach(function (id){
-      if (roster.some(function (u){ return u.id === id; })) return;
+    /* Somebody logging events who is not on the roster still deserves a row \u2014
+       and, now, the fix. "paul bolton" is Paul: the id was typed by hand into a
+       free-text field, so everything he wrote was logged by a stranger with his
+       name. Joining the two says they are one person, and the fold applies it to
+       everything he has ever written. */
+    var strays = Object.keys(seen).filter(function (id){
+      return !roster.some(function (u){ return u.id === id; }); });
+    strays.forEach(function (id){
+      var sel = h("select", { "aria-label":"Who is " + id });
+      sel.appendChild(h("option", { value:"" }, "\u2014 who is this? \u2014"));
+      roster.forEach(function (u){ sel.appendChild(h("option", { value:u.id }, u.name + "  (" + u.id + ")")); });
+      var guess = C.resolveUser(App.config, id);
+      if (guess) sel.value = guess;
       tb.appendChild(h("tr", null,
-        h("td", { text:id + " — not in config.json" }),
-        h("td", { class:"mono", text:seen[id].version ? "v" + seen[id].version : "—" }),
+        h("td", null,
+          h("div", { style:"color:var(--overdue)", text:id + " \u2014 not in config.json" }),
+          h("div", { class:"note", style:"font-size:11.5px",
+            text:"Everything this id wrote is logged by somebody the roster does not know." }),
+          h("div", { style:"margin-top:5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap" }, sel,
+            h("button", { class:"btn btn-sm", type:"button", onclick:(function (from, pick){
+              return function (){
+                var to = pick.value;
+                if (!to){ toast("Say who this is first.", "err"); return; }
+                emit("user.aliased", { from:from, to:to });
+                render();
+                toast(from + " is " + userName(to) + ". Everything they wrote now belongs to them.",
+                  null, { label:"Undo", fn:function (){
+                    emit("user.unaliased", { from:from }); render();
+                    toast("Separated again."); } });
+              }; })(id, sel) }, "This is the same person"))),
+        h("td", { class:"mono", text:seen[id].version ? "v" + seen[id].version : "\u2014" }),
         h("td", { class:"mono", text:String(seen[id].build).slice(0,8) }),
         h("td", { class:"mono", text:C.fmtDayYear(String(seen[id].seenAt).slice(0,10)) })));
+    });
+    /* Already joined, and the way back. */
+    Object.keys(App.st.userAliases || {}).forEach(function (from){
+      var to = App.st.userAliases[from];
+      tb.appendChild(h("tr", null,
+        h("td", null,
+          h("span", { class:"note", text:"\u201c" + from + "\u201d counts as " + userName(to) + ". " }),
+          h("a", { href:"#", style:"font-size:11.5px", onclick:(function (f2){ return function (ev){
+            ev.preventDefault(); emit("user.unaliased", { from:f2 }); render();
+            toast("Separated again."); }; })(from) }, "separate them")),
+        h("td", { class:"mono", text:"\u2014" }), h("td", { class:"mono", text:"\u2014" }),
+        h("td", { class:"mono", text:"\u2014" })));
     });
     t.appendChild(tb);
     vers.appendChild(t);

@@ -23,6 +23,7 @@ browser you already have.
 | `tests/handover.js` | Reassigning a deal carries its open steps; stranded steps are shown and fixable; imports carry them too (49 checks) |
 | `tests/register-0921.js` | Unpaid seats before a course; 30-day default terms; domain proposals; creating a partner from a deal (80 checks) |
 | `tests/version-1002.js` | The repo versioning standard: `crm.html` and the folder's `index.html` carry the same `<meta name="version">`, the badge reads it rather than repeating it, and `stamp-build.py` writes both and fails when they drift (14 checks) |
+| `tests/alias-1002.js` | One person, one id: an alias re-attributes everything an off-roster id ever wrote (retroactively, chains and loops safe), the Settings field refuses an id not in config.json, and the version table offers the repair (44 checks) |
 | `tests/archive-1002.js` | Archiving a company: the warning about open deals and money owed, history untouched, still on Debtors, the importer refusing both doors, the list toggle and undo (44 checks) |
 | `tests/fold-1002.js` | Folding one deal into another: what moves, the panel and Settings, undo, chains and cycles, and an import row naming the folded id (64 checks) |
 | `tests/vat-1001.js` | Commission is on the net: VAT and resale out of the base, a credit note reducing it by its net, the per-line split, the on-screen breakdown, and the Rene du Bruyn case — a VAT-inclusive amount in the net box, caught and split (66 checks) |

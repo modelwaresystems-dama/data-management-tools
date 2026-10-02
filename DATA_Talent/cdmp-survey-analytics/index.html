@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.2.0">
+<meta name="version" content="2.3.0">
 <title>CDMP Survey Analytics — Modelware</title>
 <style>
 :root{
@@ -84,6 +84,15 @@ details.panel[open] > summary{margin-bottom:8px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .swatch{width:11px;height:11px;border-radius:3px;display:inline-block}
 .sw-a{background:var(--s1)} .sw-b{background:var(--s2)}
+.segkey{margin-top:13px;border-top:1px solid var(--line);padding-top:11px}
+.segkey summary{list-style:none;cursor:pointer;font-family:var(--ff-mono);font-size:12px;letter-spacing:.03em;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:8px}
+.segkey summary::-webkit-details-marker{display:none}
+.segkey summary .chev{margin-left:auto;color:var(--faint);transition:transform .2s}
+.segkey[open] summary .chev{transform:rotate(90deg)}
+.segkey dl{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;margin:12px 0 6px;font-size:13px}
+.segkey dt{font-weight:650;white-space:nowrap}
+.segkey dd{margin:0;color:var(--muted)}
+.segkey .more{font-family:var(--ff-mono);font-size:12px;font-weight:600}
 details.ft{border:1px solid var(--line);border-radius:10px;margin-top:10px;background:var(--surface-2)}
 details.ft summary{cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px}
 details.ft .items{padding:0 14px 12px}
@@ -117,7 +126,19 @@ details.ft .items{padding:0 14px 12px}
 
   <div id="dash" class="hidden">
     <div class="kpis section-gap" id="kpis"></div>
-    <section class="panel section-gap"><div class="viz-title">Respondents by segment</div><div class="viz-note" id="segNote"></div><div class="bars" id="segBars"></div></section>
+    <section class="panel section-gap"><div class="viz-title">Respondents by segment</div><div class="viz-note" id="segNote"></div><div class="bars" id="segBars"></div>
+      <details class="segkey"><summary>What the segments mean<span class="chev">›</span></summary>
+        <dl>
+          <dt>DMF candidate</dt><dd>Preparing for the DMF exam — not yet certified.</dd>
+          <dt>Associate</dt><dd>Passed the DMF exam (60%+). The foundation credential.</dd>
+          <dt>Specialist candidate</dt><dd>Preparing for, or has passed, a first specialist exam — heading toward Practitioner.</dd>
+          <dt>Practitioner</dt><dd>DMF + two specialist exams at 70%+.</dd>
+          <dt>Master</dt><dd>DMF + two specialists at 80%+, plus 10 years' experience.</dd>
+          <dt>Lapsed</dt><dd>Previously certified, now lapsed.</dd>
+        </dl>
+        <a class="more" href="../cdmp-about/" target="_blank" rel="noopener">Full CDMP guide →</a>
+      </details>
+    </section>
     <section class="panel section-gap"><div class="viz-title">Barrier &amp; value indices</div><div class="viz-note">1–5 averages, grouped by direction so bars within a group compare fairly. Barrier items mixed into a value index are reverse-scored, so "higher = better" holds throughout that group.</div><div class="bars" id="indexBars"></div></section>
     <section class="panel section-gap" id="cmpPanel"><div class="viz-title">Every segment across the indices</div><div class="viz-note" id="cmpNote"></div><div class="legend" id="cmpLegend"></div><div class="bars" id="cmpBars"></div></section>
     <div id="distros"></div>
@@ -315,9 +336,15 @@ async function downloadContacts(){
 }
 function publicAggregate(){
   var agg=CURRENT.agg;if(!agg)return;var cmp=MODEL.analysis.segmentation.compare||{};
+  var MINN=3; // small-cell guard: segments below this are NOT published (no per-individual exposure)
+  var shown=Object.keys(agg.segments).filter(function(k){return agg.segments[k]>=MINN;}).sort(function(a,b){return agg.segments[b]-agg.segments[a];});
+  var hiddenCount=Object.keys(agg.segments).filter(function(k){return agg.segments[k]>0&&agg.segments[k]<MINN;}).length;
   var out={survey:MODEL.id,generatedAt:new Date().toISOString(),n:agg.n,
     segments:Object.keys(agg.segments).filter(function(k){return agg.segments[k]>0;}).map(function(k){return {id:k,label:segLabel(k),count:agg.segments[k]};}),
     compare:{aLabel:segLabel(cmp.a),bLabel:segLabel(cmp.b),aN:agg.cmpN.a,bN:agg.cmpN.b},
+    segmentBreakdown:{minN:MINN,hiddenCount:hiddenCount,
+      segments:shown.map(function(k){return {id:k,label:segLabel(k),count:agg.segments[k]};}),
+      indices:MODEL.analysis.indices.map(function(x){var bs=(agg.indexMeans[x.id]&&agg.indexMeans[x.id].bySeg)||{};var m={};shown.forEach(function(k){if(bs[k]!=null)m[k]=bs[k];});return {id:x.id,label:x.label,dir:x.dir,means:m};})},
     indices:MODEL.analysis.indices.map(function(x){return {id:x.id,label:x.label,dir:x.dir,overall:agg.indexMeans[x.id].all,a:agg.indexMeans[x.id].a,b:agg.indexMeans[x.id].b};}),
     distributions:(MODEL.analysis.distributions||[]).map(function(qid){return {id:qid,label:qText(qid),items:Object.keys(agg.distros[qid]).map(function(k){return {label:optLabel(qid,k),count:agg.distros[qid][k]};}).filter(function(x){return String(x.label).toLowerCase()!=='other';}).sort(function(a,b){return b.count-a.count;})};})};
   download('aggregate.json',JSON.stringify(out,null,2),'application/json');

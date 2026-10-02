@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="7ae51616ac25" data-built="1 Oct 2026" data-version="1.49.0">
+<meta name="crm-build" content="d7d5253c1a7b" data-built="2 Oct 2026" data-version="1.52.0">
 <!-- Repo versioning standard: the Asset Navigator build reads this. Written by
      dev/stamp-build.py from the crm-build line above, never typed twice. -->
-<meta name="version" content="1.49.0">
+<meta name="version" content="1.52.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -815,12 +815,48 @@ function money(v){
 function foldEvents(events){
   var st = { companies:{}, contacts:{}, deals:{}, followups:{}, interactions:{},
              invoices:{}, payments:{}, quotes:{}, pos:{}, creditNotes:{},
-             clients:{}, lastTs:null, eventCount:0 };
+             clients:{}, userAliases:{}, lastTs:null, eventCount:0 };
   var ordered = sortEvents(events || []);
+
+  /* ONE PERSON, ONE ID.
+
+     "Your user id" in Settings is free text, and it is the id every event this
+     browser writes is stamped with \u2014 and the name of the file it writes to.
+     Paul typed "paul bolton"; config.json calls him "paul". So his work was
+     logged by somebody who is not on the roster: his follow-ups belonged to
+     nobody, his rows never appeared in anybody's "mine", and the version table
+     showed "Paul Bolton \u2014 never opened" beside a stranger with the same name.
+
+     An alias says the two ids are one person. It is read BEFORE the fold, not
+     during it, so it applies to everything that person ever wrote rather than
+     only to what came after somebody noticed. */
+  ordered.forEach(function (e){
+    if (!e || !e.payload) return;
+    if (e.type === "user.aliased" && e.payload.from && e.payload.to)
+      st.userAliases[String(e.payload.from)] = String(e.payload.to);
+    if (e.type === "user.unaliased" && e.payload.from)
+      delete st.userAliases[String(e.payload.from)];
+  });
+  var aliasOf = function (id){
+    var seen = {}, cur = id;
+    while (cur && st.userAliases[cur] && !seen[cur]){ seen[cur] = true; cur = st.userAliases[cur]; }
+    return cur;
+  };
+  st.aliasOf = aliasOf;
 
   for (var i = 0; i < ordered.length; i++){
     var e = ordered[i]; if (!e || !e.type) continue;
     var p = e.payload || {};
+    /* The actor and anything naming a person are resolved up front, so every
+       case below reads one id for one human without knowing aliases exist. */
+    if (e.actor && st.userAliases[e.actor]) e = Object.assign({}, e, { actor:aliasOf(e.actor) });
+    (function (){
+      var who = ["owner", "earner", "actor", "user"];
+      var hit = who.some(function (k){ return p[k] && st.userAliases[p[k]]; });
+      if (!hit) return;
+      p = Object.assign({}, p);
+      who.forEach(function (k){ if (p[k] && st.userAliases[p[k]]) p[k] = aliasOf(p[k]); });
+    })();
     st.lastTs = e.ts; st.eventCount++;
 
     switch (e.type){
@@ -893,6 +929,38 @@ function foldEvents(events){
          That is what makes it undoable: nothing has been rewritten yet, so
          company.unmerged is a clean cancellation rather than a guess at which
          deals came from where. */
+      /* ARCHIVING A COMPANY (2 Oct 2026).
+
+         "I want to be able to archive certain companies. Partly because we dont
+         want to do business with them."
+
+         Merging is for a duplicate and deleting is for a mistake. This is
+         neither: the company is real, the history is real, and the decision is
+         that there will be no more business. So nothing is removed \u2014 the
+         record, its people, its deals and every rand it ever paid stay exactly
+         where they are \u2014 but the company stops being offered for NEW work,
+         and a triage batch can no longer quietly start a deal with somebody we
+         have decided not to deal with.
+
+         Money is the deliberate exception: an archived company that still owes
+         us is still on the Debtors book. Deciding not to work with somebody is
+         not deciding to forgive their invoice. */
+      case "company.archived":
+        if (st.companies[p.companyId]){
+          st.companies[p.companyId].archived = true;
+          st.companies[p.companyId].archivedAt = String(e.ts).slice(0,10);
+          st.companies[p.companyId].archivedBy = e.actor;
+          st.companies[p.companyId].archiveReason = p.reason || "";
+        }
+        break;
+      case "company.unarchived":
+        if (st.companies[p.companyId]){
+          st.companies[p.companyId].archived = false;
+          st.companies[p.companyId].archivedAt = null;
+          st.companies[p.companyId].archiveReason = "";
+        }
+        break;
+
       case "company.merged":
         if (st.companies[p.fromId] && st.companies[p.intoId] && p.fromId !== p.intoId)
           st.companies[p.fromId].mergedInto = p.intoId;
@@ -1031,6 +1099,36 @@ function foldEvents(events){
          event is still on disk, and `deal.restored` puts the deal back. What it
          buys is that every consumer downstream — bands, forecast, coverage,
          flags, export, search — sees a smaller st.deals and needs no change. */
+      /* ONE CONVERSATION, TWO DEALS (1 Oct 2026).
+
+         A thread arrives that nobody can match, a deal is created for it, and
+         later it turns out to be part of a deal that already existed \u2014
+         "iTiQ - introduction" is the same engagement as the iTiQ training deal.
+         Until now the only exits were Won, Lost or Delete, and all three are
+         lies: it was not sold, it was not refused, and the conversation on it
+         is real and belongs somewhere.
+
+         So a deal can be FOLDED into another. Everything logged against it
+         travels; the deal itself stops existing as a deal. Exactly the company
+         merge's shape: only a MARK is set here and the re-pointing happens in
+         one pass at the end, which is what makes `deal.unmerged` a clean
+         cancellation rather than a guess about which lines came from where. */
+      case "deal.merged":
+        if (st.deals[p.fromId] && st.deals[p.intoId] && p.fromId !== p.intoId){
+          st.deals[p.fromId].mergedInto = p.intoId;
+          st.deals[p.fromId].mergedAt = String(e.ts).slice(0,10);
+          st.deals[p.fromId].mergedBy = e.actor;
+          st.deals[p.fromId].mergeReason = p.reason || "";
+        }
+        break;
+      case "deal.unmerged":
+        if (st.deals[p.fromId]){
+          st.deals[p.fromId].mergedInto = null;
+          st.deals[p.fromId].mergedAt = null;
+          st.deals[p.fromId].mergeReason = "";
+        }
+        break;
+
       case "deal.deleted":
         if (st.deals[p.dealId]){
           st.deals[p.dealId].deleted = true;
@@ -1462,6 +1560,63 @@ function foldEvents(events){
     }
   });
 
+  /* FOLDED DEALS. Chains (A\u2192B, B\u2192C) are followed to the end and a cycle
+     is broken rather than hung on, for the same reason the company merge does
+     it: a wrong answer beats a frozen tab, and two visible deals is a problem
+     somebody can see. */
+  st.mergedDeals = {};
+  Object.keys(st.deals).forEach(function (k){
+    if (!st.deals[k].mergedInto) return;
+    var seen = {}, cur = k;
+    while (st.deals[cur] && st.deals[cur].mergedInto){
+      if (seen[cur]){ st.deals[k].mergedInto = null; return; }
+      seen[cur] = true; cur = st.deals[cur].mergedInto;
+    }
+  });
+  var dealTarget = function (id){
+    var seen = {}, cur = id;
+    while (st.deals[cur] && st.deals[cur].mergedInto && !seen[cur]){
+      seen[cur] = true; cur = st.deals[cur].mergedInto;
+    }
+    return cur;
+  };
+  if (Object.keys(st.deals).some(function (k){ return !!st.deals[k].mergedInto; })){
+    /* Everything that hangs off a deal travels with it, stamped with where it
+       came from so the target can say so and the undo can send it back. */
+    var carry = function (bag, key){
+      Object.keys(bag || {}).forEach(function (k){
+        var x = bag[k];
+        var was = x[key];
+        if (!was) return;
+        var now = dealTarget(was);
+        if (now === was) return;
+        x[key] = now;
+        x.foldedFromDeal = was;
+      });
+    };
+    var carrySubject = function (bag){
+      Object.keys(bag || {}).forEach(function (k){
+        var x = bag[k];
+        if (x.subjectType !== "deal") return;
+        var was = x.subjectId, now = dealTarget(was);
+        if (now === was) return;
+        x.subjectId = now;
+        x.foldedFromDeal = was;
+      });
+    };
+    carrySubject(st.interactions);
+    carrySubject(st.followups);
+    carry(st.invoices, "dealId");
+    carry(st.quotes, "dealId");
+    carry(st.pos, "dealId");
+    carry(st.creditNotes, "dealId");
+    Object.keys(st.deals).forEach(function (k){
+      if (!st.deals[k].mergedInto) return;
+      st.mergedDeals[k] = st.deals[k];
+      delete st.deals[k];
+    });
+  }
+
   st.deletedDeals = {};
   Object.keys(st.deals).forEach(function (k){
     if (!st.deals[k].deleted) return;
@@ -1743,6 +1898,62 @@ function lastContact(st, dealId){
   var ix = interactionsFor(st, dealId);
   return ix.length ? ix[0].occurredAt : null;
 }
+/* Where a deal id points now, after any folding. Chains are followed; an id
+   that was never folded answers itself. */
+/* Companies we still do business with. Everything that OFFERS a company for new
+   work goes through here; everything that reports what already happened does
+   not. */
+function activeCompanies(st){
+  return Object.keys(st.companies).map(function (k){ return st.companies[k]; })
+    .filter(function (c){ return !c.archived; });
+}
+function archivedCompanies(st){
+  return Object.keys(st.companies).map(function (k){ return st.companies[k]; })
+    .filter(function (c){ return !!c.archived; })
+    .sort(function (a, b){ return (b.archivedAt || "") < (a.archivedAt || "") ? -1 : 1; });
+}
+function isArchived(st, companyId){
+  var c = st.companies[companyId];
+  return !!(c && c.archived);
+}
+/* What archiving this company would leave behind, so the question is asked with
+   the facts on the table rather than after the fact. */
+function archiveImpact(st, companyId, today){
+  var open = [], owed = {};
+  dealsForCompany(st, companyId).forEach(function (d){
+    if (d.status === "open") open.push(d);
+    invoicesFor(st, d.id).forEach(function (inv){
+      var s2 = invoiceState(st, inv);
+      if (s2.cancelled || s2.balance <= 0.005) return;
+      var c = inv.currency || "ZAR";
+      owed[c] = round2((owed[c] || 0) + s2.balance);
+    });
+  });
+  var steps = 0;
+  open.forEach(function (d){ steps += openFollowupsFor(st, d.id).length; });
+  return { openDeals:open, openSteps:steps, owed:owed,
+           currencies:Object.keys(owed).sort(),
+           contacts: Object.keys(st.contacts).filter(function (k){
+             return st.contacts[k].companyId === companyId; }).length };
+}
+
+function liveDeal(st, id){
+  var seen = {}, cur = id;
+  while (cur && !seen[cur]){
+    seen[cur] = true;
+    var m = (st.mergedDeals && st.mergedDeals[cur]) || st.deals[cur];
+    if (m && m.mergedInto) cur = m.mergedInto; else break;
+  }
+  return cur;
+}
+/* Everything that was folded INTO this deal, so the deal can say so. */
+function foldedInto(st, dealId){
+  return Object.keys(st.mergedDeals || {})
+    .filter(function (k){ return liveDeal(st, k) === dealId; })
+    .map(function (k){ return st.mergedDeals[k]; })
+    .sort(function (a, b){ return (a.mergedAt || "") < (b.mergedAt || "") ? -1 : 1; });
+}
+
 function openDeals(st){
   var out = [];
   for (var k in st.deals) if (st.deals[k].status === "open") out.push(st.deals[k]);
@@ -3022,6 +3233,9 @@ function moneyBook(st, cfg, today, opts){
   Object.keys(st.companies).forEach(function (k){
     var co = st.companies[k];
     if (co.merged || co.isHolder) return;          // a person bucket has no domain to have
+    /* An archived company never needs matching again \u2014 nothing from them is
+       going to be logged, so chasing their domain is work for nothing. */
+    if (co.archived) return;
     if (co.domain && String(co.domain).trim()) return;
     var deals = Object.keys(st.deals).filter(function (dk){
       return st.deals[dk].companyId === co.id; }).length;
@@ -4132,6 +4346,14 @@ function importTriage(text, st, cfg, ctx){
 
   /* deal lookup: by id, and by "company ␟ deal" */
   var byId = {}, byName = {};
+  /* A deal that has been FOLDED into another still has its id in the world \u2014
+     in a worklist, in a batch written last week. It resolves to the deal it was
+     folded into rather than refusing the row, which is the whole point of
+     folding rather than deleting. */
+  Object.keys(st.mergedDeals || {}).forEach(function (k){
+    var t = liveDeal(st, k);
+    if (t && st.deals[t]) byId[k] = st.deals[t];
+  });
   Object.keys(st.deals).forEach(function (k){
     var d = st.deals[k];
     byId[d.id] = d;
@@ -4246,6 +4468,22 @@ function importTriage(text, st, cfg, ctx){
       out.unmatched.push({ company:r.company || "", deal:r.deal || "", dealId:r.dealId || "",
                            occurredAt:when, summary:r.summary, kind:kind, row:r });
       out.summary.unmatched++;
+      return;
+    }
+
+    /* NO NEW BUSINESS WITH AN ARCHIVED COMPANY.
+
+       Archiving says "we do not deal with these people". A batch that logged
+       against them anyway, or quietly raised a deal, would undo that decision
+       without anybody choosing to \u2014 which is the whole failure mode the flag
+       exists to prevent. The row is refused, by name, so it is a decision
+       somebody makes rather than a default. */
+    if (isArchived(st, deal.companyId)){
+      out.errors.push(where + ": " + ((st.companies[deal.companyId] || {}).name || "that company") +
+        " is archived" +
+        ((st.companies[deal.companyId] || {}).archiveReason
+          ? " \u2014 " + st.companies[deal.companyId].archiveReason : "") +
+        ". Nothing is logged against an archived company. Un-archive it first if that has changed.");
       return;
     }
 
@@ -4871,6 +5109,15 @@ function triageCreate(rows, st, cfg, ctx){
     }
     var coKey = triageNorm(coName);
     var coId = isIndividual ? (holderExisting || null) : coByName[coKey];
+    /* A new deal with a company we have archived is exactly what archiving is
+       for. Refused by name, never created quietly. */
+    if (coId && isArchived(st, coId)){
+      out.errors.push("Row " + (i+1) + ": " + ((st.companies[coId] || {}).name || coName) +
+        " is archived" + ((st.companies[coId] || {}).archiveReason
+          ? " \u2014 " + st.companies[coId].archiveReason : "") +
+        ", so no deal is created for them. Un-archive them first if that has changed.");
+      return;
+    }
     /* Reusing a company as the individual bucket that nobody has marked as one.
        The row asserts this is a private buyer; without the flag the deal would
        be labelled with the bucket's name instead of the person's, and the next
@@ -5551,6 +5798,9 @@ var API = {
   sortEvents:sortEvents, foldEvents:foldEvents,
   openFollowups:openFollowups, followupsFor:followupsFor, openFollowupsFor:openFollowupsFor,
   stepsToHandOver:stepsToHandOver, strandedSteps:strandedSteps,
+  liveDeal:liveDeal, foldedInto:foldedInto,
+  activeCompanies:activeCompanies, archivedCompanies:archivedCompanies,
+  isArchived:isArchived, archiveImpact:archiveImpact,
   effectiveDue:effectiveDue, DEFAULT_TERMS_DAYS:DEFAULT_TERMS_DAYS,
   splitVatInclusive:splitVatInclusive, DEFAULT_VAT_RATE:DEFAULT_VAT_RATE,
   suggestDomain:suggestDomain, emailDomain:emailDomain,
@@ -7621,7 +7871,9 @@ function newDeal(anchor){
   var box = h("div");
   box.appendChild(h("h4", { text:"New deal" }));
 
-  var coNames = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
+  /* Archived companies are not offered for new work \u2014 that is what archiving
+     says. They stay reachable everywhere that reports what already happened. */
+  var coNames = C.activeCompanies(App.st)
                   .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
   var listId = "co-list-" + C.uid("dl");
   var co = h("input", { type:"text", list:listId, placeholder:"Company",
@@ -7991,6 +8243,9 @@ function openDeal(dealId){
     headRow.appendChild(h("button", { class:"btn btn-sm danger", type:"button",
       onclick:function (e){ closeDealPrompt(e.currentTarget, d); } }, "Lost"));
     headRow.appendChild(h("button", { class:"btn btn-sm quiet", type:"button",
+      title:"Same engagement as another deal \u2014 everything logged here moves there, and this stops being a deal.",
+      onclick:function (e){ foldDealPrompt(e.currentTarget, d); } }, "Fold into\u2026"));
+    headRow.appendChild(h("button", { class:"btn btn-sm quiet", type:"button",
       title:"For a deal that should never have existed — a duplicate or a typo. Not the same as Lost.",
       onclick:function (e){ deleteDealPrompt(e.currentTarget, d); } }, "Delete"));
   } else {
@@ -8057,6 +8312,24 @@ function openDeal(dealId){
   if (d.notes)
     body.appendChild(h("section", { class:"sec" }, h("h4", { text:"Background" }),
       h("div", { class:"prose", text:d.notes })));
+
+  /* WHAT WAS FOLDED IN HERE. Said on the deal that received it, because
+     otherwise a conversation appears in a history with no account of how it
+     got there \u2014 and the way to undo it would live only in Settings. */
+  (function (){
+    var came = C.foldedInto(App.st, d.id);
+    if (!came.length) return;
+    var sec = h("section", { class:"sec folded-in" }, h("h4", { text:"Folded in" }));
+    came.forEach(function (x){
+      sec.appendChild(h("div", { class:"note", style:"padding:3px 0" },
+        h("span", { text:"\u201c" + x.name + "\u201d was part of this deal, folded in " +
+          (x.mergedAt ? "on " + C.fmtDayYear(x.mergedAt) : "") +
+          (x.mergeReason ? " \u2014 " + x.mergeReason : "") + ". " }),
+        h("a", { href:"#", onclick:(function (id){ return function (e){
+            e.preventDefault(); unfoldDeal(id); }; })(x.id) }, "Separate it again")));
+    });
+    body.appendChild(sec);
+  })();
 
   /* flags — each with its rule on hover */
   var fl = App.flags[d.id] || [];
@@ -8142,7 +8415,9 @@ function openDeal(dealId){
     var ct = x.contactId && App.st.contacts[x.contactId];
     tl.appendChild(h("li", null,
       h("div", { class:"when", text: C.fmtFull(x.occurredAt) + " · " + x.kind +
-        (ct ? " · " + ct.name : "") + (x.actor !== d.owner ? " · " + userName(x.actor) : "") }),
+        (ct ? " · " + ct.name : "") + (x.actor !== d.owner ? " · " + userName(x.actor) : "") +
+        (x.foldedFromDeal && App.st.mergedDeals[x.foldedFromDeal]
+           ? " · from “" + App.st.mergedDeals[x.foldedFromDeal].name + "”" : "") }),
       h("div", { class:"what", text:x.summary })));
   });
   body.appendChild(h("section", { class:"sec" },
@@ -8534,6 +8809,110 @@ function closeDealPrompt(anchor, d){
    point, so the popover says which is which rather than assuming anyone
    remembers. It also counts what goes with the deal, because "delete" reads as
    harmless right up until it takes six logged conversations with it. */
+/* FOLDING ONE DEAL INTO ANOTHER.
+
+   "There are times where interactions have created a new deal but they are
+   part of another deal. I would like to fold the interaction into another deal
+   and not have to DELETE or WON / LOST." (Howard, 2 Oct 2026.)
+
+   Won is a lie, Lost is a lie, and Delete throws away a real conversation.
+   Folding says the true thing: this was never a separate engagement. Everything
+   logged travels to the deal it belonged to all along, and the fold is a mark,
+   so it can be undone. */
+function foldDealPrompt(anchor, d){
+  var co = C.dealParty(App.st, d);
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Fold " + d.name + " into another deal" }));
+  box.appendChild(h("div", { class:"note",
+    text:"For a deal that turned out to be part of one that already existed. Everything " +
+         "logged here moves across \u2014 nothing is deleted, nothing is marked won or lost, " +
+         "and this can be undone." }));
+
+  var ix = C.interactionsFor(App.st, d.id).length;
+  var fu = C.openFollowupsFor(App.st, d.id).length;
+  var inv = C.invoicesFor(App.st, d.id).length;
+  var qs = C.quotesFor(App.st, d.id).length;
+
+  var sel = h("select", { "aria-label":"Fold into which deal" });
+  sel.appendChild(h("option", { value:"" }, "\u2014 choose the deal this belongs to \u2014"));
+  var all = Object.keys(App.st.deals).map(function (k){ return App.st.deals[k]; })
+    .filter(function (x){ return x.id !== d.id; });
+  /* The same customer first, because that is nearly always the answer, and a
+     list of eighty deals with the right one somewhere in it is not an answer. */
+  var same = all.filter(function (x){ return x.companyId === d.companyId; });
+  var rest = all.filter(function (x){ return x.companyId !== d.companyId; });
+  var label = function (x){
+    var p2 = C.dealParty(App.st, x);
+    return (p2.name ? p2.name + " \u00b7 " : "") + x.name +
+           (x.status === "open" ? "" : "  (" + (x.outcome === "won" ? "won" : "lost") + ")");
+  };
+  var byName = function (a, b){ return label(a) < label(b) ? -1 : 1; };
+  if (same.length){
+    var g1 = h("optgroup", { label: (co.name || "the same customer") });
+    same.sort(byName).forEach(function (x){ g1.appendChild(h("option", { value:x.id }, label(x))); });
+    sel.appendChild(g1);
+  }
+  if (rest.length){
+    var g2 = h("optgroup", { label:"Everything else" });
+    rest.sort(byName).forEach(function (x){ g2.appendChild(h("option", { value:x.id }, label(x))); });
+    sel.appendChild(g2);
+  }
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Into" }), sel));
+
+  var what = h("div", { class:"note" });
+  var sync = function (){
+    var t = App.st.deals[sel.value];
+    var bits = [];
+    if (ix) bits.push(ix + " logged interaction" + (ix === 1 ? "" : "s"));
+    if (fu) bits.push(fu + " open next step" + (fu === 1 ? "" : "s"));
+    if (inv) bits.push(inv + " invoice" + (inv === 1 ? "" : "s"));
+    if (qs) bits.push(qs + " quote" + (qs === 1 ? "" : "s"));
+    what.textContent = (bits.length ? bits.join(", ") : "Nothing is logged on this deal") +
+      (t ? " move" + (bits.length ? "" : "s") + " to \u201c" + t.name + "\u201d." :
+           ". Choose the deal they belong to.");
+  };
+  sel.addEventListener("change", sync); sync();
+  box.appendChild(what);
+
+  var r = h("input", { type:"text", "aria-label":"Reason",
+    placeholder:"e.g. same engagement, created by a stray thread" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Why (optional)" }), r));
+
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      var into = sel.value;
+      if (!into){ toast("Choose the deal this one belongs to.", "err"); return; }
+      closeLayers("pop");
+      foldDeal(d, into, r.value.trim());
+    } }, "Fold it in")));
+  openPopover(anchor, box, { width:420 });
+}
+
+function foldDeal(d, intoId, reason){
+  var name = d.name, fromId = d.id;
+  var target = App.st.deals[intoId];
+  var tname = target ? target.name : "the other deal";
+  emit("deal.merged", { fromId:fromId, intoId:intoId, reason:reason || "" });
+  closeLayers(); App.openDealId = null; render();
+  openDeal(C.liveDeal(App.st, fromId));
+  toast(name + " folded into " + tname + ". Nothing was deleted.", null,
+        { label:"Undo", fn:function (){
+            emit("deal.unmerged", { fromId:fromId });
+            render(); openDeal(fromId);
+            toast(name + " is a deal again.");
+          } });
+}
+
+function unfoldDeal(fromId){
+  emit("deal.unmerged", { fromId:fromId });
+  render();
+  var d = App.st.deals[fromId];
+  openDeal(fromId);
+  toast((d ? d.name : "The deal") + " is separate again.");
+}
+
 function deleteDealPrompt(anchor, d){
   var ix = C.interactionsFor(App.st, d.id).length;
   var fu = C.openFollowupsFor(App.st, d.id).length;
@@ -9447,6 +9826,9 @@ function editDeal(anchor, d){
      order, or a partner who reopens the entity they had closed. */
   var filed = h("select", { "aria-label":"Filed under" });
   Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
+    /* An archived company cannot receive a deal \u2014 except the one it already
+       has, which must stay selectable or the form could not be saved at all. */
+    .filter(function (c){ return !c.archived || c.id === d.companyId; })
     .sort(function (a,b){ return a.name < b.name ? -1 : 1; })
     .forEach(function (c){
       /* Nothing may be filed under its own partner — the two sides of a
@@ -9595,7 +9977,8 @@ function editDeal(anchor, d){
 
   var firms = h("optgroup", { label:"Companies" });
   Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
-    .filter(function (c){ return c.id !== d.companyId && !c.isHolder; })
+    .filter(function (c){ return c.id !== d.companyId && !c.isHolder &&
+                                 (!c.archived || c.id === d.partnerCompanyId); })
     .sort(function (a,b){
       if (!!b.isPartner !== !!a.isPartner) return b.isPartner ? 1 : -1;
       return a.name < b.name ? -1 : 1; })
@@ -9978,6 +10361,67 @@ function dealCard(d){
    two records for one customer is a mistake, not a fact, and it must not be
    recorded as anything that looks like a business event. Deals, contacts and
    therefore every logged interaction move across; nothing is thrown away. */
+/* ARCHIVING A COMPANY \u2014 the question, with the facts on the table.
+
+   Not a merge (that is for a duplicate) and not a delete (that is for a
+   mistake). This company is real and so is its history; the decision is that
+   there will be no more business. Open deals and unpaid invoices are named
+   before anything happens, because archiving somebody who owes us money is a
+   perfectly reasonable thing to do and quietly forgetting the money is not. */
+function archiveCompanyPrompt(anchor, co){
+  var im = C.archiveImpact(App.st, co.id, App.today);
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Archive " + co.name }));
+  box.appendChild(h("div", { class:"note",
+    text:"For a customer we are no longer doing business with. Nothing is deleted: " +
+         "their history, their people and every rand they have paid stay exactly where " +
+         "they are. They stop being offered for new work, and a triage batch can no " +
+         "longer log against them or raise a deal for them." }));
+
+  if (im.openDeals.length)
+    box.appendChild(h("div", { class:"note", style:"margin-top:8px;color:var(--overdue)" },
+      h("div", { text: im.openDeals.length + " open deal" + (im.openDeals.length === 1 ? "" : "s") +
+        (im.openSteps ? " carrying " + im.openSteps + " next step" + (im.openSteps === 1 ? "" : "s") : "") +
+        " stay open and stay in Today. Archiving is a decision about new business, " +
+        "not a way of closing what is already running \u2014 mark those Won or Lost yourself." }),
+      h("div", { style:"margin-top:3px",
+        text: im.openDeals.map(function (d){ return "\u201c" + d.name + "\u201d"; }).join(", ") })));
+
+  if (im.currencies.length)
+    box.appendChild(h("div", { class:"note", style:"margin-top:8px;color:var(--overdue)",
+      text:"They still owe " + im.currencies.map(function (c){
+        return C.fmtMoneyExact(im.owed[c], c); }).join(" \u00b7 ") +
+        ". That stays on Debtors and on their statement. Deciding not to work with " +
+        "somebody is not deciding to forgive their invoice." }));
+
+  var r = h("input", { type:"text", "aria-label":"Reason",
+    placeholder:"e.g. we are not doing business with them" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Why (optional)" }), r));
+  box.appendChild(h("div", { class:"note",
+    text:"Shown wherever the company appears, and in the refusal when a batch tries " +
+         "to log against them. A line here saves the next person asking." }));
+
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      closeLayers("pop");
+      emit("company.archived", { companyId:co.id, reason:r.value.trim() });
+      render();
+      toast(co.name + " archived. Nothing was deleted.", null,
+        { label:"Undo", fn:function (){
+            emit("company.unarchived", { companyId:co.id }); render();
+            toast(co.name + " is active again."); } });
+    } }, "Archive them")));
+  openPopover(anchor, box, { width:420 });
+}
+
+function unarchiveCompany(co){
+  emit("company.unarchived", { companyId:co.id });
+  render();
+  toast(co.name + " is active again.");
+}
+
 function mergeCompanyPrompt(anchor, co){
   var others = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
     .filter(function (x){ return x.id !== co.id; })
@@ -11178,8 +11622,13 @@ function viewCompanies(el){
   (lsGet(LS.openCos, []) || []).forEach(function (id){ openCards[id] = 1; });
 
   var allBtn = h("button", { class:"btn btn-sm quiet", type:"button" });
+  /* Archived companies are out of the way by default and one press from being
+     seen. Hiding them with no way back would be a different feature \u2014 and the
+     one that makes somebody export the log to find out what happened. */
+  var showArchived = false;
+  var archBtn = h("button", { class:"btn btn-sm quiet", type:"button" });
   var bar = h("div", { style:"display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px" },
-    q, allBtn);
+    q, allBtn, archBtn);
   el.appendChild(bar);
 
   /* Companies has never had a Mine/Team switch, because a customer is not owned
@@ -11214,8 +11663,18 @@ function viewCompanies(el){
     clear(host);
     var term = q.value.trim().toLowerCase();
     var shown = 0;
-    var cos = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
+    var everyCo = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
       .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
+    var archivedCount = everyCo.filter(function (c){ return c.archived; }).length;
+    /* Searching looks past the shelf: if you have typed a name, you want that
+       company whether or not we still deal with them. */
+    var cos = (showArchived || term) ? everyCo
+            : everyCo.filter(function (c){ return !c.archived; });
+    archBtn.style.display = archivedCount ? "" : "none";
+    archBtn.textContent = showArchived
+      ? "Hide the " + archivedCount + " archived"
+      : "Show " + archivedCount + " archived";
+    archBtn.onclick = function (){ showArchived = !showArchived; paint(); };
 
     /* Reaching one person directly, WITHOUT listing every private buyer.
 
@@ -11333,6 +11792,15 @@ function viewCompanies(el){
       var headBtn = h("button", { class:"co-head", type:"button", "aria-expanded": isOpen ? "true" : "false" },
         tw,
         h("span", { class:"nm", text:row.name }),
+        /* Said on the shut card. An archived company that looks like every other
+           row is how somebody starts work with one by accident. */
+        (!person && co.archived)
+          ? h("span", { class:"chip warn",
+              title:"We are not doing business with them" +
+                    (co.archiveReason ? " \u2014 " + co.archiveReason : "") +
+                    ". Their history and any money owed are untouched.",
+              text:"Archived" })
+          : null,
         person
           ? (person.email ? h("span", { class:"mono", style:"font-size:11.5px;color:var(--muted)",
                                         text:person.email }) : null)
@@ -11431,6 +11899,13 @@ function viewCompanies(el){
                "person on their own \u2014 with their deals, their history, and the " +
                "button that makes them a partner." }));
 
+      if (!person && co.archived)
+        bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px;color:var(--warn)",
+          text:"Archived" + (co.archivedAt ? " on " + C.fmtDayYear(co.archivedAt) : "") +
+               (co.archiveReason ? " \u2014 " + co.archiveReason : "") +
+               ". Not offered for new deals, and a triage batch will refuse to log against them. " +
+               "Everything already here, including anything they owe, is untouched." }));
+
       /* ONE button, where six links used to be.
 
          Name and domain could not be edited at all from here; the partner flag,
@@ -11450,6 +11925,18 @@ function viewCompanies(el){
           h("button", { class:"btn btn-sm quiet", type:"button",
             onclick:(function (id){ return function (){ openStatement(id); }; })(co.id) },
             "Statement"));
+        /* Archive, or the way back. Never offered on a holder: a drawer of
+           private buyers is not a counterparty anybody decides about. */
+        if (!co.isHolder)
+          actRow.appendChild(co.archived
+            ? h("button", { class:"btn btn-sm quiet", type:"button",
+                onclick:(function (c){ return function (){ unarchiveCompany(c); }; })(co) },
+                "Un-archive")
+            : h("a", { href:"#", style:"font-size:11.5px",
+                title:"We are no longer doing business with them \u2014 nothing is deleted",
+                onclick:(function (c){ return function (e){
+                  e.preventDefault(); archiveCompanyPrompt(e.currentTarget, c); }; })(co) },
+                "archive\u2026"));
         /* Only offered when there is somewhere to merge INTO. A lone company
            cannot be a duplicate of anything. */
         if (cos.length > 1)
@@ -12223,8 +12710,36 @@ function viewSettings(el){
   gh.appendChild(h("div", { class:"row2" },
     (function (){ f.branch = h("input", { type:"text", value:App.gh.branch||"main", "aria-label":"Branch" });
        return h("label", { class:"fld" }, h("span", { text:"Branch" }), f.branch); })(),
-    (function (){ f.user = h("input", { type:"text", value:App.gh.user||"", placeholder:"howard", "aria-label":"Your user id" });
-       return h("label", { class:"fld" }, h("span", { text:"Your user id" }), f.user); })()));
+    (function (){
+       /* THE FIELD THAT COST PAUL A FORTNIGHT.
+
+          This is not a label: it is the id stamped on every event this browser
+          writes and the name of the file it writes to. Typed free-hand, "paul
+          bolton" became a person who is not on the roster, writing to a file
+          nobody expected. So the roster is offered, and an id that is not on it
+          is said out loud before anything is written. */
+       var ids = users().map(function (u){ return u.id; });
+       var listId = "me-ids-" + C.uid("l");
+       f.user = h("input", { type:"text", value:App.gh.user||"", placeholder:"howard",
+                             list: ids.length ? listId : null, "aria-label":"Your user id" });
+       var dl = h("datalist", { id:listId });
+       users().forEach(function (u){ dl.appendChild(h("option", { value:u.id }, u.name)); });
+       var warn = h("span", { class:"note", style:"color:var(--overdue)" });
+       var checkMe = function (){
+         var v = String(f.user.value || "").trim();
+         if (!v || !ids.length || ids.indexOf(v) >= 0){ warn.textContent = ""; return true; }
+         var guess = C.resolveUser(App.config, v);
+         warn.textContent = "\u201c" + v + "\u201d is not an id in config.json" +
+           (guess ? " \u2014 did you mean \u201c" + guess + "\u201d?" : "") +
+           " Everything you write would be logged by somebody who is not on the team, " +
+           "and into events/" + v + ".jsonl.";
+         return false;
+       };
+       f.checkMe = checkMe;
+       f.user.addEventListener("input", checkMe);
+       setTimeout(checkMe, 0);
+       return h("label", { class:"fld" }, h("span", { text:"Your user id" }), f.user, dl, warn);
+     })()));
   (function (){
     f.path = h("input", { type:"text", value:App.gh.path||"", placeholder:"CRM_Data",
                           "aria-label":"Folder in repo" });
@@ -12276,6 +12791,12 @@ function viewSettings(el){
                  token:f.token.value.trim() };
       lsSet(LS.gh, App.gh);
       if (!ghConfigured()){ toast("Owner, repo, user id and token are all needed.", "err"); return; }
+      /* Refused here rather than warned about afterwards: by the time the first
+         event is written the wrong id is already in the log. */
+      if (f.checkMe && !f.checkMe()){
+        toast("That user id is not in config.json \u2014 pick one from the list.", "err");
+        return;
+      }
       App.workspace = "team"; lsSet(LS.ws, "team");
       try {
         await pullTeam();
@@ -12823,6 +13344,37 @@ function viewSettings(el){
     el.appendChild(fold(del, "deleted"));
   }
 
+  /* Folded deals. Same argument as the deleted list: a deal that has stopped
+     existing where somebody put it has to be findable, and the way back has to
+     be one press. */
+  var folded = Object.keys(App.st.mergedDeals || {}).map(function (k){ return App.st.mergedDeals[k]; })
+                     .sort(function (a,b){ return (b.mergedAt||"") < (a.mergedAt||"") ? -1 : 1; });
+  if (folded.length){
+    var fdp = h("section", { class:"pane", style:"margin-bottom:16px" },
+      h("h3", { text:"Folded deals" }),
+      h("div", { class:"sub", text:"Deals that turned out to be part of another one. Everything " +
+        "logged on them moved across; they are not won, lost or deleted. Separate any of them again." }));
+    var ftb = h("tbody");
+    folded.forEach(function (d){
+      var co = App.st.companies[d.companyId];
+      var into = App.st.deals[C.liveDeal(App.st, d.id)];
+      ftb.appendChild(h("tr", null,
+        h("td", { text:(co ? co.name + " \u00b7 " : "") + d.name }),
+        h("td", null, into
+          ? h("a", { href:"#", onclick:(function (id){ return function (e){
+              e.preventDefault(); openDeal(id); }; })(into.id) }, into.name)
+          : h("span", { text:"\u2014" })),
+        h("td", { text:d.mergedAt ? C.fmtDayYear(d.mergedAt) : "" }),
+        h("td", { text:d.mergeReason || "\u2014" }),
+        h("td", null, h("button", { class:"btn btn-sm quiet", type:"button",
+          onclick:(function (id){ return function (){ unfoldDeal(id); }; })(d.id) }, "Separate again"))));
+    });
+    fdp.appendChild(h("table", { class:"tbl" },
+      h("thead", null, h("tr", null, h("th", { text:"Deal" }), h("th", { text:"Folded into" }),
+                         h("th", { text:"When" }), h("th", { text:"Why" }), h("th", { text:"" }))), ftb));
+    el.appendChild(fold(fdp, "folded"));
+  }
+
   /* storage — the thing you need when it goes wrong */
   var stor = h("section", { class:"pane", style:"margin-bottom:16px" },
     h("h3", { text:"This device" }),
@@ -12989,14 +13541,51 @@ function viewSettings(el){
         h("td", { class:"mono", text: c ? String(c.build).slice(0,8) : "—" }),
         h("td", { class:"mono", text: c ? C.fmtDayYear(String(c.seenAt).slice(0,10)) : "—" })));
     });
-    /* somebody logging events who is not in the roster still deserves a row */
-    Object.keys(seen).forEach(function (id){
-      if (roster.some(function (u){ return u.id === id; })) return;
+    /* Somebody logging events who is not on the roster still deserves a row \u2014
+       and, now, the fix. "paul bolton" is Paul: the id was typed by hand into a
+       free-text field, so everything he wrote was logged by a stranger with his
+       name. Joining the two says they are one person, and the fold applies it to
+       everything he has ever written. */
+    var strays = Object.keys(seen).filter(function (id){
+      return !roster.some(function (u){ return u.id === id; }); });
+    strays.forEach(function (id){
+      var sel = h("select", { "aria-label":"Who is " + id });
+      sel.appendChild(h("option", { value:"" }, "\u2014 who is this? \u2014"));
+      roster.forEach(function (u){ sel.appendChild(h("option", { value:u.id }, u.name + "  (" + u.id + ")")); });
+      var guess = C.resolveUser(App.config, id);
+      if (guess) sel.value = guess;
       tb.appendChild(h("tr", null,
-        h("td", { text:id + " — not in config.json" }),
-        h("td", { class:"mono", text:seen[id].version ? "v" + seen[id].version : "—" }),
+        h("td", null,
+          h("div", { style:"color:var(--overdue)", text:id + " \u2014 not in config.json" }),
+          h("div", { class:"note", style:"font-size:11.5px",
+            text:"Everything this id wrote is logged by somebody the roster does not know." }),
+          h("div", { style:"margin-top:5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap" }, sel,
+            h("button", { class:"btn btn-sm", type:"button", onclick:(function (from, pick){
+              return function (){
+                var to = pick.value;
+                if (!to){ toast("Say who this is first.", "err"); return; }
+                emit("user.aliased", { from:from, to:to });
+                render();
+                toast(from + " is " + userName(to) + ". Everything they wrote now belongs to them.",
+                  null, { label:"Undo", fn:function (){
+                    emit("user.unaliased", { from:from }); render();
+                    toast("Separated again."); } });
+              }; })(id, sel) }, "This is the same person"))),
+        h("td", { class:"mono", text:seen[id].version ? "v" + seen[id].version : "\u2014" }),
         h("td", { class:"mono", text:String(seen[id].build).slice(0,8) }),
         h("td", { class:"mono", text:C.fmtDayYear(String(seen[id].seenAt).slice(0,10)) })));
+    });
+    /* Already joined, and the way back. */
+    Object.keys(App.st.userAliases || {}).forEach(function (from){
+      var to = App.st.userAliases[from];
+      tb.appendChild(h("tr", null,
+        h("td", null,
+          h("span", { class:"note", text:"\u201c" + from + "\u201d counts as " + userName(to) + ". " }),
+          h("a", { href:"#", style:"font-size:11.5px", onclick:(function (f2){ return function (ev){
+            ev.preventDefault(); emit("user.unaliased", { from:f2 }); render();
+            toast("Separated again."); }; })(from) }, "separate them")),
+        h("td", { class:"mono", text:"\u2014" }), h("td", { class:"mono", text:"\u2014" }),
+        h("td", { class:"mono", text:"\u2014" })));
     });
     t.appendChild(tb);
     vers.appendChild(t);
@@ -13275,6 +13864,7 @@ globalThis.CRMApp = { App:App, emit:emit, refold:refold, render:render,
                       ghUrl:ghUrl, ghPrefix:ghPrefix, ghRelPath:ghRelPath,
                       testConnection:testConnection, ghExplain:ghExplain,
                       openDeal:openDeal, deleteDeal:deleteDeal, restoreDeal:restoreDeal,
+                      foldDeal:foldDeal, unfoldDeal:unfoldDeal,
                       /* the hand-over file, so the suite can read what actually
                          leaves the app rather than trusting that it is right */
                       eventLogExport:eventLogExport,

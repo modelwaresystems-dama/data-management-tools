@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.1.0">
+<meta name="version" content="1.2.0">
 <title>CDMP Value Analytics — Modelware</title>
 <style>
 :root{
@@ -110,6 +110,17 @@ details.ft .items{padding:0 14px 12px}
 .tab:hover{color:var(--fg)}
 .grid2cmp{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:10px}
 @media(max-width:620px){.grid2cmp{grid-template-columns:1fr}}
+
+/* Market reality panel */
+.mkt-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:10px}
+@media(max-width:620px){.mkt-grid{grid-template-columns:1fr}}
+.mkt-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:8px 0;border-top:1px solid var(--line)}
+.mkt-lab{flex:1 1 120px;font-size:13.5px;font-weight:600}
+.mkt-fig{font-family:var(--ff-mono);font-size:14px;font-variant-numeric:tabular-nums}
+.mkt-range{color:var(--muted);font-size:12px}
+.mkt-meta{flex-basis:100%;font-family:var(--ff-mono);font-size:11px;color:var(--faint)}
+.mkt-note{font-size:12px;color:var(--muted);margin-top:8px}
+.mkt-src{font-family:var(--ff-mono);font-size:11px;color:var(--faint);margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
 </style>
 </head>
 <body>
@@ -416,6 +427,28 @@ function pairedPctHTML(rows){return rows.map(function(r){var wa=r.a==null?0:r.a,
  return '<div class="bar-row"><div class="bar-lab">'+esc(r.label)+'</div><div class="grp"><div class="track" title="Professionals: '+(r.a==null?'—':Math.round(r.a)+'%')+'"><div class="fill a" style="width:'+wa.toFixed(0)+'%"></div></div><div class="track" title="Employers: '+(r.b==null?'—':Math.round(r.b)+'%')+'"><div class="fill b" style="width:'+wb.toFixed(0)+'%"></div></div></div><div class="bar-val">'+(r.a==null?'—':Math.round(r.a)+'%')+' / '+(r.b==null?'—':Math.round(r.b)+'%')+'</div></div>';}).join('');}
 function cLegend(){return '<div class="legend"><span><i class="swatch sw-a"></i>Professionals</span><span><i class="swatch sw-b"></i>Employers</span></div>';}
 function cCaution(pro,corp){var w=[];if(pro.length<3)w.push('professionals n='+pro.length);if(corp.length<3)w.push('employers n='+corp.length);return w.length?'<div class="viz-note" style="color:var(--warn)">Small sample — '+w.join(', ')+'. Read as provisional, not a finding.</div>':'';}
+
+var MARKET_GLOBAL=[
+ {label:'United States',fig:'US$117,000',n:119,as:'Nov 2025'},
+ {label:'Australia',fig:'A$153,000',n:11,as:'Nov 2023 (dated)'},
+ {label:'India',fig:'₹616,000',n:12,as:'Jul 2025'}
+];
+var MARKET_SA=[
+ {label:'Data Architect',fig:'R912,050',range:'R507k–R1.0M',n:13,as:'Jun 2026'},
+ {label:'Data Manager',fig:'R452,442',range:'R215k–R1.0M',n:45,as:'Feb 2026'}
+];
+function mktRows(arr){return arr.map(function(r){return '<div class="mkt-row"><div class="mkt-lab">'+esc(r.label)+'</div><div class="mkt-fig">'+esc(r.fig)+(r.range?' <span class="mkt-range">('+esc(r.range)+')</span>':'')+'</div><div class="mkt-meta">n='+r.n+' · as of '+esc(r.as)+'</div></div>';}).join('');}
+function marketHTML(){
+ return '<section class="panel section-gap"><div class="viz-title">Market reality — reported pay (self-reported, PayScale)</div>'+
+  '<div class="viz-note">A dated snapshot to read against the perception above. This is self-reported market pay, <b>not a causal CDMP premium</b> — PayScale has no counterfactual. Samples are small; each row is in its own currency and figures cannot be compared across currencies.</div>'+
+  '<div class="mkt-grid">'+
+   '<div><div class="idx-cap" style="color:var(--s3)">CDMP-certified holders (certification-keyed)</div>'+mktRows(MARKET_GLOBAL)+'</div>'+
+   '<div><div class="idx-cap" style="color:var(--s4)">South Africa — role benchmarks (not CDMP-specific)</div>'+mktRows(MARKET_SA)+
+    '<div class="mkt-note">No PayScale CDMP-certification page exists for South Africa, and no SA Data Governance Manager page — role pay only.</div></div>'+
+  '</div>'+
+  '<div class="mkt-src">Source: PayScale, fetched 2 Oct 2026. Refresh manually; PayScale blocks automated/live fetching.</div></section>';
+}
+
 function buildCompare(allRows){
   COMPARE.pro=allRows.filter(function(r){return r&&r.survey===PRO_SURVEY;});
   COMPARE.corp=allRows.filter(function(r){return r&&r.survey===CORP_SURVEY;});
@@ -423,7 +456,7 @@ function buildCompare(allRows){
 }
 function renderCompare(){
   var pro=COMPARE.pro,corp=COMPARE.corp;
-  if(!pro.length&&!corp.length){$('dashCompare').innerHTML='<div class="empty">No responses from either survey yet — the comparison fills in as they arrive.</div>';return;}
+  if(!pro.length&&!corp.length){$('dashCompare').innerHTML=marketHTML()+'<div class="empty">No survey responses from either side yet — the perception comparison fills in as they arrive.</div>';return;}
   var html='<div class="kpis section-gap">'+kpi(pro.length,'professional responses')+kpi(corp.length,'employer responses')+'</div>';
   var rows=SCALAR.map(function(t){return {label:t.label,a:sideMean(pro,proScore,t.id),b:sideMean(corp,corpScore,t.id),aLab:'Professionals',bLab:'Employers'};});
   html+='<section class="panel section-gap"><div class="viz-title">Perception vs reality — 1–5 by theme</div>'+
@@ -437,6 +470,7 @@ function renderCompare(){
     '<div class="viz-note">The two surveys ask this differently (a person’s barrier vs an organisation’s limit), so these are two distributions, not a paired bar.</div>'+
     '<div class="grid2cmp"><div><div class="idx-cap" style="color:var(--s1)">Professionals — biggest barrier</div>'+barsHTML(distCat(pro,T5PRO.q,T5PRO.map))+'</div>'+
     '<div><div class="idx-cap" style="color:var(--s2)">Employers — what limits sponsoring</div>'+barsHTML(distCat(corp,T5CORP.q,T5CORP.map))+'</div></div></section>';
+  html+=marketHTML();
   $('dashCompare').innerHTML=html;
 }
 function showTab(which){var g=which==='gap';$('dash').classList.toggle('hidden',g);$('dashCompare').classList.toggle('hidden',!g);

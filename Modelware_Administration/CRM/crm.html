@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="f949da9a7239" data-built="2 Oct 2026" data-version="1.50.1">
+<meta name="crm-build" content="47741f902102" data-built="2 Oct 2026" data-version="1.51.0">
 <!-- Repo versioning standard: the Asset Navigator build reads this. Written by
      dev/stamp-build.py from the crm-build line above, never typed twice. -->
-<meta name="version" content="1.50.1">
+<meta name="version" content="1.51.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -893,6 +893,38 @@ function foldEvents(events){
          That is what makes it undoable: nothing has been rewritten yet, so
          company.unmerged is a clean cancellation rather than a guess at which
          deals came from where. */
+      /* ARCHIVING A COMPANY (2 Oct 2026).
+
+         "I want to be able to archive certain companies. Partly because we dont
+         want to do business with them."
+
+         Merging is for a duplicate and deleting is for a mistake. This is
+         neither: the company is real, the history is real, and the decision is
+         that there will be no more business. So nothing is removed \u2014 the
+         record, its people, its deals and every rand it ever paid stay exactly
+         where they are \u2014 but the company stops being offered for NEW work,
+         and a triage batch can no longer quietly start a deal with somebody we
+         have decided not to deal with.
+
+         Money is the deliberate exception: an archived company that still owes
+         us is still on the Debtors book. Deciding not to work with somebody is
+         not deciding to forgive their invoice. */
+      case "company.archived":
+        if (st.companies[p.companyId]){
+          st.companies[p.companyId].archived = true;
+          st.companies[p.companyId].archivedAt = String(e.ts).slice(0,10);
+          st.companies[p.companyId].archivedBy = e.actor;
+          st.companies[p.companyId].archiveReason = p.reason || "";
+        }
+        break;
+      case "company.unarchived":
+        if (st.companies[p.companyId]){
+          st.companies[p.companyId].archived = false;
+          st.companies[p.companyId].archivedAt = null;
+          st.companies[p.companyId].archiveReason = "";
+        }
+        break;
+
       case "company.merged":
         if (st.companies[p.fromId] && st.companies[p.intoId] && p.fromId !== p.intoId)
           st.companies[p.fromId].mergedInto = p.intoId;
@@ -1832,6 +1864,43 @@ function lastContact(st, dealId){
 }
 /* Where a deal id points now, after any folding. Chains are followed; an id
    that was never folded answers itself. */
+/* Companies we still do business with. Everything that OFFERS a company for new
+   work goes through here; everything that reports what already happened does
+   not. */
+function activeCompanies(st){
+  return Object.keys(st.companies).map(function (k){ return st.companies[k]; })
+    .filter(function (c){ return !c.archived; });
+}
+function archivedCompanies(st){
+  return Object.keys(st.companies).map(function (k){ return st.companies[k]; })
+    .filter(function (c){ return !!c.archived; })
+    .sort(function (a, b){ return (b.archivedAt || "") < (a.archivedAt || "") ? -1 : 1; });
+}
+function isArchived(st, companyId){
+  var c = st.companies[companyId];
+  return !!(c && c.archived);
+}
+/* What archiving this company would leave behind, so the question is asked with
+   the facts on the table rather than after the fact. */
+function archiveImpact(st, companyId, today){
+  var open = [], owed = {};
+  dealsForCompany(st, companyId).forEach(function (d){
+    if (d.status === "open") open.push(d);
+    invoicesFor(st, d.id).forEach(function (inv){
+      var s2 = invoiceState(st, inv);
+      if (s2.cancelled || s2.balance <= 0.005) return;
+      var c = inv.currency || "ZAR";
+      owed[c] = round2((owed[c] || 0) + s2.balance);
+    });
+  });
+  var steps = 0;
+  open.forEach(function (d){ steps += openFollowupsFor(st, d.id).length; });
+  return { openDeals:open, openSteps:steps, owed:owed,
+           currencies:Object.keys(owed).sort(),
+           contacts: Object.keys(st.contacts).filter(function (k){
+             return st.contacts[k].companyId === companyId; }).length };
+}
+
 function liveDeal(st, id){
   var seen = {}, cur = id;
   while (cur && !seen[cur]){
@@ -3128,6 +3197,9 @@ function moneyBook(st, cfg, today, opts){
   Object.keys(st.companies).forEach(function (k){
     var co = st.companies[k];
     if (co.merged || co.isHolder) return;          // a person bucket has no domain to have
+    /* An archived company never needs matching again \u2014 nothing from them is
+       going to be logged, so chasing their domain is work for nothing. */
+    if (co.archived) return;
     if (co.domain && String(co.domain).trim()) return;
     var deals = Object.keys(st.deals).filter(function (dk){
       return st.deals[dk].companyId === co.id; }).length;
@@ -4363,6 +4435,22 @@ function importTriage(text, st, cfg, ctx){
       return;
     }
 
+    /* NO NEW BUSINESS WITH AN ARCHIVED COMPANY.
+
+       Archiving says "we do not deal with these people". A batch that logged
+       against them anyway, or quietly raised a deal, would undo that decision
+       without anybody choosing to \u2014 which is the whole failure mode the flag
+       exists to prevent. The row is refused, by name, so it is a decision
+       somebody makes rather than a default. */
+    if (isArchived(st, deal.companyId)){
+      out.errors.push(where + ": " + ((st.companies[deal.companyId] || {}).name || "that company") +
+        " is archived" +
+        ((st.companies[deal.companyId] || {}).archiveReason
+          ? " \u2014 " + st.companies[deal.companyId].archiveReason : "") +
+        ". Nothing is logged against an archived company. Un-archive it first if that has changed.");
+      return;
+    }
+
     /* OTHER ADDRESSES THE SAME PERSON WRITES FROM.
 
        Amanda holds the Career Coaching deal under her work address and replies
@@ -4985,6 +5073,15 @@ function triageCreate(rows, st, cfg, ctx){
     }
     var coKey = triageNorm(coName);
     var coId = isIndividual ? (holderExisting || null) : coByName[coKey];
+    /* A new deal with a company we have archived is exactly what archiving is
+       for. Refused by name, never created quietly. */
+    if (coId && isArchived(st, coId)){
+      out.errors.push("Row " + (i+1) + ": " + ((st.companies[coId] || {}).name || coName) +
+        " is archived" + ((st.companies[coId] || {}).archiveReason
+          ? " \u2014 " + st.companies[coId].archiveReason : "") +
+        ", so no deal is created for them. Un-archive them first if that has changed.");
+      return;
+    }
     /* Reusing a company as the individual bucket that nobody has marked as one.
        The row asserts this is a private buyer; without the flag the deal would
        be labelled with the bucket's name instead of the person's, and the next
@@ -5666,6 +5763,8 @@ var API = {
   openFollowups:openFollowups, followupsFor:followupsFor, openFollowupsFor:openFollowupsFor,
   stepsToHandOver:stepsToHandOver, strandedSteps:strandedSteps,
   liveDeal:liveDeal, foldedInto:foldedInto,
+  activeCompanies:activeCompanies, archivedCompanies:archivedCompanies,
+  isArchived:isArchived, archiveImpact:archiveImpact,
   effectiveDue:effectiveDue, DEFAULT_TERMS_DAYS:DEFAULT_TERMS_DAYS,
   splitVatInclusive:splitVatInclusive, DEFAULT_VAT_RATE:DEFAULT_VAT_RATE,
   suggestDomain:suggestDomain, emailDomain:emailDomain,
@@ -7736,7 +7835,9 @@ function newDeal(anchor){
   var box = h("div");
   box.appendChild(h("h4", { text:"New deal" }));
 
-  var coNames = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
+  /* Archived companies are not offered for new work \u2014 that is what archiving
+     says. They stay reachable everywhere that reports what already happened. */
+  var coNames = C.activeCompanies(App.st)
                   .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
   var listId = "co-list-" + C.uid("dl");
   var co = h("input", { type:"text", list:listId, placeholder:"Company",
@@ -9689,6 +9790,9 @@ function editDeal(anchor, d){
      order, or a partner who reopens the entity they had closed. */
   var filed = h("select", { "aria-label":"Filed under" });
   Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
+    /* An archived company cannot receive a deal \u2014 except the one it already
+       has, which must stay selectable or the form could not be saved at all. */
+    .filter(function (c){ return !c.archived || c.id === d.companyId; })
     .sort(function (a,b){ return a.name < b.name ? -1 : 1; })
     .forEach(function (c){
       /* Nothing may be filed under its own partner — the two sides of a
@@ -9837,7 +9941,8 @@ function editDeal(anchor, d){
 
   var firms = h("optgroup", { label:"Companies" });
   Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
-    .filter(function (c){ return c.id !== d.companyId && !c.isHolder; })
+    .filter(function (c){ return c.id !== d.companyId && !c.isHolder &&
+                                 (!c.archived || c.id === d.partnerCompanyId); })
     .sort(function (a,b){
       if (!!b.isPartner !== !!a.isPartner) return b.isPartner ? 1 : -1;
       return a.name < b.name ? -1 : 1; })
@@ -10220,6 +10325,67 @@ function dealCard(d){
    two records for one customer is a mistake, not a fact, and it must not be
    recorded as anything that looks like a business event. Deals, contacts and
    therefore every logged interaction move across; nothing is thrown away. */
+/* ARCHIVING A COMPANY \u2014 the question, with the facts on the table.
+
+   Not a merge (that is for a duplicate) and not a delete (that is for a
+   mistake). This company is real and so is its history; the decision is that
+   there will be no more business. Open deals and unpaid invoices are named
+   before anything happens, because archiving somebody who owes us money is a
+   perfectly reasonable thing to do and quietly forgetting the money is not. */
+function archiveCompanyPrompt(anchor, co){
+  var im = C.archiveImpact(App.st, co.id, App.today);
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Archive " + co.name }));
+  box.appendChild(h("div", { class:"note",
+    text:"For a customer we are no longer doing business with. Nothing is deleted: " +
+         "their history, their people and every rand they have paid stay exactly where " +
+         "they are. They stop being offered for new work, and a triage batch can no " +
+         "longer log against them or raise a deal for them." }));
+
+  if (im.openDeals.length)
+    box.appendChild(h("div", { class:"note", style:"margin-top:8px;color:var(--overdue)" },
+      h("div", { text: im.openDeals.length + " open deal" + (im.openDeals.length === 1 ? "" : "s") +
+        (im.openSteps ? " carrying " + im.openSteps + " next step" + (im.openSteps === 1 ? "" : "s") : "") +
+        " stay open and stay in Today. Archiving is a decision about new business, " +
+        "not a way of closing what is already running \u2014 mark those Won or Lost yourself." }),
+      h("div", { style:"margin-top:3px",
+        text: im.openDeals.map(function (d){ return "\u201c" + d.name + "\u201d"; }).join(", ") })));
+
+  if (im.currencies.length)
+    box.appendChild(h("div", { class:"note", style:"margin-top:8px;color:var(--overdue)",
+      text:"They still owe " + im.currencies.map(function (c){
+        return C.fmtMoneyExact(im.owed[c], c); }).join(" \u00b7 ") +
+        ". That stays on Debtors and on their statement. Deciding not to work with " +
+        "somebody is not deciding to forgive their invoice." }));
+
+  var r = h("input", { type:"text", "aria-label":"Reason",
+    placeholder:"e.g. we are not doing business with them" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Why (optional)" }), r));
+  box.appendChild(h("div", { class:"note",
+    text:"Shown wherever the company appears, and in the refusal when a batch tries " +
+         "to log against them. A line here saves the next person asking." }));
+
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      closeLayers("pop");
+      emit("company.archived", { companyId:co.id, reason:r.value.trim() });
+      render();
+      toast(co.name + " archived. Nothing was deleted.", null,
+        { label:"Undo", fn:function (){
+            emit("company.unarchived", { companyId:co.id }); render();
+            toast(co.name + " is active again."); } });
+    } }, "Archive them")));
+  openPopover(anchor, box, { width:420 });
+}
+
+function unarchiveCompany(co){
+  emit("company.unarchived", { companyId:co.id });
+  render();
+  toast(co.name + " is active again.");
+}
+
 function mergeCompanyPrompt(anchor, co){
   var others = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
     .filter(function (x){ return x.id !== co.id; })
@@ -11420,8 +11586,13 @@ function viewCompanies(el){
   (lsGet(LS.openCos, []) || []).forEach(function (id){ openCards[id] = 1; });
 
   var allBtn = h("button", { class:"btn btn-sm quiet", type:"button" });
+  /* Archived companies are out of the way by default and one press from being
+     seen. Hiding them with no way back would be a different feature \u2014 and the
+     one that makes somebody export the log to find out what happened. */
+  var showArchived = false;
+  var archBtn = h("button", { class:"btn btn-sm quiet", type:"button" });
   var bar = h("div", { style:"display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px" },
-    q, allBtn);
+    q, allBtn, archBtn);
   el.appendChild(bar);
 
   /* Companies has never had a Mine/Team switch, because a customer is not owned
@@ -11456,8 +11627,18 @@ function viewCompanies(el){
     clear(host);
     var term = q.value.trim().toLowerCase();
     var shown = 0;
-    var cos = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
+    var everyCo = Object.keys(App.st.companies).map(function (k){ return App.st.companies[k]; })
       .sort(function (a,b){ return a.name < b.name ? -1 : 1; });
+    var archivedCount = everyCo.filter(function (c){ return c.archived; }).length;
+    /* Searching looks past the shelf: if you have typed a name, you want that
+       company whether or not we still deal with them. */
+    var cos = (showArchived || term) ? everyCo
+            : everyCo.filter(function (c){ return !c.archived; });
+    archBtn.style.display = archivedCount ? "" : "none";
+    archBtn.textContent = showArchived
+      ? "Hide the " + archivedCount + " archived"
+      : "Show " + archivedCount + " archived";
+    archBtn.onclick = function (){ showArchived = !showArchived; paint(); };
 
     /* Reaching one person directly, WITHOUT listing every private buyer.
 
@@ -11575,6 +11756,15 @@ function viewCompanies(el){
       var headBtn = h("button", { class:"co-head", type:"button", "aria-expanded": isOpen ? "true" : "false" },
         tw,
         h("span", { class:"nm", text:row.name }),
+        /* Said on the shut card. An archived company that looks like every other
+           row is how somebody starts work with one by accident. */
+        (!person && co.archived)
+          ? h("span", { class:"chip warn",
+              title:"We are not doing business with them" +
+                    (co.archiveReason ? " \u2014 " + co.archiveReason : "") +
+                    ". Their history and any money owed are untouched.",
+              text:"Archived" })
+          : null,
         person
           ? (person.email ? h("span", { class:"mono", style:"font-size:11.5px;color:var(--muted)",
                                         text:person.email }) : null)
@@ -11673,6 +11863,13 @@ function viewCompanies(el){
                "person on their own \u2014 with their deals, their history, and the " +
                "button that makes them a partner." }));
 
+      if (!person && co.archived)
+        bodyEl.appendChild(h("div", { class:"note", style:"margin-bottom:10px;color:var(--warn)",
+          text:"Archived" + (co.archivedAt ? " on " + C.fmtDayYear(co.archivedAt) : "") +
+               (co.archiveReason ? " \u2014 " + co.archiveReason : "") +
+               ". Not offered for new deals, and a triage batch will refuse to log against them. " +
+               "Everything already here, including anything they owe, is untouched." }));
+
       /* ONE button, where six links used to be.
 
          Name and domain could not be edited at all from here; the partner flag,
@@ -11692,6 +11889,18 @@ function viewCompanies(el){
           h("button", { class:"btn btn-sm quiet", type:"button",
             onclick:(function (id){ return function (){ openStatement(id); }; })(co.id) },
             "Statement"));
+        /* Archive, or the way back. Never offered on a holder: a drawer of
+           private buyers is not a counterparty anybody decides about. */
+        if (!co.isHolder)
+          actRow.appendChild(co.archived
+            ? h("button", { class:"btn btn-sm quiet", type:"button",
+                onclick:(function (c){ return function (){ unarchiveCompany(c); }; })(co) },
+                "Un-archive")
+            : h("a", { href:"#", style:"font-size:11.5px",
+                title:"We are no longer doing business with them \u2014 nothing is deleted",
+                onclick:(function (c){ return function (e){
+                  e.preventDefault(); archiveCompanyPrompt(e.currentTarget, c); }; })(co) },
+                "archive\u2026"));
         /* Only offered when there is somewhere to merge INTO. A lone company
            cannot be a duplicate of anything. */
         if (cos.length > 1)

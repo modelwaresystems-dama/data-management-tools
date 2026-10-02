@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.22.1">
+<meta name="version" content="1.22.3">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -337,7 +337,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.22.1";</script>
+<script>window.PAGE_BUILD="1.22.3";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -736,6 +736,57 @@ async function renderHostSetup(body){
     const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
     a.download=(slugify(x.name||x.id)||"results")+"-results.csv"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   }
+  function certCfg(){
+    var d={org:"Modelware Systems",sub:"datasherpa · DAMA South Africa",presenter:"[Presenter name]",role:"Facilitator",signatureImg:"",logoImg:"",accent:"#0E8F7E"};
+    try{var s=JSON.parse(localStorage.getItem("ds_cert_cfg")||"{}");if(s&&typeof s==="object")Object.keys(s).forEach(function(k){if(s[k]!=null&&s[k]!=="")d[k]=s[k];});}catch(e){}
+    return d;
+  }
+  function certTier(scp){if(scp>=80)return{name:"Master Pass",cls:"t-master"};if(scp>=70)return{name:"Practitioner",cls:"t-pract"};if(scp>=60)return{name:"Associate",cls:"t-assoc"};return{name:"Attended",cls:"t-attend"};}
+  function engBand(eng){if(eng>=90)return"Full participation";if(eng>=60)return"Active participation";return"Participant";}
+  function generateCertificates(x){
+    if(!x)return;
+    var cfg=certCfg(), accent=cfg.accent||"#0E8F7E";
+    var courseName=x.planTitle||x.course||x.name||"Course";
+    var cohort=x.className||"";
+    var when=new Date(x.completedAt||x.savedAt||Date.now());
+    var dateStr=when.toLocaleDateString(undefined,{year:"numeric",month:"long",day:"numeric"});
+    var recips=[];
+    (x.players||[]).forEach(function(p){
+      var qs=p.qStats||[],ans=0,tot=0,cor=0;
+      qs.forEach(function(z){if(z){ans+=z.a||0;tot+=z.n||0;cor+=z.c||0;}});
+      if(ans<=0)return;
+      var eng=tot?Math.round(ans/tot*100):0, scp=tot?Math.round(cor/tot*100):0;
+      recips.push({name:p.name,ans:ans,tot:tot,cor:cor,eng:eng,scp:scp,tier:certTier(scp),band:engBand(eng)});
+    });
+    if(!recips.length){alert("No participants answered any questions in this session, so there are no certificates to produce.");return;}
+    recips.sort(function(a,b){return b.scp-a.scp||b.eng-a.eng||a.name.localeCompare(b.name);});
+    var logo = cfg.logoImg ? '<img class="logoimg" src="'+esc(cfg.logoImg)+'" alt="">' : '<div class="logoph">LOGO</div>';
+    var sig = cfg.signatureImg ? '<img class="sigimg" src="'+esc(cfg.signatureImg)+'" alt="">' : '<div class="sigph"></div>';
+    var certs = recips.map(function(r){
+      return '<section class="cert"><div class="frame '+r.tier.cls+'">'
+        +'<div class="watermark">'+esc(cfg.org)+'</div>'
+        +'<div class="ch"><div class="logo">'+logo+'</div><div class="org"><div class="o1">'+esc(cfg.org)+'</div><div class="o2">'+esc(cfg.sub)+'</div></div></div>'
+        +'<div class="ttl">Certificate of Achievement</div>'
+        +'<div class="tier">'+esc(r.tier.name)+'</div>'
+        +'<div class="pre">This is proudly presented to</div>'
+        +'<div class="who">'+esc(r.name)+'</div>'
+        +'<div class="bdy">for completing <b>'+esc(courseName)+'</b>'+(cohort?' — '+esc(cohort):'')+', held on '+esc(dateStr)+'.</div>'
+        +'<div class="stats"><span><b>'+r.scp+'%</b> score</span><span><b>'+r.eng+'%</b> engagement</span><span>'+esc(r.band)+'</span><span>'+r.cor+' / '+r.tot+' correct</span></div>'
+        +'<div class="cf"><div class="sig">'+sig+'<div class="sigline"></div><div class="signame">'+esc(cfg.presenter)+'</div><div class="sigrole">'+esc(cfg.role)+'</div></div>'
+        +'<div class="seal"><div class="sealscore">'+r.scp+'%</div><div class="sealtier">'+esc(r.tier.name)+'</div></div></div>'
+        +'</div></section>';
+    }).join("");
+    var sumRows=recips.map(function(r){return '<tr><td>'+esc(r.name)+'</td><td class="n">'+r.scp+'%</td><td>'+esc(r.tier.name)+'</td><td class="n">'+r.eng+'%</td><td>'+esc(r.band)+'</td><td class="n">'+r.cor+'/'+r.tot+'</td></tr>';}).join("");
+    var summary='<section class="cert summary"><div class="sumwrap"><h1>'+esc(courseName)+(cohort?' — '+esc(cohort):'')+'</h1><div class="sumsub">Cohort results · '+esc(dateStr)+' · '+recips.length+' participants</div>'
+      +'<table class="sumtbl"><thead><tr><th>Name</th><th>Score</th><th>Certificate</th><th>Engagement</th><th>Band</th><th>Correct</th></tr></thead><tbody>'+sumRows+'</tbody></table>'
+      +'<div class="legend"><b>Score bands:</b> Master Pass ≥ 80% · Practitioner 70–79% · Associate 60–69% · Attended &lt; 60%. &nbsp; <b>Engagement:</b> Full ≥ 90% · Active 60–89% · Participant &lt; 60%.</div></div></section>';
+    var css='<style>*{box-sizing:border-box;margin:0;padding:0}:root{--acc:'+accent+'}body{font-family:Georgia,"Times New Roman",serif;color:#1a2330;background:#50606f}@page{size:A4 landscape;margin:0}.cert{width:297mm;height:210mm;page-break-after:always;display:flex;align-items:center;justify-content:center;padding:12mm;background:#fff}.cert:last-child{page-break-after:auto}.frame{position:relative;width:100%;height:100%;border:3px solid var(--acc);outline:1px solid var(--acc);outline-offset:5px;border-radius:4px;padding:15mm 20mm;display:flex;flex-direction:column;align-items:center;text-align:center;overflow:hidden}.watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:120px;font-weight:bold;color:var(--acc);opacity:.045;letter-spacing:4px;pointer-events:none;white-space:nowrap}.ch{display:flex;align-items:center;gap:14px;margin-bottom:5mm}.logoimg{height:52px}.logoph{width:120px;height:52px;border:1.5px dashed #9aa7b4;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9aa7b4;font-family:Arial,sans-serif;font-size:12px;letter-spacing:2px}.org .o1{font-size:20px;font-weight:bold;color:var(--acc)}.org .o2{font-size:12px;color:#6b7785;font-family:Arial,sans-serif;letter-spacing:.5px}.ttl{font-size:16px;letter-spacing:5px;text-transform:uppercase;color:#6b7785;font-family:Arial,sans-serif;margin-top:1mm}.tier{font-size:38px;font-weight:bold;color:var(--acc);margin:1mm 0 4mm}.pre{font-size:15px;font-style:italic;color:#55616e}.who{font-size:42px;font-weight:bold;margin:3mm 0;padding-bottom:3mm;border-bottom:2px solid var(--acc);min-width:55%}.bdy{font-size:17px;line-height:1.5;max-width:210mm;color:#333}.stats{display:flex;gap:9mm;margin-top:5mm;font-family:Arial,sans-serif;font-size:13px;color:#55616e;align-items:baseline}.stats b{color:var(--acc);font-size:16px}.cf{display:flex;justify-content:space-between;align-items:flex-end;width:100%;margin-top:auto}.sig{text-align:center;min-width:70mm}.sigimg{height:42px;margin-bottom:2px}.sigph{height:42px}.sigline{border-top:1.5px solid #333;width:70mm;margin:0 auto}.signame{font-size:15px;font-weight:bold;margin-top:4px}.sigrole{font-size:12px;color:#6b7785;font-family:Arial,sans-serif}.seal{width:34mm;height:34mm;border-radius:50%;border:3px double var(--acc);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--acc);flex:none}.sealscore{font-size:26px;font-weight:bold;line-height:1}.sealtier{font-size:9px;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:1px;margin-top:3px;max-width:30mm}.summary{align-items:flex-start}.summary .sumwrap{width:100%;font-family:Arial,sans-serif;padding:4mm}.summary h1{font-family:Georgia,serif;color:var(--acc);font-size:28px}.sumsub{color:#6b7785;margin:4px 0 8mm;font-size:14px}.sumtbl{width:100%;border-collapse:collapse;font-size:14px}.sumtbl th{background:var(--acc);color:#fff;text-align:left;padding:8px 12px}.sumtbl td{padding:7px 12px;border-bottom:1px solid #dce3ea}.sumtbl td.n{text-align:right;font-variant-numeric:tabular-nums}.legend{margin-top:8mm;font-size:12px;color:#55616e;line-height:1.7}@media screen{body{padding:20px}.cert{box-shadow:0 4px 20px rgba(0,0,0,.3);margin:0 auto 20px}}</style>';
+    var html='<!doctype html><html><head><meta charset="utf-8"><title>Certificates — '+esc(courseName)+'</title>'+css
+      +'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.focus();window.print();},350);};<\/scr'+'ipt></head><body>'+certs+summary+'</body></html>';
+    var w=window.open("","_blank");
+    if(w){w.document.open();w.document.write(html);w.document.close();return;}
+    alert("Please allow pop-ups for this site to open the printable certificates, then try again.");
+  }
   async function renderRepoUI(){
     const rs=document.getElementById("repoState"), ru=document.getElementById("repoUnfinished");
     if(rs){ rs.innerHTML = REPO.on()
@@ -753,7 +804,7 @@ async function renderHostSetup(body){
     const done=items.filter(function(x){return x.status==="completed";});
     const DOCS={}; items.forEach(function(x){ DOCS[x.id]=x; });
     function prog(x){ if(x.status==="completed"){ return x.kind==="course" ? ((((x.quizPaths||[]).length)||"?")+" quizzes · complete") : "quiz complete"; } return x.kind==="course" ? ("quiz "+((x.resumeIdx||0)+1)+" of "+(((x.quizPaths||[]).length)||"?")) : ("question "+(((x.qi||0)+2))+(x.total?(" of "+x.total):"")); }
-    function row(x,act,label){ return '<div class="sessrow"><div class="sessmeta"><b>'+esc(x.name||x.id)+'</b><span>'+esc(prog(x))+' \u00b7 '+((x.players||[]).length)+' players \u00b7 '+esc(new Date(x.savedAt||x.completedAt||Date.now()).toLocaleString())+'</span></div><div style="display:flex;gap:10px;align-items:center;flex:none"><button class="btn2 sess-act" type="button" data-id="'+esc(x.id)+'" data-act="'+act+'">'+label+'</button><button class="btn2 sess-exp" type="button" data-id="'+esc(x.id)+'" title="Download a results CSV (names, per-quiz scores, engagement %) for certificates">Export ⤓</button><button class="tinylink sess-del" type="button" data-id="'+esc(x.id)+'" data-done="'+(x.status==="completed"?"1":"")+'" style="padding:0">discard</button></div></div>'; }
+    function row(x,act,label){ return '<div class="sessrow"><div class="sessmeta"><b>'+esc(x.name||x.id)+'</b><span>'+esc(prog(x))+' \u00b7 '+((x.players||[]).length)+' players \u00b7 '+esc(new Date(x.savedAt||x.completedAt||Date.now()).toLocaleString())+'</span></div><div style="display:flex;gap:10px;align-items:center;flex:none"><button class="btn2 sess-act" type="button" data-id="'+esc(x.id)+'" data-act="'+act+'">'+label+'</button><button class="btn2 sess-exp" type="button" data-id="'+esc(x.id)+'" title="Download a results CSV (names, per-quiz scores, engagement %) for certificates">Export ⤓</button><button class="btn2 sess-cert" type="button" data-id="'+esc(x.id)+'" title="Produce printable branded certificates (PDF) for everyone who took part">Certificates</button><button class="tinylink sess-del" type="button" data-id="'+esc(x.id)+'" data-done="'+(x.status==="completed"?"1":"")+'" style="padding:0">discard</button></div></div>'; }
     let html='<div class="sessionhdr">Saved sessions \u00b7 resume on any machine</div>';
     if(!items.length){ html+='<div class="repohint">No saved sessions yet \u2014 they appear here by their \u201cCourse \u2013 Cohort\u201d name as you run and finish rooms.</div>'; }
     else {
@@ -763,6 +814,7 @@ async function renderHostSetup(body){
     ru.innerHTML=html;
     ru.querySelectorAll(".sess-act").forEach(function(b){ b.onclick=function(){ const x=DOCS[b.dataset.id]; if(!x)return; if(b.dataset.act==="reopen") doReopenRepo(x); else doResumeRepo(x); }; });
     ru.querySelectorAll(".sess-exp").forEach(function(b){ b.onclick=function(){ exportRoster(DOCS[b.dataset.id]); }; });
+    ru.querySelectorAll(".sess-cert").forEach(function(b){ b.onclick=function(){ generateCertificates(DOCS[b.dataset.id]); }; });
     ru.querySelectorAll(".sess-del").forEach(function(b){ b.onclick=function(){ if(!confirm("Discard this saved session? It is removed from the private repo.")) return; REPO.discard(b.dataset.id, b.dataset.done==="1").then(function(){ renderRepoUI(); }); }; });
   }
   async function doResumeRepo(x){
@@ -1262,10 +1314,12 @@ async function loadAgg(){
 }
 function buildSessAgg(){
   const agg={};
-  function fold(name, qts){ const k=nameKey(name); if(!k||name==="Guest") return; if(!agg[k]) agg[k]={name:name, quiz:[]}; else if(name) agg[k].name=name; (qts||[]).forEach((v,i)=>{ agg[k].quiz[i]=Math.max(agg[k].quiz[i]||0, v||0); }); }
-  if(SESSION_STORE && SESSION_STORE.id===SESSION.id) (SESSION_STORE.players||[]).forEach(pl=>fold(pl.name, (pl.quizTotals&&pl.quizTotals.length)?pl.quizTotals:[pl.score||0]));
-  if(typeof H!=="undefined"&&H&&H.players) H.players.forEach(p=>{ if(p.name&&p.name!=="Guest") fold(p.name, (p.quizTotals&&p.quizTotals.length)?p.quizTotals:[p.score||0]); });
-  Object.keys(agg).forEach(k=>{ agg[k].total=agg[k].quiz.reduce((s,v)=>s+(v||0),0); });
+  function fold(name, qts, qss){ const k=nameKey(name); if(!k||name==="Guest") return; if(!agg[k]) agg[k]={name:name, quiz:[], ans:[]}; else if(name) agg[k].name=name;
+    (qts||[]).forEach((v,i)=>{ agg[k].quiz[i]=Math.max(agg[k].quiz[i]||0, v||0); });
+    (qss||[]).forEach((v,i)=>{ if(v){ agg[k].ans[i]=Math.max(agg[k].ans[i]||0, v.a||0); } }); }
+  if(SESSION_STORE && SESSION_STORE.id===SESSION.id) (SESSION_STORE.players||[]).forEach(pl=>fold(pl.name, (pl.quizTotals&&pl.quizTotals.length)?pl.quizTotals:[pl.score||0], pl.qStats||[]));
+  if(typeof H!=="undefined"&&H&&H.players) H.players.forEach(p=>{ if(p.name&&p.name!=="Guest") fold(p.name, (p.quizTotals&&p.quizTotals.length)?p.quizTotals:[p.score||0], p.qStats||[]); });
+  Object.keys(agg).forEach(k=>{ agg[k].total=agg[k].quiz.reduce((s,v)=>s+(v||0),0); agg[k].ansTotal=agg[k].ans.reduce((s,v)=>s+(v||0),0); });
   return agg;
 }
 function resultRows(level, hasParent){
@@ -1273,11 +1327,18 @@ function resultRows(level, hasParent){
   if(level==="course"){
     const keys={}; Object.keys(agg).forEach(k=>keys[k]=1); Object.keys(COURSE_OTHERS||{}).forEach(k=>keys[k]=1);
     const rows=[];
-    Object.keys(keys).forEach(k=>{ const a=agg[k], other=COURSE_OTHERS[k]; const name=(a&&a.name)||(other&&other.name); if(!name||name==="Guest") return; const v=((a&&a.total)||0)+(hasParent?((other&&other.total)||0):0); rows.push({id:k, name, v}); });
+    Object.keys(keys).forEach(k=>{ const a=agg[k], other=COURSE_OTHERS[k]; const name=(a&&a.name)||(other&&other.name); if(!name||name==="Guest") return;
+      const v=((a&&a.total)||0)+(hasParent?((other&&other.total)||0):0);
+      const part=((a&&(a.ansTotal||a.total))||0)+(hasParent?((other&&other.total)||0):0);
+      if(v<=0 && part<=0) return;   // skip carried-over players who never took part in this course
+      rows.push({id:k, name, v}); });
     return rows.sort((a,b)=>b.v-a.v);
   }
   const rows=[];
-  Object.keys(agg).forEach(k=>{ const a=agg[k]; if(!a.name||a.name==="Guest") return; let v; if(level==="quiz"){ v=a.quiz[RV.qi]||0; } else { v=a.total||0; } rows.push({id:k, name:a.name, v}); });
+  Object.keys(agg).forEach(k=>{ const a=agg[k]; if(!a.name||a.name==="Guest") return;
+    let v, part; if(level==="quiz"){ v=a.quiz[RV.qi]||0; part=(a.ans[RV.qi]||0); } else { v=a.total||0; part=a.ansTotal||0; }
+    if(v<=0 && part<=0) return;   // only show people who actually took part in this quiz/session
+    rows.push({id:k, name:a.name, v}); });
   return rows.sort((a,b)=>b.v-a.v);
 }
 function hbarsHTML(rows){

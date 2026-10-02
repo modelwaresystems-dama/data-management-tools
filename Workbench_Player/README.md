@@ -33,7 +33,23 @@ The public page never contains assets or scores. It fetches assets through the p
 - Host opens `/live/` on the projector → **Host this quiz** → room code + QR appear.
 - Learners scan / enter code + name on phones.
 - Drive: **Start round → Reveal → Next**. Leaderboard builds live.
-- At the end press **Save results ⤓** → a `results-<code>-<date>.csv` (rank, name, score) downloads. **Save that file into the private repo's `Workbench_Player/results/` folder.** That's the only place student data is kept.
+- Results **save automatically to your private repo** as you finish each quiz (connect it once via **GitHub settings** on the host screen). They appear under **Saved sessions**, named by *Course – Cohort*, and you can resume or review them from any machine. A per-session Export CSV and **Certificates** (print-ready PDFs) sit on each saved row. Student data lives only in the private repo.
+
+## Cohorts — resume or start fresh?
+
+**Rule of thumb: a new cohort → _start fresh_. Resume / Re-open are only for the _same_ cohort.**
+
+Every saved session is identified by **session title + cohort** (`sessionId = slug(day/session title)__slug(cohort)`), so the cohort is part of the record's identity. A new group of learners therefore gets its own clean record, history and certificates automatically — there is nothing to resume.
+
+| Situation | Do this | Why |
+|---|---|---|
+| New intake / new cohort | **Start fresh** — pick the course + the new cohort on the host screen and open the room | New people have no prior run; they get a clean record and clean certificates |
+| Same cohort, session was interrupted (end of day 1, dropped connection) | **Saved sessions → Resume** | Carries that cohort's running scores forward to the next quiz; won't restart a finished quiz |
+| Same cohort, session finished — review results, print certificates, add a quiz | **Saved sessions → Re-open** | Opens the final review without restarting anything |
+
+**Give every cohort its own distinct name** (e.g. `DAMA Cape Town — Oct 2026`). Because the cohort is half the session ID, two different groups run under the same cohort name will **merge into one record**. Distinct names keep every intake — and its certificates — cleanly separate.
+
+Note on the live views: the leaderboard and final-results screen show only the people in the **current run** (present, or who answered this run). Resuming the same cohort still carries their scores; re-opening a finished session for review shows everyone. The underlying saved record keeps the full roster either way, so certificates are never short.
 
 ## Wiring the Workbench "Play" buttons
 - Self-paced quiz: `/player/?quiz=<asset path>`

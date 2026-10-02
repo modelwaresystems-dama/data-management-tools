@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.1.0">
 <title>CDMP Value Analytics — Modelware</title>
 <style>
 :root{
@@ -102,6 +102,14 @@ details.ft .items{padding:0 14px 12px}
 .hidden{display:none!important}
 .section-gap{margin-top:26px}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Perceptions Gap tab */
+.tabs{display:flex;gap:6px;margin:18px 0 0}
+.tab{font-family:var(--ff-body);font-size:14px;font-weight:600;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--muted);border-radius:10px 10px 0 0;padding:9px 16px;cursor:pointer}
+.tab.on{color:var(--fg);background:var(--surface);box-shadow:var(--shadow)}
+.tab:hover{color:var(--fg)}
+.grid2cmp{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:10px}
+@media(max-width:620px){.grid2cmp{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -123,6 +131,11 @@ details.ft .items{padding:0 14px 12px}
     </div>
     <div class="row-btns"><button class="btn primary" id="loadBtn">Load results</button><button class="forget" id="forgetBtn">Forget token</button></div>
   </details>
+
+  <div class="tabs hidden" id="tabNav">
+    <button class="tab on" id="tabThis">This survey</button>
+    <button class="tab" id="tabGap">Perceptions Gap</button>
+  </div>
 
   <div id="dash" class="hidden">
     <div class="kpis section-gap" id="kpis"></div>
@@ -148,6 +161,8 @@ details.ft .items{padding:0 14px 12px}
       <button class="btn" id="refreshBtn">Refresh</button>
     </div>
   </div>
+
+  <div id="dashCompare" class="hidden"></div>
 </div>
 
 <script>
@@ -300,11 +315,12 @@ async function loadResults(){
     var mr=await fetch(modelUrl,{cache:'no-store'});if(!mr.ok)throw new Error('Could not load survey.json ('+mr.status+') from '+modelUrl);
     MODEL=await mr.json();indexModel(MODEL);
     setStatus('Loading responses…');
-    var rows=await ghListJson(owner,repo,branch,folder,token); rows=rows.filter(function(r){return r && r.survey===MODEL.id;});
-    setStatus('Loaded '+rows.length+' responses.','ok');
+    var allRows=await ghListJson(owner,repo,branch,folder,token);
+    var rows=allRows.filter(function(r){return r && r.survey===MODEL.id;});
+    setStatus('Loaded '+rows.length+' for this survey, '+allRows.length+' total.','ok');
+    buildCompare(allRows); $('tabNav').classList.remove('hidden'); $('connPanel').open=false;
     if(!rows.length){$('dash').classList.add('hidden');$('loadBtn').disabled=false;return;}
     render(aggregate(rows),rows);
-    $('connPanel').open=false;
   }catch(e){setStatus(String(e.message||e),'err');$('connPanel').open=true;}finally{$('loadBtn').disabled=false;}
 }
 
@@ -350,6 +366,84 @@ function publicAggregate(){
   download('aggregate.json',JSON.stringify(out,null,2),'application/json');
   setStatus('Public aggregate downloaded — commit it to the results-page folder. No raw responses or free-text included.','ok');
 }
+
+
+/* ============ Perceptions Gap (cross-survey comparison) ============ */
+var PRO_SURVEY="cdmp-barriers-v1", CORP_SURVEY="cdmp-value-corporate-v1";
+var COMPARE={pro:[],corp:[]};
+function cAvg(arr){var s=0,n=0;arr.forEach(function(x){if(x!=null&&!isNaN(x)){s+=x;n++;}});return n?s/n:null;}
+function cField(a,f){var p=f.split('.'),v=a[p[0]];if(p.length>1)v=(v&&typeof v==='object')?v[p[1]]:undefined;return (typeof v==='number')?v:null;}
+function cMap(a,f,m){var v=a[f];return (v!=null&&m[v]!=null)?m[v]:null;}
+function cRev(x){return x==null?null:6-x;}      /* reverse a 1-5 barrier -> 1-5 positive */
+function cEx6(x){return x===6?null:(typeof x==='number'?x:null);} /* drop the '6 = don't know/NA' option */
+
+/* per-row 1-5 score for each side, per theme (category maps documented in the mapping doc) */
+function proScore(t,a){
+  if(t==='T1') return cAvg([ cEx6(a.q11), cRev(cField(a,'q8.no_level_distinction')) ]);
+  if(t==='T2') return cAvg([ a.q6, cEx6(a.q7), cMap(a,'q27',{A:5,B:4,C:3,D:1}) ]);
+  if(t==='T3') return cAvg([ a.q21, a.q22 ]);
+  return null;
+}
+function corpScore(t,a){
+  if(t==='T1') return cAvg([ cEx6(a.q_levels_known), cMap(a,'q_level_distinguish',{A:5,B:4,C:2,D:1}) ]);
+  if(t==='T2') return cAvg([ cField(a,'q_sponsor_levels.practitioner'), cField(a,'q_sponsor_levels.master'),
+                              cMap(a,'q_progression_value',{A:5,B:4,C:2,D:3}), cMap(a,'q_cdo_budget',{A:5,B:3,C:2,D:1}),
+                              cMap(a,'q_ld_policy',{A:5,B:4,C:3,D:2,E:1}) ]);
+  if(t==='T3'){var m=a.q_value_battery; if(!m||typeof m!=='object')return null; return cAvg(Object.keys(m).map(function(k){return m[k];}));}
+  return null;
+}
+function sideMean(rows,fn,t){return cAvg(rows.map(function(r){return fn(t,r.answers||{});}));}
+var SCALAR=[
+ {id:'T1',label:'Level recognition'},
+ {id:'T2',label:'Progression & sponsorship'},
+ {id:'T3',label:'Value placed on CDMP'}
+];
+var T4OPTS=[
+ {label:'Professional portfolio',pro:'portfolio',corp:'portfolio'},
+ {label:'Workplace project / case study',pro:'case_study',corp:'project'},
+ {label:'Employer / client references',pro:'references',corp:'references'},
+ {label:'Structured interview',pro:'interview',corp:'interview'},
+ {label:'Peer / mentor assessment',pro:'peer',corp:'peer'},
+ {label:'Years of experience',pro:'experience',corp:'experience'},
+ {label:'Higher exam scores',pro:'scores',corp:'scores'},
+ {label:'Contribution to the profession',pro:'contribution',corp:'contribution'}
+];
+function optPct(rows,field,key){if(!rows.length)return null;var c=0;rows.forEach(function(r){var v=(r.answers||{})[field];if(Array.isArray(v)&&v.indexOf(key)>-1)c++;});return c/rows.length*100;}
+var T5PRO={q:'q9',map:{A:'Cost',B:'Time',C:'Exam difficulty',D:'Lack of prep resources',E:'Specialist choice',F:'Lack of employer support',G:'Unclear career return',H:'No value beyond Associate',I:'Intend but not started',J:'Other'}};
+var T5CORP={q:'q_barrier_sponsor',map:{A:'Cost of exams/training',B:'Unclear ROI',C:"Market doesn't distinguish levels",D:'Time to study',E:'Lack of local training',F:'Already sponsor fully',G:'Other'}};
+function distCat(rows,field,map){var o={};rows.forEach(function(r){var v=(r.answers||{})[field];if(v!=null&&map[v])o[map[v]]=(o[map[v]]||0)+1;});return Object.keys(o).map(function(k){return {label:k,value:o[k]};}).sort(function(a,b){return b.value-a.value;});}
+function pairedPctHTML(rows){return rows.map(function(r){var wa=r.a==null?0:r.a,wb=r.b==null?0:r.b;
+ return '<div class="bar-row"><div class="bar-lab">'+esc(r.label)+'</div><div class="grp"><div class="track" title="Professionals: '+(r.a==null?'—':Math.round(r.a)+'%')+'"><div class="fill a" style="width:'+wa.toFixed(0)+'%"></div></div><div class="track" title="Employers: '+(r.b==null?'—':Math.round(r.b)+'%')+'"><div class="fill b" style="width:'+wb.toFixed(0)+'%"></div></div></div><div class="bar-val">'+(r.a==null?'—':Math.round(r.a)+'%')+' / '+(r.b==null?'—':Math.round(r.b)+'%')+'</div></div>';}).join('');}
+function cLegend(){return '<div class="legend"><span><i class="swatch sw-a"></i>Professionals</span><span><i class="swatch sw-b"></i>Employers</span></div>';}
+function cCaution(pro,corp){var w=[];if(pro.length<3)w.push('professionals n='+pro.length);if(corp.length<3)w.push('employers n='+corp.length);return w.length?'<div class="viz-note" style="color:var(--warn)">Small sample — '+w.join(', ')+'. Read as provisional, not a finding.</div>':'';}
+function buildCompare(allRows){
+  COMPARE.pro=allRows.filter(function(r){return r&&r.survey===PRO_SURVEY;});
+  COMPARE.corp=allRows.filter(function(r){return r&&r.survey===CORP_SURVEY;});
+  renderCompare();
+}
+function renderCompare(){
+  var pro=COMPARE.pro,corp=COMPARE.corp;
+  if(!pro.length&&!corp.length){$('dashCompare').innerHTML='<div class="empty">No responses from either survey yet — the comparison fills in as they arrive.</div>';return;}
+  var html='<div class="kpis section-gap">'+kpi(pro.length,'professional responses')+kpi(corp.length,'employer responses')+'</div>';
+  var rows=SCALAR.map(function(t){return {label:t.label,a:sideMean(pro,proScore,t.id),b:sideMean(corp,corpScore,t.id),aLab:'Professionals',bLab:'Employers'};});
+  html+='<section class="panel section-gap"><div class="viz-title">Perception vs reality — 1–5 by theme</div>'+
+    '<div class="viz-note">Each theme on a common 1–5 scale (higher = more recognition / value / support). Where the two bars diverge is where professionals and employers see CDMP differently.</div>'+
+    cLegend()+cCaution(pro,corp)+'<div class="bars">'+groupedHTML(rows)+'</div></section>';
+  var t4=T4OPTS.map(function(o){return {label:o.label,a:optPct(pro,'q25',o.pro),b:optPct(corp,'q_evidence_expected',o.corp)};});
+  html+='<section class="panel section-gap"><div class="viz-title">Evidence beyond the exam — what each side wants</div>'+
+    '<div class="viz-note">Share on each side selecting each kind of evidence as proof of competence.</div>'+cLegend()+cCaution(pro,corp)+
+    '<div class="bars">'+pairedPctHTML(t4)+'</div></section>';
+  html+='<section class="panel section-gap"><div class="viz-title">Barriers &amp; ROI — two frames, side by side</div>'+
+    '<div class="viz-note">The two surveys ask this differently (a person’s barrier vs an organisation’s limit), so these are two distributions, not a paired bar.</div>'+
+    '<div class="grid2cmp"><div><div class="idx-cap" style="color:var(--s1)">Professionals — biggest barrier</div>'+barsHTML(distCat(pro,T5PRO.q,T5PRO.map))+'</div>'+
+    '<div><div class="idx-cap" style="color:var(--s2)">Employers — what limits sponsoring</div>'+barsHTML(distCat(corp,T5CORP.q,T5CORP.map))+'</div></div></section>';
+  $('dashCompare').innerHTML=html;
+}
+function showTab(which){var g=which==='gap';$('dash').classList.toggle('hidden',g);$('dashCompare').classList.toggle('hidden',!g);
+  document.getElementById('tabThis').classList.toggle('on',!g);document.getElementById('tabGap').classList.toggle('on',g);}
+(function(){var a=document.getElementById('tabThis'),b=document.getElementById('tabGap');
+  if(a)a.onclick=function(){showTab('this');};if(b)b.onclick=function(){showTab('gap');};})();
+/* ============ end Perceptions Gap ============ */
 
 (function init(){
   var cfg=lsGet('cdmp-value-analytics:cfg');if(cfg){try{var c=JSON.parse(cfg);if(c.owner)$('f_owner').value=c.owner;if(c.repo)$('f_repo').value=c.repo;if(c.branch)$('f_branch').value=c.branch;if(c.folder)$('f_folder').value=c.folder;if(c.model)$('f_model').value=c.model;}catch(e){}}

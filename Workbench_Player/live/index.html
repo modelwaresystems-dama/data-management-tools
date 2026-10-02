@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.21.29">
+<meta name="version" content="1.22.0">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -337,7 +337,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.21.29";</script>
+<script>window.PAGE_BUILD="1.22.0";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -447,7 +447,7 @@ const REPO=(function(){
   }
   const lastBody={}; let flushTimer=null, pending=null;
   function save(snap){ if(!on()||!snap||!snap.id) return; const cmp=JSON.stringify(Object.assign({},snap,{savedAt:0})); if(lastBody[snap.id]===cmp) return; pending=snap; setRepoStat("queued"); if(!flushTimer) flushTimer=setTimeout(function(){ flushTimer=null; flush(); }, 8000); }
-  async function flush(){ if(!pending) return; const snap=pending; pending=null; const cmp=JSON.stringify(Object.assign({},snap,{savedAt:0})); lastBody[snap.id]=cmp; const path=LIVE+"/active/"+snap.id+".json"; setRepoStat("saving"); try{ const prior=await getJson(path); const merged=mergeSnap(snap, prior); await put(path,merged,"Session: "+snap.name); setRepoStat("saved"); }catch(e){ delete lastBody[snap.id]; setRepoStat("failed:"+(e.message||"")); } }
+  async function flush(){ if(!pending) return; const snap=pending; pending=null; const cmp=JSON.stringify(Object.assign({},snap,{savedAt:0})); lastBody[snap.id]=cmp; const path=LIVE+"/active/"+snap.id+".json"; setRepoStat("saving"); try{ const prior=await getJson(path); let merged=mergeSnap(snap, prior); if(prior&&prior.players){ const ps=(prior.players||[]).reduce((s,p)=>s+(p.score||0),0); const ms=(merged.players||[]).reduce((s,p)=>s+(p.score||0),0); if(ps>0&&ms<ps){ merged=prior; } } await put(path,merged,"Session: "+snap.name); setRepoStat("saved"); }catch(e){ delete lastBody[snap.id]; setRepoStat("failed:"+(e.message||"")); } }
   function flushNow(){ if(flushTimer){ clearTimeout(flushTimer); flushTimer=null; } return flush(); }
   async function listDir(sub){ let items=[]; try{ const r=await fetch(api(LIVE+"/"+sub)+"?ref="+encodeURIComponent(cfg().branch),{headers:hdr(),cache:"no-store"}); if(r.status!==200) return []; items=await r.json(); }catch(e){ return []; } if(!Array.isArray(items)) return []; const out=[]; for(const it of items){ if(!/\.json$/i.test(it.name||"")) continue; const doc=await getJson(LIVE+"/"+sub+"/"+it.name); if(doc) out.push(doc); } return out; }
   async function list(){ if(!on()) return []; const out=await listDir("active"); out.sort((a,b)=>String(b.savedAt||"").localeCompare(String(a.savedAt||""))); return out; }
@@ -455,8 +455,9 @@ const REPO=(function(){
   function load(id){ return getJson(LIVE+"/active/"+id+".json"); }
   async function archive(snap){ if(!on()||!snap||!snap.id) return; if(flushTimer){ clearTimeout(flushTimer); flushTimer=null; } pending=null; const cpath=LIVE+"/completed/"+snap.id+".json", apath=LIVE+"/active/"+snap.id+".json"; try{ const pa=await getJson(apath), pc=await getJson(cpath); let merged=mergeSnap(snap, pa); merged=mergeSnap(merged, pc); const done=Object.assign({},merged,{status:"completed", completedAt:new Date().toISOString()}); await put(cpath, done, "Completed: "+snap.name); await del(apath,"Archive: "+snap.name); delete lastBody[snap.id]; setRepoStat("saved"); }catch(e){ setRepoStat("failed:"+(e.message||"")); } }
   async function check(){ if(!on()) return {reason:"no token"}; const c=cfg(); try{ const r=await fetch("https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+encodeURIComponent(c.repo),{headers:hdr(),cache:"no-store"}); if(r.status===200){ const j=await r.json(); const w=!!(j.permissions&&(j.permissions.push||j.permissions.admin||j.permissions.maintain)); const db=j.default_branch||"main"; let fixed=false; if(c.branch && c.branch!==db){ /* stored branch looks wrong (e.g. a folder name) — heal to the repo default */ healBranch(db); fixed=true; } else { branchOverride=db; } return {repo:(j.full_name||(c.owner+"/"+c.repo)), write:w, branch:db, fixed:fixed}; } if(r.status===401||r.status===403) return {reason:"token rejected ("+r.status+")"}; if(r.status===404) return {reason:"repo not found or no access"}; return {reason:"status "+r.status}; }catch(e){ return {reason:"network error"}; } }
+  async function appendHistory(rec){ if(!on()||!rec||!rec.id) return; const path=LIVE+"/history/"+encodeURIComponent(rec.id)+".json"; try{ await put(path, rec, "History: "+(rec.quizTitle||"quiz")+(rec.className?(" · "+rec.className):"")); }catch(e){} }
   async function discard(id, completed){ if(!on()||!id) return; try{ await del(LIVE+"/"+(completed?"completed":"active")+"/"+id+".json","Discard session "+id); delete lastBody[id]; }catch(e){} }
-  return { on, cfg, raw, save, flushNow, check, discard, list, listAll, load, archive };
+  return { on, cfg, raw, save, flushNow, check, discard, list, listAll, load, archive, appendHistory };
 })();
 function ghRawCfg(){ try{ return JSON.parse(localStorage.getItem("ds_gh_cfg")||"{}"); }catch(e){ return {}; } }
 function openRepoCfg(){ const m=document.getElementById("repoModal"); if(!m)return; const c=Object.assign({owner:"modelwaresystems-dama",repo:"modelware_app_storage",branch:"main"}, ghRawCfg());
@@ -722,6 +723,19 @@ async function renderHostSetup(body){
     role="host"; startHost();
   }
   fillClasses(); refreshResume(); renderRepoUI();
+  function exportRoster(x){
+    if(!x){ return; }
+    const paths=(x.quizPaths||[]); const titles=paths.map(p=>(quizzes.find(q=>q.path===p)||{}).title||p);
+    const head=["Name"].concat(titles.map(t=>"Quiz: "+t)).concat(["Total score","Answered","Questions","Engagement %","Correct","Score %"]);
+    const rows=[head];
+    (x.players||[]).forEach(p=>{ const qt=p.quizTotals||[]; const qs=p.qStats||[]; let ans=0,tot=0,cor=0; qs.forEach(z=>{ if(z){ ans+=z.a||0; tot+=z.n||0; cor+=z.c||0; } });
+      const total=(qt.length?qt.reduce((a,b)=>a+(b||0),0):(p.score||0));
+      const eng=tot?Math.round(ans/tot*100):""; const scp=tot?Math.round(cor/tot*100):"";
+      rows.push([p.name].concat(titles.map((_,i)=>qt[i]!=null?qt[i]:"")).concat([total,ans,tot,eng,cor,scp])); });
+    const csv=rows.map(r=>r.map(c=>{ const v=String(c==null?"":c); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }).join(",")).join("\r\n");
+    const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download=(slugify(x.name||x.id)||"results")+"-results.csv"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  }
   async function renderRepoUI(){
     const rs=document.getElementById("repoState"), ru=document.getElementById("repoUnfinished");
     if(rs){ rs.innerHTML = REPO.on()
@@ -739,7 +753,7 @@ async function renderHostSetup(body){
     const done=items.filter(function(x){return x.status==="completed";});
     const DOCS={}; items.forEach(function(x){ DOCS[x.id]=x; });
     function prog(x){ if(x.status==="completed"){ return x.kind==="course" ? ((((x.quizPaths||[]).length)||"?")+" quizzes · complete") : "quiz complete"; } return x.kind==="course" ? ("quiz "+((x.resumeIdx||0)+1)+" of "+(((x.quizPaths||[]).length)||"?")) : ("question "+(((x.qi||0)+2))+(x.total?(" of "+x.total):"")); }
-    function row(x,act,label){ return '<div class="sessrow"><div class="sessmeta"><b>'+esc(x.name||x.id)+'</b><span>'+esc(prog(x))+' \u00b7 '+((x.players||[]).length)+' players \u00b7 '+esc(new Date(x.savedAt||x.completedAt||Date.now()).toLocaleString())+'</span></div><div style="display:flex;gap:10px;align-items:center;flex:none"><button class="btn2 sess-act" type="button" data-id="'+esc(x.id)+'" data-act="'+act+'">'+label+'</button><button class="tinylink sess-del" type="button" data-id="'+esc(x.id)+'" data-done="'+(x.status==="completed"?"1":"")+'" style="padding:0">discard</button></div></div>'; }
+    function row(x,act,label){ return '<div class="sessrow"><div class="sessmeta"><b>'+esc(x.name||x.id)+'</b><span>'+esc(prog(x))+' \u00b7 '+((x.players||[]).length)+' players \u00b7 '+esc(new Date(x.savedAt||x.completedAt||Date.now()).toLocaleString())+'</span></div><div style="display:flex;gap:10px;align-items:center;flex:none"><button class="btn2 sess-act" type="button" data-id="'+esc(x.id)+'" data-act="'+act+'">'+label+'</button><button class="btn2 sess-exp" type="button" data-id="'+esc(x.id)+'" title="Download a results CSV (names, per-quiz scores, engagement %) for certificates">Export ⤓</button><button class="tinylink sess-del" type="button" data-id="'+esc(x.id)+'" data-done="'+(x.status==="completed"?"1":"")+'" style="padding:0">discard</button></div></div>'; }
     let html='<div class="sessionhdr">Saved sessions \u00b7 resume on any machine</div>';
     if(!items.length){ html+='<div class="repohint">No saved sessions yet \u2014 they appear here by their \u201cCourse \u2013 Cohort\u201d name as you run and finish rooms.</div>'; }
     else {
@@ -748,6 +762,7 @@ async function renderHostSetup(body){
     }
     ru.innerHTML=html;
     ru.querySelectorAll(".sess-act").forEach(function(b){ b.onclick=function(){ const x=DOCS[b.dataset.id]; if(!x)return; if(b.dataset.act==="reopen") doReopenRepo(x); else doResumeRepo(x); }; });
+    ru.querySelectorAll(".sess-exp").forEach(function(b){ b.onclick=function(){ exportRoster(DOCS[b.dataset.id]); }; });
     ru.querySelectorAll(".sess-del").forEach(function(b){ b.onclick=function(){ if(!confirm("Discard this saved session? It is removed from the private repo.")) return; REPO.discard(b.dataset.id, b.dataset.done==="1").then(function(){ renderRepoUI(); }); }; });
   }
   async function doResumeRepo(x){
@@ -755,8 +770,11 @@ async function renderHostSetup(body){
     const note=document.getElementById("hnote"); if(note) note.textContent="Loading saved session\u2026";
     SESSION={ id:x.id, name:x.name||x.id }; hostClassId=x.classId||""; hostClassName=x.className||""; RESUME_SCORES={};
     if(x.kind==="course"){
-      PLAN={ id:x.planId, title:x.planTitle, course:(x.course||null), items:(x.quizPaths||[]).map(p=>({path:p,title:(quizzes.find(q=>q.path===p)||{}).title||p,weight:1})), idx:Math.min((x.resumeIdx||0), Math.max(0,((x.quizPaths||[]).length-1))) };
-      SOLO=null; RESUME_QI=null; RESUME_HOSTMAX=(x.hostMax!=null?x.hostMax:((x.resumeIdx!=null?x.resumeIdx:1)-1));
+      const _len=(x.quizPaths||[]).length; const _hm=(x.hostMax!=null?x.hostMax:((x.resumeIdx!=null?x.resumeIdx:1)-1));
+      const _start=Math.max((x.resumeIdx||0), _hm+1);
+      if(_len>0 && _start>=_len){ return doReopenRepo(x); }   // every quiz already completed -> review Final, never restart one
+      PLAN={ id:x.planId, title:x.planTitle, course:(x.course||null), items:(x.quizPaths||[]).map(p=>({path:p,title:(quizzes.find(q=>q.path===p)||{}).title||p,weight:1})), idx:Math.min(_start, Math.max(0,_len-1)) };
+      SOLO=null; RESUME_QI=null; RESUME_HOSTMAX=_hm;
       COURSE_NAME=(x.course||""); COURSE_DAYS = x.course ? sessions.filter(z=>z.course===x.course) : [];
       (x.players||[]).forEach(pl=>{ if(pl&&pl.name) RESUME_SCORES[pl.name.toLowerCase()]={score:pl.score||0, quizTotals:(pl.quizTotals||[]).slice(), qStats:(pl.qStats||[]).slice()}; });
       try{ QUIZ=normalizeQuiz(await fetchAsset(PLAN.items[PLAN.idx].path,"quiz.sample.json")); }catch(e){ QUIZ={error:e.message}; }
@@ -1021,6 +1039,24 @@ function downloadProgress(){
 async function hostRestart(){ clearInterval(H.timer); H.phase="lobby"; H.qi=-1; H.players.forEach(p=>{p.score=0;p.lastPts=0;p.log={};p.quizTotals=[];p.qStats=[];p._qstart=0;}); H.answers=new Map(); H.counts=[0,0,0,0];
   if(PLAN){ PLAN.idx=0; try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(PLAN.items[0].path,"quiz.sample.json"))); }catch(e){} }
   publishState(); renderHost(); }
+function appendQuizHistory(qidx){
+  if(!REPO.on()) return;
+  const vals=[...H.players.values()].filter(p=>p.name&&p.name!=="Guest");
+  const N=(QUIZ&&QUIZ.questions&&QUIZ.questions.length)||0;
+  const quizTitle=(PLAN?((PLAN.items[qidx]||{}).title):(SOLO&&SOLO.title))||(QUIZ&&QUIZ.title)||"Quiz";
+  const quizPath=(PLAN?((PLAN.items[qidx]||{}).path):(SOLO&&SOLO.path))||"";
+  const players=vals.map(p=>{
+    if(PLAN){ const qs=(p.qStats&&p.qStats[qidx])||{a:0,c:0,n:N}; return {name:p.name, score:(p.quizTotals&&p.quizTotals[qidx])||0, answered:qs.a||0, correct:qs.c||0, total:qs.n||N}; }
+    let a=0,c=0; for(let i=0;i<N;i++){ const e=p.log&&p.log[i]; if(e&&e.pick!=null)a++; if(e&&e.correct)c++; }
+    return {name:p.name, score:p.score||0, answered:a, correct:c, total:N};
+  });
+  const ts=new Date().toISOString();
+  const rec={ v:1, kind:"quiz-completion", at:ts, course:(PLAN&&PLAN.course)||null,
+    session:(PLAN?PLAN.title:(SOLO&&SOLO.title))||(SESSION&&SESSION.name)||"", sessionId:(SESSION&&SESSION.id)||"",
+    quizIndex:qidx, quizTitle:quizTitle, quizPath:quizPath, room:room, classId:hostClassId, className:hostClassName, questions:N, players:players };
+  rec.id=(slugify(hostClassName||"open")||"open")+"__"+(slugify(quizTitle)||("quiz"+qidx))+"__"+ts.replace(/[:.]/g,"-");
+  try{ REPO.appendHistory(rec); }catch(e){}
+}
 function hostNext(){
   clearInterval(H.timer);
   H.qi++;
@@ -1033,6 +1069,8 @@ function hostNext(){
       if(!p.qStats)p.qStats=[]; while(p.qStats.length<qidx)p.qStats.push({a:0,c:0,n:0}); const _N=(QUIZ&&QUIZ.questions&&QUIZ.questions.length)||0; let _A=0,_C=0; for(let i=0;i<_N;i++){ const e=p.log&&p.log[i]; if(e&&e.pick!=null)_A++; if(e&&e.correct)_C++; } p.qStats[qidx]={a:_A,c:_C,n:_N}; });
     if(PLAN){ H.hostMax=Math.max((H.hostMax==null?-1:H.hostMax), PLAN.idx); }
     if(PLAN) saveProgress();
+    try{ appendQuizHistory(PLAN?PLAN.idx:0); }catch(e){}   // immutable per-completion history (append-only, never overwritten)
+    if(PLAN && REPO.on()){ try{ REPO.save(sessionSnapshot()); REPO.flushNow(); }catch(e){} }   // persist banked result + resumeIdx the instant a quiz finishes
     if(PLAN && PLAN.idx<PLAN.items.length-1){ H.phase="interlude"; RV.level="session"; RV.qi=PLAN.idx; publishState(); renderHost(); if(REPO.on())loadAgg(); return; }
     H.phase="final"; RV.level=(PLAN&&PLAN.course)?"course":(PLAN?"session":"quiz"); RV.qi=PLAN?Math.max(0,PLAN.idx):0; publishState(); renderHost();
     if((PLAN||SOLO)&&REPO.on()){ try{ REPO.archive(sessionSnapshot()); }catch(e){} }

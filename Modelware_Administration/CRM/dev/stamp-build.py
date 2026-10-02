@@ -25,6 +25,17 @@ if a.check:
     if vm and vm.group(1) != m.group(3):
         print("STALE  the repo version meta says %s, the build line says %s" % (vm.group(1), m.group(3)))
         sys.exit(1)
+    import os as _os
+    _idx = _os.path.join(_os.path.dirname(_os.path.abspath(a.file)), "index.html")
+    if _os.path.exists(_idx):
+        _im = re.search(r'<meta name="version" content="([^"]*)">', io.open(_idx, encoding="utf-8").read())
+        if not _im:
+            print("STALE  index.html has no version meta, so the Navigator card cannot update")
+            sys.exit(1)
+        if _im.group(1) != m.group(3):
+            print("STALE  index.html says %s, the app says %s - the Navigator card would show %s"
+                  % (_im.group(1), m.group(3), _im.group(1)))
+            sys.exit(1)
     got = fp(s)
     print(("OK  " if got == m.group(1) else "STALE  ") + "stamp %s, file hashes to %s (v%s, %s)"
           % (m.group(1), got, m.group(3), m.group(2)))
@@ -35,6 +46,18 @@ s = pat.sub('<meta name="crm-build" content="" data-built="%s" data-version="%s"
 # script so it is never typed twice (project rule 1-2).
 vpat = re.compile(r'<meta name="version" content="[^"]*">')
 if vpat.search(s): s = vpat.sub('<meta name="version" content="%s">' % ver, s, count=1)
+# The folder's landing page carries the same number, because that is the file
+# the Asset Navigator's build-manifest.mjs reads for the card. It read 1.33.0
+# while the app was at 1.50.0 for want of this one line.
+import os
+_idx = os.path.join(os.path.dirname(os.path.abspath(a.file)), "index.html")
+if os.path.exists(_idx):
+    _s = io.open(_idx, encoding="utf-8").read()
+    if vpat.search(_s):
+        io.open(_idx, "w", encoding="utf-8").write(vpat.sub('<meta name="version" content="%s">' % ver, _s, count=1))
+        print("  index.html -> v%s (the Navigator card reads this)" % ver)
+    else:
+        print("  WARNING: index.html has no <meta name=\"version\"> - the Navigator card will not update")
 h = fp(s)
 s = s.replace('<meta name="crm-build" content=""', '<meta name="crm-build" content="%s"' % h, 1)
 io.open(a.file, "w", encoding="utf-8").write(s)

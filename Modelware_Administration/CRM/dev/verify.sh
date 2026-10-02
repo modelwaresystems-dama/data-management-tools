@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 APP="$(cd .. && pwd)/crm.html"
 fail=0
 echo "== stamp";            python3 stamp-build.py --file "$APP" --check || fail=1
+echo "== version meta";    node tests/version-1002.js "$APP" | tail -2 || fail=1
 echo "== owner hand-over";  node tests/handover.js "$APP" | tail -2 || fail=1
 echo "== register 21 Sep";  node tests/register-0921.js "$APP" | tail -2 || fail=1
 echo "== folding a deal";  node tests/fold-1002.js "$APP" | tail -2 || fail=1

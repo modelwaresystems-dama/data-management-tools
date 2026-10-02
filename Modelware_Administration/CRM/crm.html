@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="7ae51616ac25" data-built="1 Oct 2026" data-version="1.49.0">
+<meta name="crm-build" content="893e6973d614" data-built="2 Oct 2026" data-version="1.50.0">
 <!-- Repo versioning standard: the Asset Navigator build reads this. Written by
      dev/stamp-build.py from the crm-build line above, never typed twice. -->
-<meta name="version" content="1.49.0">
+<meta name="version" content="1.50.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1031,6 +1031,36 @@ function foldEvents(events){
          event is still on disk, and `deal.restored` puts the deal back. What it
          buys is that every consumer downstream — bands, forecast, coverage,
          flags, export, search — sees a smaller st.deals and needs no change. */
+      /* ONE CONVERSATION, TWO DEALS (1 Oct 2026).
+
+         A thread arrives that nobody can match, a deal is created for it, and
+         later it turns out to be part of a deal that already existed \u2014
+         "iTiQ - introduction" is the same engagement as the iTiQ training deal.
+         Until now the only exits were Won, Lost or Delete, and all three are
+         lies: it was not sold, it was not refused, and the conversation on it
+         is real and belongs somewhere.
+
+         So a deal can be FOLDED into another. Everything logged against it
+         travels; the deal itself stops existing as a deal. Exactly the company
+         merge's shape: only a MARK is set here and the re-pointing happens in
+         one pass at the end, which is what makes `deal.unmerged` a clean
+         cancellation rather than a guess about which lines came from where. */
+      case "deal.merged":
+        if (st.deals[p.fromId] && st.deals[p.intoId] && p.fromId !== p.intoId){
+          st.deals[p.fromId].mergedInto = p.intoId;
+          st.deals[p.fromId].mergedAt = String(e.ts).slice(0,10);
+          st.deals[p.fromId].mergedBy = e.actor;
+          st.deals[p.fromId].mergeReason = p.reason || "";
+        }
+        break;
+      case "deal.unmerged":
+        if (st.deals[p.fromId]){
+          st.deals[p.fromId].mergedInto = null;
+          st.deals[p.fromId].mergedAt = null;
+          st.deals[p.fromId].mergeReason = "";
+        }
+        break;
+
       case "deal.deleted":
         if (st.deals[p.dealId]){
           st.deals[p.dealId].deleted = true;
@@ -1462,6 +1492,63 @@ function foldEvents(events){
     }
   });
 
+  /* FOLDED DEALS. Chains (A\u2192B, B\u2192C) are followed to the end and a cycle
+     is broken rather than hung on, for the same reason the company merge does
+     it: a wrong answer beats a frozen tab, and two visible deals is a problem
+     somebody can see. */
+  st.mergedDeals = {};
+  Object.keys(st.deals).forEach(function (k){
+    if (!st.deals[k].mergedInto) return;
+    var seen = {}, cur = k;
+    while (st.deals[cur] && st.deals[cur].mergedInto){
+      if (seen[cur]){ st.deals[k].mergedInto = null; return; }
+      seen[cur] = true; cur = st.deals[cur].mergedInto;
+    }
+  });
+  var dealTarget = function (id){
+    var seen = {}, cur = id;
+    while (st.deals[cur] && st.deals[cur].mergedInto && !seen[cur]){
+      seen[cur] = true; cur = st.deals[cur].mergedInto;
+    }
+    return cur;
+  };
+  if (Object.keys(st.deals).some(function (k){ return !!st.deals[k].mergedInto; })){
+    /* Everything that hangs off a deal travels with it, stamped with where it
+       came from so the target can say so and the undo can send it back. */
+    var carry = function (bag, key){
+      Object.keys(bag || {}).forEach(function (k){
+        var x = bag[k];
+        var was = x[key];
+        if (!was) return;
+        var now = dealTarget(was);
+        if (now === was) return;
+        x[key] = now;
+        x.foldedFromDeal = was;
+      });
+    };
+    var carrySubject = function (bag){
+      Object.keys(bag || {}).forEach(function (k){
+        var x = bag[k];
+        if (x.subjectType !== "deal") return;
+        var was = x.subjectId, now = dealTarget(was);
+        if (now === was) return;
+        x.subjectId = now;
+        x.foldedFromDeal = was;
+      });
+    };
+    carrySubject(st.interactions);
+    carrySubject(st.followups);
+    carry(st.invoices, "dealId");
+    carry(st.quotes, "dealId");
+    carry(st.pos, "dealId");
+    carry(st.creditNotes, "dealId");
+    Object.keys(st.deals).forEach(function (k){
+      if (!st.deals[k].mergedInto) return;
+      st.mergedDeals[k] = st.deals[k];
+      delete st.deals[k];
+    });
+  }
+
   st.deletedDeals = {};
   Object.keys(st.deals).forEach(function (k){
     if (!st.deals[k].deleted) return;
@@ -1743,6 +1830,25 @@ function lastContact(st, dealId){
   var ix = interactionsFor(st, dealId);
   return ix.length ? ix[0].occurredAt : null;
 }
+/* Where a deal id points now, after any folding. Chains are followed; an id
+   that was never folded answers itself. */
+function liveDeal(st, id){
+  var seen = {}, cur = id;
+  while (cur && !seen[cur]){
+    seen[cur] = true;
+    var m = (st.mergedDeals && st.mergedDeals[cur]) || st.deals[cur];
+    if (m && m.mergedInto) cur = m.mergedInto; else break;
+  }
+  return cur;
+}
+/* Everything that was folded INTO this deal, so the deal can say so. */
+function foldedInto(st, dealId){
+  return Object.keys(st.mergedDeals || {})
+    .filter(function (k){ return liveDeal(st, k) === dealId; })
+    .map(function (k){ return st.mergedDeals[k]; })
+    .sort(function (a, b){ return (a.mergedAt || "") < (b.mergedAt || "") ? -1 : 1; });
+}
+
 function openDeals(st){
   var out = [];
   for (var k in st.deals) if (st.deals[k].status === "open") out.push(st.deals[k]);
@@ -4132,6 +4238,14 @@ function importTriage(text, st, cfg, ctx){
 
   /* deal lookup: by id, and by "company ␟ deal" */
   var byId = {}, byName = {};
+  /* A deal that has been FOLDED into another still has its id in the world \u2014
+     in a worklist, in a batch written last week. It resolves to the deal it was
+     folded into rather than refusing the row, which is the whole point of
+     folding rather than deleting. */
+  Object.keys(st.mergedDeals || {}).forEach(function (k){
+    var t = liveDeal(st, k);
+    if (t && st.deals[t]) byId[k] = st.deals[t];
+  });
   Object.keys(st.deals).forEach(function (k){
     var d = st.deals[k];
     byId[d.id] = d;
@@ -5551,6 +5665,7 @@ var API = {
   sortEvents:sortEvents, foldEvents:foldEvents,
   openFollowups:openFollowups, followupsFor:followupsFor, openFollowupsFor:openFollowupsFor,
   stepsToHandOver:stepsToHandOver, strandedSteps:strandedSteps,
+  liveDeal:liveDeal, foldedInto:foldedInto,
   effectiveDue:effectiveDue, DEFAULT_TERMS_DAYS:DEFAULT_TERMS_DAYS,
   splitVatInclusive:splitVatInclusive, DEFAULT_VAT_RATE:DEFAULT_VAT_RATE,
   suggestDomain:suggestDomain, emailDomain:emailDomain,
@@ -7991,6 +8106,9 @@ function openDeal(dealId){
     headRow.appendChild(h("button", { class:"btn btn-sm danger", type:"button",
       onclick:function (e){ closeDealPrompt(e.currentTarget, d); } }, "Lost"));
     headRow.appendChild(h("button", { class:"btn btn-sm quiet", type:"button",
+      title:"Same engagement as another deal \u2014 everything logged here moves there, and this stops being a deal.",
+      onclick:function (e){ foldDealPrompt(e.currentTarget, d); } }, "Fold into\u2026"));
+    headRow.appendChild(h("button", { class:"btn btn-sm quiet", type:"button",
       title:"For a deal that should never have existed — a duplicate or a typo. Not the same as Lost.",
       onclick:function (e){ deleteDealPrompt(e.currentTarget, d); } }, "Delete"));
   } else {
@@ -8057,6 +8175,24 @@ function openDeal(dealId){
   if (d.notes)
     body.appendChild(h("section", { class:"sec" }, h("h4", { text:"Background" }),
       h("div", { class:"prose", text:d.notes })));
+
+  /* WHAT WAS FOLDED IN HERE. Said on the deal that received it, because
+     otherwise a conversation appears in a history with no account of how it
+     got there \u2014 and the way to undo it would live only in Settings. */
+  (function (){
+    var came = C.foldedInto(App.st, d.id);
+    if (!came.length) return;
+    var sec = h("section", { class:"sec folded-in" }, h("h4", { text:"Folded in" }));
+    came.forEach(function (x){
+      sec.appendChild(h("div", { class:"note", style:"padding:3px 0" },
+        h("span", { text:"\u201c" + x.name + "\u201d was part of this deal, folded in " +
+          (x.mergedAt ? "on " + C.fmtDayYear(x.mergedAt) : "") +
+          (x.mergeReason ? " \u2014 " + x.mergeReason : "") + ". " }),
+        h("a", { href:"#", onclick:(function (id){ return function (e){
+            e.preventDefault(); unfoldDeal(id); }; })(x.id) }, "Separate it again")));
+    });
+    body.appendChild(sec);
+  })();
 
   /* flags — each with its rule on hover */
   var fl = App.flags[d.id] || [];
@@ -8142,7 +8278,9 @@ function openDeal(dealId){
     var ct = x.contactId && App.st.contacts[x.contactId];
     tl.appendChild(h("li", null,
       h("div", { class:"when", text: C.fmtFull(x.occurredAt) + " · " + x.kind +
-        (ct ? " · " + ct.name : "") + (x.actor !== d.owner ? " · " + userName(x.actor) : "") }),
+        (ct ? " · " + ct.name : "") + (x.actor !== d.owner ? " · " + userName(x.actor) : "") +
+        (x.foldedFromDeal && App.st.mergedDeals[x.foldedFromDeal]
+           ? " · from “" + App.st.mergedDeals[x.foldedFromDeal].name + "”" : "") }),
       h("div", { class:"what", text:x.summary })));
   });
   body.appendChild(h("section", { class:"sec" },
@@ -8534,6 +8672,110 @@ function closeDealPrompt(anchor, d){
    point, so the popover says which is which rather than assuming anyone
    remembers. It also counts what goes with the deal, because "delete" reads as
    harmless right up until it takes six logged conversations with it. */
+/* FOLDING ONE DEAL INTO ANOTHER.
+
+   "There are times where interactions have created a new deal but they are
+   part of another deal. I would like to fold the interaction into another deal
+   and not have to DELETE or WON / LOST." (Howard, 2 Oct 2026.)
+
+   Won is a lie, Lost is a lie, and Delete throws away a real conversation.
+   Folding says the true thing: this was never a separate engagement. Everything
+   logged travels to the deal it belonged to all along, and the fold is a mark,
+   so it can be undone. */
+function foldDealPrompt(anchor, d){
+  var co = C.dealParty(App.st, d);
+  var box = h("div");
+  box.appendChild(h("h4", { text:"Fold " + d.name + " into another deal" }));
+  box.appendChild(h("div", { class:"note",
+    text:"For a deal that turned out to be part of one that already existed. Everything " +
+         "logged here moves across \u2014 nothing is deleted, nothing is marked won or lost, " +
+         "and this can be undone." }));
+
+  var ix = C.interactionsFor(App.st, d.id).length;
+  var fu = C.openFollowupsFor(App.st, d.id).length;
+  var inv = C.invoicesFor(App.st, d.id).length;
+  var qs = C.quotesFor(App.st, d.id).length;
+
+  var sel = h("select", { "aria-label":"Fold into which deal" });
+  sel.appendChild(h("option", { value:"" }, "\u2014 choose the deal this belongs to \u2014"));
+  var all = Object.keys(App.st.deals).map(function (k){ return App.st.deals[k]; })
+    .filter(function (x){ return x.id !== d.id; });
+  /* The same customer first, because that is nearly always the answer, and a
+     list of eighty deals with the right one somewhere in it is not an answer. */
+  var same = all.filter(function (x){ return x.companyId === d.companyId; });
+  var rest = all.filter(function (x){ return x.companyId !== d.companyId; });
+  var label = function (x){
+    var p2 = C.dealParty(App.st, x);
+    return (p2.name ? p2.name + " \u00b7 " : "") + x.name +
+           (x.status === "open" ? "" : "  (" + (x.outcome === "won" ? "won" : "lost") + ")");
+  };
+  var byName = function (a, b){ return label(a) < label(b) ? -1 : 1; };
+  if (same.length){
+    var g1 = h("optgroup", { label: (co.name || "the same customer") });
+    same.sort(byName).forEach(function (x){ g1.appendChild(h("option", { value:x.id }, label(x))); });
+    sel.appendChild(g1);
+  }
+  if (rest.length){
+    var g2 = h("optgroup", { label:"Everything else" });
+    rest.sort(byName).forEach(function (x){ g2.appendChild(h("option", { value:x.id }, label(x))); });
+    sel.appendChild(g2);
+  }
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Into" }), sel));
+
+  var what = h("div", { class:"note" });
+  var sync = function (){
+    var t = App.st.deals[sel.value];
+    var bits = [];
+    if (ix) bits.push(ix + " logged interaction" + (ix === 1 ? "" : "s"));
+    if (fu) bits.push(fu + " open next step" + (fu === 1 ? "" : "s"));
+    if (inv) bits.push(inv + " invoice" + (inv === 1 ? "" : "s"));
+    if (qs) bits.push(qs + " quote" + (qs === 1 ? "" : "s"));
+    what.textContent = (bits.length ? bits.join(", ") : "Nothing is logged on this deal") +
+      (t ? " move" + (bits.length ? "" : "s") + " to \u201c" + t.name + "\u201d." :
+           ". Choose the deal they belong to.");
+  };
+  sel.addEventListener("change", sync); sync();
+  box.appendChild(what);
+
+  var r = h("input", { type:"text", "aria-label":"Reason",
+    placeholder:"e.g. same engagement, created by a stray thread" });
+  box.appendChild(h("label", { class:"fld" }, h("span", { text:"Why (optional)" }), r));
+
+  box.appendChild(h("div", { class:"pop-foot" },
+    h("button", { class:"btn btn-sm quiet", type:"button",
+                  onclick:function (){ closeLayers("pop"); } }, "Cancel"),
+    h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
+      var into = sel.value;
+      if (!into){ toast("Choose the deal this one belongs to.", "err"); return; }
+      closeLayers("pop");
+      foldDeal(d, into, r.value.trim());
+    } }, "Fold it in")));
+  openPopover(anchor, box, { width:420 });
+}
+
+function foldDeal(d, intoId, reason){
+  var name = d.name, fromId = d.id;
+  var target = App.st.deals[intoId];
+  var tname = target ? target.name : "the other deal";
+  emit("deal.merged", { fromId:fromId, intoId:intoId, reason:reason || "" });
+  closeLayers(); App.openDealId = null; render();
+  openDeal(C.liveDeal(App.st, fromId));
+  toast(name + " folded into " + tname + ". Nothing was deleted.", null,
+        { label:"Undo", fn:function (){
+            emit("deal.unmerged", { fromId:fromId });
+            render(); openDeal(fromId);
+            toast(name + " is a deal again.");
+          } });
+}
+
+function unfoldDeal(fromId){
+  emit("deal.unmerged", { fromId:fromId });
+  render();
+  var d = App.st.deals[fromId];
+  openDeal(fromId);
+  toast((d ? d.name : "The deal") + " is separate again.");
+}
+
 function deleteDealPrompt(anchor, d){
   var ix = C.interactionsFor(App.st, d.id).length;
   var fu = C.openFollowupsFor(App.st, d.id).length;
@@ -12823,6 +13065,37 @@ function viewSettings(el){
     el.appendChild(fold(del, "deleted"));
   }
 
+  /* Folded deals. Same argument as the deleted list: a deal that has stopped
+     existing where somebody put it has to be findable, and the way back has to
+     be one press. */
+  var folded = Object.keys(App.st.mergedDeals || {}).map(function (k){ return App.st.mergedDeals[k]; })
+                     .sort(function (a,b){ return (b.mergedAt||"") < (a.mergedAt||"") ? -1 : 1; });
+  if (folded.length){
+    var fdp = h("section", { class:"pane", style:"margin-bottom:16px" },
+      h("h3", { text:"Folded deals" }),
+      h("div", { class:"sub", text:"Deals that turned out to be part of another one. Everything " +
+        "logged on them moved across; they are not won, lost or deleted. Separate any of them again." }));
+    var ftb = h("tbody");
+    folded.forEach(function (d){
+      var co = App.st.companies[d.companyId];
+      var into = App.st.deals[C.liveDeal(App.st, d.id)];
+      ftb.appendChild(h("tr", null,
+        h("td", { text:(co ? co.name + " \u00b7 " : "") + d.name }),
+        h("td", null, into
+          ? h("a", { href:"#", onclick:(function (id){ return function (e){
+              e.preventDefault(); openDeal(id); }; })(into.id) }, into.name)
+          : h("span", { text:"\u2014" })),
+        h("td", { text:d.mergedAt ? C.fmtDayYear(d.mergedAt) : "" }),
+        h("td", { text:d.mergeReason || "\u2014" }),
+        h("td", null, h("button", { class:"btn btn-sm quiet", type:"button",
+          onclick:(function (id){ return function (){ unfoldDeal(id); }; })(d.id) }, "Separate again"))));
+    });
+    fdp.appendChild(h("table", { class:"tbl" },
+      h("thead", null, h("tr", null, h("th", { text:"Deal" }), h("th", { text:"Folded into" }),
+                         h("th", { text:"When" }), h("th", { text:"Why" }), h("th", { text:"" }))), ftb));
+    el.appendChild(fold(fdp, "folded"));
+  }
+
   /* storage — the thing you need when it goes wrong */
   var stor = h("section", { class:"pane", style:"margin-bottom:16px" },
     h("h3", { text:"This device" }),
@@ -13275,6 +13548,7 @@ globalThis.CRMApp = { App:App, emit:emit, refold:refold, render:render,
                       ghUrl:ghUrl, ghPrefix:ghPrefix, ghRelPath:ghRelPath,
                       testConnection:testConnection, ghExplain:ghExplain,
                       openDeal:openDeal, deleteDeal:deleteDeal, restoreDeal:restoreDeal,
+                      foldDeal:foldDeal, unfoldDeal:unfoldDeal,
                       /* the hand-over file, so the suite can read what actually
                          leaves the app rather than trusting that it is right */
                       eventLogExport:eventLogExport,

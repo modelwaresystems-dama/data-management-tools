@@ -8,6 +8,7 @@ fail=0
 echo "== stamp";            python3 stamp-build.py --file "$APP" --check || fail=1
 echo "== owner hand-over";  node tests/handover.js "$APP" | tail -2 || fail=1
 echo "== register 21 Sep";  node tests/register-0921.js "$APP" | tail -2 || fail=1
+echo "== folding a deal";  node tests/fold-1002.js "$APP" | tail -2 || fail=1
 echo "== vat and commission"; node tests/vat-1001.js "$APP" | tail -2 || fail=1
 echo "== alt emails";     node tests/altemails-1001.js "$APP" | tail -2 || fail=1
 echo "== today bands";     node tests/bands-1001.js "$APP" | tail -2 || fail=1

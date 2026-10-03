@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.2.0">
+<meta name="version" content="1.3.0">
 <title>CDMP Value Analytics — Modelware</title>
 <style>
 :root{
@@ -449,6 +449,45 @@ function marketHTML(){
   '<div class="mkt-src">Source: PayScale, fetched 2 Oct 2026. Refresh manually; PayScale blocks automated/live fetching.</div></section>';
 }
 
+
+function comparisonAggregate(){
+ var pro=COMPARE.pro, corp=COMPARE.corp, MINN=3;
+ var rnd=function(x){return x==null?null:Math.round(x*100)/100;};
+ var pOK=pro.length>=MINN, cOK=corp.length>=MINN;
+ var themes=SCALAR.map(function(t){
+   return {id:t.id,label:t.label,
+     professional:(pOK?rnd(sideMean(pro,proScore,t.id)):null),
+     employer:(cOK?rnd(sideMean(corp,corpScore,t.id)):null)};
+ });
+ var evidence=T4OPTS.map(function(o){
+   var a=optPct(pro,'q25',o.pro), b=optPct(corp,'q_evidence_expected',o.corp);
+   return {label:o.label,
+     professionalPct:(pOK&&a!=null?Math.round(a):null),
+     employerPct:(cOK&&b!=null?Math.round(b):null)};
+ });
+ var barriers={professional:(pOK?distCat(pro,T5PRO.q,T5PRO.map):null),
+               employer:(cOK?distCat(corp,T5CORP.q,T5CORP.map):null)};
+ return {
+   kind:"perceptions-gap-comparison",
+   generatedAt:new Date().toISOString(),
+   minN:MINN,
+   lens:"perception-vs-reality",
+   scale:"1-5 (higher = more recognition / value / support)",
+   surveys:{
+     professional:{id:PRO_SURVEY,n:pro.length,suppressed:!pOK},
+     employer:{id:CORP_SURVEY,n:corp.length,suppressed:!cOK}
+   },
+   themes:themes,
+   evidence:evidence,
+   barriers:barriers,
+   notes:"Perception comparison only. No raw responses, no free-text, no pay data. A side with n below minN is suppressed (null values)."
+ };
+}
+function downloadComparisonAggregate(){
+ download('comparison-aggregate.json', JSON.stringify(comparisonAggregate(),null,2), 'application/json');
+ setStatus('Comparison aggregate downloaded — both surveys, min-n 3 guarded, perception-only. No raw responses or free-text.','ok');
+}
+
 function buildCompare(allRows){
   COMPARE.pro=allRows.filter(function(r){return r&&r.survey===PRO_SURVEY;});
   COMPARE.corp=allRows.filter(function(r){return r&&r.survey===CORP_SURVEY;});
@@ -471,7 +510,9 @@ function renderCompare(){
     '<div class="grid2cmp"><div><div class="idx-cap" style="color:var(--s1)">Professionals — biggest barrier</div>'+barsHTML(distCat(pro,T5PRO.q,T5PRO.map))+'</div>'+
     '<div><div class="idx-cap" style="color:var(--s2)">Employers — what limits sponsoring</div>'+barsHTML(distCat(corp,T5CORP.q,T5CORP.map))+'</div></div></section>';
   html+=marketHTML();
+  html+='<div class="row-btns section-gap"><button class="btn" id="cmpAggBtn">Download comparison aggregate (JSON)</button></div>';
   $('dashCompare').innerHTML=html;
+  var cb=document.getElementById('cmpAggBtn'); if(cb) cb.onclick=downloadComparisonAggregate;
 }
 function showTab(which){var g=which==='gap';$('dash').classList.toggle('hidden',g);$('dashCompare').classList.toggle('hidden',!g);
   document.getElementById('tabThis').classList.toggle('on',!g);document.getElementById('tabGap').classList.toggle('on',g);}

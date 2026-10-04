@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.1.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -16,17 +16,24 @@
   header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:12px}
   h1{font-size:1.4rem;margin:0}
   .badge{font-family:var(--mono);font-size:.75rem;color:var(--soft)}
-  .sub{color:var(--soft);font-size:.9rem;margin:10px 0 0}
-  .stages{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:20px}
+  .selector{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .selector label{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--soft)}
+  .selector select{font-family:var(--sans);font-size:.95rem;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);min-width:0;flex:1}
+  .selector .meta{font-size:.78rem;color:var(--soft);font-family:var(--mono)}
+  .sub{color:var(--soft);font-size:.9rem;margin:12px 0 0}
+  .stages{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:18px}
   .stage{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;border-left:3px solid var(--accent)}
   .stage .g{font-family:var(--mono);font-size:.7rem;color:var(--accent);letter-spacing:.08em}
   .stage h3{margin:4px 0 2px;font-size:.98rem}
   .stage p{margin:0;font-size:.82rem;color:var(--soft)}
   .stage .st{font-family:var(--mono);font-size:.68rem;margin-top:8px;display:inline-block;padding:.1em .5em;border-radius:20px;border:1px solid var(--line)}
   .st.pend{color:var(--warn)} .st.done{color:var(--good)} .st.wait{color:var(--soft)}
-  .pilot{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:20px}
-  .pilot h2{margin:0 0 6px;font-size:1.05rem}
-  .pilot ul{margin:6px 0 0;padding-left:18px;font-size:.88rem;color:var(--soft)}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:18px}
+  .panel h2{margin:0 0 6px;font-size:1.05rem}
+  .panel ul{margin:6px 0 0;padding-left:18px;font-size:.88rem;color:var(--soft)}
+  .secs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .sec{font-size:.8rem;border:1px solid var(--line);border-radius:20px;padding:.15em .6em}
+  .sec.done{color:var(--good);border-color:var(--good)} .sec.pilot{color:var(--warn);border-color:var(--warn)}
   code{font-family:var(--mono);font-size:.85em}
   footer{margin-top:24px;border-top:1px solid var(--line);padding-top:12px;font-size:.78rem;color:var(--soft)}
 </style>
@@ -37,39 +44,77 @@
     <h1>ACPP Pipeline Board</h1>
     <span class="badge" id="appVersion"></span>
   </header>
-  <p class="sub">Author-Controlled Proposition-to-Prose — DMBOK v3 Chapter 1. The human author controls
-  argument, evidence, terminology and approvals; AI only tests, transforms and expresses approved material.
-  <strong>Phase 0 placeholder</strong> — the live board (reading the private JSON registers) arrives in Phase 4.</p>
 
-  <div class="stages" id="stages"></div>
-
-  <div class="pilot">
-    <h2>Pilot — 1.2 Why Data Management Exists</h2>
-    <ul>
-      <li>6 propositions approved (<code>P-01.02-00…04</code>, <code>C-01.02-01</code>)</li>
-      <li>Argument mapped; <code>AIQ-001</code> pending (coexistence warrant)</li>
-      <li>All four reasons <code>NEEDS-SOURCE</code> — evidence not yet approved</li>
-    </ul>
+  <div class="selector">
+    <label for="proj">Project</label>
+    <select id="proj"></select>
+    <span class="meta" id="projMeta"></span>
   </div>
 
-  <footer>Private data: <code>modelware_app_storage/ACPP</code> · fine-grained PAT · no Microsoft or relational DB except the Word manuscript layer.</footer>
+  <p class="sub">Author-Controlled Proposition-to-Prose. The human author controls argument, evidence,
+  terminology and approvals; AI only tests, transforms and expresses approved material. One pipeline,
+  many projects. <strong>Phase 0 placeholder</strong> — the selector and board run on a bundled seed;
+  Phase 4 swaps the seed for a live PAT-authenticated read of <code>projects.json</code> and the
+  registers in the private repo.</p>
+
+  <div class="stages" id="stages"></div>
+  <div class="panel" id="panel"></div>
+
+  <footer>Private data: <code>modelware_app_storage/ACPP</code> (shared <code>database/</code> + <code>content/</code>, partitioned by <code>project_id</code>) · fine-grained PAT · no Microsoft or relational DB except the Word manuscript layer.</footer>
 </div>
 <script>
   document.getElementById('appVersion').textContent='v'+document.querySelector('meta[name="version"]').content;
-  var S=[
-    ["G0","Frame","Constraints, 10 headings, glossary, GenAI policy","pend","pending"],
-    ["G1","Outline","Structure approved (dmbok-outline-review)","done","approved"],
-    ["G2","Propositions","Bullets → atomic typed propositions","done","seeded"],
-    ["G3","Argument","Mermaid map, logic test","done","mapped"],
-    ["G4","Evidence","Claim-to-evidence, Zotero","wait","needs-source"],
-    ["G5","Freeze","Frozen prose brief (the contract)","wait","waiting"],
-    ["G6","Render","Controlled prose + paragraph trace","wait","waiting"],
-    ["G7","Assure","Drift, trace, CDC disclosure, release","wait","waiting"]
+
+  // Phase-0 seed — mirrors projects.json + per-project gate/section state.
+  // Phase 4 replaces this with a live read of the private repo via PAT.
+  var PROJECTS={
+    "dmbok-v3-ch1":{
+      title:"DAMA-DMBOK v3.0 — Chapter 1: Data Management",
+      type:"dmbok-chapter",
+      gates:{G0:"done",G1:"done",G2:"done",G3:"done",G4:"pend",G5:"wait",G6:"wait",G7:"wait"},
+      sections:[
+        {id:"1.1 What is Data Management?",s:"done"},
+        {id:"2.1 Foundational Data Management Terms",s:"done"},
+        {id:"1.2 Why Data Management Exists",s:"pilot"}
+      ],
+      pilot:[
+        "6 propositions approved (P-01.02-00…04, C-01.02-01)",
+        "Argument mapped; AIQ-001 pending (coexistence warrant)",
+        "All four reasons NEEDS-SOURCE — evidence not yet approved"
+      ]
+    }
+  };
+  var GATE_LABELS=[
+    ["G0","Frame","Constraints, headings, glossary, GenAI policy"],
+    ["G1","Outline","Structure approved"],
+    ["G2","Propositions","Bullets → atomic typed propositions"],
+    ["G3","Argument","Argument map, logic test"],
+    ["G4","Evidence","Claim-to-evidence, Zotero"],
+    ["G5","Freeze","Frozen prose brief (the contract)"],
+    ["G6","Render","Controlled prose + paragraph trace"],
+    ["G7","Assure","Drift, trace, CDC disclosure, release"]
   ];
-  document.getElementById('stages').innerHTML=S.map(function(s){
-    return '<div class="stage"><span class="g">'+s[0]+'</span><h3>'+s[1]+'</h3><p>'+s[2]+
-      '</p><span class="st '+s[3]+'">'+s[4]+'</span></div>';
-  }).join('');
+  var ST={done:"approved",pend:"active",wait:"waiting"};
+
+  var sel=document.getElementById('proj');
+  Object.keys(PROJECTS).forEach(function(id){
+    var o=document.createElement('option');o.value=id;o.textContent=PROJECTS[id].title;sel.appendChild(o);
+  });
+  function render(id){
+    var p=PROJECTS[id];
+    document.getElementById('projMeta').textContent=p.type+" · "+id;
+    document.getElementById('stages').innerHTML=GATE_LABELS.map(function(g){
+      var s=p.gates[g[0]]||"wait";
+      return '<div class="stage"><span class="g">'+g[0]+'</span><h3>'+g[1]+'</h3><p>'+g[2]+
+        '</p><span class="st '+s+'">'+ST[s]+'</span></div>';
+    }).join('');
+    document.getElementById('panel').innerHTML='<h2>Sections</h2><div class="secs">'+
+      p.sections.map(function(x){return '<span class="sec '+x.s+'">'+x.id+'</span>';}).join('')+
+      '</div><h2 style="margin-top:14px">Active pilot</h2><ul>'+
+      p.pilot.map(function(t){return '<li>'+t+'</li>';}).join('')+'</ul>';
+  }
+  sel.addEventListener('change',function(){render(sel.value);});
+  render(sel.value);
 </script>
 </body>
 </html>

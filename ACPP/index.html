@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.6.0">
+<meta name="version" content="1.7.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -64,6 +64,18 @@
   .rv-sugg .auth2{font-family:var(--mono);font-size:.62rem;color:var(--soft);margin-left:6px}
   .rv-sugg .sup{font-size:.8rem;color:var(--soft);margin:3px 0}
   .rv-sugg a{font-size:.74rem;color:var(--accent)}
+  .rv-cands-h{font-family:var(--mono);font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);margin-bottom:6px}
+  .rv-cands{display:flex;flex-direction:column;gap:7px;margin-bottom:9px}
+  .rv-cand{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg)}
+  .rv-cand.chosen{border-color:var(--good);background:color-mix(in srgb,var(--good) 9%,transparent)}
+  .rv-cand .cand-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .rv-cand .tier{font-family:var(--mono);font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)}
+  .cand-use{font:inherit;font-size:.72rem;padding:3px 11px;border-radius:6px;border:1px solid var(--accent);background:var(--bg);color:var(--accent);cursor:pointer;white-space:nowrap}
+  .rv-cand.chosen .cand-use{background:var(--good);border-color:var(--good);color:#fff}
+  .rv-cand .cite{font-size:.84rem;font-weight:600;margin-top:4px}
+  .rv-cand .auth2{font-family:var(--mono);font-size:.6rem;color:var(--soft);font-weight:400;margin-left:5px}
+  .rv-cand .sup{font-size:.78rem;color:var(--soft);margin:2px 0}
+  .rv-cand a{font-size:.72rem;color:var(--accent)}
   .rv-ctrls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .rv-btn{font:inherit;font-size:.76rem;padding:5px 11px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
   .rv-btn:hover{border-color:var(--accent)}
@@ -138,30 +150,48 @@
     c.innerHTML='<div class="rv-bar"><span class="rv-prog" id="rvProg"></span>'+
       '<span><span class="rv-save" id="rvSave"></span><button class="rv-export" id="rvExport">Export evidence_links.json</button></span></div>'+
       rows.map(function(e){
-        var pid=e[0], st=lsGet(keyOf(pid))||{decision:'nd',src:'',comment:''}, sg=e[4]||null;
-        return '<div class="rv-row" data-pid="'+pid+'" data-sugg="'+(sg?esc(sg.id):'')+'">'+
+        var pid=e[0], st=lsGet(keyOf(pid))||{decision:'nd',src:'',comment:''}, cands=e[4]||[];
+        var candHtml=cands.map(function(cd){
+          var chosen=(st.decision==='acc' && st.src===cd.id);
+          return '<div class="rv-cand'+(chosen?' chosen':'')+'" data-cid="'+esc(cd.id)+'">'+
+            '<div class="cand-top"><span class="tier">'+esc(cd.tier)+'</span>'+
+            '<button class="cand-use" data-cid="'+esc(cd.id)+'">'+(chosen?'✓ Using':'Use this')+'</button></div>'+
+            '<div class="cite">'+esc(cd.cite)+'<span class="auth2">'+esc(cd.auth)+'</span></div>'+
+            '<div class="sup">Supports: '+esc(cd.supports)+'</div>'+
+            '<a href="'+esc(cd.url)+'" target="_blank" rel="noopener">reference ↗</a></div>';
+        }).join('');
+        return '<div class="rv-row" data-pid="'+pid+'">'+
           '<div class="rv-claim"><span class="idc">'+pid+'</span> '+esc(props[pid]||'')+'</div>'+
-          (sg?('<div class="rv-sugg"><span class="rv-sugg-h">Suggested source — review &amp; accept</span><span class="cite">'+esc(sg.cite)+'</span><span class="auth2">'+esc(sg.auth)+'</span><div class="sup">Supports: '+esc(sg.supports)+'</div><a href="'+esc(sg.url)+'" target="_blank" rel="noopener">reference ↗</a></div>'):('<div class="rv-auth">Proposed source authority: '+esc(e[3]||'')+'</div>'))+
+          '<div class="rv-cands-h">Candidate sources — international first</div>'+
+          '<div class="rv-cands">'+candHtml+'</div>'+
           '<div class="rv-ctrls">'+
-            '<button class="rv-btn acc'+(st.decision==='acc'?' on':'')+'" data-d="acc">Accept</button>'+
             '<button class="rv-btn nd'+(st.decision==='nd'?' on':'')+'" data-d="nd">Needs-source</button>'+
-            '<button class="rv-btn rej'+(st.decision==='rej'?' on':'')+'" data-d="rej">Reject</button>'+
-            '<input class="rv-src" placeholder="SRC-ID (e.g. MW-SRC-000147)" value="'+esc(st.src)+'"'+(st.decision==='acc'?'':' disabled')+'>'+
+            '<button class="rv-btn rej'+(st.decision==='rej'?' on':'')+'" data-d="rej">Reject all</button>'+
+            '<input class="rv-src" placeholder="Accepted SRC-ID" value="'+esc(st.src)+'"'+(st.decision==='acc'?'':' disabled')+'>'+
           '</div>'+
-          '<textarea class="rv-cmt" placeholder="Comment — or the source I should use instead">'+esc(st.comment)+'</textarea>'+
+          '<textarea class="rv-cmt" placeholder="Comment — or a source I did not suggest">'+esc(st.comment)+'</textarea>'+
         '</div>';
       }).join('')+
       '<p class="note">No source may be linked that only restates the assignment that requested the claim (source-laundering control). Saved in your browser as you go — export and commit to update the repo. Phase 4 writes back via your PAT automatically.</p>';
     function prog(){var a=0;rows.forEach(function(e){var s=lsGet(keyOf(e[0]))||{};if(s.decision==='acc'&&s.src)a++;});c.querySelector('#rvProg').textContent=a+' of '+rows.length+' sourced & accepted';}
     function flash(){var s=c.querySelector('#rvSave');s.textContent='saved';setTimeout(function(){s.textContent='';},1200);}
-    function save(pid){var row=c.querySelector('.rv-row[data-pid="'+pid+'"]');var on=row.querySelector('.rv-btn.on');var dec=on?on.dataset.d:'nd';lsSet(keyOf(pid),{decision:dec,src:row.querySelector('.rv-src').value.trim(),comment:row.querySelector('.rv-cmt').value});prog();flash();}
-    c.querySelectorAll('.rv-row').forEach(function(row){var pid=row.dataset.pid;
+    function save(pid){var row=c.querySelector('.rv-row[data-pid="'+pid+'"]');
+      var chosen=row.querySelector('.rv-cand.chosen');var on=row.querySelector('.rv-btn.on');
+      var dec=chosen?'acc':(on?on.dataset.d:'nd');
+      lsSet(keyOf(pid),{decision:dec,src:row.querySelector('.rv-src').value.trim(),comment:row.querySelector('.rv-cmt').value});prog();flash();}
+    c.querySelectorAll('.rv-row').forEach(function(row){var pid=row.dataset.pid, srcI=row.querySelector('.rv-src');
+      row.querySelectorAll('.cand-use').forEach(function(btn){btn.addEventListener('click',function(){
+        row.querySelectorAll('.rv-cand').forEach(function(x){x.classList.remove('chosen');});
+        btn.closest('.rv-cand').classList.add('chosen');
+        row.querySelectorAll('.cand-use').forEach(function(x){x.textContent='Use this';});btn.textContent='✓ Using';
+        row.querySelectorAll('.rv-btn').forEach(function(x){x.classList.remove('on');});
+        srcI.disabled=false; srcI.value=btn.dataset.cid; save(pid);});});
       row.querySelectorAll('.rv-btn').forEach(function(b){b.addEventListener('click',function(){
         row.querySelectorAll('.rv-btn').forEach(function(x){x.classList.remove('on');});b.classList.add('on');
-        var sInput=row.querySelector('.rv-src'); sInput.disabled=(b.dataset.d!=='acc');
-        if(b.dataset.d==='acc' && !sInput.value && row.dataset.sugg) sInput.value=row.dataset.sugg;
-        save(pid);});});
-      row.querySelector('.rv-src').addEventListener('input',function(){save(pid);});
+        row.querySelectorAll('.rv-cand').forEach(function(x){x.classList.remove('chosen');});
+        row.querySelectorAll('.cand-use').forEach(function(x){x.textContent='Use this';});
+        srcI.disabled=true; save(pid);});});
+      srcI.addEventListener('input',function(){save(pid);});
       row.querySelector('.rv-cmt').addEventListener('input',function(){save(pid);});
     });
     c.querySelector('#rvExport').addEventListener('click',function(){
@@ -269,10 +299,20 @@
                reasons:[["P-01.02-01","business value and innovation",true],["P-01.02-02","operational effectiveness",true],["P-01.02-03","risk reduction and resilience",true],["P-01.02-04","regulatory / legal / contractual obligation",true]],
                conclusion:"C-01.02-01 — the four drivers operate together."},
            G4:{evid:[
-             ["P-01.02-01",null,"NEEDS-SOURCE","Standard",{id:"ISO-38505-1-2017",cite:"ISO/IEC 38505-1:2017 — Governance of data (Part 1)",auth:"Standard",supports:"Frames data as an asset whose value an organisation must deliberately govern and realise.",url:"https://www.iso.org/standard/56639.html"}],
-             ["P-01.02-02",null,"NEEDS-SOURCE","Standard",{id:"ISO-8000",cite:"ISO 8000 — Data quality (series)",auth:"Standard",supports:"Data quality is the basis for reliable, efficient day-to-day operational use of data.",url:"https://www.iso.org/standard/81745.html"}],
-             ["P-01.02-03",null,"NEEDS-SOURCE","Industry framework",{id:"BCBS-239",cite:"BCBS 239 (BIS, 2013) — Principles for effective risk data aggregation and risk reporting",auth:"Industry-Framework",supports:"Weak risk-data management caused material failures; managing it reduces risk and builds resilience.",url:"https://www.bis.org/publ/bcbs239.htm"}],
-             ["P-01.02-04",null,"NEEDS-SOURCE","Legislation",{id:"POPIA-2013",cite:"Protection of Personal Information Act 4 of 2013 (POPIA), South Africa",auth:"Legislation",supports:"A legal obligation to manage personal data lawfully — a driver beyond value. EU equivalent: GDPR.",url:"https://en.wikipedia.org/wiki/Protection_of_Personal_Information_Act,_2013"}]]}},
+             ["P-01.02-01",null,"NEEDS-SOURCE","Standard",[
+               {id:"ISO-38505-1-2017",tier:"International",cite:"ISO/IEC 38505-1:2017 — Governance of data (Part 1)",auth:"Standard",supports:"Data is an asset whose value must be deliberately governed and realised.",url:"https://www.iso.org/standard/56639.html"},
+               {id:"OECD-DDI-2015",tier:"International",cite:"OECD (2015) — Data-Driven Innovation: Big Data for Growth and Well-Being",auth:"Intergovernmental",supports:"Data drives innovation and economic value across sectors.",url:"https://www.oecd.org"},
+               {id:"DAMA-DMBOK2-CH1",tier:"Professional body",cite:"DAMA-DMBOK2 (2017), Ch.1 — Data Management",auth:"Professional-Body",supports:"Data is an enterprise asset supporting insight, strategy and operations.",url:"https://www.dama.org"}]],
+             ["P-01.02-02",null,"NEEDS-SOURCE","Standard",[
+               {id:"ISO-8000",tier:"International",cite:"ISO 8000 — Data quality (series)",auth:"Standard",supports:"Data quality underpins reliable, efficient operational use of data.",url:"https://www.iso.org/standard/81745.html"},
+               {id:"DAMA-DMBOK2-DQ",tier:"Professional body",cite:"DAMA-DMBOK2 (2017) — Data Quality chapter",auth:"Professional-Body",supports:"Managed quality makes day-to-day operations dependable.",url:"https://www.dama.org"}]],
+             ["P-01.02-03",null,"NEEDS-SOURCE","Industry framework",[
+               {id:"BCBS-239",tier:"International",cite:"BCBS 239 (BIS, 2013) — Principles for effective risk data aggregation and risk reporting",auth:"Industry-Framework",supports:"Weak risk-data management caused material failures; managing it reduces risk.",url:"https://www.bis.org/publ/bcbs239.htm"},
+               {id:"ISO-IEC-27001",tier:"International",cite:"ISO/IEC 27001 — Information security management systems",auth:"Standard",supports:"Protecting data assets builds operational resilience.",url:"https://www.iso.org"}]],
+             ["P-01.02-04",null,"NEEDS-SOURCE","Legislation",[
+               {id:"OECD-PRIVACY-2013",tier:"International",cite:"OECD Privacy Guidelines (1980, rev. 2013)",auth:"Intergovernmental",supports:"A global baseline obligation for handling personal data.",url:"https://www.oecd.org"},
+               {id:"GDPR-2016-679",tier:"Regional (EU)",cite:"GDPR — Regulation (EU) 2016/679",auth:"Regulation",supports:"A binding legal obligation to manage personal data lawfully.",url:"https://eur-lex.europa.eu/eli/reg/2016/679/oj"},
+               {id:"POPIA-2013",tier:"Local (South Africa)",cite:"Protection of Personal Information Act 4 of 2013 (POPIA)",auth:"Legislation",supports:"South Africa's statutory obligation to manage personal data.",url:"https://en.wikipedia.org/wiki/Protection_of_Personal_Information_Act,_2013"}]]]}},
          aiq:[["AIQ-001","Argument","Add a warrant stating the four drivers may coexist and are not mutually exclusive.","P-01.02-00","Pending"]]}
       ]
     }

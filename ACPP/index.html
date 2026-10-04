@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.4.1">
+<meta name="version" content="1.5.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -48,6 +48,26 @@
   .pill{font-family:var(--mono);font-size:.64rem;padding:.1em .5em;border-radius:20px;border:1px solid var(--line);white-space:nowrap}
   .pill.ok{color:var(--good);border-color:var(--good)} .pill.need{color:var(--bad);border-color:var(--bad)} .pill.pend{color:var(--warn);border-color:var(--warn)}
   .empty{color:var(--soft);font-size:.88rem}
+  /* in-app review */
+  .rv-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .rv-prog{font-size:.82rem;color:var(--soft);font-family:var(--mono)}
+  .rv-save{font-family:var(--mono);font-size:.66rem;color:var(--good);margin-right:8px}
+  .rv-export{font:inherit;font-size:.8rem;font-weight:600;padding:7px 13px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+  .rv-export:hover{filter:brightness(1.05)}
+  .rv-row{border:1px solid var(--line);border-radius:9px;padding:12px;margin-bottom:10px;background:var(--surface)}
+  .rv-claim{font-size:.9rem;margin-bottom:3px}
+  .rv-claim .idc{color:var(--soft)}
+  .rv-auth{font-size:.74rem;color:var(--soft);margin-bottom:9px}
+  .rv-ctrls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .rv-btn{font:inherit;font-size:.76rem;padding:5px 11px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+  .rv-btn:hover{border-color:var(--accent)}
+  .rv-btn.on.acc{background:var(--good);border-color:var(--good);color:#fff}
+  .rv-btn.on.nd{background:var(--warn);border-color:var(--warn);color:#fff}
+  .rv-btn.on.rej{background:var(--bad);border-color:var(--bad);color:#fff}
+  .rv-src{font-family:var(--mono);font-size:.78rem;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);min-width:150px;flex:1}
+  .rv-src:disabled{opacity:.45}
+  .rv-cmt{width:100%;margin-top:8px;min-height:40px;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font:inherit;font-size:.82rem;background:var(--bg);color:var(--ink);resize:vertical}
+  .rv-cmt:focus,.rv-src:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
   /* outline artifact */
   .ol-meta{display:flex;gap:18px;flex-wrap:wrap;font-size:.78rem;color:var(--soft);margin-bottom:12px}
   .ol-meta b{color:var(--ink);font-weight:600}
@@ -97,7 +117,56 @@
 </div>
 <script>
   document.getElementById('appVersion').textContent='v'+document.querySelector('meta[name="version"]').content;
-  var esc=function(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});};
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  function lsGet(k){try{return JSON.parse(localStorage.getItem(k)||'null');}catch(e){return null;}}
+  function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+  function download(name,text){try{var b=new Blob([text],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u);},500);}catch(e){alert('Export failed: '+e.message);}}
+
+  // In-app review for G4 Evidence: Accept / Needs-source / Reject + SRC-ID + comment per claim,
+  // saved to localStorage, exportable as evidence_links.json for Howard to commit.
+  function buildEvidenceReview(c, sec){
+    var proj="dmbok-v3-ch1";
+    var props={}; var g2=(sec.art&&sec.art.G2)?sec.art.G2.props:[]; g2.forEach(function(p){props[p[0]]=p[2];});
+    var rows=sec.art.G4.evid;
+    var keyOf=function(pid){return 'acpp.'+proj+'.'+sec.sid+'.G4.'+pid;};
+    c.innerHTML='<div class="rv-bar"><span class="rv-prog" id="rvProg"></span>'+
+      '<span><span class="rv-save" id="rvSave"></span><button class="rv-export" id="rvExport">Export evidence_links.json</button></span></div>'+
+      rows.map(function(e){
+        var pid=e[0], st=lsGet(keyOf(pid))||{decision:'nd',src:'',comment:''};
+        return '<div class="rv-row" data-pid="'+pid+'">'+
+          '<div class="rv-claim"><span class="idc">'+pid+'</span> '+esc(props[pid]||'')+'</div>'+
+          '<div class="rv-auth">Proposed source authority: '+esc(e[3]||'')+'</div>'+
+          '<div class="rv-ctrls">'+
+            '<button class="rv-btn acc'+(st.decision==='acc'?' on':'')+'" data-d="acc">Accept</button>'+
+            '<button class="rv-btn nd'+(st.decision==='nd'?' on':'')+'" data-d="nd">Needs-source</button>'+
+            '<button class="rv-btn rej'+(st.decision==='rej'?' on':'')+'" data-d="rej">Reject</button>'+
+            '<input class="rv-src" placeholder="SRC-ID (e.g. MW-SRC-000147)" value="'+esc(st.src)+'"'+(st.decision==='acc'?'':' disabled')+'>'+
+          '</div>'+
+          '<textarea class="rv-cmt" placeholder="Comment — or the source I should use instead">'+esc(st.comment)+'</textarea>'+
+        '</div>';
+      }).join('')+
+      '<p class="note">No source may be linked that only restates the assignment that requested the claim (source-laundering control). Saved in your browser as you go — export and commit to update the repo. Phase 4 writes back via your PAT automatically.</p>';
+    function prog(){var a=0;rows.forEach(function(e){var s=lsGet(keyOf(e[0]))||{};if(s.decision==='acc'&&s.src)a++;});c.querySelector('#rvProg').textContent=a+' of '+rows.length+' sourced & accepted';}
+    function flash(){var s=c.querySelector('#rvSave');s.textContent='saved';setTimeout(function(){s.textContent='';},1200);}
+    function save(pid){var row=c.querySelector('.rv-row[data-pid="'+pid+'"]');var on=row.querySelector('.rv-btn.on');var dec=on?on.dataset.d:'nd';lsSet(keyOf(pid),{decision:dec,src:row.querySelector('.rv-src').value.trim(),comment:row.querySelector('.rv-cmt').value});prog();flash();}
+    c.querySelectorAll('.rv-row').forEach(function(row){var pid=row.dataset.pid;
+      row.querySelectorAll('.rv-btn').forEach(function(b){b.addEventListener('click',function(){
+        row.querySelectorAll('.rv-btn').forEach(function(x){x.classList.remove('on');});b.classList.add('on');
+        row.querySelector('.rv-src').disabled=(b.dataset.d!=='acc');save(pid);});});
+      row.querySelector('.rv-src').addEventListener('input',function(){save(pid);});
+      row.querySelector('.rv-cmt').addEventListener('input',function(){save(pid);});
+    });
+    c.querySelector('#rvExport').addEventListener('click',function(){
+      var links=rows.map(function(e,i){var pid=e[0],s=lsGet(keyOf(pid))||{decision:'nd',src:'',comment:''};
+        var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');
+        return {project_id:proj,link_id:'EL-'+sec.sid+'-'+(i+1),p_id:pid,src_id:s.src||null,
+          support_strength:(s.decision==='acc'&&s.src)?'Direct':null,human_approved:(s.decision==='acc'&&!!s.src),
+          status:status,reviewer_comment:s.comment||null};});
+      var obj={_note:"Exported from the ACPP board review. Replace this section's rows in database/evidence_links.json, then commit.",project_id:proj,section_id:sec.sid,links:links};
+      download('evidence_links.'+sec.sid+'.json',JSON.stringify(obj,null,2));
+    });
+    prog();
+  }
   var GATES=[["G0","Frame"],["G1","Outline"],["G2","Propositions"],["G3","Argument"],
              ["G4","Evidence"],["G5","Freeze"],["G6","Render"],["G7","Assure"]];
 
@@ -191,7 +260,11 @@
            G3:{contention:"P-01.02-00 — Data Management exists for more than one reason.",
                reasons:[["P-01.02-01","business value and innovation",true],["P-01.02-02","operational effectiveness",true],["P-01.02-03","risk reduction and resilience",true],["P-01.02-04","regulatory / legal / contractual obligation",true]],
                conclusion:"C-01.02-01 — the four drivers operate together."},
-           G4:{evid:[["P-01.02-01",null,"NEEDS-SOURCE"],["P-01.02-02",null,"NEEDS-SOURCE"],["P-01.02-03",null,"NEEDS-SOURCE"],["P-01.02-04",null,"NEEDS-SOURCE"]]}},
+           G4:{evid:[
+             ["P-01.02-01",null,"NEEDS-SOURCE","Industry research / professional body (value & innovation)"],
+             ["P-01.02-02",null,"NEEDS-SOURCE","Industry research / standard (operational effectiveness)"],
+             ["P-01.02-03",null,"NEEDS-SOURCE","Standard / professional body (risk & resilience)"],
+             ["P-01.02-04",null,"NEEDS-SOURCE","Regulation / legislation — note jurisdiction (obligation)"]]}},
          aiq:[["AIQ-001","Argument","Add a warrant stating the four drivers may coexist and are not mutually exclusive.","P-01.02-00","Pending"]]}
       ]
     }
@@ -233,9 +306,7 @@
         a.reasons.map(function(r){return '<li style="margin:3px 0"><span class="idc">'+r[0]+'</span> — '+esc(r[1])+' '+(r[2]?'<span class="pill need">needs evidence</span>':'')+'</li>';}).join('')+
         '</ul><div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-weight:600;color:var(--good)">↳ '+esc(a.conclusion)+'</div></div>';
     } else if(gk==="G4" && a && a.evid){
-      body='<table><thead><tr><th>Proposition</th><th>Source</th><th>Status</th></tr></thead><tbody>'+
-        a.evid.map(function(e){return '<tr><td class="idc">'+e[0]+'</td><td class="idc">'+(e[1]||'—')+'</td><td><span class="pill need">'+e[2]+'</span></td></tr>';}).join('')+'</tbody></table>'+
-        '<p class="note">No source may be linked that only restates the assignment that requested the claim (source-laundering control).</p>';
+      body='<div id="evReview"></div>';
     } else if(gk==="G6" && a){
       body='<table><tbody><tr><th>Status</th><td>'+esc(a.status)+'</td></tr><tr><th>Manuscript</th><td>'+esc(a.ref)+'</td></tr><tr><th>Size</th><td>'+esc(a.words)+'</td></tr></tbody></table>';
     } else {
@@ -268,6 +339,7 @@
         document.querySelectorAll('.gate[data-si="'+si+'"]').forEach(function(b){b.classList.remove('sel');});
         if(already){det.hidden=true;return;}
         btn.classList.add('sel'); det.innerHTML=renderGate(p.sections[si],gk); det.hidden=false;
+        if(gk==='G4'){var evc=det.querySelector('#evReview'); if(evc) buildEvidenceReview(evc, p.sections[si]);}
       });
     });
   }

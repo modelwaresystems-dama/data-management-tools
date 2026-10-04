@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.8.0">
+<meta name="version" content="1.8.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -355,6 +355,23 @@
   };
   var DLAB={complete:"done",active:"active",backfill:"backfill",waiting:"waiting"};
 
+  // Derive a gate's status from the viewer's saved review decisions (localStorage), falling back to the
+  // seed status when no review exists or none have been decided. This makes the chip reflect accept/reject.
+  function reviewTally(sec, gk){
+    var proj="dmbok-v3-ch1", a=(sec.art||{})[gk], ids=null, needSrc=false;
+    if(gk==='G4' && a && a.evid){ ids=a.evid.map(function(e){return e[0];}); needSrc=true; }
+    else if(gk==='G2' && a && a.backfill){ ids=a.backfill.map(function(e){return e[0];}); }
+    if(!ids) return null;
+    var acc=0; ids.forEach(function(pid){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.'+gk+'.'+pid)||{};
+      if(s.decision==='acc' && (!needSrc || s.src)) acc++;});
+    return {total:ids.length, acc:acc};
+  }
+  function gateStatus(sec, gk){
+    var t=reviewTally(sec, gk);
+    if(t && t.total>0){ if(t.acc===t.total) return 'complete'; if(t.acc>0) return 'active'; }
+    return sec.gates[gk]||'waiting';
+  }
+
   function buildPropositionReview(c, sec){
     var proj="dmbok-v3-ch1";
     var rows=sec.art.G2.backfill, drift=(sec.art.G2.drift||[]), src=sec.art.G2.sources||"";
@@ -410,7 +427,7 @@
   }
 
   function renderGate(sec,gk){
-    var st=sec.gates[gk]||"waiting", a=(sec.art||{})[gk];
+    var st=gateStatus(sec,gk), a=(sec.art||{})[gk];
     var head='<div class="dh"><b>'+gk+' · '+GATES.find(function(g){return g[0]===gk;})[1]+'</b><span class="src">'+esc(sec.label)+' — '+DLAB[st]+'</span></div>';
     var body;
     if(gk==="G0"){
@@ -451,9 +468,9 @@
     document.getElementById('projMeta').textContent=p.type+" · "+id+" · "+p.sections.length+" sections";
     var secs=p.sections.slice().sort(function(a,b){var k=function(s){var m=String(s.label).match(/^(\d+)\.(\d+)/)||[0,0,0];return [+m[1],+m[2]];};var ka=k(a),kb=k(b);return ka[0]-kb[0]||ka[1]-kb[1];});
     document.getElementById('sections').innerHTML=secs.map(function(s,si){
-      var strip=GATES.map(function(g){var st=s.gates[g[0]]||"waiting";
+      var strip=GATES.map(function(g){var st=gateStatus(s,g[0]);
         return '<button class="gate '+st+'" data-si="'+si+'" data-gk="'+g[0]+'"><span class="g">'+g[0]+'</span><span class="n">'+g[1]+'</span><span class="d">'+DLAB[st]+'</span></button>';}).join('');
-      var bf=GATES.filter(function(g){return s.gates[g[0]]==="backfill";}).map(function(g){return g[0];});
+      var bf=GATES.filter(function(g){return gateStatus(s,g[0])==="backfill";}).map(function(g){return g[0];});
       var flag=bf.length?'<div class="flag">⚠ Backfill needed: '+bf.join(", ")+'</div>':'';
       var aiq=(s.aiq&&s.aiq.length)?'<div class="note">AIQ: '+s.aiq.map(function(q){return '<span class="idc">'+q[0]+'</span> ('+q[4]+')';}).join(', ')+' — see G3.</div>':'';
       return '<div class="sec"><div class="top"><h2>'+esc(s.label)+'</h2><span class="prose">'+esc(s.prose)+'</span></div>'+

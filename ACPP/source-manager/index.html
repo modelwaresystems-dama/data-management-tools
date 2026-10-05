@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.1.0">
+<meta name="version" content="1.3.0">
 <title>ACPP Source Manager</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -48,6 +48,28 @@
   .srcitem h3{margin:0 0 3px;font-size:14px}
   .srcmeta{font-size:12px;color:var(--soft)}
   .srcactions{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
+  .srchead{display:flex;align-items:baseline;gap:6px;cursor:pointer;margin:0 0 3px}
+  .srchead h3{margin:0;font-size:14px}
+  .srccaret{color:var(--soft);font-size:12px;width:12px;flex:none}
+  .srcbody.collapsed{display:none}
+  .srcsum{font-size:12px;color:var(--soft);margin:2px 0}
+  .authkey{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;font-size:.72rem;color:var(--soft)}
+  .hgroup{border:1px solid var(--line);border-radius:10px;margin:0 0 10px;background:var(--surface);overflow:hidden}
+  .hgroup>.hhead{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;background:var(--surface2)}
+  .hgroup>.hhead b{font-size:14px}
+  .hgroup>.hhead .hcount{margin-left:auto;font:12px var(--mono);color:var(--soft)}
+  .hbody{padding:6px 12px 10px}
+  .hbody.collapsed{display:none}
+  .hrow{display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line)}
+  .hrow:last-child{border-bottom:none}
+  .hrow .ht{flex:1}
+  .atier{display:inline-block;font:11px var(--mono);border-radius:20px;padding:1px 8px;border:1px solid var(--line);background:var(--surface2);color:var(--soft);white-space:nowrap}
+  .atier.a1{border-color:#2563eb;color:#2563eb}
+  .atier.a2{border-color:#6b4f9e;color:var(--viol)}
+  .atier.a3{border-color:#2f6f4f;color:var(--good)}
+  .atier.a4{border-color:#b5731a;color:var(--warn)}
+  .atier.a5{border-color:#7a6b5b;color:var(--soft)}
+  .atier.a6{border-color:#5b6b7a;color:var(--soft)}
   .cite{font-size:13px;line-height:1.55;padding:8px 0;border-bottom:1px dashed var(--line)}
   .cite:last-child{border-bottom:none}
   .hang{padding-left:24px;text-indent:-24px}
@@ -103,6 +125,7 @@
   <div class="tabs" id="tabs">
     <div class="tab on" data-t="lib">Library</div>
     <div class="tab" data-t="byarg">By Argument</div>
+    <div class="tab" data-t="hier">Hierarchy</div>
     <div class="tab" data-t="imp">Import</div>
     <div class="tab" data-t="exp">Export &amp; Cite</div>
     <div class="tab" data-t="help">Help</div>
@@ -115,6 +138,7 @@
       <button class="btn" id="loadAcpp" title="Build the library from the ACPP board’s committed G4 evidence">⬇ Load ACPP sources</button>
       <input id="libSearch" placeholder="search title / author / year" style="max-width:280px">
       <span class="count" id="libCount"></span>
+      <button class="btn" id="collAll" title="Collapse or expand all source cards">Collapse all</button>
       <button class="btn g" id="saveAll" style="margin-left:auto">Save to GitHub</button>
     </div>
     <div id="libList"></div>
@@ -130,6 +154,20 @@
       <p class="muted" style="margin:8px 0 0">Pick a node or proposition to see every source and the exact passage that supports it. This is what the pipeline freezes against at G4 Evidence.</p>
     </div>
     <div id="byArgList"></div>
+  </section>
+
+  <!-- HIERARCHY -->
+  <section class="panel" id="p-hier">
+    <div class="card">
+      <div class="row">
+        <label style="margin:0">Group by</label>
+        <select id="hierMode" style="max-width:220px"><option value="work">Parent work / issuing body</option><option value="auth">Authority tier</option></select>
+        <button class="btn sm" id="hierColl" style="margin-left:auto">Collapse all</button>
+      </div>
+      <p class="muted" style="margin:8px 0 0">Many citations roll up to one work (e.g. the DAMA-DMBOK chapters and glossary). Grouping is a view only — it does not merge or re-point your committed evidence links. Each source keeps its own id and passages.</p>
+      <div class="authkey" id="authKey"></div>
+    </div>
+    <div id="hierList"></div>
   </section>
 
   <!-- IMPORT -->
@@ -1166,6 +1204,12 @@
   function saveJSON(k,v){LS.set(k,JSON.stringify(v));}
 
   var ITEMS=loadJSON(SKEY,[]);        // CSL-JSON item array
+  var CKEY='acpp.sources.coll';
+  var COLL=loadJSON(CKEY,{});            // {sourceId:true} collapsed cards
+  function saveColl(){saveJSON(CKEY,COLL);}
+  var HKEY='acpp.sources.hcoll';
+  var HCOLL=loadJSON(HKEY,{});
+  function saveHcoll(){saveJSON(HKEY,HCOLL);}
   var LINKS=loadJSON(LKEY,[]);        // link records
   var REFS=loadJSON(RKEY,{nodes:[],props:[]}); // pulled argument nodes + propositions
 
@@ -1345,8 +1389,9 @@
     var t=e.target.closest('.tab');if(!t)return;
     [].forEach.call(tabs.children,function(x){x.classList.remove('on');});
     t.classList.add('on');
-    ['lib','byarg','imp','exp','help'].forEach(function(id){document.getElementById('p-'+id).classList.toggle('on',id===t.dataset.t);});
+    ['lib','byarg','hier','imp','exp','help'].forEach(function(id){document.getElementById('p-'+id).classList.toggle('on',id===t.dataset.t);});
     if(t.dataset.t==='byarg'){renderByArg();}
+    if(t.dataset.t==='hier'){renderHier();}
     if(t.dataset.t==='exp'){renderBib();}
     if(t.dataset.t==='help'){renderHelp();}
   });
@@ -1374,17 +1419,25 @@
           '<div style="margin-top:4px"><button class="btn sm" data-editlnk="'+l.id+'">edit</button> <button class="btn sm d" data-dellnk="'+l.id+'">remove</button></div></div>';
       }).join(''):'<div class="muted" style="margin:4px 0">No argument links yet.</div>';
       var tlabel=(TYPES.filter(function(x){return x.v===it.type;})[0]||{l:it.type}).l;
-      return '<div class="srcitem"><h3>'+esc(it.title||'(untitled)')+' <span class="tag">'+esc(it.id)+'</span></h3>'+
-        '<div class="srcmeta">'+esc(namesStr(it.author)||'—')+' · '+esc(yearOf(it)||'n.d.')+' · '+esc(tlabel)+'</div>'+
+      var col=!!COLL[it.id];
+      return '<div class="srcitem"><div class="srchead" data-tog="'+it.id+'"><span class="srccaret">'+(col?'▸':'▾')+'</span><h3>'+esc(it.title||'(untitled)')+' <span class="tag">'+esc(it.id)+'</span></h3></div>'+
+        '<div class="srcmeta">'+esc(namesStr(it.author)||'—')+' · '+esc(yearOf(it)||'n.d.')+' · '+esc(tlabel)+' '+authPill(it)+(col?(' · '+lks.length+' link'+(lks.length!==1?'s':'')):'')+'</div>'+
+        '<div class="srcbody'+(col?' collapsed':'')+'" data-body="'+it.id+'">'+
         '<div class="cite" style="border:none;padding:4px 0">'+fmtAPA(it)+'</div>'+
-        lkHtml+
+        lkHtml+'</div>'+
         '<div class="srcactions"><button class="btn sm p" data-link="'+it.id+'">+ Link to argument</button>'+
         '<button class="btn sm" data-edit="'+it.id+'">edit</button>'+
         '<button class="btn sm d" data-del="'+it.id+'">delete</button></div></div>';
     }).join('');
+    syncCollBtn();
   }
 
   document.getElementById('libSearch').addEventListener('input',renderLib);
+  function syncCollBtn(){var btn=document.getElementById('collAll');if(!btn)return;var ids=ITEMS.map(function(i){return i.id;});var allCol=ids.length&&ids.every(function(i){return COLL[i];});btn.textContent=allCol?'Expand all':'Collapse all';}
+  document.getElementById('collAll').addEventListener('click',function(){var ids=ITEMS.map(function(i){return i.id;});var allCol=ids.length&&ids.every(function(i){return COLL[i];});if(allCol){COLL={};}else{COLL={};ids.forEach(function(i){COLL[i]=true;});}saveColl();renderLib();});
+  document.getElementById('hierMode').addEventListener('change',renderHier);
+  document.getElementById('hierList').addEventListener('click',function(e){var h=e.target.closest('[data-hg]');if(!h)return;var k=h.dataset.hg;if(HCOLL[k])delete HCOLL[k];else HCOLL[k]=true;saveHcoll();renderHier();});
+  document.getElementById('hierColl').addEventListener('click',function(){var keys={};ITEMS.forEach(function(it){keys[document.getElementById('hierMode').value==='auth'?authInfo(it).l:workOf(it)]=1;});var ks=Object.keys(keys);var allc=ks.length&&ks.every(function(k){return HCOLL[k];});if(allc){HCOLL={};}else{HCOLL={};ks.forEach(function(k){HCOLL[k]=true;});}saveHcoll();renderHier();});
   function loadAcppSeed(){
     var seed;try{seed=JSON.parse(document.getElementById('acppSeed').textContent);}catch(e){alert('Seed not available.');return;}
     var have={};ITEMS.forEach(function(i){have[i.id]=1;});
@@ -1397,6 +1450,8 @@
   var _la=document.getElementById('loadAcpp');if(_la)_la.addEventListener('click',loadAcppSeed);
 
   document.getElementById('libList').addEventListener('click',function(e){
+    var tg=e.target.closest('[data-tog]');
+    if(tg&&!e.target.closest('button')){var id=tg.dataset.tog;if(COLL[id])delete COLL[id];else COLL[id]=true;saveColl();renderLib();return;}
     var b=e.target.closest('button');if(!b)return;
     if(b.dataset.edit){openSrc(b.dataset.edit);}
     else if(b.dataset.del){if(confirm('Delete this source and its links?')){ITEMS=ITEMS.filter(function(x){return x.id!==b.dataset.del;});LINKS=LINKS.filter(function(x){return x.source_id!==b.dataset.del;});saveJSON(SKEY,ITEMS);saveJSON(LKEY,LINKS);renderLib();}}
@@ -1512,6 +1567,51 @@
     var pr=document.getElementById('argProp');pr.innerHTML='<option value="">— all propositions —</option>';
     var pseen={};REFS.props.forEach(function(p){pseen[p.id]=1;var o=document.createElement('option');o.value=p.id;o.textContent=p.id+(p.text?' · '+p.text.slice(0,40):'');pr.appendChild(o);});
     LINKS.forEach(function(l){if(l.proposition_id&&!pseen[l.proposition_id]){pseen[l.proposition_id]=1;var o=document.createElement('option');o.value=l.proposition_id;o.textContent=l.proposition_id;pr.appendChild(o);}});
+  }
+  function workOf(it){
+    if(it.group) return it.group;
+    var s=(it.id+' '+(it.title||'')).toUpperCase();
+    if(/DMBOK ?3|DMBOK-3|DMBOK3/.test(s)) return 'DAMA-DMBOK 3.0 (DAMA International)';
+    if(/DMBOK|DAMA/.test(s)) return 'DAMA-DMBOK2 (DAMA International, 2017)';
+    if(/ISO/.test(s)) return 'ISO / IEC standards';
+    if(/GDPR|2016\/679|\bEU\b/.test(s)) return 'European Union — law';
+    if(/POPIA|SOUTH AFRICA/.test(s)) return 'South Africa — law';
+    if(/OECD/.test(s)) return 'OECD';
+    if(/BCBS|\bBIS\b|BASEL/.test(s)) return 'BIS / Basel Committee';
+    if(/DCAM|EDM COUNCIL|EDMC/.test(s)) return 'EDM Council (DCAM)';
+    if(/ACKOFF|MOODY|CARLSON|JCMC|JOURNAL|SCHOLAR/.test(s)) return 'Academic / peer-reviewed';
+    return 'Other sources';
+  }
+  function authInfo(it){
+    var n=((it.authority||'')+' '+(it.note||'')+' '+(it.type||'')).toLowerCase();
+    if(/standard/.test(n)) return {r:1,c:'a1',l:'Standard'};
+    if(/regulation|legislation|\blaw\b|gdpr|popia/.test(n)) return {r:2,c:'a2',l:'Law / regulation'};
+    if(/intergovernmental|oecd/.test(n)) return {r:3,c:'a3',l:'Intergovernmental'};
+    if(/professional|dama|dmbok/.test(n)) return {r:4,c:'a4',l:'Professional body'};
+    if(/industry|framework|dcam|bcbs/.test(n)) return {r:5,c:'a5',l:'Industry framework'};
+    if(/peer|academic|journal|article/.test(n)) return {r:6,c:'a6',l:'Peer-reviewed'};
+    return {r:7,c:'a6',l:'Other'};
+  }
+  function authPill(it){var a=authInfo(it);return '<span class="atier '+a.c+'">'+a.l+'</span>';}
+  function renderHier(){
+    var mode=document.getElementById('hierMode').value;
+    document.getElementById('authKey').innerHTML=[['a1','Standard'],['a2','Law / regulation'],['a3','Intergovernmental'],['a4','Professional body'],['a5','Industry framework'],['a6','Peer-reviewed']].map(function(x){return '<span><i class="atier '+x[0]+'">'+x[1]+'</i></span>';}).join('')+'<span>authority high → low</span>';
+    var el=document.getElementById('hierList');
+    if(!ITEMS.length){el.innerHTML='<div class="empty">No sources yet. Load ACPP sources or import a Zotero export.</div>';return;}
+    var groups={};
+    ITEMS.forEach(function(it){var key=(mode==='auth')?authInfo(it).l:workOf(it);(groups[key]=groups[key]||[]).push(it);});
+    var keys=Object.keys(groups);
+    if(mode==='auth'){var ord={'Standard':1,'Law / regulation':2,'Intergovernmental':3,'Professional body':4,'Industry framework':5,'Peer-reviewed':6,'Other':7};keys.sort(function(a,b){return (ord[a]||9)-(ord[b]||9);});}
+    else{keys.sort(function(a,b){return groups[b].length-groups[a].length||(a<b?-1:1);});}
+    el.innerHTML=keys.map(function(k){
+      var arr=groups[k].slice().sort(function(a,b){return authInfo(a).r-authInfo(b).r||((a.title||a.id)<(b.title||b.id)?-1:1);});
+      var col=!!HCOLL[k];
+      var rows=arr.map(function(it){var a=authInfo(it);var lc=linksFor(it.id).length;
+        return '<div class="hrow"><span class="atier '+a.c+'">'+a.l+'</span><span class="ht">'+esc(it.title||it.id)+' <span class="tag">'+esc(it.id)+'</span></span><span class="muted">'+lc+' link'+(lc!==1?'s':'')+'</span></div>';}).join('');
+      var totLinks=arr.reduce(function(s,it){return s+linksFor(it.id).length;},0);
+      return '<div class="hgroup"><div class="hhead" data-hg="'+esc(k)+'"><span class="srccaret">'+(col?'▸':'▾')+'</span><b>'+esc(k)+'</b><span class="hcount">'+arr.length+' source'+(arr.length!==1?'s':'')+' · '+totLinks+' link'+(totLinks!==1?'s':'')+'</span></div><div class="hbody'+(col?' collapsed':'')+'">'+rows+'</div></div>';
+    }).join('');
+    var cb=document.getElementById('hierColl');if(cb){var allc=keys.length&&keys.every(function(k){return HCOLL[k];});cb.textContent=allc?'Expand all':'Collapse all';}
   }
   function renderByArg(){
     populateArgFilters();

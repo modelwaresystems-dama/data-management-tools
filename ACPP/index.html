@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.5.1">
+<meta name="version" content="2.6.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -145,6 +145,12 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .ar-form select,.ar-form input{padding:6px 9px;border:1px solid var(--line,#ddd);border-radius:7px;font:inherit;font-size:.85rem;background:var(--surface2,#f6f6f6);color:var(--ink,#222)}
 .ar-form input#anText{flex:1;min-width:220px}
 .linklike{background:none;border:none;color:#2563eb;cursor:pointer;font:inherit;padding:0;text-decoration:underline}
+.g3lk{font-size:.8rem;margin:4px 0;color:var(--muted,#566)}
+.g3lk b{color:var(--ink,#222);margin-right:4px}
+.chip{display:inline-block;font-size:.72rem;font-family:ui-monospace,monospace;border:1px solid var(--line,#ccc);background:var(--surface2,#f4f4f4);color:var(--ink,#333);border-radius:10px;padding:1px 7px;margin:2px;cursor:pointer}
+.chip.on{background:#2563eb;color:#fff;border-color:#2563eb}
+.g3fn{font-size:.8rem;padding:2px 6px;border:1px solid var(--line,#ccc);border-radius:6px;background:var(--surface2,#f4f4f4);color:var(--ink,#222)}
+.evlab{font-size:.78rem;color:var(--muted,#566);display:inline-flex;align-items:center;gap:4px;margin-left:8px}
 </style>
 </head>
 <body>
@@ -566,9 +572,14 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
              ["P-01.02-03","Reason","Organisations manage data for risk reduction and resilience.","Approved"],
              ["P-01.02-04","Reason","Organisations also manage data to satisfy regulatory, legal and contractual obligations.","Approved"],
              ["C-01.02-01","Conclusion","Because these drivers operate together, DM is justified by value, operations, risk and obligation — not value alone.","Approved"]]},
-           G3:{contention:"P-01.02-00 — Data Management exists for more than one reason.",
-               reasons:[["P-01.02-01","business value and innovation",true],["P-01.02-02","operational effectiveness",true],["P-01.02-03","risk reduction and resilience",true],["P-01.02-04","regulatory / legal / contractual obligation",true]],
-               conclusion:"C-01.02-01 — the four drivers operate together."},
+           G3:{sources:"Outline (G1) + approved propositions (G2)",nodes:[
+             ["AN-01.02-C","Contention","P-01.02-00","B-01.02-01","Data Management exists for more than one reason; a value-only framing is incomplete."],
+             ["AN-01.02-R1","Reason","P-01.02-01","B-01.02-01","Organisations manage data for business value and innovation."],
+             ["AN-01.02-R2","Reason","P-01.02-02","B-01.02-02","Organisations manage data for operational effectiveness and efficiency."],
+             ["AN-01.02-R3","Reason","P-01.02-03","B-01.02-03","Organisations manage data for risk reduction and resilience."],
+             ["AN-01.02-R4","Qualification","P-01.02-04","B-01.02-04","Organisations also manage data to satisfy regulatory, legal and contractual obligations."],
+             ["AN-01.02-CL","Conclusion","C-01.02-01","B-01.02-05","Because these drivers operate together, DM is justified by value, operations, risk and obligation — not value alone."]
+           ]},
            G4:{evid:[
              ["P-01.02-01",null,"NEEDS-SOURCE","Standard",[
                {id:"ISO-38505-1-2017",tier:"International",cite:"ISO/IEC 38505-1:2017 — Governance of data (Part 1)",auth:"Standard",supports:"Data is an asset whose value must be deliberately governed and realised.",url:"https://www.iso.org/standard/56639.html"},
@@ -720,38 +731,53 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   }
 
   function g3Active(sec){var proj="dmbok-v3-ch1",seed=(sec.art&&sec.art.G3&&sec.art.G3.nodes)?sec.art.G3.nodes:[],add=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.added')||[];return seed.concat(add).filter(function(n){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+n[0])||{};return s.decision!=='rej';});}
+  function evListedFor(sec,pid){var g4=sec.art&&sec.art.G4;return !!(g4&&g4.evid&&g4.evid.some(function(e){return e[0]===pid;}));}
+  function g3defaults(sec){var nodes=g3Active(sec),cont=null,conc=null,sup=[];nodes.forEach(function(n){if(n[1]==='Contention')cont=n[0];else if(n[1]==='Conclusion')conc=n[0];else sup.push(n[0]);});var d={};nodes.forEach(function(n){var id=n[0],t=n[1],rec={fn:t,dep:[],leads:[],ev:false};if(t==='Contention'){rec.leads=sup.slice();}else if(t==='Conclusion'){rec.dep=sup.slice();}else{if(cont)rec.dep=[cont];if(conc)rec.leads=[conc];rec.ev=evListedFor(sec,n[2]);}d[id]=rec;});return d;}
+  function g3L(sec,id){var rec=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G3L.'+id);if(rec)return {fn:rec.fn||'',dep:rec.dep||[],leads:rec.leads||[],ev:!!rec.ev};var def=g3defaults(sec);return def[id]||{fn:'',dep:[],leads:[],ev:false};}
   function buildArgumentReview(c, sec){
     var proj="dmbok-v3-ch1";
     var kOf=function(id){return 'acpp.'+proj+'.'+sec.sid+'.G3.'+id;};
     var addedKey='acpp.'+proj+'.'+sec.sid+'.G3.added';
     function added(){return lsGet(addedKey)||[];}
     function allNodes(){var seed=(sec.art.G3&&sec.art.G3.nodes)?sec.art.G3.nodes:[];return seed.concat(added());}
+    function setL(id,rec){lsSet('acpp.'+proj+'.'+sec.sid+'.G3L.'+id,rec);}
+    var FN=['Contention','Reason','Warrant','Qualification','Counterpoint','Conclusion','Definition','Distinction','Principle','Consequence','Recommendation','Transition'];
     function draw(){
       var all=allNodes();
       var active=all.filter(function(n){var s=lsGet(kOf(n[0]))||{};return s.decision!=='rej';});
       var removed=all.filter(function(n){var s=lsGet(kOf(n[0]))||{};return s.decision==='rej';});
       var acc=active.filter(function(n){var s=lsGet(kOf(n[0]))||{};return s.decision==='acc';}).length;
+      var ids=active.map(function(n){return n[0];});
       var bar='<div class="rv-bar"><span class="rv-prog">'+acc+' of '+active.length+' accepted</span><span><span class="rv-save" id="agSave"></span><button class="rv-export" id="agExport">⬆ Commit argument_nodes.json</button></span></div>';
       var map='<div class="vismapwrap" style="margin-bottom:10px">'+genArgumentSVG(sec)+'</div>';
-      var hint='<div class="rv-cands-h">Live argument map — updates as you accept, reject or add. Reject removes the node from the map.</div>';
-      var cards=active.map(function(n){var s=lsGet(kOf(n[0]))||{decision:'nd',comment:''};
-        return '<div class="rv-row" data-id="'+n[0]+'"><div class="rv-claim"><span class="idc">'+n[0]+'</span> <b>'+esc(n[1])+'</b> · <span class="idc">'+esc(n[2]||'')+'</span>'+(n[3]?' · <span class="idc">'+esc(n[3])+'</span>':'')+'</div>'+
+      var hint='<div class="rv-cands-h">Provide the argument for each proposition: set its function and its Depends-on / Leads-to links. The map updates live. Reject removes a node.</div>';
+      var cards=active.map(function(n){var id=n[0];var s=lsGet(kOf(id))||{decision:'nd',comment:''};var L=g3L(sec,id);
+        var fnsel='<select class="g3fn" data-id="'+id+'">'+FN.map(function(x){return '<option'+(L.fn===x?' selected':'')+'>'+x+'</option>';}).join('')+'</select>';
+        function chips(kind){var html=ids.filter(function(o){return o!==id;}).map(function(o){var on=(L[kind]||[]).indexOf(o)>=0;return '<button class="chip'+(on?' on':'')+'" data-id="'+id+'" data-'+kind+'="'+o+'">'+o+'</button>';}).join('');return html||'<i>—</i>';}
+        return '<div class="rv-row" data-id="'+id+'"><div class="rv-claim"><span class="idc">'+id+'</span> '+fnsel+' · <span class="idc">'+esc(n[2]||'')+'</span></div>'+
           '<div class="sup">'+esc(s.comment&&s.comment.trim()?s.comment:n[4])+'</div>'+
+          '<div class="g3lk"><b>Depends on</b> '+chips('dep')+'</div>'+
+          '<div class="g3lk"><b>Leads to</b> '+chips('leads')+'</div>'+
           '<div class="rv-ctrls"><button class="rv-btn acc'+(s.decision==='acc'?' on':'')+'" data-act="acc">Accept</button>'+
-          '<button class="rv-btn rej" data-act="rej">Reject &amp; remove</button></div>'+
+          '<button class="rv-btn rej" data-act="rej">Reject &amp; remove</button>'+
+          '<label class="evlab"><input type="checkbox" class="g3ev" data-id="'+id+'"'+(L.ev?' checked':'')+'> Evidence needed</label></div>'+
           '<textarea class="rv-cmt" placeholder="Edit the wording (your words win), or comment">'+esc(s.comment||'')+'</textarea></div>';
       }).join('');
       var rem=removed.length?('<p class="note">Removed ('+removed.length+'): '+removed.map(function(n){return '<span class="idc">'+n[0]+'</span> <button class="linklike" data-restore="'+n[0]+'">↩ restore</button>';}).join('   ')+'</p>'):'';
       var addf='<div class="addnode"><b>+ Add a node</b><div class="ar-form"><select id="anType"><option value="Contention">Opening Contention</option><option value="Reason" selected>Supporting Reason</option><option value="Warrant">Warrant</option><option value="Qualification">Qualification</option><option value="Counterpoint">Counterpoint</option><option value="Conclusion">Intended Conclusion</option></select><input id="anPid" placeholder="P-ID (optional)"><input id="anText" placeholder="Node text"><button class="rv-btn" id="anAdd">Add</button></div></div>';
       c.innerHTML=bar+map+hint+cards+rem+addf;
-      function flash(){var e=c.querySelector('#agSave');if(e){e.textContent='saved';setTimeout(function(){e.textContent='';},1000);}}
+      function flash(){var e=c.querySelector('#agSave');if(e){e.textContent='saved';setTimeout(function(){e.textContent='';},900);}}
       c.querySelectorAll('.rv-row').forEach(function(row){var id=row.dataset.id;
         row.querySelector('[data-act="acc"]').addEventListener('click',function(){var s=lsGet(kOf(id))||{};s.decision='acc';s.comment=row.querySelector('.rv-cmt').value;lsSet(kOf(id),s);draw();});
-        row.querySelector('[data-act="rej"]').addEventListener('click',function(){var s=lsGet(kOf(id))||{};s.decision='rej';s.comment=row.querySelector('.rv-cmt').value;lsSet(kOf(id),s);draw();});
-        row.querySelector('.rv-cmt').addEventListener('input',function(){var s=lsGet(kOf(id))||{};s.comment=this.value;if(!s.decision)s.decision='nd';lsSet(kOf(id),s);flash();});});
+        row.querySelector('[data-act="rej"]').addEventListener('click',function(){var s=lsGet(kOf(id))||{};s.decision='rej';lsSet(kOf(id),s);draw();});
+        row.querySelector('.rv-cmt').addEventListener('input',function(){var s=lsGet(kOf(id))||{};s.comment=this.value;if(!s.decision)s.decision='nd';lsSet(kOf(id),s);flash();});
+        row.querySelector('.g3fn').addEventListener('change',function(){var L=g3L(sec,id);L.fn=this.value;setL(id,L);draw();});
+        row.querySelector('.g3ev').addEventListener('change',function(){var L=g3L(sec,id);L.ev=this.checked;setL(id,L);draw();});});
+      c.querySelectorAll('[data-dep]').forEach(function(b){b.addEventListener('click',function(){var id=b.dataset.id,o=b.dataset.dep,L=g3L(sec,id);L.dep=L.dep||[];var k=L.dep.indexOf(o);if(k>=0)L.dep.splice(k,1);else L.dep.push(o);setL(id,L);draw();});});
+      c.querySelectorAll('[data-leads]').forEach(function(b){b.addEventListener('click',function(){var id=b.dataset.id,o=b.dataset.leads,L=g3L(sec,id);L.leads=L.leads||[];var k=L.leads.indexOf(o);if(k>=0)L.leads.splice(k,1);else L.leads.push(o);setL(id,L);draw();});});
       c.querySelectorAll('[data-restore]').forEach(function(b){b.addEventListener('click',function(){var id=b.dataset.restore,s=lsGet(kOf(id))||{};s.decision='nd';lsSet(kOf(id),s);draw();});});
       var ab=c.querySelector('#anAdd'); if(ab) ab.addEventListener('click',function(){var t=c.querySelector('#anText').value.trim();if(!t)return;var ty=c.querySelector('#anType').value,pid=c.querySelector('#anPid').value.trim();var id='ANU-'+Date.now().toString(36).toUpperCase().slice(-6);var arr=added();arr.push([id,ty,pid,'',t]);lsSet(addedKey,arr);lsSet(kOf(id),{decision:'acc',comment:''});draw();});
-      var ex=c.querySelector('#agExport'); if(ex) ex.addEventListener('click',function(){var rows=active.map(function(n){var s=lsGet(kOf(n[0]))||{};return {project_id:proj,an_id:n[0],type:n[1],p_id:n[2]||null,outline_id:n[3]||null,text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:(s.decision==='acc'?'Approved':'Pending'),author_id:'HD'};});var obj={_note:"Exported from the ACPP board G3 review (incl. author-added nodes; rejected nodes removed).",project_id:proj,section_id:sec.sid,nodes:rows};ghCommitOrDownload('argument_nodes.'+sec.sid+'.json',obj,this);});
+      var ex=c.querySelector('#agExport'); if(ex) ex.addEventListener('click',function(){var rows=active.map(function(n){var s=lsGet(kOf(n[0]))||{};var L=g3L(sec,n[0]);return {project_id:proj,an_id:n[0],type:L.fn||n[1],p_id:n[2]||null,outline_id:n[3]||null,text:(s.comment&&s.comment.trim()?s.comment:n[4]),depends_on:L.dep||[],leads_to:L.leads||[],evidence_needed:!!L.ev,status:(s.decision==='acc'?'Approved':'Pending'),author_id:'HD'};});var obj={_note:"Exported from the ACPP board G3 review (functions + inferential links; rejected removed).",project_id:proj,section_id:sec.sid,nodes:rows};ghCommitOrDownload('argument_nodes.'+sec.sid+'.json',obj,this);});
     }
     draw();
   }
@@ -829,29 +855,30 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     function dec(g,id){return lsGet('acpp.'+proj+'.'+sec.sid+'.'+g+'.'+id)||{};}
     function evSup(pid){var s=dec('G4',pid);return s.decision==='acc'&&!!s.src;}
     function evListed(pid){var g4=sec.art&&sec.art.G4;return !!(g4&&g4.evid&&g4.evid.some(function(e){return e[0]===pid;}));}
-    var items=[],contention=null,conclusion=null;
-    if(sec.art.G3&&sec.art.G3.nodes){g3Active(sec).forEach(function(n){var s=dec('G3',n[0]);var st=s.decision==='rej'?'rej':(s.decision==='acc'?'acc':'pend');var it={id:n[0],pid:n[2],type:n[1],text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:st};if(n[1]==='Contention')contention=it;else if(n[1]==='Conclusion')conclusion=it;else items.push(it);});}
-    else if(sec.art.G2){var g2=sec.art.G2;var rows=g2.props?g2.props.map(function(p){return {id:p[0],type:p[1],text:p[2],pid:p[0],status:'acc'};}):(g2.backfill||[]).map(function(e){var s=dec('G2',e[0]);return {id:e[0],type:e[2],text:(s.text&&s.text!==''?s.text:e[3]),pid:e[0],status:s.decision==='rej'?'rej':(s.decision==='acc'?'acc':'pend')};});rows.forEach(function(it){if(it.type==='Contention')contention=it;else if(it.type==='Conclusion')conclusion=it;else items.push(it);});}
+    var usingNodes=!!(sec.art.G3&&sec.art.G3.nodes);
+    var list=[];
+    if(usingNodes){g3Active(sec).forEach(function(n){var s=dec('G3',n[0]);var st=s.decision==='acc'?'acc':(s.decision==='rej'?'rej':'pend');list.push({id:n[0],type:(g3L(sec,n[0]).fn||n[1]),pid:n[2],text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:st});});}
+    else if(sec.art.G2){var g2=sec.art.G2;list=g2.props?g2.props.map(function(p){return {id:p[0],type:p[1],text:p[2],pid:p[0],status:'acc'};}):(g2.backfill||[]).map(function(e){var s=dec('G2',e[0]);return {id:e[0],type:e[2],text:(s.text&&s.text!==''?s.text:e[3]),pid:e[0],status:s.decision==='rej'?'rej':(s.decision==='acc'?'acc':'pend')};});}
+    var contention=null,conclusion=null,items=[];
+    list.forEach(function(it){if(it.type==='Contention')contention=it;else if(it.type==='Conclusion')conclusion=it;else items.push(it);});
     var aiqs=(sec.aiq||[]).map(function(q){var s=dec('AIQ',q[0]);return {id:q[0],text:q[2],resolved:(s.decision==='accept'||s.decision==='reject')};}).filter(function(a){return !a.resolved;});
-    var W=860,bw=184,bh=68,gap=20,perRow=4,topY=18,rowY=contention?150:44,rws=Math.ceil(items.length/perRow)||1,rowH=bh+74,concY=rowY+rws*rowH+6,H=concY+bh+34;
+    var W=880,bw=186,bh=70,gap2=20,perRow=4,topY=18,rowY=contention?150:44,rws=Math.ceil(items.length/perRow)||1,rowH=bh+80,concY=rowY+rws*rowH+6,H=concY+bh+34;
     var BLUE=['#dbeafe','#2563eb'],GREEN=['#dcfce7','#16a34a'],AMBER=['#fef3c7','#d97706'],RED=['#fee2e2','#dc2626'],GREY='#5b6b7a';
-    var p=['<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="'+GREY+'"/></marker><marker id="ahg" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#16a34a"/></marker></defs>'];
-    var cx=(W-230)/2, contBottom={x:cx+115,y:topY+bh};
-    if(contention){p.push(vmBox(cx,topY,230,bh,BLUE[0],BLUE[1],contention.id,contention.type,contention.text));}
-    var spos=[];
-    items.forEach(function(it,i){var r=Math.floor(i/perRow),cI=i%perRow,cnt=Math.min(perRow,items.length-r*perRow),rowW=cnt*bw+(cnt-1)*gap,sx=(W-rowW)/2+cI*(bw+gap),sy=rowY+r*rowH;
-      var unsup=(it.status!=='rej')&&evListed(it.pid)&&!evSup(it.pid);var fill,stroke;
-      if(it.status==='rej'||unsup){fill=RED[0];stroke=RED[1];}else{fill=BLUE[0];stroke=BLUE[1];}
-      p.push(vmBox(sx,sy,bw,bh,fill,stroke,it.id,it.type,it.text));
-      if(evSup(it.pid))p.push(vmDoc(sx+bw-19,sy+bh-19));
-      var dash=(it.status==='acc')?'':' stroke-dasharray="5 4"';
-      if(contention){p.push('<path d="M'+contBottom.x+','+contBottom.y+' L'+(sx+bw/2)+','+sy+'" stroke="'+GREY+'" stroke-width="1.4" fill="none" marker-end="url(#ah)"'+dash+'/>');}
-      spos.push({x:sx+bw/2,y:sy+bh,acc:it.status==='acc'});});
-    if(conclusion){var gx=(W-230)/2;p.push(vmBox(gx,concY,230,bh,GREEN[0],GREEN[1],conclusion.id,conclusion.type,conclusion.text));
-      spos.forEach(function(sp){p.push('<path d="M'+sp.x+','+sp.y+' L'+(gx+115)+','+concY+'" stroke="'+GREY+'" stroke-width="1.3" fill="none" marker-end="url(#ah)"'+(sp.acc?'':' stroke-dasharray="5 4"')+'/>');});}
-    aiqs.forEach(function(a,i){var ax=W-176,ay=topY+i*(bh+14);p.push(vmBox(ax,ay,168,bh,AMBER[0],AMBER[1],a.id,'AIQ',a.text));
-      var tx=contention?(cx+230):((W-230)/2+230),ty=contention?(topY+bh/2):(concY+bh/2);
-      p.push('<path d="M'+ax+','+(ay+bh/2)+' L'+tx+','+ty+'" stroke="#d97706" stroke-width="1.3" fill="none" marker-end="url(#ah)" stroke-dasharray="5 4"/>');});
+    var p=['<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="'+GREY+'"/></marker></defs>'];
+    var pos={},cx=(W-230)/2;
+    if(contention){pos[contention.id]={cx:cx+115,top:topY,bot:topY+bh};}
+    items.forEach(function(it,i){var r=Math.floor(i/perRow),cI=i%perRow,cnt=Math.min(perRow,items.length-r*perRow),rowW=cnt*bw+(cnt-1)*gap2,sx=(W-rowW)/2+cI*(bw+gap2),sy=rowY+r*rowH;it._x=sx;it._y=sy;pos[it.id]={cx:sx+bw/2,top:sy,bot:sy+bh};});
+    if(conclusion){pos[conclusion.id]={cx:(W-230)/2+115,top:concY,bot:concY+bh};}
+    function accOf(id){return dec('G3',id).decision==='acc';}
+    var edges=[];
+    if(usingNodes){var seen={};g3Active(sec).forEach(function(n){var L=g3L(sec,n[0]);(L.leads||[]).forEach(function(t){var k=n[0]+'>'+t;if(!seen[k]&&pos[n[0]]&&pos[t]){seen[k]=1;edges.push([n[0],t]);}});(L.dep||[]).forEach(function(dp){var k=dp+'>'+n[0];if(!seen[k]&&pos[dp]&&pos[n[0]]){seen[k]=1;edges.push([dp,n[0]]);}});});}
+    else{if(contention)items.forEach(function(it){edges.push([contention.id,it.id]);});if(conclusion)items.forEach(function(it){edges.push([it.id,conclusion.id]);});}
+    edges.forEach(function(e){var a=pos[e[0]],b=pos[e[1]];if(!a||!b)return;var x1=a.cx,x2=b.cx,y1,y2;if(b.top>=a.bot){y1=a.bot;y2=b.top;}else if(b.bot<=a.top){y1=a.top;y2=b.bot;}else{y1=a.bot;y2=b.top;}var solid=usingNodes?accOf(e[0]):true;p.push('<path d="M'+x1+','+y1+' L'+x2+','+y2+'" stroke="'+GREY+'" stroke-width="1.4" fill="none" marker-end="url(#ah)"'+(solid?'':' stroke-dasharray="5 4"')+'/>');});
+    function drawNode(it,x,y,w){var unsup=(it.status!=='rej')&&evListed(it.pid)&&!evSup(it.pid);var fill,stroke;if(it===conclusion){fill=GREEN[0];stroke=GREEN[1];}else if(it.status==='rej'||unsup){fill=RED[0];stroke=RED[1];}else{fill=BLUE[0];stroke=BLUE[1];}p.push(vmBox(x,y,w,bh,fill,stroke,it.id,it.type,it.text));if(evSup(it.pid))p.push(vmDoc(x+w-19,y+bh-19));}
+    if(contention)drawNode(contention,cx,topY,230);
+    items.forEach(function(it){drawNode(it,it._x,it._y,bw);});
+    if(conclusion)drawNode(conclusion,(W-230)/2,concY,230);
+    aiqs.forEach(function(a,i){var ax=W-176,ay=topY+i*(bh+14);p.push(vmBox(ax,ay,168,bh,AMBER[0],AMBER[1],a.id,'AIQ',a.text));var tgt=contention||conclusion;if(tgt&&pos[tgt.id]){var tp=pos[tgt.id];p.push('<path d="M'+ax+','+(ay+bh/2)+' L'+tp.cx+','+(tp.top+bh/2)+'" stroke="#d97706" stroke-width="1.3" fill="none" marker-end="url(#ah)" stroke-dasharray="5 4"/>');}});
     return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:'+W+'px" xmlns="http://www.w3.org/2000/svg">'+p.join('')+'</svg>';}
   function vmLegend(){return '<div class="viskey">'+
     '<span><i class="k" style="background:#dbeafe;border-color:#2563eb"></i>Approved proposition</span>'+
@@ -896,7 +923,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       '<li>Qualifications and counterarguments are addressed.</li>'+
       '<li>Evidence requirements are visibly tagged.</li>'+
       '<li>No unapproved AI suggestions have entered the baseline.</li></ul>'+
-      '<p class="note">Source: <span class="idc">modelware_app_storage/ACPP/docs/ACPP_Argument_Modelling.docx</span></p>'+
+      '<h3>6. Core elements of an argument</h3><ul>'+'<li><b>Opening Contention (P-ID)</b> — entry claim answering the section question.</li>'+'<li><b>Supporting Reason (P-ID)</b> — sub-claim justifying the contention.</li>'+'<li><b>Warrant (P-ID / AIQ-ID)</b> — the inferential bridge linking reasons to the contention.</li>'+'<li><b>Qualification (P-ID)</b> — scope boundaries and conditions.</li>'+'<li><b>Counterpoint / Objection (P-ID)</b> — opposing views addressed.</li>'+'<li><b>Evidence Statement (SRC-ID)</b> — tagged where a claim needs a source.</li>'+'<li><b>Intended Conclusion (C-ID)</b> — the green terminal node.</li></ul>'+'<h3>7. How to compose — the six steps</h3><ul>'+'<li><b>1. Decouple logic from prose</b> — atomic propositions, each individually evaluated.</li>'+'<li><b>2. Define explicit inferential links</b> — Depends-on (prerequisites) and Leads-to / Supports (downstream) for every proposition.</li>'+'<li><b>3. Apply the visual grammar</b> — map it so dependencies are auditable.</li>'+'<li><b>4. Test logic independently of evidence</b> — tag Evidence-Needed without attaching sources yet (prevents source-laundering).</li>'+'<li><b>5. AI as logic challenger</b> — AI-proposed warrants go to the AIQ (amber) until you approve.</li>'+'<li><b>6. Verify against the Gate G3 checklist</b> before Stage 4.</li></ul>'+'<p class="note">Source: <span class="idc">modelware_app_storage/ACPP/docs/ACPP_Argument_Modelling.docx</span></p>'+
       '</div>'+
       '<p class="note"><button class="rv-btn visback">← Back</button></p>';
     wireDetail(det,sec,'G3');}

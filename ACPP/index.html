@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.15.0">
+<meta name="version" content="2.13.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -251,15 +251,22 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       try{render(sel.value);}catch(e){}}).catch(function(){});}
   function ghConnect(){if(!ghConfigured()){ghStatus('not connected');return;}ghStatus('connecting…');
     fetch('https://api.github.com/repos/'+GH.owner()+'/'+GH.repo(),{headers:ghHeaders()}).then(function(r){return r.json().then(function(j){
-      if(r.ok){ghStatus('connected · '+GH.owner()+'/'+GH.repo(),true);ghRefreshFiles().then(function(){return ghRehydrate(false);}).then(function(){return ghPullContent();}).then(function(){try{render(sel.value);}catch(e){}});}else{ghStatus('error: '+(j.message||('HTTP '+r.status)));}});}).catch(function(e){ghStatus('error: '+e);});}
+      if(r.ok){ghStatus('auto-refreshing from repo…',true);
+        ghRefreshFiles()
+          .then(function(){return ghRehydrate(false);})
+          .then(function(c){return ghPullContent().then(function(got){
+            ghStatus('connected · '+GH.owner()+'/'+GH.repo()+' · auto-refreshed '+c+' new record'+(c===1?'':'s')+(got?' + content':''),true);
+          });})
+          .then(function(){try{render(sel.value);}catch(e){}});
+      }else{ghStatus('error: '+(j.message||('HTTP '+r.status)));}});}).catch(function(e){ghStatus('error: '+e);});}
   function ghGetJson(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;try{return JSON.parse(decodeURIComponent(escape(atob(String(j.content).replace(/\s/g,'')))));}catch(e){return null;}}).catch(function(){return null;});}
   function ghPutLocal(k,val,overwrite,n){try{if(!overwrite&&localStorage.getItem(k)!=null)return;lsSet(k,val);n.c++;}catch(e){}}
-  function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);var n={c:0},P='acpp.dmbok-v3-ch1.',jobs=[];var padId=function(x){return String(x||'').replace(/^([PNBC])-(\d{1,2})\.(\d{1,2})-/,function(m,pp,a,b){return pp+'-'+('0'+a).slice(-2)+'.'+('0'+b).slice(-2)+'-';});};
+  function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);var n={c:0},P='acpp.dmbok-v3-ch1.',jobs=[];
     function pull(fn,apply){if(!GHFILES[fn])return Promise.resolve();return ghGetJson(GH.dir()+'/'+fn).then(function(o){if(o)apply(o);});}
     proj.sections.forEach(function(sec){var sid=sec.sid;
-      jobs.push(pull('propositions.'+sid+'.json',function(o){(o.propositions||[]).forEach(function(p){if(p.p_id)ghPutLocal(P+sid+'.G2.'+padId(p.p_id),{decision:'acc',text:(p.text!=null?p.text:''),comment:''},overwrite,n);});}));
-      jobs.push(pull('argument_nodes.'+sid+'.json',function(o){(o.nodes||[]).forEach(function(nd){if(!nd.an_id)return;var d=nd.status==='Approved'?'acc':(nd.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G3.'+padId(nd.an_id),{decision:d,comment:nd.text||''},overwrite,n);});}));
-      jobs.push(pull('evidence_links.'+sid+'.json',function(o){(o.links||[]).forEach(function(l){if(!l.p_id)return;var d=l.status==='Supported'?'acc':(l.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G4.'+padId(l.p_id),{decision:d,src:l.src_id||'',comment:l.reviewer_comment||'',quote:l.passage||'',locator:l.locator||''},overwrite,n);});}));
+      jobs.push(pull('propositions.'+sid+'.json',function(o){(o.propositions||[]).forEach(function(p){if(p.p_id)ghPutLocal(P+sid+'.G2.'+p.p_id,{decision:'acc',text:(p.text!=null?p.text:''),comment:''},overwrite,n);});}));
+      jobs.push(pull('argument_nodes.'+sid+'.json',function(o){(o.nodes||[]).forEach(function(nd){if(!nd.an_id)return;var d=nd.status==='Approved'?'acc':(nd.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G3.'+nd.an_id,{decision:d,comment:nd.text||''},overwrite,n);});}));
+      jobs.push(pull('evidence_links.'+sid+'.json',function(o){(o.links||[]).forEach(function(l){if(!l.p_id)return;var d=l.status==='Supported'?'acc':(l.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G4.'+l.p_id,{decision:d,src:l.src_id||'',comment:l.reviewer_comment||''},overwrite,n);});}));
       jobs.push(pull('freeze.'+sid+'.json',function(o){if(o.frozen)ghPutLocal(P+sid+'.G5.freeze',{decision:'frozen',date:o.frozen_date||'',hash:o.content_hash||''},overwrite,n);}));
       jobs.push(pull('ai_quarantine.'+sid+'.json',function(o){(o.items||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));ghPutLocal(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''},overwrite,n);});}));
     });
@@ -309,7 +316,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
         var pid=e[0], st=lsGet(keyOf(pid))||{decision:'nd',src:'',comment:''}, cands=e[4]||[];
         var candHtml=cands.map(function(cd){
           var chosen=(st.decision==='acc' && st.src===cd.id);
-          var cq=candQuote(cd);if(chosen&&st.quote&&st.quote.trim())cq=st.quote.trim();
+          var cq=candQuote(cd);
           var passHtml=cq?('<div class="passage" data-q="'+esc(cq)+'"><b>Passage</b><br>“'+esc(cq)+'”</div>')
                          :('<div class="passage none"><b>Passage</b> — not on file. Open the source, then paste the exact sentence/paragraph in the evidence box below.</div>');
           return '<div class="rv-cand'+(chosen?' chosen':'')+'" data-cid="'+esc(cd.id)+'" data-q="'+esc(cq)+'">'+
@@ -323,7 +330,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
         return '<div class="rv-row" data-pid="'+pid+'">'+
           '<div class="rv-claim"><span class="idc">'+pid+'</span> '+esc(props[pid]||'')+'</div>'+
           '<div class="rv-cands-h">Candidate sources — international first</div>'+
-          '<div class="rv-cands">'+((st.decision==='acc'&&st.src&&!cands.some(function(cd){return cd.id===st.src;}))?('<div class="rv-cand chosen" data-cid="'+esc(st.src)+'" data-q="'+esc((st.quote||'').trim())+'"><div class="cand-top"><span class="tier">Author-added</span><button class="cand-use" data-cid="'+esc(st.src)+'">✓ Using</button></div><div class="cite">'+esc(st.src)+'<span class="auth2">author source</span></div>'+((st.quote&&st.quote.trim())?('<div class="passage"><b>Passage</b><br>“'+esc(st.quote.trim())+'”</div>'):('<div class="passage none"><b>Passage</b> — not on file. Paste it in the evidence box below.</div>'))+'<div class="sup">'+esc(st.comment||'Author-supplied source (not in the candidate pool).')+'</div></div>'):'')+candHtml+'</div>'+
+          '<div class="rv-cands">'+candHtml+'</div>'+
           '<div class="rv-ctrls">'+
             '<button class="rv-btn nd'+(st.decision==='nd'?' on':'')+'" data-d="nd">Needs-source</button>'+
             '<button class="rv-btn rej'+(st.decision==='rej'?' on':'')+'" data-d="rej">Reject all</button>'+
@@ -342,7 +349,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       var dec=chosen?'acc':(on?on.dataset.d:'nd');
       var qa=row.querySelector('.rv-quote');var qv=qa?qa.value.trim():'';
       if(qa){var miss=(dec==='acc'&&row.querySelector('.rv-src').value.trim()&&!qv);qa.classList.toggle('warn',!!miss);}
-      lsSet(keyOf(pid),{decision:dec,src:row.querySelector('.rv-src').value.trim(),comment:row.querySelector('.rv-cmt').value,quote:qv,locator:(lsGet(keyOf(pid))||{}).locator||''});prog();flash();}
+      lsSet(keyOf(pid),{decision:dec,src:row.querySelector('.rv-src').value.trim(),comment:row.querySelector('.rv-cmt').value,quote:qv});prog();flash();}
     c.querySelectorAll('.rv-row').forEach(function(row){var pid=row.dataset.pid, srcI=row.querySelector('.rv-src');
       row.querySelectorAll('.cand-use').forEach(function(btn){btn.addEventListener('click',function(){
         row.querySelectorAll('.rv-cand').forEach(function(x){x.classList.remove('chosen');});
@@ -366,7 +373,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
         var hasP=!!(s.quote&&s.quote.trim());
         return {project_id:proj,link_id:'EL-'+sec.sid+'-'+(i+1),p_id:pid,src_id:s.src||null,
           support_strength:(s.decision==='acc'&&s.src)?'Direct':null,human_approved:(s.decision==='acc'&&!!s.src),
-          passage:(s.quote&&s.quote.trim())||null,locator:s.locator||null,passage_status:(s.decision==='acc'&&s.src)?(hasP?'present':'pending'):null,
+          passage:(s.quote&&s.quote.trim())||null,passage_status:(s.decision==='acc'&&s.src)?(hasP?'present':'pending'):null,
           status:status,reviewer_comment:s.comment||null};});
       var obj={_note:"Exported from the ACPP board review. Replace this section's rows in database/evidence_links.json, then commit.",project_id:proj,section_id:sec.sid,links:links};
       ghCommitOrDownload('evidence_links.'+sec.sid+'.json',obj,this);

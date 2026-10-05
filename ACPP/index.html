@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.11.0">
+<meta name="version" content="2.12.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -172,6 +172,16 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .chip.on{background:#2563eb;color:#fff;border-color:#2563eb}
 .g3fn{font-size:.8rem;padding:2px 6px;border:1px solid var(--line,#ccc);border-radius:6px;background:var(--surface2,#f4f4f4);color:var(--ink,#222)}
 .evlab{font-size:.78rem;color:var(--muted,#566);display:inline-flex;align-items:center;gap:4px;margin-left:8px}
+  .h1tools{display:flex;justify-content:flex-end;margin:0 0 8px}
+  .h1group{border:1px solid var(--line,#ddd5c6);border-radius:12px;margin:0 0 14px;overflow:hidden;background:var(--surface,#fbf8f2)}
+  .h1head{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;background:var(--surface2,#f0ebe0);border-bottom:1px solid var(--line,#ddd5c6)}
+  .h1head b{font-size:16px}
+  .h1head .h1caret{color:var(--soft,#4c535d);font-size:13px;width:12px;flex:none}
+  .h1head .h1count{margin-left:auto;font:12px var(--mono,monospace);color:var(--soft,#4c535d)}
+  .h1body{padding:10px 12px}
+  .h1body.collapsed{display:none}
+  .h1body .sec{margin-bottom:12px}
+  .h1body .sec:last-child{margin-bottom:0}
 </style>
 </head>
 <body>
@@ -198,6 +208,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   <p class="sub">Each section runs its own eight-gate pipeline. <strong>Click any gate</strong> to see that
   section's real artifact. G0 (the frame) is shared across all sections. <span class="prose">Artifacts read from the registers; Phase 4 wires the live repo.</span></p>
 
+  <div class="h1tools"><button id="h1collAll" class="btn sm">Collapse all headings</button></div>
   <div id="sections"></div>
 
   <div class="legend">
@@ -1171,7 +1182,8 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     var p=PROJECTS[id];
     document.getElementById('projMeta').textContent=p.type+" · "+id+" · "+p.sections.length+" sections";
     var secs=p.sections.slice().sort(function(a,b){var k=function(s){var m=String(s.label).match(/^(\d+)\.(\d+)/)||[0,0,0];return [+m[1],+m[2]];};var ka=k(a),kb=k(b);return ka[0]-kb[0]||ka[1]-kb[1];});
-    document.getElementById('sections').innerHTML=secs.map(function(s,si){
+    var H1NAMES={1:'Introduction',2:'Key Terms',3:'Foundations of Data Management',4:'Tools',5:'Techniques',6:'Roles',7:'Activities',8:'Metrics',9:'Risk Management',10:'Interrelation with Data Governance'};
+    function secCard(s,si){
       var rmap={}; reviewItems(s).forEach(function(r){rmap[r.gk]=r.pending;});
       var strip=GATES.map(function(g){var st=gateStatus(s,g[0]);var pend=rmap[g[0]];
         return '<button class="gate '+st+(pend?' rvpend':'')+'" data-si="'+si+'" data-gk="'+g[0]+'"><span class="g">'+g[0]+'</span><span class="n">'+g[1]+'</span><span class="d">'+DLAB[st]+'</span>'+(pend?'<span class="rvb">review '+pend+'</span>':'')+'</button>';}).join('');
@@ -1186,6 +1198,16 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       return '<div class="sec"><div class="top"><h2>'+esc(s.label)+'</h2><span class="prose">'+esc(s.prose)+'</span></div>'+
         '<div class="strip">'+strip+'</div>'+reviewLine+flag+'<div class="note">'+esc(s.note)+'</div>'+aiq+ghLine+
         '<div class="detail" id="det-'+si+'" hidden></div></div>';
+    }
+    var h1coll=lsGet('acpp.board.h1coll')||{};
+    var groups=[],gidx={};
+    secs.forEach(function(s,si){var m=String(s.label).match(/^(\d+)\./);var hn=m?+m[1]:0;if(!(hn in gidx)){gidx[hn]=groups.length;groups.push({hn:hn,items:[]});}groups[gidx[hn]].items.push({s:s,si:si});});
+    function gateDone(s){return GATES.every(function(g){return gateStatus(s,g[0])==='complete';});}
+    document.getElementById('sections').innerHTML=groups.map(function(g){
+      var col=!!h1coll[g.hn];
+      var doneN=g.items.filter(function(x){return gateDone(x.s);}).length;
+      var cards=g.items.map(function(x){return secCard(x.s,x.si);}).join('');
+      return '<div class="h1group"><div class="h1head" data-h1="'+g.hn+'"><span class="h1caret">'+(col?'▸':'▾')+'</span><b>'+g.hn+'. '+esc(H1NAMES[g.hn]||('Section '+g.hn))+'</b><span class="h1count">'+doneN+'/'+g.items.length+' done</span></div><div class="h1body'+(col?' collapsed':'')+'">'+cards+'</div></div>';
     }).join('');
     document.querySelectorAll('.gate').forEach(function(btn){
       btn.addEventListener('click',function(){
@@ -1203,6 +1225,22 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       if(open){det.hidden=true;return;}
       btn.classList.add('sel'); det.innerHTML=''; det.hidden=false; buildAiqReview(det, secs[si]);
     });});
+    document.querySelectorAll('.h1head').forEach(function(head){head.addEventListener('click',function(){
+      var hn=head.dataset.h1, body=head.nextElementSibling, car=head.querySelector('.h1caret');
+      var hc=lsGet('acpp.board.h1coll')||{};
+      var nowCol=!body.classList.contains('collapsed');
+      body.classList.toggle('collapsed',nowCol); if(car)car.textContent=nowCol?'▸':'▾';
+      if(nowCol)hc[hn]=1; else delete hc[hn];
+      lsSet('acpp.board.h1coll',hc);
+    });});
+    var collAll=document.getElementById('h1collAll');
+    if(collAll){collAll.onclick=function(){
+      var hc=lsGet('acpp.board.h1coll')||{};
+      var anyOpen=groups.some(function(g){return !hc[g.hn];});
+      hc={}; if(anyOpen){groups.forEach(function(g){hc[g.hn]=1;});}
+      lsSet('acpp.board.h1coll',hc); render(id);
+    };}
+    if(collAll){var hcNow=lsGet('acpp.board.h1coll')||{};var allCol=groups.length&&groups.every(function(g){return hcNow[g.hn];});collAll.textContent=allCol?'Expand all headings':'Collapse all headings';}
   }
   sel.addEventListener('change',function(){render(sel.value);});
   render(sel.value);

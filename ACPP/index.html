@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.7.0">
+<meta name="version" content="2.8.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -75,6 +75,14 @@
   .rv-cand .cite{font-size:.84rem;font-weight:600;margin-top:4px}
   .rv-cand .auth2{font-family:var(--mono);font-size:.6rem;color:var(--soft);font-weight:400;margin-left:5px}
   .rv-cand .sup{font-size:.78rem;color:var(--soft);margin:2px 0}
+  .rv-cand .passage{font-size:.8rem;color:var(--ink);background:var(--surface2);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;padding:5px 8px;margin:4px 0;font-style:italic}
+  .rv-cand .passage.none{color:var(--soft);font-style:normal;border-left-color:var(--line)}
+  .rv-cand .passage b{font-style:normal;font-weight:700;color:var(--soft);font-size:.7rem;text-transform:uppercase;letter-spacing:.04em}
+  .rv-qwrap{margin:4px 0 2px}
+  .qlab{display:block;font-size:.72rem;color:var(--soft);margin-bottom:3px}
+  .rv-quote{width:100%;min-height:52px;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font:inherit;font-size:.82rem;background:var(--bg);color:var(--ink);resize:vertical}
+  .rv-quote.warn{border-color:var(--warn);background:rgba(181,115,26,.06)}
+  .passwarn{font-size:.72rem;color:var(--warn);margin-left:6px}
   .rv-cand a{font-size:.72rem;color:var(--accent)}
   .ptype{font-family:var(--mono);font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);border:1px solid var(--accent);border-radius:20px;padding:.08em .5em}
   .pbul{font-family:var(--mono);font-size:.68rem;color:var(--soft)}
@@ -261,17 +269,22 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     var props={}; var g2o=(sec.art&&sec.art.G2)||{}; var g2=g2o.props||g2o.backfill||[]; var tIdx=g2o.props?2:3; g2.forEach(function(p){props[p[0]]=p[tIdx];});
     var rows=sec.art.G4.evid;
     var keyOf=function(pid){return 'acpp.'+proj+'.'+sec.sid+'.G4.'+pid;};
+    function candQuote(cd){return (cd.quote||((String(cd.cite||'').match(/[\u201c"‘']([^\u201d"’']{15,})[\u201d"’']/)||[])[1])||'').trim();}
     c.innerHTML='<div class="rv-bar"><span class="rv-prog" id="rvProg"></span>'+
       '<span><span class="rv-save" id="rvSave"></span><button class="rv-export" id="rvExport">⬆ Commit evidence_links.json</button></span></div>'+
       rows.map(function(e){
         var pid=e[0], st=lsGet(keyOf(pid))||{decision:'nd',src:'',comment:''}, cands=e[4]||[];
         var candHtml=cands.map(function(cd){
           var chosen=(st.decision==='acc' && st.src===cd.id);
-          return '<div class="rv-cand'+(chosen?' chosen':'')+'" data-cid="'+esc(cd.id)+'">'+
+          var cq=candQuote(cd);
+          var passHtml=cq?('<div class="passage" data-q="'+esc(cq)+'"><b>Passage</b><br>“'+esc(cq)+'”</div>')
+                         :('<div class="passage none"><b>Passage</b> — not on file. Open the source, then paste the exact sentence/paragraph in the evidence box below.</div>');
+          return '<div class="rv-cand'+(chosen?' chosen':'')+'" data-cid="'+esc(cd.id)+'" data-q="'+esc(cq)+'">'+
             '<div class="cand-top"><span class="tier">'+esc(cd.tier)+'</span>'+
             '<button class="cand-use" data-cid="'+esc(cd.id)+'">'+(chosen?'✓ Using':'Use this')+'</button></div>'+
             '<div class="cite">'+esc(cd.cite)+'<span class="auth2">'+esc(cd.auth)+'</span></div>'+
-            '<div class="sup">Supports: '+esc(cd.supports)+'</div>'+
+            passHtml+
+            '<div class="sup">Why it supports the claim: '+esc(cd.supports)+'</div>'+
             '<a href="'+esc(cd.url)+'" target="_blank" rel="noopener">reference ↗</a></div>';
         }).join('');
         return '<div class="rv-row" data-pid="'+pid+'">'+
@@ -283,22 +296,27 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
             '<button class="rv-btn rej'+(st.decision==='rej'?' on':'')+'" data-d="rej">Reject all</button>'+
             '<input class="rv-src" placeholder="Accepted SRC-ID" value="'+esc(st.src)+'"'+(st.decision==='acc'?'':' disabled')+'>'+
           '</div>'+
+          '<div class="rv-qwrap"><label class="qlab">Passage used as evidence — the exact sentence/paragraph from the chosen source (this becomes the evidence for the argument node):</label>'+
+          '<textarea class="rv-quote" placeholder="Paste or confirm the exact passage from the source…">'+esc(st.quote||'')+'</textarea></div>'+
           '<textarea class="rv-cmt" placeholder="Comment — or a source I did not suggest">'+esc(st.comment)+'</textarea>'+
         '</div>';
       }).join('')+
       '<p class="note">No source may be linked that only restates the assignment that requested the claim (source-laundering control). Saved in your browser as you go — export and commit to update the repo. Phase 4 writes back via your PAT automatically.</p>';
-    function prog(){var a=0;rows.forEach(function(e){var s=lsGet(keyOf(e[0]))||{};if(s.decision==='acc'&&s.src)a++;});c.querySelector('#rvProg').textContent=a+' of '+rows.length+' sourced & accepted';}
+    function prog(){var a=0,wp=0;rows.forEach(function(e){var s=lsGet(keyOf(e[0]))||{};if(s.decision==='acc'&&s.src){a++;if(s.quote&&s.quote.trim())wp++;}});c.querySelector('#rvProg').textContent=a+' of '+rows.length+' sourced & accepted · '+wp+' with passage';}
     function flash(){var s=c.querySelector('#rvSave');s.textContent='saved';setTimeout(function(){s.textContent='';},1200);}
     function save(pid){var row=c.querySelector('.rv-row[data-pid="'+pid+'"]');
       var chosen=row.querySelector('.rv-cand.chosen');var on=row.querySelector('.rv-btn.on');
       var dec=chosen?'acc':(on?on.dataset.d:'nd');
-      lsSet(keyOf(pid),{decision:dec,src:row.querySelector('.rv-src').value.trim(),comment:row.querySelector('.rv-cmt').value});prog();flash();}
+      var qa=row.querySelector('.rv-quote');var qv=qa?qa.value.trim():'';
+      if(qa){var miss=(dec==='acc'&&row.querySelector('.rv-src').value.trim()&&!qv);qa.classList.toggle('warn',!!miss);}
+      lsSet(keyOf(pid),{decision:dec,src:row.querySelector('.rv-src').value.trim(),comment:row.querySelector('.rv-cmt').value,quote:qv});prog();flash();}
     c.querySelectorAll('.rv-row').forEach(function(row){var pid=row.dataset.pid, srcI=row.querySelector('.rv-src');
       row.querySelectorAll('.cand-use').forEach(function(btn){btn.addEventListener('click',function(){
         row.querySelectorAll('.rv-cand').forEach(function(x){x.classList.remove('chosen');});
         btn.closest('.rv-cand').classList.add('chosen');
         row.querySelectorAll('.cand-use').forEach(function(x){x.textContent='Use this';});btn.textContent='✓ Using';
         row.querySelectorAll('.rv-btn').forEach(function(x){x.classList.remove('on');});
+        var q=btn.closest('.rv-cand').getAttribute('data-q');var qa=row.querySelector('.rv-quote');if(qa&&!qa.value.trim()&&q)qa.value=q;
         srcI.disabled=false; srcI.value=btn.dataset.cid; save(pid);});});
       row.querySelectorAll('.rv-btn').forEach(function(b){b.addEventListener('click',function(){
         row.querySelectorAll('.rv-btn').forEach(function(x){x.classList.remove('on');});b.classList.add('on');
@@ -306,13 +324,16 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
         row.querySelectorAll('.cand-use').forEach(function(x){x.textContent='Use this';});
         srcI.disabled=true; save(pid);});});
       srcI.addEventListener('input',function(){save(pid);});
+      var qa=row.querySelector('.rv-quote');if(qa)qa.addEventListener('input',function(){save(pid);});
       row.querySelector('.rv-cmt').addEventListener('input',function(){save(pid);});
     });
     c.querySelector('#rvExport').addEventListener('click',function(){
       var links=rows.map(function(e,i){var pid=e[0],s=lsGet(keyOf(pid))||{decision:'nd',src:'',comment:''};
         var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');
+        var hasP=!!(s.quote&&s.quote.trim());
         return {project_id:proj,link_id:'EL-'+sec.sid+'-'+(i+1),p_id:pid,src_id:s.src||null,
           support_strength:(s.decision==='acc'&&s.src)?'Direct':null,human_approved:(s.decision==='acc'&&!!s.src),
+          passage:(s.quote&&s.quote.trim())||null,passage_status:(s.decision==='acc'&&s.src)?(hasP?'present':'pending'):null,
           status:status,reviewer_comment:s.comment||null};});
       var obj={_note:"Exported from the ACPP board review. Replace this section's rows in database/evidence_links.json, then commit.",project_id:proj,section_id:sec.sid,links:links};
       ghCommitOrDownload('evidence_links.'+sec.sid+'.json',obj,this);

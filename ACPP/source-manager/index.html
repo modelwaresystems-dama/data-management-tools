@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="version" content="1.0.0">
+<title>ACPP Source Manager</title>
+<style>
+  :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
+    --accent:#1f6f8b;--good:#2e7d57;--warn:#b5731a;--bad:#b23b3b;--viol:#6b4f9e;
+    --mono:ui-monospace,Menlo,monospace;--sans:system-ui,-apple-system,Segoe UI,sans-serif}
+  @media(prefers-color-scheme:dark){:root{--bg:#13161a;--surface:#1b1f25;--surface2:#22272e;--ink:#eef1f4;--soft:#aab2bd;
+    --line:#2e343c;--accent:#5bb3cf;--good:#5cc08c;--warn:#e0a053;--bad:#e06b6b;--viol:#a98ed6;color-scheme:dark}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5}
+  .wrap{max-width:1040px;margin:0 auto;padding:22px 18px 80px}
+  header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+  header h1{font-size:20px;margin:0}
+  .badge{font:12px var(--mono);background:var(--surface2);border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--soft)}
+  .sub{color:var(--soft);font-size:13px;margin:0 0 16px}
+  .btn{font:13px var(--sans);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;color:var(--ink)}
+  .btn:hover{border-color:var(--accent)}
+  .btn.p{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn.g{background:var(--good);color:#fff;border-color:var(--good)}
+  .btn.d{background:var(--bad);color:#fff;border-color:var(--bad)}
+  .btn.sm{padding:3px 8px;font-size:12px}
+  .tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin:0 0 18px}
+  .tab{padding:8px 14px;cursor:pointer;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;color:var(--soft);font-size:14px}
+  .tab.on{background:var(--surface);border-color:var(--line);color:var(--ink);font-weight:600;margin-bottom:-1px}
+  .panel{display:none}.panel.on{display:block}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:0 0 12px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .grow{flex:1 1 220px}
+  input,select,textarea{font:13px var(--sans);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:6px 9px;color:var(--ink);width:100%}
+  textarea{font-family:var(--mono);min-height:70px;resize:vertical}
+  label{font-size:12px;color:var(--soft);display:block;margin:8px 0 3px}
+  .field{margin:0 0 2px}
+  .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:620px){.fgrid{grid-template-columns:1fr}}
+  .muted{color:var(--soft);font-size:12px}
+  .pill{display:inline-block;font:11px var(--mono);border-radius:20px;padding:1px 8px;border:1px solid var(--line);background:var(--surface2);color:var(--soft);margin:0 4px 4px 0}
+  .pill.str{border-color:var(--good);color:var(--good)}
+  .pill.sup{border-color:var(--accent);color:var(--accent)}
+  .pill.qua{border-color:var(--warn);color:var(--warn)}
+  .pill.reb{border-color:var(--bad);color:var(--bad)}
+  .pill.node{border-color:var(--viol);color:var(--viol)}
+  .srcitem{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 8px;background:var(--surface)}
+  .srcitem h3{margin:0 0 3px;font-size:14px}
+  .srcmeta{font-size:12px;color:var(--soft)}
+  .srcactions{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
+  .cite{font-size:13px;line-height:1.55;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .cite:last-child{border-bottom:none}
+  .hang{padding-left:24px;text-indent:-24px}
+  pre.out{white-space:pre-wrap;word-break:break-word;font:12px var(--mono);background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:10px;max-height:320px;overflow:auto}
+  .lnkitem{border-left:3px solid var(--viol);padding:6px 10px;margin:0 0 7px;background:var(--surface2);border-radius:0 8px 8px 0}
+  .quote{font-size:12px;font-style:italic;color:var(--ink);border-left:2px solid var(--line);padding-left:8px;margin:4px 0}
+  .empty{color:var(--soft);font-size:13px;padding:14px;text-align:center}
+  .status{font-size:12px;color:var(--soft);margin-left:auto}
+  .status.ok{color:var(--good)}.status.err{color:var(--bad)}
+  .cfg{display:none;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 14px}
+  .cfg.on{display:block}
+  .kgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+  .count{font:12px var(--mono);color:var(--soft)}
+  dialog{border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);max-width:640px;width:94%;padding:0}
+  dialog::backdrop{background:rgba(0,0,0,.45)}
+  .dlgtop{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .dlgtop h2{margin:0;font-size:16px;flex:1}
+  .dlgbody{padding:14px 16px;max-height:70vh;overflow:auto}
+  .dlgfoot{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+  a{color:var(--accent)}
+  .tag{font:11px var(--mono);color:var(--soft)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ACPP Source Manager</h1>
+    <span class="badge" id="appVersion"></span>
+    <span class="badge" title="argument-aware reference manager">argument-aware</span>
+    <button class="btn sm" id="cfgToggle" style="margin-left:auto">⚙ GitHub</button>
+  </header>
+  <p class="sub">Your own reference manager. Sources resolve down to the <b>argument node</b> and <b>proposition</b> each one supports, with the exact passage isolated. CSL-JSON native, so it exports straight into Zotero.</p>
+
+  <div class="cfg" id="cfgPanel">
+    <div class="kgrid">
+      <div><label>Owner (user/org)</label><input id="ghOwner" placeholder="your-github-user"></div>
+      <div><label>Private repo</label><input id="ghRepo" placeholder="modelware_app_storage"></div>
+      <div><label>Branch</label><input id="ghBranch" placeholder="main"></div>
+      <div><label>Data dir</label><input id="ghDir" placeholder="ACPP/database"></div>
+      <div style="grid-column:1/-1"><label>Fine-grained PAT (Contents: read &amp; write) — stored only in this browser</label><input id="ghPat" type="password" placeholder="github_pat_..."></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn p" id="ghSave">Save config</button>
+      <button class="btn" id="ghPull">Pull sources.json</button>
+      <button class="btn" id="ghPullRefs">Pull nodes + propositions</button>
+      <button class="btn" id="ghForget">Forget token</button>
+      <span class="status" id="ghStatus">not connected</span>
+    </div>
+    <p class="muted" style="margin:8px 0 0">Shares credentials with the ACPP Pipeline Board (same <span class="tag">acpp.gh.*</span> keys). Code stays yours to commit; this app writes only data (<span class="tag">sources.json</span>) to the private repo.</p>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab on" data-t="lib">Library</div>
+    <div class="tab" data-t="byarg">By Argument</div>
+    <div class="tab" data-t="imp">Import</div>
+    <div class="tab" data-t="exp">Export &amp; Cite</div>
+    <div class="tab" data-t="help">Help</div>
+  </div>
+
+  <!-- LIBRARY -->
+  <section class="panel on" id="p-lib">
+    <div class="toolbar">
+      <button class="btn p" id="addSrc">+ Add source</button>
+      <input id="libSearch" placeholder="search title / author / year" style="max-width:280px">
+      <span class="count" id="libCount"></span>
+      <button class="btn g" id="saveAll" style="margin-left:auto">Save to GitHub</button>
+    </div>
+    <div id="libList"></div>
+  </section>
+
+  <!-- BY ARGUMENT -->
+  <section class="panel" id="p-byarg">
+    <div class="card">
+      <div class="fgrid">
+        <div><label>Argument node</label><select id="argNode"><option value="">— all nodes —</option></select></div>
+        <div><label>Proposition</label><select id="argProp"><option value="">— all propositions —</option></select></div>
+      </div>
+      <p class="muted" style="margin:8px 0 0">Pick a node or proposition to see every source and the exact passage that supports it. This is what the pipeline freezes against at G4 Evidence.</p>
+    </div>
+    <div id="byArgList"></div>
+  </section>
+
+  <!-- IMPORT -->
+  <section class="panel" id="p-imp">
+    <div class="card">
+      <div class="row">
+        <label style="margin:0">Format</label>
+        <select id="impFmt" style="max-width:200px">
+          <option value="auto">Auto-detect</option>
+          <option value="csl">CSL-JSON</option>
+          <option value="bibtex">BibTeX</option>
+          <option value="ris">RIS</option>
+        </select>
+        <input type="file" id="impFile" accept=".json,.bib,.bibtex,.ris,.txt" style="max-width:260px">
+      </div>
+      <label>Paste a Zotero export (CSL-JSON / BibTeX / RIS)</label>
+      <textarea id="impText" placeholder="Paste exported references here..."></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn p" id="impParse">Parse &amp; preview</button>
+        <span class="status" id="impStatus"></span>
+      </div>
+    </div>
+    <div id="impPreview"></div>
+  </section>
+
+  <!-- EXPORT & CITE -->
+  <section class="panel" id="p-exp">
+    <div class="card">
+      <div class="row">
+        <button class="btn" id="expCsl">Copy CSL-JSON</button>
+        <button class="btn" id="dlCsl">Download .json (Zotero)</button>
+        <button class="btn" id="expBib">Copy BibTeX</button>
+        <button class="btn" id="dlBib">Download .bib</button>
+        <span class="status" id="expStatus"></span>
+      </div>
+      <p class="muted" style="margin:8px 0 0">CSL-JSON imports directly into Zotero (File &gt; Import, or the Zotero MCP later).</p>
+    </div>
+    <div class="card">
+      <div class="row">
+        <label style="margin:0">Bibliography style</label>
+        <select id="citeStyle" style="max-width:160px"><option value="apa">APA 7 (approx)</option></select>
+        <button class="btn sm" id="copyBib" style="margin-left:auto">Copy bibliography</button>
+      </div>
+      <div id="bibList" style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <!-- HELP -->
+  <section class="panel" id="p-help">
+    <div class="card" id="helpBody"></div>
+  </section>
+</div>
+
+<!-- SOURCE DIALOG -->
+<dialog id="srcDlg">
+  <form method="dialog">
+    <div class="dlgtop"><h2 id="srcDlgTitle">Add source</h2><button class="btn sm" value="cancel">✕</button></div>
+    <div class="dlgbody">
+      <div class="fgrid">
+        <div><label>Item type</label><select id="fType"></select></div>
+        <div><label>Year</label><input id="fYear" placeholder="2007"></div>
+      </div>
+      <label>Title</label><input id="fTitle">
+      <label>Authors — one per line, "Family, Given"</label>
+      <textarea id="fAuthors" placeholder="Carlson, Samuel&#10;Anderson, Barbara"></textarea>
+      <div id="typeFields"></div>
+      <label>Note</label><input id="fNote">
+    </div>
+    <div class="dlgfoot">
+      <button class="btn" value="cancel">Cancel</button>
+      <button class="btn p" id="srcSave" value="default">Save source</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- LINK DIALOG -->
+<dialog id="lnkDlg">
+  <form method="dialog">
+    <div class="dlgtop"><h2 id="lnkDlgTitle">Link source to argument</h2><button class="btn sm" value="cancel">✕</button></div>
+    <div class="dlgbody">
+      <p class="muted" id="lnkSrcLabel" style="margin:0 0 10px"></p>
+      <div class="fgrid">
+        <div><label>Argument node</label><select id="lArgNode"></select></div>
+        <div><label>Proposition</label><select id="lArgProp"></select></div>
+      </div>
+      <label>Isolated passage — the exact sentence(s) or paragraph in the source (not a whole-source pointer)</label>
+      <textarea id="lPassage" placeholder="Quote the specific sentence or paragraph that does the support..."></textarea>
+      <div class="fgrid">
+        <div><label>Locator (page / para / section)</label><input id="lLocator" placeholder="p. 638"></div>
+        <div><label>Support strength</label><select id="lStrength">
+          <option value="strongly-supports">strongly supports</option>
+          <option value="supports" selected>supports</option>
+          <option value="qualifies">qualifies</option>
+          <option value="rebuts">rebuts / counter</option>
+        </select></div>
+        <div><label>Reuse permission</label><select id="lReuse">
+          <option value="quote-ok">quote OK (direct quote allowed)</option>
+          <option value="paraphrase-only">paraphrase only</option>
+          <option value="background">background / not for citation</option>
+        </select></div>
+        <div><label>Section</label><input id="lSection" placeholder="1.1"></div>
+      </div>
+      <label>Note</label><input id="lNote">
+    </div>
+    <div class="dlgfoot">
+      <button class="btn" value="cancel">Cancel</button>
+      <button class="btn p" id="lnkSave" value="default">Save link</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+(function(){
+  /* ---------- version badge ---------- */
+  document.getElementById('appVersion').textContent='v'+document.querySelector('meta[name="version"]').content;
+
+  /* ---------- storage ---------- */
+  var LS={
+    get:function(k,d){try{var v=localStorage.getItem(k);return v==null?d:v;}catch(e){return d;}},
+    set:function(k,v){try{localStorage.setItem(k,v);}catch(e){}},
+    del:function(k){try{localStorage.removeItem(k);}catch(e){}}
+  };
+  var SKEY='acpp.sources.items', LKEY='acpp.sources.links', RKEY='acpp.sources.refs';
+  function loadJSON(k,d){try{return JSON.parse(LS.get(k,''))||d;}catch(e){return d;}}
+  function saveJSON(k,v){LS.set(k,JSON.stringify(v));}
+
+  var ITEMS=loadJSON(SKEY,[]);        // CSL-JSON item array
+  var LINKS=loadJSON(LKEY,[]);        // link records
+  var REFS=loadJSON(RKEY,{nodes:[],props:[]}); // pulled argument nodes + propositions
+
+  /* ---------- CSL item types + per-type fields ---------- */
+  var TYPES=[
+    {v:'article-journal',l:'Journal article'},
+    {v:'book',l:'Book'},
+    {v:'chapter',l:'Book chapter'},
+    {v:'paper-conference',l:'Conference paper'},
+    {v:'report',l:'Report'},
+    {v:'thesis',l:'Thesis / dissertation'},
+    {v:'webpage',l:'Web page'},
+    {v:'standard',l:'Standard'},
+    {v:'dataset',l:'Dataset'},
+    {v:'document',l:'Document / other'}
+  ];
+  // field key -> label; shown per type
+  var FIELDS={
+    'article-journal':[['container-title','Journal'],['volume','Volume'],['issue','Issue'],['page','Pages'],['DOI','DOI'],['URL','URL']],
+    'book':[['publisher','Publisher'],['publisher-place','Place'],['edition','Edition'],['ISBN','ISBN'],['URL','URL']],
+    'chapter':[['container-title','Book title'],['editor','Editors (one per line)'],['publisher','Publisher'],['publisher-place','Place'],['page','Pages'],['ISBN','ISBN']],
+    'paper-conference':[['container-title','Proceedings'],['publisher','Publisher'],['publisher-place','Place'],['page','Pages'],['DOI','DOI']],
+    'report':[['publisher','Institution'],['number','Report no.'],['publisher-place','Place'],['URL','URL']],
+    'thesis':[['publisher','Institution'],['genre','Type (PhD/MSc)'],['publisher-place','Place'],['URL','URL']],
+    'webpage':[['container-title','Website'],['URL','URL'],['accessed','Accessed (YYYY-MM-DD)']],
+    'standard':[['publisher','Body'],['number','Standard no.'],['URL','URL']],
+    'dataset':[['publisher','Repository'],['DOI','DOI'],['URL','URL'],['version','Version']],
+    'document':[['publisher','Publisher'],['URL','URL']]
+  };
+  var PEOPLE=['editor']; // fields that hold name arrays
+
+  /* ---------- id helpers ---------- */
+  function nextId(prefix,arr,key){
+    var max=0;arr.forEach(function(x){var m=String(x[key]||'').match(/(\d+)$/);if(m){var n=parseInt(m[1],10);if(n>max)max=n;}});
+    return prefix+('000'+(max+1)).slice(-4);
+  }
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+  /* ---------- CSL helpers ---------- */
+  function yearOf(it){try{return it.issued&&it.issued['date-parts']&&it.issued['date-parts'][0]&&it.issued['date-parts'][0][0];}catch(e){return '';}}
+  function namesStr(arr){if(!arr||!arr.length)return '';return arr.map(function(a){return (a.family||'')+(a.given?', '+a.given:'');}).join('; ');}
+  function parseNames(txt){return (txt||'').split('\n').map(function(l){return l.trim();}).filter(Boolean).map(function(l){
+    if(l.indexOf(',')>=0){var p=l.split(',');return {family:p[0].trim(),given:p.slice(1).join(',').trim()};}
+    var sp=l.split(' ');return sp.length>1?{family:sp.pop(),given:sp.join(' ')}:{family:l,literal:l};
+  });}
+  function authorsAPA(arr){
+    if(!arr||!arr.length)return '';
+    function one(a){if(a.literal)return a.literal;var g=(a.given||'').split(/\s+/).map(function(x){return x?x[0]+'.':'';}).join(' ');return (a.family||'')+(g?', '+g:'');}
+    if(arr.length===1)return one(arr[0]);
+    if(arr.length>20){var first=arr.slice(0,19).map(one).join(', ');return first+', ... '+one(arr[arr.length-1]);}
+    var list=arr.map(one);var last=list.pop();return list.join(', ')+', & '+last;
+  }
+
+  /* ---------- APA-ish formatter ---------- */
+  function fmtAPA(it){
+    var au=authorsAPA(it.author), y=yearOf(it)||'n.d.', t=it.title||'';
+    var tail='';
+    function it_(x){return x?'<i>'+esc(x)+'</i>':'';}
+    if(it.type==='article-journal'){
+      tail=it_(it['container-title']);
+      if(it.volume)tail+=', '+it_(it.volume)+(it.issue?'('+esc(it.issue)+')':'');
+      if(it.page)tail+=', '+esc(it.page);
+      tail+='.';
+      if(it.DOI)tail+=' https://doi.org/'+esc(it.DOI);
+    }else if(it.type==='book'){
+      tail=(it.edition?'('+esc(it.edition)+' ed.). ':'')+(it.publisher?esc(it.publisher)+'.':'');
+    }else if(it.type==='chapter'){
+      var eds=it.editor?authorsAPA(it.editor)+' (Eds.), ':'';
+      tail='In '+eds+it_(it['container-title'])+(it.page?' (pp. '+esc(it.page)+')':'')+'. '+(it.publisher?esc(it.publisher)+'.':'');
+    }else if(it.type==='paper-conference'){
+      tail=it_(it['container-title'])+(it.page?' (pp. '+esc(it.page)+')':'')+'. '+(it.publisher?esc(it.publisher)+'.':'');
+      if(it.DOI)tail+=' https://doi.org/'+esc(it.DOI);
+    }else if(it.type==='report'){
+      tail=(it.number?'('+esc(it.number)+'). ':'')+(it.publisher?esc(it.publisher)+'.':'');
+      if(it.URL)tail+=' '+esc(it.URL);
+    }else if(it.type==='webpage'){
+      tail=it_(it['container-title'])+(it['container-title']?'. ':'')+(it.URL?esc(it.URL):'');
+    }else if(it.type==='standard'){
+      tail=(it.publisher?esc(it.publisher)+'. ':'')+(it.number?esc(it.number):'');
+    }else{
+      tail=(it.publisher?esc(it.publisher)+'.':'')+(it.URL?' '+esc(it.URL):'');
+    }
+    var titleHTML=(it.type==='article-journal'||it.type==='chapter'||it.type==='paper-conference')?esc(t):'<i>'+esc(t)+'</i>';
+    return (au?au+' ':'')+'('+esc(y)+'). '+titleHTML+'. '+tail;
+  }
+  function citeInline(it){var au=it.author&&it.author[0]?(it.author.length>2?it.author[0].family+' et al.':(it.author.length===2?it.author[0].family+' & '+it.author[1].family:it.author[0].family)):'';return '('+au+(au?', ':'')+(yearOf(it)||'n.d.')+')';}
+
+  /* ---------- BibTeX ---------- */
+  var BIB2CSL={article:'article-journal',book:'book',inbook:'chapter',incollection:'chapter',inproceedings:'paper-conference',conference:'paper-conference',techreport:'report',phdthesis:'thesis',mastersthesis:'thesis',misc:'document',online:'webpage',electronic:'webpage',manual:'standard'};
+  function parseBibTeX(txt){
+    var out=[],re=/@(\w+)\s*\{([^,]*),([\s\S]*?)\n\}/g,m;
+    while((m=re.exec(txt))){
+      var type=BIB2CSL[m[1].toLowerCase()]||'document', body=m[3], it={type:type};
+      var fre=/(\w+)\s*=\s*(\{([\s\S]*?)\}|"([\s\S]*?)"|[^,\n]+)/g,f;
+      while((f=fre.exec(body))){
+        var key=f[1].toLowerCase(), val=(f[3]!=null?f[3]:(f[4]!=null?f[4]:f[2])).replace(/[{}]/g,'').trim();
+        if(key==='author'||key==='editor'){it[key==='author'?'author':'editor']=val.split(/\s+and\s+/).map(function(n){n=n.trim();if(n.indexOf(',')>=0){var p=n.split(',');return {family:p[0].trim(),given:p.slice(1).join(',').trim()};}var sp=n.split(' ');return {family:sp.pop(),given:sp.join(' ')};});}
+        else if(key==='title'||key==='booktitle'){it[key==='title'?'title':'container-title']=val;}
+        else if(key==='journal'){it['container-title']=val;}
+        else if(key==='year'){it.issued={'date-parts':[[parseInt(val,10)||val]]};}
+        else if(key==='pages'){it.page=val.replace(/--/g,'-');}
+        else if(key==='doi'){it.DOI=val;}
+        else if(key==='url'){it.URL=val;}
+        else if(key==='publisher'||key==='institution'||key==='school'){it.publisher=val;}
+        else if(key==='volume'){it.volume=val;}
+        else if(key==='number'){it.issue=val;it.number=val;}
+        else if(key==='address'){it['publisher-place']=val;}
+        else if(key==='isbn'){it.ISBN=val;}
+        else if(key==='edition'){it.edition=val;}
+      }
+      out.push(it);
+    }
+    return out;
+  }
+  function toBibTeX(items){
+    function key(it){var a=it.author&&it.author[0]?(it.author[0].family||'anon'):'anon';return (a+(yearOf(it)||'')).replace(/\W/g,'');}
+    var CSL2BIB={'article-journal':'article',book:'book',chapter:'incollection','paper-conference':'inproceedings',report:'techreport',thesis:'phdthesis',webpage:'online',standard:'manual',dataset:'misc',document:'misc'};
+    return items.map(function(it){
+      var t=CSL2BIB[it.type]||'misc',lines=[];
+      function nm(arr){return arr.map(function(a){return a.literal||((a.family||'')+(a.given?', '+a.given:''));}).join(' and ');}
+      if(it.author)lines.push('  author = {'+nm(it.author)+'}');
+      if(it.editor)lines.push('  editor = {'+nm(it.editor)+'}');
+      if(it.title)lines.push('  title = {'+it.title+'}');
+      if(it['container-title'])lines.push('  '+(it.type==='article-journal'?'journal':'booktitle')+' = {'+it['container-title']+'}');
+      if(yearOf(it))lines.push('  year = {'+yearOf(it)+'}');
+      if(it.volume)lines.push('  volume = {'+it.volume+'}');
+      if(it.issue)lines.push('  number = {'+it.issue+'}');
+      if(it.page)lines.push('  pages = {'+it.page+'}');
+      if(it.publisher)lines.push('  publisher = {'+it.publisher+'}');
+      if(it['publisher-place'])lines.push('  address = {'+it['publisher-place']+'}');
+      if(it.DOI)lines.push('  doi = {'+it.DOI+'}');
+      if(it.URL)lines.push('  url = {'+it.URL+'}');
+      if(it.ISBN)lines.push('  isbn = {'+it.ISBN+'}');
+      return '@'+t+'{'+key(it)+',\n'+lines.join(',\n')+'\n}';
+    }).join('\n\n');
+  }
+
+  /* ---------- RIS ---------- */
+  var RIS2CSL={JOUR:'article-journal',BOOK:'book',CHAP:'chapter',CONF:'paper-conference',RPRT:'report',THES:'thesis',ELEC:'webpage',DATA:'dataset',STD:'standard'};
+  function parseRIS(txt){
+    var out=[],cur=null;
+    txt.split(/\r?\n/).forEach(function(line){
+      var m=line.match(/^([A-Z0-9]{2})\s{2}-\s?(.*)$/);if(!m)return;
+      var tag=m[1],val=m[2].trim();
+      if(tag==='TY'){cur={type:RIS2CSL[val]||'document',author:[]};out.push(cur);return;}
+      if(!cur)return;
+      if(tag==='ER'){cur=null;return;}
+      if(tag==='AU'||tag==='A1'){var p=val.split(',');cur.author.push({family:p[0].trim(),given:p.slice(1).join(',').trim()});}
+      else if(tag==='TI'||tag==='T1'){cur.title=val;}
+      else if(tag==='JO'||tag==='T2'||tag==='JF'){cur['container-title']=val;}
+      else if(tag==='PY'||tag==='Y1'){var y=parseInt(val,10);if(y)cur.issued={'date-parts':[[y]]};}
+      else if(tag==='VL'){cur.volume=val;}
+      else if(tag==='IS'){cur.issue=val;}
+      else if(tag==='SP'){cur._sp=val;}
+      else if(tag==='EP'){cur._ep=val;}
+      else if(tag==='DO'){cur.DOI=val;}
+      else if(tag==='UR'){cur.URL=val;}
+      else if(tag==='PB'){cur.publisher=val;}
+      else if(tag==='SN'){cur.ISBN=val;}
+    });
+    out.forEach(function(it){if(it._sp){it.page=it._sp+(it._ep?'-'+it._ep:'');delete it._sp;delete it._ep;}if(it.author&&!it.author.length)delete it.author;});
+    return out;
+  }
+
+  function normImport(items){
+    items.forEach(function(it){
+      if(!it.id)it.id=nextId('SRC-',ITEMS,'id');
+      if(!it.type)it.type='document';
+      ITEMS.push(it);
+    });
+    saveJSON(SKEY,ITEMS);
+  }
+
+  /* ---------- tabs ---------- */
+  var tabs=document.getElementById('tabs');
+  tabs.addEventListener('click',function(e){
+    var t=e.target.closest('.tab');if(!t)return;
+    [].forEach.call(tabs.children,function(x){x.classList.remove('on');});
+    t.classList.add('on');
+    ['lib','byarg','imp','exp','help'].forEach(function(id){document.getElementById('p-'+id).classList.toggle('on',id===t.dataset.t);});
+    if(t.dataset.t==='byarg'){renderByArg();}
+    if(t.dataset.t==='exp'){renderBib();}
+    if(t.dataset.t==='help'){renderHelp();}
+  });
+
+  /* ---------- LIBRARY render ---------- */
+  function linksFor(sid){return LINKS.filter(function(l){return l.source_id===sid;});}
+  function strClass(s){return {'strongly-supports':'str','supports':'sup','qualifies':'qua','rebuts':'reb'}[s]||'sup';}
+  function renderLib(){
+    var q=(document.getElementById('libSearch').value||'').toLowerCase();
+    var list=ITEMS.filter(function(it){
+      if(!q)return true;
+      return (it.title||'').toLowerCase().indexOf(q)>=0||namesStr(it.author).toLowerCase().indexOf(q)>=0||String(yearOf(it)).indexOf(q)>=0;
+    });
+    document.getElementById('libCount').textContent=list.length+' / '+ITEMS.length+' sources · '+LINKS.length+' links';
+    var el=document.getElementById('libList');
+    if(!list.length){el.innerHTML='<div class="empty">No sources yet. Add one, or import a Zotero export.</div>';return;}
+    el.innerHTML=list.map(function(it){
+      var lks=linksFor(it.id);
+      var lkHtml=lks.length?lks.map(function(l){
+        return '<div class="lnkitem"><span class="pill node">'+esc(l.an_id||'(no node)')+'</span>'+
+          (l.proposition_id?'<span class="pill">'+esc(l.proposition_id)+'</span>':'')+
+          '<span class="pill '+strClass(l.support_strength)+'">'+esc(l.support_strength)+'</span>'+
+          '<span class="pill">'+esc(l.reuse)+'</span>'+(l.locator?'<span class="tag"> '+esc(l.locator)+'</span>':'')+
+          (l.passage?'<div class="quote">“'+esc(l.passage)+'”</div>':'')+
+          '<div style="margin-top:4px"><button class="btn sm" data-editlnk="'+l.id+'">edit</button> <button class="btn sm d" data-dellnk="'+l.id+'">remove</button></div></div>';
+      }).join(''):'<div class="muted" style="margin:4px 0">No argument links yet.</div>';
+      var tlabel=(TYPES.filter(function(x){return x.v===it.type;})[0]||{l:it.type}).l;
+      return '<div class="srcitem"><h3>'+esc(it.title||'(untitled)')+' <span class="tag">'+esc(it.id)+'</span></h3>'+
+        '<div class="srcmeta">'+esc(namesStr(it.author)||'—')+' · '+esc(yearOf(it)||'n.d.')+' · '+esc(tlabel)+'</div>'+
+        '<div class="cite" style="border:none;padding:4px 0">'+fmtAPA(it)+'</div>'+
+        lkHtml+
+        '<div class="srcactions"><button class="btn sm p" data-link="'+it.id+'">+ Link to argument</button>'+
+        '<button class="btn sm" data-edit="'+it.id+'">edit</button>'+
+        '<button class="btn sm d" data-del="'+it.id+'">delete</button></div></div>';
+    }).join('');
+  }
+
+  document.getElementById('libSearch').addEventListener('input',renderLib);
+
+  document.getElementById('libList').addEventListener('click',function(e){
+    var b=e.target.closest('button');if(!b)return;
+    if(b.dataset.edit){openSrc(b.dataset.edit);}
+    else if(b.dataset.del){if(confirm('Delete this source and its links?')){ITEMS=ITEMS.filter(function(x){return x.id!==b.dataset.del;});LINKS=LINKS.filter(function(x){return x.source_id!==b.dataset.del;});saveJSON(SKEY,ITEMS);saveJSON(LKEY,LINKS);renderLib();}}
+    else if(b.dataset.link){openLink(b.dataset.link,null);}
+    else if(b.dataset.editlnk){var l=LINKS.filter(function(x){return x.id===b.dataset.editlnk;})[0];if(l)openLink(l.source_id,l);}
+    else if(b.dataset.dellnk){LINKS=LINKS.filter(function(x){return x.id!==b.dataset.dellnk;});saveJSON(LKEY,LINKS);renderLib();}
+  });
+
+  /* ---------- SOURCE dialog ---------- */
+  var srcDlg=document.getElementById('srcDlg'),editingSrc=null;
+  var fType=document.getElementById('fType');
+  TYPES.forEach(function(t){var o=document.createElement('option');o.value=t.v;o.textContent=t.l;fType.appendChild(o);});
+  function renderTypeFields(type,it){
+    var box=document.getElementById('typeFields');it=it||{};
+    box.innerHTML=(FIELDS[type]||[]).map(function(f){
+      var key=f[0],lab=f[1],val=it[key];
+      if(PEOPLE.indexOf(key)>=0){return '<label>'+esc(lab)+'</label><textarea data-f="'+key+'">'+esc(namesStr(val))+'</textarea>';}
+      return '<label>'+esc(lab)+'</label><input data-f="'+key+'" value="'+esc(val||'')+'">';
+    }).join('');
+  }
+  fType.addEventListener('change',function(){renderTypeFields(fType.value,{});});
+  function openSrc(id){
+    editingSrc=id?ITEMS.filter(function(x){return x.id===id;})[0]:null;
+    document.getElementById('srcDlgTitle').textContent=id?'Edit source':'Add source';
+    var it=editingSrc||{type:'article-journal'};
+    fType.value=it.type||'article-journal';
+    document.getElementById('fTitle').value=it.title||'';
+    document.getElementById('fYear').value=yearOf(it)||'';
+    document.getElementById('fAuthors').value=(it.author||[]).map(function(a){return a.literal||((a.family||'')+(a.given?', '+a.given:''));}).join('\n');
+    document.getElementById('fNote').value=it.note||'';
+    renderTypeFields(fType.value,it);
+    srcDlg.showModal();
+  }
+  document.getElementById('addSrc').addEventListener('click',function(){openSrc(null);});
+  document.getElementById('srcSave').addEventListener('click',function(e){
+    e.preventDefault();
+    var it=editingSrc||{id:nextId('SRC-',ITEMS,'id')};
+    it.type=fType.value;
+    it.title=document.getElementById('fTitle').value.trim();
+    var au=parseNames(document.getElementById('fAuthors').value);if(au.length)it.author=au;else delete it.author;
+    var y=parseInt(document.getElementById('fYear').value,10);if(y)it.issued={'date-parts':[[y]]};else delete it.issued;
+    var nt=document.getElementById('fNote').value.trim();if(nt)it.note=nt;else delete it.note;
+    [].forEach.call(document.querySelectorAll('#typeFields [data-f]'),function(inp){
+      var key=inp.dataset.f,v=inp.value.trim();
+      if(!v){delete it[key];return;}
+      if(PEOPLE.indexOf(key)>=0){it[key]=parseNames(v);}else{it[key]=v;}
+    });
+    if(!editingSrc)ITEMS.push(it);
+    saveJSON(SKEY,ITEMS);
+    srcDlg.close();renderLib();
+  });
+
+  /* ---------- LINK dialog ---------- */
+  var lnkDlg=document.getElementById('lnkDlg'),editingLnk=null,lnkSrcId=null;
+  function fillNodeSelect(sel,includeAll){
+    sel.innerHTML=(includeAll?'<option value="">— none —</option>':'');
+    REFS.nodes.forEach(function(n){var o=document.createElement('option');o.value=n.id;o.textContent=n.id+(n.label?' · '+n.label:'');sel.appendChild(o);});
+    var o2=document.createElement('option');o2.value='__manual__';o2.textContent='(type manually…)';sel.appendChild(o2);
+  }
+  function fillPropSelect(sel){
+    sel.innerHTML='<option value="">— none —</option>';
+    REFS.props.forEach(function(p){var o=document.createElement('option');o.value=p.id;o.textContent=p.id+(p.text?' · '+p.text.slice(0,40):'');sel.appendChild(o);});
+  }
+  function openLink(srcId,lnk){
+    lnkSrcId=srcId;editingLnk=lnk;
+    var src=ITEMS.filter(function(x){return x.id===srcId;})[0]||{};
+    document.getElementById('lnkDlgTitle').textContent=lnk?'Edit link':'Link source to argument';
+    document.getElementById('lnkSrcLabel').innerHTML='<b>'+esc(src.title||srcId)+'</b> — '+esc(namesStr(src.author))+' ('+esc(yearOf(src)||'n.d.')+')';
+    fillNodeSelect(document.getElementById('lArgNode'),true);
+    fillPropSelect(document.getElementById('lArgProp'));
+    var L=lnk||{};
+    var an=document.getElementById('lArgNode');
+    if(L.an_id&&!REFS.nodes.some(function(n){return n.id===L.an_id;})){var o=document.createElement('option');o.value=L.an_id;o.textContent=L.an_id;an.appendChild(o);}
+    an.value=L.an_id||'';
+    document.getElementById('lArgProp').value=L.proposition_id||'';
+    document.getElementById('lPassage').value=L.passage||'';
+    document.getElementById('lLocator').value=L.locator||'';
+    document.getElementById('lStrength').value=L.support_strength||'supports';
+    document.getElementById('lReuse').value=L.reuse||'quote-ok';
+    document.getElementById('lSection').value=L.section||'';
+    document.getElementById('lNote').value=L.note||'';
+    lnkDlg.showModal();
+  }
+  document.getElementById('lArgNode').addEventListener('change',function(){
+    if(this.value==='__manual__'){var v=prompt('Argument node id (e.g. AN-01.01-C):','');this.value='';if(v){var o=document.createElement('option');o.value=v;o.textContent=v;this.appendChild(o);this.value=v;}}
+  });
+  document.getElementById('lnkSave').addEventListener('click',function(e){
+    e.preventDefault();
+    var an=document.getElementById('lArgNode').value;
+    var pr=document.getElementById('lArgProp').value;
+    if(!an&&!pr){alert('Link to at least an argument node or a proposition.');return;}
+    var L=editingLnk||{id:nextId('LNK-',LINKS,'id'),source_id:lnkSrcId};
+    L.an_id=an==='__manual__'?'':an;
+    L.proposition_id=pr;
+    L.passage=document.getElementById('lPassage').value.trim();
+    L.locator=document.getElementById('lLocator').value.trim();
+    L.support_strength=document.getElementById('lStrength').value;
+    L.reuse=document.getElementById('lReuse').value;
+    L.section=document.getElementById('lSection').value.trim();
+    L.note=document.getElementById('lNote').value.trim();
+    if(!editingLnk)LINKS.push(L);
+    saveJSON(LKEY,LINKS);
+    lnkDlg.close();renderLib();
+  });
+
+  /* ---------- BY ARGUMENT ---------- */
+  function populateArgFilters(){
+    var an=document.getElementById('argNode');an.innerHTML='<option value="">— all nodes —</option>';
+    REFS.nodes.forEach(function(n){var o=document.createElement('option');o.value=n.id;o.textContent=n.id+(n.label?' · '+n.label:'');an.appendChild(o);});
+    // also include node ids that only appear in links
+    var seen={};REFS.nodes.forEach(function(n){seen[n.id]=1;});
+    LINKS.forEach(function(l){if(l.an_id&&!seen[l.an_id]){seen[l.an_id]=1;var o=document.createElement('option');o.value=l.an_id;o.textContent=l.an_id;an.appendChild(o);}});
+    var pr=document.getElementById('argProp');pr.innerHTML='<option value="">— all propositions —</option>';
+    var pseen={};REFS.props.forEach(function(p){pseen[p.id]=1;var o=document.createElement('option');o.value=p.id;o.textContent=p.id+(p.text?' · '+p.text.slice(0,40):'');pr.appendChild(o);});
+    LINKS.forEach(function(l){if(l.proposition_id&&!pseen[l.proposition_id]){pseen[l.proposition_id]=1;var o=document.createElement('option');o.value=l.proposition_id;o.textContent=l.proposition_id;pr.appendChild(o);}});
+  }
+  function renderByArg(){
+    populateArgFilters();
+    var fn=document.getElementById('argNode').value, fp=document.getElementById('argProp').value;
+    var sel=LINKS.filter(function(l){return (!fn||l.an_id===fn)&&(!fp||l.proposition_id===fp);});
+    var el=document.getElementById('byArgList');
+    if(!sel.length){el.innerHTML='<div class="empty">No source links'+(fn||fp?' for this selection':'')+' yet.</div>';return;}
+    // group by node
+    var groups={};sel.forEach(function(l){var k=l.an_id||'(no node)';(groups[k]=groups[k]||[]).push(l);});
+    el.innerHTML=Object.keys(groups).sort().map(function(k){
+      var nd=REFS.nodes.filter(function(n){return n.id===k;})[0];
+      var head='<span class="pill node">'+esc(k)+'</span>'+(nd&&nd.label?' <b>'+esc(nd.label)+'</b>':'');
+      var rows=groups[k].map(function(l){
+        var src=ITEMS.filter(function(x){return x.id===l.source_id;})[0]||{};
+        return '<div class="lnkitem"><div class="srcmeta">'+fmtAPA(src)+' '+citeInline(src)+'</div>'+
+          (l.proposition_id?'<span class="pill">'+esc(l.proposition_id)+'</span>':'')+
+          '<span class="pill '+strClass(l.support_strength)+'">'+esc(l.support_strength)+'</span>'+
+          '<span class="pill">'+esc(l.reuse)+'</span>'+(l.locator?'<span class="tag"> '+esc(l.locator)+'</span>':'')+
+          (l.passage?'<div class="quote">“'+esc(l.passage)+'”</div>':'<div class="muted">No passage isolated yet.</div>')+'</div>';
+      }).join('');
+      return '<div class="card"><div style="margin-bottom:8px">'+head+' <span class="count">'+groups[k].length+' source'+(groups[k].length>1?'s':'')+'</span></div>'+rows+'</div>';
+    }).join('');
+  }
+  document.getElementById('argNode').addEventListener('change',renderByArg);
+  document.getElementById('argProp').addEventListener('change',renderByArg);
+
+  /* ---------- IMPORT ---------- */
+  var impParsed=[];
+  function detectFmt(txt){
+    var t=txt.trim();
+    if(t[0]==='['||t[0]==='{')return 'csl';
+    if(/^@\w+\s*\{/.test(t))return 'bibtex';
+    if(/^TY\s{2}-/m.test(t))return 'ris';
+    return 'csl';
+  }
+  document.getElementById('impFile').addEventListener('change',function(e){
+    var f=e.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(){document.getElementById('impText').value=r.result;};r.readAsText(f);
+  });
+  document.getElementById('impParse').addEventListener('click',function(){
+    var txt=document.getElementById('impText').value;var fmt=document.getElementById('impFmt').value;
+    if(fmt==='auto')fmt=detectFmt(txt);
+    var st=document.getElementById('impStatus');
+    try{
+      if(fmt==='csl'){var j=JSON.parse(txt);impParsed=Array.isArray(j)?j:[j];}
+      else if(fmt==='bibtex'){impParsed=parseBibTeX(txt);}
+      else{impParsed=parseRIS(txt);}
+    }catch(err){st.textContent='Parse error: '+err.message;st.className='status err';impParsed=[];document.getElementById('impPreview').innerHTML='';return;}
+    st.textContent='Parsed '+impParsed.length+' item(s) as '+fmt.toUpperCase();st.className='status ok';
+    var el=document.getElementById('impPreview');
+    if(!impParsed.length){el.innerHTML='<div class="empty">Nothing parsed. Check the format.</div>';return;}
+    el.innerHTML='<div class="card"><div class="row"><b>'+impParsed.length+' item(s) ready</b><button class="btn p" id="impCommit" style="margin-left:auto">Add all to library</button></div></div>'+
+      impParsed.map(function(it){return '<div class="srcitem"><h3>'+esc(it.title||'(untitled)')+'</h3><div class="srcmeta">'+esc(namesStr(it.author)||'—')+' · '+esc(yearOf(it)||'n.d.')+' · '+esc(it.type)+'</div><div class="cite" style="border:none">'+fmtAPA(it)+'</div></div>';}).join('');
+    document.getElementById('impCommit').addEventListener('click',function(){
+      normImport(impParsed);st.textContent='Added '+impParsed.length+' to library.';impParsed=[];el.innerHTML='';document.getElementById('impText').value='';renderLib();
+    });
+  });
+
+  /* ---------- EXPORT & CITE ---------- */
+  function cslExport(){return JSON.stringify(ITEMS,null,2);}
+  function copy(txt,status){
+    (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(function(){status.textContent='Copied.';status.className='status ok';}).catch(function(){
+      var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');status.textContent='Copied.';status.className='status ok';}catch(e){status.textContent='Copy failed — select manually.';status.className='status err';}document.body.removeChild(ta);
+    });
+  }
+  function dl(name,txt,mime){var b=new Blob([txt],{type:mime||'text/plain'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();setTimeout(function(){URL.revokeObjectURL(a.href);},500);}
+  var es=document.getElementById('expStatus');
+  document.getElementById('expCsl').addEventListener('click',function(){copy(cslExport(),es);});
+  document.getElementById('dlCsl').addEventListener('click',function(){dl('acpp-sources.json',cslExport(),'application/json');});
+  document.getElementById('expBib').addEventListener('click',function(){copy(toBibTeX(ITEMS),es);});
+  document.getElementById('dlBib').addEventListener('click',function(){dl('acpp-sources.bib',toBibTeX(ITEMS),'application/x-bibtex');});
+  function renderBib(){
+    var el=document.getElementById('bibList');
+    if(!ITEMS.length){el.innerHTML='<div class="empty">No sources to format.</div>';return;}
+    var sorted=ITEMS.slice().sort(function(a,b){var fa=(a.author&&a.author[0]&&a.author[0].family||a.title||'').toLowerCase(),fb=(b.author&&b.author[0]&&b.author[0].family||b.title||'').toLowerCase();return fa<fb?-1:fa>fb?1:0;});
+    el.innerHTML=sorted.map(function(it){return '<div class="cite hang">'+fmtAPA(it)+'</div>';}).join('');
+  }
+  document.getElementById('copyBib').addEventListener('click',function(){
+    var sorted=ITEMS.slice().sort(function(a,b){var fa=(a.author&&a.author[0]&&a.author[0].family||a.title||'').toLowerCase(),fb=(b.author&&b.author[0]&&b.author[0].family||b.title||'').toLowerCase();return fa<fb?-1:fa>fb?1:0;});
+    var txt=sorted.map(function(it){return fmtAPA(it).replace(/<[^>]+>/g,'');}).join('\n\n');
+    copy(txt,es);document.getElementById('expStatus');
+  });
+
+  /* ---------- GITHUB (shared acpp.gh.* keys) ---------- */
+  function GHget(k,d){try{return (localStorage.getItem('acpp.gh.'+k)||d||'').trim();}catch(e){return d||'';}}
+  function GHset(k,v){try{localStorage.setItem('acpp.gh.'+k,v);}catch(e){}}
+  var GH={pat:function(){return GHget('pat','');},owner:function(){return GHget('owner','');},repo:function(){return GHget('repo','modelware_app_storage');},branch:function(){return GHget('branch','main');},dir:function(){return GHget('dir','ACPP/database');}};
+  function ghConfigured(){return !!(GH.pat()&&GH.owner()&&GH.repo());}
+  function ghHeaders(){return {'Authorization':'Bearer '+GH.pat(),'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};}
+  function b64(x){return btoa(unescape(encodeURIComponent(x)));}
+  function ghUrl(path){return 'https://api.github.com/repos/'+GH.owner()+'/'+GH.repo()+'/contents/'+path;}
+  function ghGetSha(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(j){return (j&&j.sha)?j.sha:null;}).catch(function(){return null;});}
+  function ghPut(path,str,msg){return ghGetSha(path).then(function(sha){var body={message:msg,content:b64(str),branch:GH.branch()};if(sha)body.sha=sha;return fetch(ghUrl(path),{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body)}).then(function(r){return r.json().then(function(j){return {ok:r.ok,url:(j.commit&&j.commit.html_url)||'',error:j.message||('HTTP '+r.status)};});});}).catch(function(e){return {ok:false,error:String(e)};});}
+  function ghGetJson(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;try{return JSON.parse(decodeURIComponent(escape(atob(String(j.content).replace(/\s/g,'')))));}catch(e){return null;}}).catch(function(){return null;});}
+  function ghList(dir){return fetch(ghUrl(dir)+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():[];}).catch(function(){return [];});}
+
+  function ghStatus(msg,cls){var s=document.getElementById('ghStatus');s.textContent=msg;s.className='status'+(cls?' '+cls:'');}
+  function cfgLoad(){document.getElementById('ghOwner').value=GH.owner();document.getElementById('ghRepo').value=GH.repo();document.getElementById('ghBranch').value=GH.branch();document.getElementById('ghDir').value=GH.dir();document.getElementById('ghPat').value=GH.pat();ghStatus(ghConfigured()?'configured':'not connected',ghConfigured()?'ok':'');}
+  document.getElementById('cfgToggle').addEventListener('click',function(){document.getElementById('cfgPanel').classList.toggle('on');cfgLoad();});
+  document.getElementById('ghSave').addEventListener('click',function(){GHset('owner',document.getElementById('ghOwner').value.trim());GHset('repo',document.getElementById('ghRepo').value.trim());GHset('branch',document.getElementById('ghBranch').value.trim()||'main');GHset('dir',document.getElementById('ghDir').value.trim()||'ACPP/database');GHset('pat',document.getElementById('ghPat').value.trim());ghStatus(ghConfigured()?'configured':'incomplete',ghConfigured()?'ok':'err');});
+  document.getElementById('ghForget').addEventListener('click',function(){LS.del('acpp.gh.pat');document.getElementById('ghPat').value='';ghStatus('token forgotten');});
+
+  var SRCPATH=function(){return GH.dir()+'/sources.json';};
+  document.getElementById('ghPull').addEventListener('click',function(){
+    if(!ghConfigured()){ghStatus('configure first',"err");return;}
+    ghStatus('pulling…');
+    ghGetJson(SRCPATH()).then(function(data){
+      if(!data){ghStatus('no sources.json yet (Save to create)','');return;}
+      if(Array.isArray(data)){ITEMS=data;}
+      else{ITEMS=data.items||[];LINKS=data.links||[];}
+      saveJSON(SKEY,ITEMS);saveJSON(LKEY,LINKS);renderLib();
+      ghStatus('pulled '+ITEMS.length+' sources, '+LINKS.length+' links','ok');
+    });
+  });
+  document.getElementById('ghPullRefs').addEventListener('click',function(){pullRefs(true);});
+  function pullRefs(verbose){
+    if(!ghConfigured()){if(verbose)ghStatus('configure first','err');return;}
+    if(verbose)ghStatus('pulling nodes + propositions…');
+    ghList(GH.dir()).then(function(files){
+      var nodeFiles=files.filter(function(f){return /^argument_nodes.*\.json$/.test(f.name);}).map(function(f){return GH.dir()+'/'+f.name;});
+      var propFiles=files.filter(function(f){return /^propositions.*\.json$/.test(f.name);}).map(function(f){return GH.dir()+'/'+f.name;});
+      if(!nodeFiles.length)nodeFiles=[GH.dir()+'/argument_nodes.json'];
+      if(!propFiles.length)propFiles=[GH.dir()+'/propositions.json'];
+      return Promise.all([Promise.all(nodeFiles.map(ghGetJson)),Promise.all(propFiles.map(ghGetJson))]);
+    }).then(function(res){
+      var nodes=[],props=[];
+      res[0].forEach(function(d){if(!d)return;var arr=Array.isArray(d)?d:(d.nodes||d.items||[]);arr.forEach(function(n){nodes.push({id:n.id||n.an_id||n.node_id,label:n.label||n.fn||n.function||n.text||''});});});
+      res[1].forEach(function(d){if(!d)return;var arr=Array.isArray(d)?d:(d.propositions||d.items||[]);arr.forEach(function(p){props.push({id:p.id||p.proposition_id||p.pid,text:p.text||p.statement||p.claim||''});});});
+      // dedupe
+      var ns={},ps={};REFS.nodes=nodes.filter(function(n){if(!n.id||ns[n.id])return false;ns[n.id]=1;return true;});
+      REFS.props=props.filter(function(p){if(!p.id||ps[p.id])return false;ps[p.id]=1;return true;});
+      saveJSON(RKEY,REFS);
+      if(verbose)ghStatus('loaded '+REFS.nodes.length+' nodes, '+REFS.props.length+' propositions','ok');
+    }).catch(function(e){if(verbose)ghStatus('refs error: '+e.message,'err');});
+  }
+
+  function saveToGitHub(){
+    if(!ghConfigured()){document.getElementById('cfgPanel').classList.add('on');cfgLoad();ghStatus('configure GitHub, then Save','err');return;}
+    var v=document.querySelector('meta[name="version"]').content;
+    var payload={schema:'acpp.sources/1',version:v,updated:new Date().toISOString().slice(0,10),items:ITEMS,links:LINKS};
+    ghStatus('saving…');
+    ghPut(SRCPATH(),JSON.stringify(payload,null,2),'ACPP Source Manager v'+v+': '+ITEMS.length+' sources, '+LINKS.length+' links').then(function(r){
+      ghStatus(r.ok?'saved sources.json ✓':('save failed: '+r.error),r.ok?'ok':'err');
+    });
+  }
+  document.getElementById('saveAll').addEventListener('click',saveToGitHub);
+
+  /* ---------- HELP ---------- */
+  function renderHelp(){
+    document.getElementById('helpBody').innerHTML=
+      '<h2 style="margin-top:0">What this is</h2>'+
+      '<p>A reference manager that resolves every source down to the <b>argument node</b> and <b>proposition</b> it supports — not just a flat library. For the DMBOK chapter you use official Zotero; this is the argument-aware parallel so the ACPP pipeline can freeze evidence at the level of each claim.</p>'+
+      '<h2>The rule you set</h2>'+
+      '<p>Every link <b>isolates the exact sentence or paragraph</b> in the source. A link is never a pointer to a whole source — it carries the passage, the locator (page), the support strength, and the reuse permission.</p>'+
+      '<h2>Workflow</h2>'+
+      '<p><b>1.</b> Add sources (or Import a Zotero export: CSL-JSON, BibTeX, RIS).<br>'+
+      '<b>2.</b> Pull nodes + propositions from the private repo (⚙ GitHub) so the link pickers know your argument structure.<br>'+
+      '<b>3.</b> On each source, <b>+ Link to argument</b>: choose node + proposition, paste the isolated passage, set page, strength, reuse.<br>'+
+      '<b>4.</b> <b>By Argument</b> shows every source + passage behind a node — this is what G4 Evidence checks against.<br>'+
+      '<b>5.</b> <b>Save to GitHub</b> writes <span class="tag">sources.json</span> to the private repo (data only — your code commits stay yours).<br>'+
+      '<b>6.</b> <b>Export &amp; Cite</b>: CSL-JSON out imports straight into Zotero (or the Zotero MCP later); bibliography generates now.</p>'+
+      '<h2>Support strength</h2>'+
+      '<p><span class="pill str">strongly supports</span><span class="pill sup">supports</span><span class="pill qua">qualifies</span><span class="pill reb">rebuts / counter</span></p>'+
+      '<h2>Reuse permission</h2>'+
+      '<p><span class="pill">quote-ok</span> direct quote allowed · <span class="pill">paraphrase-only</span> · <span class="pill">background</span> not for citation</p>'+
+      '<p class="muted">Later: live Zotero API via MCP. For now, file import/export round-trips cleanly through CSL-JSON.</p>';
+  }
+
+  /* ---------- init ---------- */
+  cfgLoad();
+  renderLib();
+  if(ghConfigured())pullRefs(false);
+})();
+</script>
+</body>
+</html>

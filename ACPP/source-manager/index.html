@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.6.0">
+<meta name="version" content="1.7.0">
 <title>ACPP Source Manager</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -92,6 +92,7 @@
   .dlgfoot{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
   a{color:var(--accent)}
   .tag{font:11px var(--mono);color:var(--soft)}
+.pill.derived{background:#efe3c8;color:#7a5a16;border:1px solid #d8c38a;font-size:.68rem}
 </style>
 </head>
 <body>
@@ -1216,6 +1217,10 @@
   var LINKS=padLinks(loadJSON(LKEY,[]));        // link records
   function padId(x){return String(x||'').replace(/^([PNBC])-(\d{1,2})\.(\d{1,2})-/,function(m,p,a,b){return p+'-'+('0'+a).slice(-2)+'.'+('0'+b).slice(-2)+'-';});}
   function padLinks(a){(a||[]).forEach(function(l){if(l.an_id)l.an_id=padId(l.an_id);if(l.proposition_id)l.proposition_id=padId(l.proposition_id);});return a;}
+  // D1 (hybrid): a stored an_id wins; otherwise derive the node from the proposition (1:1 only).
+  function propNodeMap(){var m={};((typeof REFS!=='undefined'&&REFS.nodes)||[]).forEach(function(n){if(n.p_id){(m[n.p_id]=m[n.p_id]||[]).push(n.id);}});return m;}
+  function effNode(l,pm){if(l.an_id)return l.an_id;pm=pm||propNodeMap();var a=pm[l.proposition_id]||[];return a.length===1?a[0]:'';}
+  function nodeIsDerived(l){return !l.an_id && !!effNode(l);}
   var REFS=loadJSON(RKEY,{nodes:[],props:[]}); // pulled argument nodes + propositions
 
   /* ---------- CSL item types + per-type fields ---------- */
@@ -1407,7 +1412,7 @@
   function libCard(it){
     var lks=linksFor(it.id);
     var lkHtml=lks.length?lks.map(function(l){
-      return '<div class="lnkitem"><span class="pill node">'+esc(l.an_id||'(no node)')+'</span>'+
+      return '<div class="lnkitem"><span class="pill node">'+esc(effNode(l)||'(no node)')+'</span>'+(nodeIsDerived(l)?'<span class="pill derived" title="node inferred from the proposition">derived</span>':'')+
         (l.proposition_id?'<span class="pill">'+esc(l.proposition_id)+'</span>':'')+
         '<span class="pill '+strClass(l.support_strength)+'">'+esc(l.support_strength)+'</span>'+
         '<span class="pill">'+esc(l.reuse)+'</span>'+(l.locator?'<span class="tag"> '+esc(l.locator)+'</span>':'')+
@@ -1634,18 +1639,18 @@
     var fn=document.getElementById('argNode').value, fp=document.getElementById('argProp').value;
     populateArgFilters();
     document.getElementById('argNode').value=fn; document.getElementById('argProp').value=fp;
-    var sel=LINKS.filter(function(l){return (!fn||l.an_id===fn)&&(!fp||l.proposition_id===fp);});
+    var pm=propNodeMap();var sel=LINKS.filter(function(l){return (!fn||effNode(l,pm)===fn)&&(!fp||l.proposition_id===fp);});
     var el=document.getElementById('byArgList');
     var banner='<div style="margin:0 0 10px;padding:6px 10px;border-radius:7px;background:#eef3ec;border:1px solid #cfe0c8;font:13px var(--mono,monospace)">Showing: node='+esc(fn||'(all)')+' · prop='+esc(fp||'(all)')+' · '+sel.length+' source link'+(sel.length!==1?'s':'')+'</div>';
     if(!sel.length){el.innerHTML=banner+'<div class="empty">No source links'+(fn||fp?' for this selection':'')+' yet.</div>';return;}
     // group by node
-    var groups={};sel.forEach(function(l){var k=l.an_id||'(no node)';(groups[k]=groups[k]||[]).push(l);});
+    var groups={};sel.forEach(function(l){var k=effNode(l,pm)||'(no node)';(groups[k]=groups[k]||[]).push(l);});
     el.innerHTML=banner+Object.keys(groups).sort().map(function(k){
       var nd=REFS.nodes.filter(function(n){return n.id===k;})[0];
       var head='<span class="pill node">'+esc(k)+'</span>'+(nd&&nd.label?' <b>'+esc(nd.label)+'</b>':'');
       var rows=groups[k].map(function(l){
         var src=ITEMS.filter(function(x){return x.id===l.source_id;})[0]||{};
-        return '<div class="lnkitem"><div class="srcmeta">'+fmtAPA(src)+' '+citeInline(src)+'</div>'+
+        return '<div class="lnkitem"><div class="srcmeta">'+fmtAPA(src)+' '+citeInline(src)+'</div>'+(nodeIsDerived(l)?'<span class="pill derived" title="node inferred from the proposition">derived</span>':'')+
           (l.proposition_id?'<span class="pill">'+esc(l.proposition_id)+'</span>':'')+
           '<span class="pill '+strClass(l.support_strength)+'">'+esc(l.support_strength)+'</span>'+
           '<span class="pill">'+esc(l.reuse)+'</span>'+(l.locator?'<span class="tag"> '+esc(l.locator)+'</span>':'')+
@@ -1757,7 +1762,7 @@
       return Promise.all([Promise.all(nodeFiles.map(ghGetJson)),Promise.all(propFiles.map(ghGetJson))]);
     }).then(function(res){
       var nodes=[],props=[];
-      res[0].forEach(function(d){if(!d)return;var arr=Array.isArray(d)?d:(d.nodes||d.items||[]);arr.forEach(function(n){nodes.push({id:padId(n.id||n.an_id||n.node_id),label:n.label||n.fn||n.function||n.text||''});});});
+      res[0].forEach(function(d){if(!d)return;var arr=Array.isArray(d)?d:(d.nodes||d.items||[]);arr.forEach(function(n){nodes.push({id:padId(n.id||n.an_id||n.node_id),p_id:padId(n.p_id||n.proposition_id||''),label:n.label||n.fn||n.function||n.text||''});});});
       res[1].forEach(function(d){if(!d)return;var arr=Array.isArray(d)?d:(d.propositions||d.items||[]);arr.forEach(function(p){props.push({id:padId(p.id||p.p_id||p.proposition_id||p.pid),text:p.text||p.statement||p.claim||p.proposition||''});});});
       // dedupe
       var ns={},ps={};REFS.nodes=nodes.filter(function(n){if(!n.id||ns[n.id])return false;ns[n.id]=1;return true;});

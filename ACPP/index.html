@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.13.0">
+<meta name="version" content="2.1.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -116,11 +116,36 @@
 .reviewline{font-size:.82rem;color:#c2410c;font-weight:600;margin:6px 0 2px}
 .aiqbtn{margin:6px 8px 2px 0;font-size:.8rem;border:1px solid #c2410c;color:#c2410c;background:transparent;border-radius:7px;padding:4px 10px;cursor:pointer;font-weight:600}
 .aiqbtn.sel{background:#c2410c;color:#fff}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ghbtn{font-size:.78rem;border:1px solid var(--line,#ddd);background:var(--surface,#fff);color:var(--ink,#222);border-radius:7px;padding:3px 9px;cursor:pointer}
+.ghstat{font-size:.74rem;color:var(--muted,#667)}
+.ghstat.on{color:#2f6f4f;font-weight:600}
+.ghpanel{background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:12px;padding:14px 16px;margin:10px 0}
+.ghrow{display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap}
+.ghrow label{width:120px;font-size:.8rem;color:var(--muted,#667)}
+.ghrow input{flex:1;min-width:170px;padding:6px 9px;border:1px solid var(--line,#ddd);border-radius:7px;background:var(--surface2,#f5f5f5);color:var(--ink,#222);font:inherit;font-size:.85rem}
+.ghrow button{font-size:.8rem;border:1px solid #2f6f4f;background:#2f6f4f;color:#fff;border-radius:7px;padding:5px 11px;cursor:pointer}
+.ghrow button#ghForget{background:transparent;color:#c2410c;border-color:#c2410c}
+.ghnote{font-size:.74rem;color:var(--muted,#667);margin:6px 0}
+.ghfiles{font-size:.74rem;color:var(--muted,#667);margin-top:6px;word-break:break-word}
+.ghline{font-size:.72rem;color:var(--muted,#667);font-family:ui-monospace,monospace;margin:4px 0 0}
+.ghmsg{font-size:.74rem;color:var(--muted,#667)}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header><h1>ACPP Pipeline Board</h1><span class="badge" id="appVersion"></span></header>
+  <header><h1>ACPP Pipeline Board</h1><span class="badge" id="appVersion"></span>
+    <button class="ghbtn" id="ghToggle">⚙ GitHub</button><span class="ghstat" id="ghStat">not connected</span></header>
+  <div class="ghpanel" id="ghPanel" hidden>
+    <div class="ghrow"><label>Owner / org</label><input id="ghOwner" placeholder="your GitHub owner"></div>
+    <div class="ghrow"><label>Private repo</label><input id="ghRepo" value="modelware_app_storage"></div>
+    <div class="ghrow"><label>Branch</label><input id="ghBranch" value="main"></div>
+    <div class="ghrow"><label>Database path</label><input id="ghDir" value="ACPP/database"></div>
+    <div class="ghrow"><label>Fine-grained PAT</label><input id="ghPat" type="password" placeholder="github_pat_… (Contents: Read & Write)"></div>
+    <div class="ghrow"><button id="ghSave">Save &amp; connect</button><button id="ghPull">Pull latest ↓</button><button id="ghForget">Forget token</button><span id="ghMsg" class="ghmsg"></span></div>
+    <p class="ghnote">Stored in this browser on this device only (your choice). Use a fine-grained PAT scoped to the private data repo with Contents: Read &amp; Write — it is never shared or committed. You still commit the public app code yourself. On connect the board fills any missing review state from the committed registers; <b>Pull latest</b> overwrites your local review state with the repo’s.</p>
+    <div id="ghFiles" class="ghfiles"></div>
+  </div>
 
   <div class="selector">
     <label for="proj">Project</label>
@@ -148,6 +173,57 @@
   function lsGet(k){try{return JSON.parse(localStorage.getItem(k)||'null');}catch(e){return null;}}
   function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
   function download(name,text){try{var b=new Blob([text],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u);},500);}catch(e){alert('Export failed: '+e.message);}}
+  // ---- Phase 4: live GitHub integration (private data repo) ----
+  function GHget(k,d){try{return (localStorage.getItem('acpp.gh.'+k)||d||'').trim();}catch(e){return d||'';}}
+  function GHset(k,v){try{localStorage.setItem('acpp.gh.'+k,v);}catch(e){}}
+  var GH={pat:function(){return GHget('pat','');},owner:function(){return GHget('owner','');},repo:function(){return GHget('repo','modelware_app_storage');},branch:function(){return GHget('branch','main');},dir:function(){return GHget('dir','ACPP/database');}};
+  var GHFILES={};
+  function ghConfigured(){return !!(GH.pat()&&GH.owner()&&GH.repo());}
+  function ghHeaders(){return {'Authorization':'Bearer '+GH.pat(),'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};}
+  function b64(x){return btoa(unescape(encodeURIComponent(x)));}
+  function ghUrl(path){return 'https://api.github.com/repos/'+GH.owner()+'/'+GH.repo()+'/contents/'+path;}
+  function ghGetSha(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(j){return (j&&j.sha)?j.sha:null;}).catch(function(){return null;});}
+  function ghPut(path,str,msg){return ghGetSha(path).then(function(sha){var body={message:msg,content:b64(str),branch:GH.branch()};if(sha)body.sha=sha;return fetch(ghUrl(path),{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body)}).then(function(r){return r.json().then(function(j){return {ok:r.ok,url:(j.commit&&j.commit.html_url)||'',error:j.message||('HTTP '+r.status)};});});}).catch(function(e){return {ok:false,error:String(e)};});}
+  function ghToast(btn,msg,warn){try{var p=btn.parentNode;var e=p.querySelector('.ghmsg');if(!e){e=document.createElement('span');e.className='ghmsg';p.appendChild(e);}e.textContent=' '+msg;e.style.color=warn?'#c2410c':'';}catch(x){}}
+  function ghCommitOrDownload(fn,obj,btn){var str=JSON.stringify(obj,null,2);
+    if(!ghConfigured()){download(fn,str);ghToast(btn,'no token — downloaded. Set up ⚙ GitHub to commit',true);return;}
+    ghToast(btn,'committing…');
+    ghPut(GH.dir()+'/'+fn,str,'ACPP data: '+fn+' (board commit)').then(function(r){
+      if(r.ok){GHFILES[fn]=1;ghToast(btn,'✓ committed to '+GH.repo());}else{download(fn,str);ghToast(btn,'commit failed: '+r.error+' — downloaded instead',true);}});}
+  function ghStatus(t,ok){var e=document.getElementById('ghStat');if(e){e.textContent=t;e.className='ghstat'+(ok?' on':'');}}
+  function ghRefreshFiles(){if(!ghConfigured())return Promise.resolve();
+    return fetch(ghUrl(GH.dir())+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(arr){
+      GHFILES={};(arr||[]).forEach(function(x){if(x&&x.name)GHFILES[x.name]=1;});
+      var el=document.getElementById('ghFiles');if(el){var n=Object.keys(GHFILES).sort();el.innerHTML=n.length?('<b>'+n.length+' files in '+esc(GH.dir())+'/</b><br>'+n.map(esc).join(' · ')):('(no files at '+esc(GH.dir())+')');}
+      try{render(sel.value);}catch(e){}}).catch(function(){});}
+  function ghConnect(){if(!ghConfigured()){ghStatus('not connected');return;}ghStatus('connecting…');
+    fetch('https://api.github.com/repos/'+GH.owner()+'/'+GH.repo(),{headers:ghHeaders()}).then(function(r){return r.json().then(function(j){
+      if(r.ok){ghStatus('connected · '+GH.owner()+'/'+GH.repo(),true);ghRefreshFiles().then(function(){return ghRehydrate(false);}).then(function(){try{render(sel.value);}catch(e){}});}else{ghStatus('error: '+(j.message||('HTTP '+r.status)));}});}).catch(function(e){ghStatus('error: '+e);});}
+  function ghGetJson(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;try{return JSON.parse(decodeURIComponent(escape(atob(String(j.content).replace(/\s/g,'')))));}catch(e){return null;}}).catch(function(){return null;});}
+  function ghPutLocal(k,val,overwrite,n){try{if(!overwrite&&localStorage.getItem(k)!=null)return;lsSet(k,val);n.c++;}catch(e){}}
+  function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);var n={c:0},P='acpp.dmbok-v3-ch1.',jobs=[];
+    function pull(fn,apply){if(!GHFILES[fn])return Promise.resolve();return ghGetJson(GH.dir()+'/'+fn).then(function(o){if(o)apply(o);});}
+    proj.sections.forEach(function(sec){var sid=sec.sid;
+      jobs.push(pull('propositions.'+sid+'.json',function(o){(o.propositions||[]).forEach(function(p){if(p.p_id)ghPutLocal(P+sid+'.G2.'+p.p_id,{decision:'acc',text:(p.text!=null?p.text:''),comment:''},overwrite,n);});}));
+      jobs.push(pull('argument_nodes.'+sid+'.json',function(o){(o.nodes||[]).forEach(function(nd){if(!nd.an_id)return;var d=nd.status==='Approved'?'acc':(nd.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G3.'+nd.an_id,{decision:d,comment:nd.text||''},overwrite,n);});}));
+      jobs.push(pull('evidence_links.'+sid+'.json',function(o){(o.links||[]).forEach(function(l){if(!l.p_id)return;var d=l.status==='Supported'?'acc':(l.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G4.'+l.p_id,{decision:d,src:l.src_id||'',comment:l.reviewer_comment||''},overwrite,n);});}));
+      jobs.push(pull('freeze.'+sid+'.json',function(o){if(o.frozen)ghPutLocal(P+sid+'.G5.freeze',{decision:'frozen',date:o.frozen_date||'',hash:o.content_hash||''},overwrite,n);}));
+      jobs.push(pull('ai_quarantine.'+sid+'.json',function(o){(o.items||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));ghPutLocal(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''},overwrite,n);});}));
+    });
+    return Promise.all(jobs).then(function(){return n.c;});}
+  function ghInitPanel(){
+    var map={ghOwner:'owner',ghRepo:'repo',ghBranch:'branch',ghDir:'dir',ghPat:'pat'};
+    Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el){var v=GHget(map[id],'');if(v)el.value=v;}});
+    document.getElementById('ghToggle').addEventListener('click',function(){var p=document.getElementById('ghPanel');p.hidden=!p.hidden;});
+    document.getElementById('ghSave').addEventListener('click',function(){
+      GHset('owner',document.getElementById('ghOwner').value.trim());GHset('repo',document.getElementById('ghRepo').value.trim());
+      GHset('branch',document.getElementById('ghBranch').value.trim());GHset('dir',document.getElementById('ghDir').value.trim());
+      GHset('pat',document.getElementById('ghPat').value.trim());document.getElementById('ghMsg').textContent=' saved';ghConnect();});
+    document.getElementById('ghPull').addEventListener('click',function(){var m=document.getElementById('ghMsg');m.textContent=' pulling…';ghRehydrate(true).then(function(c){m.textContent=' pulled '+c+' records from repo';try{render(sel.value);}catch(e){}});});
+    document.getElementById('ghForget').addEventListener('click',function(){try{localStorage.removeItem('acpp.gh.pat');}catch(e){}document.getElementById('ghPat').value='';document.getElementById('ghMsg').textContent=' token forgotten';ghStatus('not connected');GHFILES={};try{render(sel.value);}catch(e){}});
+    ghConnect();
+  }
+
 
   // In-app review for G4 Evidence: Accept / Needs-source / Reject + SRC-ID + comment per claim,
   // saved to localStorage, exportable as evidence_links.json for Howard to commit.
@@ -157,7 +233,7 @@
     var rows=sec.art.G4.evid;
     var keyOf=function(pid){return 'acpp.'+proj+'.'+sec.sid+'.G4.'+pid;};
     c.innerHTML='<div class="rv-bar"><span class="rv-prog" id="rvProg"></span>'+
-      '<span><span class="rv-save" id="rvSave"></span><button class="rv-export" id="rvExport">Export evidence_links.json</button></span></div>'+
+      '<span><span class="rv-save" id="rvSave"></span><button class="rv-export" id="rvExport">⬆ Commit evidence_links.json</button></span></div>'+
       rows.map(function(e){
         var pid=e[0], st=lsGet(keyOf(pid))||{decision:'nd',src:'',comment:''}, cands=e[4]||[];
         var candHtml=cands.map(function(cd){
@@ -210,7 +286,7 @@
           support_strength:(s.decision==='acc'&&s.src)?'Direct':null,human_approved:(s.decision==='acc'&&!!s.src),
           status:status,reviewer_comment:s.comment||null};});
       var obj={_note:"Exported from the ACPP board review. Replace this section's rows in database/evidence_links.json, then commit.",project_id:proj,section_id:sec.sid,links:links};
-      download('evidence_links.'+sec.sid+'.json',JSON.stringify(obj,null,2));
+      ghCommitOrDownload('evidence_links.'+sec.sid+'.json',obj,this);
     });
     prog();
   }
@@ -524,7 +600,7 @@
     var rows=sec.art.G2.backfill, drift=(sec.art.G2.drift||[]), src=sec.art.G2.sources||"";
     var keyOf=function(pid){return 'acpp.'+proj+'.'+sec.sid+'.G2.'+pid;};
     c.innerHTML='<div class="rv-bar"><span class="rv-prog" id="rpProg"></span>'+
-      '<span><span class="rv-save" id="rpSave"></span><button class="rv-export" id="rpExport">Export propositions.json</button></span></div>'+
+      '<span><span class="rv-save" id="rpSave"></span><button class="rv-export" id="rpExport">⬆ Commit propositions.json</button></span></div>'+
       (src?'<div class="rv-cands-h">Decomposed from two sources — '+esc(src)+'</div>':'')+
       (sec.art.G2.terms?'<div class="rv-cands-h" style="color:'+(rows.length===sec.art.G2.terms?'var(--good)':'var(--bad)')+'">'+rows.length+' propositions ↔ '+sec.art.G2.terms+' governed terms'+(rows.length===sec.art.G2.terms?' ✓ reconciled':' ⚠ mismatch')+'</div>':'')+
       rows.map(function(e){
@@ -556,7 +632,7 @@
       var props=rows.filter(function(e){var s=lsGet(keyOf(e[0]))||{};return s.decision==='acc';}).map(function(e){var s=lsGet(keyOf(e[0]))||{};
         return {project_id:proj,p_id:e[0],outline_id:e[1],type:e[2],text:(s.text!=null?s.text:e[3]),status:"Approved",author_id:"HD"};});
       var obj={_note:"Exported from the ACPP board (G2 propositions backfill). Merge into database/propositions.json, then commit.",project_id:proj,section_id:sec.sid,propositions:props};
-      download('propositions.'+sec.sid+'.json',JSON.stringify(obj,null,2));
+      ghCommitOrDownload('propositions.'+sec.sid+'.json',obj,this);
     });
     prog();
   }
@@ -617,7 +693,7 @@
   function buildArgumentReview(c, sec){
     var proj="dmbok-v3-ch1", nodes=sec.art.G3.nodes;
     var keyOf=function(id){return 'acpp.'+proj+'.'+sec.sid+'.G3.'+id;};
-    c.innerHTML='<div class="rv-bar"><span class="rv-prog" id="agProg"></span><span><span class="rv-save" id="agSave"></span><button class="rv-export" id="agExport">Export argument_nodes.json</button></span></div>'+
+    c.innerHTML='<div class="rv-bar"><span class="rv-prog" id="agProg"></span><span><span class="rv-save" id="agSave"></span><button class="rv-export" id="agExport">⬆ Commit argument_nodes.json</button></span></div>'+
       '<div class="rv-cands-h">Argument reconstructed from the two sources, anchored to the outline. Accept each node, edit the wording, or reject.</div>'+
       nodes.map(function(n){var id=n[0], st=lsGet(keyOf(id))||{decision:'nd',comment:''};
         return '<div class="rv-row" data-id="'+id+'"><div class="rv-claim"><span class="idc">'+id+'</span> <b>'+n[1]+'</b> · <span class="idc">'+n[2]+'</span> · <span class="idc">'+n[3]+'</span></div>'+
@@ -640,7 +716,7 @@
         return {project_id:proj,an_id:n[0],type:n[1],p_id:n[2],outline_id:n[3],text:s.comment||n[4],
           status:(s.decision==='acc'?'Approved':(s.decision==='rej'?'Rejected':'Pending')),author_id:'HD'};});
       var obj={_note:"Exported from the ACPP board G3 review. Replace this section's rows in database/argument_nodes.json, then commit.",project_id:proj,section_id:sec.sid,nodes:rows};
-      download('argument_nodes.'+sec.sid+'.json',JSON.stringify(obj,null,2));});
+      ghCommitOrDownload('argument_nodes.'+sec.sid+'.json',obj,this);});
     prog();
   }
   function buildFreezeReview(c, sec){
@@ -656,11 +732,11 @@
         '</tbody></table><p class="note">'+esc(g5.note)+'</p>'+
         '<div class="rv-bar"><span class="rv-save" id="frSave"></span><span>'+
         (frozen?'<button class="rv-btn" id="frReopen">Re-open baseline</button>':'<button class="rv-btn acc on" id="frFreeze">Freeze baseline</button>')+
-        ' <button class="rv-export" id="frExport">Export freeze record</button></span></div>';
+        ' <button class="rv-export" id="frExport">⬆ Commit freeze record</button></span></div>';
       c.querySelector('#frExport').addEventListener('click',function(){var s=lsGet(key)||{};
         var obj={_note:"Exported from the ACPP board G5 freeze. Merge the baseline into publication_control.json and append the APR to approvals.json, then commit.",
           project_id:proj,section_id:sec.sid,baseline:g5.baseline,frozen:s.decision==='frozen',frozen_date:s.date||null,content_hash:s.hash||null,scope:g5.scope,open_aiq:g5.aiqOpen||0,author_id:'HD'};
-        download('freeze.'+sec.sid+'.json',JSON.stringify(obj,null,2));});
+        ghCommitOrDownload('freeze.'+sec.sid+'.json',obj,this);});
       var fz=c.querySelector('#frFreeze'); if(fz) fz.addEventListener('click',function(){
         lsSet(key,{decision:'frozen',date:new Date().toISOString().slice(0,10),hash:'B'+Date.now().toString(36).toUpperCase().slice(-6)});
         render(sel.value);});
@@ -684,7 +760,7 @@
     var keyOf=function(id){return 'acpp.'+proj+'.'+sec.sid+'.AIQ.'+id;};
     c.innerHTML='<div class="dh"><b>AIQ · Quarantine</b><span class="src">'+esc(sec.label)+'</span></div>'+
       '<p class="note">Substantive ideas not yet carried by an approved proposition. Resolve each before freeze: accept it as a warrant (routed into G3), reject it, or defer.</p>'+
-      '<div class="rv-bar"><span class="rv-prog" id="aqProg"></span><span><span class="rv-save" id="aqSave"></span><button class="rv-export" id="aqExport">Export ai_quarantine.json</button></span></div>'+
+      '<div class="rv-bar"><span class="rv-prog" id="aqProg"></span><span><span class="rv-save" id="aqSave"></span><button class="rv-export" id="aqExport">⬆ Commit ai_quarantine.json</button></span></div>'+
       items.map(function(q){var id=q[0], st=lsGet(keyOf(id))||{decision:'pending',comment:''};
         return '<div class="rv-row" data-id="'+id+'"><div class="rv-claim"><span class="idc">'+id+'</span> <b>'+q[1]+'</b> · targets <span class="idc">'+q[3]+'</span></div>'+
           '<div class="sup">'+esc(q[2])+'</div>'+
@@ -704,7 +780,7 @@
         var map={accept:"Resolved (routed to G3 as warrant)",reject:"Rejected",defer:"Deferred",pending:"Pending"};
         return {project_id:proj,aiq_id:q[0],type:q[1],text:q[2],target_p_id:q[3],status:map[s2.decision]||"Pending",resolution:s2.comment||null,author_id:"HD"};});
       var obj={_note:"Exported from the ACPP board AIQ review. Merge into database/ai_quarantine.json, then commit.",project_id:proj,section_id:sec.sid,items:rows};
-      download("ai_quarantine."+sec.sid+".json",JSON.stringify(obj,null,2));});
+      ghCommitOrDownload("ai_quarantine."+sec.sid+".json",obj,this);});
     prog();}
   function render(id){
     var p=PROJECTS[id];
@@ -720,8 +796,10 @@
       var flag=bf.length?'<div class="flag">⚠ Backfill needed: '+bf.join(", ")+'</div>':'';
       var aiqOpen=(s.aiq||[]).filter(function(q){var st=lsGet('acpp.dmbok-v3-ch1.'+s.sid+'.AIQ.'+q[0])||{};return st.decision!=='accept'&&st.decision!=='reject';}).length;
       var aiq=(s.aiq&&s.aiq.length)?'<button class="aiqbtn" data-si="'+si+'">Review AIQ ('+aiqOpen+' open of '+s.aiq.length+')</button>':'';
+      var ghExp=[['propositions','propositions.'+s.sid+'.json'],['argument','argument_nodes.'+s.sid+'.json'],['evidence','evidence_links.'+s.sid+'.json'],['freeze','freeze.'+s.sid+'.json']];
+      var ghLine=ghConfigured()?'<div class="ghline">private repo: '+ghExp.map(function(x){return (GHFILES[x[1]]?'✓ ':'· ')+x[0];}).join('   ')+'</div>':'';
       return '<div class="sec"><div class="top"><h2>'+esc(s.label)+'</h2><span class="prose">'+esc(s.prose)+'</span></div>'+
-        '<div class="strip">'+strip+'</div>'+reviewLine+flag+'<div class="note">'+esc(s.note)+'</div>'+aiq+
+        '<div class="strip">'+strip+'</div>'+reviewLine+flag+'<div class="note">'+esc(s.note)+'</div>'+aiq+ghLine+
         '<div class="detail" id="det-'+si+'" hidden></div></div>';
     }).join('');
     document.querySelectorAll('.gate').forEach(function(btn){
@@ -747,6 +825,7 @@
   }
   sel.addEventListener('change',function(){render(sel.value);});
   render(sel.value);
+  ghInitPanel();
 </script>
 </body>
 </html>

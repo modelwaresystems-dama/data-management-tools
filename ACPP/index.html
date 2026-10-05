@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.8.3">
+<meta name="version" content="2.8.4">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -897,7 +897,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     function tierOf(fn){if(fn==='Contention')return 1;if(fn==='Conclusion')return 5;if(T3SET[fn])return 3;return 2;}
     var tiers={1:[],2:[],3:[],4:[],5:[]};
     list.forEach(function(it){tiers[tierOf(it.fn)].push(it);});
-    var aiqs=(sec.aiq||[]).map(function(q){var s=dec('AIQ',q[0]);return {id:q[0],fn:'Warrant',text:q[2],aiq:true,resolved:(s.decision==='accept'||s.decision==='reject')};}).filter(function(a){return !a.resolved;});
+    var aiqs=(sec.aiq||[]).map(function(q){var s=dec('AIQ',q[0]);return {id:q[0],fn:'Warrant',text:q[2],aiq:true,state:(s.decision==='accept'?'acc':(s.decision==='reject'?'rej':'pend'))};});
     aiqs.forEach(function(a){tiers[3].push(a);});
     var evNodes=[];
     list.forEach(function(it){if(it.fn==='Conclusion')return;if(it.ev||it.evOk){evNodes.push({id:'EV-'+it.id,owner:it.id,ok:it.evOk,cite:(it.evOk?'SRC verified':'SRC needed'),pid:it.pid});}});
@@ -915,10 +915,19 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     function edge(aId,bId,solid,amber){var a=pos[aId],b=pos[bId];if(!a||!b)return;var x1=a.cx,x2=b.cx,y1,y2;if(b.top>=a.bot){y1=a.bot;y2=b.top;}else if(b.bot<=a.top){y1=a.top;y2=b.bot;}else{y1=a.bot;y2=b.top;}var col=amber?'#d97706':GREY;p.push('<path d="M'+x1+','+y1+' L'+x2+','+y2+'" stroke="'+col+'" stroke-width="1.4" fill="none" marker-end="url(#'+(amber?'aha':'ah')+')"'+(solid?'':' stroke-dasharray="5 4"')+'/>');}
     if(usingNodes){var seen={};g3Active(sec).forEach(function(n){var L=g3L(sec,n[0]);(L.leads||[]).forEach(function(t){var k=n[0]+'>'+t;if(!seen[k]&&pos[n[0]]&&pos[t]){seen[k]=1;edge(n[0],t,accOf(n[0]));}});(L.dep||[]).forEach(function(dp){var k=dp+'>'+n[0];if(!seen[k]&&pos[dp]&&pos[n[0]]){seen[k]=1;edge(dp,n[0],accOf(dp));}});});}
     else{var cont0=tiers[1][0],conc0=tiers[5][0];tiers[2].concat(tiers[3]).forEach(function(it){if(it.aiq)return;if(cont0)edge(cont0.id,it.id,true);if(conc0)edge(it.id,conc0.id,true);});}
-    aiqs.forEach(function(a){var tgt=(tiers[1][0]&&tiers[1][0].id)||(tiers[5][0]&&tiers[5][0].id);if(tgt)edge(a.id,tgt,false,true);});
+    aiqs.forEach(function(a){var tgt=(tiers[1][0]&&tiers[1][0].id)||(tiers[5][0]&&tiers[5][0].id);if(tgt)edge(a.id,tgt,a.state==='acc',a.state!=='rej');});
     evNodes.forEach(function(ev){edge(ev.owner,ev.id,ev.ok);});
     function funcDisplay(fn){return {Contention:'Opening Contention',Conclusion:'Intended Conclusion'}[fn]||fn;}
-    function drawProp(it){var fill,stroke;if(it.aiq){fill=AMBER[0];stroke=AMBER[1];}else if(it.fn==='Conclusion'){fill=GREEN[0];stroke=GREEN[1];}else if(it.status==='rej'){fill=RED[0];stroke=RED[1];}else{fill=BLUE[0];stroke=BLUE[1];}var did=it.pid||it.id,flab=it.aiq?'Quarantined Warrant':funcDisplay(it.fn);p.push('<g><title>'+esc(did+' · '+flab+' — '+it.text)+'</title>'+vmBox(it._x,it._y,it._w,it._h,fill,stroke,did,flab,it.text)+'</g>');}
+    function drawProp(it){var fill,stroke,flab;
+      if(it.aiq){
+        if(it.state==='acc'){fill=BLUE[0];stroke=BLUE[1];flab='Warrant (approved)';}
+        else if(it.state==='rej'){fill='#edf0f3';stroke='#9aa7b4';flab='Warrant (rejected)';}
+        else{fill=AMBER[0];stroke=AMBER[1];flab='Quarantined Warrant';}
+      }else if(it.fn==='Conclusion'){fill=GREEN[0];stroke=GREEN[1];flab=funcDisplay(it.fn);}
+      else if(it.status==='rej'){fill=RED[0];stroke=RED[1];flab=funcDisplay(it.fn);}
+      else{fill=BLUE[0];stroke=BLUE[1];flab=funcDisplay(it.fn);}
+      var did=it.pid||it.id;
+      p.push('<g><title>'+esc(did+' · '+flab+' — '+it.text)+'</title>'+vmBox(it._x,it._y,it._w,it._h,fill,stroke,did,flab,it.text)+'</g>');}
     [1,2,3,5].forEach(function(ti){tiers[ti].forEach(drawProp);});
     evNodes.forEach(function(ev){var fill=ev.ok?GREEN[0]:RED[0],stroke=ev.ok?'#2f6f4f':RED[1];p.push('<g><title>'+esc('Evidence for '+ev.owner+' — '+ev.cite)+'</title><rect x="'+ev._x+'" y="'+ev._y+'" rx="7" width="'+ev._w+'" height="'+ev._h+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.4"'+(ev.ok?'':' stroke-dasharray="5 4"')+'/><g transform="translate('+(ev._x+9)+','+(ev._y+9)+')"><rect x="0" y="0" width="13" height="16" rx="1.5" fill="#ffffff" stroke="'+stroke+'" stroke-width="1.2"/><path d="M9,0 L13,4 L9,4 Z" fill="'+stroke+'"/><line x1="3" y1="7" x2="10" y2="7" stroke="'+stroke+'" stroke-width="1"/><line x1="3" y1="10" x2="10" y2="10" stroke="'+stroke+'" stroke-width="1"/></g><text x="'+(ev._x+30)+'" y="'+(ev._y+17)+'" font-size="9" font-weight="700" fill="'+stroke+'" font-family="ui-monospace,monospace">'+esc(ev.pid)+'</text><text x="'+(ev._x+30)+'" y="'+(ev._y+33)+'" font-size="10" fill="#1d2630">'+esc(ev.cite)+'</text></g>');});
     return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:'+W+'px" xmlns="http://www.w3.org/2000/svg">'+p.join('')+'</svg>';}

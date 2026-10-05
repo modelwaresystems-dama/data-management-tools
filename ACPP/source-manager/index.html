@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.4.3">
+<meta name="version" content="1.5.0">
 <title>ACPP Source Manager</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -1731,22 +1731,23 @@
   document.getElementById('ghForget').addEventListener('click',function(){LS.del('acpp.gh.pat');document.getElementById('ghPat').value='';ghStatus('token forgotten');});
 
   var SRCPATH=function(){return GH.dir()+'/sources.json';};
-  document.getElementById('ghPull').addEventListener('click',function(){
-    if(!ghConfigured()){ghStatus('configure first',"err");return;}
-    ghStatus('pulling…');
-    ghGetJson(SRCPATH()).then(function(data){
-      if(!data){ghStatus('no sources.json yet (Save to create)','');return;}
+  function pullSources(verbose){
+    if(!ghConfigured()){if(verbose)ghStatus('configure first',"err");return Promise.resolve();}
+    if(verbose)ghStatus('pulling…');
+    return ghGetJson(SRCPATH()).then(function(data){
+      if(!data){if(verbose)ghStatus('no sources.json yet (Save to create)','');return;}
       if(Array.isArray(data)){ITEMS=data;}
       else{ITEMS=data.items||[];LINKS=data.links||[];}
       saveJSON(SKEY,ITEMS);saveJSON(LKEY,LINKS);renderLib();
-      ghStatus('pulled '+ITEMS.length+' sources, '+LINKS.length+' links','ok');
-    });
-  });
+      if(verbose)ghStatus('pulled '+ITEMS.length+' sources, '+LINKS.length+' links','ok');
+    }).catch(function(e){if(verbose)ghStatus('pull error: '+e.message,'err');});
+  }
+  document.getElementById('ghPull').addEventListener('click',function(){pullSources(true);});
   document.getElementById('ghPullRefs').addEventListener('click',function(){pullRefs(true);});
   function pullRefs(verbose){
-    if(!ghConfigured()){if(verbose)ghStatus('configure first','err');return;}
+    if(!ghConfigured()){if(verbose)ghStatus('configure first','err');return Promise.resolve();}
     if(verbose)ghStatus('pulling nodes + propositions…');
-    ghList(GH.dir()).then(function(files){
+    return ghList(GH.dir()).then(function(files){
       var nodeFiles=files.filter(function(f){return /^argument_nodes.*\.json$/.test(f.name);}).map(function(f){return GH.dir()+'/'+f.name;});
       var propFiles=files.filter(function(f){return /^propositions.*\.json$/.test(f.name);}).map(function(f){return GH.dir()+'/'+f.name;});
       if(!nodeFiles.length)nodeFiles=[GH.dir()+'/argument_nodes.json'];
@@ -1799,7 +1800,14 @@
   /* ---------- init ---------- */
   cfgLoad();
   renderLib();
-  if(ghConfigured())pullRefs(false);
+  if(ghConfigured()){
+    ghStatus('auto-refreshing from private repo…');
+    Promise.all([pullSources(false),pullRefs(false)]).then(function(){
+      ghStatus('auto-refreshed: '+ITEMS.length+' sources, '+LINKS.length+' links, '+REFS.props.length+' propositions','ok');
+      var cur=document.querySelector('.tab.on');
+      if(cur&&cur.dataset.t==='byarg')renderByArg();
+    });
+  }
 })();
 </script>
 </body>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.10.0">
+<meta name="version" content="2.11.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -184,7 +184,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     <div class="ghrow"><label>Branch</label><input id="ghBranch" value="main"></div>
     <div class="ghrow"><label>Database path</label><input id="ghDir" value="ACPP/database"></div>
     <div class="ghrow"><label>Fine-grained PAT</label><input id="ghPat" type="password" placeholder="github_pat_… (Contents: Read & Write)"></div>
-    <div class="ghrow"><button id="ghSave">Save &amp; connect</button><button id="ghPull">Pull latest ↓</button><button id="ghForget">Forget token</button><span id="ghMsg" class="ghmsg"></span></div>
+    <div class="ghrow"><button id="ghSave">Save &amp; connect</button><button id="ghPull">Pull latest ↓</button><button id="ghPublish">Publish content ↑</button><button id="ghForget">Forget token</button><span id="ghMsg" class="ghmsg"></span></div>
     <p class="ghnote">Stored in this browser on this device only (your choice). Use a fine-grained PAT scoped to the private data repo with Contents: Read &amp; Write — it is never shared or committed. You still commit the public app code yourself. On connect the board fills any missing review state from the committed registers; <b>Pull latest</b> overwrites your local review state with the repo’s.</p>
     <div id="ghFiles" class="ghfiles"></div>
   </div>
@@ -240,7 +240,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       try{render(sel.value);}catch(e){}}).catch(function(){});}
   function ghConnect(){if(!ghConfigured()){ghStatus('not connected');return;}ghStatus('connecting…');
     fetch('https://api.github.com/repos/'+GH.owner()+'/'+GH.repo(),{headers:ghHeaders()}).then(function(r){return r.json().then(function(j){
-      if(r.ok){ghStatus('connected · '+GH.owner()+'/'+GH.repo(),true);ghRefreshFiles().then(function(){return ghRehydrate(false);}).then(function(){try{render(sel.value);}catch(e){}});}else{ghStatus('error: '+(j.message||('HTTP '+r.status)));}});}).catch(function(e){ghStatus('error: '+e);});}
+      if(r.ok){ghStatus('connected · '+GH.owner()+'/'+GH.repo(),true);ghRefreshFiles().then(function(){return ghRehydrate(false);}).then(function(){return ghPullContent();}).then(function(){try{render(sel.value);}catch(e){}});}else{ghStatus('error: '+(j.message||('HTTP '+r.status)));}});}).catch(function(e){ghStatus('error: '+e);});}
   function ghGetJson(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;try{return JSON.parse(decodeURIComponent(escape(atob(String(j.content).replace(/\s/g,'')))));}catch(e){return null;}}).catch(function(){return null;});}
   function ghPutLocal(k,val,overwrite,n){try{if(!overwrite&&localStorage.getItem(k)!=null)return;lsSet(k,val);n.c++;}catch(e){}}
   function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);var n={c:0},P='acpp.dmbok-v3-ch1.',jobs=[];
@@ -253,6 +253,22 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       jobs.push(pull('ai_quarantine.'+sid+'.json',function(o){(o.items||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));ghPutLocal(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''},overwrite,n);});}));
     });
     return Promise.all(jobs).then(function(){return n.c;});}
+  function applyBoardContent(bc){
+    if(!bc||!bc.sections||!bc.sections.length)return false;
+    var proj=sel.value;
+    if(PROJECTS[proj]){PROJECTS[proj].sections=bc.sections;
+      if(bc.project){if(bc.project.title)PROJECTS[proj].title=bc.project.title;if(bc.project.type)PROJECTS[proj].type=bc.project.type;}}
+    if(bc.outlines&&typeof bc.outlines==='object')OUTLINES=bc.outlines;
+    return true;
+  }
+  function ghPullContent(){if(!ghConfigured())return Promise.resolve(false);
+    return ghGetJson(GH.dir()+'/board_content.json').then(function(bc){return applyBoardContent(bc);}).catch(function(){return false;});}
+  function ghPublishContent(btn){var proj=sel.value;var ver=document.querySelector('meta[name="version"]').content;
+    var bc={schema:'acpp.board-content/1',app_version:ver,updated:new Date().toISOString().slice(0,10),
+      project:{id:proj,title:PROJECTS[proj].title,type:PROJECTS[proj].type},
+      sections:PROJECTS[proj].sections,outlines:OUTLINES};
+    ghCommitOrDownload('board_content.json',bc,btn);}
+  try{window.__acpp={applyBoardContent:applyBoardContent,pullContent:ghPullContent,publishContent:ghPublishContent};}catch(e){}
   function ghInitPanel(){
     var map={ghOwner:'owner',ghRepo:'repo',ghBranch:'branch',ghDir:'dir',ghPat:'pat'};
     Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el){var v=GHget(map[id],'');if(v)el.value=v;}});
@@ -261,7 +277,8 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       GHset('owner',document.getElementById('ghOwner').value.trim());GHset('repo',document.getElementById('ghRepo').value.trim());
       GHset('branch',document.getElementById('ghBranch').value.trim());GHset('dir',document.getElementById('ghDir').value.trim());
       GHset('pat',document.getElementById('ghPat').value.trim());document.getElementById('ghMsg').textContent=' saved';ghConnect();});
-    document.getElementById('ghPull').addEventListener('click',function(){var m=document.getElementById('ghMsg');m.textContent=' pulling…';ghRehydrate(true).then(function(c){m.textContent=' pulled '+c+' records from repo';try{render(sel.value);}catch(e){}});});
+    document.getElementById('ghPull').addEventListener('click',function(){var m=document.getElementById('ghMsg');m.textContent=' pulling…';ghRehydrate(true).then(function(c){return ghPullContent().then(function(got){m.textContent=' pulled '+c+' records'+(got?' + content':'');try{render(sel.value);}catch(e){}});});});
+    var _pb=document.getElementById('ghPublish');if(_pb)_pb.addEventListener('click',function(){ghPublishContent(_pb);});
     document.getElementById('ghForget').addEventListener('click',function(){try{localStorage.removeItem('acpp.gh.pat');}catch(e){}document.getElementById('ghPat').value='';document.getElementById('ghMsg').textContent=' token forgotten';ghStatus('not connected');GHFILES={};try{render(sel.value);}catch(e){}});
     ghConnect();
   }

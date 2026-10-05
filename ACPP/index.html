@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.1.0">
+<meta name="version" content="2.4.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -130,6 +130,16 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .ghfiles{font-size:.74rem;color:var(--muted,#667);margin-top:6px;word-break:break-word}
 .ghline{font-size:.72rem;color:var(--muted,#667);font-family:ui-monospace,monospace;margin:4px 0 0}
 .ghmsg{font-size:.74rem;color:var(--muted,#667)}
+.vismapwrap{overflow:auto;border:1px solid var(--line,#ddd);border-radius:10px;padding:8px;background:#fcfcfd;margin:6px 0}
+.viskey{display:flex;flex-wrap:wrap;gap:12px;font-size:.72rem;color:var(--muted,#566);margin:6px 0 2px}
+.viskey i.k{display:inline-block;width:12px;height:12px;border-radius:2px;border:1.5px solid;vertical-align:-1px;margin-right:3px}
+.manual{font-size:.9rem;max-height:62vh;overflow:auto;padding-right:6px}
+.manual h3{font-size:.95rem;margin:14px 0 4px}
+.manual ul{margin:4px 0;padding-left:20px}
+.manual li{margin:3px 0}
+.manual table{width:100%;border-collapse:collapse;margin:6px 0}
+.manual td{border:1px solid var(--line,#ddd);padding:5px 8px;font-size:.85rem;vertical-align:top}
+.gsw{display:inline-block;width:12px;height:12px;border-radius:2px;border:1.5px solid;vertical-align:-1px;margin-right:5px}
 </style>
 </head>
 <body>
@@ -595,6 +605,21 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     return sec.gates[gk]||'waiting';
   }
 
+  function propositionsSummary(sec){
+    var proj="dmbok-v3-ch1", ol=OUTLINES[sec.sid]||{}, g2=sec.art.G2, rows;
+    if(g2.backfill){rows=g2.backfill.map(function(e){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G2.'+e[0])||{};return {id:e[0],bullet:e[1],type:e[2],text:(s.text!=null&&s.text!==''?s.text:e[3]),status:(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending'))};});}
+    else {rows=(g2.props||[]).map(function(p){return {id:p[0],bullet:'',type:p[1],text:p[2],status:p[3]};});}
+    var acc=rows.filter(function(r){return r.status==='Approved';}).length, hasB=rows.some(function(r){return r.bullet;});
+    var head=(ol.intended_conclusion?'<p class="note"><b>Intended conclusion.</b> '+esc(ol.intended_conclusion)+'</p>':'');
+    var recon=(g2.terms?'<p class="note" style="font-weight:600;color:'+(acc===g2.terms?'#2f6f4f':'#c2410c')+'">'+acc+' propositions ↔ '+g2.terms+' governed terms'+(acc===g2.terms?' ✓ reconciled':' ⚠ mismatch')+'</p>':'');
+    var tbl='<table><thead><tr><th>P-ID</th>'+(hasB?'<th>Bullet</th>':'')+'<th>Type</th><th>Text</th><th>Status</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td class="idc">'+r.id+'</td>'+(hasB?'<td class="idc">'+esc(r.bullet||'')+'</td>':'')+'<td>'+esc(r.type)+'</td><td>'+esc(r.text)+'</td><td><span class="pill '+(r.status==='Approved'?'ok':'need')+'">'+r.status+'</span></td></tr>';}).join('')+'</tbody></table>';
+    return head+recon+tbl;}
+  function argumentSummary(sec){var proj="dmbok-v3-ch1", nodes=sec.art.G3.nodes;
+    return '<table><thead><tr><th>Node</th><th>Type</th><th>P-ID</th><th>Text</th><th>Status</th></tr></thead><tbody>'+nodes.map(function(nn){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+nn[0])||{};var t=(s.comment&&s.comment.trim()?s.comment:nn[4]);var st=(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending'));return '<tr><td class="idc">'+nn[0]+'</td><td>'+esc(nn[1])+'</td><td class="idc">'+esc(nn[2])+'</td><td>'+esc(t)+'</td><td><span class="pill '+(st==='Approved'?'ok':'need')+'">'+st+'</span></td></tr>';}).join('')+'</tbody></table>';}
+  function evidenceSummary(sec){var proj="dmbok-v3-ch1", rows=sec.art.G4.evid, g2o=(sec.art&&sec.art.G2)||{}, g2=g2o.props||g2o.backfill||[], tIdx=g2o.props?2:3, props={}; g2.forEach(function(p){props[p[0]]=p[tIdx];});
+    return '<table><thead><tr><th>Claim</th><th>Accepted source</th><th>Status</th></tr></thead><tbody>'+rows.map(function(e){var pid=e[0], s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+pid)||{};var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');return '<tr><td><span class="idc">'+pid+'</span> '+esc(String(props[pid]||'').slice(0,80))+'</td><td class="idc">'+esc(s.src||'—')+'</td><td><span class="pill '+(status==='Supported'?'ok':'need')+'">'+status+'</span></td></tr>';}).join('')+'</tbody></table>';}
+  function gateSummary(sec,gk){var inner=gk==='G2'?propositionsSummary(sec):gk==='G3'?argumentSummary(sec):gk==='G4'?evidenceSummary(sec):'';var vis=(gk==='G2'||gk==='G3')?' <button class="rv-btn vismap" data-gk="'+gk+'">◇ Visual map</button>':'';return inner+'<p class="note"><button class="rv-btn reedit" data-gk="'+gk+'">✎ Re-edit</button>'+vis+'</p>';}
+  function gateHead(sec,gk){var g=GATES.find(function(x){return x[0]===gk;});return '<div class="dh"><b>'+gk+' · '+(g?g[1]:'')+'</b><span class="src">'+esc(sec.label)+' — re-editing</span></div>';}
   function buildPropositionReview(c, sec){
     var proj="dmbok-v3-ch1";
     var rows=sec.art.G2.backfill, drift=(sec.art.G2.drift||[]), src=sec.art.G2.sources||"";
@@ -665,20 +690,19 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     } else if(gk==="G1"){
       body=renderOutline(OUTLINES[sec.sid]);
     } else if(gk==="G2" && a && a.backfill){
-      body='<div id="propReview"></div>';
+      body=(gateStatus(sec,'G2')==='complete')?gateSummary(sec,'G2'):'<div id="propReview"></div>';
     } else if(gk==="G2" && a && a.props){
-      body='<table><thead><tr><th>P-ID</th><th>Type</th><th>Text</th><th>Status</th></tr></thead><tbody>'+
-        a.props.map(function(p){return '<tr><td class="idc">'+p[0]+'</td><td>'+p[1]+'</td><td>'+esc(p[2])+'</td><td><span class="pill ok">'+p[3]+'</span></td></tr>';}).join('')+'</tbody></table>';
+      body=gateSummary(sec,'G2');
     } else if(gk==="G3" && a && a.nodes){
-      body=(a.sources?'<p class="note"><b>Two sources:</b> '+esc(a.sources)+'</p>':'')+(a.aiqNote?'<p class="note">'+esc(a.aiqNote)+'</p>':'')+'<div id="argReview"></div>';
+      body='<p class="note"><button class="rv-btn g3man">? G3 Manual</button></p>'+(a.sources?'<p class="note"><b>Two sources:</b> '+esc(a.sources)+'</p>':'')+(a.aiqNote?'<p class="note">'+esc(a.aiqNote)+'</p>':'')+(gateStatus(sec,'G3')==='complete'?gateSummary(sec,'G3'):'<div id="argReview"></div>');
     } else if(gk==="G3" && a && a.contention){
-      body='<div style="font-size:.88rem"><div style="font-weight:600;margin-bottom:6px">'+esc(a.contention)+'</div><ul style="margin:6px 0;padding-left:18px">'+
+      body='<p class="note"><button class="rv-btn g3man">? G3 Manual</button></p>'+'<div style="font-size:.88rem"><div style="font-weight:600;margin-bottom:6px">'+esc(a.contention)+'</div><ul style="margin:6px 0;padding-left:18px">'+
         a.reasons.map(function(r){return '<li style="margin:3px 0"><span class="idc">'+r[0]+'</span> — '+esc(r[1])+' '+(r[2]?'<span class="pill need">needs evidence</span>':'')+'</li>';}).join('')+
         '</ul><div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-weight:600;color:var(--good)">↳ '+esc(a.conclusion)+'</div></div>';
     } else if(gk==="G4" && a && a.evid){
       body=(a.sources?'<p class="note"><b>Two sources:</b> '+esc(a.sources)+'</p>':'')+
            (a.findings?'<p class="note">'+esc(a.findings)+'</p>':'')+
-           '<div id="evReview"></div>';
+           (gateStatus(sec,'G4')==='complete'?gateSummary(sec,'G4'):'<div id="evReview"></div>');
     } else if(gk==="G5" && a && a.baseline){
       body='<div id="frzReview"></div>';
     } else if(gk==="G6" && a){
@@ -782,6 +806,100 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       var obj={_note:"Exported from the ACPP board AIQ review. Merge into database/ai_quarantine.json, then commit.",project_id:proj,section_id:sec.sid,items:rows};
       ghCommitOrDownload("ai_quarantine."+sec.sid+".json",obj,this);});
     prog();}
+  function vmWrap(t,max,maxl){var w=String(t).split(/\s+/),lines=[],cur='';w.forEach(function(x){if((cur+' '+x).trim().length<=max)cur=(cur+' '+x).trim();else{if(cur)lines.push(cur);cur=x;}});if(cur)lines.push(cur);if(lines.length>maxl){lines=lines.slice(0,maxl);lines[maxl-1]=lines[maxl-1].slice(0,max-1)+'…';}return lines;}
+  function vmDoc(x,y){return '<g transform="translate('+x+','+y+')"><rect x="0" y="0" width="13" height="16" rx="1.5" fill="#ffffff" stroke="#2f6f4f" stroke-width="1.2"/><path d="M9,0 L13,4 L9,4 Z" fill="#2f6f4f"/><line x1="3" y1="7" x2="10" y2="7" stroke="#2f6f4f" stroke-width="1"/><line x1="3" y1="10" x2="10" y2="10" stroke="#2f6f4f" stroke-width="1"/></g>';}
+  function vmBox(x,y,w,h,fill,stroke,id,type,text){var l1=id+(type?'   '+type:'');var body=vmWrap(text,32,3);
+    var t='<rect x="'+x+'" y="'+y+'" rx="8" width="'+w+'" height="'+h+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.6"/>'+
+      '<text x="'+(x+11)+'" y="'+(y+17)+'" font-size="10" font-weight="700" fill="'+stroke+'" font-family="ui-monospace,monospace">'+esc(l1)+'</text>';
+    body.forEach(function(ln,i){t+='<text x="'+(x+11)+'" y="'+(y+34+i*13)+'" font-size="11" fill="#1d2630">'+esc(ln)+'</text>';});
+    return t;}
+  function genArgumentSVG(sec){var proj="dmbok-v3-ch1";
+    function dec(g,id){return lsGet('acpp.'+proj+'.'+sec.sid+'.'+g+'.'+id)||{};}
+    function evSup(pid){var s=dec('G4',pid);return s.decision==='acc'&&!!s.src;}
+    function evListed(pid){var g4=sec.art&&sec.art.G4;return !!(g4&&g4.evid&&g4.evid.some(function(e){return e[0]===pid;}));}
+    var items=[],contention=null,conclusion=null;
+    if(sec.art.G3&&sec.art.G3.nodes){sec.art.G3.nodes.forEach(function(n){var s=dec('G3',n[0]);var st=s.decision==='rej'?'rej':(s.decision==='acc'?'acc':'pend');var it={id:n[0],pid:n[2],type:n[1],text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:st};if(n[1]==='Contention')contention=it;else if(n[1]==='Conclusion')conclusion=it;else items.push(it);});}
+    else if(sec.art.G2){var g2=sec.art.G2;var rows=g2.props?g2.props.map(function(p){return {id:p[0],type:p[1],text:p[2],pid:p[0],status:'acc'};}):(g2.backfill||[]).map(function(e){var s=dec('G2',e[0]);return {id:e[0],type:e[2],text:(s.text&&s.text!==''?s.text:e[3]),pid:e[0],status:s.decision==='rej'?'rej':(s.decision==='acc'?'acc':'pend')};});rows.forEach(function(it){if(it.type==='Contention')contention=it;else if(it.type==='Conclusion')conclusion=it;else items.push(it);});}
+    var aiqs=(sec.aiq||[]).map(function(q){var s=dec('AIQ',q[0]);return {id:q[0],text:q[2],resolved:(s.decision==='accept'||s.decision==='reject')};}).filter(function(a){return !a.resolved;});
+    var W=860,bw=184,bh=68,gap=20,perRow=4,topY=18,rowY=contention?150:44,rws=Math.ceil(items.length/perRow)||1,rowH=bh+74,concY=rowY+rws*rowH+6,H=concY+bh+34;
+    var BLUE=['#dbeafe','#2563eb'],GREEN=['#dcfce7','#16a34a'],AMBER=['#fef3c7','#d97706'],RED=['#fee2e2','#dc2626'],GREY='#5b6b7a';
+    var p=['<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="'+GREY+'"/></marker><marker id="ahg" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#16a34a"/></marker></defs>'];
+    var cx=(W-230)/2, contBottom={x:cx+115,y:topY+bh};
+    if(contention){p.push(vmBox(cx,topY,230,bh,BLUE[0],BLUE[1],contention.id,contention.type,contention.text));}
+    var spos=[];
+    items.forEach(function(it,i){var r=Math.floor(i/perRow),cI=i%perRow,cnt=Math.min(perRow,items.length-r*perRow),rowW=cnt*bw+(cnt-1)*gap,sx=(W-rowW)/2+cI*(bw+gap),sy=rowY+r*rowH;
+      var unsup=(it.status!=='rej')&&evListed(it.pid)&&!evSup(it.pid);var fill,stroke;
+      if(it.status==='rej'||unsup){fill=RED[0];stroke=RED[1];}else{fill=BLUE[0];stroke=BLUE[1];}
+      p.push(vmBox(sx,sy,bw,bh,fill,stroke,it.id,it.type,it.text));
+      if(evSup(it.pid))p.push(vmDoc(sx+bw-19,sy+bh-19));
+      var dash=(it.status==='acc')?'':' stroke-dasharray="5 4"';
+      if(contention){p.push('<path d="M'+contBottom.x+','+contBottom.y+' L'+(sx+bw/2)+','+sy+'" stroke="'+GREY+'" stroke-width="1.4" fill="none" marker-end="url(#ah)"'+dash+'/>');}
+      spos.push({x:sx+bw/2,y:sy+bh,acc:it.status==='acc'});});
+    if(conclusion){var gx=(W-230)/2;p.push(vmBox(gx,concY,230,bh,GREEN[0],GREEN[1],conclusion.id,conclusion.type,conclusion.text));
+      spos.forEach(function(sp){p.push('<path d="M'+sp.x+','+sp.y+' L'+(gx+115)+','+concY+'" stroke="'+GREY+'" stroke-width="1.3" fill="none" marker-end="url(#ah)"'+(sp.acc?'':' stroke-dasharray="5 4"')+'/>');});}
+    aiqs.forEach(function(a,i){var ax=W-176,ay=topY+i*(bh+14);p.push(vmBox(ax,ay,168,bh,AMBER[0],AMBER[1],a.id,'AIQ',a.text));
+      var tx=contention?(cx+230):((W-230)/2+230),ty=contention?(topY+bh/2):(concY+bh/2);
+      p.push('<path d="M'+ax+','+(ay+bh/2)+' L'+tx+','+ty+'" stroke="#d97706" stroke-width="1.3" fill="none" marker-end="url(#ah)" stroke-dasharray="5 4"/>');});
+    return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:'+W+'px" xmlns="http://www.w3.org/2000/svg">'+p.join('')+'</svg>';}
+  function vmLegend(){return '<div class="viskey">'+
+    '<span><i class="k" style="background:#dbeafe;border-color:#2563eb"></i>Approved proposition</span>'+
+    '<span><i class="k" style="background:#dcfce7;border-color:#16a34a"></i>Intended conclusion (C-ID)</span>'+
+    '<span><i class="k" style="background:#fef3c7;border-color:#d97706"></i>AIQ (quarantined)</span>'+
+    '<span><i class="k" style="background:#fee2e2;border-color:#dc2626"></i>Gap / unsupported</span>'+
+    '<span>📄 verified evidence</span>'+
+    '<span>— solid = approved · - - dashed = proposed/unverified</span></div>';}
+  function buildG3Manual(det,sec){
+    function row(sw,bd,el,mean){return '<tr><td style="white-space:nowrap"><span class="gsw" style="background:'+sw+';border-color:'+bd+'"></span><b>'+el+'</b></td><td>'+mean+'</td></tr>';}
+    var grammar='<table><tbody>'+
+      row('#dbeafe','#2563eb','Blue rectangle','Author-approved proposition')+
+      row('#ffffff','#2f6f4f','Document symbol','Verified supporting evidence')+
+      '<tr><td style="white-space:nowrap">→ <b>Solid arrow</b></td><td>Approved reasoning relationship / dependency</td></tr>'+
+      '<tr><td style="white-space:nowrap">⇢ <b>Dashed arrow</b></td><td>Proposed or unverified relationship</td></tr>'+
+      row('#fef3c7','#d97706','Amber node','Unapproved AI suggestion held in quarantine (AIQ)')+
+      row('#fee2e2','#dc2626','Red node','Unresolved logic gap, contradiction, or unsupported claim')+
+      row('#dcfce7','#16a34a','Green terminal','Intended subsection conclusion (C-ID)')+
+    '</tbody></table>';
+    det.innerHTML='<div class="dh"><b>? G3 Manual — Argument Modelling</b><span class="src">'+esc(sec.label)+'</span></div>'+
+      '<div class="manual">'+
+      '<p class="note"><b>Stage 3: Argument Modelling / Gate G3</b> sits between atomic proposition creation (Stage 2) and evidence synthesis (Stage 4). Its purpose is to test and validate the structural logic of an argument before drafting prose.</p>'+
+      '<p class="note" style="font-style:italic">“The flowchart is not a picture of the prose — it is a picture of your reasoning.”</p>'+
+      '<h3>1. Structure of the G3 Argument Map</h3>'+
+      '<ul><li><b>Logical functions.</b> Each node is a Proposition ID (P-ID) with a role: Opening Contention, Supporting Reason, Qualification, Counterpoint, Warrant, or Intended Conclusion.</li>'+
+      '<li><b>Inferential links.</b> Nodes connect by <i>Depends On</i> (prior propositions required) and <i>Leads To / Supports</i> (downstream claims or the conclusion).</li>'+
+      '<li><b>Evidence markers.</b> Each node shows whether evidence is required (Evidence Needed), so structural logic is tested independently of evidence availability.</li></ul>'+
+      '<h3>2. Standardized Visual Grammar</h3>'+grammar+
+      '<h3>3. AI role vs human control at G3</h3>'+
+      '<ul><li><b>AI as Argument Challenger.</b> AI runs an “Argument Challenge Prompt” to flag compound statements, missing warrants, unsupported conclusions and unaddressed counterpoints.</li>'+
+      '<li><b>AI Suggestion Quarantine (AIQ).</b> AI cannot silently insert nodes or alter sequence; any suggested transition or missing warrant gets an AIQ-ID and stays an amber node until you approve or reject it.</li>'+
+      '<li><b>Human approval.</b> You retain sole authority over proposition order, inferential links and the dependency tree.</li></ul>'+
+      '<h3>4. Worked example — 1.2 “Why Data Management Exists”</h3>'+
+      '<ul><li><b>Opening Contention (P-1.2-00):</b> Data Management exists for more than a single business-value rationale.</li>'+
+      '<li><b>Parallel supporting branches:</b> value/innovation (P-1.2-01), operational effectiveness (P-1.2-02), risk reduction (P-1.2-03), regulatory obligations (P-1.2-04).</li>'+
+      '<li><b>Quarantined warrant (AIQ-001):</b> “these four drivers may coexist and are not mutually exclusive” — amber, awaiting approval.</li>'+
+      '<li><b>Terminal node (C-1.2-01):</b> all branches resolve into the final summary conclusion.</li></ul>'+
+      '<h3>5. Gate G3 approval checklist</h3>'+
+      '<ul><li>Every node maps to an explicit Proposition ID.</li>'+
+      '<li>The argument has a defined entry point and terminal conclusion.</li>'+
+      '<li>Dependencies and sequence are explicit and deliberate.</li>'+
+      '<li>Qualifications and counterarguments are addressed.</li>'+
+      '<li>Evidence requirements are visibly tagged.</li>'+
+      '<li>No unapproved AI suggestions have entered the baseline.</li></ul>'+
+      '<p class="note">Source: <span class="idc">modelware_app_storage/ACPP/docs/ACPP_Argument_Modelling.docx</span></p>'+
+      '</div>'+
+      '<p class="note"><button class="rv-btn visback">← Back</button></p>';
+    wireDetail(det,sec,'G3');}
+  function buildVisualMap(det,sec,gk){det.innerHTML='<div class="dh"><b>◇ Visual map</b><span class="src">'+esc(sec.label)+' — Standardized Visual Grammar</span></div>'+'<div class="vismapwrap">'+genArgumentSVG(sec)+'</div>'+vmLegend()+'<p class="note" style="font-style:italic;color:var(--muted,#667)">“The flowchart is not a picture of the prose — it is a picture of your reasoning.”</p><p class="note"><button class="rv-btn visback">← Back to summary</button></p>';wireDetail(det,sec,gk);}
+  function wireDetail(det,sec,gk){
+    det.querySelectorAll('.reedit').forEach(function(rb){rb.addEventListener('click',function(){var g=rb.dataset.gk;var map={G2:['propReview',buildPropositionReview],G3:['argReview',buildArgumentReview],G4:['evReview',buildEvidenceReview],G5:['frzReview',buildFreezeReview]};var m=map[g];if(!m)return;det.innerHTML=gateHead(sec,g)+'<div id="'+m[0]+'"></div>';m[1](det.querySelector('#'+m[0]),sec);});});
+    det.querySelectorAll('.vismap').forEach(function(vb){vb.addEventListener('click',function(){buildVisualMap(det,sec,vb.dataset.gk);});});
+    det.querySelectorAll('.g3man').forEach(function(mb){mb.addEventListener('click',function(){buildG3Manual(det,sec);});});
+    det.querySelectorAll('.visback').forEach(function(bb){bb.addEventListener('click',function(){openGate(det,sec,gk);});});}
+  function openGate(det,sec,gk){det.innerHTML=renderGate(sec,gk);
+    var pc=det.querySelector('#propReview'); if(pc) buildPropositionReview(pc,sec);
+    var ac=det.querySelector('#argReview'); if(ac) buildArgumentReview(ac,sec);
+    var evc=det.querySelector('#evReview'); if(evc) buildEvidenceReview(evc,sec);
+    var fc=det.querySelector('#frzReview'); if(fc) buildFreezeReview(fc,sec);
+    wireDetail(det,sec,gk);}
   function render(id){
     var p=PROJECTS[id];
     document.getElementById('projMeta').textContent=p.type+" · "+id+" · "+p.sections.length+" sections";
@@ -808,11 +926,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
         var already=btn.classList.contains('sel');
         document.querySelectorAll('.gate[data-si="'+si+'"]').forEach(function(b){b.classList.remove('sel');});
         if(already){det.hidden=true;return;}
-        btn.classList.add('sel'); det.innerHTML=renderGate(secs[si],gk); det.hidden=false;
-        if(gk==='G4'){var evc=det.querySelector('#evReview'); if(evc) buildEvidenceReview(evc, secs[si]);}
-        if(gk==='G2'){var pc=det.querySelector('#propReview'); if(pc) buildPropositionReview(pc, secs[si]);}
-        if(gk==='G3'){var ac=det.querySelector('#argReview'); if(ac) buildArgumentReview(ac, secs[si]);}
-        if(gk==='G5'){var fc=det.querySelector('#frzReview'); if(fc) buildFreezeReview(fc, secs[si]);}
+        btn.classList.add('sel'); det.hidden=false; openGate(det, secs[si], gk);
       });
     });
     document.querySelectorAll('.aiqbtn').forEach(function(btn){btn.addEventListener('click',function(){

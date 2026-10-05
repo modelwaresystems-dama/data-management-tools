@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.4.0">
+<meta name="version" content="2.5.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -140,6 +140,11 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .manual table{width:100%;border-collapse:collapse;margin:6px 0}
 .manual td{border:1px solid var(--line,#ddd);padding:5px 8px;font-size:.85rem;vertical-align:top}
 .gsw{display:inline-block;width:12px;height:12px;border-radius:2px;border:1.5px solid;vertical-align:-1px;margin-right:5px}
+.addnode{margin-top:12px;padding:10px 12px;border:1px dashed var(--line,#ccc);border-radius:10px}
+.ar-form{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.ar-form select,.ar-form input{padding:6px 9px;border:1px solid var(--line,#ddd);border-radius:7px;font:inherit;font-size:.85rem;background:var(--surface2,#f6f6f6);color:var(--ink,#222)}
+.ar-form input#anText{flex:1;min-width:220px}
+.linklike{background:none;border:none;color:#2563eb;cursor:pointer;font:inherit;padding:0;text-decoration:underline}
 </style>
 </head>
 <body>
@@ -592,7 +597,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     var proj="dmbok-v3-ch1", a=(sec.art||{})[gk], ids=null, needSrc=false;
     if(gk==='G4' && a && a.evid){ ids=a.evid.map(function(e){return e[0];}); needSrc=true; }
     else if(gk==='G2' && a && a.backfill){ ids=a.backfill.map(function(e){return e[0];}); }
-    else if(gk==='G3' && a && a.nodes){ ids=a.nodes.map(function(n){return n[0];}); }
+    else if(gk==='G3' && a && a.nodes){ ids=g3Active(sec).map(function(n){return n[0];}); }
     if(!ids) return null;
     var acc=0; ids.forEach(function(pid){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.'+gk+'.'+pid)||{};
       if(s.decision==='acc' && (!needSrc || s.src)) acc++;});
@@ -614,7 +619,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     var recon=(g2.terms?'<p class="note" style="font-weight:600;color:'+(acc===g2.terms?'#2f6f4f':'#c2410c')+'">'+acc+' propositions ↔ '+g2.terms+' governed terms'+(acc===g2.terms?' ✓ reconciled':' ⚠ mismatch')+'</p>':'');
     var tbl='<table><thead><tr><th>P-ID</th>'+(hasB?'<th>Bullet</th>':'')+'<th>Type</th><th>Text</th><th>Status</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td class="idc">'+r.id+'</td>'+(hasB?'<td class="idc">'+esc(r.bullet||'')+'</td>':'')+'<td>'+esc(r.type)+'</td><td>'+esc(r.text)+'</td><td><span class="pill '+(r.status==='Approved'?'ok':'need')+'">'+r.status+'</span></td></tr>';}).join('')+'</tbody></table>';
     return head+recon+tbl;}
-  function argumentSummary(sec){var proj="dmbok-v3-ch1", nodes=sec.art.G3.nodes;
+  function argumentSummary(sec){var proj="dmbok-v3-ch1", nodes=g3Active(sec);
     return '<table><thead><tr><th>Node</th><th>Type</th><th>P-ID</th><th>Text</th><th>Status</th></tr></thead><tbody>'+nodes.map(function(nn){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+nn[0])||{};var t=(s.comment&&s.comment.trim()?s.comment:nn[4]);var st=(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending'));return '<tr><td class="idc">'+nn[0]+'</td><td>'+esc(nn[1])+'</td><td class="idc">'+esc(nn[2])+'</td><td>'+esc(t)+'</td><td><span class="pill '+(st==='Approved'?'ok':'need')+'">'+st+'</span></td></tr>';}).join('')+'</tbody></table>';}
   function evidenceSummary(sec){var proj="dmbok-v3-ch1", rows=sec.art.G4.evid, g2o=(sec.art&&sec.art.G2)||{}, g2=g2o.props||g2o.backfill||[], tIdx=g2o.props?2:3, props={}; g2.forEach(function(p){props[p[0]]=p[tIdx];});
     return '<table><thead><tr><th>Claim</th><th>Accepted source</th><th>Status</th></tr></thead><tbody>'+rows.map(function(e){var pid=e[0], s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+pid)||{};var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');return '<tr><td><span class="idc">'+pid+'</span> '+esc(String(props[pid]||'').slice(0,80))+'</td><td class="idc">'+esc(s.src||'—')+'</td><td><span class="pill '+(status==='Supported'?'ok':'need')+'">'+status+'</span></td></tr>';}).join('')+'</tbody></table>';}
@@ -714,34 +719,41 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     return head+body;
   }
 
+  function g3Active(sec){var proj="dmbok-v3-ch1",seed=(sec.art&&sec.art.G3&&sec.art.G3.nodes)?sec.art.G3.nodes:[],add=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.added')||[];return seed.concat(add).filter(function(n){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+n[0])||{};return s.decision!=='rej';});}
   function buildArgumentReview(c, sec){
-    var proj="dmbok-v3-ch1", nodes=sec.art.G3.nodes;
-    var keyOf=function(id){return 'acpp.'+proj+'.'+sec.sid+'.G3.'+id;};
-    c.innerHTML='<div class="rv-bar"><span class="rv-prog" id="agProg"></span><span><span class="rv-save" id="agSave"></span><button class="rv-export" id="agExport">⬆ Commit argument_nodes.json</button></span></div>'+
-      '<div class="rv-cands-h">Argument reconstructed from the two sources, anchored to the outline. Accept each node, edit the wording, or reject.</div>'+
-      nodes.map(function(n){var id=n[0], st=lsGet(keyOf(id))||{decision:'nd',comment:''};
-        return '<div class="rv-row" data-id="'+id+'"><div class="rv-claim"><span class="idc">'+id+'</span> <b>'+n[1]+'</b> · <span class="idc">'+n[2]+'</span> · <span class="idc">'+n[3]+'</span></div>'+
-          '<div class="sup">'+esc(n[4])+'</div>'+
-          '<div class="rv-ctrls"><button class="rv-btn acc'+(st.decision==='acc'?' on':'')+'" data-d="acc">Accept</button>'+
-          '<button class="rv-btn rej'+(st.decision==='rej'?' on':'')+'" data-d="rej">Reject</button></div>'+
-          '<textarea class="rv-cmt" placeholder="Edit the wording (your words win), or comment">'+esc(st.comment)+'</textarea></div>';
-      }).join('')+
-      '<p class="note">A new warrant not already carried by a proposition is an AIQ item (G3), not added here silently.</p>';
-    function prog(){var a=0;nodes.forEach(function(n){var s=lsGet(keyOf(n[0]))||{};if(s.decision==='acc')a++;});c.querySelector('#agProg').textContent=a+' of '+nodes.length+' accepted';}
-    function flash(){var s=c.querySelector('#agSave');s.textContent='saved';setTimeout(function(){s.textContent='';},1200);}
-    function save(id){var row=c.querySelector('.rv-row[data-id="'+id+'"]');var on=row.querySelector('.rv-btn.on');
-      lsSet(keyOf(id),{decision:on?on.dataset.d:'nd',comment:row.querySelector('.rv-cmt').value});prog();flash();}
-    c.querySelectorAll('.rv-row').forEach(function(row){var id=row.dataset.id;
-      row.querySelectorAll('.rv-btn').forEach(function(b){b.addEventListener('click',function(){
-        row.querySelectorAll('.rv-btn').forEach(function(x){x.classList.remove('on');});b.classList.add('on');save(id);});});
-      row.querySelector('.rv-cmt').addEventListener('input',function(){save(id);});});
-    c.querySelector('#agExport').addEventListener('click',function(){
-      var rows=nodes.map(function(n){var s=lsGet(keyOf(n[0]))||{decision:'nd',comment:''};
-        return {project_id:proj,an_id:n[0],type:n[1],p_id:n[2],outline_id:n[3],text:s.comment||n[4],
-          status:(s.decision==='acc'?'Approved':(s.decision==='rej'?'Rejected':'Pending')),author_id:'HD'};});
-      var obj={_note:"Exported from the ACPP board G3 review. Replace this section's rows in database/argument_nodes.json, then commit.",project_id:proj,section_id:sec.sid,nodes:rows};
-      ghCommitOrDownload('argument_nodes.'+sec.sid+'.json',obj,this);});
-    prog();
+    var proj="dmbok-v3-ch1";
+    var kOf=function(id){return 'acpp.'+proj+'.'+sec.sid+'.G3.'+id;};
+    var addedKey='acpp.'+proj+'.'+sec.sid+'.G3.added';
+    function added(){return lsGet(addedKey)||[];}
+    function allNodes(){var seed=(sec.art.G3&&sec.art.G3.nodes)?sec.art.G3.nodes:[];return seed.concat(added());}
+    function draw(){
+      var all=allNodes();
+      var active=all.filter(function(n){var s=lsGet(kOf(n[0]))||{};return s.decision!=='rej';});
+      var removed=all.filter(function(n){var s=lsGet(kOf(n[0]))||{};return s.decision==='rej';});
+      var acc=active.filter(function(n){var s=lsGet(kOf(n[0]))||{};return s.decision==='acc';}).length;
+      var bar='<div class="rv-bar"><span class="rv-prog">'+acc+' of '+active.length+' accepted</span><span><span class="rv-save" id="agSave"></span><button class="rv-export" id="agExport">⬆ Commit argument_nodes.json</button></span></div>';
+      var map='<div class="vismapwrap" style="margin-bottom:10px">'+genArgumentSVG(sec)+'</div>';
+      var hint='<div class="rv-cands-h">Live argument map — updates as you accept, reject or add. Reject removes the node from the map.</div>';
+      var cards=active.map(function(n){var s=lsGet(kOf(n[0]))||{decision:'nd',comment:''};
+        return '<div class="rv-row" data-id="'+n[0]+'"><div class="rv-claim"><span class="idc">'+n[0]+'</span> <b>'+esc(n[1])+'</b> · <span class="idc">'+esc(n[2]||'')+'</span>'+(n[3]?' · <span class="idc">'+esc(n[3])+'</span>':'')+'</div>'+
+          '<div class="sup">'+esc(s.comment&&s.comment.trim()?s.comment:n[4])+'</div>'+
+          '<div class="rv-ctrls"><button class="rv-btn acc'+(s.decision==='acc'?' on':'')+'" data-act="acc">Accept</button>'+
+          '<button class="rv-btn rej" data-act="rej">Reject &amp; remove</button></div>'+
+          '<textarea class="rv-cmt" placeholder="Edit the wording (your words win), or comment">'+esc(s.comment||'')+'</textarea></div>';
+      }).join('');
+      var rem=removed.length?('<p class="note">Removed ('+removed.length+'): '+removed.map(function(n){return '<span class="idc">'+n[0]+'</span> <button class="linklike" data-restore="'+n[0]+'">↩ restore</button>';}).join('   ')+'</p>'):'';
+      var addf='<div class="addnode"><b>+ Add a node</b><div class="ar-form"><select id="anType"><option value="Contention">Opening Contention</option><option value="Reason" selected>Supporting Reason</option><option value="Warrant">Warrant</option><option value="Qualification">Qualification</option><option value="Counterpoint">Counterpoint</option><option value="Conclusion">Intended Conclusion</option></select><input id="anPid" placeholder="P-ID (optional)"><input id="anText" placeholder="Node text"><button class="rv-btn" id="anAdd">Add</button></div></div>';
+      c.innerHTML=bar+map+hint+cards+rem+addf;
+      function flash(){var e=c.querySelector('#agSave');if(e){e.textContent='saved';setTimeout(function(){e.textContent='';},1000);}}
+      c.querySelectorAll('.rv-row').forEach(function(row){var id=row.dataset.id;
+        row.querySelector('[data-act="acc"]').addEventListener('click',function(){var s=lsGet(kOf(id))||{};s.decision='acc';s.comment=row.querySelector('.rv-cmt').value;lsSet(kOf(id),s);draw();});
+        row.querySelector('[data-act="rej"]').addEventListener('click',function(){var s=lsGet(kOf(id))||{};s.decision='rej';s.comment=row.querySelector('.rv-cmt').value;lsSet(kOf(id),s);draw();});
+        row.querySelector('.rv-cmt').addEventListener('input',function(){var s=lsGet(kOf(id))||{};s.comment=this.value;if(!s.decision)s.decision='nd';lsSet(kOf(id),s);flash();});});
+      c.querySelectorAll('[data-restore]').forEach(function(b){b.addEventListener('click',function(){var id=b.dataset.restore,s=lsGet(kOf(id))||{};s.decision='nd';lsSet(kOf(id),s);draw();});});
+      var ab=c.querySelector('#anAdd'); if(ab) ab.addEventListener('click',function(){var t=c.querySelector('#anText').value.trim();if(!t)return;var ty=c.querySelector('#anType').value,pid=c.querySelector('#anPid').value.trim();var id='ANU-'+Date.now().toString(36).toUpperCase().slice(-6);var arr=added();arr.push([id,ty,pid,'',t]);lsSet(addedKey,arr);lsSet(kOf(id),{decision:'acc',comment:''});draw();});
+      var ex=c.querySelector('#agExport'); if(ex) ex.addEventListener('click',function(){var rows=active.map(function(n){var s=lsGet(kOf(n[0]))||{};return {project_id:proj,an_id:n[0],type:n[1],p_id:n[2]||null,outline_id:n[3]||null,text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:(s.decision==='acc'?'Approved':'Pending'),author_id:'HD'};});var obj={_note:"Exported from the ACPP board G3 review (incl. author-added nodes; rejected nodes removed).",project_id:proj,section_id:sec.sid,nodes:rows};ghCommitOrDownload('argument_nodes.'+sec.sid+'.json',obj,this);});
+    }
+    draw();
   }
   function buildFreezeReview(c, sec){
     var proj="dmbok-v3-ch1", g5=sec.art.G5, key='acpp.'+proj+'.'+sec.sid+'.G5.freeze';
@@ -818,7 +830,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     function evSup(pid){var s=dec('G4',pid);return s.decision==='acc'&&!!s.src;}
     function evListed(pid){var g4=sec.art&&sec.art.G4;return !!(g4&&g4.evid&&g4.evid.some(function(e){return e[0]===pid;}));}
     var items=[],contention=null,conclusion=null;
-    if(sec.art.G3&&sec.art.G3.nodes){sec.art.G3.nodes.forEach(function(n){var s=dec('G3',n[0]);var st=s.decision==='rej'?'rej':(s.decision==='acc'?'acc':'pend');var it={id:n[0],pid:n[2],type:n[1],text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:st};if(n[1]==='Contention')contention=it;else if(n[1]==='Conclusion')conclusion=it;else items.push(it);});}
+    if(sec.art.G3&&sec.art.G3.nodes){g3Active(sec).forEach(function(n){var s=dec('G3',n[0]);var st=s.decision==='rej'?'rej':(s.decision==='acc'?'acc':'pend');var it={id:n[0],pid:n[2],type:n[1],text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:st};if(n[1]==='Contention')contention=it;else if(n[1]==='Conclusion')conclusion=it;else items.push(it);});}
     else if(sec.art.G2){var g2=sec.art.G2;var rows=g2.props?g2.props.map(function(p){return {id:p[0],type:p[1],text:p[2],pid:p[0],status:'acc'};}):(g2.backfill||[]).map(function(e){var s=dec('G2',e[0]);return {id:e[0],type:e[2],text:(s.text&&s.text!==''?s.text:e[3]),pid:e[0],status:s.decision==='rej'?'rej':(s.decision==='acc'?'acc':'pend')};});rows.forEach(function(it){if(it.type==='Contention')contention=it;else if(it.type==='Conclusion')conclusion=it;else items.push(it);});}
     var aiqs=(sec.aiq||[]).map(function(q){var s=dec('AIQ',q[0]);return {id:q[0],text:q[2],resolved:(s.decision==='accept'||s.decision==='reject')};}).filter(function(a){return !a.resolved;});
     var W=860,bw=184,bh=68,gap=20,perRow=4,topY=18,rowY=contention?150:44,rws=Math.ceil(items.length/perRow)||1,rowH=bh+74,concY=rowY+rws*rowH+6,H=concY+bh+34;

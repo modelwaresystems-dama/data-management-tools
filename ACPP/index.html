@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.8.4">
+<meta name="version" content="2.9.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -139,6 +139,9 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .ghline{font-size:.72rem;color:var(--muted,#667);font-family:ui-monospace,monospace;margin:4px 0 0}
 .ghmsg{font-size:.74rem;color:var(--muted,#667)}
 .vismapwrap{overflow:auto;border:1px solid var(--line,#ddd);border-radius:10px;padding:8px;background:#fcfcfd;margin:6px 0}
+.rendoc{background:var(--surface2,#f0ebe0);border:1px solid var(--line,#ddd);border-radius:8px;padding:10px 12px;font-size:.9rem;line-height:1.55;margin:6px 0}
+.rendoc p{margin:0 0 8px}
+.rendoc p:last-child{margin-bottom:0}
 .viskey{display:flex;flex-wrap:wrap;gap:12px;font-size:.72rem;color:var(--muted,#566);margin:6px 0 2px}
 .viskey i.k{display:inline-block;width:12px;height:12px;border-radius:2px;border:1.5px solid;vertical-align:-1px;margin-right:3px}
 .viskey .tierk{flex-basis:100%;font-family:var(--mono);color:var(--soft);font-size:.7rem}
@@ -645,6 +648,8 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   }
   function gateStatus(sec, gk){
     if(gk==='G5' && sec.art && sec.art.G5){var fs=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G5.freeze')||{};return fs.decision==='frozen'?'complete':(sec.gates.G5||'waiting');}
+    if(gk==='G6'){var _r=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G6.render')||{};if(_r.decision==='complete')return 'complete';var _fr=(lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G5.freeze')||{}).decision==='frozen';return _fr?'active':(sec.gates.G6||'waiting');}
+    if(gk==='G7'){var _a7=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G7.assure')||{};if(_a7.decision==='signed')return 'complete';var _r6=(lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G6.render')||{}).decision==='complete';return _r6?'active':(sec.gates.G7||'waiting');}
     var t=reviewTally(sec, gk);
     if(t && t.total>0){ if(t.acc===t.total) return 'complete'; if(t.acc>0) return 'active'; }
     return sec.gates[gk]||'waiting';
@@ -750,8 +755,10 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
            (gateStatus(sec,'G4')==='complete'?gateSummary(sec,'G4'):'<div id="evReview"></div>');
     } else if(gk==="G5" && a && a.baseline){
       body='<div id="frzReview"></div>';
-    } else if(gk==="G6" && a){
-      body='<table><tbody><tr><th>Status</th><td>'+esc(a.status)+'</td></tr><tr><th>Manuscript</th><td>'+esc(a.ref)+'</td></tr><tr><th>Size</th><td>'+esc(a.words)+'</td></tr></tbody></table>';
+    } else if(gk==="G6"){
+      body=(a&&a.ref?'<p class="note"><b>Target manuscript:</b> '+esc(a.ref)+'</p>':'')+'<div id="renderReview"></div>';
+    } else if(gk==="G7"){
+      body='<div id="assureReview"></div>';
     } else {
       var why={backfill:"This gate was skipped — prose was reached before it. Its artifact must be backfilled before G7.",waiting:"This gate hasn't started — upstream gates must complete first.",active:"In progress.",complete:"Complete."}[st];
       body='<p class="empty">No artifact to show yet. '+why+'</p>';
@@ -838,6 +845,73 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       var ro=c.querySelector('#frReopen'); if(ro) ro.addEventListener('click',function(){lsSet(key,{decision:'open'});render(sel.value);});
     }
     draw();
+  }
+  function g4acc(sec,pid){var s=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G4.'+pid)||{};return (s.decision==='acc'&&s.src)?{src:s.src,quote:s.quote||''}:null;}
+  function srcCite(sec,srcId){var found='';((sec.art&&sec.art.G4&&sec.art.G4.evid)||[]).forEach(function(e){(e[4]||[]).forEach(function(cd){if(cd.id===srcId&&cd.cite)found=cd.cite;});});return found||srcId;}
+  function buildRenderReview(c,sec){
+    var proj="dmbok-v3-ch1";
+    var frozen=(lsGet('acpp.'+proj+'.'+sec.sid+'.G5.freeze')||{}).decision==='frozen';
+    if(!frozen){c.innerHTML='<p class="empty">G6 Render needs a frozen baseline. Freeze the section at G5 first, then return here — render assembles only from a frozen baseline.</p>';return;}
+    var dkey='acpp.'+proj+'.'+sec.sid+'.G6.render';
+    var nodes=g3Active(sec).filter(function(n){return (lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+n[0])||{}).decision!=='rej';});
+    function fnOf(n){return g3L(sec,n[0]).fn||n[1];}
+    function tier(n){var f=fnOf(n);return f==='Contention'?1:(f==='Conclusion'?5:(['Warrant','Qualification','Counterpoint'].indexOf(f)>=0?3:2));}
+    var ord=nodes.map(function(n,i){return {n:n,i:i,t:tier(n)};}).sort(function(a,b){return a.t-b.t||a.i-b.i;}).map(function(x){return x.n;});
+    function txt(n){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+n[0])||{};return (s.comment&&s.comment.trim()?s.comment:n[4]);}
+    function citeId(n){var a=g4acc(sec,n[2]);return a?a.src:'';}
+    var cont=ord.filter(function(n){return fnOf(n)==='Contention';});
+    var conc=ord.filter(function(n){return fnOf(n)==='Conclusion';});
+    var mids=ord.filter(function(n){return fnOf(n)!=='Contention'&&fnOf(n)!=='Conclusion';});
+    var trace=[],refs={},paras=[];
+    function emit(list){var sent=list.map(function(n){var cc=citeId(n);if(cc)refs[cc]=1;trace.push({para:paras.length+1,node:n[0],pid:n[2],src:cc});return txt(n)+(cc?' ['+cc+']':'');});paras.push(sent.join(' '));}
+    if(cont.length)emit(cont);
+    if(mids.length)emit(mids);
+    if(conc.length)emit(conc);
+    var draftDefault=paras.join('\n\n');
+    var saved=lsGet(dkey)||{};
+    var draft=(saved.draft!=null&&saved.draft!=='')?saved.draft:draftDefault;
+    var done=saved.decision==='complete';
+    var refList=Object.keys(refs);
+    c.innerHTML='<div class="rv-bar"><span class="rv-prog">'+ord.length+' nodes → '+paras.length+' paragraphs · '+refList.length+' source'+(refList.length!==1?'s':'')+' cited</span><span><span class="rv-save" id="g6save"></span>'+(done?'<button class="rv-btn" id="g6reopen">Re-open</button>':'<button class="rv-btn acc on" id="g6done">Mark render complete</button>')+' <button class="rv-export" id="g6commit">⬆ Commit render.'+sec.sid+'.json</button></span></div>'+
+      '<p class="note">Assembled scaffold from the frozen baseline — the approved propositions in reading order (contention → reasons → warrants/qualifications → conclusion), each with its accepted source in [brackets]. Edit freely; your words win. No new claims are introduced.</p>'+
+      '<div class="rendoc">'+paras.map(function(p){return '<p>'+esc(p)+'</p>';}).join('')+'</div>'+
+      '<label class="qlab" style="margin-top:8px">Editable draft (your words win)</label>'+
+      '<textarea class="rv-quote" id="g6draft" style="min-height:160px">'+esc(draft)+'</textarea>'+
+      '<h4 style="margin:12px 0 4px">Paragraph trace</h4>'+
+      '<table><thead><tr><th>¶</th><th>Node</th><th>P-ID</th><th>Source</th></tr></thead><tbody>'+trace.map(function(t){return '<tr><td>'+t.para+'</td><td class="idc">'+esc(t.node)+'</td><td class="idc">'+esc(t.pid)+'</td><td class="idc">'+esc(t.src||'—')+'</td></tr>';}).join('')+'</tbody></table>'+
+      '<h4 style="margin:12px 0 4px">References</h4>'+(refList.length?'<ul style="margin:4px 0;padding-left:18px">'+refList.map(function(s){return '<li>'+esc(srcCite(sec,s))+' <span class="idc">('+esc(s)+')</span></li>';}).join('')+'</ul>':'<p class="muted">No accepted sources yet — run G4 first.</p>');
+    function save(extra){var s=lsGet(dkey)||{};s.draft=c.querySelector('#g6draft').value;if(extra)for(var k in extra)s[k]=extra[k];lsSet(dkey,s);var e=c.querySelector('#g6save');if(e){e.textContent='saved';setTimeout(function(){e.textContent='';},900);}}
+    c.querySelector('#g6draft').addEventListener('input',function(){save();});
+    var d=c.querySelector('#g6done');if(d)d.addEventListener('click',function(){save({decision:'complete'});render(sel.value);});
+    var ro=c.querySelector('#g6reopen');if(ro)ro.addEventListener('click',function(){save({decision:'open'});render(sel.value);});
+    c.querySelector('#g6commit').addEventListener('click',function(){var s=lsGet(dkey)||{};var obj={_note:'ACPP G6 Render — assembled from the frozen baseline; author-edited draft.',project_id:proj,section_id:sec.sid,draft:(s.draft!=null&&s.draft!==''?s.draft:draft),paragraphs:paras.length,paragraph_trace:trace,references:refList.map(function(x){return {src_id:x,cite:srcCite(sec,x)};}),complete:s.decision==='complete',author_id:'HD'};ghCommitOrDownload('render.'+sec.sid+'.json',obj,this);});
+  }
+  function buildAssureReview(c,sec){
+    var proj="dmbok-v3-ch1";
+    var key='acpp.'+proj+'.'+sec.sid+'.G7.assure';
+    var nodes=g3Active(sec).filter(function(n){return (lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+n[0])||{}).decision!=='rej';});
+    var frozen=(lsGet('acpp.'+proj+'.'+sec.sid+'.G5.freeze')||{}).decision==='frozen';
+    var renderDone=(lsGet('acpp.'+proj+'.'+sec.sid+'.G6.render')||{}).decision==='complete';
+    var evNeeded=nodes.filter(function(n){return g3L(sec,n[0]).ev;});
+    var evMissing=evNeeded.filter(function(n){return !g4acc(sec,n[2]);});
+    var passMissing=evNeeded.filter(function(n){var a=g4acc(sec,n[2]);return a&&!(a.quote&&a.quote.trim());});
+    var aiqOpen=(sec.aiq||[]).filter(function(q){var stx=lsGet('acpp.'+proj+'.'+sec.sid+'.AIQ.'+q[0])||{};return stx.decision!=='accept'&&stx.decision!=='reject';}).length;
+    var checks=[
+      ['Baseline frozen (G5)',frozen,''],
+      ['Render complete (G6)',renderDone,''],
+      ['Every evidence-needed claim has an accepted source',evMissing.length===0,evMissing.length+' missing'],
+      ['Every accepted source carries a verbatim passage',passMissing.length===0,passMissing.length+' without passage'],
+      ['All AIQ resolved (none quarantined)',aiqOpen===0,aiqOpen+' open'],
+      ['Every node traced to a paragraph',renderDone,renderDone?'':'render first']
+    ];
+    var allPass=checks.every(function(c0){return c0[1];});
+    var stt=lsGet(key)||{};var signed=stt.decision==='signed';
+    c.innerHTML='<div class="rv-bar"><span class="rv-prog">'+checks.filter(function(c0){return c0[1];}).length+' of '+checks.length+' checks pass</span><span><span class="rv-save" id="g7save"></span>'+(signed?'<button class="rv-btn" id="g7reopen">Re-open</button>':'<button class="rv-btn acc'+(allPass?' on':'')+'" id="g7sign"'+(allPass?'':' disabled')+'>Sign off G7 (Assure)</button>')+' <button class="rv-export" id="g7commit">⬆ Commit assure.'+sec.sid+'.json</button></span></div>'+
+      '<table><thead><tr><th>Assurance check</th><th>Result</th></tr></thead><tbody>'+checks.map(function(c0){return '<tr><td>'+esc(c0[0])+'</td><td><span class="pill '+(c0[1]?'ok':'need')+'">'+(c0[1]?'PASS':('FAIL'+(c0[2]?' · '+esc(c0[2]):'')))+'</span></td></tr>';}).join('')+'</tbody></table>'+
+      '<p class="note">'+(signed?('✓ Assured · '+esc(stt.date||'')):(allPass?'All checks pass — sign off to complete G7 and the pipeline.':'Resolve the failing checks before sign-off.'))+'</p>';
+    var sign=c.querySelector('#g7sign');if(sign)sign.addEventListener('click',function(){if(!allPass)return;lsSet(key,{decision:'signed',date:new Date().toISOString().slice(0,10)});render(sel.value);});
+    var ro=c.querySelector('#g7reopen');if(ro)ro.addEventListener('click',function(){lsSet(key,{decision:'open'});render(sel.value);});
+    c.querySelector('#g7commit').addEventListener('click',function(){var s=lsGet(key)||{};var obj={_note:'ACPP G7 Assure — QA checklist sign-off.',project_id:proj,section_id:sec.sid,checks:checks.map(function(c0){return {check:c0[0],pass:c0[1],detail:c0[2]||null};}),all_pass:allPass,signed:s.decision==='signed',signed_date:s.date||null,author_id:'HD'};ghCommitOrDownload('assure.'+sec.sid+'.json',obj,this);});
   }
   var sel=document.getElementById('proj');
   Object.keys(PROJECTS).forEach(function(id){var o=document.createElement('option');o.value=id;o.textContent=PROJECTS[id].title;sel.appendChild(o);});
@@ -1003,6 +1077,8 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     var ac=det.querySelector('#argReview'); if(ac) buildArgumentReview(ac,sec);
     var evc=det.querySelector('#evReview'); if(evc) buildEvidenceReview(evc,sec);
     var fc=det.querySelector('#frzReview'); if(fc) buildFreezeReview(fc,sec);
+    var rc=det.querySelector('#renderReview'); if(rc) buildRenderReview(rc,sec);
+    var asc=det.querySelector('#assureReview'); if(asc) buildAssureReview(asc,sec);
     wireDetail(det,sec,gk);}
   function render(id){
     var p=PROJECTS[id];

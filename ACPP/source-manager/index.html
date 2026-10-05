@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.5.0">
+<meta name="version" content="1.6.0">
 <title>ACPP Source Manager</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -1213,7 +1213,9 @@
   var HKEY='acpp.sources.hcoll';
   var HCOLL=loadJSON(HKEY,{});
   function saveHcoll(){saveJSON(HKEY,HCOLL);}
-  var LINKS=loadJSON(LKEY,[]);        // link records
+  var LINKS=padLinks(loadJSON(LKEY,[]));        // link records
+  function padId(x){return String(x||'').replace(/^([PNBC])-(\d{1,2})\.(\d{1,2})-/,function(m,p,a,b){return p+'-'+('0'+a).slice(-2)+'.'+('0'+b).slice(-2)+'-';});}
+  function padLinks(a){(a||[]).forEach(function(l){if(l.an_id)l.an_id=padId(l.an_id);if(l.proposition_id)l.proposition_id=padId(l.proposition_id);});return a;}
   var REFS=loadJSON(RKEY,{nodes:[],props:[]}); // pulled argument nodes + propositions
 
   /* ---------- CSL item types + per-type fields ---------- */
@@ -1456,7 +1458,7 @@
     var have={};ITEMS.forEach(function(i){have[i.id]=1;});
     var addedS=0;(seed.items||[]).forEach(function(it){if(!have[it.id]){ITEMS.push(it);have[it.id]=1;addedS++;}});
     var lk={};LINKS.forEach(function(l){lk[(l.source_id||'')+'|'+(l.proposition_id||'')+'|'+(l.an_id||'')]=1;});
-    var addedL=0;(seed.links||[]).forEach(function(l){var k=(l.source_id||'')+'|'+(l.proposition_id||'')+'|'+(l.an_id||'');if(!lk[k]){if(!l.id)l.id=nextId('LNK-',LINKS,'id');LINKS.push(l);lk[k]=1;addedL++;}});
+    var addedL=0;(seed.links||[]).forEach(function(l){if(l.an_id)l.an_id=padId(l.an_id);if(l.proposition_id)l.proposition_id=padId(l.proposition_id);var k=(l.source_id||'')+'|'+(l.proposition_id||'')+'|'+(l.an_id||'');if(!lk[k]){if(!l.id)l.id=nextId('LNK-',LINKS,'id');LINKS.push(l);lk[k]=1;addedL++;}});
     saveJSON(SKEY,ITEMS);saveJSON(LKEY,LINKS);renderLib();
     alert('Loaded '+addedS+' new source(s) and '+addedL+' new link(s) from the ACPP board (G4 evidence). Review, then Save to GitHub to write sources.json.');
   }
@@ -1737,7 +1739,7 @@
     return ghGetJson(SRCPATH()).then(function(data){
       if(!data){if(verbose)ghStatus('no sources.json yet (Save to create)','');return;}
       if(Array.isArray(data)){ITEMS=data;}
-      else{ITEMS=data.items||[];LINKS=data.links||[];}
+      else{ITEMS=data.items||[];LINKS=padLinks(data.links||[]);}
       saveJSON(SKEY,ITEMS);saveJSON(LKEY,LINKS);renderLib();
       if(verbose)ghStatus('pulled '+ITEMS.length+' sources, '+LINKS.length+' links','ok');
     }).catch(function(e){if(verbose)ghStatus('pull error: '+e.message,'err');});
@@ -1755,8 +1757,8 @@
       return Promise.all([Promise.all(nodeFiles.map(ghGetJson)),Promise.all(propFiles.map(ghGetJson))]);
     }).then(function(res){
       var nodes=[],props=[];
-      res[0].forEach(function(d){if(!d)return;var arr=Array.isArray(d)?d:(d.nodes||d.items||[]);arr.forEach(function(n){nodes.push({id:n.id||n.an_id||n.node_id,label:n.label||n.fn||n.function||n.text||''});});});
-      res[1].forEach(function(d){if(!d)return;var arr=Array.isArray(d)?d:(d.propositions||d.items||[]);arr.forEach(function(p){props.push({id:p.id||p.p_id||p.proposition_id||p.pid,text:p.text||p.statement||p.claim||p.proposition||''});});});
+      res[0].forEach(function(d){if(!d)return;var arr=Array.isArray(d)?d:(d.nodes||d.items||[]);arr.forEach(function(n){nodes.push({id:padId(n.id||n.an_id||n.node_id),label:n.label||n.fn||n.function||n.text||''});});});
+      res[1].forEach(function(d){if(!d)return;var arr=Array.isArray(d)?d:(d.propositions||d.items||[]);arr.forEach(function(p){props.push({id:padId(p.id||p.p_id||p.proposition_id||p.pid),text:p.text||p.statement||p.claim||p.proposition||''});});});
       // dedupe
       var ns={},ps={};REFS.nodes=nodes.filter(function(n){if(!n.id||ns[n.id])return false;ns[n.id]=1;return true;});
       REFS.props=props.filter(function(p){if(!p.id||ps[p.id])return false;ps[p.id]=1;return true;});

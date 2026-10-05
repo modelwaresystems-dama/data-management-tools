@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.14.0">
+<meta name="version" content="2.15.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -254,12 +254,12 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       if(r.ok){ghStatus('connected · '+GH.owner()+'/'+GH.repo(),true);ghRefreshFiles().then(function(){return ghRehydrate(false);}).then(function(){return ghPullContent();}).then(function(){try{render(sel.value);}catch(e){}});}else{ghStatus('error: '+(j.message||('HTTP '+r.status)));}});}).catch(function(e){ghStatus('error: '+e);});}
   function ghGetJson(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;try{return JSON.parse(decodeURIComponent(escape(atob(String(j.content).replace(/\s/g,'')))));}catch(e){return null;}}).catch(function(){return null;});}
   function ghPutLocal(k,val,overwrite,n){try{if(!overwrite&&localStorage.getItem(k)!=null)return;lsSet(k,val);n.c++;}catch(e){}}
-  function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);var n={c:0},P='acpp.dmbok-v3-ch1.',jobs=[];
+  function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);var n={c:0},P='acpp.dmbok-v3-ch1.',jobs=[];var padId=function(x){return String(x||'').replace(/^([PNBC])-(\d{1,2})\.(\d{1,2})-/,function(m,pp,a,b){return pp+'-'+('0'+a).slice(-2)+'.'+('0'+b).slice(-2)+'-';});};
     function pull(fn,apply){if(!GHFILES[fn])return Promise.resolve();return ghGetJson(GH.dir()+'/'+fn).then(function(o){if(o)apply(o);});}
     proj.sections.forEach(function(sec){var sid=sec.sid;
-      jobs.push(pull('propositions.'+sid+'.json',function(o){(o.propositions||[]).forEach(function(p){if(p.p_id)ghPutLocal(P+sid+'.G2.'+p.p_id,{decision:'acc',text:(p.text!=null?p.text:''),comment:''},overwrite,n);});}));
-      jobs.push(pull('argument_nodes.'+sid+'.json',function(o){(o.nodes||[]).forEach(function(nd){if(!nd.an_id)return;var d=nd.status==='Approved'?'acc':(nd.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G3.'+nd.an_id,{decision:d,comment:nd.text||''},overwrite,n);});}));
-      jobs.push(pull('evidence_links.'+sid+'.json',function(o){(o.links||[]).forEach(function(l){if(!l.p_id)return;var d=l.status==='Supported'?'acc':(l.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G4.'+l.p_id,{decision:d,src:l.src_id||'',comment:l.reviewer_comment||'',quote:l.passage||'',locator:l.locator||''},overwrite,n);});}));
+      jobs.push(pull('propositions.'+sid+'.json',function(o){(o.propositions||[]).forEach(function(p){if(p.p_id)ghPutLocal(P+sid+'.G2.'+padId(p.p_id),{decision:'acc',text:(p.text!=null?p.text:''),comment:''},overwrite,n);});}));
+      jobs.push(pull('argument_nodes.'+sid+'.json',function(o){(o.nodes||[]).forEach(function(nd){if(!nd.an_id)return;var d=nd.status==='Approved'?'acc':(nd.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G3.'+padId(nd.an_id),{decision:d,comment:nd.text||''},overwrite,n);});}));
+      jobs.push(pull('evidence_links.'+sid+'.json',function(o){(o.links||[]).forEach(function(l){if(!l.p_id)return;var d=l.status==='Supported'?'acc':(l.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G4.'+padId(l.p_id),{decision:d,src:l.src_id||'',comment:l.reviewer_comment||'',quote:l.passage||'',locator:l.locator||''},overwrite,n);});}));
       jobs.push(pull('freeze.'+sid+'.json',function(o){if(o.frozen)ghPutLocal(P+sid+'.G5.freeze',{decision:'frozen',date:o.frozen_date||'',hash:o.content_hash||''},overwrite,n);}));
       jobs.push(pull('ai_quarantine.'+sid+'.json',function(o){(o.items||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));ghPutLocal(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''},overwrite,n);});}));
     });

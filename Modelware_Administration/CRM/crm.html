@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="d7d5253c1a7b" data-built="2 Oct 2026" data-version="1.52.0">
+<meta name="crm-build" content="70beb350c79d" data-built="2 Oct 2026" data-version="1.53.0">
 <!-- Repo versioning standard: the Asset Navigator build reads this. Written by
      dev/stamp-build.py from the crm-build line above, never typed twice. -->
-<meta name="version" content="1.52.0">
+<meta name="version" content="1.53.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1952,6 +1952,63 @@ function foldedInto(st, dealId){
     .filter(function (k){ return liveDeal(st, k) === dealId; })
     .map(function (k){ return st.mergedDeals[k]; })
     .sort(function (a, b){ return (a.mergedAt || "") < (b.mergedAt || "") ? -1 : 1; });
+}
+
+/* WHAT FOLDING THIS INTO THAT WOULD DO.
+
+   "I need to have functionality to merge 2 deals that are 1." (Howard, 6 Oct
+   2026 — two WON deals at one customer, R23,000 and R23,500, won-by-deal-value
+   reading R46,500 against R27,025 actually invoiced.)
+
+   Folding already did the right thing; the control was built only for open
+   deals, so the one case where the arithmetic visibly lies — two closed deals
+   double-counting one engagement — had no way to reach it. Closing a won deal
+   into another changes the tally and may change the outcome, so the prompt has
+   to say so BEFORE the press, which means the consequences have to be
+   computable. Hence this: pure, so it can be asserted, and so the dialog and
+   the test are reading the same answer.
+
+   The two VALUES are never summed on our own initiative (same reason as C16 and
+   C23: an amount nobody quoted is not a fact). `combined` is offered; it is not
+   applied. */
+function foldImpact(st, cfg, fromId, intoId){
+  var from = st.deals[fromId], into = st.deals[intoId];
+  if (!from || !into || fromId === intoId) return null;
+  var fromOpen = from.status === "open", intoOpen = into.status === "open";
+  var o = {
+    from:from, into:into,
+    interactions: interactionsFor(st, fromId).length,
+    steps: openFollowupsFor(st, fromId).length,
+    invoices: invoicesFor(st, fromId).length,
+    quotes: quotesFor(st, fromId).length,
+    sameCompany: from.companyId === into.companyId,
+    fromOpen:fromOpen, intoOpen:intoOpen,
+    fromOutcome: fromOpen ? null : (from.outcome || null),
+    intoOutcome: intoOpen ? null : (into.outcome || null),
+    /* The engagement's standing AFTER the fold is the receiving deal's — the
+       folded one stops being a deal, so its own Won or Lost stops counting. */
+    afterOpen: intoOpen,
+    afterOutcome: intoOpen ? null : (into.outcome || null),
+    outcomeChanges: false,
+    value: from.value == null ? null : round2(from.value),
+    currency: from.currency || "",
+    intoValue: into.value == null ? null : round2(into.value),
+    intoCurrency: into.currency || "",
+    sameCurrency: (from.currency || "") === (into.currency || ""),
+    combined: null,
+    /* What the company's "Won, by deal value" loses. Only meaningful when the
+       two sit under the same customer, which is the case that was wrong. */
+    wonValueDrops: 0,
+    wonCountDrops: 0
+  };
+  if (!fromOpen && (o.afterOpen || o.afterOutcome !== o.fromOutcome)) o.outcomeChanges = true;
+  if (o.value != null && o.intoValue != null && o.sameCurrency)
+    o.combined = round2(o.value + o.intoValue);
+  if (o.fromOutcome === "won"){
+    o.wonCountDrops = 1;
+    if (o.value != null) o.wonValueDrops = o.value;
+  }
+  return o;
 }
 
 function openDeals(st){
@@ -5798,7 +5855,7 @@ var API = {
   sortEvents:sortEvents, foldEvents:foldEvents,
   openFollowups:openFollowups, followupsFor:followupsFor, openFollowupsFor:openFollowupsFor,
   stepsToHandOver:stepsToHandOver, strandedSteps:strandedSteps,
-  liveDeal:liveDeal, foldedInto:foldedInto,
+  liveDeal:liveDeal, foldedInto:foldedInto, foldImpact:foldImpact,
   activeCompanies:activeCompanies, archivedCompanies:archivedCompanies,
   isArchived:isArchived, archiveImpact:archiveImpact,
   effectiveDue:effectiveDue, DEFAULT_TERMS_DAYS:DEFAULT_TERMS_DAYS,
@@ -8254,6 +8311,13 @@ function openDeal(dealId){
     if (d.lossReason) headRow.appendChild(h("span", { class:"chip plain", text:d.lossReason }));
     headRow.appendChild(h("button", { class:"btn btn-sm quiet", type:"button",
       onclick:function (){ emit("deal.reopened", { dealId:d.id }); render(); openDeal(d.id); } }, "Reopen"));
+    /* ALSO on a closed deal. Two deals that are one engagement are usually only
+       noticed after both have been marked won — which is exactly when the
+       arithmetic starts lying, and exactly where the control was missing. */
+    headRow.appendChild(h("button", { class:"btn btn-sm quiet", type:"button",
+      title:"Two deals that are really one engagement \u2014 everything logged here moves " +
+            "there, and this stops counting as a deal of its own.",
+      onclick:function (e){ foldDealPrompt(e.currentTarget, d); } }, "Fold into\u2026"));
   }
   head.appendChild(headRow);
   panel.appendChild(head);
@@ -8327,6 +8391,30 @@ function openDeal(dealId){
           (x.mergeReason ? " \u2014 " + x.mergeReason : "") + ". " }),
         h("a", { href:"#", onclick:(function (id){ return function (e){
             e.preventDefault(); unfoldDeal(id); }; })(x.id) }, "Separate it again")));
+      /* What it was carrying when it stopped being a deal. Said as a fact, not a
+         nag: nobody will re-derive R23,000 from an event log in six weeks, and
+         whether the engagement is worth both numbers is a judgement, not
+         arithmetic the CRM is entitled to make. */
+      if (x.value != null){
+        var same = (x.currency || "") === (d.currency || "");
+        var sumv = (same && d.value != null) ? C.round2(x.value + d.value) : null;
+        var line = h("div", { class:"note", style:"padding:0 0 3px 10px" },
+          h("span", { text:"It was carried at " + C.fmtMoney(x.value, x.currency) +
+            (x.status === "open" ? "" : " (" + (x.outcome === "won" ? "won" : "lost") + ")") +
+            ". This deal is " +
+            (d.value == null ? "carrying no value." : C.fmtMoney(d.value, d.currency) + ".") + " " }));
+        if (sumv != null && sumv !== C.round2(d.value))
+          line.appendChild(h("a", { href:"#",
+            title:"Only if the engagement really is worth both",
+            onclick:(function (v, nm){ return function (e){
+              e.preventDefault();
+              emit("deal.updated", { dealId:d.id, value:v });
+              render(); openDeal(d.id);
+              toast("Value set to " + C.fmtMoney(v, d.currency) + ".");
+            }; })(sumv, x.name) },
+            "make it " + C.fmtMoney(sumv, d.currency)));
+        sec.appendChild(line);
+      }
     });
     body.appendChild(sec);
   })();
@@ -8821,17 +8909,18 @@ function closeDealPrompt(anchor, d){
    so it can be undone. */
 function foldDealPrompt(anchor, d){
   var co = C.dealParty(App.st, d);
+  var closed = d.status !== "open";
   var box = h("div");
   box.appendChild(h("h4", { text:"Fold " + d.name + " into another deal" }));
   box.appendChild(h("div", { class:"note",
-    text:"For a deal that turned out to be part of one that already existed. Everything " +
-         "logged here moves across \u2014 nothing is deleted, nothing is marked won or lost, " +
-         "and this can be undone." }));
-
-  var ix = C.interactionsFor(App.st, d.id).length;
-  var fu = C.openFollowupsFor(App.st, d.id).length;
-  var inv = C.invoicesFor(App.st, d.id).length;
-  var qs = C.quotesFor(App.st, d.id).length;
+    text: closed
+      ? "For two deals that turned out to be one engagement. Everything logged here " +
+        "moves across, and this stops counting as a deal of its own \u2014 so it leaves " +
+        "the win tally and the won-by-deal-value total. Nothing is deleted, and this " +
+        "can be undone."
+      : "For a deal that turned out to be part of one that already existed. Everything " +
+        "logged here moves across \u2014 nothing is deleted, nothing is marked won or lost, " +
+        "and this can be undone." }));
 
   var sel = h("select", { "aria-label":"Fold into which deal" });
   sel.appendChild(h("option", { value:"" }, "\u2014 choose the deal this belongs to \u2014"));
@@ -8859,20 +8948,80 @@ function foldDealPrompt(anchor, d){
   }
   box.appendChild(h("label", { class:"fld" }, h("span", { text:"Into" }), sel));
 
-  var what = h("div", { class:"note" });
+  var what  = h("div", { class:"note" });
+  var effect = h("div", { class:"note", style:"display:none" });
+  /* The two values are NEVER added behind anybody's back. R23,000 plus R23,500
+     is only R46,500 if the engagement really was both \u2014 and the one place that
+     is known is the person pressing the button, at the moment they press it. Off
+     by default, because leaving a number alone cannot invent one. */
+  var addBox = h("input", { type:"checkbox" });
+  var addLab = h("label", { style:"display:none;align-items:center;gap:7px;font-size:12px;margin:2px 0 0" },
+    addBox, h("span", null));
+  box.appendChild(what);
+  box.appendChild(effect);
+  box.appendChild(addLab);
+
   var sync = function (){
-    var t = App.st.deals[sel.value];
+    var im = sel.value ? C.foldImpact(App.st, App.config, d.id, sel.value) : null;
+    if (!im){
+      what.textContent = "Choose the deal this one belongs to.";
+      effect.style.display = "none"; addLab.style.display = "none";
+      return;
+    }
     var bits = [];
-    if (ix) bits.push(ix + " logged interaction" + (ix === 1 ? "" : "s"));
-    if (fu) bits.push(fu + " open next step" + (fu === 1 ? "" : "s"));
-    if (inv) bits.push(inv + " invoice" + (inv === 1 ? "" : "s"));
-    if (qs) bits.push(qs + " quote" + (qs === 1 ? "" : "s"));
-    what.textContent = (bits.length ? bits.join(", ") : "Nothing is logged on this deal") +
-      (t ? " move" + (bits.length ? "" : "s") + " to \u201c" + t.name + "\u201d." :
-           ". Choose the deal they belong to.");
+    if (im.interactions) bits.push(im.interactions + " logged interaction" + (im.interactions === 1 ? "" : "s"));
+    if (im.steps)        bits.push(im.steps + " open next step" + (im.steps === 1 ? "" : "s"));
+    if (im.invoices)     bits.push(im.invoices + " invoice" + (im.invoices === 1 ? "" : "s"));
+    if (im.quotes)       bits.push(im.quotes + " quote" + (im.quotes === 1 ? "" : "s"));
+    what.textContent = (bits.length
+      ? bits.join(", ") + " move to \u201c" + im.into.name + "\u201d."
+      : "Nothing is logged on this deal; it simply stops being one.");
+
+    /* What it does to the tallies, said before the press. */
+    var lines = [];
+    if (im.outcomeChanges)
+      lines.push("This deal is marked " + (im.fromOutcome === "won" ? "Won" : "Lost") +
+        " and \u201c" + im.into.name + "\u201d is " +
+        (im.afterOpen ? "still open \u2014 after folding, the engagement counts as open again."
+          : (im.afterOutcome === "won" ? "Won \u2014 after folding, the engagement counts as one win."
+             : "Lost \u2014 after folding, the engagement counts as lost.")));
+    else if (!im.fromOpen && im.afterOutcome)
+      lines.push("Two " + (im.afterOutcome === "won" ? "wins" : "losses") +
+                 " become one. The win rate stops counting this twice.");
+    if (im.wonValueDrops)
+      lines.push("Won by deal value" + (im.sameCompany ? " for this customer" : "") +
+        " drops by " + C.fmtMoney(im.wonValueDrops, im.currency) +
+        (im.intoValue != null && im.sameCurrency
+          ? ", leaving " + C.fmtMoney(im.intoValue, im.intoCurrency) + " on \u201c" + im.into.name + "\u201d."
+          : "."));
+    else if (im.wonCountDrops && im.value == null)
+      lines.push("This deal carries no value, so no total changes \u2014 only the count of wins.");
+    clear(effect);
+    lines.forEach(function (t){ effect.appendChild(h("div", { text:t })); });
+    effect.style.display = lines.length ? "" : "none";
+
+    /* Offering the sum, and never applying it unasked. */
+    if (im.combined != null && im.value){
+      addLab.style.display = "flex";
+      addLab.lastChild.textContent =
+        "Add this deal\u2019s " + C.fmtMoney(im.value, im.currency) + " to \u201c" +
+        im.into.name + "\u201d, making it " + C.fmtMoney(im.combined, im.intoCurrency) +
+        " \u2014 tick only if the engagement really is both.";
+    } else {
+      addLab.style.display = "none"; addBox.checked = false;
+      if (im.value != null && im.intoValue != null && !im.sameCurrency)
+        effect.appendChild(h("div", { style:"color:var(--warn)",
+          text:"The two are in different currencies (" + (im.currency || "no currency") +
+               " and " + (im.intoCurrency || "no currency") +
+               "), so the values cannot be combined here \u2014 set the right one with Edit." }));
+      if (im.value != null && im.intoValue == null)
+        effect.appendChild(h("div", {
+          text:"\u201c" + im.into.name + "\u201d carries no value. This one\u2019s " +
+               C.fmtMoney(im.value, im.currency) + " will be recorded on the fold, not copied across." }));
+      if (effect.childNodes.length) effect.style.display = "";
+    }
   };
   sel.addEventListener("change", sync); sync();
-  box.appendChild(what);
 
   var r = h("input", { type:"text", "aria-label":"Reason",
     placeholder:"e.g. same engagement, created by a stray thread" });
@@ -8884,22 +9033,32 @@ function foldDealPrompt(anchor, d){
     h("button", { class:"btn btn-sm primary", type:"button", onclick:function (){
       var into = sel.value;
       if (!into){ toast("Choose the deal this one belongs to.", "err"); return; }
+      var im = C.foldImpact(App.st, App.config, d.id, into);
       closeLayers("pop");
-      foldDeal(d, into, r.value.trim());
+      foldDeal(d, into, r.value.trim(),
+               (addBox.checked && im && im.combined != null) ? im.combined : null);
     } }, "Fold it in")));
-  openPopover(anchor, box, { width:420 });
+  openPopover(anchor, box, { width:440 });
 }
 
-function foldDeal(d, intoId, reason){
+function foldDeal(d, intoId, reason, newValue){
   var name = d.name, fromId = d.id;
   var target = App.st.deals[intoId];
   var tname = target ? target.name : "the other deal";
+  /* Captured before the fold so Undo can put the number back exactly, rather
+     than subtracting and hoping nothing else touched it in between. */
+  var wasValue = target ? target.value : null;
+  var changedValue = (newValue != null && target && newValue !== wasValue);
   emit("deal.merged", { fromId:fromId, intoId:intoId, reason:reason || "" });
+  if (changedValue) emit("deal.updated", { dealId:intoId, value:newValue });
   closeLayers(); App.openDealId = null; render();
   openDeal(C.liveDeal(App.st, fromId));
-  toast(name + " folded into " + tname + ". Nothing was deleted.", null,
+  toast(name + " folded into " + tname + "." +
+        (changedValue ? " " + tname + " is now " +
+           C.fmtMoney(newValue, target.currency) + "." : " Nothing was deleted."), null,
         { label:"Undo", fn:function (){
             emit("deal.unmerged", { fromId:fromId });
+            if (changedValue) emit("deal.updated", { dealId:intoId, value:wasValue });
             render(); openDeal(fromId);
             toast(name + " is a deal again.");
           } });
@@ -11978,7 +12137,19 @@ function viewCompanies(el){
                   ? h("div", { class:"note", style:"font-size:11.5px",
                       text: party.isIndividual ? party.name : "(nobody named)" })
                   : null,
-                h("div", { text:d.name }), chipsFor(d.id, 3)),
+                h("div", { text:d.name }), chipsFor(d.id, 3),
+                /* Two deals that are one engagement are SPOTTED here \u2014 standing
+                   at the customer, looking at both rows at once. Reaching the
+                   fix meant opening one of them first and knowing the button
+                   existed. Only offered when there is a second deal to fold
+                   into: a lone deal cannot be a duplicate of anything. */
+                deals.length > 1
+                  ? h("a", { href:"#", style:"font-size:11px",
+                      title:"Two deals that are really one engagement \u2014 fold this one in",
+                      onclick:(function (dd){ return function (e){
+                        e.preventDefault(); e.stopPropagation();
+                        foldDealPrompt(e.currentTarget, dd); }; })(d) }, "fold\u2026")
+                  : null),
               /* Blank says "nobody has set one", and says it in the place you
                  would go to set it \u2014 the channel lives on the DEAL, so the row
                  is the way in. */

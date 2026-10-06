@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.1.0">
+<meta name="version" content="1.2.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -96,14 +96,17 @@
   </details>
 
   <div class="panel">
-    <div class="row">
+    <div class="row" style="align-items:flex-start">
+      <div>
+        <label class="fl">1 · Section</label>
+        <select id="secFilter" class="secfilter"><option value="">All sections</option></select>
+      </div>
       <div style="flex:1;min-width:260px">
-        <label class="fl" for="picker">Add element to trace</label>
-        <select id="picker"><option value="">Type or pick an element…</option></select>
-        <div class="hint">Pick an Outline bullet, Proposition, Argument node, Evidence source or Render to focus the chain.</div>
+        <label class="fl" for="picker">2 · Add element to trace</label>
+        <select id="picker" style="width:100%"><option value="">Type or pick an element…</option></select>
       </div>
       <div>
-        <label class="fl">Direction</label>
+        <label class="fl">3 · Direction</label>
         <div class="seg" id="dirSeg">
           <button data-d="anc">Ancestors ↑</button>
           <button data-d="both" class="on">Both</button>
@@ -111,15 +114,15 @@
         </div>
       </div>
       <div>
-        <label class="fl">Section</label>
-        <select id="secFilter" class="secfilter"><option value="">All sections</option></select>
+        <label class="fl">&nbsp;</label>
+        <label class="btn" style="font-size:.85rem;display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="onlyConn" checked> Only connected paths</label>
       </div>
       <div>
         <label class="fl">&nbsp;</label>
-        <label style="font-size:.85rem"><input type="checkbox" id="onlyConn" checked> Only connected paths</label>
+        <span id="status" style="display:inline-block;padding-top:8px">loading…</span>
       </div>
-      <span id="status">loading…</span>
     </div>
+    <div class="hint">Choose a Section first to narrow the elements, then add an element to trace its chain. Direction sets ancestors (upstream) / descendants (downstream) / both.</div>
     <div class="chips" id="focusChips"></div>
     <div class="legend">
       <span><i class="tchip tB">B</i> Outline bullet</span>
@@ -227,14 +230,19 @@
 
   // ---- controls ----
   var focus=[], dir='both';
-  function populateControls(){
-    var pk=document.getElementById('picker'); pk.innerHTML='<option value="">Type or pick an element…</option>';
+  function populatePicker(){
+    var secF=document.getElementById('secFilter').value;
+    var pk=document.getElementById('picker');
+    pk.innerHTML='<option value="">Type or pick an element…</option>';
     var order={B:0,P:1,A:2,E:3,R:4};
-    Object.keys(NODES).sort(function(a,b){var na=NODES[a],nb=NODES[b];return (order[na.tier]-order[nb.tier])||(a<b?-1:1);}).forEach(function(id){
-      var n=NODES[id];var o=document.createElement('option');o.value=id;o.textContent=n.tier+' · '+id+' · '+String(n.text).slice(0,50);pk.appendChild(o);
-    });
+    Object.keys(NODES).filter(function(id){return !secF||NODES[id].section===secF;})
+      .sort(function(a,b){var na=NODES[a],nb=NODES[b];return (order[na.tier]-order[nb.tier])||(a<b?-1:1);})
+      .forEach(function(id){var n=NODES[id];var o=document.createElement('option');o.value=id;o.textContent=n.tier+' · '+id+' · '+String(n.text).slice(0,50);pk.appendChild(o);});
+  }
+  function populateControls(){
     var sf=document.getElementById('secFilter'); sf.innerHTML='<option value="">All sections</option>';
     Object.keys(SECTIONS).sort().forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=SECTIONS[s].label;sf.appendChild(o);});
+    populatePicker();
     // gaps
     var bulletsNoP=0,propsNoA=0,propsNoE=0,secNoR=0;
     Object.keys(NODES).forEach(function(id){var n=NODES[id];
@@ -319,7 +327,7 @@
   document.getElementById('ghPull').addEventListener('click',function(){loadAll(true);});
   document.getElementById('ghForget').addEventListener('click',function(){LS.del('acpp.gh.pat');document.getElementById('ghPat').value='';setStatus('token forgotten');});
   document.getElementById('picker').addEventListener('change',function(){if(this.value){if(focus.indexOf(this.value)<0){focus.push(this.value);renderChips();render();}this.value='';}});
-  document.getElementById('secFilter').addEventListener('change',render);
+  document.getElementById('secFilter').addEventListener('change',function(){populatePicker();render();});
   document.getElementById('onlyConn').addEventListener('change',render);
   document.querySelectorAll('#dirSeg button').forEach(function(b){b.addEventListener('click',function(){dir=b.dataset.d;document.querySelectorAll('#dirSeg button').forEach(function(x){x.classList.toggle('on',x===b);});render();});});
   window.addEventListener('resize',function(){requestAnimationFrame(function(){drawLinks(connectedSet(),document.getElementById('onlyConn').checked);});});

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.19.0">
+<meta name="version" content="3.0.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -261,16 +261,35 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       }else{ghStatus('error: '+(j.message||('HTTP '+r.status)));}});}).catch(function(e){ghStatus('error: '+e);});}
   function ghGetJson(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;try{return JSON.parse(decodeURIComponent(escape(atob(String(j.content).replace(/\s/g,'')))));}catch(e){return null;}}).catch(function(){return null;});}
   function ghPutLocal(k,val,overwrite,n){try{if(!overwrite&&localStorage.getItem(k)!=null)return;lsSet(k,val);n.c++;}catch(e){}}
-  function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);var n={c:0},P='acpp.dmbok-v3-ch1.',jobs=[];var padId=function(x){return String(x||'').replace(/^([PNBC])-(\d{1,2})\.(\d{1,2})-/,function(m,pp,a,b){return pp+'-'+('0'+a).slice(-2)+'.'+('0'+b).slice(-2)+'-';});};
+  // ===== Data-driven gates: registers are the source of truth; seed is fallback =====
+  var padId=function(x){return String(x||'').replace(/^([PNBC])-(\d{1,2})\.(\d{1,2})-/,function(m,pp,a,b){return pp+'-'+('0'+a).slice(-2)+'.'+('0'+b).slice(-2)+'-';});};
+  var SRCIDX={items:{},links:[]};
+  function buildSrcIndex(sj){SRCIDX={items:{},links:(sj&&sj.links)||[]};((sj&&sj.items)||[]).forEach(function(i){SRCIDX.items[i.id]=i;});}
+  function _authTier(note){var a='',t='';var m=/Authority:\s*([^·]+)/.exec(note||'');if(m)a=m[1].trim();var m2=/·\s*(.+)$/.exec(note||'');if(m2)t=m2[1].trim();return {auth:a,tier:t};}
+  function _supportsFor(srcId,pid){for(var i=0;i<SRCIDX.links.length;i++){var l=SRCIDX.links[i];if(l.source_id===srcId&&padId(l.proposition_id)===padId(pid))return {sup:l.passage||'',strg:l.support_strength||''};}return {sup:'',strg:''};}
+  function buildG2(o){return {sources:"Committed propositions."+(o.section_id||'')+".json (register)",backfill:(o.propositions||[]).map(function(p){return [padId(p.p_id),p.outline_id||'',p.type||'Claim',p.text||''];})};}
+  function buildG3(o){return {sources:"Committed argument_nodes."+(o.section_id||'')+".json (register)",nodes:(o.nodes||[]).map(function(n){return [padId(n.an_id),n.type,padId(n.p_id),n.outline_id||'',n.text||'',(n.depends_on||[]).map(padId),(n.leads_to||[]).map(padId),!!n.evidence_needed];}),drift:[],aiqNote:""};}
+  function buildG4(o){return {sources:"Committed evidence_links + sources.json (registers)",findings:"Built from the committed registers.",evid:(o.links||[]).map(function(l){var it=SRCIDX.items[l.src_id]||{};var at=_authTier(it.note);var s=_supportsFor(l.src_id,l.p_id);var status=l.status==='Supported'?'Supported':(l.status==='Rejected'?'Rejected':'NEEDS-SOURCE');return [padId(l.p_id),null,status,at.tier||at.auth||'',[{id:l.src_id||'',tier:at.tier||l.support_strength||'',cite:it.title||l.src_id||'',auth:at.auth||'',supports:s.sup||l.reviewer_comment||'',url:it.URL||'',quote:l.passage||'',locator:l.locator||''}]];})};}
+  function buildG1map(oj){var arr=(oj&&(oj.outlines||oj.items))||(Array.isArray(oj)?oj:[]);var m={};arr.forEach(function(e){var sid=e.section_id||e.sid;if(sid)m[sid]={heading:e.heading||'',boundary:e.boundary||'',intended_conclusion:e.intended_conclusion||'',bullets:e.bullets||[],threads:e.threads||[]};});return m;}
+  function installGate(sec,gate,struct){if(sec&&struct){if(!sec.art)sec.art={};sec.art[gate]=struct;}}
+  function cacheSet(key,val){try{localStorage.setItem('acpp.dmbok-v3-ch1.cache.'+key,JSON.stringify(val));}catch(e){}}
+  function cacheGet(key){try{var v=localStorage.getItem('acpp.dmbok-v3-ch1.cache.'+key);return v?JSON.parse(v):null;}catch(e){return null;}}
+  function hydrateFromCache(){try{var proj=PROJECTS[sel.value];if(!proj)return;var om=cacheGet('OUTLINES');if(om)Object.keys(om).forEach(function(k){OUTLINES[k]=om[k];});proj.sections.forEach(function(sec){['G2','G3','G4'].forEach(function(g){var c=cacheGet(sec.sid+'.'+g);if(c)installGate(sec,g,c);});});}catch(e){}}
+  function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);var n={c:0},P='acpp.dmbok-v3-ch1.',jobs=[];
     function pull(fn,apply){if(!GHFILES[fn])return Promise.resolve();return ghGetJson(GH.dir()+'/'+fn).then(function(o){if(o)apply(o);});}
-    proj.sections.forEach(function(sec){var sid=sec.sid;
-      jobs.push(pull('propositions.'+sid+'.json',function(o){(o.propositions||[]).forEach(function(p){if(p.p_id)ghPutLocal(P+sid+'.G2.'+padId(p.p_id),{decision:'acc',text:(p.text!=null?p.text:''),comment:''},overwrite,n);});}));
-      jobs.push(pull('argument_nodes.'+sid+'.json',function(o){(o.nodes||[]).forEach(function(nd){if(!nd.an_id)return;var d=nd.status==='Approved'?'acc':(nd.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G3.'+padId(nd.an_id),{decision:d,comment:nd.text||''},overwrite,n);});}));
-      jobs.push(pull('evidence_links.'+sid+'.json',function(o){(o.links||[]).forEach(function(l){if(!l.p_id)return;var d=l.status==='Supported'?'acc':(l.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G4.'+padId(l.p_id),{decision:d,src:l.src_id||'',comment:l.reviewer_comment||'',quote:l.passage||'',locator:l.locator||''},overwrite,n);});}));
-      jobs.push(pull('freeze.'+sid+'.json',function(o){if(o.frozen)ghPutLocal(P+sid+'.G5.freeze',{decision:'frozen',date:o.frozen_date||'',hash:o.content_hash||''},overwrite,n);}));
-      jobs.push(pull('ai_quarantine.'+sid+'.json',function(o){(o.items||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));ghPutLocal(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''},overwrite,n);});}));
-    });
-    return Promise.all(jobs).then(function(){return n.c;});}
+    var pre=[];
+    pre.push(ghGetJson(GH.dir()+'/sources.json').then(function(sj){if(sj)buildSrcIndex(sj);}));
+    pre.push((GHFILES['outlines.json']?ghGetJson(GH.dir()+'/outlines.json'):Promise.resolve(null)).then(function(oj){if(oj){var m=buildG1map(oj);Object.keys(m).forEach(function(k){OUTLINES[k]=m[k];});cacheSet('OUTLINES',m);}}));
+    return Promise.all(pre).then(function(){
+      proj.sections.forEach(function(sec){var sid=sec.sid;
+        jobs.push(pull('propositions.'+sid+'.json',function(o){installGate(sec,'G2',buildG2(o));cacheSet(sid+'.G2',sec.art.G2);(o.propositions||[]).forEach(function(p){if(p.p_id)ghPutLocal(P+sid+'.G2.'+padId(p.p_id),{decision:(p.status==='Rejected'?'rej':'acc'),text:(p.text!=null?p.text:''),comment:''},overwrite,n);});}));
+        jobs.push(pull('argument_nodes.'+sid+'.json',function(o){installGate(sec,'G3',buildG3(o));cacheSet(sid+'.G3',sec.art.G3);(o.nodes||[]).forEach(function(nd){if(!nd.an_id)return;var d=nd.status==='Approved'?'acc':(nd.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G3.'+padId(nd.an_id),{decision:d,comment:nd.text||''},overwrite,n);});}));
+        jobs.push(pull('evidence_links.'+sid+'.json',function(o){installGate(sec,'G4',buildG4(o));cacheSet(sid+'.G4',sec.art.G4);(o.links||[]).forEach(function(l){if(!l.p_id)return;var d=l.status==='Supported'?'acc':(l.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G4.'+padId(l.p_id),{decision:d,src:l.src_id||'',comment:l.reviewer_comment||'',quote:l.passage||'',locator:l.locator||''},overwrite,n);});}));
+        jobs.push(pull('freeze.'+sid+'.json',function(o){if(o.frozen)ghPutLocal(P+sid+'.G5.freeze',{decision:'frozen',date:o.frozen_date||'',hash:o.content_hash||''},overwrite,n);}));
+        jobs.push(pull('ai_quarantine.'+sid+'.json',function(o){(o.items||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));ghPutLocal(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''},overwrite,n);});}));
+      });
+      return Promise.all(jobs).then(function(){return n.c;});
+    });}
   function applyBoardContent(bc){
     if(!bc||!bc.sections||!bc.sections.length)return false;
     var proj=sel.value;
@@ -1239,6 +1258,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     if(collAll){var hcNow=lsGet('acpp.board.h1coll')||{};var allCol=groups.length&&groups.every(function(g){return hcNow[g.hn];});collAll.textContent=allCol?'Expand all headings':'Collapse all headings';}
   }
   sel.addEventListener('change',function(){render(sel.value);});
+  hydrateFromCache();
   render(sel.value);
   ghInitPanel();
 </script>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.8.0">
+<meta name="version" content="1.9.0">
 <title>ACPP Source Manager</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -1221,6 +1221,12 @@
   function propNodeMap(){var m={};((typeof REFS!=='undefined'&&REFS.nodes)||[]).forEach(function(n){if(n.p_id){(m[n.p_id]=m[n.p_id]||[]).push(n.id);}});return m;}
   function effNode(l,pm){if(l.an_id)return l.an_id;pm=pm||propNodeMap();var a=pm[l.proposition_id]||[];return a.length===1?a[0]:'';}
   function nodeIsDerived(l){return !l.an_id && !!effNode(l);}
+  // node<->proposition relations for cross-filtering the By Argument pickers
+  function argRelations(){var pm=propNodeMap();var n2p={},p2n={};
+    function add(m,k,v){if(!k||!v)return;(m[k]=m[k]||{})[v]=1;}
+    ((typeof REFS!=='undefined'&&REFS.nodes)||[]).forEach(function(n){if(n.p_id){add(n2p,n.id,n.p_id);add(p2n,n.p_id,n.id);}});
+    ((typeof LINKS!=='undefined'&&LINKS)||[]).forEach(function(l){var en=effNode(l,pm),p=l.proposition_id;if(en&&p){add(n2p,en,p);add(p2n,p,en);}});
+    return {n2p:n2p,p2n:p2n};}
   var REFS=loadJSON(RKEY,{nodes:[],props:[]}); // pulled argument nodes + propositions
 
   /* ---------- CSL item types + per-type fields ---------- */
@@ -1580,15 +1586,22 @@
   });
 
   /* ---------- BY ARGUMENT ---------- */
-  function populateArgFilters(){
+  function populateArgFilters(fn,fp){
+    var rel=argRelations();
+    // Node picker: if a proposition is selected, show only its related nodes (plus the selected node itself).
+    var allowNode=fp?Object.assign({},rel.p2n[fp]||{}):null; if(allowNode&&fn)allowNode[fn]=1;
     var an=document.getElementById('argNode');an.innerHTML='<option value="">— all nodes —</option>';
-    REFS.nodes.forEach(function(n){var o=document.createElement('option');o.value=n.id;o.textContent=n.id+(n.label?' · '+n.label:'');an.appendChild(o);});
-    // also include node ids that only appear in links
-    var seen={};REFS.nodes.forEach(function(n){seen[n.id]=1;});
-    LINKS.forEach(function(l){if(l.an_id&&!seen[l.an_id]){seen[l.an_id]=1;var o=document.createElement('option');o.value=l.an_id;o.textContent=l.an_id;an.appendChild(o);}});
+    var nseen={};var nodeList=[];
+    REFS.nodes.forEach(function(n){if(!nseen[n.id]){nseen[n.id]=1;nodeList.push({id:n.id,label:n.label});}});
+    LINKS.forEach(function(l){if(l.an_id&&!nseen[l.an_id]){nseen[l.an_id]=1;nodeList.push({id:l.an_id,label:''});}});
+    nodeList.forEach(function(n){if(allowNode&&!allowNode[n.id])return;var o=document.createElement('option');o.value=n.id;o.textContent=n.id+(n.label?' · '+n.label:'');an.appendChild(o);});
+    // Proposition picker: if a node is selected, show only its related propositions (plus the selected prop itself).
+    var allowProp=fn?Object.assign({},rel.n2p[fn]||{}):null; if(allowProp&&fp)allowProp[fp]=1;
     var pr=document.getElementById('argProp');pr.innerHTML='<option value="">— all propositions —</option>';
-    var pseen={};REFS.props.forEach(function(p){pseen[p.id]=1;var o=document.createElement('option');o.value=p.id;o.textContent=p.id+(p.text?' · '+p.text.slice(0,40):'');pr.appendChild(o);});
-    LINKS.forEach(function(l){if(l.proposition_id&&!pseen[l.proposition_id]){pseen[l.proposition_id]=1;var o=document.createElement('option');o.value=l.proposition_id;o.textContent=l.proposition_id;pr.appendChild(o);}});
+    var pseen={};var propList=[];
+    REFS.props.forEach(function(p){if(!pseen[p.id]){pseen[p.id]=1;propList.push({id:p.id,text:p.text});}});
+    LINKS.forEach(function(l){if(l.proposition_id&&!pseen[l.proposition_id]){pseen[l.proposition_id]=1;propList.push({id:l.proposition_id,text:''});}});
+    propList.forEach(function(p){if(allowProp&&!allowProp[p.id])return;var o=document.createElement('option');o.value=p.id;o.textContent=p.id+(p.text?' · '+p.text.slice(0,40):'');pr.appendChild(o);});
   }
   function workOf(it){
     if(it.group) return it.group;
@@ -1637,7 +1650,7 @@
   }
   function renderByArg(){
     var fn=document.getElementById('argNode').value, fp=document.getElementById('argProp').value;
-    populateArgFilters();
+    populateArgFilters(fn,fp);
     document.getElementById('argNode').value=fn; document.getElementById('argProp').value=fp;
     var pm=propNodeMap();var sel=LINKS.filter(function(l){return (!fn||effNode(l,pm)===fn)&&(!fp||l.proposition_id===fp);});
     var el=document.getElementById('byArgList');
@@ -1659,8 +1672,16 @@
       return '<div class="card"><div style="margin-bottom:8px">'+head+' <span class="count">'+groups[k].length+' source'+(groups[k].length>1?'s':'')+'</span></div>'+rows+'</div>';
     }).join('');
   }
-  document.getElementById('argNode').addEventListener('change',renderByArg);
-  document.getElementById('argProp').addEventListener('change',renderByArg);
+  document.getElementById('argNode').addEventListener('change',function(){
+    var fn=this.value, fp=document.getElementById('argProp').value, rel=argRelations();
+    if(fn&&fp&&!(rel.n2p[fn]&&rel.n2p[fn][fp]))document.getElementById('argProp').value='';
+    renderByArg();
+  });
+  document.getElementById('argProp').addEventListener('change',function(){
+    var fp=this.value, fn=document.getElementById('argNode').value, rel=argRelations();
+    if(fp&&fn&&!(rel.p2n[fp]&&rel.p2n[fp][fn]))document.getElementById('argNode').value='';
+    renderByArg();
+  });
 
   /* ---------- IMPORT ---------- */
   var impParsed=[];

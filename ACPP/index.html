@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.0.0">
+<meta name="version" content="3.0.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -1066,10 +1066,12 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     prog();}
   function vmWrap(t,max,maxl){var w=String(t).split(/\s+/),lines=[],cur='';w.forEach(function(x){if((cur+' '+x).trim().length<=max)cur=(cur+' '+x).trim();else{if(cur)lines.push(cur);cur=x;}});if(cur)lines.push(cur);if(lines.length>maxl){lines=lines.slice(0,maxl);lines[maxl-1]=lines[maxl-1].slice(0,max-1)+'…';}return lines;}
   function vmDoc(x,y){return '<g transform="translate('+x+','+y+')"><rect x="0" y="0" width="13" height="16" rx="1.5" fill="#ffffff" stroke="#2f6f4f" stroke-width="1.2"/><path d="M9,0 L13,4 L9,4 Z" fill="#2f6f4f"/><line x1="3" y1="7" x2="10" y2="7" stroke="#2f6f4f" stroke-width="1"/><line x1="3" y1="10" x2="10" y2="10" stroke="#2f6f4f" stroke-width="1"/></g>';}
-  function vmBox(x,y,w,h,fill,stroke,id,type,text){var l1=id+(type?'   '+type:'');var body=vmWrap(text,36,3);
+  function vmLines(text,w){var cpl=Math.max(14,Math.floor((w-22)/6.2));return vmWrap(text,cpl,8);}
+  function boxHeight(text,w){return Math.max(70,26+vmLines(text,w).length*14+10);}
+  function vmBox(x,y,w,h,fill,stroke,id,type,text){var l1=id+(type?'   '+type:'');var body=vmLines(text,w);
     var t='<rect x="'+x+'" y="'+y+'" rx="8" width="'+w+'" height="'+h+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.6"/>'+
       '<text x="'+(x+11)+'" y="'+(y+17)+'" font-size="10" font-weight="700" fill="'+stroke+'" font-family="ui-monospace,monospace">'+esc(l1)+'</text>';
-    body.forEach(function(ln,i){t+='<text x="'+(x+11)+'" y="'+(y+34+i*13)+'" font-size="11" fill="#1d2630">'+esc(ln)+'</text>';});
+    body.forEach(function(ln,i){t+='<text x="'+(x+11)+'" y="'+(y+33+i*14)+'" font-size="11" fill="#1d2630">'+esc(ln)+'</text>';});
     return t;}
   function genArgumentSVG(sec){var proj="dmbok-v3-ch1";
     function dec(g,id){return lsGet('acpp.'+proj+'.'+sec.sid+'.'+g+'.'+id)||{};}
@@ -1093,9 +1095,12 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     var BLUE=['#dbeafe','#2563eb'],GREEN=['#dcfce7','#16a34a'],AMBER=['#fef3c7','#d97706'],RED=['#fee2e2','#dc2626'],GREY='#5b6b7a';
     function perRow(nodeW){return Math.max(1,Math.floor((W-2*pad+gapX)/(nodeW+gapX)));}
     var pos={},p=[],y=pad,bandMeta=[];
-    [1,2,3,4,5].forEach(function(ti){var arr=tiers[ti];if(!arr.length)return;var isEv=(ti===4),single=(arr.length===1&&!isEv);var nodeW=isEv?ew:(single?360:bw),nodeH=isEv?eh:bh,pr=perRow(nodeW),rows=Math.ceil(arr.length/pr),bandTop=y;
-      arr.forEach(function(it,i){var r=Math.floor(i/pr),cI=i%pr,cnt=Math.min(pr,arr.length-r*pr),rowW=cnt*nodeW+(cnt-1)*gapX,sx=(W-rowW)/2+cI*(nodeW+gapX),sy=bandTop+r*(nodeH+rowGap);it._x=sx;it._y=sy;it._w=nodeW;it._h=nodeH;pos[it.id]={cx:sx+nodeW/2,top:sy,bot:sy+nodeH};});
-      var bandH=rows*nodeH+(rows-1)*rowGap;bandMeta.push({ti:ti,top:bandTop,bot:bandTop+bandH});y=bandTop+bandH+bandGap;});
+    [1,2,3,4,5].forEach(function(ti){var arr=tiers[ti];if(!arr.length)return;var isEv=(ti===4),single=(arr.length===1&&!isEv);var nodeW=isEv?ew:(single?360:bw),pr=perRow(nodeW),rows=Math.ceil(arr.length/pr),bandTop=y;
+      arr.forEach(function(it){it._w=nodeW;it._h=isEv?eh:boxHeight(it.text,nodeW);});
+      var rowH=[];for(var r=0;r<rows;r++){var mh=0;for(var i=r*pr;i<Math.min((r+1)*pr,arr.length);i++){mh=Math.max(mh,arr[i]._h);}rowH[r]=mh;}
+      var rowTop=[],acc=bandTop;for(var r=0;r<rows;r++){rowTop[r]=acc;acc+=rowH[r]+rowGap;}
+      arr.forEach(function(it,i){var r=Math.floor(i/pr),cI=i%pr,cnt=Math.min(pr,arr.length-r*pr),rowW=cnt*nodeW+(cnt-1)*gapX,sx=(W-rowW)/2+cI*(nodeW+gapX),sy=rowTop[r];it._x=sx;it._y=sy;pos[it.id]={cx:sx+nodeW/2,top:sy,bot:sy+it._h};});
+      var bandH=acc-rowGap-bandTop;bandMeta.push({ti:ti,top:bandTop,bot:bandTop+bandH});y=bandTop+bandH+bandGap;});
     var H=y+2;
     p.push('<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="'+GREY+'"/></marker><marker id="aha" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d97706"/></marker></defs>');
     bandMeta.forEach(function(b){p.push('<text x="4" y="'+(b.top+11)+'" font-size="9" fill="#9aa7b4" font-family="ui-monospace,monospace">T'+b.ti+'</text>');});

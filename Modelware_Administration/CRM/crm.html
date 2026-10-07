@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="70beb350c79d" data-built="2 Oct 2026" data-version="1.53.0">
+<meta name="crm-build" content="ddc12c8b604b" data-built="7 Oct 2026" data-version="1.53.1">
 <!-- Repo versioning standard: the Asset Navigator build reads this. Written by
      dev/stamp-build.py from the crm-build line above, never typed twice. -->
-<meta name="version" content="1.53.0">
+<meta name="version" content="1.53.1">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -6668,8 +6668,11 @@ async function ghPutFile(path, text, sha, message){
   if (sha) body.sha = sha;
   var res = await fetch(ghUrl(path), { method:"PUT", headers:
       Object.assign({ "Content-Type":"application/json" }, ghHeaders()), body:JSON.stringify(body) });
-  if (!res.ok)
-    throw new Error(ghExplain(res.status, ghRelPath(path), await res.text(), { write:true }));
+  if (!res.ok){
+    var e = new Error(ghExplain(res.status, ghRelPath(path), await res.text(), { write:true }));
+    e.status = res.status;
+    throw e;
+  }
   return res.json();
 }
 
@@ -6937,20 +6940,35 @@ async function flushPending(){
   try {
     var path = "events/" + App.gh.user + ".jsonl";
     var batch = App.pending.slice();
-    var existing = await ghGetFile(path);
-    var have = {};
-    if (existing) existing.text.split(/\n/).forEach(function (l){
-      l = l.trim(); if (!l) return;
-      try { have[JSON.parse(l).id] = true; } catch (e){}
-    });
-    var lines = batch.filter(function (e){ return !have[e.id]; })
-                     .map(function (e){ return JSON.stringify(e); });
-    if (lines.length){
+    /* On a 409 the file moved under us (another tab/device wrote first, or
+       GitHub had not settled yet). Re-read the current file + sha, re-append
+       only the events still missing, and retry the PUT - the same fetch-and-
+       retry the rosters bot uses, so concurrent writers self-heal instead of
+       surfacing a conflict to the person. */
+    for (var attempt = 1; ; attempt++){
+      var existing = await ghGetFile(path);
+      var have = {};
+      if (existing) existing.text.split(/\n/).forEach(function (l){
+        l = l.trim(); if (!l) return;
+        try { have[JSON.parse(l).id] = true; } catch (e){}
+      });
+      var lines = batch.filter(function (e){ return !have[e.id]; })
+                       .map(function (e){ return JSON.stringify(e); });
+      if (!lines.length) break;
       var base = existing ? existing.text.replace(/\s*$/, "") : "";
       var next = (base ? base + "\n" : "") + lines.join("\n") + "\n";
-      await ghPutFile(path, next, existing ? existing.sha : null,
-                      "crm: " + lines.length + " event" + (lines.length===1?"":"s") +
-                      " from " + App.gh.user + (ghPrefix() ? " (" + ghPrefix() + ")" : ""));
+      try {
+        await ghPutFile(path, next, existing ? existing.sha : null,
+                        "crm: " + lines.length + " event" + (lines.length===1?"":"s") +
+                        " from " + App.gh.user + (ghPrefix() ? " (" + ghPrefix() + ")" : ""));
+        break;
+      } catch (err2){
+        if (err2.status === 409 && attempt < 5){
+          await new Promise(function (r){ setTimeout(r, 400 * attempt); });
+          continue;
+        }
+        throw err2;
+      }
     }
     App.pending = App.pending.filter(function (e){ return batch.indexOf(e) < 0; });
     persistTeam();

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.4.0">
+<meta name="version" content="4.0.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -35,6 +35,7 @@
   .gate.active{box-shadow:inset 0 0 0 1px var(--warn);border-color:var(--warn)} .gate.active .d{color:var(--warn);border-color:var(--warn)}
   .gate.backfill{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 8%,transparent)} .gate.backfill .d{color:var(--bad);border-color:var(--bad)}
   .gate.waiting{opacity:.65} .gate.waiting .d{color:var(--soft)}
+  .gate.ready{box-shadow:inset 0 0 0 1px var(--accent);border-color:var(--accent)} .gate.ready .d{color:var(--accent);border-color:var(--accent)}
   .gate.sel{outline:2px solid var(--accent);outline-offset:1px}
   .flag{margin-top:8px;font-size:.8rem;color:var(--bad);font-weight:600}
   .note{font-size:.84rem;color:var(--soft);margin-top:10px}
@@ -295,8 +296,15 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 <script>
   document.getElementById('appVersion').textContent='v'+document.querySelector('meta[name="version"]').content;
   var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
-  function lsGet(k){try{return JSON.parse(localStorage.getItem(k)||'null');}catch(e){return null;}}
-  function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+  // ===== NO REGISTER CACHING (handover: repo is the only source of truth) =====
+  // All register-derived + in-progress review state lives in memory only, under the acpp.dmbok-v3-ch1.* keyspace,
+  // and is rebuilt fresh from the repo on every load. It is NEVER written to localStorage, so the board can never
+  // show stale cached data. Only connection config (acpp.gh.*) and per-viewer UI (acpp.board.*) use localStorage.
+  var _ram={};
+  function _isReg(k){return String(k).indexOf('acpp.dmbok-v3-ch1.')===0;}
+  function lsGet(k){ if(_isReg(k)) return (k in _ram)?_ram[k]:null; try{return JSON.parse(localStorage.getItem(k)||'null');}catch(e){return null;} }
+  function lsSet(k,v){ if(_isReg(k)){ if(v===null) delete _ram[k]; else _ram[k]=v; return; } try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} }
+  function ramClear(){ _ram={}; }
   function hashMatch(a,b){a=String(a||'').toLowerCase();b=String(b||'').toLowerCase();if(!a||!b)return false;return a===b||a.indexOf(b)===0||b.indexOf(a)===0;}
   function download(name,text){try{var b=new Blob([text],{type:'application/json'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u);},500);}catch(e){alert('Export failed: '+e.message);}}
   // ---- Phase 4: live GitHub integration (private data repo) ----
@@ -306,6 +314,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   var GHFILES={};
   var RENDERREG={};   // section_id -> render register (G6 skill output)
   var METAPHORS=null; // metaphors.json (chapter metaphor track)
+  var PUBCTRL=null;   // publication_control.json (baselines)
   function ghConfigured(){return !!(GH.pat()&&GH.owner()&&GH.repo());}
   function ghHeaders(){return {'Authorization':'Bearer '+GH.pat(),'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};}
   function b64(x){return btoa(unescape(encodeURIComponent(x)));}
@@ -320,21 +329,22 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       if(r.ok){GHFILES[fn]=1;ghToast(btn,'✓ committed to '+GH.repo());}else{download(fn,str);ghToast(btn,'commit failed: '+r.error+' — downloaded instead',true);}});}
   function ghStatus(t,ok){var e=document.getElementById('ghStat');if(e){e.textContent=t;e.className='ghstat'+(ok?' on':'');}}
   function ghRefreshFiles(){if(!ghConfigured())return Promise.resolve();
-    return fetch(ghUrl(GH.dir())+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(arr){
+    return fetch(ghUrl(GH.dir())+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():[];}).then(function(arr){
       GHFILES={};(arr||[]).forEach(function(x){if(x&&x.name)GHFILES[x.name]=1;});
       var el=document.getElementById('ghFiles');if(el){var n=Object.keys(GHFILES).sort();el.innerHTML=n.length?('<b>'+n.length+' files in '+esc(GH.dir())+'/</b><br>'+n.map(esc).join(' · ')):('(no files at '+esc(GH.dir())+')');}
       try{render(sel.value);}catch(e){}}).catch(function(){});}
   function ghConnect(){if(!ghConfigured()){ghStatus('not connected');return;}ghStatus('connecting…');
     fetch('https://api.github.com/repos/'+GH.owner()+'/'+GH.repo(),{headers:ghHeaders()}).then(function(r){return r.json().then(function(j){
-      if(r.ok){ghStatus('auto-refreshing from repo…',true);
+      if(r.ok){ghStatus('loading fresh from repo…',true);
         ghRefreshFiles()
-          .then(function(){return ghRehydrate(false);})
-          .then(function(c){return ghPullContent().then(function(got){
-            ghStatus('connected · '+GH.owner()+'/'+GH.repo()+' · auto-refreshed '+c+' new record'+(c===1?'':'s')+(got?' + content':''),true);
-          });})
+          .then(function(){return ghRehydrate(true);})
+          .then(function(c){var pr=PROJECTS[sel.value];
+            if(pr&&pr._loadError){ghStatus('error: '+pr._loadError);}
+            else{ghStatus('loaded · '+GH.owner()+'/'+GH.repo()+' · '+c+' section'+(c===1?'':'s')+' fresh from repo',true);}
+          })
           .then(function(){try{render(sel.value);}catch(e){}});
       }else{ghStatus('error: '+(j.message||('HTTP '+r.status)));}});}).catch(function(e){ghStatus('error: '+e);});}
-  function ghGetJson(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch()),{headers:ghHeaders()}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;try{return JSON.parse(decodeURIComponent(escape(atob(String(j.content).replace(/\s/g,'')))));}catch(e){return null;}}).catch(function(){return null;});}
+  function ghGetJson(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;try{return JSON.parse(decodeURIComponent(escape(atob(String(j.content).replace(/\s/g,'')))));}catch(e){return null;}}).catch(function(){return null;});}
   function ghPutLocal(k,val,overwrite,n){try{if(!overwrite&&localStorage.getItem(k)!=null)return;lsSet(k,val);n.c++;}catch(e){}}
   // ===== Data-driven gates: registers are the source of truth; seed is fallback =====
   var padId=function(x){return String(x||'').replace(/^([PNBC])-(\d{1,2})\.(\d{1,2})-/,function(m,pp,a,b){return pp+'-'+('0'+a).slice(-2)+'.'+('0'+b).slice(-2)+'-';});};
@@ -343,30 +353,41 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   function _authTier(note){var a='',t='';var m=/Authority:\s*([^·]+)/.exec(note||'');if(m)a=m[1].trim();var m2=/·\s*(.+)$/.exec(note||'');if(m2)t=m2[1].trim();return {auth:a,tier:t};}
   function _supportsFor(srcId,pid){for(var i=0;i<SRCIDX.links.length;i++){var l=SRCIDX.links[i];if(l.source_id===srcId&&padId(l.proposition_id)===padId(pid))return {sup:l.passage||'',strg:l.support_strength||''};}return {sup:'',strg:''};}
   function buildG2(o){return {sources:"Committed propositions."+(o.section_id||'')+".json (register)",backfill:(o.propositions||[]).map(function(p){return [padId(p.p_id),p.outline_id||'',p.type||'Claim',p.text||''];})};}
-  function buildG3(o){return {sources:"Committed argument_nodes."+(o.section_id||'')+".json (register)",nodes:(o.nodes||[]).map(function(n){return [padId(n.an_id),n.type,padId(n.p_id),n.outline_id||'',n.text||'',(n.depends_on||[]).map(padId),(n.leads_to||[]).map(padId),!!n.evidence_needed];}),drift:[],aiqNote:""};}
+  function buildG3(o){return {sources:"Committed argument_nodes."+(o.section_id||'')+".json (register)",nodes:((o.argument_nodes||o.nodes)||[]).map(function(n){return [padId(n.an_id),n.type,padId(n.p_id),n.outline_id||'',n.text||'',(n.depends_on||[]).map(padId),(n.leads_to||[]).map(padId),(n.evidence_needed!=null?!!n.evidence_needed:!!n.evidence_marker),(n.tier!=null?n.tier:null)];}),drift:[],aiqNote:""};}
+  function buildAIQ(o){return ((o&&o.items)||[]).map(function(it){return [it.aiq_id,it.type||'Warrant',it.text||'',it.target_p_id||it.p_id||'',it.status||'Pending'];});}
   function buildG4(o){return {sources:"Committed evidence_links + sources.json (registers)",findings:"Built from the committed registers.",evid:(o.links||[]).map(function(l){var it=SRCIDX.items[l.src_id]||{};var at=_authTier(it.note);var s=_supportsFor(l.src_id,l.p_id);var status=l.status==='Supported'?'Supported':(l.status==='Rejected'?'Rejected':'NEEDS-SOURCE');return [padId(l.p_id),null,status,at.tier||at.auth||'',[{id:l.src_id||'',tier:at.tier||l.support_strength||'',cite:it.title||l.src_id||'',auth:at.auth||'',supports:s.sup||l.reviewer_comment||'',url:it.URL||'',quote:l.passage||'',locator:l.locator||''}]];})};}
   function buildG1map(oj){var arr=(oj&&(oj.outlines||oj.items))||(Array.isArray(oj)?oj:[]);var m={};arr.forEach(function(e){var sid=e.section_id||e.sid;if(sid)m[sid]={heading:e.heading||'',boundary:e.boundary||'',intended_conclusion:e.intended_conclusion||'',bullets:e.bullets||[],threads:e.threads||[]};});return m;}
   function installGate(sec,gate,struct){if(sec&&struct){if(!sec.art)sec.art={};sec.art[gate]=struct;}}
-  function cacheSet(key,val){try{localStorage.setItem('acpp.dmbok-v3-ch1.cache.'+key,JSON.stringify(val));}catch(e){}}
-  function cacheGet(key){try{var v=localStorage.getItem('acpp.dmbok-v3-ch1.cache.'+key);return v?JSON.parse(v):null;}catch(e){return null;}}
-  function hydrateFromCache(){try{var proj=PROJECTS[sel.value];if(!proj)return;var om=cacheGet('OUTLINES');if(om)Object.keys(om).forEach(function(k){OUTLINES[k]=om[k];});var mc=cacheGet('METAPHORS');if(mc)METAPHORS=mc;proj.sections.forEach(function(sec){['G2','G3','G4'].forEach(function(g){var c=cacheGet(sec.sid+'.'+g);if(c)installGate(sec,g,c);});var rc=cacheGet(sec.sid+'.RENDER');if(rc&&rc.renders)RENDERREG[sec.sid]=rc;});}catch(e){}}
-  function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);var n={c:0},P='acpp.dmbok-v3-ch1.',jobs=[];
-    function pull(fn,apply){if(!GHFILES[fn])return Promise.resolve();return ghGetJson(GH.dir()+'/'+fn).then(function(o){if(o)apply(o);});}
-    var pre=[];
-    pre.push(ghGetJson(GH.dir()+'/sources.json').then(function(sj){if(sj)buildSrcIndex(sj);}));
-    pre.push((GHFILES['outlines.json']?ghGetJson(GH.dir()+'/outlines.json'):Promise.resolve(null)).then(function(oj){if(oj){var m=buildG1map(oj);Object.keys(m).forEach(function(k){OUTLINES[k]=m[k];});cacheSet('OUTLINES',m);}}));
-    pre.push((GHFILES['metaphors.json']?ghGetJson(GH.dir()+'/metaphors.json'):Promise.resolve(null)).then(function(mj){if(mj){METAPHORS=mj;cacheSet('METAPHORS',mj);}}));
-    return Promise.all(pre).then(function(){
-      proj.sections.forEach(function(sec){var sid=sec.sid;
-        jobs.push(pull('propositions.'+sid+'.json',function(o){installGate(sec,'G2',buildG2(o));cacheSet(sid+'.G2',sec.art.G2);(o.propositions||[]).forEach(function(p){if(p.p_id)ghPutLocal(P+sid+'.G2.'+padId(p.p_id),{decision:(p.status==='Rejected'?'rej':'acc'),text:(p.text!=null?p.text:''),comment:''},overwrite,n);});}));
-        jobs.push(pull('argument_nodes.'+sid+'.json',function(o){installGate(sec,'G3',buildG3(o));cacheSet(sid+'.G3',sec.art.G3);(o.nodes||[]).forEach(function(nd){if(!nd.an_id)return;var d=nd.status==='Approved'?'acc':(nd.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G3.'+padId(nd.an_id),{decision:d,comment:nd.text||''},overwrite,n);});}));
-        jobs.push(pull('evidence_links.'+sid+'.json',function(o){installGate(sec,'G4',buildG4(o));cacheSet(sid+'.G4',sec.art.G4);(o.links||[]).forEach(function(l){if(!l.p_id)return;var d=l.status==='Supported'?'acc':(l.status==='Rejected'?'rej':'nd');ghPutLocal(P+sid+'.G4.'+padId(l.p_id),{decision:d,src:l.src_id||'',comment:l.reviewer_comment||'',quote:l.passage||'',locator:l.locator||''},overwrite,n);});}));
-        jobs.push(pull('freeze.'+sid+'.json',function(o){if(o.frozen)ghPutLocal(P+sid+'.G5.freeze',{decision:'frozen',date:o.frozen_date||'',hash:o.content_hash||''},overwrite,n);}));
-        jobs.push(pull('render.'+sid+'.json',function(o){if(o&&o.renders){RENDERREG[sid]=o;cacheSet(sid+'.RENDER',o);}}));
-        jobs.push(pull('ai_quarantine.'+sid+'.json',function(o){(o.items||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));ghPutLocal(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''},overwrite,n);});}));
+  function cacheSet(key,val){/* caching removed: repo is the only source of truth */}
+  function cacheGet(key){return null;}
+  function hydrateFromCache(){/* caching removed: nothing is hydrated from local storage; data loads fresh from the repo */}
+  // Load EVERYTHING fresh from the repo. No seed, no cache. The section list itself comes from sections.json.
+  function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);
+    ramClear(); RENDERREG={}; METAPHORS=null; OUTLINES={}; var P='acpp.dmbok-v3-ch1.';
+    function get(fn){return ghGetJson(GH.dir()+'/'+fn);}  // cache-busted
+    var pre=[
+      get('sources.json').then(function(sj){if(sj)buildSrcIndex(sj);}),
+      get('outlines.json').then(function(oj){if(oj)OUTLINES=buildG1map(oj);}),
+      get('metaphors.json').then(function(mj){if(mj)METAPHORS=mj;}),
+      get('publication_control.json').then(function(pc){if(pc)PUBCTRL=pc;})
+    ];
+    return get('sections.json').then(function(sj){
+      if(!sj||!sj.sections||!sj.sections.length){proj.sections=[];proj._loadError='Could not load sections.json from the repo — check the connection and the data path.';return 0;}
+      proj._loadError=null;
+      proj.sections=sj.sections.map(function(s){return {sid:s.section_id,label:s.label||s.section_id,prose:s.prose_status||s.prose||'',gates:s.gates||{},note:s.note||'',art:{},aiq:[]};});
+      return Promise.all(pre).then(function(){
+        var jobs=[];
+        proj.sections.forEach(function(sec){var sid=sec.sid;
+          jobs.push(get('propositions.'+sid+'.json').then(function(o){if(o&&o.propositions){installGate(sec,'G2',buildG2(o));o.propositions.forEach(function(p){if(p.p_id)lsSet(P+sid+'.G2.'+padId(p.p_id),{decision:(p.status==='Rejected'?'rej':'acc'),text:(p.text!=null?p.text:''),comment:''});});}}));
+          jobs.push(get('argument_nodes.'+sid+'.json').then(function(o){var rows=o&&(o.argument_nodes||o.nodes);if(rows){installGate(sec,'G3',buildG3(o));rows.forEach(function(nd){if(!nd.an_id)return;var d=nd.status==='Approved'?'acc':(nd.status==='Rejected'?'rej':'nd');lsSet(P+sid+'.G3.'+padId(nd.an_id),{decision:d,comment:nd.text||''});});}}));
+          jobs.push(get('evidence_links.'+sid+'.json').then(function(o){if(o&&o.links){installGate(sec,'G4',buildG4(o));o.links.forEach(function(l){if(!l.p_id)return;var d=l.status==='Supported'?'acc':(l.status==='Rejected'?'rej':'nd');lsSet(P+sid+'.G4.'+padId(l.p_id),{decision:d,src:l.src_id||'',comment:l.reviewer_comment||'',quote:l.passage||'',locator:l.locator||''});});}}));
+          jobs.push(get('freeze.'+sid+'.json').then(function(o){if(o&&o.frozen){installGate(sec,'G5',{baseline:o.baseline||'',scope:o.scope||'',note:o.note||'',aiqOpen:o.open_aiq||0});lsSet(P+sid+'.G5.freeze',{decision:'frozen',date:o.frozen_date||'',hash:o.content_hash||''});}}));
+          jobs.push(get('render.'+sid+'.json').then(function(o){if(o&&o.renders){RENDERREG[sid]=o;installGate(sec,'G6',{ref:(o.docx&&(o.docx.A_plain||o.docx.B_illustrated))||'',status:'Rendered'});}}));
+          jobs.push(get('ai_quarantine.'+sid+'.json').then(function(o){sec.aiq=buildAIQ(o);((o&&o.items)||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));lsSet(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''});});}));
+        });
+        return Promise.all(jobs).then(function(){return proj.sections.length;});
       });
-      return Promise.all(jobs).then(function(){return n.c;});
-    });}
+    }).catch(function(e){proj._loadError='Load failed: '+(e&&e.message||e);return 0;});}
   function applyBoardContent(bc){
     if(!bc||!bc.sections||!bc.sections.length)return false;
     var proj=sel.value;
@@ -392,7 +413,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       GHset('owner',document.getElementById('ghOwner').value.trim());GHset('repo',document.getElementById('ghRepo').value.trim());
       GHset('branch',document.getElementById('ghBranch').value.trim());GHset('dir',document.getElementById('ghDir').value.trim());
       GHset('pat',document.getElementById('ghPat').value.trim());document.getElementById('ghMsg').textContent=' saved';ghConnect();});
-    document.getElementById('ghPull').addEventListener('click',function(){var m=document.getElementById('ghMsg');m.textContent=' pulling…';ghRehydrate(true).then(function(c){return ghPullContent().then(function(got){m.textContent=' pulled '+c+' records'+(got?' + content':'');try{render(sel.value);}catch(e){}});});});
+    document.getElementById('ghPull').addEventListener('click',function(){var m=document.getElementById('ghMsg');m.textContent=' refreshing from repo…';ghRefreshFiles().then(function(){return ghRehydrate(true);}).then(function(c){var pr=PROJECTS[sel.value];m.textContent=(pr&&pr._loadError)?(' '+pr._loadError):(' refreshed '+c+' sections from repo');try{render(sel.value);}catch(e){}});});
     var _pb=document.getElementById('ghPublish');if(_pb)_pb.addEventListener('click',function(){ghPublishContent(_pb);});
     document.getElementById('ghForget').addEventListener('click',function(){try{localStorage.removeItem('acpp.gh.pat');}catch(e){}document.getElementById('ghPat').value='';document.getElementById('ghMsg').textContent=' token forgotten';ghStatus('not connected');GHFILES={};try{render(sel.value);}catch(e){}});
     ghConnect();
@@ -489,341 +510,16 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   };
 
   // Real outline artifacts (mirror of database/outlines.json) keyed by section_id.
-  var OUTLINES={
-    "DM-01-01-03":{"heading": "1.3 Purpose of this Chapter", "boundary": "Introduce", "intended_conclusion": "The reader understands this chapter as the umbrella that sets the shared language, principles and boundaries the rest of the book reuses.", "bullets": [{"id": "B-01.03-01", "text": "Position this chapter as the umbrella chapter that introduces terminology, principles, high-level activities, and cross-cutting topics used by all other chapters.", "source": null}, {"id": "B-01.03-02", "text": "Preview the Knowledge Areas and explain that later chapters develop operational depth; this chapter provides shared context and boundaries.", "source": null}, {"id": "B-01.03-03", "text": "Establish the shared language, shared concepts, and shared principles that later chapters reuse.", "source": null}, {"id": "B-01.03-04", "text": "Introduce concepts that are developed elsewhere, and say where each one is developed.", "source": null}, {"id": "B-01.03-05", "text": "Leave the history of the DMBOK and the introduction to the framework to the book introduction.", "source": null}], "threads": []},
-    "DM-01-02-02":{"heading": "2.2 Consistent Terminology Across the Book", "boundary": "Introduce", "intended_conclusion": "The reader understands that the DAMA Glossary is the authoritative source of shared terms and that terminology is used consistently across the book.", "bullets": [{"id": "B-02.02-01", "text": "Use the DAMA Glossary as the authoritative source for terms; DMBOK definitions must substantively match the Glossary by publication.", "source": null}, {"id": "B-02.02-02", "text": "Include only terms that support all later chapters; defer specialist terminology to individual Knowledge Area chapters.", "source": null}, {"id": "B-02.02-03", "text": "Add a short “terms used consistently in this book” note to reduce later ambiguity across chapters.", "source": null}], "threads": []},
-    "DM-01-03-01":{"heading": "3.1 Data as an Enterprise Capability", "boundary": "Introduce", "intended_conclusion": "The reader understands data as a strategic, operational and regulated resource the organisation must build capability around.", "bullets": [{"id": "B-03.01-01", "text": "Data as a strategic resource.", "source": null}, {"id": "B-03.01-02", "text": "Data as an operational resource.", "source": null}, {"id": "B-03.01-03", "text": "Data as a regulated resource.", "source": null}], "threads": []},
-    "DM-01-03-02":{"heading": "3.2 Principles of Effective Data Management", "boundary": "Introduce", "intended_conclusion": "The reader understands the core principles that make Data Management effective.", "bullets": [{"id": "B-03.02-01", "text": "Accountability, transparency, and stewardship.", "source": null}, {"id": "B-03.02-02", "text": "Quality and security.", "source": null}, {"id": "B-03.02-03", "text": "Lifecycle management.", "source": null}], "threads": []},
-    "DM-01-03-03":{"heading": "3.3 Data Lifecycle as an Organising Framework", "boundary": "Introduce", "intended_conclusion": "The reader understands the data lifecycle as the organising frame for where Data Management acts.", "bullets": [{"id": "B-03.03-01", "text": "Establish lifecycle positioning: Data Management acts across planning, design, creation and acquisition, storage and maintenance, use, enhancement, and disposal, with governance and controls spanning the lifecycle.", "source": null}, {"id": "B-03.03-02", "text": "Use the lifecycle stages as the organising frame: plan, create or acquire, store and maintain, use, enhance, archive, and dispose.", "source": null}], "threads": []},
-    "DM-01-03-04":{"heading": "3.4 Types of Knowledge Areas", "boundary": "Introduce", "intended_conclusion": "The reader can distinguish data-discipline Knowledge Areas from data-type Knowledge Areas and place later chapters accordingly.", "bullets": [{"id": "B-03.04-01", "text": "Introduce the distinction between data discipline Knowledge Areas and data-type Knowledge Areas.", "source": null}, {"id": "B-03.04-02", "text": "Say which later chapters fall into each category, so readers can place them before they arrive.", "source": null}], "threads": []},
-    "DM-01-04-01":{"heading": "4.1 Categories of Data Management Tools", "boundary": "Introduce", "intended_conclusion": "The reader understands the vendor-neutral categories of Data Management tools and how they map to the lifecycle.", "bullets": [{"id": "B-04.01-01", "text": "Introduce tool categories, not vendor products: data catalogs, glossaries, metadata repositories, data quality tools, integration platforms, security and access management tools, records and content repositories, and reporting and analytics tools.", "source": null}, {"id": "B-04.01-02", "text": "Emphasize that DAMA-DMBOK is not a technology manual and should remain vendor-neutral.", "source": null}, {"id": "B-04.01-03", "text": "Show how tool categories map to lifecycle needs: discover, define, store, protect, integrate, monitor, use, archive, and dispose.", "source": null}], "threads": []},
-    "DM-01-04-02":{"heading": "4.2 Tools Support Data Management", "boundary": "Introduce", "intended_conclusion": "The reader understands that tools enable but do not replace governance, accountability and culture.", "bullets": [{"id": "B-04.02-01", "text": "Explain that tools support people, process, policy, and controls; they do not replace governance, accountability, or culture.", "source": null}, {"id": "B-04.02-02", "text": "People remain accountable, and governance remains necessary.", "source": null}, {"id": "B-04.02-03", "text": "Tools enable Data Management; they do not replace it.", "source": null}], "threads": []},
-    "DM-01-04-03":{"heading": "4.3 Emerging Technology Support", "boundary": "Introduce", "intended_conclusion": "The reader understands that existing tools are being extended for AI oversight rather than forming a separate AI toolset.", "bullets": [{"id": "B-04.03-01", "text": "Describe existing Data Management tools being extended to support AI oversight, AI lineage, AI monitoring, and AI risk visibility, rather than presenting them as a separate class of AI tools.", "source": null}, {"id": "B-04.03-02", "text": "Refer implementation patterns, evaluation checklists, and examples to the digital platform.", "source": null}], "threads": []},
-    "DM-01-05-01":{"heading": "5.1 Enterprise Data Management Frameworks", "boundary": "Introduce", "intended_conclusion": "The reader can use the DAMA framework and context-diagram pattern as a high-level map of the disciplines and their interdependence.", "bullets": [{"id": "B-05.01-01", "text": "Introduce the DAMA framework as the high-level map of data management disciplines and their interdependence, building on the introduction to the wheel given in the book introduction.", "source": null}, {"id": "B-05.01-02", "text": "Use the Data Management context diagram pattern to show goals, inputs, activities, deliverables, roles, tools, techniques, and metrics at a high level.", "source": null}, {"id": "B-05.01-03", "text": "Introduce lifecycle mapping as a technique for locating where each Knowledge Area operates and where handoffs occur.", "source": null}], "threads": []},
-    "DM-01-05-02":{"heading": "5.2 Capability and Maturity Thinking", "boundary": "Introduce", "intended_conclusion": "The reader understands capability and maturity assessment as a high-level technique for finding gaps and priorities.", "bullets": [{"id": "B-05.02-01", "text": "Introduce capability and maturity assessment as a technique for understanding current state, gaps, and improvement priorities, at a high level only, with external comparison frameworks listed in Further Reading rather than described here.", "source": null}], "threads": []},
-    "DM-01-05-03":{"heading": "5.3 Value and Risk Framing", "boundary": "Introduce", "intended_conclusion": "The reader can frame every data activity by value delivered, risk managed and obligations satisfied.", "bullets": [{"id": "B-05.03-01", "text": "Introduce value-and-risk framing: link each data activity to business outcomes, obligations, and risks.", "source": null}, {"id": "B-05.03-02", "text": "Frame every major Data Management activity through value delivered, risk managed, and obligations satisfied.", "source": null}], "threads": []},
-    "DM-01-05-04":{"heading": "5.4 Communication and Change", "boundary": "Introduce", "intended_conclusion": "The reader understands the light-touch communication and change techniques that support adoption.", "bullets": [{"id": "B-05.04-01", "text": "Introduce communication and change techniques lightly: stakeholder mapping, data literacy, shared vocabulary, and adoption planning.", "source": null}], "threads": []},
-    "DM-01-06-01":{"heading": "6.1 Data Management is a Team Sport", "boundary": "Introduce", "intended_conclusion": "The reader understands Data Management as a collaboration across business and technology communities.", "bullets": [{"id": "B-06.01-01", "text": "Data Management requires collaboration across the business and technology communities, and calls on technical, business, governance, risk, security, and change capabilities.", "source": null}, {"id": "B-06.01-02", "text": "Roles collaborate through governance forums, stewardship networks, project teams, lifecycle handoffs, and operational controls.", "source": null}, {"id": "B-06.01-03", "text": "Leaders sponsor, practitioners execute, stewards coordinate, and data consumers participate in quality and meaning.", "source": null}], "threads": []},
-    "DM-01-06-02":{"heading": "6.2 Representative Role Families", "boundary": "Introduce", "intended_conclusion": "The reader can place the representative role families rather than individual titles, with detail deferred to KA chapters.", "bullets": [{"id": "B-06.02-01", "text": "Define representative role families rather than individual titles: business roles (data owner, data steward); governance (data governance lead); architecture and engineering (data architect, data modeler, data engineer); risk and control (security, privacy, records management); leadership (CDO, CIO, CTO, CISO, transformation/data leadership); and consumers (analysts, business users).", "source": null}, {"id": "B-06.02-02", "text": "Make clear that each Knowledge Area chapter will refine roles and responsibilities for its area; Chapter 1 gives the shared map.", "source": null}], "threads": []},
-    "DM-01-06-03":{"heading": "6.3 Role Variability", "boundary": "Introduce", "intended_conclusion": "The reader understands that role titles and responsibilities vary across organisations and evolve with maturity.", "bullets": [{"id": "B-06.03-01", "text": "Include maturity-aware role evolution: starting programs may use combined roles; scaling programs need clearer ownership, stewardship, and specialist functions.", "source": null}, {"id": "B-06.03-02", "text": "State that role titles differ across organisations.", "source": null}, {"id": "B-06.03-03", "text": "State that responsibilities are often combined in earlier-stage organisations and separate as maturity grows.", "source": null}], "threads": []},
-    "DM-01-06-04":{"heading": "6.4 Stewardship", "boundary": "Introduce", "intended_conclusion": "The reader understands stewardship as primarily a business accountability role.", "bullets": [{"id": "B-06.04-01", "text": "Clarify stewardship as primarily a business accountability role.", "source": null}], "threads": []},
-    "DM-01-07-01":{"heading": "7.1 Establish Direction", "boundary": "Introduce", "intended_conclusion": "The reader understands how Data Management sets strategy, shared principles and priorities aligned to business and governance.", "bullets": [{"id": "B-07.01-01", "text": "Establish and maintain a Data Management strategy aligned to business strategy, governance direction, risk appetite, and value priorities.", "source": null}, {"id": "B-07.01-02", "text": "Define shared principles, terminology, and minimum controls that guide all Knowledge Areas.", "source": null}, {"id": "B-07.01-03", "text": "Set data management priorities that reflect business value, obligations, and risk.", "source": null}], "threads": []},
-    "DM-01-07-02":{"heading": "7.2 Manage Across the Lifecycle", "boundary": "Introduce", "intended_conclusion": "The reader can map data activities to the lifecycle and document lineage.", "bullets": [{"id": "B-07.02-01", "text": "Map data activities to the lifecycle: plan, design/enable, create/obtain, store/maintain, use, enhance, archive/dispose, and document lineage.", "source": null}], "threads": []},
-    "DM-01-07-03":{"heading": "7.3 Coordinate Knowledge Areas", "boundary": "Introduce", "intended_conclusion": "The reader understands Data Management as the coordinator of cross-functional work across the Knowledge Areas.", "bullets": [{"id": "B-07.03-01", "text": "Coordinate cross-functional work across governance, architecture, quality, security, metadata, integration, records/content, master/reference data, and analytics.", "source": null}], "threads": []},
-    "DM-01-07-04":{"heading": "7.4 Manage Critical Data", "boundary": "Introduce", "intended_conclusion": "The reader understands the need to prioritise critical data rather than manage every item equally.", "bullets": [{"id": "B-07.04-01", "text": "Prioritize critical data rather than attempting to manage every data item equally; organizations produce much unused data and lifecycle management requires focus on critical data.", "source": null}], "threads": []},
-    "DM-01-07-05":{"heading": "7.5 Improve Capability", "boundary": "Introduce", "intended_conclusion": "The reader understands how capability is improved through metrics, maturity assessment and change adoption.", "bullets": [{"id": "B-07.05-01", "text": "Monitor improvement through metrics, maturity assessment, issue management, stakeholder communication, and change adoption.", "source": null}], "threads": []},
-    "DM-01-07-06":{"heading": "7.6 Respond to Emerging Technology", "boundary": "Introduce", "intended_conclusion": "The reader understands the umbrella-level AI-era activities that connect AI risk to governance and lifecycle controls.", "bullets": [{"id": "B-07.06-01", "text": "Establish AI-era activities at the umbrella level: identify AI data dependencies, define responsible data-use expectations, and connect AI risks to governance and lifecycle controls, without taking on detailed AI governance.", "source": null}], "threads": []},
-    "DM-01-08-01":{"heading": "8.1 Why Measure Data Management?", "boundary": "Introduce", "intended_conclusion": "The reader understands why Data Management is measured: value, control evidence and improvement over time.", "bullets": [{"id": "B-08.01-01", "text": "Explain why Data Management is measured: to show value delivered, to evidence that controls work, and to track improvement over time.", "source": null}], "threads": []},
-    "DM-01-08-02":{"heading": "8.2 Representative Metric Categories", "boundary": "Introduce", "intended_conclusion": "The reader knows the six representative metric categories, with definitions deferred to the Knowledge Area chapters.", "bullets": [{"id": "B-08.02-01", "text": "Representative metric categories: business value, quality, governance, risk, adoption, and maturity.", "source": null}, {"id": "B-08.02-02", "text": "Leave metric definitions and calculation methods to the Knowledge Area chapters and the digital platform.", "source": null}], "threads": []},
-    "DM-01-09-01":{"heading": "9.1 Data Risk Fundamentals", "boundary": "Introduce", "intended_conclusion": "The reader understands data risk as both business and operational risk, across its main categories.", "bullets": [{"id": "B-09.01-01", "text": "Introduce data risk as both business and operational risk: poor data can produce wrong decisions, failed compliance, inefficiency, reputational harm, and loss of trust.", "source": null}, {"id": "B-09.01-02", "text": "Distinguish business risk, operational risk, compliance risk, and reputational risk.", "source": null}], "threads": []},
-    "DM-01-09-02":{"heading": "9.2 Regulatory and Policy Drivers", "boundary": "Introduce", "intended_conclusion": "The reader understands the regulatory, standards, policy and contractual drivers behind Data Management.", "bullets": [{"id": "B-09.02-01", "text": "Regulatory obligations, industry standards, internal policy expectations, and contractual obligations.", "source": null}], "threads": []},
-    "DM-01-09-03":{"heading": "9.3 Lifecycle Risks", "boundary": "Introduce", "intended_conclusion": "The reader understands the foundational data risks that arise across the lifecycle.", "bullets": [{"id": "B-09.03-01", "text": "Cover foundational risks across the lifecycle: poor creation controls, missing lineage, poor quality, unmanaged copies, unauthorized access, retention failures, and uncontrolled disposal.", "source": null}, {"id": "B-09.03-02", "text": "Include security, privacy, business continuity, backup/recovery, retention/archiving, and e-discovery as basics to be followed up in later chapters.", "source": null}], "threads": []},
-    "DM-01-09-04":{"heading": "9.4 Risk Management Cycle", "boundary": "Introduce", "intended_conclusion": "The reader understands risk management as a cycle of identify, assess, prioritise, control, monitor and escalate.", "bullets": [{"id": "B-09.04-01", "text": "Frame risk management as preparation and response: identify, assess, prioritise, control, monitor, and escalate.", "source": null}], "threads": []},
-    "DM-01-09-05":{"heading": "9.5 Emerging Risks", "boundary": "Introduce", "intended_conclusion": "The reader is briefly oriented to AI-related and data-ecosystem risks, with detail deferred to later chapters.", "bullets": [{"id": "B-09.05-01", "text": "Introduce emerging risks briefly: AI-related risk and the complexity of the wider data ecosystem, with detailed treatment left to Data Security, Data Governance, and Analytics.", "source": null}, {"id": "B-09.05-02", "text": "Clarify boundaries: detailed security controls belong in Data Security; detailed records controls belong in Document and Content Management; detailed AI controls belong in relevant AI/analytics/governance material.", "source": null}], "threads": []},
-    "DM-01-10-01":{"heading": "10.1 Governance and Management Are Distinct but Interdependent", "boundary": "Introduce", "intended_conclusion": "The reader understands the bidirectional relationship between Data Governance and Data Management.", "bullets": [{"id": "B-10.01-01", "text": "Explain the bidirectional relationship: Data Governance sets authority, policy, decision rights, stewardship, and accountability; Data Management executes and evidences those decisions across the lifecycle.", "source": null}], "threads": []},
-    "DM-01-10-02":{"heading": "10.2 What Governance Provides", "boundary": "Introduce", "intended_conclusion": "The reader understands what Data Governance provides to Data Management.", "bullets": [{"id": "B-10.02-01", "text": "Governance provides authority, accountability, decision rights, and policy: priorities, roles, escalation paths, funding, and cross-functional alignment.", "source": null}], "threads": []},
-    "DM-01-10-03":{"heading": "10.3 What Data Management Provides", "boundary": "Introduce", "intended_conclusion": "The reader understands what Data Management provides back to Data Governance.", "bullets": [{"id": "B-10.03-01", "text": "Explain how Data Management supports governance: metadata, quality evidence, lifecycle controls, issue logs, lineage, standards, and operational feedback.", "source": null}], "threads": []},
-    "DM-01-10-04":{"heading": "10.4 Preview of the Governance Relationship", "boundary": "Refer Online", "intended_conclusion": "The reader sees a short preview governance matrix, with the full landscape deferred to the Data Governance chapter.", "bullets": [{"id": "B-10.04-01", "text": "Include a short Data Management and Governance matrix: governance decisions on one axis, lifecycle and Knowledge Area execution evidence on the other, kept as a preview, with the full landscape matrix carried in the Data Governance chapter.", "source": null}], "threads": []},
-    "DM-01-10-05":{"heading": "10.5 Governance Language", "boundary": "Introduce", "intended_conclusion": "The reader understands governance as providing consistency within and balance between Data Management functions.", "bullets": [{"id": "B-10.05-01", "text": "State that governance provides consistency within and balance between Data Management functions, without depending on the position of any element in a visual representation.", "source": null}], "threads": []},
-    "DM-01-01-01":{heading:"1.1 What is Data Management?",boundary:"Develop",
-      intended_conclusion:"The reader understands Data Management as a coordinated, enterprise-wide discipline — business, operational, governance and risk — not a technology function.",
-      bullets:[
-        {id:"B-01.01-01",text:"Define Data Management as the coordinated discipline for managing data and information assets across their lifecycles to deliver, control, protect, and enhance value.",source:"Session 02 — Chapter 1 DATA MANAGEMENT (pptx)"},
-        {id:"B-01.01-02",text:"Present data as an enterprise asset that supports insight, innovation, strategic goals, and day-to-day operations.",source:null},
-        {id:"B-01.01-03",text:"Describe Data Management as a business, operational, governance, and risk discipline rather than a technology function.",source:null},
-        {id:"B-01.01-04",text:"Explain the relationship between data, information, decisions, and outcomes.",source:null}
-      ],
-      threads:[{ref:"c14",who:"Howard Diesel",date:"2026-09-08",disp:"Applied",
-        issue:"The Introduction runs as one bullet list, so definition, rationale and chapter purpose are interleaved.",
-        change:"Split it into 1.1 What is Data Management?, 1.2 Why Data Management Exists and 1.3 Purpose of this Chapter.",
-        rationale:"A reader looking for why the discipline exists has to assemble it from bullets written for three different jobs.",
-        reference:"Revised Outline 1.1 to 1.3"}]},
-    "DM-01-01-02":{heading:"1.2 Why Data Management Exists",boundary:"Develop",
-      intended_conclusion:"Organisations manage data for value, operations, risk and obligation — not value alone.",
-      bullets:[
-        {id:"B-01.02-01",text:"Business value and innovation.",source:null},
-        {id:"B-01.02-02",text:"Operational effectiveness and efficiency.",source:null},
-        {id:"B-01.02-03",text:"Risk reduction and resilience.",source:null},
-        {id:"B-01.02-04",text:"Regulatory, legal, and contractual obligations.",source:null},
-        {id:"B-01.02-05",text:"Examples may include privacy regulations, financial reporting obligations, industry-specific compliance requirements, and records retention and evidentiary requirements.",source:null}
-      ],
-      threads:[
-        {ref:"c15",who:"Howard Diesel",date:"2026-09-08",disp:"Applied",
-         issue:"This bullet carries the whole rationale for Data Management and frames it as business value.",
-         change:"Replace it with the four drivers at 1.2 — value, operational effectiveness, risk and obligation.",
-         rationale:"Organisations often manage data because they are required to; a value-only framing leaves that reader out.",
-         reference:"Revised Outline 1.2"},
-        {ref:"c0",who:"Shannon Ashford → Howard Diesel",date:"2026-09-08",disp:"Accepted",
-         issue:"It is not clear why Data Management exists beyond business value; sometimes it is legally required.",
-         change:"Add 9.2 Regulatory and Policy Drivers, and make obligation one of the four drivers at 1.2.",
-         rationale:"The regulatory driver was missing from the outline entirely.",
-         reference:"Revised Outline 1.2 and 9.2"}
-      ]},
-    "DM-01-02-03":{heading:"2.3 AI Terminology",boundary:"Introduce",
-      intended_conclusion:"The reader has a minimal, stable AI vocabulary; how AI works is left to the Analytics chapter.",
-      bullets:[
-        {id:"B-02.03-01",text:"Introduce four stable AI terms only: artificial intelligence, machine learning, generative AI, and AI risk.",source:null},
-        {id:"B-02.03-02",text:"Provide only enough context to support later chapters; leave how AI works to the Analytics chapter.",source:null}
-      ],
-      threads:[
-        {ref:"c10",who:"Shannon Ashford → Howard Diesel",date:"2026-09-08",disp:"Applied",
-         issue:"A substantive AI discussion may not belong in the Data Management chapter as a theme.",
-         change:"Reduce AI to four stable terms at 2.3; treat AI elsewhere as technological change (tools 4.3, activity 7.6, risk 9.5).",
-         rationale:"Tool-specific AI content ages quickly; only stable terminology belongs in the umbrella chapter.",
-         reference:"Revised Outline 2.3"}
-      ]},
-    "DM-01-02-01":{heading:"2.1 Foundational Data Management Terms",boundary:"Introduce",
-      intended_conclusion:"The reader has the shared cross-book vocabulary before entering the specialist chapters.",
-      bullets:[
-        {id:"B-02.01-01",text:"Data, information, data asset, data lifecycle, lineage, metadata, data quality, data governance, data stewardship, data strategy, and data management maturity.",source:null},
-        {id:"B-02.01-02",text:"Include ethical and risk terms where foundational: accountability, privacy, security, sensitive data, retention, and responsible use.",source:null}
-      ],
-      threads:[
-        {ref:"c16",who:"Howard Diesel",date:"2026-09-08",disp:"Applied",
-         issue:"Key Terms mixes the term list, the cross-book consistency rule and AI terminology in one flat list.",
-         change:"Split into 2.1 Foundational Terms, 2.2 Consistent Terminology Across the Book and 2.3 AI Terminology.",
-         rationale:"The consistency rule governs the whole book and is buried among term entries.",
-         reference:"Revised Outline 2.1 to 2.3"},
-        {ref:"c17",who:"Shannon Ashford → Howard Diesel",date:"2026-09-08",disp:"Open",
-         issue:"Whether each chapter carries only its own terms, or Chapter 1 alone carries an expanded Key Terms section.",
-         change:"Raised as a formal Editorial Board question at the end of the outline.",
-         rationale:"Decides how much shared vocabulary Chapter 1 must hold.",
-         reference:"Revised Outline, Editorial Note"}
-      ]}
-  };
+  var OUTLINES={};   // NO SEED: built fresh from outlines.json on load
 
   var PROJECTS={
     "dmbok-v3-ch1":{
       title:"DAMA-DMBOK v3.0 — Chapter 1: Data Management", type:"dmbok-chapter",
-      sections:[
-        {"sid": "DM-01-01-03", "label": "1.3 Purpose of this Chapter", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Introduction). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-02-02", "label": "2.2 Consistent Terminology Across the Book", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Key Terms). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-03-01", "label": "3.1 Data as an Enterprise Capability", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Foundations of Data Management). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-03-02", "label": "3.2 Principles of Effective Data Management", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Foundations of Data Management). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-03-03", "label": "3.3 Data Lifecycle as an Organising Framework", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Foundations of Data Management). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-03-04", "label": "3.4 Types of Knowledge Areas", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Foundations of Data Management). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-04-01", "label": "4.1 Categories of Data Management Tools", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Tools). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-04-02", "label": "4.2 Tools Support Data Management", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Tools). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-04-03", "label": "4.3 Emerging Technology Support", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Tools). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-05-01", "label": "5.1 Enterprise Data Management Frameworks", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Techniques). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-05-02", "label": "5.2 Capability and Maturity Thinking", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Techniques). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-05-03", "label": "5.3 Value and Risk Framing", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Techniques). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-05-04", "label": "5.4 Communication and Change", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Techniques). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-06-01", "label": "6.1 Data Management is a Team Sport", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Roles). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-06-02", "label": "6.2 Representative Role Families", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Roles). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-06-03", "label": "6.3 Role Variability", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Roles). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-06-04", "label": "6.4 Stewardship", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Roles). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-07-01", "label": "7.1 Establish Direction", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Activities). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-07-02", "label": "7.2 Manage Across the Lifecycle", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Activities). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-07-03", "label": "7.3 Coordinate Knowledge Areas", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Activities). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-07-04", "label": "7.4 Manage Critical Data", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Activities). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-07-05", "label": "7.5 Improve Capability", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Activities). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-07-06", "label": "7.6 Respond to Emerging Technology", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Activities). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-08-01", "label": "8.1 Why Measure Data Management?", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Metrics). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-08-02", "label": "8.2 Representative Metric Categories", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Metrics). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-09-01", "label": "9.1 Data Risk Fundamentals", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Risk Management). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-09-02", "label": "9.2 Regulatory and Policy Drivers", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Risk Management). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-09-03", "label": "9.3 Lifecycle Risks", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Risk Management). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-09-04", "label": "9.4 Risk Management Cycle", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Risk Management). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-09-05", "label": "9.5 Emerging Risks", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Risk Management). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-10-01", "label": "10.1 Governance and Management Are Distinct but Interdependent", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Interrelation with Data Governance). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-10-02", "label": "10.2 What Governance Provides", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Interrelation with Data Governance). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-10-03", "label": "10.3 What Data Management Provides", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Interrelation with Data Governance). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-10-04", "label": "10.4 Preview of the Governance Relationship", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Interrelation with Data Governance). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {"sid": "DM-01-10-05", "label": "10.5 Governance Language", "prose": "Not started", "gates": {"G0": "complete", "G1": "complete", "G2": "waiting", "G3": "waiting", "G4": "waiting", "G5": "waiting", "G6": "waiting", "G7": "waiting"}, "note": "Seeded from the Ch 01 high-level outline (Interrelation with Data Governance). Outline (G1) ready; run G2 Propositions to start.", "art": {}},
-        {sid:"DM-01-01-01",label:"1.1 What is Data Management?", prose:"Drafted pre-ACPP",
-         gates:{G0:"complete",G1:"complete",G2:"active",G3:"active",G4:"backfill",G5:"backfill",G6:"complete",G7:"waiting"},
-         note:"Argument (G3) now carries your authoritative Section 1.1 model — a 5-tier hierarchy ready for review. Evidence (G4) still points at the earlier proposition set (P-01.01-xx); reconcile the P-IDs when you run G4.",
-         art:{G2:{sources:"Outline (G1) + completed G6 prose",backfill:[
-           ["P-01.01-01","B-01.01-01","Definition","Data Management is the coordinated discipline for managing data and information assets across their lifecycles to deliver, control, protect and enhance value."],
-           ["P-01.01-02","B-01.01-01","Claim","Trust in data is not a given; it is earned through deliberate design, clear accountability and continuous stewardship."],
-           ["P-01.01-03","B-01.01-02","Claim","Data is an economic resource the organisation controls and it produces value — supporting operations, strategy, insight and innovation."],
-           ["P-01.01-04","B-01.01-02","Claim","Data has unique asset properties: it is not consumed in use, is easily copied yet hard to reproduce once lost, grows in value when combined, and carries risk that rises with its value."],
-           ["P-01.01-05","B-01.01-03","Distinction","Technology is essential to Data Management, but technology is not Data Management."],
-           ["P-01.01-06","B-01.01-03","Claim","Data Management is at once a business, operational, governance and risk discipline, and a shared enterprise-wide responsibility."],
-           ["P-01.01-07","B-01.01-03","Claim","Data Management succeeds only when the business owns its data and technology enables it."],
-           ["P-01.01-08","B-01.01-04","Claim","Value flows along a chain: data becomes information in context, information informs decisions, and decisions drive the actions that produce business outcomes."],
-           ["P-01.01-09","B-01.01-04","Consequence","A single missing definition or unchecked error travels down the chain and surfaces later as a flawed forecast, a compliance breach or a biased AI output."],
-           ["C-01.01-01","B-01.01-04","Conclusion","Well-managed data strengthens every link in the chain, making Data Management the foundation of better decisions, lower risk and greater value."]
-         ],drift:["The recipe / kitchen analogies in the prose are illustrative devices, not claims — kept as rhetoric, not filed as propositions."]},
-           G3:{sources:"Rebuilt on the authoritative P-01.01 proposition set (10 nodes; replaces the earlier P-1.1 keying that never reconciled with G2/G4)",
-               nodes:[
-                 ["AN-01.01-01","Contention","P-01.01-01","B-01.01-01","Data Management is the coordinated discipline for managing data and information assets across their lifecycles to deliver, control, protect and enhance value.",[],["AN-01.01-02","AN-01.01-03","AN-01.01-04"],false],
-                 ["AN-01.01-02","Reason","P-01.01-03","B-01.01-02","Data is an economic resource the organisation controls and it produces value — supporting operations, strategy, insight and innovation.",["AN-01.01-01"],["AN-01.01-C1"],true],
-                 ["AN-01.01-03","Reason","P-01.01-04","B-01.01-02","Data has unique asset properties: it is not consumed in use, is easily copied yet hard to reproduce once lost, grows in value when combined, and carries risk that rises with its value.",["AN-01.01-01"],["AN-01.01-C1"],true],
-                 ["AN-01.01-04","Reason","P-01.01-06","B-01.01-03","Data Management is at once a business, operational, governance and risk discipline, and a shared enterprise-wide responsibility.",["AN-01.01-01"],["AN-01.01-C1"],true],
-                 ["AN-01.01-05","Warrant","P-01.01-02","B-01.01-01","Trust in data is not a given; it is earned through deliberate design, clear accountability and continuous stewardship.",["AN-01.01-01"],[],true],
-                 ["AN-01.01-06","Qualification","P-01.01-05","B-01.01-03","Technology is essential to Data Management, but technology is not Data Management.",["AN-01.01-04"],[],true],
-                 ["AN-01.01-07","Qualification","P-01.01-07","B-01.01-03","Data Management succeeds only when the business owns its data and technology enables it.",["AN-01.01-04"],[],true],
-                 ["AN-01.01-08","Warrant","P-01.01-08","B-01.01-04","Value flows along a chain: data becomes information in context, information informs decisions, and decisions drive the actions that produce business outcomes.",["AN-01.01-01"],["AN-01.01-C1"],true],
-                 ["AN-01.01-09","Consequence","P-01.01-09","B-01.01-04","A single missing definition or unchecked error travels down the chain and surfaces later as a flawed forecast, a compliance breach or a biased AI output.",["AN-01.01-08"],["AN-01.01-C1"],true],
-                 ["AN-01.01-C1","Conclusion","C-01.01-01","B-01.01-04","Well-managed data strengthens every link in the chain, making Data Management the foundation of better decisions, lower risk and greater value.",["AN-01.01-02","AN-01.01-03","AN-01.01-04","AN-01.01-09"],[],false]
-               ],drift:[],aiqNote:"AIQ-001 (quarantined warrant) kept amber, outside the approved baseline until you sign off."},
-           G4:{sources:"Outline (G1) + the completed G6 prose and its in-text citations",
-               findings:"Harvested citations: DAMA International, 2017 (→ B-01.01-01 definition) and Carlson & Anderson, 2007 — JCMC 12(2), verified (→ B-01.01-01 trust; its natural fit is the definition / data-as-asset claims). Both map to a bullet, so no citation drift. All four bullets carry at least one evidenced proposition — no gaps. Conclusion C-01.01-01 inherits evidence from its reasons.",
-               evid:[
-             ["P-01.01-01",null,"Supported","Professional body",[
-               {id:"DAMA-DMBOK2-DEF",tier:"Professional body · DMBOK2",cite:"DAMA International (2017), DAMA-DMBOK2 — Ch.1, definition of Data Management",auth:"Professional-Body",supports:"States the DMBOK definition of Data Management verbatim — the coordinated discipline that delivers, controls, protects and enhances data value.",url:"https://www.dama.org",quote:"Data Management is the development, execution, and supervision of plans, policies, programs, and practices that deliver, control, protect, and enhance the value of data and information assets throughout their lifecycles.",locator:"DMBOK2 (2017), p.23"}]],
-             ["P-01.01-02",null,"Supported","Professional body",[
-               {id:"DAMA-DMBOK2-GOV",tier:"Professional body · DMBOK2",cite:"DAMA-DMBOK2 (2017) — Data Governance & Data Stewardship",auth:"Professional-Body",supports:"Grounds the trust claim in clear accountability and chain-of-custody: trust in data is earned through stewardship, not given.",url:"https://www.dama.org",quote:"Clear accountability: Roles and responsibilities must be clearly defined, including the ‘chain of custody’ for data across organizations and roles.",locator:"DMBOK2 (2017), p.218"}]],
-             ["P-01.01-03",null,"Supported","Professional body",[
-               {id:"DAMA-DMBOK2-CH1",tier:"Professional body · DMBOK2",cite:"DAMA-DMBOK2 (2017), Ch.1 — Data Management",auth:"Professional-Body",supports:"Defines data as an organizational asset — an economic resource that is owned or controlled and produces value.",url:"https://www.dama.org",quote:"2.3 Data as an Organizational Asset — An asset is an economic resource, that can be owned or controlled, and that holds or produces value.",locator:"DMBOK2 (2017), p.26"}]],
-             ["P-01.01-04",null,"Supported","Professional body",[
-               {id:"DAMA-DMBOK2-VAL",tier:"Professional body · DMBOK2",cite:"DAMA-DMBOK2 (2017), Ch.1 — Data as an asset with unique properties",auth:"Professional-Body",supports:"Sets out data's unique asset properties that make it differ from physical assets and change how it must be managed.",url:"https://www.dama.org",quote:"Data is an asset with unique properties: Data is an asset, but it differs from other assets in important ways that influence how it is managed. The most obvious of these properties is that data is not consumed when it is used, as are financial and physical assets.",locator:"DMBOK2 (2017), p.27"}]],
-             ["P-01.01-05",null,"Supported","Professional body",[
-               {id:"DAMA-DMBOK2-CH1",tier:"Professional body · DMBOK2",cite:"DAMA-DMBOK2 (2017), Ch.1 — Data Management",auth:"Professional-Body",supports:"Data management requirements drive IT decisions — so technology is essential to, but is not, Data Management.",url:"https://www.dama.org",quote:"Data management requirements must drive Information Technology decisions: Data and data management are deeply intertwined with information technology and information technology management.",locator:"DMBOK2 (2017), p.29"}]],
-             ["P-01.01-06",null,"Supported","Professional body",[
-               {id:"DAMA-DMBOK2-FRAME",tier:"Professional body · DMBOK2",cite:"DAMA-DMBOK2 (2017) — the DAMA Data Management Framework",auth:"Professional-Body",supports:"Frames Data Governance/Management as a shared responsibility across business and IT — a cross-disciplinary enterprise capability.",url:"https://www.dama.org",quote:"Shared responsibility: Across all Data Management Knowledge Areas, Data Governance is a shared responsibility between business data stewards and technical data management professionals.",locator:"DMBOK2 (2017), p.78"}]],
-             ["P-01.01-07",null,"Supported","Peer-reviewed",[
-               {id:"POTHINENI-2023",tier:"Peer-reviewed",cite:"Pothineni (2023) — The Impact of Data Strategy and Emerging Technologies on Business Performance. IJBSA 4(1). DOI 10.4018/IJBSA.334022",auth:"Peer-Reviewed",supports:"Empirical support (t=9.382, p<0.001) that business-owned data strategy drives business performance, with technology as enabler.",url:"https://doi.org/10.4018/IJBSA.334022",quote:"The statistical significance, with a high t-value of 9.382 (p < 0.001), indicates the substantial relationship between DS and BP.",locator:"Pothineni (2023), IJBSA 4(1), p.12 (DS/ET regression results), DOI 10.4018/IJBSA.334022"}]],
-             ["P-01.01-08",null,"Supported","Peer-reviewed",[
-               {id:"KAKOSEOU-LAOURIS-2023",tier:"Peer-reviewed",cite:"Kakoseou & Laouris (2023) — What Is Wisdom? Open Journal of Social Sciences 11(11), 329-341. DOI 10.4236/jss.2023.1111023",auth:"Peer-Reviewed",supports:"Supports the data -> information -> knowledge value chain: higher forms emerge from data placed in context.",url:"https://doi.org/10.4236/jss.2023.1111023",quote:"While the evolution or emergence of information from data, knowledge from information, and intelligence from knowledge has been sufficiently well defined, operationalised, and simulated, the transition to wisdom remains challenging.",locator:"Kakoseou & Laouris (2023), Open Journal of Social Sciences 11(11):329-341, DOI 10.4236/jss.2023.1111023"}]],
-             ["P-01.01-09",null,"Supported","Standard",[
-               {id:"ISO-IEC-42001-2023",tier:"International standard",cite:"ISO/IEC 42001:2023 — Information technology — AI management system",auth:"Standard",supports:"Supports the 'biased / untrustworthy AI output' limb of the consequence via data-quality and AI-trustworthiness controls.",url:"https://www.iso.org/standard/81230.html",quote:"processes for the management of concerns related to the trustworthiness of AI systems such as security, safety, fairness, transparency, data quality and quality of AI systems throughout their life cycle",locator:"ISO/IEC 42001:2023, p.6 (Introduction)"}]],
-             ["C-01.01-01",null,"NEEDS-SOURCE","Inherits",[
-               {id:"INHERITS-P08-P09",tier:"Inherits from reasons",cite:"Conclusion — inherits evidence from P-01.01-08 and P-01.01-09",auth:"Inherited",supports:"A conclusion drawn from the evidenced value chain; no separate source required unless you want one.",url:"https://www.dama.org"},
-               {id:"DAMA-DMBOK2-CH1",tier:"Professional body",cite:"DAMA-DMBOK2 (2017), Ch.1 — Data Management (optional overarching framing)",auth:"Professional-Body",supports:"Well-managed data strengthens every link, making DM the foundation of better decisions, lower risk and greater value.",url:"https://www.dama.org"}]]]},
-         G6:{status:"Complete (pre-ACPP)",ref:"writer prose — import to content/dmbok-v3-ch1/03_manuscripts/MS-1.1.docx",words:"~1,105 words"}},
-         aiq:[["AIQ-001","Argument","Technical infrastructure enables data management but does not define its governance or business accountability.","P-01.01-01","Pending"]]},
-        {sid:"DM-01-02-01",label:"2.1 Foundational Data Management Terms", prose:"Rendered via Glossary Workbench",
-         gates:{G0:"complete",G1:"complete",G2:"active",G3:"backfill",G4:"backfill",G5:"backfill",G6:"complete",G7:"waiting"},
-         note:"Controlled rendering exists (23 governed terms). Propositions, a minimal argument (G3) and evidence (G4, one source per term) ready for review.",
-         art:{G2:{sources:"Outline (G1) + completed G6 glossary rendering",backfill:[
-           ["P-02.01-01","B-02.01-01","Definition","Data Management is a Business Function comprising the development, execution and oversight of plans, policies, programs and practices that deliver, control, protect and enhance the value of data and information assets across the lifecycle."],
-           ["P-02.01-02","B-02.01-01","Definition","Data is a representation of facts, concepts and observations in a formalised manner that people and machines communicate, interpret and process; data outside a context is raw data."],
-           ["P-02.01-03","B-02.01-01","Definition","Information is contextualised data that carries meaning within a timeframe, format and relevance, and produces the understanding that supports decision-making."],
-           ["P-02.01-04","B-02.01-01","Definition","A Data Asset is an economic resource composed of data, owned or controlled by an organisation, that holds present or future value."],
-           ["P-02.01-05","B-02.01-01","Definition","The Data Lifecycle is a value chain that carries data from planning, creation or acquisition through storage, maintenance, usage, enhancement and archiving to disposal."],
-           ["P-02.01-06","B-02.01-01","Definition","Lineage is a provenance record documenting the origin, transformations and movement of data from its point of origin to consumption."],
-           ["P-02.01-07","B-02.01-01","Definition","Metadata is descriptive data that defines and describes the meaning, origin, ownership, quality, format and governing rules of other data — “data about data”."],
-           ["P-02.01-08","B-02.01-01","Definition","Data Quality is a data characteristic expressing the degree to which data satisfies consumer requirements for a purpose, across dimensions such as accuracy, completeness, timeliness, consistency and relevance."],
-           ["P-02.01-09","B-02.01-01","Definition","Data Governance is a data management discipline that exercises authority, control and shared decision-making over data assets, setting direction, policy and accountability."],
-           ["P-02.01-10","B-02.01-01","Definition","Data Stewardship is a data management discipline through which assigned business and technical roles take responsibility for defining, protecting, maintaining and ensuring the responsible use of data assets."],
-           ["P-02.01-11","B-02.01-01","Definition","A Data Strategy is a business roadmap, aligned to enterprise objectives, that directs how an organisation builds, organises, protects and leverages data capability."],
-           ["P-02.01-12","B-02.01-01","Definition","Data Management Maturity is a capability measure expressing the degree of formalisation, capability, repeatability and continuous improvement across data management practices."],
-           ["P-02.01-13","B-02.01-02","Definition","Accountability is an obligation a designated role carries to answer for the handling, quality, security and compliant use of data assets."],
-           ["P-02.01-14","B-02.01-02","Definition","Privacy is a right by which an individual keeps appropriate control over the collection, processing, storage, sharing and disposal of personal data, within regulatory limits."],
-           ["P-02.01-15","B-02.01-02","Definition","Data Security is a data management discipline that protects data assets against unauthorised access, disclosure, alteration, corruption or destruction."],
-           ["P-02.01-16","B-02.01-02","Definition","Sensitive Data is a data category requiring elevated protection because of regulatory mandate, risk exposure, privacy implication or competitive confidentiality."],
-           ["P-02.01-17","B-02.01-02","Definition","Data Retention is a data management activity that preserves data assets for a defined period to meet business, legal, regulatory and audit obligations, preceding authorised disposal."],
-           ["P-02.01-18","B-02.01-02","Definition","Responsible Use is an ethical practice of using data and analytical models within legal, transparent, fair and non-discriminatory boundaries."],
-           ["P-02.01-19","B-02.01-01","Definition","A Data Product is a data asset that an organisation curates, governs and packages for consumption, with a defined owner, quality service levels and consumer-focused value."]
-         ],terms:19,drift:[]},
-           G3:{nodes:[
-                 ["AN-02.01-C","Contention","P-02.01-00","B-02.01-01","A shared, governed set of foundational terms must be fixed before the specialist chapters, so every term means the same thing across the book."],
-                 ["AN-02.01-R1","Reason","P-02.01-01","B-02.01-01","Each term is defined once and authoritatively, with a governing source at G4."],
-                 ["AN-02.01-R2","Reason","P-02.01-13","B-02.01-02","The set spans data, lifecycle, governance, quality, security and ethics — the base vocabulary of the field."],
-                 ["AN-02.01-CL","Conclusion","P-02.01-19","B-02.01-01","With these terms governed, the book reads on one consistent vocabulary."]
-               ],sources:"Outline (G1) + the completed G6 glossary rendering",aiqNote:"Minimal argument per your instruction (D5); a definitions section otherwise asserts no contention — each term stands on its own definition and evidence."},
-           G4:{sources:"Outline (G1) + the completed G6 glossary rendering, aligned against your Key Terms master table (dmbok3_section2_key_terms-v4); DAMA Glossary where the term is present and aligned, else a new international reference.",
-               findings:"Of 19 terms: 12 cite the DAMA Glossary; 7 use a new/override international reference — Data → ISO/IEC 2382 (your pick), plus Data Management Maturity, Accountability, Privacy, Sensitive Data, Responsible Use, Data Product. One source per term.",
-               evid:[
-             ["P-02.01-01",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Data Management: “The planning, execution, and oversight of policies, practices, and projects that acquire, control, protect, deliver, and enhance the value of data and information assets.”",auth:"Professional-Body",supports:"In the DAMA Glossary; aligns with your Business-Function definition.",url:"https://www.dama.org"}]],
-             ["P-02.01-02",null,"NEEDS-SOURCE","Standard",[
-               {id:"ISO-IEC-2382-2015",tier:"Override (your pick)",cite:"ISO/IEC 2382:2015 — Information technology — Vocabulary",auth:"Standard",supports:"Your pick over the DAMA Glossary: ISO/IEC 2382 gives the formal ‘representation of facts’ definition that matches your wording.",url:"https://www.iso.org/standard/63598.html"}]],
-             ["P-02.01-03",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Information: “Understanding concerning objects (facts, events, processes, ideas) that, within a context and timeframe, have meaning; the interpretation of data based on its context.”",auth:"Professional-Body",supports:"Substantively aligned; DAMA frames understanding-in-context, your draft frames actionable for decisions.",url:"https://www.dama.org"}]],
-             ["P-02.01-04",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Data Asset: “Any data resource with organizational value.”",auth:"Professional-Body",supports:"Aligned; DAMA is terse, your draft expands to economic-asset language (owned/controlled, present/future value).",url:"https://www.dama.org"}]],
-             ["P-02.01-05",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Data Lifecycle: “A ‘birth-to-death’ value chain for data: acquisition, processing, analysis, storage and maintenance, archiving and retention, and disposal.”",auth:"Professional-Body",supports:"Aligned; your draft enumerates the DMBOK 3.0 lifecycle stages.",url:"https://www.dama.org"}]],
-             ["P-02.01-06",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Lineage: “The path a data attribute travels between systems and the alterations made during that journey.”",auth:"Professional-Body",supports:"Aligned; DAMA defines lineage at attribute/system level, your draft adds enterprise provenance.",url:"https://www.dama.org"}]],
-             ["P-02.01-07",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Metadata: “Literally ‘data about data’; data that defines and describes the characteristics of other data to improve understanding.”",auth:"Professional-Body",supports:"Aligned; your draft adds structural/descriptive/administrative types.",url:"https://www.dama.org"}]],
-             ["P-02.01-08",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Data Quality: “The degree to which data is accurate, complete, timely, consistent with all requirements, and relevant for a given use.”",auth:"Professional-Body",supports:"Aligned; DAMA lists attributes, your draft frames consumer fitness for purpose.",url:"https://www.dama.org"}]],
-             ["P-02.01-09",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Data Governance: “The exercise of authority, control, and shared decision-making (planning, monitoring, and enforcement) over data assets.”",auth:"Professional-Body",supports:"Verbatim core alignment.",url:"https://www.dama.org"}]],
-             ["P-02.01-10",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Data Stewardship: “Formal, specifically assigned, and entrusted accountability for business (nontechnical) responsibilities.”",auth:"Professional-Body",supports:"Perspective shift — DAMA restricts stewardship to nontechnical roles; your draft includes technical roles. Accept, or override.",url:"https://www.dama.org"}]],
-             ["P-02.01-11",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Data Strategy: “A business plan for leveraging an enterprise's data assets to maximum advantage.”",auth:"Professional-Body",supports:"Aligned; DAMA is brief, your draft expands to a capability-building roadmap.",url:"https://www.dama.org"}]],
-             ["P-02.01-12",null,"NEEDS-SOURCE","Professional body",[
-               {id:"DAMA-MATURITY-MODEL",tier:"New ref (not in Glossary)",cite:"DAMA-DMBOK2 — Maturity Model (and CMMI Data Management Maturity Model)",auth:"Professional-Body",supports:"Not a standalone Glossary term (derived from ‘Maturity Model’); DMBOK Maturity Model / CMMI DMM govern it.",url:"https://www.dama.org"}]],
-             ["P-02.01-13",null,"NEEDS-SOURCE","Standard",[
-               {id:"ISO-IEC-38505-1-2017",tier:"New ref (not in Glossary)",cite:"ISO/IEC 38505-1:2017 — Governance of data (Part 1)",auth:"Standard",supports:"Not standalone in Glossary (related ‘Performance Accountability’); ISO/IEC 38505-1 establishes accountability for data.",url:"https://www.iso.org/standard/56639.html"}]],
-             ["P-02.01-14",null,"NEEDS-SOURCE","Standard",[
-               {id:"ISO-IEC-29100-2011",tier:"New ref (Glossary divergent)",cite:"ISO/IEC 29100:2011 — Privacy framework",auth:"Standard",supports:"DAMA Glossary defines privacy narrowly (access control within security); your regulatory-lifecycle definition fits ISO/IEC 29100 / GDPR.",url:"https://www.iso.org/standard/45123.html"}]],
-             ["P-02.01-15",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Data Security: “The safety of data from unauthorized access or change; measures to prevent unauthorized access, alteration, or destruction of data.”",auth:"Professional-Body",supports:"Aligned; core security intent identical, your draft adds policy/technical/procedural tiers.",url:"https://www.dama.org"}]],
-             ["P-02.01-16",null,"NEEDS-SOURCE","Standard",[
-               {id:"ISO-IEC-29100-2011",tier:"New ref (not in Glossary)",cite:"ISO/IEC 29100:2011 — Privacy framework (sensitive PII)",auth:"Standard",supports:"Not standalone in Glossary (related ‘Data Classification Level’); ISO/IEC 29100 defines sensitive PII (GDPR Art.9 alternative).",url:"https://www.iso.org/standard/45123.html"}]],
-             ["P-02.01-17",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Data Retention: “Rules defining how long data is stored and when it is to be disposed.”",auth:"Professional-Body",supports:"Aligned; your draft adds legal/regulatory/audit driver context.",url:"https://www.dama.org"}]],
-             ["P-02.01-18",null,"NEEDS-SOURCE","Intergovernmental",[
-               {id:"OECD-AI-2019",tier:"New ref (not in Glossary)",cite:"OECD Recommendation on Artificial Intelligence (2019, updated 2024)",auth:"Intergovernmental",supports:"Not standalone in Glossary (related ‘Ethical AI’/‘Ethics’); OECD principles define responsible, fair use of data and models.",url:"https://oecd.ai/en/ai-principles"}]],
-             ["P-02.01-19",null,"NEEDS-SOURCE","Professional body",[
-               {id:"DMBOK3-DATA-PRODUCT",tier:"New ref (not in Glossary)",cite:"DAMA-DMBOK 3.0 — Data Product (product-thinking formulation)",auth:"Professional-Body",supports:"No standalone Glossary entry; formulated in DMBOK 3.0 as a product-managed data asset (data-as-a-product).",url:"https://www.dama.org"}]]]},
-         G6:{status:"Complete (Glossary Workbench)",ref:"19 governed definitions — import to content/dmbok-v3-ch1/03_manuscripts/MS-2.1.docx",words:"19 terms"}}},
-        {sid:"DM-01-02-03",label:"2.3 AI Terminology", prose:"Rendered via Glossary Workbench",
-         gates:{G0:"complete",G1:"complete",G2:"active",G3:"backfill",G4:"backfill",G5:"backfill",G6:"complete",G7:"waiting"},
-         note:"Four stable AI terms (AI, ML, Generative AI, AI Risk). Propositions, a minimal argument (G3) and evidence (G4) ready for review.",
-         art:{G2:{sources:"Outline (G1) + completed G6 glossary rendering",terms:4,backfill:[
-           ["P-02.03-01","B-02.03-01","Definition","Artificial Intelligence is a technology field concerned with systems that perform tasks once reserved for human intelligence, such as pattern recognition, reasoning, learning and decision-making."],
-           ["P-02.03-02","B-02.03-01","Definition","Machine Learning is a branch of Artificial Intelligence that builds algorithms which learn from data and improve through experience, without explicit programming."],
-           ["P-02.03-03","B-02.03-01","Definition","Generative AI is a branch of Machine Learning concerned with models that generate novel content — text, code, images, synthetic data — from patterns learned in training data."],
-           ["P-02.03-04","B-02.03-01","Definition","AI Risk is the risk of operational, legal, financial, ethical or reputational harm arising from the design, deployment, data dependencies or outputs of AI systems, requiring mitigation."]
-         ],terms:4,drift:[]},
-           G3:{nodes:[
-                 ["AN-02.03-C","Contention","P-02.03-00","B-02.03-01","Four stable AI terms are fixed so AI is discussed consistently across the book."],
-                 ["AN-02.03-R1","Reason","P-02.03-01","B-02.03-01","AI, Machine Learning and Generative AI form a nested hierarchy."],
-                 ["AN-02.03-R2","Reason","P-02.03-04","B-02.03-01","AI Risk anchors the governance and risk discussion of AI."],
-                 ["AN-02.03-CL","Conclusion","P-02.03-03","B-02.03-01","These four terms give the book a stable, shared AI vocabulary."]
-               ],sources:"Outline (G1) + the completed G6 glossary rendering",aiqNote:"Minimal argument per your instruction (D5)."},
-           G4:{sources:"Outline (G1) + the completed G6 glossary rendering, aligned against your Key Terms master table; DAMA Glossary where present and aligned, else a new international reference.",
-               findings:"Of 4 AI terms: 3 are in the DAMA Glossary and aligned → cite the Glossary; AI Risk is absent → ISO/IEC 23894:2023. One source per term.",
-               evid:[
-             ["P-02.03-01",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Artificial Intelligence: “Software that performs a function previously ascribed only to human beings, such as complex reasoning, learning, and self-correction.”",auth:"Professional-Body",supports:"Substantively aligned; your draft specifies pattern recognition, reasoning, decision-making.",url:"https://www.dama.org"}]],
-             ["P-02.03-02",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Machine Learning: “A subset of artificial intelligence that involves algorithms that enable machines to improve performance through experience.”",auth:"Professional-Body",supports:"Aligned; DAMA emphasises improvement through experience, your draft ‘learning without explicit programming’.",url:"https://www.dama.org"}]],
-             ["P-02.03-03",null,"NEEDS-SOURCE","DAMA Glossary",[
-               {id:"DAMA-GLOSSARY",tier:"DAMA Glossary",cite:"DAMA-DMBOK2 Glossary — Generative AI: “A type of AI that can create new content that looks human-made by learning patterns from existing data.”",auth:"Professional-Body",supports:"Aligned; DAMA emphasises ‘looks human-made’, your draft the ML model class and training patterns.",url:"https://www.dama.org"}]],
-             ["P-02.03-04",null,"NEEDS-SOURCE","Standard",[
-               {id:"ISO-IEC-23894-2023",tier:"New ref (not in Glossary)",cite:"ISO/IEC 23894:2023 — AI — Guidance on risk management",auth:"Standard",supports:"Not standalone in Glossary (related ‘Operational Risk’); ISO/IEC 23894 is the AI-risk standard (NIST AI RMF alternative).",url:"https://www.iso.org/standard/77304.html"}]]]},
-         G6:{status:"Complete (Glossary Workbench)",ref:"4 AI definitions — import to content/dmbok-v3-ch1/03_manuscripts/MS-2.3.docx",words:"4 terms"}}},
-        {sid:"DM-01-01-02",label:"1.2 Why Data Management Exists", prose:"Not yet rendered",
-         gates:{G0:"complete",G1:"complete",G2:"complete",G3:"complete",G4:"active",G5:"waiting",G6:"waiting",G7:"waiting"},
-         note:"Active pilot. Evidence (G4) accepted and committed; G5 Freeze ready — one AIQ (AIQ-001) still open.",
-         art:{
-           G2:{props:[
-             ["P-01.02-00","Contention","Data Management exists for more than one reason; a value-only framing is incomplete.","Approved"],
-             ["P-01.02-01","Reason","Organisations manage data for business value and innovation.","Approved"],
-             ["P-01.02-02","Reason","Organisations manage data for operational effectiveness and efficiency.","Approved"],
-             ["P-01.02-03","Reason","Organisations manage data for risk reduction and resilience.","Approved"],
-             ["P-01.02-04","Reason","Organisations also manage data to satisfy regulatory, legal and contractual obligations.","Approved"],
-             ["C-01.02-01","Conclusion","Because these drivers operate together, DM is justified by value, operations, risk and obligation — not value alone.","Approved"]]},
-           G3:{sources:"Outline (G1) + approved propositions (G2)",nodes:[
-             ["AN-01.02-C","Contention","P-01.02-00","B-01.02-01","Data Management exists for more than one reason; a value-only framing is incomplete."],
-             ["AN-01.02-R1","Reason","P-01.02-01","B-01.02-01","Organisations manage data for business value and innovation."],
-             ["AN-01.02-R2","Reason","P-01.02-02","B-01.02-02","Organisations manage data for operational effectiveness and efficiency."],
-             ["AN-01.02-R3","Reason","P-01.02-03","B-01.02-03","Organisations manage data for risk reduction and resilience."],
-             ["AN-01.02-R4","Qualification","P-01.02-04","B-01.02-04","Organisations also manage data to satisfy regulatory, legal and contractual obligations."],
-             ["AN-01.02-CL","Conclusion","C-01.02-01","B-01.02-05","Because these drivers operate together, DM is justified by value, operations, risk and obligation — not value alone."]
-           ]},
-           G4:{evid:[
-             ["P-01.02-01",null,"NEEDS-SOURCE","Standard",[
-               {id:"ISO-38505-1-2017",tier:"International",cite:"ISO/IEC 38505-1:2017 — Governance of data (Part 1)",auth:"Standard",supports:"Data is an asset whose value must be deliberately governed and realised.",url:"https://www.iso.org/standard/56639.html"},
-               {id:"OECD-DDI-2015",quote:"Data-driven innovation (DDI) has become a key pillar of 21st-century growth.",locator:"Summary",tier:"International",cite:"OECD (2015) — Data-Driven Innovation: Big Data for Growth and Well-Being",auth:"Intergovernmental",supports:"Data drives innovation and economic value across sectors.",url:"https://www.oecd.org"},
-               {id:"DAMA-DMBOK2-CH1",tier:"Professional body",cite:"DAMA-DMBOK2 (2017), Ch.1 — Data Management",auth:"Professional-Body",supports:"Data is an enterprise asset supporting insight, strategy and operations.",url:"https://www.dama.org"}]],
-             ["P-01.02-02",null,"NEEDS-SOURCE","Standard",[
-               {id:"ISO-8000",tier:"International",cite:"ISO 8000 — Data quality (series)",auth:"Standard",supports:"Data quality underpins reliable, efficient operational use of data.",url:"https://www.iso.org/standard/81745.html"},
-               {id:"DAMA-DMBOK2-DQ",tier:"Professional body",cite:"DAMA-DMBOK2 (2017) — Data Quality chapter",auth:"Professional-Body",supports:"Managed quality makes day-to-day operations dependable.",url:"https://www.dama.org"}]],
-             ["P-01.02-03",null,"NEEDS-SOURCE","Industry framework",[
-               {id:"BCBS-239",tier:"International",cite:"BCBS 239 (BIS, 2013) — Principles for effective risk data aggregation and risk reporting",auth:"Industry-Framework",supports:"Weak risk-data management caused material failures; managing it reduces risk.",url:"https://www.bis.org/publ/bcbs239.htm"},
-               {id:"ISO-IEC-27001",tier:"International",cite:"ISO/IEC 27001 — Information security management systems",auth:"Standard",supports:"Protecting data assets builds operational resilience.",url:"https://www.iso.org"}]],
-             ["P-01.02-04",null,"NEEDS-SOURCE","Legislation",[
-               {id:"OECD-PRIVACY-2013",tier:"International",cite:"OECD Privacy Guidelines (1980, rev. 2013)",auth:"Intergovernmental",supports:"A global baseline obligation for handling personal data.",url:"https://www.oecd.org"},
-               {id:"GDPR-2016-679",tier:"Regional (EU)",cite:"GDPR — Regulation (EU) 2016/679",auth:"Regulation",supports:"A binding legal obligation to manage personal data lawfully.",url:"https://eur-lex.europa.eu/eli/reg/2016/679/oj"},
-               {id:"POPIA-2013",quote:"To give effect to the constitutional right to privacy, by safeguarding personal information when processed by a responsible party.",locator:"Section 2",tier:"Local (South Africa)",cite:"Protection of Personal Information Act 4 of 2013 (POPIA)",auth:"Legislation",supports:"South Africa's statutory obligation to manage personal data.",url:"https://en.wikipedia.org/wiki/Protection_of_Personal_Information_Act,_2013"}]]]},
-           G5:{baseline:"DM-01-01-02 / Baseline 1",date:"2026-10-04",scope:"6 propositions (P-01.02-00…04 + C-01.02-01, Approved) · argument (1 contention, 4 reasons, 1 conclusion) · 4 evidence sources accepted and committed (ISO/IEC 38505-1, ISO 8000, ISO/IEC 27001, GDPR).",aiqOpen:1,note:"Freezing locks this baseline; G6 render proceeds from it, and any later change needs a new baseline. One AIQ (AIQ-001) is still open — resolve or accept it for a clean freeze, or freeze with it noted (your call)."}},
-         aiq:[["AIQ-001","Argument","Add a warrant stating the four drivers may coexist and are not mutually exclusive.","P-01.02-00","Pending"]]}
-      ]
+      sections:[],   // NO SEED: built fresh from sections.json on every load
+      _loadError:null
     }
   };
-  var DLAB={complete:"done",active:"active",backfill:"backfill",waiting:"waiting"};
+  var DLAB={complete:"done",active:"active",backfill:"backfill",waiting:"waiting",ready:"ready"};
 
   // Derive a gate's status from the viewer's saved review decisions (localStorage), falling back to the
   // seed status when no review exists or none have been decided. This makes the chip reflect accept/reject.
@@ -837,16 +533,8 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       if(s.decision==='acc' && (!needSrc || s.src)) acc++;});
     return {total:ids.length, acc:acc};
   }
-  function gateStatus(sec, gk){
-    if(gk==='G5'){var fs=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G5.freeze')||{};return fs.decision==='frozen'?'complete':(sec.gates.G5||'waiting');}
-    if(gk==='G6'){var _fz=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G5.freeze')||{};var _fr=_fz.decision==='frozen';var _reg=RENDERREG[sec.sid];
-      if(_reg&&_reg.renders){var _fh=_fz.hash||'';if(!_fh||/^B[0-9A-Z]{3,8}$/.test(_fh)||hashMatch(_reg.content_hash,_fh))return 'complete';return 'active';}
-      var _r=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G6.render')||{};if(_r.decision==='complete')return 'complete';return _fr?'active':(sec.gates.G6||'waiting');}
-    if(gk==='G7'){var _a7=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G7.assure')||{};if(_a7.decision==='signed')return 'complete';var _r6=(lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G6.render')||{}).decision==='complete';return _r6?'active':(sec.gates.G7||'waiting');}
-    var t=reviewTally(sec, gk);
-    if(t && t.total>0){ if(t.acc===t.total) return 'complete'; if(t.acc>0) return 'active'; }
-    return sec.gates[gk]||'waiting';
-  }
+  // Gate chips come straight from the committed sections.json register — nothing else (handover requirement).
+  function gateStatus(sec, gk){ return (sec.gates&&sec.gates[gk])||'waiting'; }
 
   function propositionsSummary(sec){
     var proj="dmbok-v3-ch1", ol=OUTLINES[sec.sid]||{}, g2=sec.art.G2, rows;
@@ -1122,6 +810,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       var addMeta=MT_EDIT.addMeta?metaForm(null,-1):'<div class="mt-bar"><button class="rv-btn" id="mtAddMeta">+ Add metaphor</button></div>';
       var claims='<div class="mt-claims"><h4 style="margin:14px 0 4px">Claims ↔ mappings</h4><p class="note" style="margin:0 0 6px">Every claim the rendered prose makes, and the mapping(s) that illustrate it. Click a claim to highlight its mapping; click a mapping’s claim chip to highlight the claim.</p>'+
         Object.keys(ci).sort().map(function(pid){var e=ci[pid];var maps=Object.keys(e.maps);return '<div class="claimrow" id="cr-'+CSSid(pid)+'" data-pid="'+esc(pid)+'"><span class="cpid">'+esc(pid)+'</span>'+esc(String(e.text).slice(0,150))+(String(e.text).length>150?'…':'')+(maps.length?(' <span style="color:var(--soft);font-size:.74rem">◆ '+maps.map(esc).join(', ')+'</span>'):' <span style="color:var(--soft);font-size:.74rem">◆ (no mapping yet)</span>')+'</div>';}).join('')+'</div>';
+      function kv(o){if(o==null)return '';if(typeof o!=='object')return esc(String(o));if(Array.isArray(o))return '<ul class="sbmb">'+o.map(function(x){return '<li>'+kv(x)+'</li>';}).join('')+'</ul>';return Object.keys(o).map(function(k){return '<div style="margin:2px 0"><b>'+esc(k)+':</b> '+kv(o[k])+'</div>';}).join('');}
       var A=d.architecture, arch='';
       if(A){var sbm=A.section_bullet_map||[];
         arch='<details class="mt-arch"><summary>▤ Chapter architecture (v'+esc(d.schema_version||'2.0')+') — dosage, guardrails &amp; section/bullet alignment</summary>'+
@@ -1131,6 +820,8 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
           (A.editorial_dosage?('<div class="archsub">Editorial dosage</div><p class="note"><b>Prominent:</b> '+esc((A.editorial_dosage.prominent||[]).join(', '))+' · <b>Light-touch:</b> '+esc((A.editorial_dosage.light_touch||[]).join(', '))+' · <b>Withdraw:</b> '+esc((A.editorial_dosage.withdraw||[]).join(', '))+'</p>'):'')+
           (A.no_metaphor_zones?('<div class="archsub">No-metaphor zones</div><p class="note">'+esc((A.no_metaphor_zones||[]).join(' · '))+'</p>'):'')+
           (sbm.length?('<div class="archsub">Section / bullet alignment ('+sbm.length+')</div>'+sbm.map(function(e){return '<div class="sbm"><b>'+esc(e.outline_id)+' · '+esc(e.heading||'')+'</b>'+((e.use||e.fidelity||e.guardrails)?' <span class="idc">['+esc((e.use||[]).join(','))+(e.fidelity?(' · fidelity '+esc(e.fidelity)):'')+(e.guardrails&&e.guardrails.length?(' · '+esc((e.guardrails||[]).join(','))):'')+']</span>':'')+((e.bullets&&e.bullets.length)?('<ul class="sbmb">'+e.bullets.map(function(b){return '<li>'+esc(b)+'</li>';}).join('')+'</ul>'):'')+(e.application?'<div class="note" style="margin:3px 0 0">'+esc(e.application)+'</div>':'')+'</div>';}).join('')):'')+
+          (d.central_proposition?('<div class="archsub">Central proposition</div><p class="note">'+kv(d.central_proposition)+'</p>'):'')+
+          (A.composed_meal?('<div class="archsub">Composed-meal model (integrative sections)</div>'+kv(A.composed_meal)):'')+
           '</details>';
       }
       c.innerHTML=bar+fam+arch+intro+cards+addMeta+claims;
@@ -1329,34 +1020,35 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     function accOf(id){return dec('G3',id).decision==='acc';}
     var usingNodes=!!(sec.art.G3&&sec.art.G3.nodes);
     var list=[];
-    if(usingNodes){g3Active(sec).forEach(function(n){var s=dec('G3',n[0]);var st=s.decision==='acc'?'acc':(s.decision==='rej'?'rej':'pend');var L=g3L(sec,n[0]);list.push({id:n[0],fn:(L.fn||n[1]),pid:n[2],text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:st,ev:(!!L.ev||evListed(n[2])),evOk:evSup(n[2])});});}
+    if(usingNodes){g3Active(sec).forEach(function(n){var s=dec('G3',n[0]);var st=s.decision==='acc'?'acc':(s.decision==='rej'?'rej':'pend');var L=g3L(sec,n[0]);list.push({id:n[0],fn:(L.fn||n[1]),pid:n[2],text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:st,ev:(!!L.ev||evListed(n[2])),evOk:evSup(n[2]),tier:(n.length>8&&n[8]!=null?n[8]:null)});});}
     else if(sec.art.G2){var g2=sec.art.G2;list=(g2.props?g2.props.map(function(pp){return {id:pp[0],fn:pp[1],text:pp[2],pid:pp[0],status:'acc'};}):(g2.backfill||[]).map(function(e){var s=dec('G2',e[0]);return {id:e[0],fn:e[2],text:(s.text&&s.text!==''?s.text:e[3]),pid:e[0],status:s.decision==='rej'?'rej':(s.decision==='acc'?'acc':'pend')};})).map(function(it){it.ev=evListed(it.pid);it.evOk=evSup(it.pid);return it;});}
-    var T3SET={Warrant:1,Qualification:1,Counterpoint:1,Definition:1,Distinction:1,Principle:1,Consequence:1,Recommendation:1,Transition:1,Auxiliary:1};
-    function tierOf(fn){if(fn==='Contention')return 1;if(fn==='Conclusion')return 5;if(T3SET[fn])return 3;return 2;}
-    var tiers={1:[],2:[],3:[],4:[],5:[]};
-    list.forEach(function(it){tiers[tierOf(it.fn)].push(it);});
+    function tierOf(fn){return {Principle:1,Contention:2,Claim:2,Definition:2,Distinction:3,Qualification:3,Counterpoint:3,Reason:4,Warrant:5,Consequence:6,Recommendation:6,Transition:3,Auxiliary:3,Conclusion:7}[fn]||2;}
+    function tierOfNode(it){return (it.tier!=null&&it.tier>=1&&it.tier<=7)?it.tier:tierOf(it.fn);}
+    var tiers={1:[],2:[],3:[],4:[],5:[],6:[],7:[]};
+    list.forEach(function(it){var t=tierOfNode(it);(tiers[t]||(tiers[t]=[])).push(it);});
     var aiqs=(sec.aiq||[]).map(function(q){var s=dec('AIQ',q[0]);return {id:q[0],fn:'Warrant',text:q[2],aiq:true,state:(s.decision==='accept'?'acc':(s.decision==='reject'?'rej':'pend'))};});
-    aiqs.forEach(function(a){tiers[3].push(a);});
+    aiqs.forEach(function(a){tiers[5].push(a);});
     var evNodes=[];
     list.forEach(function(it){if(it.fn==='Conclusion')return;if(it.ev||it.evOk){evNodes.push({id:'EV-'+it.id,owner:it.id,ok:it.evOk,cite:(it.evOk?'SRC verified':'SRC needed'),pid:it.pid});}});
-    tiers[4]=evNodes;
     var W=1320,bw=240,bh=70,ew=180,eh=46,gapX=30,rowGap=30,bandGap=36,pad=20;
     var BLUE=['#dbeafe','#2563eb'],GREEN=['#dcfce7','#16a34a'],AMBER=['#fef3c7','#d97706'],RED=['#fee2e2','#dc2626'],GREY='#5b6b7a';
     function perRow(nodeW){return Math.max(1,Math.floor((W-2*pad+gapX)/(nodeW+gapX)));}
     var pos={},p=[],y=pad,bandMeta=[];
-    [1,2,3,4,5].forEach(function(ti){var arr=tiers[ti];if(!arr.length)return;var isEv=(ti===4),single=(arr.length===1&&!isEv);var nodeW=isEv?ew:(single?360:bw),pr=perRow(nodeW),rows=Math.ceil(arr.length/pr),bandTop=y;
+    var BANDS=[];[1,2,3,4,5,6,7].forEach(function(ti){if(tiers[ti]&&tiers[ti].length)BANDS.push({lab:'T'+ti,arr:tiers[ti],ev:false});});
+    if(evNodes.length)BANDS.push({lab:'EV',arr:evNodes,ev:true});
+    BANDS.forEach(function(bnd){var arr=bnd.arr,isEv=bnd.ev,single=(arr.length===1&&!isEv);var nodeW=isEv?ew:(single?360:bw),pr=perRow(nodeW),rows=Math.ceil(arr.length/pr),bandTop=y;
       arr.forEach(function(it){it._w=nodeW;it._h=isEv?eh:boxHeight(it.text,nodeW);});
       var rowH=[];for(var r=0;r<rows;r++){var mh=0;for(var i=r*pr;i<Math.min((r+1)*pr,arr.length);i++){mh=Math.max(mh,arr[i]._h);}rowH[r]=mh;}
       var rowTop=[],acc=bandTop;for(var r=0;r<rows;r++){rowTop[r]=acc;acc+=rowH[r]+rowGap;}
       arr.forEach(function(it,i){var r=Math.floor(i/pr),cI=i%pr,cnt=Math.min(pr,arr.length-r*pr),rowW=cnt*nodeW+(cnt-1)*gapX,sx=(W-rowW)/2+cI*(nodeW+gapX),sy=rowTop[r];it._x=sx;it._y=sy;pos[it.id]={cx:sx+nodeW/2,top:sy,bot:sy+it._h};});
-      var bandH=acc-rowGap-bandTop;bandMeta.push({ti:ti,top:bandTop,bot:bandTop+bandH});y=bandTop+bandH+bandGap;});
+      var bandH=acc-rowGap-bandTop;bandMeta.push({ti:bnd.lab,top:bandTop,bot:bandTop+bandH});y=bandTop+bandH+bandGap;});
     var H=y+2;
     p.push('<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="'+GREY+'"/></marker><marker id="aha" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d97706"/></marker></defs>');
-    bandMeta.forEach(function(b){p.push('<text x="4" y="'+(b.top+11)+'" font-size="9" fill="#9aa7b4" font-family="ui-monospace,monospace">T'+b.ti+'</text>');});
+    bandMeta.forEach(function(b){p.push('<text x="4" y="'+(b.top+11)+'" font-size="9" fill="#9aa7b4" font-family="ui-monospace,monospace">'+b.ti+'</text>');});
     function edge(aId,bId,solid,amber){var a=pos[aId],b=pos[bId];if(!a||!b)return;var x1=a.cx,x2=b.cx,y1,y2;if(b.top>=a.bot){y1=a.bot;y2=b.top;}else if(b.bot<=a.top){y1=a.top;y2=b.bot;}else{y1=a.bot;y2=b.top;}var col=amber?'#d97706':GREY;p.push('<path d="M'+x1+','+y1+' L'+x2+','+y2+'" stroke="'+col+'" stroke-width="1.4" fill="none" marker-end="url(#'+(amber?'aha':'ah')+')"'+(solid?'':' stroke-dasharray="5 4"')+'/>');}
     if(usingNodes){var seen={};g3Active(sec).forEach(function(n){var L=g3L(sec,n[0]);(L.leads||[]).forEach(function(t){var k=n[0]+'>'+t;if(!seen[k]&&pos[n[0]]&&pos[t]){seen[k]=1;edge(n[0],t,accOf(n[0]));}});(L.dep||[]).forEach(function(dp){var k=dp+'>'+n[0];if(!seen[k]&&pos[dp]&&pos[n[0]]){seen[k]=1;edge(dp,n[0],accOf(dp));}});});}
-    else{var cont0=tiers[1][0],conc0=tiers[5][0];tiers[2].concat(tiers[3]).forEach(function(it){if(it.aiq)return;if(cont0)edge(cont0.id,it.id,true);if(conc0)edge(it.id,conc0.id,true);});}
-    aiqs.forEach(function(a){var tgt=(tiers[1][0]&&tiers[1][0].id)||(tiers[5][0]&&tiers[5][0].id);if(tgt)edge(a.id,tgt,a.state==='acc',a.state!=='rej');});
+    else{var cont0=(tiers[2][0]||tiers[1][0]),conc0=tiers[7][0];tiers[3].concat(tiers[4]).forEach(function(it){if(it.aiq)return;if(cont0)edge(cont0.id,it.id,true);if(conc0)edge(it.id,conc0.id,true);});}
+    aiqs.forEach(function(a){var tgt=(tiers[2][0]&&tiers[2][0].id)||(tiers[7][0]&&tiers[7][0].id);if(tgt)edge(a.id,tgt,a.state==='acc',a.state!=='rej');});
     evNodes.forEach(function(ev){edge(ev.owner,ev.id,ev.ok);});
     function funcDisplay(fn){return {Contention:'Opening Contention',Conclusion:'Intended Conclusion'}[fn]||fn;}
     function drawProp(it){var fill,stroke,flab;
@@ -1370,11 +1062,11 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       var nodeId=usingNodes?(it.id||it.pid):(it.pid||it.id);
       var did=nodeId+((usingNodes&&it.pid&&it.pid!==nodeId)?('  ·  '+it.pid):'');
       p.push('<g><title>'+esc(nodeId+(it.pid&&it.pid!==nodeId?' ('+it.pid+')':'')+' · '+flab+' — '+it.text)+'</title>'+vmBox(it._x,it._y,it._w,it._h,fill,stroke,did,flab,it.text)+'</g>');}
-    [1,2,3,5].forEach(function(ti){tiers[ti].forEach(drawProp);});
+    [1,2,3,4,5,6,7].forEach(function(ti){(tiers[ti]||[]).forEach(drawProp);});
     evNodes.forEach(function(ev){var fill=ev.ok?GREEN[0]:RED[0],stroke=ev.ok?'#2f6f4f':RED[1];p.push('<g><title>'+esc('Evidence for '+ev.owner+' — '+ev.cite)+'</title><rect x="'+ev._x+'" y="'+ev._y+'" rx="7" width="'+ev._w+'" height="'+ev._h+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.4"'+(ev.ok?'':' stroke-dasharray="5 4"')+'/><g transform="translate('+(ev._x+9)+','+(ev._y+9)+')"><rect x="0" y="0" width="13" height="16" rx="1.5" fill="#ffffff" stroke="'+stroke+'" stroke-width="1.2"/><path d="M9,0 L13,4 L9,4 Z" fill="'+stroke+'"/><line x1="3" y1="7" x2="10" y2="7" stroke="'+stroke+'" stroke-width="1"/><line x1="3" y1="10" x2="10" y2="10" stroke="'+stroke+'" stroke-width="1"/></g><text x="'+(ev._x+30)+'" y="'+(ev._y+17)+'" font-size="9" font-weight="700" fill="'+stroke+'" font-family="ui-monospace,monospace">'+esc(ev.pid)+'</text><text x="'+(ev._x+30)+'" y="'+(ev._y+33)+'" font-size="10" fill="#1d2630">'+esc(ev.cite)+'</text></g>');});
     return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:'+W+'px" xmlns="http://www.w3.org/2000/svg">'+p.join('')+'</svg>';}
   function vmLegend(){return '<div class="viskey">'+
-    '<span class="tierk">Tiers: T1 Contention › T2 Reasons › T3 Warrants/Qualifications/Counterpoints › T4 Evidence › T5 Conclusion</span>'+
+    '<span class="tierk">7-tier hierarchy: T1 Principles › T2 Contention/Claims › T3 Distinctions/Qualifications › T4 Reasons › T5 Warrants › T6 Consequences › T7 Conclusion · EV Evidence</span>'+
     '<span><i class="k" style="background:#dbeafe;border-color:#2563eb"></i>Approved proposition</span>'+
     '<span><i class="k" style="background:#dcfce7;border-color:#16a34a"></i>Intended conclusion (C-ID)</span>'+
     '<span><i class="k" style="background:#fef3c7;border-color:#d97706"></i>Quarantined warrant (AIQ)</span>'+
@@ -1451,6 +1143,8 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   function render(id){
     var p=PROJECTS[id];
     document.getElementById('projMeta').textContent=p.type+" · "+id+" · "+p.sections.length+" sections";
+    if(p._loadError){document.getElementById('sections').innerHTML='<div class="sec"><div class="empty" style="padding:28px;text-align:center"><b>Could not load from the repo.</b><br>'+esc(p._loadError)+'<br><br>The board shows only what is committed — it never falls back to cached or seed data. Fix the connection in ⚙ GitHub and press <b>Pull latest ↓</b>.</div></div>';return;}
+    if(!p.sections.length){document.getElementById('sections').innerHTML='<div class="sec"><div class="empty" style="padding:28px;text-align:center">'+(ghConfigured()?'Loading sections fresh from the repo…':'Not connected. Open <b>⚙ GitHub</b>, add your details and connect — the board loads everything live from the repo (no local cache, no seed).')+'</div></div>';return;}
     var secs=p.sections.slice().sort(function(a,b){var k=function(s){var m=String(s.label).match(/^(\d+)\.(\d+)/)||[0,0,0];return [+m[1],+m[2]];};var ka=k(a),kb=k(b);return ka[0]-kb[0]||ka[1]-kb[1];});
     var H1NAMES={1:'Introduction',2:'Key Terms',3:'Foundations of Data Management',4:'Tools',5:'Techniques',6:'Roles',7:'Activities',8:'Metrics',9:'Risk Management',10:'Interrelation with Data Governance'};
     function secCard(s,si){
@@ -1513,6 +1207,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     if(collAll){var hcNow=lsGet('acpp.board.h1coll')||{};var allCol=groups.length&&groups.every(function(g){return hcNow[g.hn];});collAll.textContent=allCol?'Expand all headings':'Collapse all headings';}
   }
   sel.addEventListener('change',function(){render(sel.value);});
+  try{for(var _i=localStorage.length-1;_i>=0;_i--){var _k=localStorage.key(_i);if(_k&&_k.indexOf('acpp.dmbok-v3-ch1.')===0)localStorage.removeItem(_k);}}catch(e){}  // purge any stale cache from earlier versions
   hydrateFromCache();
   render(sel.value);
   ghInitPanel();

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.3.0">
+<meta name="version" content="1.4.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -200,18 +200,22 @@
       addNode(rid,'R',SECTIONS[sec].label+' — '+(g6==='complete'?'Rendered':'Not yet rendered'),sec,(g6==='complete'?'G6 complete':'G6 '+g6));
       Object.keys(NODES).forEach(function(nid){var nn=NODES[nid];if(nn.tier==='P'&&nn.section===sec)addEdge(nid,rid);});
     });
-    // metaphors -> M tier: metaphor nodes + mapping nodes; each mapping illustrates -> claim (P, else argument node by p_id)
+    // metaphors -> M tier: metaphor nodes + mapping nodes.
+    // Anchor each mapping to the OUTLINE BULLET of the proposition it illustrates (matches metaphors.json
+    // section_bullet_map); fall back to the proposition/argument node when the claim is section-level (no bullet).
     function claimNode(pid){ if(NODES[pid]&&NODES[pid].tier==='P')return pid; if(ANBYPID[pid])return ANBYPID[pid]; return null; }
+    var PID2OUT={}; (data.props||[]).forEach(function(p){ if(p.p_id)PID2OUT[p.p_id]=p.outline_id; });
+    function anchorFor(pp){ var out=PID2OUT[pp]; if(out&&NODES[out]&&NODES[out].tier==='B') return out; return claimNode(pp); }
     var mroot=data.metaphors&&(data.metaphors.metaphors||(Array.isArray(data.metaphors)?data.metaphors:null));
     (mroot||[]).forEach(function(m,mi){ if(!m||!m.metaphor_id)return; var midx=('0'+mi).slice(-2);
       addNode(m.metaphor_id,'M',(m.name||m.metaphor_id)+' — '+(m.vehicle||''),'',(m.status||'')+(m.role_in_family?(' · '+m.role_in_family):''));
       NODES[m.metaphor_id].sortkey=midx+'#0#'+m.metaphor_id; NODES[m.metaphor_id].mkind='met';
       (m.mappings||[]).forEach(function(mp){ if(!mp||!mp.map_id)return; var secs={},sec='';
-        (mp.illustrates||[]).forEach(function(pp){var cn=claimNode(pp);if(cn&&NODES[cn].section){secs[NODES[cn].section]=1;if(!sec)sec=NODES[cn].section;}});
+        (mp.illustrates||[]).forEach(function(pp){var an=anchorFor(pp);if(an&&NODES[an].section){secs[NODES[an].section]=1;if(!sec)sec=NODES[an].section;}});
         addNode(mp.map_id,'M',(mp.vehicle||'')+' → '+(mp.tenor||''),sec,'illustrates '+((mp.illustrates||[]).join(', '))+(mp.fidelity?(' · '+mp.fidelity):''));
         NODES[mp.map_id].sortkey=midx+'#1#'+mp.map_id; NODES[mp.map_id].mkind='map'; NODES[mp.map_id].secs=secs;
         addEdge(m.metaphor_id,mp.map_id); // parentage (same-tier; not drawn)
-        (mp.illustrates||[]).forEach(function(pp){var cn=claimNode(pp);if(cn)addEdge(cn,mp.map_id);});
+        (mp.illustrates||[]).forEach(function(pp){var an=anchorFor(pp);if(an)addEdge(an,mp.map_id);});
       });
     });
     // metaphor node section membership = union of its mappings' sections

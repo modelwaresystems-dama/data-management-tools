@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.0.0">
+<meta name="version" content="4.1.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -352,7 +352,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   function buildSrcIndex(sj){SRCIDX={items:{},links:(sj&&sj.links)||[]};((sj&&sj.items)||[]).forEach(function(i){SRCIDX.items[i.id]=i;});}
   function _authTier(note){var a='',t='';var m=/Authority:\s*([^·]+)/.exec(note||'');if(m)a=m[1].trim();var m2=/·\s*(.+)$/.exec(note||'');if(m2)t=m2[1].trim();return {auth:a,tier:t};}
   function _supportsFor(srcId,pid){for(var i=0;i<SRCIDX.links.length;i++){var l=SRCIDX.links[i];if(l.source_id===srcId&&padId(l.proposition_id)===padId(pid))return {sup:l.passage||'',strg:l.support_strength||''};}return {sup:'',strg:''};}
-  function buildG2(o){return {sources:"Committed propositions."+(o.section_id||'')+".json (register)",backfill:(o.propositions||[]).map(function(p){return [padId(p.p_id),p.outline_id||'',p.type||'Claim',p.text||''];})};}
+  function buildG2(o){return {sources:"Committed propositions."+(o.section_id||'')+".json (register)",backfill:(o.propositions||[]).map(function(p){return [padId(p.p_id),p.outline_id||'',p.type||'Claim',p.text||'',(p.tier!=null?p.tier:null),(Array.isArray(p.grounded_on)?p.grounded_on:(p.grounded_on?[p.grounded_on]:[])).map(padId)];})};}
   function buildG3(o){return {sources:"Committed argument_nodes."+(o.section_id||'')+".json (register)",nodes:((o.argument_nodes||o.nodes)||[]).map(function(n){return [padId(n.an_id),n.type,padId(n.p_id),n.outline_id||'',n.text||'',(n.depends_on||[]).map(padId),(n.leads_to||[]).map(padId),(n.evidence_needed!=null?!!n.evidence_needed:!!n.evidence_marker),(n.tier!=null?n.tier:null)];}),drift:[],aiqNote:""};}
   function buildAIQ(o){return ((o&&o.items)||[]).map(function(it){return [it.aiq_id,it.type||'Warrant',it.text||'',it.target_p_id||it.p_id||'',it.status||'Pending'];});}
   function buildG4(o){return {sources:"Committed evidence_links + sources.json (registers)",findings:"Built from the committed registers.",evid:(o.links||[]).map(function(l){var it=SRCIDX.items[l.src_id]||{};var at=_authTier(it.note);var s=_supportsFor(l.src_id,l.p_id);var status=l.status==='Supported'?'Supported':(l.status==='Rejected'?'Rejected':'NEEDS-SOURCE');return [padId(l.p_id),null,status,at.tier||at.auth||'',[{id:l.src_id||'',tier:at.tier||l.support_strength||'',cite:it.title||l.src_id||'',auth:at.auth||'',supports:s.sup||l.reviewer_comment||'',url:it.URL||'',quote:l.passage||'',locator:l.locator||''}]];})};}
@@ -686,7 +686,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       var rem=removed.length?('<p class="note">Removed ('+removed.length+'): '+removed.map(function(n){return '<span class="idc">'+n[0]+'</span> <button class="linklike" data-restore="'+n[0]+'">↩ restore</button>';}).join('   ')+'</p>'):'';
       var addf='<div class="addnode"><b>+ Add a node</b><div class="ar-form"><select id="anType"><option value="Contention">Opening Contention</option><option value="Reason" selected>Supporting Reason</option><option value="Warrant">Warrant</option><option value="Qualification">Qualification</option><option value="Counterpoint">Counterpoint</option><option value="Conclusion">Intended Conclusion</option></select><input id="anPid" placeholder="P-ID (optional)"><input id="anText" placeholder="Node text"><button class="rv-btn" id="anAdd">Add</button></div></div>';
       c.innerHTML=bar+map+hint+cards+rem+addf;
-      var vf=c.querySelector('.visfull');if(vf)vf.addEventListener('click',function(){openFullMap(sec);});
+      var vf=c.querySelector('.visfull');if(vf)vf.addEventListener('click',function(){openFullMap(sec,'G3');});
       function flash(){var e=c.querySelector('#agSave');if(e){e.textContent='saved';setTimeout(function(){e.textContent='';},900);}}
       c.querySelectorAll('.rv-row').forEach(function(row){var id=row.dataset.id;
         row.querySelector('[data-act="acc"]').addEventListener('click',function(){var s=lsGet(kOf(id))||{};s.decision='acc';s.comment=row.querySelector('.rv-cmt').value;lsSet(kOf(id),s);draw();});
@@ -1065,6 +1065,38 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     [1,2,3,4,5,6,7].forEach(function(ti){(tiers[ti]||[]).forEach(drawProp);});
     evNodes.forEach(function(ev){var fill=ev.ok?GREEN[0]:RED[0],stroke=ev.ok?'#2f6f4f':RED[1];p.push('<g><title>'+esc('Evidence for '+ev.owner+' — '+ev.cite)+'</title><rect x="'+ev._x+'" y="'+ev._y+'" rx="7" width="'+ev._w+'" height="'+ev._h+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.4"'+(ev.ok?'':' stroke-dasharray="5 4"')+'/><g transform="translate('+(ev._x+9)+','+(ev._y+9)+')"><rect x="0" y="0" width="13" height="16" rx="1.5" fill="#ffffff" stroke="'+stroke+'" stroke-width="1.2"/><path d="M9,0 L13,4 L9,4 Z" fill="'+stroke+'"/><line x1="3" y1="7" x2="10" y2="7" stroke="'+stroke+'" stroke-width="1"/><line x1="3" y1="10" x2="10" y2="10" stroke="'+stroke+'" stroke-width="1"/></g><text x="'+(ev._x+30)+'" y="'+(ev._y+17)+'" font-size="9" font-weight="700" fill="'+stroke+'" font-family="ui-monospace,monospace">'+esc(ev.pid)+'</text><text x="'+(ev._x+30)+'" y="'+(ev._y+33)+'" font-size="10" fill="#1d2630">'+esc(ev.cite)+'</text></g>');});
     return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:'+W+'px" xmlns="http://www.w3.org/2000/svg">'+p.join('')+'</svg>';}
+  function genPropositionSVG(sec){var proj="dmbok-v3-ch1";
+    function dec(id){return lsGet('acpp.'+proj+'.'+sec.sid+'.G2.'+id)||{};}
+    var g2=sec.art&&sec.art.G2; if(!g2||!g2.backfill||!g2.backfill.length) return '<p class="empty">No propositions to map for this section.</p>';
+    function pTier(type,tier){if(tier!=null&&tier>=1&&tier<=7)return tier;return {Principle:1,Contention:2,Claim:2,Definition:2,Distinction:3,Qualification:3,Counterpoint:3,Reason:4,Warrant:5,Consequence:6,Recommendation:6,Conclusion:7}[type]||2;}
+    var list=g2.backfill.map(function(e){var s=dec(e[0]);var st=(s.decision==='rej')?'rej':(s.decision==='acc'?'acc':'pend');var txt=(s.text&&s.text.trim?(s.text.trim()?s.text:e[3]):e[3]);return {id:e[0],type:e[2],text:txt,tier:pTier(e[2],e.length>4?e[4]:null),grounded:(e.length>5&&e[5])?e[5]:[],status:st};});
+    var tiers={1:[],2:[],3:[],4:[],5:[],6:[],7:[]};
+    list.forEach(function(it){(tiers[it.tier]||(tiers[it.tier]=[])).push(it);});
+    var W=1320,bw=240,gapX=30,rowGap=30,bandGap=36,pad=20;
+    var BLUE=['#dbeafe','#2563eb'],GREEN=['#dcfce7','#16a34a'],RED=['#fee2e2','#dc2626'],GREY='#5b6b7a';
+    function perRow(nodeW){return Math.max(1,Math.floor((W-2*pad+gapX)/(nodeW+gapX)));}
+    var pos={},p=[],y=pad,bandMeta=[];
+    var BANDS=[];[1,2,3,4,5,6,7].forEach(function(ti){if(tiers[ti]&&tiers[ti].length)BANDS.push({lab:'T'+ti,arr:tiers[ti]});});
+    BANDS.forEach(function(bnd){var arr=bnd.arr,single=(arr.length===1),nodeW=single?360:bw,pr=perRow(nodeW),rows=Math.ceil(arr.length/pr),bandTop=y;
+      arr.forEach(function(it){it._w=nodeW;it._h=boxHeight(it.text,nodeW);});
+      var rowH=[];for(var r=0;r<rows;r++){var mh=0;for(var i=r*pr;i<Math.min((r+1)*pr,arr.length);i++){mh=Math.max(mh,arr[i]._h);}rowH[r]=mh;}
+      var rowTop=[],acc=bandTop;for(var r=0;r<rows;r++){rowTop[r]=acc;acc+=rowH[r]+rowGap;}
+      arr.forEach(function(it,i){var r=Math.floor(i/pr),cI=i%pr,cnt=Math.min(pr,arr.length-r*pr),rowW=cnt*nodeW+(cnt-1)*gapX,sx=(W-rowW)/2+cI*(nodeW+gapX),sy=rowTop[r];it._x=sx;it._y=sy;pos[it.id]={cx:sx+nodeW/2,top:sy,bot:sy+it._h};});
+      var bandH=acc-rowGap-bandTop;bandMeta.push({ti:bnd.lab,top:bandTop,bot:bandTop+bandH});y=bandTop+bandH+bandGap;});
+    var H=y+2;
+    p.push('<defs><marker id="ahp" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="'+GREY+'"/></marker></defs>');
+    bandMeta.forEach(function(b){p.push('<text x="4" y="'+(b.top+11)+'" font-size="9" fill="#9aa7b4" font-family="ui-monospace,monospace">'+b.ti+'</text>');});
+    function edge(aId,bId){var a=pos[aId],b=pos[bId];if(!a||!b)return;var x1=a.cx,x2=b.cx,y1,y2;if(b.top>=a.bot){y1=a.bot;y2=b.top;}else if(b.bot<=a.top){y1=a.top;y2=b.bot;}else{y1=a.bot;y2=b.top;}p.push('<path d="M'+x1+','+y1+' C'+x1+','+((y1+y2)/2)+' '+x2+','+((y1+y2)/2)+' '+x2+','+y2+'" stroke="'+GREY+'" stroke-width="1.3" fill="none" marker-end="url(#ahp)"/>');}
+    list.forEach(function(it){(it.grounded||[]).forEach(function(g){if(pos[g]&&pos[it.id])edge(g,it.id);});});
+    list.forEach(function(it){var fill,stroke;if(/^C-/.test(it.id)||it.type==='Conclusion'){fill=GREEN[0];stroke=GREEN[1];}else if(it.status==='rej'){fill=RED[0];stroke=RED[1];}else{fill=BLUE[0];stroke=BLUE[1];}
+      p.push('<g><title>'+esc(it.id+' \u00b7 '+it.type+(it.grounded&&it.grounded.length?(' \u00b7 grounded on '+it.grounded.join(', ')):'')+' \u2014 '+it.text)+'</title>'+vmBox(it._x,it._y,it._w,it._h,fill,stroke,it.id,it.type,it.text)+'</g>');});
+    return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:'+W+'px" xmlns="http://www.w3.org/2000/svg">'+p.join('')+'</svg>';}
+  function vmLegendProps(){return '<div class="viskey">'+
+    '<span class="tierk">Proposition inventory by tier: T1 Principles \u203a T2 Contention/Definitions/Claims \u203a T3 Distinctions/Qualifications \u203a T4 Reasons \u203a T5 Warrants \u203a T6 Consequences \u203a T7 Conclusion</span>'+
+    '<span><i class="k" style="background:#dbeafe;border-color:#2563eb"></i>Proposition</span>'+
+    '<span><i class="k" style="background:#dcfce7;border-color:#16a34a"></i>Conclusion (C-ID)</span>'+
+    '<span><i class="k" style="background:#fee2e2;border-color:#dc2626"></i>Rejected</span>'+
+    '<span>\u2192 grounded-on (claim \u2192 proposition)</span></div>';}
   function vmLegend(){return '<div class="viskey">'+
     '<span class="tierk">7-tier hierarchy: T1 Principles › T2 Contention/Claims › T3 Distinctions/Qualifications › T4 Reasons › T5 Warrants › T6 Consequences › T7 Conclusion · EV Evidence</span>'+
     '<span><i class="k" style="background:#dbeafe;border-color:#2563eb"></i>Approved proposition</span>'+
@@ -1124,13 +1156,13 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       '</div>'+
       '<p class="note"><button class="rv-btn visback">← Back</button></p>';
     wireDetail(det,sec,'G3');}
-  function openFullMap(sec){if(document.querySelector('.fsOverlay'))return;var ov=document.createElement('div');ov.className='fsOverlay';ov.innerHTML='<div class="fsBar"><b>'+esc(sec.label)+' — Argument hierarchy (Standardized Visual Grammar)</b><button class="rv-btn fsFit">Actual size</button><button class="rv-btn fsClose">✕ Close</button></div><div class="fsBody">'+genArgumentSVG(sec)+'</div>'+vmLegend();document.body.appendChild(ov);var body=ov.querySelector('.fsBody');var fitBtn=ov.querySelector('.fsFit');fitBtn.addEventListener('click',function(){var actual=body.classList.toggle('actual');fitBtn.textContent=actual?'Fit to screen':'Actual size';});function close(){if(ov.parentNode)document.body.removeChild(ov);document.removeEventListener('keydown',onk);}function onk(e){if(e.key==='Escape')close();}ov.querySelector('.fsClose').addEventListener('click',close);ov.addEventListener('click',function(e){if(e.target===ov)close();});document.addEventListener('keydown',onk);}
-  function buildVisualMap(det,sec,gk){det.innerHTML='<div class="dh"><b>◇ Visual map</b><span class="src">'+esc(sec.label)+' — Standardized Visual Grammar</span></div>'+'<div class="maptools"><button class="rv-btn visfull">⤢ Full screen</button></div><div class="vismapwrap">'+genArgumentSVG(sec)+'</div>'+vmLegend()+'<p class="note" style="font-style:italic;color:var(--muted,#667)">“The flowchart is not a picture of the prose — it is a picture of your reasoning.”</p><p class="note"><button class="rv-btn visback">← Back to summary</button></p>';wireDetail(det,sec,gk);}
+  function openFullMap(sec,gk){if(document.querySelector('.fsOverlay'))return;var isP=(gk==='G2');var svg=isP?genPropositionSVG(sec):genArgumentSVG(sec);var leg=isP?vmLegendProps():vmLegend();var hd=isP?'Proposition inventory (typed, by tier)':'Argument hierarchy (Standardized Visual Grammar)';var ov=document.createElement('div');ov.className='fsOverlay';ov.innerHTML='<div class="fsBar"><b>'+esc(sec.label)+' — '+hd+'</b><button class="rv-btn fsFit">Actual size</button><button class="rv-btn fsClose">✕ Close</button></div><div class="fsBody">'+svg+'</div>'+leg;document.body.appendChild(ov);var body=ov.querySelector('.fsBody');var fitBtn=ov.querySelector('.fsFit');fitBtn.addEventListener('click',function(){var actual=body.classList.toggle('actual');fitBtn.textContent=actual?'Fit to screen':'Actual size';});function close(){if(ov.parentNode)document.body.removeChild(ov);document.removeEventListener('keydown',onk);}function onk(e){if(e.key==='Escape')close();}ov.querySelector('.fsClose').addEventListener('click',close);ov.addEventListener('click',function(e){if(e.target===ov)close();});document.addEventListener('keydown',onk);}
+  function buildVisualMap(det,sec,gk){var isP=(gk==='G2');var svg=isP?genPropositionSVG(sec):genArgumentSVG(sec);var leg=isP?vmLegendProps():vmLegend();var ttl=isP?'Proposition inventory (typed, by tier)':'Standardized Visual Grammar';var cap=isP?'“The proposition map is the inventory of claims — one node per proposition, grounded-on links shown.”':'“The flowchart is not a picture of the prose — it is a picture of your reasoning.”';det.innerHTML='<div class="dh"><b>◇ Visual map</b><span class="src">'+esc(sec.label)+' — '+ttl+'</span></div>'+'<div class="maptools"><button class="rv-btn visfull">⤢ Full screen</button></div><div class="vismapwrap">'+svg+'</div>'+leg+'<p class="note" style="font-style:italic;color:var(--muted,#667)">'+cap+'</p><p class="note"><button class="rv-btn visback">← Back to summary</button></p>';wireDetail(det,sec,gk);}
   function wireDetail(det,sec,gk){
     det.querySelectorAll('.reedit').forEach(function(rb){rb.addEventListener('click',function(){var g=rb.dataset.gk;var map={G2:['propReview',buildPropositionReview],G3:['argReview',buildArgumentReview],G4:['evReview',buildEvidenceReview],G5:['frzReview',buildFreezeReview]};var m=map[g];if(!m)return;det.innerHTML=gateHead(sec,g)+'<div id="'+m[0]+'"></div>';m[1](det.querySelector('#'+m[0]),sec);});});
     det.querySelectorAll('.vismap').forEach(function(vb){vb.addEventListener('click',function(){buildVisualMap(det,sec,vb.dataset.gk);});});
     det.querySelectorAll('.g3man').forEach(function(mb){mb.addEventListener('click',function(){buildG3Manual(det,sec);});});
-    det.querySelectorAll('.visfull').forEach(function(fb){fb.addEventListener('click',function(){openFullMap(sec);});});
+    det.querySelectorAll('.visfull').forEach(function(fb){fb.addEventListener('click',function(){openFullMap(sec,gk);});});
     det.querySelectorAll('.visback').forEach(function(bb){bb.addEventListener('click',function(){openGate(det,sec,gk);});});}
   function openGate(det,sec,gk){det.innerHTML=renderGate(sec,gk);
     var pc=det.querySelector('#propReview'); if(pc) buildPropositionReview(pc,sec);

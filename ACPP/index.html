@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.6.1">
+<meta name="version" content="4.6.2">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -975,7 +975,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
           '<dt>Argument node</dt><dd class="idc">'+esc(sp.dataset.an||'—')+(sp.dataset.ant?(' · '+esc(sp.dataset.ant)):'')+'</dd>'+
           '<dt>Evidence</dt><dd>'+esc(sp.dataset.ev||'— (inherited / author-asserted)')+'</dd>'+
           (map?('<dt>Illustrated by</dt><dd class="idc">'+esc(map)+'</dd>'):'')+
-          '</dl>'+((map||pid)?'<p class="note" style="margin:6px 0 0"><button class="rv-btn" id="annMap">◆ View mapping in Metaphor Track</button></p>':'')+'</div>';
+          '</dl>'+((map||(pid&&mtPidMaps(pid).length))?'<p class="note" style="margin:6px 0 0"><button class="rv-btn" id="annMap">◆ View mapping in Metaphor Track</button></p>':'<p class="note" style="margin:6px 0 0;color:var(--soft)">No metaphor mapping is linked to this claim.</p>')+'</div>';
         var mb=d.querySelector('#annMap');if(mb)mb.addEventListener('click',function(){openMetaphorTrack(map||'',pid||'');});}
     }
     draw();
@@ -993,14 +993,18 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         if(!e.text||vk==='A_plain')e.text=sp.text;e.secs[sid]=1;if(sp.map_id)e.maps[sp.map_id]=1;}});});});});return idx;}
   function approvedPids(){var s={},ci=claimIndex();Object.keys(ci).forEach(function(p){s[p]=1;});
     var proj=PROJECTS['dmbok-v3-ch1'];if(proj)(proj.sections||[]).forEach(function(sec){var g2=sec.art&&sec.art.G2;if(g2&&g2.backfill)g2.backfill.forEach(function(e){var d=(lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G2.'+e[0])||{}).decision;if(d!=='rej')s[e[0]]=1;});});return s;}
-  function openMetaphorTrack(focusMap,focusPid){var p=document.getElementById('metaPanel');var gp=document.getElementById('ghPanel');if(gp)gp.hidden=true;p.hidden=false;buildMetaphorTrack(p,focusMap,focusPid);p.scrollIntoView({behavior:'smooth',block:'start'});}
+  // All map_ids linked to a proposition: from render claim spans (map_id) and from metaphors.json mappings that illustrate it.
+  function mtPidMaps(pid){var out={};try{var ci=claimIndex();if(ci[pid])Object.keys(ci[pid].maps||{}).forEach(function(k){out[k]=1;});var d=mtData();if(d)(d.metaphors||[]).forEach(function(m){(m.mappings||[]).forEach(function(mp){if((mp.illustrates||[]).indexOf(pid)>=0)out[mp.map_id]=1;});});}catch(e){}return Object.keys(out);}
+  function openMetaphorTrack(focusMap,focusPid){var p=document.getElementById('metaPanel');var gp=document.getElementById('ghPanel');if(gp)gp.hidden=true;var wp=document.getElementById('wcPanel');if(wp)wp.hidden=true;p.hidden=false;buildMetaphorTrack(p,focusMap,focusPid);p.scrollIntoView({behavior:'smooth',block:'start'});}
   function mtHighlight(mapId,pid){
     var p=document.getElementById('metaPanel');if(!p)return;
     p.querySelectorAll('.maprow.hl,.claimrow.hl,.ill.hl').forEach(function(x){x.classList.remove('hl');});
     if(mapId){var mr=p.querySelector('#mr-'+CSSid(mapId));if(mr){mr.classList.add('hl');mr.scrollIntoView({behavior:'smooth',block:'center'});}
       var md=mtFindMap(mapId);if(md)(md.illustrates||[]).forEach(function(pp){var cr=p.querySelector('#cr-'+CSSid(pp));if(cr)cr.classList.add('hl');});}
-    if(pid){var cr2=p.querySelector('#cr-'+CSSid(pid));if(cr2){cr2.classList.add('hl');if(!mapId)cr2.scrollIntoView({behavior:'smooth',block:'center'});}
-      p.querySelectorAll('.ill[data-pid="'+pid+'"]').forEach(function(ch){ch.classList.add('hl');ch.closest('.maprow')&&ch.closest('.maprow').classList.add('hl');});}
+    if(pid){var cr2=p.querySelector('#cr-'+CSSid(pid));if(cr2)cr2.classList.add('hl');
+      var scrolled=false;
+      p.querySelectorAll('.ill[data-pid="'+pid+'"]').forEach(function(ch){ch.classList.add('hl');var row=ch.closest('.maprow');if(row){row.classList.add('hl');if(!mapId&&!scrolled){row.scrollIntoView({behavior:'smooth',block:'center'});scrolled=true;}}});
+      if(!mapId&&!scrolled&&cr2)cr2.scrollIntoView({behavior:'smooth',block:'center'});}
   }
   function CSSid(x){return String(x).replace(/[^a-zA-Z0-9_-]/g,'_');}
   function mtFindMap(mapId){var d=mtData();if(!d)return null;var r=null;(d.metaphors||[]).forEach(function(m){(m.mappings||[]).forEach(function(mp){if(mp.map_id===mapId)r=mp;});});return r;}

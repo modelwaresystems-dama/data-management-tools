@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.9.1">
+<meta name="version" content="4.10.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -310,6 +310,33 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   .docxlinks a{color:var(--accent);margin-right:14px}
   .stalewarn{background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:8px 11px;font-size:.82rem;margin:6px 0}
   #metaPanel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;margin:10px 0}
+  .mt-vseg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:10px 0 6px}
+  .mt-vseg button{appearance:none;border:0;background:var(--surface);color:var(--soft);padding:6px 13px;font-size:.82rem;cursor:pointer}
+  .mt-vseg button+button{border-left:1px solid var(--line)}
+  .mt-vseg button.on{background:var(--accent);color:#fff}
+  .ktd-wrap{margin-top:8px}
+  .ktd-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:6px 0}
+  .ktd-counts{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+  .ktd-total{color:var(--soft);font-size:.8rem}
+  .ktd-badge{font-size:.72rem;font-weight:600;border-radius:999px;padding:2px 9px;text-transform:capitalize}
+  .ktd-badge.mapped{background:rgba(46,125,87,.16);color:var(--good)}
+  .ktd-badge.none{background:rgba(181,115,26,.18);color:var(--warn)}
+  .ktd-badge.prohibited{background:rgba(178,59,59,.16);color:var(--bad)}
+  .ktd-table{width:100%;border-collapse:collapse;font-size:.86rem;margin-top:6px}
+  .ktd-table th{text-align:left;font:600 .66rem/1.3 var(--mono,ui-monospace);text-transform:uppercase;letter-spacing:.04em;color:var(--soft);border-bottom:1px solid var(--line);padding:6px 8px}
+  .ktd-table td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  .ktd-term{min-width:120px}
+  .ktd-sec{white-space:nowrap;color:var(--soft)}
+  .ktd-note{color:var(--soft)}
+  .ktd-dining{color:var(--accent);cursor:pointer;font-weight:600}
+  .ktd-dining:hover{text-decoration:underline}
+  .ktd-chev{font-size:.7rem}
+  .ktd-dash{color:var(--soft)}
+  .ktd-detail td{background:var(--surface2);padding:0 8px}
+  .lexbox{padding:8px 4px}
+  .lexrow{padding:6px 10px;margin:4px 0;border-left:3px solid var(--accent);background:var(--surface);border-radius:0 6px 6px 0;font-size:.84rem}
+  .lexrow>div{margin:2px 0}
+  .lexdt{font-weight:600}
   .mt-fam{font-size:.9rem;line-height:1.6;color:var(--ink)}
   .mt-fam .precedent{font-size:.82rem;color:var(--soft);border-left:3px solid var(--line);padding-left:10px;margin-top:8px}
   .mt-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0}
@@ -1195,6 +1222,28 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var d=mtData();
     if(!d){c.innerHTML='<div class="dh"><b>◆ Metaphor Track</b></div><p class="empty">No metaphor track loaded yet. Open <b>⚙ GitHub</b>, connect, and the board will load <code>metaphors.json</code>. It carries the chapter’s metaphor family, its mappings and entailment guards.</p>';return;}
     var ci=claimIndex(),appr=approvedPids();
+    var mtView='track';try{var _mv=lsGet('acpp.dmbok-v3-ch1.metaphors.view');if(_mv&&_mv.v)mtView=_mv.v;}catch(e){}
+    if(focusMap||focusPid)mtView='track';
+    function lexEntry(n){var L=(d.architecture&&d.architecture.canonical_lexicon)||[];for(var i=0;i<L.length;i++){if(L[i].n===n)return L[i];}return null;}
+    function lexBlock(L){if(!L)return '';return '<div class="lexrow"><div class="lexdt">'+esc(L.dining_term||('n='+L.n))+' <span class="idc">n='+esc(L.n)+'</span></div>'+(L.dm_term?'<div><b>DM term:</b> '+esc(L.dm_term)+'</div>':'')+(L.semantic_type?'<div><b>Semantic type:</b> '+esc(L.semantic_type)+'</div>':'')+(L.rendering_rule?'<div><b>Rendering rule:</b> '+esc(L.rendering_rule)+'</div>':'')+'</div>';}
+    function lexDetailHtml(t){var parts=[];var main=(t.lexicon_n!=null)?lexEntry(t.lexicon_n):null;
+      if(main)parts.push(lexBlock(main));else if(t.lexicon_n!=null)parts.push('<div class="lexrow"><span class="ill bad">canonical_lexicon n='+esc(t.lexicon_n)+' not found ⚠</span></div>');
+      (t.lexicon_also||[]).forEach(function(n){var L=lexEntry(n);parts.push(L?lexBlock(L):'<div class="lexrow"><span class="ill bad">related n='+esc(n)+' not found ⚠</span></div>');});
+      if(t.lexicon_ref)parts.push('<div class="lexrow"><b>Refers to block:</b> <span class="idc">'+esc(t.lexicon_ref)+'</span></div>');
+      return '<div class="lexbox">'+(parts.length?parts.join(''):'<div class="lexrow note">No canonical lexicon entry linked.</div>')+'</div>';}
+    function glossaryView(){
+      var A=d.architecture||{};var K=A.key_term_dining_map;
+      if(!K)return '<div class="ktd-wrap"><p class="empty">This <code>metaphors.json</code> has no <code>architecture.key_term_dining_map</code> yet. The data side maintains it; once committed, the Key Term ↔ Dining glossary appears here.</p></div>';
+      var c0=K.counts||{};
+      var hdr='<div class="ktd-head"><div><b>Key Terms ↔ Dining</b> <span class="src">glossary view over the governed canon · asserts no new proposition</span></div>'+
+        '<div class="ktd-counts"><span class="ktd-badge mapped">'+(c0.mapped!=null?c0.mapped:'?')+' mapped</span><span class="ktd-badge none">'+(c0.none!=null?c0.none:'?')+' none</span><span class="ktd-badge prohibited">'+(c0.prohibited!=null?c0.prohibited:'?')+' prohibited</span><span class="ktd-total">of '+(c0.total!=null?c0.total:(K.terms||[]).length)+'</span></div></div>';
+      var src=K.source?('<p class="note" style="margin:2px 0 10px">Source: '+esc(K.source)+'</p>'):'';
+      var rows=(K.terms||[]).map(function(t,i){var st=t.status||'none';
+        var dining=(st==='mapped'&&t.dining_term)?('<span class="ktd-dining" data-kti="'+i+'" role="button" tabindex="0">'+esc(t.dining_term)+' <span class="ktd-chev">▸</span></span>'):'<span class="ktd-dash">—</span>';
+        return '<tr class="ktd-row"><td class="ktd-term"><b>'+esc(t.term)+'</b></td><td class="ktd-sec idc">'+esc(t.section||'')+'</td><td><span class="ktd-badge '+esc(st)+'">'+esc(st)+'</span></td><td class="ktd-dcell">'+dining+'</td><td class="ktd-note">'+esc(t.note||'')+'</td></tr>'+
+          '<tr class="ktd-detail" id="ktd-d-'+i+'" hidden><td colspan="5"></td></tr>';}).join('');
+      return '<div class="ktd-wrap">'+hdr+src+'<table class="ktd-table"><thead><tr><th>Key Term</th><th>§</th><th>Status</th><th>Dining term</th><th>Note / rendering guidance</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    }
     function draw(){
       d=mtData()||d;
       var fam='<div class="mt-fam"><b>Family — '+esc(d.family||'')+'</b>'+(d.family_note?'<p style="margin:4px 0">'+esc(d.family_note)+'</p>':'')+(d.family_relationship?'<p style="margin:4px 0;color:var(--soft)">'+esc(d.family_relationship)+'</p>':'')+(d.precedent?'<div class="precedent"><b>Precedent:</b> '+esc(d.precedent.cite||'')+(d.precedent.url?' — <a href="'+esc(d.precedent.url)+'" target="_blank" rel="noopener">source</a>':'')+(d.precedent.note?'<br>'+esc(d.precedent.note):'')+'</div>':'')+'</div>';
@@ -1218,7 +1267,9 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
           (A.composed_meal?('<div class="archsub">Composed-meal model (integrative sections)</div>'+kv(A.composed_meal)):'')+
           '</details>';
       }
-      c.innerHTML=bar+fam+arch+intro+cards+addMeta+claims;
+      var viewSeg='<div class="mt-vseg"><button data-mtv="track"'+(mtView==='track'?' class="on"':'')+'>◆ Track</button><button data-mtv="glossary"'+(mtView==='glossary'?' class="on"':'')+'>▦ Key Terms ↔ Dining</button></div>';
+      var bodyHtml=(mtView==='glossary')?glossaryView():(fam+arch+intro+cards+addMeta+claims);
+      c.innerHTML=bar+viewSeg+bodyHtml;
       wire();
       if(focusMap||focusPid){var _fm=focusMap,_fp=focusPid;setTimeout(function(){mtHighlight(_fm,_fp);},60);focusMap='';focusPid='';}
     }
@@ -1261,6 +1312,10 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         '<div class="mt-bar"><span>'+(pi<0?'':'<button class="rv-btn rej" id="pfDel" data-mi="'+mi+'" data-pi="'+pi+'">Delete mapping</button>')+'</span><span><button class="rv-btn" id="pfCancel">Cancel</button> <button class="rv-btn acc on" id="pfSave" data-mi="'+mi+'" data-pi="'+pi+'">Save</button></span></div></div>';
     }
     function wire(){
+      c.querySelectorAll('[data-mtv]').forEach(function(b){b.addEventListener('click',function(){var v=b.dataset.mtv;if(v===mtView)return;mtView=v;try{lsSet('acpp.dmbok-v3-ch1.metaphors.view',{v:v});}catch(e){}draw();});});
+      c.querySelectorAll('.ktd-dining').forEach(function(el){el.addEventListener('click',function(){var i=el.dataset.kti;var dr=c.querySelector('#ktd-d-'+i);if(!dr)return;var cell=dr.querySelector('td');var ch=el.querySelector('.ktd-chev');
+        if(dr.hidden){var K=(d.architecture||{}).key_term_dining_map||{};cell.innerHTML=lexDetailHtml((K.terms||[])[+i]||{});dr.hidden=false;if(ch)ch.textContent='▾';}
+        else{dr.hidden=true;if(ch)ch.textContent='▸';}});});
       var cm=c.querySelector('#mtCommit');if(cm)cm.addEventListener('click',function(){ghCommitOrDownload('metaphors.json',mtData(),this);});
       var rv=c.querySelector('#mtRevert');if(rv)rv.addEventListener('click',function(){try{localStorage.removeItem('acpp.dmbok-v3-ch1.metaphors.draft');}catch(e){}MT_EDIT={meta:null,map:null,addMapFor:null,addMeta:false};draw();});
       var am=c.querySelector('#mtAddMeta');if(am)am.addEventListener('click',function(){MT_EDIT.addMeta=true;draw();});

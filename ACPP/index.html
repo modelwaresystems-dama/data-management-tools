@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.3.0">
+<meta name="version" content="4.4.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -137,6 +137,19 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .ghrow button#ghForget{background:transparent;color:#c2410c;border-color:#c2410c}
 .ghnote{font-size:.74rem;color:var(--muted,#667);margin:6px 0}
 .ghfiles{font-size:.74rem;color:var(--muted,#667);margin-top:6px;word-break:break-word}
+.ghfl-head{display:block;width:100%;text-align:left;background:transparent;border:1px solid var(--line,#ddd);border-radius:8px;padding:7px 10px;cursor:pointer;color:var(--ink,#222);font:inherit;font-size:.78rem}
+.ghfl-car{display:inline-block;width:1em;color:var(--muted,#789)}
+.ghfl-warn{color:#b45309;font-weight:600}
+.ghfl-ok{color:#2f7d4f}
+.ghfl-body{border:1px solid var(--line,#ddd);border-top:none;border-radius:0 0 8px 8px;padding:8px 10px;margin-top:-1px}
+.ghfl-chap{margin-bottom:8px;display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.ghfl-sec{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:4px 0;border-top:1px dashed var(--line,#eee)}
+.ghfl-sec.concern{background:rgba(180,83,9,.08);border-radius:5px;padding:4px 6px}
+.ghfl-lab{flex:1;min-width:150px;font-size:.76rem;color:var(--ink,#222)}
+.ghfl-chip{display:inline-block;min-width:1.5em;text-align:center;font-family:var(--mono,ui-monospace,monospace);font-size:.68rem;border-radius:4px;padding:1px 5px;border:1px solid}
+.ghfl-chip.ok{background:#dcfce7;border-color:#16a34a;color:#166534}
+.ghfl-chip.miss{background:transparent;border-color:var(--line,#ddd);color:var(--muted,#99a);opacity:.55}
+.ghfl-other,.ghfl-legend{font-size:.7rem;color:var(--muted,#789);margin-top:7px}
 .ghline{font-size:.72rem;color:var(--muted,#667);font-family:ui-monospace,monospace;margin:4px 0 0}
 .ghmsg{font-size:.74rem;color:var(--muted,#667)}
 .vismapwrap{overflow:auto;border:1px solid var(--line,#ddd);border-radius:10px;padding:8px;background:#fcfcfd;margin:6px 0}
@@ -334,8 +347,46 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   function ghRefreshFiles(){if(!ghConfigured())return Promise.resolve();
     return fetch(ghUrl(GH.dir())+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():[];}).then(function(arr){
       GHFILES={};(arr||[]).forEach(function(x){if(x&&x.name)GHFILES[x.name]=1;});
-      var el=document.getElementById('ghFiles');if(el){var n=Object.keys(GHFILES).sort();el.innerHTML=n.length?('<b>'+n.length+' files in '+esc(GH.dir())+'/</b><br>'+n.map(esc).join(' · ')):('(no files at '+esc(GH.dir())+')');}
+      renderGhFiles();
       try{render(sel.value);}catch(e){}}).catch(function(){});}
+  // Scope the repo file list to the project being worked on, grouped by section, collapsed until a concern needs a look.
+  function ghFileStatus(){
+    var proj=PROJECTS[sel.value];var total=Object.keys(GHFILES).length;
+    if(!proj||!proj.sections){return {rows:[],projFiles:[],concerns:0,other:total,total:total,projId:sel.value};}
+    var STAGES=[['propositions','P','G2'],['argument_nodes','A','G3'],['evidence_links','E','G4'],['freeze','F','G5'],['render','R','G6']];
+    var CHAP=['sections.json','outlines.json','metaphors.json','sources.json','approvals.json','publication_control.json'];
+    var claimed={};
+    var projFiles=CHAP.map(function(f){if(GHFILES[f])claimed[f]=1;return {name:f,have:!!GHFILES[f]};});
+    var secs=proj.sections.slice().sort(function(a,b){var k=function(s){var m=String(s.label).match(/^(\d+)\.(\d+)/)||[0,0,0];return [+m[1],+m[2]];};var ka=k(a),kb=k(b);return ka[0]-kb[0]||ka[1]-kb[1];});
+    var rows=secs.map(function(s){
+      var seenMissing=false,concern=false;
+      var cells=STAGES.map(function(st){var fn=st[0]+'.'+s.sid+'.json';var have=!!GHFILES[fn];if(have)claimed[fn]=1;
+        if(!have)seenMissing=true;else if(seenMissing)concern=true;  // a downstream file exists without its upstream
+        var gs=(s.gates&&s.gates[st[2]]);if(gs==='complete'&&!have)concern=true;  // gate marked complete but file missing
+        return {k:st[1],have:have,fn:fn};});
+      return {sid:s.sid,label:s.label,cells:cells,concern:concern};
+    });
+    var other=0;Object.keys(GHFILES).forEach(function(f){if(!claimed[f])other++;});
+    return {rows:rows,projFiles:projFiles,concerns:rows.filter(function(r){return r.concern;}).length,other:other,total:total,projId:sel.value};
+  }
+  function renderGhFiles(){
+    var el=document.getElementById('ghFiles');if(!el)return;
+    if(!ghConfigured()||!Object.keys(GHFILES).length){el.innerHTML='(no files at '+esc(GH.dir())+'/)';return;}
+    var st=ghFileStatus();var open=false;try{open=!!lsGet('acpp.board.ghFilesOpen');}catch(e){}
+    var flag=st.concerns?(' · <span class="ghfl-warn">⚠ '+st.concerns+' to check</span>'):' · <span class="ghfl-ok">all consistent</span>';
+    var head='<button type="button" class="ghfl-head" id="ghflToggle" aria-expanded="'+(open?'true':'false')+'"><span class="ghfl-car">'+(open?'▾':'▸')+'</span> Repo files · '+esc(st.projId)+': '+st.rows.length+' section'+(st.rows.length===1?'':'s')+' · '+st.total+' files'+flag+'</button>';
+    var body='';
+    if(open){
+      body='<div class="ghfl-body">'+
+        '<div class="ghfl-chap">Chapter files: '+st.projFiles.map(function(f){return '<span class="ghfl-chip '+(f.have?'ok':'miss')+'" title="'+esc(f.name)+'">'+(f.have?'✓':'·')+' '+esc(f.name.replace('.json',''))+'</span>';}).join('')+'</div>'+
+        st.rows.map(function(r){return '<div class="ghfl-sec'+(r.concern?' concern':'')+'">'+(r.concern?'<span class="ghfl-warn">⚠</span> ':'')+'<span class="ghfl-lab">'+esc(r.label)+'</span>'+r.cells.map(function(c){return '<span class="ghfl-chip '+(c.have?'ok':'miss')+'" title="'+esc(c.fn)+'">'+c.k+'</span>';}).join('')+'</div>';}).join('')+
+        (st.other?('<div class="ghfl-other">+ '+st.other+' other file'+(st.other===1?'':'s')+' in '+esc(GH.dir())+'/ (other projects or legacy)</div>'):'')+
+        '<div class="ghfl-legend">P propositions · A argument · E evidence · F freeze · R render · ⚠ a file is missing where a later stage or a completed gate expects it</div>'+
+      '</div>';
+    }
+    el.innerHTML=head+body;
+    var tg=document.getElementById('ghflToggle');if(tg)tg.addEventListener('click',function(){var cur=false;try{cur=!!lsGet('acpp.board.ghFilesOpen');}catch(e){}try{lsSet('acpp.board.ghFilesOpen',cur?0:1);}catch(e){}renderGhFiles();});
+  }
   function ghConnect(){if(!ghConfigured()){ghStatus('not connected');return;}ghStatus('connecting…');
     fetch('https://api.github.com/repos/'+GH.owner()+'/'+GH.repo(),{headers:ghHeaders()}).then(function(r){return r.json().then(function(j){
       if(r.ok){ghStatus('loading fresh from repo…',true);
@@ -555,7 +606,12 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     return {total:ids.length, acc:acc};
   }
   // Gate chips come straight from the committed sections.json register — nothing else (handover requirement).
-  function gateStatus(sec, gk){ return (sec.gates&&sec.gates[gk])||'waiting'; }
+  function gateStatus(sec, gk){
+    var g=(sec.gates&&sec.gates[gk])||'waiting';
+    // G6: if a render artifact is loaded for this section, surface it as active (available to view) rather than waiting/blocked.
+    if(gk==='G6' && g!=='complete' && RENDERREG[sec.sid] && RENDERREG[sec.sid].renders) return 'active';
+    return g;
+  }
 
   function propositionsSummary(sec){
     var proj="dmbok-v3-ch1", ol=OUTLINES[sec.sid]||{}, g2=sec.art.G2, rows;
@@ -777,10 +833,15 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       var intro='';
       if(reg.is_first_subsection&&reg.introduction&&variant==='B_illustrated'){
         intro='<div class="introbox"><span class="ib-tag">Metaphor introduction · scene-setting, not a claim</span>'+(reg.introduction.paragraphs||[]).map(function(p){return '<p>'+esc(p)+'</p>';}).join('')+'</div>';}
-      var body=(rv.paragraphs||[]).map(function(para){return '<p>'+para.map(function(sp){var kind=sp.kind||'connective';
+      function drawSpan(sp){if(sp==null)return '';if(typeof sp==='string')return '<span class="sp-conn">'+esc(sp)+'</span>';var kind=sp.kind||'connective';
           if(kind==='claim'){var _ty=sp.an_type||'claim';var _ti=(sp.tier!=null)?(' · t'+sp.tier):'';var mk=sp.map_id?('⟦'+sp.map_id+'⟧'):('⟦'+_ty+_ti+'⟧');var _amc=sp.map_id?'am-map':(sp.tier!=null?('am-t'+sp.tier):'am-claim');
             return '<span class="sp-claim" data-pid="'+esc(sp.p_id||'')+'" data-an="'+esc(sp.an_id||'')+'" data-ant="'+esc(sp.an_type||'')+'" data-tier="'+esc(sp.tier!=null?sp.tier:'')+'" data-ev="'+esc(sp.evidence||'')+'" data-map="'+esc(sp.map_id||'')+'">'+esc(sp.text)+'<span class="annmark '+_amc+'">'+esc(mk)+'</span></span>';}
-          return '<span class="sp-'+(kind==='metaphor'?'meta':'conn')+'">'+esc(sp.text)+'</span>';}).join('')+'</p>';}).join('');
+          return '<span class="sp-'+(kind==='metaphor'?'meta':'conn')+'">'+esc(sp.text)+'</span>';}
+      // Paragraphs may be plain strings (most render files) or arrays of annotation spans (annotated renders). Handle both.
+      var body=(rv.paragraphs||[]).map(function(para){
+          if(typeof para==='string')return '<p>'+esc(para)+'</p>';
+          if(!Array.isArray(para))return '';
+          return '<p>'+para.map(drawSpan).join('')+'</p>';}).join('');
       c.innerHTML=bar+stalew+(rv.note?'<p class="note">'+esc(rv.note)+'</p>':'')+dl+intro+'<div class="renderprose '+(ann?'an-on':'')+'" id="rprose">'+body+'</div><div id="annDetail"></div>';
       c.querySelectorAll('.rvseg button').forEach(function(b){b.addEventListener('click',function(){variant=b.dataset.v;setS('variant',variant);draw();});});
       c.querySelector('#annTog').addEventListener('change',function(){ann=this.checked;setS('ann',ann);draw();});
@@ -1283,6 +1344,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       lsSet('acpp.board.h1coll',hc); render(id);
     };}
     if(collAll){var hcNow=lsGet('acpp.board.h1coll')||{};var allCol=groups.length&&groups.every(function(g){return hcNow[g.hn];});collAll.textContent=allCol?'Expand all headings':'Collapse all headings';}
+    try{renderGhFiles();}catch(e){}
   }
   sel.addEventListener('change',function(){render(sel.value);});
   try{for(var _i=localStorage.length-1;_i>=0;_i--){var _k=localStorage.key(_i);if(_k&&_k.indexOf('acpp.dmbok-v3-ch1.')===0)localStorage.removeItem(_k);}}catch(e){}  // purge any stale cache from earlier versions

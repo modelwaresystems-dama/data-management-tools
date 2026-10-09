@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.8.0">
+<meta name="version" content="4.8.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -160,8 +160,15 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .doc-seg button{font:inherit;font-size:.8rem;border:0;background:transparent;color:var(--ink);padding:5px 12px;cursor:pointer}
 .doc-seg button.on{background:var(--accent);color:#fff}
 .doc-dl{font-size:.8rem;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:7px;padding:4px 10px}
-.docwrap{border:1px solid var(--line);border-radius:10px;background:var(--bg);max-height:72vh;overflow:auto;padding:26px 30px}
-.docprose{max-width:70ch;margin:0 auto;font-size:.95rem;line-height:1.65;color:var(--ink)}
+.docwrap{border:1px solid var(--line);border-radius:10px;background:var(--bg);max-height:76vh;overflow:auto;padding:26px 34px}
+.docprose{max-width:none;margin:0;font-size:.95rem;line-height:1.7;color:var(--ink)}
+.docfs{position:fixed;inset:0;z-index:10000;background:var(--bg);display:flex;flex-direction:column}
+.docfs-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--surface)}
+.docfs-bar h2{font-size:1rem;margin:0;color:var(--ink)}
+.docfs-bar .cap{font-size:.78rem;color:var(--soft)}
+.docfs-bar .sp{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.docfs-body{flex:1;overflow:auto;padding:30px clamp(20px,4vw,64px)}
+.docfs-body .docprose{font-size:1rem;line-height:1.75}
 .docprose h1{font-size:1.5rem;margin:.2em 0 .5em;text-wrap:balance}
 .docprose h2{font-size:1.2rem;margin:1.3em 0 .4em;padding-top:.5em;border-top:1px solid var(--line)}
 .docprose h3{font-size:1.02rem;margin:1.1em 0 .3em}
@@ -637,29 +644,59 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function ghGetBytes(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;var b=atob(String(j.content).replace(/\s/g,''));var n=b.length,arr=new Uint8Array(n);for(var i=0;i<n;i++)arr[i]=b.charCodeAt(i);return arr.buffer;}).catch(function(){return null;});}
   function docCompiledDir(){return acppRoot()+'/content/'+sel.value+'/04_compiled';}
   function docCompiledList(){return fetch(ghUrl(docCompiledDir())+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():[];}).then(function(arr){var out={};(arr||[]).forEach(function(x){if(!x||!x.name||!/\.docx$/i.test(x.name))return;if(/illustrat/i.test(x.name))out.illustrated={name:x.name,path:x.path};else if(/plain/i.test(x.name))out.plain={name:x.name,path:x.path};});return out;}).catch(function(){return {};});}
+  function docEnsureList(){return DOCLIST?Promise.resolve(DOCLIST):docCompiledList().then(function(l){DOCLIST=l;return l;});}
+  function docMeta(v){return DOCLIST&&DOCLIST[v];}
+  function docVariantGet(){return (lsGet('acpp.board.docVariant')==='illustrated')?'illustrated':'plain';}
+  function docVariantSet(v){try{lsSet('acpp.board.docVariant',v);}catch(e){}}
+  // Resolve a variant to rendered HTML (cached). Returns {html} or {err}.
+  function docHtml(variant){
+    if(DOCCACHE[variant])return Promise.resolve({html:DOCCACHE[variant]});
+    return docEnsureList().then(function(list){var meta=list&&list[variant];
+      if(!meta)return {err:'No compiled '+variant+' document found in '+docCompiledDir()+'/. Run the compile step in the render skill.'};
+      if(!window.mammoth)return {err:'The document renderer did not load (offline or blocked). Use the ⬇ .docx link to open it in Word.'};
+      return ghGetBytes(meta.path).then(function(buf){if(!buf)return {err:'Could not load '+meta.name+' from the repo.'};
+        return window.mammoth.convertToHtml({arrayBuffer:buf}).then(function(res){DOCCACHE[variant]=res.value||'<div class="doc-msg">(empty document)</div>';return {html:DOCCACHE[variant]};}).catch(function(e){return {err:'Could not render the .docx: '+(e&&e.message||e)};});});
+    });
+  }
+  function docSetDl(dl,variant){var m=docMeta(variant);if(dl){if(m){dl.href=docxGitUrl(m.path);dl.style.display='';dl.textContent='⬇ '+m.name;}else{dl.style.display='none';}}}
   function buildDocument(p){
     DOCCACHE={};DOCLIST=null;
-    var variant=(lsGet('acpp.board.docVariant')==='illustrated')?'illustrated':'plain';
-    p.innerHTML='<div class="doc-head"><h2>Completed document</h2><span class="cap">compiled chapter · '+esc(sel.value)+'</span><span class="sp"><span class="doc-seg"><button data-v="plain"'+(variant==='plain'?' class="on"':'')+'>Plain</button><button data-v="illustrated"'+(variant==='illustrated'?' class="on"':'')+'>Illustrated</button></span><a class="doc-dl" id="docDl" target="_blank" rel="noopener" style="display:none">⬇ .docx</a><button class="wcx" id="docClose">✕ Close</button></span></div><div class="docwrap"><div class="docprose" id="docBody"><div class="doc-msg">Loading…</div></div></div>';
+    var variant=docVariantGet();
+    p.innerHTML='<div class="doc-head"><h2>Completed document</h2><span class="cap">compiled chapter · '+esc(sel.value)+'</span><span class="sp"><span class="doc-seg"><button data-v="plain"'+(variant==='plain'?' class="on"':'')+'>Plain</button><button data-v="illustrated"'+(variant==='illustrated'?' class="on"':'')+'>Illustrated</button></span><a class="doc-dl" id="docDl" target="_blank" rel="noopener" style="display:none">⬇ .docx</a><button class="rv-btn" id="docFull" title="Read full screen">⤢ Full screen</button><button class="wcx" id="docClose">✕ Close</button></span></div><div class="docwrap"><div class="docprose" id="docBody"><div class="doc-msg">Loading…</div></div></div>';
     var body=p.querySelector('#docBody'),dl=p.querySelector('#docDl');
     function msg(t){body.innerHTML='<div class="doc-msg">'+esc(t)+'</div>';}
-    function setVar(v){variant=v;try{lsSet('acpp.board.docVariant',v);}catch(e){}p.querySelectorAll('.doc-seg button').forEach(function(b){b.classList.toggle('on',b.dataset.v===v);});render();}
     function render(){
-      var meta=DOCLIST&&DOCLIST[variant];
-      if(!meta){dl.style.display='none';msg('No compiled '+variant+' document found in '+docCompiledDir()+'/. Run the compile step in the render skill.');return;}
-      dl.href=docxGitUrl(meta.path);dl.style.display='';dl.textContent='⬇ '+meta.name;
-      if(DOCCACHE[variant]){body.innerHTML=DOCCACHE[variant];return;}
-      if(!window.mammoth){msg('The document renderer did not load (offline or blocked). Use the ⬇ .docx link to open it in Word.');return;}
-      msg('Rendering '+meta.name+'…');
-      ghGetBytes(meta.path).then(function(buf){
-        if(!buf){msg('Could not load '+meta.name+' from the repo.');return;}
-        window.mammoth.convertToHtml({arrayBuffer:buf}).then(function(res){DOCCACHE[variant]=res.value||'<div class="doc-msg">(empty document)</div>';body.innerHTML=DOCCACHE[variant];}).catch(function(e){msg('Could not render the .docx: '+(e&&e.message||e));});
-      });
+      if(DOCCACHE[variant]){body.innerHTML=DOCCACHE[variant];docSetDl(dl,variant);return;}
+      msg('Rendering…');
+      docHtml(variant).then(function(r){docSetDl(dl,variant);if(r.err)msg(r.err);else body.innerHTML=r.html;});
     }
+    function setVar(v){variant=v;docVariantSet(v);p.querySelectorAll('.doc-seg button').forEach(function(b){b.classList.toggle('on',b.dataset.v===v);});render();}
     p.querySelectorAll('.doc-seg button').forEach(function(b){b.addEventListener('click',function(){setVar(b.dataset.v);});});
     var cb=p.querySelector('#docClose');if(cb)cb.addEventListener('click',function(){p.hidden=true;});
+    var fb=p.querySelector('#docFull');if(fb)fb.addEventListener('click',function(){openDocFull(variant);});
     if(!ghConfigured()){msg('Connect to the repo in ⚙ GitHub to load the compiled documents.');return;}
-    docCompiledList().then(function(list){DOCLIST=list;render();});
+    render();
+  }
+  function openDocFull(variant){
+    if(document.querySelector('.docfs'))return;
+    variant=variant||docVariantGet();
+    var ov=document.createElement('div');ov.className='docfs';
+    ov.innerHTML='<div class="docfs-bar"><h2>Completed document</h2><span class="cap">compiled chapter · '+esc(sel.value)+'</span><span class="sp"><span class="doc-seg"><button data-v="plain"'+(variant==='plain'?' class="on"':'')+'>Plain</button><button data-v="illustrated"'+(variant==='illustrated'?' class="on"':'')+'>Illustrated</button></span><a class="doc-dl" id="docfsDl" target="_blank" rel="noopener" style="display:none">⬇ .docx</a><button class="rv-btn" id="docfsClose">✕ Close (Esc)</button></span></div><div class="docfs-body"><div class="docprose" id="docfsBody"><div class="doc-msg">Loading…</div></div></div>';
+    document.body.appendChild(ov);
+    var body=ov.querySelector('#docfsBody'),dl=ov.querySelector('#docfsDl'),scroller=ov.querySelector('.docfs-body');
+    function msg(t){body.innerHTML='<div class="doc-msg">'+esc(t)+'</div>';}
+    function render(){
+      if(DOCCACHE[variant]){body.innerHTML=DOCCACHE[variant];docSetDl(dl,variant);if(scroller)scroller.scrollTop=0;return;}
+      msg('Rendering…');
+      docHtml(variant).then(function(r){docSetDl(dl,variant);if(r.err)msg(r.err);else body.innerHTML=r.html;if(scroller)scroller.scrollTop=0;});
+    }
+    ov.querySelectorAll('.doc-seg button').forEach(function(b){b.addEventListener('click',function(){variant=b.dataset.v;docVariantSet(variant);ov.querySelectorAll('.doc-seg button').forEach(function(x){x.classList.toggle('on',x.dataset.v===variant);});render();});});
+    function close(){if(ov.parentNode)document.body.removeChild(ov);document.removeEventListener('keydown',onk);
+      try{var pp=document.getElementById('docPanel');if(pp&&!pp.hidden){pp.querySelectorAll('.doc-seg button').forEach(function(x){x.classList.toggle('on',x.dataset.v===variant);});var pb=pp.querySelector('#docBody');if(pb&&DOCCACHE[variant])pb.innerHTML=DOCCACHE[variant];docSetDl(pp.querySelector('#docDl'),variant);}}catch(e){}}
+    function onk(e){if(e.key==='Escape')close();}
+    ov.querySelector('#docfsClose').addEventListener('click',close);
+    document.addEventListener('keydown',onk);
+    render();
   }
   function docxGitUrl(path){return (ghConfigured()&&GH.owner())?('https://github.com/'+GH.owner()+'/'+GH.repo()+'/blob/'+encodeURIComponent(GH.branch())+'/'+path):'';}
   function openDocument(){var p=document.getElementById('docPanel');['ghPanel','metaPanel','wcPanel'].forEach(function(id){var e=document.getElementById(id);if(e)e.hidden=true;});p.hidden=false;buildDocument(p);p.scrollIntoView({behavior:'smooth',block:'start'});}

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.8.1">
+<meta name="version" content="4.9.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -175,6 +175,22 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .docprose p{margin:.55em 0}
 .docprose strong{color:var(--ink)}
 .doc-msg{font-size:.9rem;color:var(--soft);padding:24px 6px;text-align:center}
+.renderprose::after{content:"";display:block;clear:both}
+.imgfig{margin:18px 0}
+.imgfig img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px;display:block}
+.imgfig.imgw-full{width:100%}
+.imgfig.imgw-wide{max-width:85%;margin-left:auto;margin-right:auto}
+.imgfig.imgw-small{max-width:40%;margin-left:auto;margin-right:auto}
+.imgfig.imgw-inright{float:right;max-width:46%;margin:6px 0 12px 20px}
+.imgfig.imgw-inleft{float:left;max-width:46%;margin:6px 20px 12px 0}
+.imgfig figcaption.img-cap{font-size:.82rem;color:var(--soft);font-style:italic;margin-top:5px}
+.imgfig figcaption.img-cred{font-size:.72rem;color:var(--soft);margin-top:2px}
+.img-draft{display:inline-block;font:700 .58rem var(--mono);letter-spacing:.09em;color:#fff;background:var(--warn);border-radius:4px;padding:2px 7px;margin-bottom:6px}
+.img-slot{min-height:44px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1px dashed var(--line);border-radius:6px;padding:16px}
+.img-load{font-size:.8rem;color:var(--soft)}
+.img-warn{font-size:.8rem;color:var(--warn)}
+.img-warnbox{font-size:.8rem;color:var(--warn);background:color-mix(in srgb,var(--warn) 10%,transparent);border:1px solid var(--warn);border-radius:8px;padding:8px 11px;margin-top:12px;clear:both}
+.img-warnbox ul{margin:4px 0 0;padding-left:18px}
 #wcPanel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:10px 0}
 .wc-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .wc-head h2{font-size:1.05rem;margin:0}
@@ -403,6 +419,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   var GH={pat:function(){return GHget('pat','');},owner:function(){return GHget('owner','');},repo:function(){return GHget('repo','modelware_app_storage');},branch:function(){return GHget('branch','main');},dir:function(){return GHget('dir','ACPP/database');}};
   var GHFILES={};
   var RENDERREG={};   // section_id -> render register (G6 skill output)
+  var IMAGES={};      // section_id -> images.<SID>.json (image placements; data chat owns the data)
   var METAPHORS=null; // metaphors.json (chapter metaphor track)
   var PUBCTRL=null;   // publication_control.json (baselines)
   var SECTIONSRAW=null;   // raw sections.json (so the board can flip a gate and re-commit it faithfully)
@@ -493,7 +510,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function hydrateFromCache(){/* caching removed: nothing is hydrated from local storage; data loads fresh from the repo */}
   // Load EVERYTHING fresh from the repo. No seed, no cache. The section list itself comes from sections.json.
   function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);
-    ramClear(); RENDERREG={}; METAPHORS=null; OUTLINES={}; var P='acpp.dmbok-v3-ch1.';
+    ramClear(); RENDERREG={}; IMAGES={}; METAPHORS=null; OUTLINES={}; var P='acpp.dmbok-v3-ch1.';
     function get(fn){return ghGetJson(GH.dir()+'/'+fn);}  // cache-busted
     var pre=[
       get('sources.json').then(function(sj){if(sj)buildSrcIndex(sj);}),
@@ -526,6 +543,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
             });
           }));
           jobs.push(get('ai_quarantine.'+sid+'.json').then(function(o){sec.aiq=buildAIQ(o);((o&&o.items)||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));lsSet(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''});});}));
+          jobs.push(get('images.'+sid+'.json').then(function(o){if(o&&o.images)IMAGES[sid]=o;}));  // image placements (absent = no images)
         });
         return Promise.all(jobs).then(function(){return proj.sections.length;});
       });
@@ -1039,6 +1057,51 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   // ===== G6 render viewer (reads the skill-authored render.<sid>.json register) =====
   function acppRoot(){return (GH.dir()||'ACPP/database').replace(/\/database\/?$/,'')||'ACPP';}
   function docxHref(rel){if(ghConfigured()&&GH.owner())return 'https://github.com/'+GH.owner()+'/'+GH.repo()+'/blob/'+encodeURIComponent(GH.branch())+'/'+acppRoot()+'/'+rel;return '';}
+  // ===== Images layer (app consumes images.<SID>.json; the data chat owns the data) =====
+  function imgMime(src){var e=(String(src).split('.').pop()||'').toLowerCase();return e==='png'?'image/png':(e==='jpg'||e==='jpeg'?'image/jpeg':(e==='gif'?'image/gif':(e==='svg'?'image/svg+xml':(e==='webp'?'image/webp':'application/octet-stream'))));}
+  function ghGetImgDataUrl(src){var path=acppRoot()+'/'+src;return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;return 'data:'+imgMime(src)+';base64,'+String(j.content).replace(/\s/g,'');}).catch(function(){return null;});}
+  function imgCheck(im){  // structural validation against the contract; returns a reason string or null
+    if(!im||typeof im!=='object')return 'not an object';
+    if(!im.img_id)return 'missing img_id';
+    if(!Array.isArray(im.variants)||!im.variants.length||im.variants.some(function(v){return v!=='A'&&v!=='B';}))return 'invalid variants (must be A and/or B)';
+    if(!im.anchor||typeof im.anchor!=='object')return 'missing anchor';
+    if(im.anchor.type==='node'){if(!im.anchor.an_id||(im.anchor.place!=='before'&&im.anchor.place!=='after'))return 'invalid node anchor';}
+    else if(im.anchor.type==='zone'){if(['section_start','after_intro','section_end'].indexOf(im.anchor.zone)<0)return 'invalid zone';}
+    else return 'invalid anchor type';
+    if(!im.src)return 'missing src';
+    if(!im.alt||!String(im.alt).trim())return 'missing alt text (required)';
+    if(im.width&&['full','wide','inline-right','inline-left','small'].indexOf(im.width)<0)return 'invalid width';
+    if(im.status&&['draft','approved'].indexOf(im.status)<0)return 'invalid status';
+    return null;
+  }
+  function imgCollect(sec,vcode){
+    var res={node:{},zones:{section_start:[],after_intro:[],section_end:[]},warnings:[]};
+    var doc=IMAGES[sec.sid];if(!doc||!doc.images||vcode==null)return res;
+    var anset={},reg=RENDERREG[sec.sid];
+    if(reg&&reg.renders)Object.keys(reg.renders).forEach(function(vk){(reg.renders[vk].paragraphs||[]).forEach(function(p){if(Array.isArray(p))p.forEach(function(sp){if(sp&&sp.an_id)anset[sp.an_id]=1;});});});
+    doc.images.forEach(function(im){
+      var w=imgCheck(im);if(w){res.warnings.push((im&&im.img_id?im.img_id:'image')+': '+w);return;}
+      if(im.variants.indexOf(vcode)<0)return;
+      var a=im.anchor;
+      if(a.type==='node'){if(!anset[a.an_id]){res.warnings.push(im.img_id+': anchor node '+a.an_id+' not found in this section — skipped.');return;}
+        var slot=res.node[a.an_id]||(res.node[a.an_id]={before:[],after:[]});slot[a.place==='before'?'before':'after'].push(im);}
+      else{var z=a.zone;if(z==='after_intro'&&vcode==='A')z='section_start';res.zones[z].push(im);}
+    });
+    return res;
+  }
+  function imgFig(im){
+    var wc='imgw-'+String(im.width||'wide').replace('inline-','in');
+    var mw=(im.size_hint&&im.size_hint.max_width_px)?(' style="max-width:'+(parseInt(im.size_hint.max_width_px,10)||0)+'px"'):'';
+    var cap=im.caption?'<figcaption class="img-cap">'+esc(im.caption)+'</figcaption>':'';
+    var cr=im.credit?'<figcaption class="img-cred">'+esc(im.credit)+'</figcaption>':'';
+    var dr=(im.status!=='approved')?'<span class="img-draft">DRAFT IMAGE</span>':'';
+    return '<figure class="imgfig '+wc+'" data-imgsrc="'+esc(im.src)+'" data-imgid="'+esc(im.img_id)+'"'+mw+'>'+dr+'<div class="img-slot"><span class="img-load">Loading image…</span></div><img alt="'+esc(im.alt||'')+'">'+cap+cr+'</figure>';
+  }
+  function imgFigs(list){return (list||[]).map(imgFig).join('');}
+  function hydrateImages(c){if(!c)return;c.querySelectorAll('.imgfig').forEach(function(fig){var src=fig.getAttribute('data-imgsrc');var img=fig.querySelector('img');var slot=fig.querySelector('.img-slot');
+    if(!ghConfigured()){if(slot)slot.innerHTML='<span class="img-warn">Connect to the repo to load images.</span>';return;}
+    ghGetImgDataUrl(src).then(function(url){if(url){img.onload=function(){if(slot)slot.remove();};img.onerror=function(){if(slot)slot.innerHTML='<span class="img-warn">⚠ Could not display '+esc(src)+'</span>';};img.src=url;}else{if(slot)slot.innerHTML='<span class="img-warn">⚠ Image asset not found in repo: '+esc(src)+'</span>';}});
+  });}
   function buildRenderViewer(c,sec,reg){
     var proj="dmbok-v3-ch1";
     var fz=lsGet('acpp.'+proj+'.'+sec.sid+'.G5.freeze')||{};var fh=fz.hash||'';
@@ -1066,12 +1129,24 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
           if(kind==='claim'){var _ty=sp.an_type||'claim';var _ti=(sp.tier!=null)?(' · t'+sp.tier):'';var mk=sp.map_id?('⟦'+sp.map_id+'⟧'):('⟦'+_ty+_ti+'⟧');var _amc=sp.map_id?'am-map':(sp.tier!=null?('am-t'+sp.tier):'am-claim');
             return '<span class="sp-claim" data-pid="'+esc(sp.p_id||'')+'" data-an="'+esc(sp.an_id||'')+'" data-ant="'+esc(sp.an_type||'')+'" data-tier="'+esc(sp.tier!=null?sp.tier:'')+'" data-ev="'+esc(sp.evidence||'')+'" data-map="'+esc(sp.map_id||'')+'">'+esc(sp.text)+'<span class="annmark '+_amc+'">'+esc(mk)+'</span></span>';}
           return '<span class="sp-'+(kind==='metaphor'?'meta':'conn')+'">'+esc(sp.text)+'</span>';}
-      // Paragraphs may be plain strings (most render files) or arrays of annotation spans (annotated renders). Handle both.
-      var body=(rv.paragraphs||[]).map(function(para){
-          if(typeof para==='string')return '<p>'+esc(para)+'</p>';
-          if(!Array.isArray(para))return '';
-          return '<p>'+para.map(drawSpan).join('')+'</p>';}).join('');
-      c.innerHTML=bar+stalew+opn+(rv.note?'<p class="note">'+esc(rv.note)+'</p>':'')+dl+intro+'<div class="renderprose '+(ann?'an-on':'')+'" id="rprose">'+body+'</div><div id="annDetail"></div>';
+      // Images: collect placements for the active variant (A_plain -> 'A', B_illustrated -> 'B'); opener has no images.
+      var vcode=(variant==='A_plain')?'A':(variant==='B_illustrated')?'B':null;
+      var imgr=imgCollect(sec,vcode);
+      // Paragraphs may be plain strings (most render files) or arrays of annotation spans (annotated renders). Handle both, and insert images at their anchors.
+      var bodyParts=[imgFigs(imgr.zones.after_intro)];
+      (rv.paragraphs||[]).forEach(function(para){
+        var anIds=Array.isArray(para)?para.filter(function(sp){return sp&&sp.an_id;}).map(function(sp){return sp.an_id;}):[];
+        anIds.forEach(function(an){if(imgr.node[an])bodyParts.push(imgFigs(imgr.node[an].before));});
+        if(typeof para==='string')bodyParts.push('<p>'+esc(para)+'</p>');
+        else if(Array.isArray(para))bodyParts.push('<p>'+para.map(drawSpan).join('')+'</p>');
+        anIds.forEach(function(an){if(imgr.node[an])bodyParts.push(imgFigs(imgr.node[an].after));});
+      });
+      bodyParts.push(imgFigs(imgr.zones.section_end));
+      var body=bodyParts.join('');
+      var startFigs=imgFigs(imgr.zones.section_start);
+      var imgWarn=imgr.warnings.length?('<div class="img-warnbox">⚠ Image notes<ul>'+imgr.warnings.map(function(w){return '<li>'+esc(w)+'</li>';}).join('')+'</ul></div>'):'';
+      c.innerHTML=bar+stalew+opn+(rv.note?'<p class="note">'+esc(rv.note)+'</p>':'')+dl+startFigs+intro+'<div class="renderprose '+(ann?'an-on':'')+'" id="rprose">'+body+'</div>'+imgWarn+'<div id="annDetail"></div>';
+      hydrateImages(c);
       c.querySelectorAll('.rvseg button').forEach(function(b){b.addEventListener('click',function(){variant=b.dataset.v;setS('variant',variant);draw();});});
       c.querySelector('#annTog').addEventListener('change',function(){ann=this.checked;setS('ann',ann);draw();});
       c.querySelectorAll('.sp-claim').forEach(function(sp){sp.addEventListener('click',function(){if(!ann)return;c.querySelectorAll('.sp-claim.sel').forEach(function(x){x.classList.remove('sel');});sp.classList.add('sel');showAnn(sp);});});

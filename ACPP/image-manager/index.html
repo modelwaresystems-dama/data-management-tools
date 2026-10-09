@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.0.1">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -76,6 +76,8 @@
   .thumb{aspect-ratio:16/10;background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
   .thumb img{width:100%;height:100%;object-fit:cover;display:block}
   .thumb .ph{color:var(--soft);font-size:.78rem;text-align:center;padding:10px}
+  .ph-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.66rem;word-break:break-all;margin-top:5px;opacity:.85;color:var(--soft)}
+  .ph-hint{font-size:.72rem;color:var(--warn);margin-top:5px;line-height:1.35}
   .imgmeta{padding:11px 12px;display:flex;flex-direction:column;gap:5px;flex:1}
   .imgmeta .r1{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .imgmeta .alt{font-size:.82rem;color:var(--ink)}
@@ -250,6 +252,7 @@ function srcRel(sid,file){return 'content/'+GH.proj()+'/05_images/'+sid+'/'+file
 function imgFullPath(src){return acppRoot()+'/'+src;}
 function imgMime(src){var e=(String(src).split('.').pop()||'').toLowerCase();return e==='png'?'image/png':(e==='jpg'||e==='jpeg'?'image/jpeg':(e==='gif'?'image/gif':(e==='svg'?'image/svg+xml':(e==='webp'?'image/webp':'application/octet-stream'))));}
 function ghGetImgDataUrl(src){var path=imgFullPath(src);return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;return 'data:'+imgMime(src)+';base64,'+String(j.content).replace(/\s/g,'');}).catch(function(){return null;});}
+function ghListNames(dirPath){return fetch(ghUrl(dirPath)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():[];}).then(function(arr){return Array.isArray(arr)?arr.map(function(x){return x&&x.name;}).filter(Boolean):[];}).catch(function(){return [];});}
 
 /* ---------- utils ---------- */
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
@@ -395,8 +398,18 @@ function hydrateThumbs(){
   document.querySelectorAll('.thumb[data-imgsrc]').forEach(function(t){
     var src=t.getAttribute('data-imgsrc');if(!src)return;
     ghGetImgDataUrl(src).then(function(url){
-      if(url){var img=new Image();img.alt='';img.onload=function(){t.innerHTML='';t.appendChild(img);};img.onerror=function(){t.innerHTML='<span class="ph" style="color:var(--bad)">⚠ cannot display</span>';};img.src=url;}
-      else{t.innerHTML='<span class="ph" style="color:var(--bad)">⚠ asset not in repo</span>';}
+      if(url){var img=new Image();img.alt='';img.onload=function(){t.innerHTML='';t.appendChild(img);};img.onerror=function(){t.innerHTML='<span class="ph" style="color:var(--bad)">⚠ cannot display<div class="ph-path">'+esc(src)+'</div></span>';};img.src=url;}
+      else{
+        t.innerHTML='<span class="ph" style="color:var(--bad)">⚠ not found in repo<div class="ph-path">'+esc(src)+'</div></span>';
+        var dir=imgFullPath(src).replace(/\/[^\/]*$/,'');var base=src.split('/').pop();var stem=base.replace(/\.[^.]+$/,'').toLowerCase();
+        ghListNames(dir).then(function(names){
+          var alt=names.filter(function(n){return String(n).replace(/\.[^.]+$/,'').toLowerCase()===stem&&n!==base;});
+          var sp=t.querySelector('.ph');if(!sp)return;
+          if(alt.length)sp.insertAdjacentHTML('beforeend','<div class="ph-hint">repo has <b>'+esc(alt[0])+'</b> here — fix this src to match (name/extension)</div>');
+          else if(names.length)sp.insertAdjacentHTML('beforeend','<div class="ph-hint">folder exists but has no matching file ('+names.length+' here)</div>');
+          else sp.insertAdjacentHTML('beforeend','<div class="ph-hint">folder not found — upload the asset or check the section</div>');
+        });
+      }
     });
   });
 }

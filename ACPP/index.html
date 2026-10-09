@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.5.0">
+<meta name="version" content="4.6.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -186,6 +186,16 @@ table.wc-t tr.sub td{font-weight:600;color:var(--soft);border-bottom:2px solid v
 .wc-chip.no{color:var(--soft);border-color:var(--line);background:transparent}
 .wc-foot{font-size:.76rem;color:var(--soft);margin-top:12px}
 .wc-foot b{color:var(--ink)}
+table.wc-t tr.wc-click{cursor:pointer}
+table.wc-t tr.wc-click:hover td{background:var(--surface2)}
+table.wc-t tr.wc-click.on td{background:var(--surface2)}
+table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.wc-view-hint{font-size:.66rem;color:var(--soft);opacity:.75}
+.wc-view-h{display:flex;align-items:center;gap:10px;margin:14px 0 8px}
+.wc-view-h b{font-size:.95rem;color:var(--ink)}
+.wc-view-h .wcx{margin-left:auto}
+#wcView{margin-top:4px}
+#wcView:empty{display:none}
 @media(max-width:620px){.wc-kpis{grid-template-columns:repeat(2,1fr)}table.wc-t .wchide{display:none}}
 .ghline{font-size:.72rem;color:var(--muted,#667);font-family:ui-monospace,monospace;margin:4px 0 0}
 .ghmsg{font-size:.74rem;color:var(--muted,#667)}
@@ -556,14 +566,32 @@ table.wc-t tr.sub td{font-weight:600;color:var(--soft);border-bottom:2px solid v
         var chip=r.st==='opener'?'<span class="wc-chip op">opener only</span>':(r.st==='none'?'<span class="wc-chip no">not rendered</span>':'');
         var bar=r.st==='none'?'':'<div class="wc-rowbar"><div class="f" style="width:'+wB.toFixed(1)+'%"></div><div class="t" style="left:calc('+wA.toFixed(1)+'% - 1px)"></div></div>';
         var num=r.label.split(' ')[0];var ttl=r.label.replace(/^\S+\s*/,'');
-        html+='<tr><td><span class="wc-sid">'+esc(num)+'</span>'+esc(ttl)+'</td><td class="num">'+fmt(r.a)+'</td><td class="num">'+fmt(r.b)+'</td><td class="wchide">'+bar+'</td><td>'+chip+'</td></tr>';});
+        var clickable=(r.st!=='none');
+        var statecell=chip||(clickable?'<span class="wc-view-hint">view ›</span>':'');
+        html+='<tr'+(clickable?' class="wc-click" data-sid="'+esc(r.sid)+'" title="Click to read the rendered text"':'')+'><td><span class="wc-sid">'+esc(num)+'</span>'+esc(ttl)+'</td><td class="num">'+fmt(r.a)+'</td><td class="num">'+fmt(r.b)+'</td><td class="wchide">'+bar+'</td><td>'+statecell+'</td></tr>';});
       html+='<tr class="sub"><td>— subtotal '+esc(s.h+'. '+s.name)+'</td><td class="num">'+fmt(s.a)+'</td><td class="num">'+fmt(s.b)+'</td><td class="wchide"></td><td></td></tr>';
     });
     html+='</tbody></table>';
+    html+='<div id="wcView"></div>';
     var pct=totA?Math.round((totB-totA)/totA*100):0;
-    html+='<p class="wc-foot">Counts are of the rendered prose only (the two opener-only sub-sections count their opener text). Illustrated runs <b>'+pct+'%</b> longer than plain across the chapter. This refreshes whenever you pull fresh renders.</p>';
+    html+='<p class="wc-foot">Counts are of the rendered prose only (the two opener-only sub-sections count their opener text). Illustrated runs <b>'+pct+'%</b> longer than plain across the chapter. Click any sub-section row to read its rendered text. This refreshes whenever you pull fresh renders.</p>';
     p.innerHTML=html;
     var x=p.querySelector('#wcClose');if(x)x.addEventListener('click',function(){p.hidden=true;});
+    // Click a sub-section row to open its rendered text inline (reuses the G6 render viewer).
+    var view=p.querySelector('#wcView');
+    p.querySelectorAll('tr.wc-click').forEach(function(tr){tr.addEventListener('click',function(){
+      var sid=tr.dataset.sid;
+      if(view.getAttribute('data-open')===sid){view.innerHTML='';view.removeAttribute('data-open');tr.classList.remove('on');return;}
+      p.querySelectorAll('tr.wc-click.on').forEach(function(z){z.classList.remove('on');});tr.classList.add('on');
+      var sec=((PROJECTS[sel.value]||{}).sections||[]).filter(function(s){return s.sid===sid;})[0];
+      var reg=RENDERREG[sid];
+      if(!sec||!reg||!reg.renders){view.innerHTML='<p class="empty">No rendered text on file for this sub-section.</p>';view.setAttribute('data-open',sid);return;}
+      view.innerHTML='<div class="wc-view-h"><b>Rendered text · '+esc(sec.label)+'</b><button class="wcx" id="wcViewClose">✕ Close</button></div><div id="wcViewBody"></div>';
+      try{buildRenderViewer(view.querySelector('#wcViewBody'),sec,reg);}catch(e){view.querySelector('#wcViewBody').innerHTML='<p class="empty">Could not render this text.</p>';}
+      view.setAttribute('data-open',sid);
+      var cb=view.querySelector('#wcViewClose');if(cb)cb.addEventListener('click',function(){view.innerHTML='';view.removeAttribute('data-open');tr.classList.remove('on');});
+      view.scrollIntoView({behavior:'smooth',block:'nearest'});
+    });});
   }
   function openWordCount(){var p=document.getElementById('wcPanel');var gp=document.getElementById('ghPanel');if(gp)gp.hidden=true;var mp=document.getElementById('metaPanel');if(mp)mp.hidden=true;p.hidden=false;buildWordCount(p);p.scrollIntoView({behavior:'smooth',block:'start'});}
   function ghInitPanel(){

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.10.0">
+<meta name="version" content="4.10.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -1087,7 +1087,16 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function docxHref(rel){if(ghConfigured()&&GH.owner())return 'https://github.com/'+GH.owner()+'/'+GH.repo()+'/blob/'+encodeURIComponent(GH.branch())+'/'+acppRoot()+'/'+rel;return '';}
   // ===== Images layer (app consumes images.<SID>.json; the data chat owns the data) =====
   function imgMime(src){var e=(String(src).split('.').pop()||'').toLowerCase();return e==='png'?'image/png':(e==='jpg'||e==='jpeg'?'image/jpeg':(e==='gif'?'image/gif':(e==='svg'?'image/svg+xml':(e==='webp'?'image/webp':'application/octet-stream'))));}
-  function ghGetImgDataUrl(src){var path=acppRoot()+'/'+src;return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;return 'data:'+imgMime(src)+';base64,'+String(j.content).replace(/\s/g,'');}).catch(function(){return null;});}
+  // Contents API returns inline content only for files <=1MB; larger figures come back with empty content,
+  // so fall back to the Git Blobs API by sha (serves up to 100MB).
+  function ghGetImgDataUrl(src){var path=acppRoot()+'/'+src;
+    return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
+      if(!j)return null;
+      var inline=j.content?String(j.content).replace(/\s/g,''):'';
+      if(inline)return 'data:'+imgMime(src)+';base64,'+inline;
+      if(j.sha)return fetch('https://api.github.com/repos/'+GH.owner()+'/'+GH.repo()+'/git/blobs/'+j.sha,{headers:ghHeaders(),cache:'no-store'}).then(function(r2){return r2.ok?r2.json():null;}).then(function(b){var bc=(b&&b.content)?String(b.content).replace(/\s/g,''):'';return bc?('data:'+imgMime(src)+';base64,'+bc):null;});
+      return null;
+    }).catch(function(){return null;});}
   function imgCheck(im){  // structural validation against the contract; returns a reason string or null
     if(!im||typeof im!=='object')return 'not an object';
     if(!im.img_id)return 'missing img_id';

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.0.1">
+<meta name="version" content="1.0.2">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -251,7 +251,16 @@ function imagesPath(sid){return GH.dir()+'/images.'+sid+'.json';}
 function srcRel(sid,file){return 'content/'+GH.proj()+'/05_images/'+sid+'/'+file;}
 function imgFullPath(src){return acppRoot()+'/'+src;}
 function imgMime(src){var e=(String(src).split('.').pop()||'').toLowerCase();return e==='png'?'image/png':(e==='jpg'||e==='jpeg'?'image/jpeg':(e==='gif'?'image/gif':(e==='svg'?'image/svg+xml':(e==='webp'?'image/webp':'application/octet-stream'))));}
-function ghGetImgDataUrl(src){var path=imgFullPath(src);return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;return 'data:'+imgMime(src)+';base64,'+String(j.content).replace(/\s/g,'');}).catch(function(){return null;});}
+// Contents API returns inline content only for files <=1MB; for larger files (our figures are several MB)
+// content comes back empty, so fall back to the Git Blobs API by sha (serves up to 100MB).
+function ghGetImgDataUrl(src){var path=imgFullPath(src);
+  return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
+    if(!j)return null;
+    var inline=j.content?String(j.content).replace(/\s/g,''):'';
+    if(inline)return 'data:'+imgMime(src)+';base64,'+inline;
+    if(j.sha)return fetch('https://api.github.com/repos/'+GH.owner()+'/'+GH.repo()+'/git/blobs/'+j.sha,{headers:ghHeaders(),cache:'no-store'}).then(function(r2){return r2.ok?r2.json():null;}).then(function(b){var bc=(b&&b.content)?String(b.content).replace(/\s/g,''):'';return bc?('data:'+imgMime(src)+';base64,'+bc):null;});
+    return null;
+  }).catch(function(){return null;});}
 function ghListNames(dirPath){return fetch(ghUrl(dirPath)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():[];}).then(function(arr){return Array.isArray(arr)?arr.map(function(x){return x&&x.name;}).filter(Boolean):[];}).catch(function(){return [];});}
 
 /* ---------- utils ---------- */

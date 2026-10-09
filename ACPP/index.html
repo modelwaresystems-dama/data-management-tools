@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.7.1">
+<meta name="version" content="4.8.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -151,6 +151,23 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .ghfl-chip.miss{background:transparent;border-color:var(--line,#ddd);color:var(--muted,#99a);opacity:.55}
 .ghfl-other,.ghfl-legend{font-size:.7rem;color:var(--muted,#789);margin-top:7px}
 .openernote{background:#eef6ff;border:1px solid #9cc3e6;color:#1d4e79;border-radius:8px;padding:8px 11px;margin:6px 0;font-size:.82rem}
+#docPanel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:10px 0}
+.doc-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.doc-head h2{font-size:1.05rem;margin:0}
+.doc-head .cap{font-size:.78rem;color:var(--soft)}
+.doc-head .sp{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.doc-seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.doc-seg button{font:inherit;font-size:.8rem;border:0;background:transparent;color:var(--ink);padding:5px 12px;cursor:pointer}
+.doc-seg button.on{background:var(--accent);color:#fff}
+.doc-dl{font-size:.8rem;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:7px;padding:4px 10px}
+.docwrap{border:1px solid var(--line);border-radius:10px;background:var(--bg);max-height:72vh;overflow:auto;padding:26px 30px}
+.docprose{max-width:70ch;margin:0 auto;font-size:.95rem;line-height:1.65;color:var(--ink)}
+.docprose h1{font-size:1.5rem;margin:.2em 0 .5em;text-wrap:balance}
+.docprose h2{font-size:1.2rem;margin:1.3em 0 .4em;padding-top:.5em;border-top:1px solid var(--line)}
+.docprose h3{font-size:1.02rem;margin:1.1em 0 .3em}
+.docprose p{margin:.55em 0}
+.docprose strong{color:var(--ink)}
+.doc-msg{font-size:.9rem;color:var(--soft);padding:24px 6px;text-align:center}
 #wcPanel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:10px 0}
 .wc-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .wc-head h2{font-size:1.05rem;margin:0}
@@ -312,6 +329,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   .sbmb{margin:4px 0 2px;padding-left:18px;font-size:.82rem;color:var(--ink)}
   .sbmb li{margin:2px 0}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -320,6 +338,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     <a class="ghbtn" href="source-manager/index.html" title="Open the ACPP Source Manager" style="text-decoration:none">⌥ Source Manager</a>
     <button class="ghbtn" id="metaToggle" title="Metaphor track — family, mappings, fidelity &amp; guards">◆ Metaphor Track</button>
     <button class="ghbtn" id="wcToggle" title="Word-count analysis of the rendered prose — chapter, section, sub-section">▦ Word Count</button>
+    <button class="ghbtn" id="docToggle" title="Completed compiled documents — plain &amp; illustrated — rendered in the app">▣ Document</button>
     <button class="ghbtn" id="ghToggle">⚙ GitHub</button><span class="ghstat" id="ghStat">not connected</span></header>
   <div class="ghpanel" id="ghPanel" hidden>
     <div class="ghrow"><label>Owner / org</label><input id="ghOwner" placeholder="your GitHub owner"></div>
@@ -334,6 +353,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 
   <div id="metaPanel" hidden></div>
   <div id="wcPanel" hidden></div>
+  <div id="docPanel" hidden></div>
 
   <div class="selector">
     <label for="proj">Project</label>
@@ -609,13 +629,47 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       view.scrollIntoView({behavior:'smooth',block:'nearest'});
     });});
   }
-  function openWordCount(){var p=document.getElementById('wcPanel');var gp=document.getElementById('ghPanel');if(gp)gp.hidden=true;var mp=document.getElementById('metaPanel');if(mp)mp.hidden=true;p.hidden=false;buildWordCount(p);p.scrollIntoView({behavior:'smooth',block:'start'});}
+  function openWordCount(){var p=document.getElementById('wcPanel');var gp=document.getElementById('ghPanel');if(gp)gp.hidden=true;var mp=document.getElementById('metaPanel');if(mp)mp.hidden=true;var dp=document.getElementById('docPanel');if(dp)dp.hidden=true;p.hidden=false;buildWordCount(p);p.scrollIntoView({behavior:'smooth',block:'start'});}
+
+  // ===== Completed compiled documents (plain & illustrated) — rendered in the app via mammoth.js =====
+  var DOCLIST=null;      // {plain:{name,path}, illustrated:{name,path}} from the 04_compiled folder
+  var DOCCACHE={};       // variant -> converted HTML (per load)
+  function ghGetBytes(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j||!j.content)return null;var b=atob(String(j.content).replace(/\s/g,''));var n=b.length,arr=new Uint8Array(n);for(var i=0;i<n;i++)arr[i]=b.charCodeAt(i);return arr.buffer;}).catch(function(){return null;});}
+  function docCompiledDir(){return acppRoot()+'/content/'+sel.value+'/04_compiled';}
+  function docCompiledList(){return fetch(ghUrl(docCompiledDir())+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():[];}).then(function(arr){var out={};(arr||[]).forEach(function(x){if(!x||!x.name||!/\.docx$/i.test(x.name))return;if(/illustrat/i.test(x.name))out.illustrated={name:x.name,path:x.path};else if(/plain/i.test(x.name))out.plain={name:x.name,path:x.path};});return out;}).catch(function(){return {};});}
+  function buildDocument(p){
+    DOCCACHE={};DOCLIST=null;
+    var variant=(lsGet('acpp.board.docVariant')==='illustrated')?'illustrated':'plain';
+    p.innerHTML='<div class="doc-head"><h2>Completed document</h2><span class="cap">compiled chapter · '+esc(sel.value)+'</span><span class="sp"><span class="doc-seg"><button data-v="plain"'+(variant==='plain'?' class="on"':'')+'>Plain</button><button data-v="illustrated"'+(variant==='illustrated'?' class="on"':'')+'>Illustrated</button></span><a class="doc-dl" id="docDl" target="_blank" rel="noopener" style="display:none">⬇ .docx</a><button class="wcx" id="docClose">✕ Close</button></span></div><div class="docwrap"><div class="docprose" id="docBody"><div class="doc-msg">Loading…</div></div></div>';
+    var body=p.querySelector('#docBody'),dl=p.querySelector('#docDl');
+    function msg(t){body.innerHTML='<div class="doc-msg">'+esc(t)+'</div>';}
+    function setVar(v){variant=v;try{lsSet('acpp.board.docVariant',v);}catch(e){}p.querySelectorAll('.doc-seg button').forEach(function(b){b.classList.toggle('on',b.dataset.v===v);});render();}
+    function render(){
+      var meta=DOCLIST&&DOCLIST[variant];
+      if(!meta){dl.style.display='none';msg('No compiled '+variant+' document found in '+docCompiledDir()+'/. Run the compile step in the render skill.');return;}
+      dl.href=docxGitUrl(meta.path);dl.style.display='';dl.textContent='⬇ '+meta.name;
+      if(DOCCACHE[variant]){body.innerHTML=DOCCACHE[variant];return;}
+      if(!window.mammoth){msg('The document renderer did not load (offline or blocked). Use the ⬇ .docx link to open it in Word.');return;}
+      msg('Rendering '+meta.name+'…');
+      ghGetBytes(meta.path).then(function(buf){
+        if(!buf){msg('Could not load '+meta.name+' from the repo.');return;}
+        window.mammoth.convertToHtml({arrayBuffer:buf}).then(function(res){DOCCACHE[variant]=res.value||'<div class="doc-msg">(empty document)</div>';body.innerHTML=DOCCACHE[variant];}).catch(function(e){msg('Could not render the .docx: '+(e&&e.message||e));});
+      });
+    }
+    p.querySelectorAll('.doc-seg button').forEach(function(b){b.addEventListener('click',function(){setVar(b.dataset.v);});});
+    var cb=p.querySelector('#docClose');if(cb)cb.addEventListener('click',function(){p.hidden=true;});
+    if(!ghConfigured()){msg('Connect to the repo in ⚙ GitHub to load the compiled documents.');return;}
+    docCompiledList().then(function(list){DOCLIST=list;render();});
+  }
+  function docxGitUrl(path){return (ghConfigured()&&GH.owner())?('https://github.com/'+GH.owner()+'/'+GH.repo()+'/blob/'+encodeURIComponent(GH.branch())+'/'+path):'';}
+  function openDocument(){var p=document.getElementById('docPanel');['ghPanel','metaPanel','wcPanel'].forEach(function(id){var e=document.getElementById(id);if(e)e.hidden=true;});p.hidden=false;buildDocument(p);p.scrollIntoView({behavior:'smooth',block:'start'});}
   function ghInitPanel(){
     var map={ghOwner:'owner',ghRepo:'repo',ghBranch:'branch',ghDir:'dir',ghPat:'pat'};
     Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el){var v=GHget(map[id],'');if(v)el.value=v;}});
     document.getElementById('ghToggle').addEventListener('click',function(){var p=document.getElementById('ghPanel');p.hidden=!p.hidden;});
     var mtg=document.getElementById('metaToggle');if(mtg)mtg.addEventListener('click',function(){var p=document.getElementById('metaPanel');if(p.hidden){openMetaphorTrack('','');}else{p.hidden=true;}});
     var wtg=document.getElementById('wcToggle');if(wtg)wtg.addEventListener('click',function(){var p=document.getElementById('wcPanel');if(p.hidden){openWordCount();}else{p.hidden=true;}});
+    var dtg=document.getElementById('docToggle');if(dtg)dtg.addEventListener('click',function(){var p=document.getElementById('docPanel');if(p.hidden){openDocument();}else{p.hidden=true;}});
     document.getElementById('ghSave').addEventListener('click',function(){
       GHset('owner',document.getElementById('ghOwner').value.trim());GHset('repo',document.getElementById('ghRepo').value.trim());
       GHset('branch',document.getElementById('ghBranch').value.trim());GHset('dir',document.getElementById('ghDir').value.trim());
@@ -1011,7 +1065,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var proj=PROJECTS['dmbok-v3-ch1'];if(proj)(proj.sections||[]).forEach(function(sec){var g2=sec.art&&sec.art.G2;if(g2&&g2.backfill)g2.backfill.forEach(function(e){var d=(lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G2.'+e[0])||{}).decision;if(d!=='rej')s[e[0]]=1;});});return s;}
   // All map_ids linked to a proposition: from render claim spans (map_id) and from metaphors.json mappings that illustrate it.
   function mtPidMaps(pid){var out={};try{var ci=claimIndex();if(ci[pid])Object.keys(ci[pid].maps||{}).forEach(function(k){out[k]=1;});var d=mtData();if(d)(d.metaphors||[]).forEach(function(m){(m.mappings||[]).forEach(function(mp){if((mp.illustrates||[]).indexOf(pid)>=0)out[mp.map_id]=1;});});}catch(e){}return Object.keys(out);}
-  function openMetaphorTrack(focusMap,focusPid){var p=document.getElementById('metaPanel');var gp=document.getElementById('ghPanel');if(gp)gp.hidden=true;var wp=document.getElementById('wcPanel');if(wp)wp.hidden=true;p.hidden=false;buildMetaphorTrack(p,focusMap,focusPid);p.scrollIntoView({behavior:'smooth',block:'start'});}
+  function openMetaphorTrack(focusMap,focusPid){var p=document.getElementById('metaPanel');var gp=document.getElementById('ghPanel');if(gp)gp.hidden=true;var wp=document.getElementById('wcPanel');if(wp)wp.hidden=true;var dp=document.getElementById('docPanel');if(dp)dp.hidden=true;p.hidden=false;buildMetaphorTrack(p,focusMap,focusPid);p.scrollIntoView({behavior:'smooth',block:'start'});}
   function mtHighlight(mapId,pid){
     var p=document.getElementById('metaPanel');if(!p)return;
     p.querySelectorAll('.maprow.hl,.claimrow.hl,.ill.hl').forEach(function(x){x.classList.remove('hl');});

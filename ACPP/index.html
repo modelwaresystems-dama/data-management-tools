@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.4.0">
+<meta name="version" content="4.4.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -150,6 +150,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .ghfl-chip.ok{background:#dcfce7;border-color:#16a34a;color:#166534}
 .ghfl-chip.miss{background:transparent;border-color:var(--line,#ddd);color:var(--muted,#99a);opacity:.55}
 .ghfl-other,.ghfl-legend{font-size:.7rem;color:var(--muted,#789);margin-top:7px}
+.openernote{background:#eef6ff;border:1px solid #9cc3e6;color:#1d4e79;border-radius:8px;padding:8px 11px;margin:6px 0;font-size:.82rem}
 .ghline{font-size:.72rem;color:var(--muted,#667);font-family:ui-monospace,monospace;margin:4px 0 0}
 .ghmsg{font-size:.74rem;color:var(--muted,#667)}
 .vismapwrap{overflow:auto;border:1px solid var(--line,#ddd);border-radius:10px;padding:8px;background:#fcfcfd;margin:6px 0}
@@ -437,7 +438,18 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
           jobs.push(get('argument_nodes.'+sid+'.json').then(function(o){var rows=o&&(o.argument_nodes||o.nodes);if(rows){installGate(sec,'G3',buildG3(o));rows.forEach(function(nd){if(!nd.an_id)return;var d=nd.status==='Approved'?'acc':(nd.status==='Rejected'?'rej':'nd');lsSet(P+sid+'.G3.'+padId(nd.an_id),{decision:d,comment:nd.text||''});});}}));
           jobs.push(get('evidence_links.'+sid+'.json').then(function(o){if(o&&o.links){installGate(sec,'G4',buildG4(o));o.links.forEach(function(l){if(!l.p_id)return;var d=l.status==='Supported'?'acc':(l.status==='Rejected'?'rej':'nd');lsSet(P+sid+'.G4.'+padId(l.p_id),{decision:d,src:l.src_id||'',comment:l.reviewer_comment||'',quote:l.passage||'',locator:l.locator||''});});}}));
           jobs.push(get('freeze.'+sid+'.json').then(function(o){if(o&&o.frozen){installGate(sec,'G5',{baseline:o.baseline||'',scope:o.scope||'',note:o.note||'',aiqOpen:o.open_aiq||0});lsSet(P+sid+'.G5.freeze',{decision:'frozen',date:o.frozen_date||'',hash:o.content_hash||''});}}));
-          jobs.push(get('render.'+sid+'.json').then(function(o){if(o&&o.renders){RENDERREG[sid]=o;installGate(sec,'G6',{ref:(o.docx&&(o.docx.A_plain||o.docx.B_illustrated))||'',status:'Rendered'});}}));
+          jobs.push(get('render.'+sid+'.json').then(function(o){
+            if(o&&o.renders){RENDERREG[sid]=o;installGate(sec,'G6',{ref:(o.docx&&(o.docx.A_plain||o.docx.B_illustrated))||'',status:'Rendered'});return;}
+            // No full render: fall back to an opener-only render (section opener, no argument body yet).
+            return get('render.'+sid+'.opener.json').then(function(op){
+              if(!op)return;var ren={};
+              if(op.plain_opener)ren.A_plain={label:'Plain opener',paragraphs:[op.plain_opener]};
+              if(op.introduction&&op.introduction.paragraphs&&op.introduction.paragraphs.length)ren.B_illustrated={label:'Illustrated opener',paragraphs:op.introduction.paragraphs.slice()};
+              if(!Object.keys(ren).length)return;
+              RENDERREG[sid]={section_id:sid,section_title:op.section_title||'',metaphor_family:op.metaphor_family||'',render_date:op.render_date||'',renders:ren,_opener:true};
+              installGate(sec,'G6',{ref:'',status:'Opener only'});
+            });
+          }));
           jobs.push(get('ai_quarantine.'+sid+'.json').then(function(o){sec.aiq=buildAIQ(o);((o&&o.items)||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));lsSet(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''});});}));
         });
         return Promise.all(jobs).then(function(){return proj.sections.length;});
@@ -828,6 +840,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
       var togg='<label class="rvtogg"><input type="checkbox" id="annTog"'+(ann?' checked':'')+'> Annotations</label>';
       var bar='<div class="rv-bar"><span style="display:inline-flex;gap:14px;align-items:center;flex-wrap:wrap">'+seg+togg+'</span><span class="rv-prog">'+esc(reg.baseline||sec.sid)+' · '+esc(reg.metaphor_family||'')+' · rendered '+esc(reg.render_date||'')+'</span></div>';
       var stalew=stale?'<div class="stalewarn">⚠ Render baseline hash ('+esc(String(reg.content_hash).slice(0,12))+'…) does not match the current frozen baseline. Re-run G6 render after re-freezing.</div>':'';
+      var opn=reg._opener?'<div class="openernote">Opener only — a scene-setting opener is on file for this section; the full argument render is not yet rendered. The glossary body renders separately.</div>':'';
       var dl='';
       if(reg.docx){dl='<div class="docxlinks"><b>Word:</b> '+Object.keys(reg.docx).map(function(k){var href=docxHref(reg.docx[k]);var lbl=((ren[k]&&ren[k].label)||k)+' .docx';return href?('<a href="'+esc(href)+'" target="_blank" rel="noopener">'+esc(lbl)+'</a>'):('<span class="idc">'+esc(reg.docx[k])+'</span>');}).join('')+'<span style="color:var(--soft);font-size:.78rem">(private repo — opens in GitHub)</span></div>';}
       var intro='';
@@ -842,7 +855,7 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
           if(typeof para==='string')return '<p>'+esc(para)+'</p>';
           if(!Array.isArray(para))return '';
           return '<p>'+para.map(drawSpan).join('')+'</p>';}).join('');
-      c.innerHTML=bar+stalew+(rv.note?'<p class="note">'+esc(rv.note)+'</p>':'')+dl+intro+'<div class="renderprose '+(ann?'an-on':'')+'" id="rprose">'+body+'</div><div id="annDetail"></div>';
+      c.innerHTML=bar+stalew+opn+(rv.note?'<p class="note">'+esc(rv.note)+'</p>':'')+dl+intro+'<div class="renderprose '+(ann?'an-on':'')+'" id="rprose">'+body+'</div><div id="annDetail"></div>';
       c.querySelectorAll('.rvseg button').forEach(function(b){b.addEventListener('click',function(){variant=b.dataset.v;setS('variant',variant);draw();});});
       c.querySelector('#annTog').addEventListener('change',function(){ann=this.checked;setS('ann',ann);draw();});
       c.querySelectorAll('.sp-claim').forEach(function(sp){sp.addEventListener('click',function(){if(!ann)return;c.querySelectorAll('.sp-claim.sel').forEach(function(x){x.classList.remove('sel');});sp.classList.add('sel');showAnn(sp);});});

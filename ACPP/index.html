@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.6.2">
+<meta name="version" content="4.7.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -544,6 +544,22 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       if(reg&&reg.renders){a=wcVariant(reg.renders.A_plain);b=wcVariant(reg.renders.B_illustrated);st=reg._opener?'opener':'rendered';}
       var m=String(sec.label).match(/^(\d+)\.(\d+)/);rows.push({sid:sec.sid,label:sec.label,a:a,b:b,st:st,h1:m?+m[1]:0,h2:m?+m[2]:0});});
     rows.sort(function(x,y){return x.h1-y.h1||x.h2-y.h2;});return rows;}
+  // Committed word-count record (same numbers the panel shows, derived from the renders). Schema shared with the render skill.
+  function wcRecord(){
+    var rows=wcRows();var totA=0,totB=0,nR=0,nO=0,nN=0;
+    rows.forEach(function(r){totA+=r.a;totB+=r.b;if(r.st==='rendered')nR++;else if(r.st==='opener')nO++;else nN++;});
+    var byH={};rows.forEach(function(r){(byH[r.h1]||(byH[r.h1]=[])).push(r);});
+    var by_h1=Object.keys(byH).map(Number).sort(function(a,b){return a-b;}).map(function(h){var rs=byH[h];return {h1:h,name:WC_H1[h]||('Section '+h),plain:rs.reduce(function(x,r){return x+r.a;},0),illustrated:rs.reduce(function(x,r){return x+r.b;},0)};});
+    return {
+      _note:"ACPP chapter word-count record. DERIVED from the render.<id>.json files (plain=A_plain, illustrated=B_illustrated; a word is a /[A-Za-z0-9'’-]+/ token). Not a source of truth — regenerate from the renders; do not hand-edit.",
+      project_id:sel.value,
+      generated:new Date().toISOString().slice(0,10),
+      generated_by:"board",
+      totals:{sections:rows.length,rendered:nR,opener_only:nO,not_rendered:nN,plain:totA,illustrated:totB},
+      by_section:rows.map(function(r){var st=(r.st==='opener'?'opener_only':(r.st==='none'?'not_rendered':'rendered'));return {section_id:r.sid,label:r.label,plain:r.a,illustrated:r.b,state:st};}),
+      by_h1:by_h1
+    };
+  }
   function buildWordCount(p){
     var fmt=function(n){return n.toLocaleString('en-US');};
     var rows=wcRows();
@@ -555,7 +571,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var secs=Object.keys(byH).map(Number).sort(function(a,b){return a-b;}).map(function(h){var rs=byH[h];return {h:h,name:WC_H1[h]||('Section '+h),a:rs.reduce(function(x,r){return x+r.a;},0),b:rs.reduce(function(x,r){return x+r.b;},0),rows:rs};});
     var maxSec=Math.max.apply(null,secs.map(function(s){return s.b;}))||1;
     var kpis=[['Chapter · illustrated',fmt(totB),'words (B)'],['Chapter · plain',fmt(totA),'words (A) · +'+fmt(totB-totA)],['Rendered',nR+' / '+rows.length,nO+' opener · '+nN+' pending'],['Mean / rendered',fmt(meanB),'words (B)']];
-    var html='<div class="wc-head"><h2>Word count — rendered prose</h2><span class="cap">live from the loaded renders · '+esc(sel.value)+'</span><button class="wcx" id="wcClose">✕ Close</button></div>';
+    var html='<div class="wc-head"><h2>Word count — rendered prose</h2><span class="cap">live from the loaded renders · '+esc(sel.value)+'</span><button class="rv-export" id="wcCommit" title="Write the committed word_count.json record to the data repo">⬆ Commit word_count.json</button><button class="wcx" id="wcClose">✕ Close</button></div>';
     html+='<div class="wc-kpis">'+kpis.map(function(k){return '<div class="wc-kpi"><div class="k">'+esc(k[0])+'</div><div class="v">'+k[1]+'</div><div class="n">'+esc(k[2])+'</div></div>';}).join('')+'</div>';
     html+='<div class="wc-legend"><b style="color:var(--ink)">By section</b><span><i class="wc-lgbar"></i>Illustrated (B)</span><span><i class="wc-lgtick"></i>Plain (A)</span></div>';
     html+='<div class="wc-sec">'+secs.map(function(s){var wB=s.b/maxSec*100,wA=s.a/maxSec*100;return '<div class="lab" title="'+esc(s.h+'. '+s.name)+'">'+esc(s.h+'. '+s.name)+'</div><div class="wc-track" title="'+esc(s.h+'. '+s.name+' — illustrated '+fmt(s.b)+' · plain '+fmt(s.a))+'"><div class="wc-fill" style="width:'+wB.toFixed(1)+'%"></div><div class="wc-tick" style="left:calc('+wA.toFixed(1)+'% - 1px)"></div></div><div class="v">'+fmt(s.b)+'</div>';}).join('')+'</div>';
@@ -569,7 +585,6 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         var clickable=(r.st!=='none');
         var statecell=chip||(clickable?'<span class="wc-view-hint">view ›</span>':'');
         html+='<tr'+(clickable?' class="wc-click" data-sid="'+esc(r.sid)+'" title="Click to read the rendered text"':'')+'><td><span class="wc-sid">'+esc(num)+'</span>'+esc(ttl)+'</td><td class="num">'+fmt(r.a)+'</td><td class="num">'+fmt(r.b)+'</td><td class="wchide">'+bar+'</td><td>'+statecell+'</td></tr>';});
-      html+='<tr class="sub"><td>— subtotal '+esc(s.h+'. '+s.name)+'</td><td class="num">'+fmt(s.a)+'</td><td class="num">'+fmt(s.b)+'</td><td class="wchide"></td><td></td></tr>';
     });
     html+='</tbody></table>';
     html+='<div id="wcView"></div>';
@@ -577,6 +592,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     html+='<p class="wc-foot">Counts are of the rendered prose only (the two opener-only sub-sections count their opener text). Illustrated runs <b>'+pct+'%</b> longer than plain across the chapter. Click any sub-section row to read its rendered text. This refreshes whenever you pull fresh renders.</p>';
     p.innerHTML=html;
     var x=p.querySelector('#wcClose');if(x)x.addEventListener('click',function(){p.hidden=true;});
+    var wcc=p.querySelector('#wcCommit');if(wcc)wcc.addEventListener('click',function(){ghCommitOrDownload('word_count.json',wcRecord(),this);});
     // Click a sub-section row to open its rendered text inline (reuses the G6 render viewer).
     var view=p.querySelector('#wcView');
     p.querySelectorAll('tr.wc-click').forEach(function(tr){tr.addEventListener('click',function(){

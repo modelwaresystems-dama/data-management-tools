@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.3.0">
+<meta name="version" content="1.4.0">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -63,18 +63,26 @@
 
   .statusbar{font-size:.84rem;color:var(--soft);margin-bottom:14px;min-height:1.2em}
 
-  .seccard{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;box-shadow:var(--shadow);overflow:hidden}
-  .sechead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surface2);cursor:pointer;user-select:none}
-  .sechead:hover{background:var(--surface)}
-  .sec-chev{color:var(--soft);font-size:.82rem;transition:transform .15s}
-  .seccard:not(.collapsed) .sec-chev{transform:rotate(90deg)}
-  .seccard.collapsed .sechead{border-bottom:0}
-  .sechead .st{flex:1;min-width:180px}
-  .sechead .sid{font-size:.78rem;color:var(--soft)}
+  /* top-level (H1) accordion group — board style */
+  .h1group{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin:0 0 14px;overflow:hidden;box-shadow:var(--shadow)}
+  .h1head{display:flex;align-items:center;gap:11px;padding:13px 16px;cursor:pointer;user-select:none;background:var(--surface2)}
+  .h1head:hover{background:var(--surface)}
+  .h1head b{font-size:1.02rem}
+  .h1caret{color:var(--soft);font-size:.85rem;width:12px;flex:none;transition:transform .15s}
+  .h1group.open .h1caret{transform:rotate(90deg)}
+  .h1count{margin-left:auto;font-size:.76rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--soft)}
+  .h1body{padding:6px 12px 12px}
+  .h1body.collapsed{display:none}
+  .sec{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+  .sec:first-child{border-top:0;margin-top:0}
+  .secsub{display:flex;flex-wrap:wrap;gap:9px;align-items:center;padding:6px 4px}
+  .secsub .st{flex:1;min-width:160px}
+  .secsub .st b{font-size:.92rem}
+  .secsub .sid{font-size:.76rem;color:var(--soft)}
   .count{font-size:.78rem;color:var(--soft);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
   .dirty{color:var(--warn);font-size:.78rem;font-weight:600}
 
-  .imgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;padding:16px}
+  .imgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;padding:6px 4px 8px}
   .imgcard{border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden;display:flex;flex-direction:column}
   .imgcard.bad{border-color:var(--bad)}
   .thumb{aspect-ratio:16/10;background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
@@ -407,57 +415,72 @@ function promptPanel(im){
     '<div class="promptfoot"><button class="btn sm copyprompt" type="button">⧉ Copy prompt</button><span class="copyok" style="display:none">copied</span></div>'+
   '</details>';
 }
+var H1NAMES={1:'Introduction',2:'Key Terms',3:'Foundations of Data Management',4:'Tools',5:'Techniques',6:'Roles',7:'Activities',8:'Metrics',9:'Risk Management',10:'Interrelation with Data Governance'};
+function h1of(label){var m=String(label).match(/^(\d+)/);return m?+m[1]:0;}
+function h2of(label){var m=String(label).match(/^\d+\.(\d+)/);return m?+m[1]:0;}
+function allH1s(){var set={};SECTIONS.forEach(function(s){set[h1of(s.label)]=1;});return Object.keys(set).map(Number);}
+function cardHtml(s,im,doc){
+  var realIdx=doc.images.indexOf(im);
+  var issues=imgIssues(s.sid,im);
+  var statusPill=issues.length?'<span class="pill err">needs fix</span>':(im.status==='approved'?'<span class="pill ok">approved</span>':'<span class="pill draft">draft</span>');
+  var vtags=(im.variants||[]).map(function(v){return '<span class="tag v">'+(v==='A'?'A plain':'B illus')+'</span>';}).join('');
+  var issHtml=issues.length?'<ul class="issues">'+issues.map(function(i){return '<li>'+i+'</li>';}).join('')+'</ul>':'';
+  var draftGen=(im.status!=='approved'&&im.prompt)?' data-draftgen="1"':'';
+  return '<div class="imgcard'+(issues.length?' bad':'')+'" data-sid="'+esc(s.sid)+'" data-idx="'+realIdx+'">'+
+    '<div class="thumb" data-imgsrc="'+esc(im.src||'')+'"'+draftGen+'><span class="ph">'+(im.src?'<span class="spin"></span>':'no src')+'</span></div>'+
+    '<div class="imgmeta">'+
+      '<div class="r1"><span class="idc">'+esc(im.img_id||'(no id)')+'</span>'+statusPill+'</div>'+
+      '<div class="r1">'+vtags+'<span class="tag">'+esc(im.width||'wide')+'</span></div>'+
+      '<div class="anch">⚓ '+esc(anchorDesc(im))+'</div>'+
+      (im.alt?'<div class="alt">'+esc(im.alt)+'</div>':'<div class="issues">missing alt text</div>')+
+      (im.caption?'<div class="cap">'+esc(im.caption)+'</div>':'')+
+      issHtml+
+    '</div>'+
+    promptPanel(im)+
+    '<div class="cardbtns">'+
+      '<button class="btn sm edit">Edit</button>'+
+      '<button class="btn sm '+(im.status==='approved'?'':'g')+' appr">'+(im.status==='approved'?'↩ Unapprove':'✓ Approve')+'</button>'+
+      '<button class="btn sm d del">Delete</button>'+
+    '</div>'+
+  '</div>';
+}
+function secBlock(s,active){
+  var doc=IMAGES[s.sid];var imgs=(doc.images||[]).filter(function(im){return matchImg(s.sid,im);});
+  var cards=imgs.map(function(im){return cardHtml(s,im,doc);}).join('');
+  var shownCount=active?(imgs.length+' of '+(doc.images||[]).length):((doc.images||[]).length+' image'+((doc.images||[]).length===1?'':'s'));
+  return '<div class="sec" data-sid="'+esc(s.sid)+'">'+
+    '<div class="secsub"><div class="st"><b>'+esc(s.label)+(s.title?' — '+esc(s.title):'')+'</b> <span class="sid idc">'+esc(s.sid)+'</span></div>'+
+      '<span class="count">'+esc(shownCount)+'</span>'+
+      (DIRTY[s.sid]?'<span class="dirty">● unsaved</span>':'')+
+      '<button class="btn sm addhere" data-sid="'+esc(s.sid)+'">＋ Add</button>'+
+      '<button class="btn sm p commit" data-sid="'+esc(s.sid)+'"'+(DIRTY[s.sid]?'':' disabled')+'>Commit</button>'+
+    '</div><div class="imgrid">'+cards+'</div></div>';
+}
 function render(){
   var total=0,withImgs=0;
   SECTIONS.forEach(function(s){var n=(IMAGES[s.sid]&&IMAGES[s.sid].images||[]).length;total+=n;if(n)withImgs++;});
   setStatus(total+' image'+(total===1?'':'s')+' across '+withImgs+' section'+(withImgs===1?'':'s')+'. Connected to <span class="idc">'+esc(GH.owner()+'/'+GH.repo())+'</span>.');
   var board=$('board');
   var active=(FILTER!=='all')||(VFILTER!=='all');
-  // sections that have at least one image matching the current filters
+  // sub-sections that have at least one image matching the current filters
   var rows=SECTIONS.filter(function(s){var imgs=(IMAGES[s.sid]&&IMAGES[s.sid].images)||[];return imgs.length&&imgs.some(function(im){return matchImg(s.sid,im);});});
   if(active){
     var shown=0;rows.forEach(function(s){shown+=(IMAGES[s.sid].images||[]).filter(function(im){return matchImg(s.sid,im);}).length;});
     var vlabel=VFILTER==='A'?' · Plain (A)':(VFILTER==='B'?' · Illustrated (B)':'');
-    setStatus(shown+' image'+(shown===1?'':'s')+' match'+(shown===1?'es':'')+' the filter'+vlabel+' · '+rows.length+' section'+(rows.length===1?'':'s')+'.');
+    setStatus(shown+' image'+(shown===1?'':'s')+' match'+(shown===1?'es':'')+' the filter'+vlabel+' · '+rows.length+' sub-section'+(rows.length===1?'':'s')+'.');
   }
   if(!rows.length){board.innerHTML='<div class="empty">No image placements'+(active?' match this filter':' yet')+'. Use <b>＋ New placement</b> to add one.</div>';return;}
-  board.innerHTML=rows.map(function(s){
-    var doc=IMAGES[s.sid];var imgs=(doc.images||[]).filter(function(im){return matchImg(s.sid,im);});
-    var collapsed=!!COLLAPSE[s.sid];
-    var cards=imgs.map(function(im){
-      var realIdx=doc.images.indexOf(im);
-      var issues=imgIssues(s.sid,im);
-      var statusPill=issues.length?'<span class="pill err">needs fix</span>':(im.status==='approved'?'<span class="pill ok">approved</span>':'<span class="pill draft">draft</span>');
-      var vtags=(im.variants||[]).map(function(v){return '<span class="tag v">'+(v==='A'?'A plain':'B illus')+'</span>';}).join('');
-      var issHtml=issues.length?'<ul class="issues">'+issues.map(function(i){return '<li>'+i+'</li>';}).join('')+'</ul>':'';
-      var draftGen=(im.status!=='approved'&&im.prompt)?' data-draftgen="1"':'';
-      return '<div class="imgcard'+(issues.length?' bad':'')+'" data-sid="'+esc(s.sid)+'" data-idx="'+realIdx+'">'+
-        '<div class="thumb" data-imgsrc="'+esc(im.src||'')+'"'+draftGen+'><span class="ph">'+(im.src?'<span class="spin"></span>':'no src')+'</span></div>'+
-        '<div class="imgmeta">'+
-          '<div class="r1"><span class="idc">'+esc(im.img_id||'(no id)')+'</span>'+statusPill+'</div>'+
-          '<div class="r1">'+vtags+'<span class="tag">'+esc(im.width||'wide')+'</span></div>'+
-          '<div class="anch">⚓ '+esc(anchorDesc(im))+'</div>'+
-          (im.alt?'<div class="alt">'+esc(im.alt)+'</div>':'<div class="issues">missing alt text</div>')+
-          (im.caption?'<div class="cap">'+esc(im.caption)+'</div>':'')+
-          issHtml+
-        '</div>'+
-        promptPanel(im)+
-        '<div class="cardbtns">'+
-          '<button class="btn sm edit">Edit</button>'+
-          '<button class="btn sm '+(im.status==='approved'?'':'g')+' appr">'+(im.status==='approved'?'↩ Unapprove':'✓ Approve')+'</button>'+
-          '<button class="btn sm d del">Delete</button>'+
-        '</div>'+
-      '</div>';
-    }).join('');
-    var shownCount=active?(imgs.length+' of '+(doc.images||[]).length):((doc.images||[]).length+' image'+((doc.images||[]).length===1?'':'s'));
-    return '<section class="seccard'+(collapsed?' collapsed':'')+'" data-sid="'+esc(s.sid)+'">'+
-      '<div class="sechead" data-toggle="'+esc(s.sid)+'"><span class="sec-chev">▸</span><div class="st"><h2>'+esc(s.label)+(s.title?' — '+esc(s.title):'')+'</h2><div class="sid idc">'+esc(s.sid)+'</div></div>'+
-        '<span class="count">'+esc(shownCount)+'</span>'+
-        (DIRTY[s.sid]?'<span class="dirty">● unsaved</span>':'')+
-        '<button class="btn sm addhere" data-sid="'+esc(s.sid)+'">＋ Add</button>'+
-        '<button class="btn sm p commit" data-sid="'+esc(s.sid)+'"'+(DIRTY[s.sid]?'':' disabled')+'>Commit section</button>'+
-      '</div>'+
-      '<div class="imgrid"'+(collapsed?' hidden':'')+'>'+cards+'</div>'+
+  // group sub-sections under their top-level section (the N in N.M), accordion-style
+  var byH={};rows.forEach(function(s){var h=h1of(s.label);(byH[h]||(byH[h]=[])).push(s);});
+  var hs=Object.keys(byH).map(Number).sort(function(a,b){return a-b;});
+  board.innerHTML=hs.map(function(h){
+    var secs=byH[h].slice().sort(function(a,b){return h2of(a.label)-h2of(b.label);});
+    var imgCount=0;secs.forEach(function(s){imgCount+=(IMAGES[s.sid].images||[]).filter(function(im){return matchImg(s.sid,im);}).length;});
+    var collapsed=(h in COLLAPSE)?COLLAPSE[h]:true;  // default collapsed, board-style
+    var body=secs.map(function(s){return secBlock(s,active);}).join('');
+    return '<section class="h1group'+(collapsed?'':' open')+'" data-h1="'+h+'">'+
+      '<div class="h1head" data-h1="'+h+'"><span class="h1caret">▸</span><b>'+h+'. '+esc(H1NAMES[h]||('Section '+h))+'</b><span class="h1count">'+imgCount+' image'+(imgCount===1?'':'s')+' · '+secs.length+' sub-section'+(secs.length===1?'':'s')+'</span></div>'+
+      '<div class="h1body'+(collapsed?' collapsed':'')+'">'+body+'</div>'+
     '</section>';
   }).join('');
   wire();
@@ -467,7 +490,7 @@ function hydrateThumbs(){
   if(!ghConfigured())return;
   document.querySelectorAll('.thumb[data-imgsrc]').forEach(function(t){
     if(t.dataset.hydrated)return;                 // already loaded — don't refetch
-    if(t.closest('.seccard.collapsed'))return;    // deferred until the section is expanded
+    if(t.closest('.h1body.collapsed'))return;     // deferred until the group is expanded
     var src=t.getAttribute('data-imgsrc');if(!src)return;
     t.dataset.hydrated='1';
     ghGetImgDataUrl(src).then(function(url){
@@ -494,7 +517,7 @@ function wire(){
   document.querySelectorAll('.imgcard .appr').forEach(function(b){b.onclick=function(){var c=b.closest('.imgcard');toggleApprove(c.dataset.sid,+c.dataset.idx);};});
   document.querySelectorAll('.addhere').forEach(function(b){b.onclick=function(e){e.stopPropagation();openEditor(b.dataset.sid,null);};});
   document.querySelectorAll('.commit').forEach(function(b){b.onclick=function(e){e.stopPropagation();commitSection(b.dataset.sid,b);};});
-  document.querySelectorAll('.sechead[data-toggle]').forEach(function(h){h.onclick=function(e){if(e.target.closest('button'))return;var sid=h.dataset.toggle;COLLAPSE[sid]=!COLLAPSE[sid];persistUI();var sec=h.closest('.seccard');sec.classList.toggle('collapsed',!!COLLAPSE[sid]);var grid=sec.querySelector('.imgrid');if(grid)grid.hidden=!!COLLAPSE[sid];if(!COLLAPSE[sid])hydrateThumbs();};});
+  document.querySelectorAll('.h1head[data-h1]').forEach(function(h){h.onclick=function(e){if(e.target.closest('button'))return;var hn=+h.dataset.h1;var now=(hn in COLLAPSE)?COLLAPSE[hn]:true;COLLAPSE[hn]=!now;persistUI();var grp=h.closest('.h1group');var body=grp.querySelector('.h1body');grp.classList.toggle('open',!COLLAPSE[hn]);body.classList.toggle('collapsed',!!COLLAPSE[hn]);if(!COLLAPSE[hn])hydrateThumbs();};});
   document.querySelectorAll('.copyprompt').forEach(function(b){b.onclick=function(e){e.preventDefault();var wrap=b.closest('.promptwrap');var box=wrap&&wrap.querySelector('.promptbox');var ok=wrap&&wrap.querySelector('.copyok');var txt=box?box.textContent:'';
     function done(){if(ok){ok.style.display='inline';setTimeout(function(){ok.style.display='none';},1600);}}
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,function(){selectBox(box);});}
@@ -665,8 +688,8 @@ $('refreshBtn').onclick=loadAll;
 $('newBtn').onclick=function(){if(!SECTIONS.length){alert('Load sections first (Connect & load).');return;}openEditor(SECTIONS[0].sid,null);};
 $('filterSeg').querySelectorAll('button').forEach(function(b){b.onclick=function(){FILTER=b.dataset.f;$('filterSeg').querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});render();};});
 $('variantSeg').querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.v===VFILTER);b.onclick=function(){VFILTER=b.dataset.v;persistUI();$('variantSeg').querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});render();};});
-$('expandAll').onclick=function(){SECTIONS.forEach(function(s){COLLAPSE[s.sid]=false;});persistUI();render();};
-$('collapseAll').onclick=function(){SECTIONS.forEach(function(s){COLLAPSE[s.sid]=true;});persistUI();render();};
+$('expandAll').onclick=function(){allH1s().forEach(function(h){COLLAPSE[h]=false;});persistUI();render();};
+$('collapseAll').onclick=function(){allH1s().forEach(function(h){COLLAPSE[h]=true;});persistUI();render();};
 $('fSec').onchange=function(){fillAnIds(this.value);if(!editing)$('fId').value=nextImgId(this.value);};
 $('fAnchorType').onchange=syncAnchorRows;
 $('edSave').onclick=saveEditor;

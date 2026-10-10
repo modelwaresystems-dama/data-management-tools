@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.0.2">
+<meta name="version" content="1.1.0">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -92,6 +92,18 @@
   .issues{font-size:.76rem;color:var(--bad);margin-top:2px}
   .issues li{margin-left:2px}
   .cardbtns{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 12px}
+  .togen{color:var(--accent);font-weight:600}
+  .promptwrap{margin:0 12px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface2);overflow:hidden}
+  .promptwrap summary{cursor:pointer;list-style:none;padding:8px 11px;font-size:.8rem;font-weight:600;display:flex;align-items:center;gap:7px;color:var(--ink)}
+  .promptwrap summary::-webkit-details-marker{display:none}
+  .promptwrap summary .pchev{color:var(--soft);transition:transform .15s;font-size:.7rem}
+  .promptwrap[open] summary .pchev{transform:rotate(90deg)}
+  .promptwrap summary .gennote{margin-left:auto;font-weight:400;color:var(--soft);font-size:.72rem}
+  .gchips{display:flex;gap:5px;flex-wrap:wrap;padding:0 11px 8px}
+  .gchip{font-size:.68rem;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--soft);background:var(--bg)}
+  .promptbox{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.76rem;line-height:1.45;color:var(--ink);background:var(--bg);border-top:1px solid var(--line);padding:10px 11px;max-height:260px;overflow:auto}
+  .promptfoot{display:flex;gap:7px;align-items:center;padding:8px 11px;border-top:1px solid var(--line)}
+  .copyok{font-size:.74rem;color:var(--good)}
 
   dialog.ed{border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);padding:0;max-width:640px;width:94vw;box-shadow:0 10px 40px rgba(0,0,0,.3)}
   dialog.ed::backdrop{background:rgba(0,0,0,.45)}
@@ -341,6 +353,17 @@ function anchorDesc(im){
   if(a.type==='zone')return 'zone · '+a.zone;
   return '—';
 }
+function promptPanel(im){
+  if(!im.prompt)return '';
+  var g=im.gen||{};
+  var chips=['model','aspect_ratio','image_size'].map(function(k){return g[k]?'<span class="gchip">'+esc(g[k])+'</span>':'';}).join('');
+  var note=g.method?esc(g.method):'generation prompt';
+  return '<details class="promptwrap"><summary><span class="pchev">▶</span>Generation prompt<span class="gennote">'+note+'</span></summary>'+
+    (chips?'<div class="gchips">'+chips+'</div>':'')+
+    '<div class="promptbox" tabindex="0">'+esc(im.prompt)+'</div>'+
+    '<div class="promptfoot"><button class="btn sm copyprompt" type="button">⧉ Copy prompt</button><span class="copyok" style="display:none">copied</span></div>'+
+  '</details>';
+}
 function render(){
   var total=0,withImgs=0;
   SECTIONS.forEach(function(s){var n=(IMAGES[s.sid]&&IMAGES[s.sid].images||[]).length;total+=n;if(n)withImgs++;});
@@ -372,8 +395,9 @@ function render(){
       var statusPill=issues.length?'<span class="pill err">needs fix</span>':(im.status==='approved'?'<span class="pill ok">approved</span>':'<span class="pill draft">draft</span>');
       var vtags=(im.variants||[]).map(function(v){return '<span class="tag v">'+(v==='A'?'A plain':'B illus')+'</span>';}).join('');
       var issHtml=issues.length?'<ul class="issues">'+issues.map(function(i){return '<li>'+i+'</li>';}).join('')+'</ul>':'';
+      var draftGen=(im.status!=='approved'&&im.prompt)?' data-draftgen="1"':'';
       return '<div class="imgcard'+(issues.length?' bad':'')+'" data-sid="'+esc(s.sid)+'" data-idx="'+realIdx+'">'+
-        '<div class="thumb" data-imgsrc="'+esc(im.src||'')+'"><span class="ph">'+(im.src?'<span class="spin"></span>':'no src')+'</span></div>'+
+        '<div class="thumb" data-imgsrc="'+esc(im.src||'')+'"'+draftGen+'><span class="ph">'+(im.src?'<span class="spin"></span>':'no src')+'</span></div>'+
         '<div class="imgmeta">'+
           '<div class="r1"><span class="idc">'+esc(im.img_id||'(no id)')+'</span>'+statusPill+'</div>'+
           '<div class="r1">'+vtags+'<span class="tag">'+esc(im.width||'wide')+'</span></div>'+
@@ -382,6 +406,7 @@ function render(){
           (im.caption?'<div class="cap">'+esc(im.caption)+'</div>':'')+
           issHtml+
         '</div>'+
+        promptPanel(im)+
         '<div class="cardbtns">'+
           '<button class="btn sm edit">Edit</button>'+
           '<button class="btn sm '+(im.status==='approved'?'':'g')+' appr">'+(im.status==='approved'?'↩ Unapprove':'✓ Approve')+'</button>'+
@@ -409,6 +434,8 @@ function hydrateThumbs(){
     ghGetImgDataUrl(src).then(function(url){
       if(url){var img=new Image();img.alt='';img.onload=function(){t.innerHTML='';t.appendChild(img);};img.onerror=function(){t.innerHTML='<span class="ph" style="color:var(--bad)">⚠ cannot display<div class="ph-path">'+esc(src)+'</div></span>';};img.src=url;}
       else{
+        var togen=t.getAttribute('data-draftgen')==='1';
+        if(togen){t.innerHTML='<span class="ph"><span class="togen">◷ To generate</span><div class="ph-hint" style="color:var(--soft)">draft — not generated yet. Use the prompt below to create it, then upload.</div></span>';return;}
         t.innerHTML='<span class="ph" style="color:var(--bad)">⚠ not found in repo<div class="ph-path">'+esc(src)+'</div></span>';
         var dir=imgFullPath(src).replace(/\/[^\/]*$/,'');var base=src.split('/').pop();var stem=base.replace(/\.[^.]+$/,'').toLowerCase();
         ghListNames(dir).then(function(names){
@@ -428,7 +455,13 @@ function wire(){
   document.querySelectorAll('.imgcard .appr').forEach(function(b){b.onclick=function(){var c=b.closest('.imgcard');toggleApprove(c.dataset.sid,+c.dataset.idx);};});
   document.querySelectorAll('.addhere').forEach(function(b){b.onclick=function(){openEditor(b.dataset.sid,null);};});
   document.querySelectorAll('.commit').forEach(function(b){b.onclick=function(){commitSection(b.dataset.sid,b);};});
+  document.querySelectorAll('.copyprompt').forEach(function(b){b.onclick=function(e){e.preventDefault();var wrap=b.closest('.promptwrap');var box=wrap&&wrap.querySelector('.promptbox');var ok=wrap&&wrap.querySelector('.copyok');var txt=box?box.textContent:'';
+    function done(){if(ok){ok.style.display='inline';setTimeout(function(){ok.style.display='none';},1600);}}
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,function(){selectBox(box);});}
+    else selectBox(box);
+  };});
 }
+function selectBox(box){if(!box)return;try{var r=document.createRange();r.selectNodeContents(box);var sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);document.execCommand&&document.execCommand('copy');}catch(e){}}
 
 /* ---------- mutate ---------- */
 function ensureDoc(sid){if(!IMAGES[sid])IMAGES[sid]={"$schema":"./images.schema.json",project_id:GH.proj(),section_id:sid,images:[]};if(!IMAGES[sid].images)IMAGES[sid].images=[];return IMAGES[sid];}
@@ -505,8 +538,13 @@ function saveEditor(){
   var doc=ensureDoc(sid);
   var dup=doc.images.some(function(x,i){return x.img_id===im.img_id&&!(editing&&editing.sid===sid&&editing.idx===i);});
   if(dup){$('edErr').textContent='⚠ img_id '+im.img_id+' already exists in this section';return;}
-  if(editing&&editing.sid===sid){doc.images[editing.idx]=im;}
-  else{doc.images.push(im);}
+  if(editing&&editing.sid===sid){
+    // merge managed fields onto the existing node so prompt/gen (and any other fields) are preserved
+    var ex=doc.images[editing.idx]||{};
+    ['width','size_hint','caption','credit'].forEach(function(k){delete ex[k];}); // optional fields cleared in the form must drop
+    Object.keys(im).forEach(function(k){ex[k]=im[k];});
+    doc.images[editing.idx]=ex;
+  }else{doc.images.push(im);}
   DIRTY[sid]=true;editing=null;$('editor').close();render();
 }
 

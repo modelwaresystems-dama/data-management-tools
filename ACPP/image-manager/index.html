@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.2.0">
+<meta name="version" content="1.3.0">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -64,7 +64,11 @@
   .statusbar{font-size:.84rem;color:var(--soft);margin-bottom:14px;min-height:1.2em}
 
   .seccard{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;box-shadow:var(--shadow);overflow:hidden}
-  .sechead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surface2)}
+  .sechead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surface2);cursor:pointer;user-select:none}
+  .sechead:hover{background:var(--surface)}
+  .sec-chev{color:var(--soft);font-size:.82rem;transition:transform .15s}
+  .seccard:not(.collapsed) .sec-chev{transform:rotate(90deg)}
+  .seccard.collapsed .sechead{border-bottom:0}
   .sechead .st{flex:1;min-width:180px}
   .sechead .sid{font-size:.78rem;color:var(--soft)}
   .count{font-size:.78rem;color:var(--soft);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
@@ -176,7 +180,14 @@
       <button data-f="approved">Approved</button>
       <button data-f="issues">Issues</button>
     </div>
+    <div class="seg" id="variantSeg" title="Show only images that appear in one variant">
+      <button data-v="all" class="on">Both variants</button>
+      <button data-v="A">Plain (A)</button>
+      <button data-v="B">Illustrated (B)</button>
+    </div>
     <span class="sp"></span>
+    <button class="btn sm" id="expandAll">Expand all</button>
+    <button class="btn sm" id="collapseAll">Collapse all</button>
   </div>
 
   <div class="statusbar" id="status"></div>
@@ -306,6 +317,18 @@ var ANIDS={};              // sid -> [{an_id, text}]
 var DIRTY={};              // sid -> true if changed since last commit
 var IMAGESHA={};           // sid -> sha of images.<sid>.json at load (optimistic-concurrency base)
 var FILTER='all';
+var VFILTER='all';          // 'all' | 'A' | 'B' — show only images that appear in this variant
+var COLLAPSE={};            // sid -> true if its section is collapsed
+try{var _vf=localStorage.getItem('acpp.imgmgr.vfilter');if(_vf)VFILTER=_vf;}catch(e){}
+try{COLLAPSE=JSON.parse(localStorage.getItem('acpp.imgmgr.collapse')||'{}')||{};}catch(e){COLLAPSE={};}
+function persistUI(){try{localStorage.setItem('acpp.imgmgr.vfilter',VFILTER);localStorage.setItem('acpp.imgmgr.collapse',JSON.stringify(COLLAPSE));}catch(e){}}
+function matchImg(sid,im){
+  if(FILTER==='draft'&&im.status==='approved')return false;
+  if(FILTER==='approved'&&im.status!=='approved')return false;
+  if(FILTER==='issues'&&imgIssues(sid,im).length===0)return false;
+  if(VFILTER!=='all'&&(im.variants||[]).indexOf(VFILTER)<0)return false;
+  return true;
+}
 var editing=null;          // {sid, idx} when editing an existing image, else null
 
 /* ---------- validation (mirrors the board's imgCheck + anchor resolution) ---------- */
@@ -389,26 +412,18 @@ function render(){
   SECTIONS.forEach(function(s){var n=(IMAGES[s.sid]&&IMAGES[s.sid].images||[]).length;total+=n;if(n)withImgs++;});
   setStatus(total+' image'+(total===1?'':'s')+' across '+withImgs+' section'+(withImgs===1?'':'s')+'. Connected to <span class="idc">'+esc(GH.owner()+'/'+GH.repo())+'</span>.');
   var board=$('board');
-  // which sections to show: those with images, or (when filter=all) only those with images; a "New placement" can target any section.
-  var rows=SECTIONS.filter(function(s){return (IMAGES[s.sid]&&IMAGES[s.sid].images||[]).length;});
-  if(FILTER!=='all'){
-    rows=rows.filter(function(s){
-      return (IMAGES[s.sid].images||[]).some(function(im){
-        if(FILTER==='draft')return im.status!=='approved';
-        if(FILTER==='approved')return im.status==='approved';
-        if(FILTER==='issues')return imgIssues(s.sid,im).length>0;
-        return true;
-      });
-    });
+  var active=(FILTER!=='all')||(VFILTER!=='all');
+  // sections that have at least one image matching the current filters
+  var rows=SECTIONS.filter(function(s){var imgs=(IMAGES[s.sid]&&IMAGES[s.sid].images)||[];return imgs.length&&imgs.some(function(im){return matchImg(s.sid,im);});});
+  if(active){
+    var shown=0;rows.forEach(function(s){shown+=(IMAGES[s.sid].images||[]).filter(function(im){return matchImg(s.sid,im);}).length;});
+    var vlabel=VFILTER==='A'?' · Plain (A)':(VFILTER==='B'?' · Illustrated (B)':'');
+    setStatus(shown+' image'+(shown===1?'':'s')+' match'+(shown===1?'es':'')+' the filter'+vlabel+' · '+rows.length+' section'+(rows.length===1?'':'s')+'.');
   }
-  if(!rows.length){board.innerHTML='<div class="empty">No image placements'+(FILTER==='all'?' yet':' match this filter')+'. Use <b>＋ New placement</b> to add one.</div>';return;}
+  if(!rows.length){board.innerHTML='<div class="empty">No image placements'+(active?' match this filter':' yet')+'. Use <b>＋ New placement</b> to add one.</div>';return;}
   board.innerHTML=rows.map(function(s){
-    var doc=IMAGES[s.sid];var imgs=(doc.images||[]).filter(function(im){
-      if(FILTER==='draft')return im.status!=='approved';
-      if(FILTER==='approved')return im.status==='approved';
-      if(FILTER==='issues')return imgIssues(s.sid,im).length>0;
-      return true;
-    });
+    var doc=IMAGES[s.sid];var imgs=(doc.images||[]).filter(function(im){return matchImg(s.sid,im);});
+    var collapsed=!!COLLAPSE[s.sid];
     var cards=imgs.map(function(im){
       var realIdx=doc.images.indexOf(im);
       var issues=imgIssues(s.sid,im);
@@ -434,14 +449,15 @@ function render(){
         '</div>'+
       '</div>';
     }).join('');
-    return '<section class="seccard">'+
-      '<div class="sechead"><div class="st"><h2>'+esc(s.label)+(s.title?' — '+esc(s.title):'')+'</h2><div class="sid idc">'+esc(s.sid)+'</div></div>'+
-        '<span class="count">'+(doc.images||[]).length+' image'+((doc.images||[]).length===1?'':'s')+'</span>'+
+    var shownCount=active?(imgs.length+' of '+(doc.images||[]).length):((doc.images||[]).length+' image'+((doc.images||[]).length===1?'':'s'));
+    return '<section class="seccard'+(collapsed?' collapsed':'')+'" data-sid="'+esc(s.sid)+'">'+
+      '<div class="sechead" data-toggle="'+esc(s.sid)+'"><span class="sec-chev">▸</span><div class="st"><h2>'+esc(s.label)+(s.title?' — '+esc(s.title):'')+'</h2><div class="sid idc">'+esc(s.sid)+'</div></div>'+
+        '<span class="count">'+esc(shownCount)+'</span>'+
         (DIRTY[s.sid]?'<span class="dirty">● unsaved</span>':'')+
         '<button class="btn sm addhere" data-sid="'+esc(s.sid)+'">＋ Add</button>'+
         '<button class="btn sm p commit" data-sid="'+esc(s.sid)+'"'+(DIRTY[s.sid]?'':' disabled')+'>Commit section</button>'+
       '</div>'+
-      '<div class="imgrid">'+cards+'</div>'+
+      '<div class="imgrid"'+(collapsed?' hidden':'')+'>'+cards+'</div>'+
     '</section>';
   }).join('');
   wire();
@@ -450,7 +466,10 @@ function render(){
 function hydrateThumbs(){
   if(!ghConfigured())return;
   document.querySelectorAll('.thumb[data-imgsrc]').forEach(function(t){
+    if(t.dataset.hydrated)return;                 // already loaded — don't refetch
+    if(t.closest('.seccard.collapsed'))return;    // deferred until the section is expanded
     var src=t.getAttribute('data-imgsrc');if(!src)return;
+    t.dataset.hydrated='1';
     ghGetImgDataUrl(src).then(function(url){
       if(url){var img=new Image();img.alt='';img.onload=function(){t.innerHTML='';t.appendChild(img);t.classList.add('zoom');t.title='Click to view full size';t.onclick=function(){var card=t.closest('.imgcard');var idc=card?(card.querySelector('.idc')||{}).textContent||'':'';var capEl=card&&card.querySelector('.cap');var altEl=card&&card.querySelector('.alt');openLightbox(url,idc,(capEl&&capEl.textContent)||(altEl&&altEl.textContent)||'');};};img.onerror=function(){t.innerHTML='<span class="ph" style="color:var(--bad)">⚠ cannot display<div class="ph-path">'+esc(src)+'</div></span>';};img.src=url;}
       else{
@@ -473,8 +492,9 @@ function wire(){
   document.querySelectorAll('.imgcard .edit').forEach(function(b){b.onclick=function(){var c=b.closest('.imgcard');openEditor(c.dataset.sid,+c.dataset.idx);};});
   document.querySelectorAll('.imgcard .del').forEach(function(b){b.onclick=function(){var c=b.closest('.imgcard');delImage(c.dataset.sid,+c.dataset.idx);};});
   document.querySelectorAll('.imgcard .appr').forEach(function(b){b.onclick=function(){var c=b.closest('.imgcard');toggleApprove(c.dataset.sid,+c.dataset.idx);};});
-  document.querySelectorAll('.addhere').forEach(function(b){b.onclick=function(){openEditor(b.dataset.sid,null);};});
-  document.querySelectorAll('.commit').forEach(function(b){b.onclick=function(){commitSection(b.dataset.sid,b);};});
+  document.querySelectorAll('.addhere').forEach(function(b){b.onclick=function(e){e.stopPropagation();openEditor(b.dataset.sid,null);};});
+  document.querySelectorAll('.commit').forEach(function(b){b.onclick=function(e){e.stopPropagation();commitSection(b.dataset.sid,b);};});
+  document.querySelectorAll('.sechead[data-toggle]').forEach(function(h){h.onclick=function(e){if(e.target.closest('button'))return;var sid=h.dataset.toggle;COLLAPSE[sid]=!COLLAPSE[sid];persistUI();var sec=h.closest('.seccard');sec.classList.toggle('collapsed',!!COLLAPSE[sid]);var grid=sec.querySelector('.imgrid');if(grid)grid.hidden=!!COLLAPSE[sid];if(!COLLAPSE[sid])hydrateThumbs();};});
   document.querySelectorAll('.copyprompt').forEach(function(b){b.onclick=function(e){e.preventDefault();var wrap=b.closest('.promptwrap');var box=wrap&&wrap.querySelector('.promptbox');var ok=wrap&&wrap.querySelector('.copyok');var txt=box?box.textContent:'';
     function done(){if(ok){ok.style.display='inline';setTimeout(function(){ok.style.display='none';},1600);}}
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,function(){selectBox(box);});}
@@ -644,6 +664,9 @@ $('cfgConnect').onclick=function(){cfgSave();$('cfgPanel').open=false;loadAll();
 $('refreshBtn').onclick=loadAll;
 $('newBtn').onclick=function(){if(!SECTIONS.length){alert('Load sections first (Connect & load).');return;}openEditor(SECTIONS[0].sid,null);};
 $('filterSeg').querySelectorAll('button').forEach(function(b){b.onclick=function(){FILTER=b.dataset.f;$('filterSeg').querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});render();};});
+$('variantSeg').querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.v===VFILTER);b.onclick=function(){VFILTER=b.dataset.v;persistUI();$('variantSeg').querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});render();};});
+$('expandAll').onclick=function(){SECTIONS.forEach(function(s){COLLAPSE[s.sid]=false;});persistUI();render();};
+$('collapseAll').onclick=function(){SECTIONS.forEach(function(s){COLLAPSE[s.sid]=true;});persistUI();render();};
 $('fSec').onchange=function(){fillAnIds(this.value);if(!editing)$('fId').value=nextImgId(this.value);};
 $('fAnchorType').onchange=syncAnchorRows;
 $('edSave').onclick=saveEditor;

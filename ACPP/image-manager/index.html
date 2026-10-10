@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.1.2">
+<meta name="version" content="1.2.0">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -75,6 +75,15 @@
   .imgcard.bad{border-color:var(--bad)}
   .thumb{aspect-ratio:16/10;background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
   .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb.zoom{cursor:zoom-in}
+  .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.86);display:none;align-items:center;justify-content:center;flex-direction:column;z-index:1000;padding:28px}
+  .lightbox.on{display:flex}
+  .lightbox img{max-width:96vw;max-height:84vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,.6);background:#111}
+  .lb-cap{color:#eee;font-size:.88rem;margin-top:14px;max-width:min(96vw,900px);text-align:center;line-height:1.45}
+  .lb-cap .idc{color:#9cd1e6;margin-right:8px}
+  .lb-close{position:absolute;top:16px;right:20px;font-size:1.5rem;color:#fff;background:rgba(255,255,255,.14);border:0;border-radius:8px;width:40px;height:40px;cursor:pointer;line-height:1}
+  .lb-close:hover{background:rgba(255,255,255,.26)}
+  .lb-hint{color:#9a9a9a;font-size:.74rem;margin-top:8px}
   .thumb .ph{color:var(--soft);font-size:.78rem;text-align:center;padding:10px}
   .ph-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.66rem;word-break:break-all;margin-top:5px;opacity:.85;color:var(--soft)}
   .ph-hint{font-size:.72rem;color:var(--warn);margin-top:5px;line-height:1.35}
@@ -234,6 +243,8 @@
     </div>
   </form>
 </dialog>
+
+<div class="lightbox" id="lightbox"><button class="lb-close" id="lbClose" aria-label="Close" type="button">✕</button><img id="lbImg" alt=""><div class="lb-cap" id="lbCap"></div><div class="lb-hint">Click anywhere or press Esc to close</div></div>
 
 <script>
 "use strict";
@@ -441,7 +452,7 @@ function hydrateThumbs(){
   document.querySelectorAll('.thumb[data-imgsrc]').forEach(function(t){
     var src=t.getAttribute('data-imgsrc');if(!src)return;
     ghGetImgDataUrl(src).then(function(url){
-      if(url){var img=new Image();img.alt='';img.onload=function(){t.innerHTML='';t.appendChild(img);};img.onerror=function(){t.innerHTML='<span class="ph" style="color:var(--bad)">⚠ cannot display<div class="ph-path">'+esc(src)+'</div></span>';};img.src=url;}
+      if(url){var img=new Image();img.alt='';img.onload=function(){t.innerHTML='';t.appendChild(img);t.classList.add('zoom');t.title='Click to view full size';t.onclick=function(){var card=t.closest('.imgcard');var idc=card?(card.querySelector('.idc')||{}).textContent||'':'';var capEl=card&&card.querySelector('.cap');var altEl=card&&card.querySelector('.alt');openLightbox(url,idc,(capEl&&capEl.textContent)||(altEl&&altEl.textContent)||'');};};img.onerror=function(){t.innerHTML='<span class="ph" style="color:var(--bad)">⚠ cannot display<div class="ph-path">'+esc(src)+'</div></span>';};img.src=url;}
       else{
         var togen=t.getAttribute('data-draftgen')==='1';
         if(togen){t.innerHTML='<span class="ph"><span class="togen">◷ To generate</span><div class="ph-hint" style="color:var(--soft)">draft — not generated yet. Use the prompt below to create it, then upload.</div></span>';return;}
@@ -605,6 +616,14 @@ function commitSection(sid,btn){
   });
 }
 
+/* ---------- lightbox (click an image to view full size) ---------- */
+function openLightbox(url,idc,cap){
+  var lb=$('lightbox');$('lbImg').src=url;
+  $('lbCap').innerHTML=(idc?'<span class="idc">'+esc(idc)+'</span>':'')+(cap?esc(cap):'');
+  lb.classList.add('on');
+}
+function closeLightbox(){var lb=$('lightbox');lb.classList.remove('on');$('lbImg').removeAttribute('src');}
+
 /* ---------- config panel ---------- */
 function cfgLoad(){
   var map={ghOwner:'owner',ghRepo:'repo',ghBranch:'branch',ghDir:'dir',ghProj:'proj',ghPat:'pat'};
@@ -631,6 +650,9 @@ $('edSave').onclick=saveEditor;
 $('edCancel').onclick=function(){editing=null;$('editor').close();};
 $('edClose').onclick=function(){editing=null;$('editor').close();};
 $('upBtn').onclick=uploadAsset;
+$('lightbox').onclick=closeLightbox;
+$('lbClose').onclick=function(e){e.stopPropagation();closeLightbox();};
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&$('lightbox').classList.contains('on'))closeLightbox();});
 cfgLoad();
 if(ghConfigured())loadAll();else setStatus('Add your GitHub connection above, then <b>Connect &amp; load</b>.');
 

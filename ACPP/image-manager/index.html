@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.5.0">
+<meta name="version" content="1.6.0">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -106,6 +106,7 @@
   .imgmeta .cap{font-size:.78rem;color:var(--soft);font-style:italic}
   .tag{font-size:.7rem;border-radius:999px;padding:1px 8px;border:1px solid var(--line);color:var(--soft)}
   .tag.v{background:var(--surface2)}
+  .tag.meta{background:rgba(107,79,158,.15);color:var(--viol);border-color:transparent;font-weight:600}
   .pill{font-size:.72rem;border-radius:999px;padding:2px 9px;font-weight:600}
   .pill.ok{background:rgba(46,125,87,.14);color:var(--good)}
   .pill.draft{background:rgba(181,115,26,.16);color:var(--warn)}
@@ -254,6 +255,7 @@
         <div class="f"><label>Credit</label><input type="text" id="fCred" placeholder="Optional source / credit line"></div>
         <div class="f"><label>Status</label><select id="fStatus"><option value="draft">Draft</option><option value="approved">Approved</option></select></div>
       </div>
+      <div class="f"><label class="chk" style="text-transform:none;letter-spacing:0;color:var(--ink);font-size:.9rem"><input type="checkbox" id="fMeta"> Metaphor image</label><div class="hint">Flag this as a dining-metaphor image. Images that carry a generation prompt count as metaphor automatically; use this to flag ones that don't (or to un-flag a prompt image).</div></div>
       <div class="ederr" id="edErr"></div>
     </div>
     <div class="edfoot">
@@ -335,10 +337,12 @@ function matchImg(sid,im){
   if(FILTER==='draft'&&im.status==='approved')return false;
   if(FILTER==='approved'&&im.status!=='approved')return false;
   if(FILTER==='issues'&&imgIssues(sid,im).length===0)return false;
-  if(VFILTER==='metaphor'){if(!(im.prompt&&String(im.prompt).trim()))return false;}
+  if(VFILTER==='metaphor'){if(!isMetaphor(im))return false;}
   else if(VFILTER!=='all'){if((im.variants||[]).indexOf(VFILTER)<0)return false;}
   return true;
 }
+// A metaphor image: an explicit metaphor flag wins; otherwise any image carrying a generation prompt.
+function isMetaphor(im){if(typeof im.metaphor==='boolean')return im.metaphor;return !!(im.prompt&&String(im.prompt).trim());}
 var editing=null;          // {sid, idx} when editing an existing image, else null
 
 /* ---------- validation (mirrors the board's imgCheck + anchor resolution) ---------- */
@@ -432,7 +436,7 @@ function cardHtml(s,im,doc){
     '<div class="thumb" data-imgsrc="'+esc(im.src||'')+'"'+draftGen+'><span class="ph">'+(im.src?'<span class="spin"></span>':'no src')+'</span></div>'+
     '<div class="imgmeta">'+
       '<div class="r1"><span class="idc">'+esc(im.img_id||'(no id)')+'</span>'+statusPill+'</div>'+
-      '<div class="r1">'+vtags+'<span class="tag">'+esc(im.width||'wide')+'</span></div>'+
+      '<div class="r1">'+vtags+'<span class="tag">'+esc(im.width||'wide')+'</span>'+(isMetaphor(im)?'<span class="tag meta">metaphor</span>':'')+'</div>'+
       '<div class="anch">⚓ '+esc(anchorDesc(im))+'</div>'+
       (im.alt?'<div class="alt">'+esc(im.alt)+'</div>':'<div class="issues">missing alt text</div>')+
       (im.caption?'<div class="cap">'+esc(im.caption)+'</div>':'')+
@@ -468,7 +472,7 @@ function render(){
   var rows=SECTIONS.filter(function(s){var imgs=(IMAGES[s.sid]&&IMAGES[s.sid].images)||[];return imgs.length&&imgs.some(function(im){return matchImg(s.sid,im);});});
   if(active){
     var shown=0;rows.forEach(function(s){shown+=(IMAGES[s.sid].images||[]).filter(function(im){return matchImg(s.sid,im);}).length;});
-    var vlabel=VFILTER==='A'?' · Plain (A)':(VFILTER==='B'?' · Illustrated (B)':(VFILTER==='metaphor'?' · Metaphor (has prompt)':''));
+    var vlabel=VFILTER==='A'?' · Plain (A)':(VFILTER==='B'?' · Illustrated (B)':(VFILTER==='metaphor'?' · Metaphor':''));
     setStatus(shown+' image'+(shown===1?'':'s')+' match'+(shown===1?'es':'')+' the filter'+vlabel+' · '+rows.length+' sub-section'+(rows.length===1?'':'s')+'.');
   }
   if(!rows.length){board.innerHTML='<div class="empty">No image placements'+(active?' match this filter':' yet')+'. Use <b>＋ New placement</b> to add one.</div>';return;}
@@ -580,6 +584,7 @@ function openEditor(sid,idx){
   $('fCap').value=im?(im.caption||''):'';
   $('fCred').value=im?(im.credit||''):'';
   $('fStatus').value=im?(im.status||'draft'):'draft';
+  $('fMeta').checked=im?isMetaphor(im):false;
   $('editor').showModal();
 }
 function readEditor(){
@@ -603,13 +608,20 @@ function saveEditor(){
   var doc=ensureDoc(sid);
   var dup=doc.images.some(function(x,i){return x.img_id===im.img_id&&!(editing&&editing.sid===sid&&editing.idx===i);});
   if(dup){$('edErr').textContent='⚠ img_id '+im.img_id+' already exists in this section';return;}
+  var finalObj;
   if(editing&&editing.sid===sid){
     // merge managed fields onto the existing node so prompt/gen (and any other fields) are preserved
     var ex=doc.images[editing.idx]||{};
     ['width','size_hint','caption','credit'].forEach(function(k){delete ex[k];}); // optional fields cleared in the form must drop
     Object.keys(im).forEach(function(k){ex[k]=im[k];});
-    doc.images[editing.idx]=ex;
-  }else{doc.images.push(im);}
+    doc.images[editing.idx]=ex;finalObj=ex;
+  }else{doc.images.push(im);finalObj=im;}
+  // metaphor flag: store it only when it differs from the prompt-based default, to keep the data minimal
+  var hasPrompt=!!(finalObj.prompt&&String(finalObj.prompt).trim());
+  var wantMeta=$('fMeta').checked;
+  if(wantMeta&&!hasPrompt)finalObj.metaphor=true;          // flag a non-prompt image as metaphor
+  else if(!wantMeta&&hasPrompt)finalObj.metaphor=false;    // explicitly un-flag a prompt image
+  else delete finalObj.metaphor;                           // default (prompt => metaphor, else not)
   DIRTY[sid]=true;editing=null;$('editor').close();render();
 }
 

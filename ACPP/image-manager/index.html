@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.1.1">
+<meta name="version" content="1.1.2">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -213,7 +213,7 @@
           <img class="upprev" id="upPrev" alt="" style="display:none">
           <span class="cfgmsg" id="upMsg"></span>
         </div>
-        <div class="hint">Upload stores the PNG/JPG under the section's 05_images folder and fills src automatically.</div>
+        <div class="hint">Upload stores the file under the <b>name already in src</b> (the node's name) in the section's 05_images folder — the picked file's own name is ignored. Leave src blank only for a brand-new image, where the file name is then used.</div>
       </div>
       <div class="frow">
         <div class="f"><label>Width</label><select id="fWidth"><option value="wide">Wide</option><option value="full">Full</option><option value="inline-right">Inline right</option><option value="inline-left">Inline left</option><option value="small">Small</option></select></div>
@@ -562,14 +562,22 @@ function uploadAsset(){
   var f=$('fFile').files[0];var sid=$('fSec').value;
   if(!f){$('upMsg').textContent='Choose a file first.';return;}
   if(!ghConfigured()){$('upMsg').textContent='Connect to the repo first.';return;}
-  var name=f.name.replace(/[^A-Za-z0-9._-]/g,'_');
-  var path=imgFullPath(srcRel(sid,name));
-  $('upMsg').innerHTML='<span class="spin"></span> uploading '+esc(name)+'…';
+  // Store under the name the node already carries (its src), NOT the picked file's name
+  // (e.g. a "Gemini_Generated_Image_…" download). Fall back to the file name only when no src is set yet.
+  var curSrc=($('fSrc').value||'').trim();
+  var rel,name;
+  if(curSrc){rel=curSrc;name=curSrc.split('/').pop();}
+  else{name=f.name.replace(/[^A-Za-z0-9._-]/g,'_');rel=srcRel(sid,name);}
+  var fileExt=(f.name.split('.').pop()||'').toLowerCase();
+  var nameExt=(name.split('.').pop()||'').toLowerCase();
+  var extNote=(curSrc&&fileExt&&nameExt&&fileExt!==nameExt)?(' (note: file is .'+esc(fileExt)+', stored as .'+esc(nameExt)+' per the node name)'):'';
+  var path=imgFullPath(rel);
+  $('upMsg').innerHTML='<span class="spin"></span> uploading as '+esc(name)+'…';
   var reader=new FileReader();
   reader.onload=function(){
     var b64data=String(reader.result).split(',')[1]||'';
     ghPutRaw(path,b64data,'image-manager: upload asset '+name+' for '+sid).then(function(r){
-      if(r.ok){$('fSrc').value=srcRel(sid,name);$('upMsg').innerHTML='<span class="ok">✓ uploaded</span>';$('upPrev').src=String(reader.result);$('upPrev').style.display='inline-block';}
+      if(r.ok){$('fSrc').value=rel;$('upMsg').innerHTML='<span class="ok">✓ uploaded as '+esc(name)+'</span>'+extNote;$('upPrev').src=String(reader.result);$('upPrev').style.display='inline-block';}
       else{$('upMsg').innerHTML='<span style="color:var(--bad)">✕ '+esc(r.error||'upload failed')+'</span>';}
     });
   };

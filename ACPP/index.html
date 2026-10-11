@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.11.0">
+<meta name="version" content="4.11.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -544,7 +544,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var pre=[
       get('sources.json').then(function(sj){if(sj)buildSrcIndex(sj);}),
       get('outlines.json').then(function(oj){if(oj)OUTLINES=buildG1map(oj);}),
-      get('metaphors.json').then(function(mj){if(mj)METAPHORS=mj;}),
+      get('metaphors.json').then(function(mj){METAPHORS=(mj&&(!mj.project_id||mj.project_id===sel.value))?mj:null;}),  // metaphors.json is project-scoped; ignore it for other projects
       get('publication_control.json').then(function(pc){if(pc)PUBCTRL=pc;}),
       get('approvals.json').then(function(ap){APPROVALSRAW=ap&&ap.approvals?ap:{_note:'ACPP approvals log.',approvals:[]};})
     ];
@@ -875,8 +875,9 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       list.forEach(function(p){PROJECTS[p.project_id]={title:p.title||p.project_id,type:p.publication_type||p.template_id||'project',sections:[],_loadError:null};});
       sel.innerHTML='';
       list.forEach(function(p){var o=document.createElement('option');o.value=p.project_id;o.textContent=p.title||p.project_id;sel.appendChild(o);});
-      var remembered='';try{remembered=localStorage.getItem('acpp.board.proj')||'';}catch(e){}
+      var remembered=GHget('proj','');  // shared current-project across all ACPP tools
       sel.value=(prev&&PROJECTS[prev])?prev:((remembered&&PROJECTS[remembered])?remembered:list[0].project_id);
+      GHset('proj',sel.value);
       return list.length;
     });
   }
@@ -1735,7 +1736,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     try{renderGhFiles();}catch(e){}
     try{var wp=document.getElementById('wcPanel');if(wp&&!wp.hidden)buildWordCount(wp);}catch(e){}
   }
-  sel.addEventListener('change',function(){try{localStorage.setItem('acpp.board.proj',sel.value);}catch(e){}
+  sel.addEventListener('change',function(){GHset('proj',sel.value);  // shared current-project across all ACPP tools
     if(ghConfigured()){document.getElementById('projMeta').textContent='loading '+sel.value+'…';ghRehydrate(true).then(function(){try{render(sel.value);}catch(e){}});}
     else{render(sel.value);}});
   try{for(var _i=localStorage.length-1;_i>=0;_i--){var _k=localStorage.key(_i);if(_k&&_isReg(_k))localStorage.removeItem(_k);}}catch(e){}  // purge any stale registry cache from earlier versions (any project)

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.4.1">
+<meta name="version" content="1.5.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -79,7 +79,7 @@
     <a href="../index.html" title="Open the ACPP Pipeline Board" style="background:#1e3350;color:#cfe0f5;border-radius:8px;padding:6px 12px;font-size:.82rem;text-decoration:none">▦ Board</a>
     <a href="../source-manager/index.html" title="Open the ACPP Source Manager" style="background:#1e3350;color:#cfe0f5;border-radius:8px;padding:6px 12px;font-size:.82rem;text-decoration:none">⌥ Source Manager</a>
   </nav>
-  <div class="proj" id="projName" style="margin-left:12px">DAMA-DMBOK v3.0 — Chapter 1</div>
+  <select class="proj" id="projSel" title="Current project (shared across the ACPP tools)" style="margin-left:12px;background:#1e3350;color:#cfe0f5;border:1px solid #2b4straight;border-radius:8px;padding:6px 10px;font-size:.82rem;max-width:360px"></select>
 </header>
 
 <div class="wrap">
@@ -154,6 +154,19 @@
   var GH={owner:function(){return GHget('owner','');},repo:function(){return GHget('repo','modelware_app_storage');},
           branch:function(){return GHget('branch','main');},dir:function(){return GHget('dir','ACPP/database');},pat:function(){return GHget('pat','');}};
   function ghConfigured(){return !!(GH.pat()&&GH.owner()&&GH.repo());}
+  function acppRoot(){return (GH.dir()||'ACPP/database').replace(/\/database\/?$/,'')||'ACPP';}
+  function curProj(){var s=document.getElementById('projSel');return (s&&s.value)?s.value:GHget('proj','dmbok-v3-ch1');}  // shared current-project across all ACPP tools
+  function loadProjects(){
+    return ghGetJson(acppRoot()+'/projects.json').then(function(pj){
+      var list=(pj&&pj.projects)||[];var selp=document.getElementById('projSel');if(!selp||!list.length)return 0;
+      var prev=curProj(),remembered=GHget('proj',''),has=function(id){return id&&list.some(function(p){return p.project_id===id;});};
+      selp.innerHTML='';
+      list.forEach(function(p){var o=document.createElement('option');o.value=p.project_id;o.textContent=p.title||p.project_id;selp.appendChild(o);});
+      selp.value=has(prev)?prev:(has(remembered)?remembered:list[0].project_id);
+      GHset('proj',selp.value);
+      return list.length;
+    });
+  }
   function ghHeaders(){return {Authorization:'Bearer '+GH.pat(),Accept:'application/vnd.github+json'};}
   function ghUrl(p){return 'https://api.github.com/repos/'+GH.owner()+'/'+GH.repo()+'/contents/'+p;}
   function ghGetJson(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'})
@@ -179,21 +192,22 @@
 
   function buildModel(data){
     NODES={};EDGES=[];OUT_ADJ={};IN_ADJ={};SECTIONS={};
-    // sections (labels + render state)
-    arrOf(data.sections,['sections']).forEach(function(s){SECTIONS[s.section_id]={label:s.label||s.heading||s.section_id,g6:((s.gates||{}).G6)||'waiting'};});
-    // outlines -> bullets
+    // sections (labels + render state) — only the current project (sections.json is shared across projects)
+    var PROJ=curProj();
+    arrOf(data.sections,['sections']).forEach(function(s){if(s.project_id!==PROJ)return;SECTIONS[s.section_id]={label:s.label||s.heading||s.section_id,g6:((s.gates||{}).G6)||'waiting'};});
+    // outlines -> bullets (skip sections not in the current project)
     arrOf(data.outlines,['outlines']).forEach(function(o){
-      var sec=o.section_id; if(!SECTIONS[sec])SECTIONS[sec]={label:o.heading||sec,g6:'waiting'};
+      var sec=o.section_id; if(!SECTIONS[sec])return;
       (o.bullets||[]).forEach(function(b){addNode(b.id,'B',b.text,sec,'');});
     });
     // propositions -> P, link B->P
-    data.props.forEach(function(p){ addNode(p.p_id,'P',p.text,p.section,(p.type||'')); if(p.outline_id)addEdge(p.outline_id,p.p_id); });
+    data.props.forEach(function(p){ if(!SECTIONS[p.section])return; addNode(p.p_id,'P',p.text,p.section,(p.type||'')); if(p.outline_id)addEdge(p.outline_id,p.p_id); });
     // argument nodes -> A, link P->A ; index p_id -> an_id (for metaphor resolution of C-/unfiled claims)
     var ANBYPID={};
-    data.nodes.forEach(function(n){ addNode(n.an_id,'A',n.text,n.section,(n.type||'')); if(n.p_id){addEdge(n.p_id,n.an_id);if(!ANBYPID[n.p_id])ANBYPID[n.p_id]=n.an_id;} });
+    data.nodes.forEach(function(n){ if(!SECTIONS[n.section])return; addNode(n.an_id,'A',n.text,n.section,(n.type||'')); if(n.p_id){addEdge(n.p_id,n.an_id);if(!ANBYPID[n.p_id])ANBYPID[n.p_id]=n.an_id;} });
     // evidence links -> E (source), link P->E
     var srcTitle={}; arrOf(data.sources,['items','sources']).forEach(function(s){srcTitle[s.id]=s.title||s.id;});
-    data.evid.forEach(function(e){ var id=e.link_id||(e.p_id+'·'+e.src_id); var label=(srcTitle[e.src_id]||e.src_id||'source'); addNode(id,'E',label,e.section,(e.src_id||'')+(e.support_strength?(' · '+e.support_strength):'')+(e.status?(' · '+e.status):'')); if(e.p_id)addEdge(e.p_id,id); });
+    data.evid.forEach(function(e){ if(!SECTIONS[e.section])return; var id=e.link_id||(e.p_id+'·'+e.src_id); var label=(srcTitle[e.src_id]||e.src_id||'source'); addNode(id,'E',label,e.section,(e.src_id||'')+(e.support_strength?(' · '+e.support_strength):'')+(e.status?(' · '+e.status):'')); if(e.p_id)addEdge(e.p_id,id); });
     // render -> one node per section (G6), link each prop in section -> render
     Object.keys(SECTIONS).forEach(function(sec){
       var g6=SECTIONS[sec].g6; var rid='R-'+sec;
@@ -206,7 +220,9 @@
     function claimNode(pid){ if(NODES[pid]&&NODES[pid].tier==='P')return pid; if(ANBYPID[pid])return ANBYPID[pid]; return null; }
     var PID2OUT={}; (data.props||[]).forEach(function(p){ if(p.p_id)PID2OUT[p.p_id]=p.outline_id; });
     function anchorFor(pp){ var out=PID2OUT[pp]; if(out&&NODES[out]&&NODES[out].tier==='B') return out; return claimNode(pp); }
-    var mroot=data.metaphors&&(data.metaphors.metaphors||(Array.isArray(data.metaphors)?data.metaphors:null));
+    // metaphors.json is project-scoped (carries project_id); ignore it for other projects
+    var md=(data.metaphors&&(!data.metaphors.project_id||data.metaphors.project_id===PROJ))?data.metaphors:null;
+    var mroot=md&&(md.metaphors||(Array.isArray(md)?md:null));
     (mroot||[]).forEach(function(m,mi){ if(!m||!m.metaphor_id)return; var midx=('0'+mi).slice(-2);
       addNode(m.metaphor_id,'M',(m.name||m.metaphor_id)+' — '+(m.vehicle||''),'',(m.status||'')+(m.role_in_family?(' · '+m.role_in_family):''));
       NODES[m.metaphor_id].sortkey=midx+'#0#'+m.metaphor_id; NODES[m.metaphor_id].mkind='met';
@@ -226,11 +242,11 @@
   function loadAll(verbose){
     if(!ghConfigured()){document.getElementById('emptyMsg').hidden=false;setStatus('not connected — add PAT in ⚙ GitHub');return Promise.resolve();}
     setStatus('refreshing from repo…');
-    return ghList(GH.dir()).then(function(files){
+    return loadProjects().then(function(){return ghList(GH.dir());}).then(function(files){
       var names=(files||[]).map(function(f){return f&&f.name;}).filter(Boolean);
       function pick(re){return names.filter(function(n){return re.test(n);}).map(function(n){return GH.dir()+'/'+n;});}
       var propFiles=pick(/^propositions.*\.json$/), nodeFiles=pick(/^argument_nodes.*\.json$/), evidFiles=pick(/^evidence_links.*\.json$/);
-      function secOf(fn){var m=fn.match(/\.(DM-[0-9-]+)\.json$/);return m?m[1]:'';}
+      function secOf(fn){var m=fn.match(/\.([A-Z]+-[0-9A-Za-z-]+)\.json$/);return m?m[1]:'';}
       return Promise.all([
         ghGetJson(GH.dir()+'/outlines.json'),
         Promise.all(propFiles.map(function(f){return ghGetJson(f).then(function(d){return {d:d,sec:secOf(f)};});})),
@@ -355,6 +371,7 @@
   document.getElementById('ghForget').addEventListener('click',function(){LS.del('acpp.gh.pat');document.getElementById('ghPat').value='';setStatus('token forgotten');});
   document.getElementById('picker').addEventListener('change',function(){if(this.value){if(focus.indexOf(this.value)<0){focus.push(this.value);renderChips();render();}this.value='';}});
   document.getElementById('secFilter').addEventListener('change',function(){populatePicker();render();});
+  document.getElementById('projSel').addEventListener('change',function(){GHset('proj',this.value);loadAll(true);});  // shared current-project across all ACPP tools
   document.getElementById('onlyConn').addEventListener('change',render);
   document.querySelectorAll('#dirSeg button').forEach(function(b){b.addEventListener('click',function(){dir=b.dataset.d;document.querySelectorAll('#dirSeg button').forEach(function(x){x.classList.toggle('on',x===b);});render();});});
   window.addEventListener('resize',function(){requestAnimationFrame(function(){drawLinks(connectedSet(),document.getElementById('onlyConn').checked);});});

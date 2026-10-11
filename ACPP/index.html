@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.12.0">
+<meta name="version" content="4.12.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -448,7 +448,8 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   var GHFILES={};
   var RENDERREG={};   // section_id -> render register (G6 skill output)
   var IMAGES={};      // section_id -> images.<SID>.json (image placements; data chat owns the data)
-  var METAPHORS=null; // metaphors.json (chapter metaphor track)
+  var METAPHORS=null; // metaphors.<proj>.json (per-project metaphor track), or legacy metaphors.json
+  var METAPHORSFILE='metaphors.json'; // the file the Metaphor Track commits back to (per-project when one exists)
   var PUBCTRL=null;   // publication_control.json (baselines)
   var SECTIONSRAW=null;   // raw sections.json (so the board can flip a gate and re-commit it faithfully)
   var APPROVALSRAW=null;  // raw approvals.json (so the board can append a gate APR)
@@ -539,12 +540,12 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function hydrateFromCache(){/* caching removed: nothing is hydrated from local storage; data loads fresh from the repo */}
   // Load EVERYTHING fresh from the repo. No seed, no cache. The section list itself comes from sections.json.
   function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);
-    ramClear(); RENDERREG={}; IMAGES={}; METAPHORS=null; OUTLINES={}; var P=('acpp.'+sel.value+'.');
+    ramClear(); RENDERREG={}; IMAGES={}; METAPHORS=null; METAPHORSFILE='metaphors.'+sel.value+'.json'; OUTLINES={}; var P=('acpp.'+sel.value+'.');
     function get(fn){return ghGetJson(GH.dir()+'/'+fn);}  // cache-busted
     var pre=[
       get('sources.json').then(function(sj){if(sj)buildSrcIndex(sj);}),
       get('outlines.json').then(function(oj){if(oj)OUTLINES=buildG1map(oj);}),
-      get('metaphors.'+sel.value+'.json').then(function(mj){if(mj){METAPHORS=mj;return;}return get('metaphors.json').then(function(m2){METAPHORS=(m2&&(!m2.project_id||m2.project_id===sel.value))?m2:null;});}),  // per-project metaphors.<proj>.json, falling back to metaphors.json when its project_id matches
+      get('metaphors.'+sel.value+'.json').then(function(mj){if(mj){METAPHORS=mj;METAPHORSFILE='metaphors.'+sel.value+'.json';return;}return get('metaphors.json').then(function(m2){if(m2&&(!m2.project_id||m2.project_id===sel.value)){METAPHORS=m2;METAPHORSFILE='metaphors.json';}else{METAPHORS=null;METAPHORSFILE='metaphors.'+sel.value+'.json';}});}),  // per-project metaphors.<proj>.json, falling back to legacy metaphors.json; commit back to whichever file it came from
       get('publication_control.json').then(function(pc){if(pc)PUBCTRL=pc;}),
       get('approvals.json').then(function(ap){APPROVALSRAW=ap&&ap.approvals?ap:{_note:'ACPP approvals log.',approvals:[]};})
     ];
@@ -1302,17 +1303,21 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         Object.keys(ci).sort().map(function(pid){var e=ci[pid];var maps=Object.keys(e.maps);return '<div class="claimrow" id="cr-'+CSSid(pid)+'" data-pid="'+esc(pid)+'"><span class="cpid">'+esc(pid)+'</span>'+esc(String(e.text).slice(0,150))+(String(e.text).length>150?'…':'')+(maps.length?(' <span style="color:var(--soft);font-size:.74rem">◆ '+maps.map(esc).join(', ')+'</span>'):' <span style="color:var(--soft);font-size:.74rem">◆ (no mapping yet)</span>')+'</div>';}).join('')+'</div>';
       function kv(o){if(o==null)return '';if(typeof o!=='object')return esc(String(o));if(Array.isArray(o))return '<ul class="sbmb">'+o.map(function(x){return '<li>'+kv(x)+'</li>';}).join('')+'</ul>';return Object.keys(o).map(function(k){return '<div style="margin:2px 0"><b>'+esc(k)+':</b> '+kv(o[k])+'</div>';}).join('');}
       var A=d.architecture, arch='';
-      if(A){var sbm=A.section_bullet_map||[];
+      // architecture shape varies per project; join/render defensively and never let it blank the panel
+      function jstr(x){return Array.isArray(x)?x.map(function(v){return (v&&typeof v==='object')?Object.keys(v).map(function(k){return k+': '+v[k];}).join(' '):String(v);}).join(', '):(x&&typeof x==='object'?Object.keys(x).map(function(k){return k+': '+jstr(x[k]);}).join(' · '):(x==null?'':String(x)));}
+      function blrow(b){if(b==null)return '';if(typeof b!=='object')return '<li>'+esc(b)+'</li>';return '<li>'+esc(b.b_id||b.id||'')+(b.primary?(' → '+esc(b.primary)):'')+(b.other_lens?(' / '+esc(b.other_lens)):'')+((b.dose||b.fidelity)?(' ['+esc(b.dose||'')+(b.fidelity?('·'+esc(b.fidelity)):'')+']'):'')+(b.guardrail?(' '+esc(b.guardrail)):'')+(b.text?(' '+esc(b.text)):'')+'</li>';}
+      if(A){try{var sbm=A.section_bullet_map||[];
         arch='<details class="mt-arch"><summary>▤ Chapter architecture (v'+esc(d.schema_version||'2.0')+') — dosage, guardrails &amp; section/bullet alignment</summary>'+
           (A.executive_judgment?'<p class="note">'+esc(A.executive_judgment)+'</p>':'')+
           (A.paragraph_pattern?'<p class="note"><b>Paragraph pattern:</b> '+esc(A.paragraph_pattern)+'</p>':'')+
-          (A.guardrails?('<div class="archsub">Guardrails</div><ul class="guardlist">'+Object.keys(A.guardrails).map(function(k){return '<li><b>'+esc(k)+'</b> '+esc(A.guardrails[k])+'</li>';}).join('')+'</ul>'):'')+
-          (A.editorial_dosage?('<div class="archsub">Editorial dosage</div><p class="note"><b>Prominent:</b> '+esc((A.editorial_dosage.prominent||[]).join(', '))+' · <b>Light-touch:</b> '+esc((A.editorial_dosage.light_touch||[]).join(', '))+' · <b>Withdraw:</b> '+esc((A.editorial_dosage.withdraw||[]).join(', '))+'</p>'):'')+
-          (A.no_metaphor_zones?('<div class="archsub">No-metaphor zones</div><p class="note">'+esc((A.no_metaphor_zones||[]).join(' · '))+'</p>'):'')+
-          (sbm.length?('<div class="archsub">Section / bullet alignment ('+sbm.length+')</div>'+sbm.map(function(e){return '<div class="sbm"><b>'+esc(e.outline_id)+' · '+esc(e.heading||'')+'</b>'+((e.use||e.fidelity||e.guardrails)?' <span class="idc">['+esc((e.use||[]).join(','))+(e.fidelity?(' · fidelity '+esc(e.fidelity)):'')+(e.guardrails&&e.guardrails.length?(' · '+esc((e.guardrails||[]).join(','))):'')+']</span>':'')+((e.bullets&&e.bullets.length)?('<ul class="sbmb">'+e.bullets.map(function(b){return '<li>'+esc(b)+'</li>';}).join('')+'</ul>'):'')+(e.application?'<div class="note" style="margin:3px 0 0">'+esc(e.application)+'</div>':'')+'</div>';}).join('')):'')+
+          (A.guardrails?('<div class="archsub">Guardrails</div><ul class="guardlist">'+Object.keys(A.guardrails).map(function(k){return '<li><b>'+esc(k)+'</b> '+esc(jstr(A.guardrails[k]))+'</li>';}).join('')+'</ul>'):'')+
+          (A.editorial_dosage?('<div class="archsub">Editorial dosage</div><p class="note"><b>Prominent:</b> '+esc(jstr(A.editorial_dosage.prominent))+' · <b>Light-touch:</b> '+esc(jstr(A.editorial_dosage.light_touch))+' · <b>Withdraw:</b> '+esc(jstr(A.editorial_dosage.withdraw))+'</p>'):'')+
+          (A.no_metaphor_zones?('<div class="archsub">No-metaphor zones</div><p class="note">'+esc(jstr(A.no_metaphor_zones))+'</p>'):'')+
+          (sbm.length?('<div class="archsub">Section / bullet alignment ('+sbm.length+')</div>'+sbm.map(function(e){return '<div class="sbm"><b>'+esc(e.outline_id)+' · '+esc(e.heading||'')+'</b>'+((e.use||e.fidelity||e.guardrails)?' <span class="idc">['+esc(jstr(e.use))+(e.fidelity?(' · fidelity '+esc(e.fidelity)):'')+(e.guardrails&&e.guardrails.length?(' · '+esc(jstr(e.guardrails))):'')+']</span>':'')+((e.bullets&&e.bullets.length)?('<ul class="sbmb">'+e.bullets.map(blrow).join('')+'</ul>'):'')+(e.application?'<div class="note" style="margin:3px 0 0">'+esc(e.application)+'</div>':'')+'</div>';}).join('')):'')+
           (d.central_proposition?('<div class="archsub">Central proposition</div><p class="note">'+kv(d.central_proposition)+'</p>'):'')+
           (A.composed_meal?('<div class="archsub">Composed-meal model (integrative sections)</div>'+kv(A.composed_meal)):'')+
           '</details>';
+      }catch(_e){arch='<details class="mt-arch"><summary>▤ Chapter architecture</summary><p class="note">Architecture details could not be rendered for this project (unexpected shape): '+esc(_e&&_e.message||_e)+'</p></details>';}
       }
       var viewSeg='<div class="mt-vseg"><button data-mtv="track"'+(mtView==='track'?' class="on"':'')+'>◆ Track</button><button data-mtv="glossary"'+(mtView==='glossary'?' class="on"':'')+'>▦ Key Terms ↔ Dining</button></div>';
       var bodyHtml=(mtView==='glossary')?glossaryView():(fam+arch+intro+cards+addMeta+claims);
@@ -1363,7 +1368,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       c.querySelectorAll('.ktd-dining').forEach(function(el){el.addEventListener('click',function(){var i=el.dataset.kti;var dr=c.querySelector('#ktd-d-'+i);if(!dr)return;var cell=dr.querySelector('td');var ch=el.querySelector('.ktd-chev');
         if(dr.hidden){var K=(d.architecture||{}).key_term_dining_map||{};cell.innerHTML=lexDetailHtml((K.terms||[])[+i]||{});dr.hidden=false;if(ch)ch.textContent='▾';}
         else{dr.hidden=true;if(ch)ch.textContent='▸';}});});
-      var cm=c.querySelector('#mtCommit');if(cm)cm.addEventListener('click',function(){ghCommitOrDownload('metaphors.json',mtData(),this);});
+      var cm=c.querySelector('#mtCommit');if(cm)cm.addEventListener('click',function(){ghCommitOrDownload(METAPHORSFILE,mtData(),this);});
       var rv=c.querySelector('#mtRevert');if(rv)rv.addEventListener('click',function(){try{localStorage.removeItem(('acpp.'+sel.value+'.metaphors.draft'));}catch(e){}MT_EDIT={meta:null,map:null,addMapFor:null,addMeta:false};draw();});
       var am=c.querySelector('#mtAddMeta');if(am)am.addEventListener('click',function(){MT_EDIT.addMeta=true;draw();});
       c.querySelectorAll('[data-editmeta]').forEach(function(b){b.addEventListener('click',function(){MT_EDIT={meta:+b.dataset.editmeta,map:null,addMapFor:null,addMeta:false};draw();});});

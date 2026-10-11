@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.11.2">
+<meta name="version" content="4.12.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -544,7 +544,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var pre=[
       get('sources.json').then(function(sj){if(sj)buildSrcIndex(sj);}),
       get('outlines.json').then(function(oj){if(oj)OUTLINES=buildG1map(oj);}),
-      get('metaphors.json').then(function(mj){METAPHORS=(mj&&(!mj.project_id||mj.project_id===sel.value))?mj:null;}),  // metaphors.json is project-scoped; ignore it for other projects
+      get('metaphors.'+sel.value+'.json').then(function(mj){if(mj){METAPHORS=mj;return;}return get('metaphors.json').then(function(m2){METAPHORS=(m2&&(!m2.project_id||m2.project_id===sel.value))?m2:null;});}),  // per-project metaphors.<proj>.json, falling back to metaphors.json when its project_id matches
       get('publication_control.json').then(function(pc){if(pc)PUBCTRL=pc;}),
       get('approvals.json').then(function(ap){APPROVALSRAW=ap&&ap.approvals?ap:{_note:'ACPP approvals log.',approvals:[]};})
     ];
@@ -591,6 +591,18 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     if(!already){APPROVALSRAW.approvals.push({apr_id:nextApr(),section_id:sec.sid,gate:gate,author_id:'HD',date:new Date().toISOString().slice(0,10),decision:decisionText});}
     if(flipped)ghCommitOrDownload('sections.json',SECTIONSRAW,btn);
     if(!already)ghCommitOrDownload('approvals.json',APPROVALSRAW,btn);
+    try{render(sel.value);}catch(e){}
+  }
+  // Re-open a gate that was approved (used for G0/G1): set it back to 'active' and drop its approval-log entry.
+  function reopenGate(sec,gate,btn){
+    if(!ghConfigured()){ghToast(btn,'connect GitHub to update the gate',true);return;}
+    var flipped=false;
+    if(SECTIONSRAW&&SECTIONSRAW.sections){SECTIONSRAW.sections.forEach(function(s){if(s.section_id===sec.sid){s.gates=s.gates||{};if(s.gates[gate]==='complete'){s.gates[gate]='active';flipped=true;}}});}
+    if(sec.gates&&sec.gates[gate]==='complete')sec.gates[gate]='active';
+    var removed=false;
+    if(APPROVALSRAW&&APPROVALSRAW.approvals){var n0=APPROVALSRAW.approvals.length;APPROVALSRAW.approvals=APPROVALSRAW.approvals.filter(function(a){return !(a.section_id===sec.sid&&a.gate===gate);});removed=APPROVALSRAW.approvals.length!==n0;}
+    if(flipped)ghCommitOrDownload('sections.json',SECTIONSRAW,btn);
+    if(removed)ghCommitOrDownload('approvals.json',APPROVALSRAW,btn);
     try{render(sel.value);}catch(e){}
   }
   function applyBoardContent(bc){
@@ -988,9 +1000,17 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         '<tr><th>Citation</th><td>'+esc(frame().citation)+'</td></tr>'+
         '<tr><th>GenAI policy</th><td>'+esc(frame().genai)+'</td></tr>'+
         '<tr><th>Boundary vocab</th><td>'+esc(frame().boundary)+'</td></tr></tbody></table>'+
-        '<p class="note">Shared frame — identical for every section in this project.</p>';
+        '<p class="note">Shared frame — identical for every section in this project.</p>'+
+        (gateStatus(sec,'G0')==='complete'
+          ? '<div class="rv-bar"><span class="src" style="color:var(--good)">✓ Frame approved</span><button class="rv-btn" id="g0reopen">Re-open</button></div>'
+          : '<div class="rv-bar"><span></span><button class="rv-export" id="g0approve">✓ Approve frame (G0)</button></div>');
     } else if(gk==="G1"){
-      body=renderOutline(OUTLINES[sec.sid]);
+      var g1done=gateStatus(sec,'G1')==='complete', nb=((OUTLINES[sec.sid]||{}).bullets||[]).length;
+      body=renderOutline(OUTLINES[sec.sid])+
+        (g1done
+          ? '<div class="rv-bar"><span class="src" style="color:var(--good)">✓ Outline approved</span><button class="rv-btn" id="g1reopen">Re-open</button></div>'
+          : (nb ? '<div class="rv-bar"><span class="src">'+nb+' bullet'+(nb===1?'':'s')+' authored — review, then approve</span><button class="rv-export" id="g1approve">✓ Approve outline (G1)</button></div>'
+                : '<p class="note">No outline authored yet — nothing to approve.</p>'));
     } else if(gk==="G2" && a && a.backfill){
       body=(gateStatus(sec,'G2')==='complete')?gateSummary(sec,'G2'):'<div id="propReview"></div>';
     } else if(gk==="G2" && a && a.props){
@@ -1663,6 +1683,10 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     det.querySelectorAll('.visfull').forEach(function(fb){fb.addEventListener('click',function(){openFullMap(sec,gk);});});
     det.querySelectorAll('.visback').forEach(function(bb){bb.addEventListener('click',function(){openGate(det,sec,gk);});});}
   function openGate(det,sec,gk){det.innerHTML=renderGate(sec,gk);
+    var g0a=det.querySelector('#g0approve'); if(g0a)g0a.addEventListener('click',function(){advanceGate(sec,'G0','G0 Frame approved by the author from the board.',this);});
+    var g0r=det.querySelector('#g0reopen'); if(g0r)g0r.addEventListener('click',function(){reopenGate(sec,'G0',this);});
+    var g1a=det.querySelector('#g1approve'); if(g1a)g1a.addEventListener('click',function(){advanceGate(sec,'G1','G1 Outline approved ('+((OUTLINES[sec.sid]||{}).bullets||[]).length+' bullets) by the author from the board.',this);});
+    var g1r=det.querySelector('#g1reopen'); if(g1r)g1r.addEventListener('click',function(){reopenGate(sec,'G1',this);});
     var pc=det.querySelector('#propReview'); if(pc) buildPropositionReview(pc,sec);
     var ac=det.querySelector('#argReview'); if(ac) buildArgumentReview(ac,sec);
     var evc=det.querySelector('#evReview'); if(evc) buildEvidenceReview(evc,sec);

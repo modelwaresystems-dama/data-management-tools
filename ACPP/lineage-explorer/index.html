@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.5.0">
+<meta name="version" content="1.6.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -156,6 +156,13 @@
   function ghConfigured(){return !!(GH.pat()&&GH.owner()&&GH.repo());}
   function acppRoot(){return (GH.dir()||'ACPP/database').replace(/\/database\/?$/,'')||'ACPP';}
   function curProj(){var s=document.getElementById('projSel');return (s&&s.value)?s.value:GHget('proj','dmbok-v3-ch1');}  // shared current-project across all ACPP tools
+  // metaphors are per-project: prefer metaphors.<proj>.json, fall back to metaphors.json when its project_id matches
+  function loadMetaphors(){
+    return ghGetJson(GH.dir()+'/metaphors.'+curProj()+'.json').then(function(m){
+      if(m)return m;
+      return ghGetJson(GH.dir()+'/metaphors.json').then(function(m2){return (m2&&(!m2.project_id||m2.project_id===curProj()))?m2:null;});
+    });
+  }
   function loadProjects(){
     return ghGetJson(acppRoot()+'/projects.json').then(function(pj){
       var list=(pj&&pj.projects)||[];var selp=document.getElementById('projSel');if(!selp||!list.length)return 0;
@@ -236,6 +243,20 @@
     });
     // metaphor node section membership = union of its mappings' sections
     Object.keys(NODES).forEach(function(id){var n=NODES[id];if(n.mkind==='met'){var secs={};(OUT_ADJ[id]||[]).forEach(function(mid){var mm=NODES[mid];if(mm&&mm.secs)Object.keys(mm.secs).forEach(function(s){secs[s]=1;});});n.secs=secs;}});
+    // Outline-level metaphor linkage (e.g. the KYV book, before propositions exist):
+    // architecture.section_bullet_map maps each outline bullet directly to its primary (and other-lens) metaphor.
+    (md&&md.architecture&&md.architecture.section_bullet_map||[]).forEach(function(se){
+      var sec=se.outline_id||'';
+      (se.bullets||[]).forEach(function(bl){ if(!bl||!bl.b_id||!NODES[bl.b_id])return;
+        [bl.primary,bl.other_lens].forEach(function(mid){ if(!mid)return;
+          var mm=String(mid).replace(/-[A-Z]$/,'');   // normalise a lens suffix like "MF1-S" to the base metaphor id "MF1"
+          if(!NODES[mm])return;
+          addEdge(bl.b_id,mm);                         // bullet → metaphor (illustrates)
+          NODES[mm].mkind='met';
+          NODES[mm].secs=NODES[mm].secs||{}; if(sec)NODES[mm].secs[sec]=1; else if(NODES[bl.b_id].section)NODES[mm].secs[NODES[bl.b_id].section]=1;
+        });
+      });
+    });
   }
 
   // ---- loading ----
@@ -254,7 +275,7 @@
         Promise.all(evidFiles.map(function(f){return ghGetJson(f).then(function(d){return {d:d,sec:secOf(f)};});})),
         ghGetJson(GH.dir()+'/sources.json'),
         ghGetJson(GH.dir()+'/sections.json'),
-        ghGetJson(GH.dir()+'/metaphors.json')
+        loadMetaphors()
       ]).then(function(res){
         var props=[],nodes=[],evid=[];
         res[1].forEach(function(x){arrOf(x.d,['propositions','items']).forEach(function(p){p.section=p.section||(x.d&&x.d.section_id)||x.sec;props.push(p);});});

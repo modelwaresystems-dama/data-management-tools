@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.6.0">
+<meta name="version" content="1.7.0">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -54,6 +54,10 @@
   .cfgrow{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:8px}
   .cfgmsg{font-size:.82rem;color:var(--soft)}
 
+  .projbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 13px;box-shadow:var(--shadow)}
+  .projlabel{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);font-weight:600}
+  #projSel{flex:1;min-width:220px;max-width:640px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:.95rem}
+  .projtype{color:var(--soft);font-size:.78rem}
   .toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
   .toolbar .sp{flex:1}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -180,6 +184,12 @@
     </div>
   </details>
 
+  <div class="projbar" id="projBar" hidden>
+    <span class="projlabel">Project</span>
+    <select id="projSel"></select>
+    <span class="projtype idc" id="projType"></span>
+  </div>
+
   <div class="toolbar">
     <button class="btn p" id="newBtn">＋ New placement</button>
     <button class="btn" id="refreshBtn">↻ Refresh</button>
@@ -301,7 +311,7 @@ function ghGetJson(path){return fetch(ghUrl(path)+'?ref='+encodeURIComponent(GH.
 /* ---------- path helpers ---------- */
 function acppRoot(){return (GH.dir()||'ACPP/database').replace(/\/database\/?$/,'')||'ACPP';}
 function imagesPath(sid){return GH.dir()+'/images.'+sid+'.json';}
-function srcRel(sid,file){return 'content/'+GH.proj()+'/05_images/'+sid+'/'+file;}
+function srcRel(sid,file){return 'content/'+curProj()+'/05_images/'+sid+'/'+file;}
 function imgFullPath(src){return acppRoot()+'/'+src;}
 function imgMime(src){var e=(String(src).split('.').pop()||'').toLowerCase();return e==='png'?'image/png':(e==='jpg'||e==='jpeg'?'image/jpeg':(e==='gif'?'image/gif':(e==='svg'?'image/svg+xml':(e==='webp'?'image/webp':'application/octet-stream'))));}
 // Contents API returns inline content only for files <=1MB; for larger files (our figures are several MB)
@@ -372,16 +382,45 @@ function imgIssues(sid,im){
   return out;
 }
 
+/* ---------- projects (from projects.json — nothing hardcoded) ---------- */
+function curProj(){var s=$('projSel');return (s&&s.value)?s.value:GHget('proj','dmbok-v3-ch1');}
+function projHas(list,id){return !!(id&&list.some(function(p){return p.project_id===id;}));}
+function syncProjType(){var selp=$('projSel');var o=selp&&selp.selectedOptions&&selp.selectedOptions[0];$('projType').textContent=(o&&o.getAttribute('data-type'))?('· '+o.getAttribute('data-type')):'';}
+function loadProjects(){
+  return ghGetJson(acppRoot()+'/projects.json').then(function(pj){
+    var list=(pj&&pj.projects)||[];var bar=$('projBar'),selp=$('projSel');
+    if(!list.length){if(bar)bar.hidden=true;return 0;}
+    var prev=curProj();
+    selp.innerHTML='';
+    list.forEach(function(p){var o=document.createElement('option');o.value=p.project_id;o.textContent=p.title||p.project_id;o.setAttribute('data-type',p.publication_type||p.template_id||'');selp.appendChild(o);});
+    var remembered='';try{remembered=localStorage.getItem('acpp.imgmgr.proj')||'';}catch(e){}
+    var pick=projHas(list,prev)?prev:(projHas(list,remembered)?remembered:list[0].project_id);
+    selp.value=pick;GHset('proj',pick);if(bar)bar.hidden=false;syncProjType();
+    return list.length;
+  });
+}
+function loadReqStruct(){
+  return ghGetJson(GH.dir()+'/publication_control.json').then(function(pc){
+    var ctrls=(pc&&pc.controls)||[];var c=ctrls.filter(function(x){return x.project_id===curProj();})[0];
+    REQSTRUCT=(c&&c.required_structure)||[];
+  }).catch(function(){REQSTRUCT=[];});
+}
+
 /* ---------- load ---------- */
 function setStatus(html){$('status').innerHTML=html;}
 function loadAll(){
   if(!ghConfigured()){setStatus('Add your GitHub connection above, then <b>Connect &amp; load</b>.');$('board').innerHTML='';return Promise.resolve();}
-  setStatus('<span class="spin"></span> Loading sections…');
+  setStatus('<span class="spin"></span> Loading projects…');
+  return loadProjects().then(reloadProject);
+}
+function reloadProject(){
+  if(!ghConfigured())return Promise.resolve();
+  setStatus('<span class="spin"></span> Loading '+esc(curProj())+'…');
   SECTIONS=[];IMAGES={};ANIDS={};DIRTY={};IMAGESHA={};
-  return ghGetJson(GH.dir()+'/sections.json').then(function(sj){
+  return loadReqStruct().then(function(){return ghGetJson(GH.dir()+'/sections.json');}).then(function(sj){
     if(!sj||!sj.sections||!sj.sections.length){setStatus('<span style="color:var(--bad)">Could not load sections.json. Check the owner / repo / data dir / token.</span>');return;}
-    if(sj.project_id&&!GHget('proj','')){GHset('proj',sj.project_id);$('ghProj').value=sj.project_id;}
-    SECTIONS=sj.sections.map(function(s){return {sid:s.section_id,label:s.label||s.section_id,title:s.title||s.section_title||''};});
+    // sections.json is shared across projects — show only the selected project's sections
+    SECTIONS=sj.sections.filter(function(s){return s.project_id===curProj();}).map(function(s){return {sid:s.section_id,label:s.label||s.section_id,title:s.title||s.section_title||''};});
     var jobs=[];
     SECTIONS.forEach(function(sec){
       var sid=sec.sid;
@@ -421,7 +460,8 @@ function promptPanel(im){
     '<div class="promptfoot"><button class="btn sm copyprompt" type="button">⧉ Copy prompt</button><span class="copyok" style="display:none">copied</span></div>'+
   '</details>';
 }
-var H1NAMES={1:'Introduction',2:'Key Terms',3:'Foundations of Data Management',4:'Tools',5:'Techniques',6:'Roles',7:'Activities',8:'Metrics',9:'Risk Management',10:'Interrelation with Data Governance'};
+var REQSTRUCT=[];          // required_structure of the current project (H1 heading names) — from publication_control.json
+function h1name(h){var nm=REQSTRUCT[h-1];if(nm!=null&&String(nm).trim())return String(nm).replace(/^\s*\d+\.\s*/,'');return 'Section '+h;}
 function h1of(label){var m=String(label).match(/^(\d+)/);return m?+m[1]:0;}
 function h2of(label){var m=String(label).match(/^\d+\.(\d+)/);return m?+m[1]:0;}
 function allH1s(){var set={};SECTIONS.forEach(function(s){set[h1of(s.label)]=1;});return Object.keys(set).map(Number);}
@@ -485,7 +525,7 @@ function render(){
     var collapsed=(h in COLLAPSE)?COLLAPSE[h]:true;  // default collapsed, board-style
     var body=secs.map(function(s){return secBlock(s,active);}).join('');
     return '<section class="h1group'+(collapsed?'':' open')+'" data-h1="'+h+'">'+
-      '<div class="h1head" data-h1="'+h+'"><span class="h1caret">▸</span><b>'+h+'. '+esc(H1NAMES[h]||('Section '+h))+'</b><span class="h1count">'+imgCount+' image'+(imgCount===1?'':'s')+' · '+secs.length+' sub-section'+(secs.length===1?'':'s')+'</span></div>'+
+      '<div class="h1head" data-h1="'+h+'"><span class="h1caret">▸</span><b>'+h+'. '+esc(h1name(h))+'</b><span class="h1count">'+imgCount+' image'+(imgCount===1?'':'s')+' · '+secs.length+' sub-section'+(secs.length===1?'':'s')+'</span></div>'+
       '<div class="h1body'+(collapsed?' collapsed':'')+'">'+body+'</div>'+
     '</section>';
   }).join('');
@@ -533,7 +573,7 @@ function wire(){
 function selectBox(box){if(!box)return;try{var r=document.createRange();r.selectNodeContents(box);var sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);document.execCommand&&document.execCommand('copy');}catch(e){}}
 
 /* ---------- mutate ---------- */
-function ensureDoc(sid){if(!IMAGES[sid])IMAGES[sid]={"$schema":"./images.schema.json",project_id:GH.proj(),section_id:sid,images:[]};if(!IMAGES[sid].images)IMAGES[sid].images=[];return IMAGES[sid];}
+function ensureDoc(sid){if(!IMAGES[sid])IMAGES[sid]={"$schema":"./images.schema.json",project_id:curProj(),section_id:sid,images:[]};if(!IMAGES[sid].images)IMAGES[sid].images=[];return IMAGES[sid];}
 function delImage(sid,idx){
   var im=(IMAGES[sid]&&IMAGES[sid].images||[])[idx];if(!im)return;
   if(!confirm('Remove placement '+(im.img_id||'')+' from '+sid+'?\n\n(The asset file in the repo is not deleted; this only removes the placement record. Commit the section to save.)'))return;
@@ -658,7 +698,7 @@ function commitSection(sid,btn){
   if(!ghConfigured()){alert('Connect to the repo first.');return;}
   var doc=IMAGES[sid];if(!doc){return;}
   doc.updated=new Date().toISOString();
-  if(!doc.project_id)doc.project_id=GH.proj();
+  if(!doc.project_id)doc.project_id=curProj();
   if(!doc.section_id)doc.section_id=sid;
   var orig=btn.textContent;btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
   var base=IMAGESHA.hasOwnProperty(sid)?IMAGESHA[sid]:undefined; // the sha this edit was based on
@@ -699,6 +739,7 @@ $('appVersion').textContent='v'+document.querySelector('meta[name="version"]').c
 $('cfgSave').onclick=cfgSave;
 $('cfgConnect').onclick=function(){cfgSave();$('cfgPanel').open=false;loadAll();};
 $('refreshBtn').onclick=loadAll;
+$('projSel').onchange=function(){try{localStorage.setItem('acpp.imgmgr.proj',this.value);}catch(e){}GHset('proj',this.value);syncProjType();reloadProject();};
 $('newBtn').onclick=function(){if(!SECTIONS.length){alert('Load sections first (Connect & load).');return;}openEditor(SECTIONS[0].sid,null);};
 $('filterSeg').querySelectorAll('button').forEach(function(b){b.onclick=function(){FILTER=b.dataset.f;$('filterSeg').querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});render();};});
 $('variantSeg').querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.v===VFILTER);b.onclick=function(){VFILTER=b.dataset.v;persistUI();$('variantSeg').querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});render();};});

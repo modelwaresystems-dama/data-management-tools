@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.10.2">
+<meta name="version" content="4.11.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -435,7 +435,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   // and is rebuilt fresh from the repo on every load. It is NEVER written to localStorage, so the board can never
   // show stale cached data. Only connection config (acpp.gh.*) and per-viewer UI (acpp.board.*) use localStorage.
   var _ram={};
-  function _isReg(k){return String(k).indexOf('acpp.dmbok-v3-ch1.')===0;}
+  function _isReg(k){k=String(k);return k.indexOf('acpp.')===0&&k.indexOf('acpp.board.')!==0&&k.indexOf('acpp.gh.')!==0;}
   function lsGet(k){ if(_isReg(k)) return (k in _ram)?_ram[k]:null; try{return JSON.parse(localStorage.getItem(k)||'null');}catch(e){return null;} }
   function lsSet(k,v){ if(_isReg(k)){ if(v===null) delete _ram[k]; else _ram[k]=v; return; } try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} }
   function ramClear(){ _ram={}; }
@@ -512,6 +512,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     fetch('https://api.github.com/repos/'+GH.owner()+'/'+GH.repo(),{headers:ghHeaders()}).then(function(r){return r.json().then(function(j){
       if(r.ok){ghStatus('loading fresh from repo…',true);
         ghRefreshFiles()
+          .then(loadProjects)
           .then(function(){return ghRehydrate(true);})
           .then(function(c){var pr=PROJECTS[sel.value];
             if(pr&&pr._loadError){ghStatus('error: '+pr._loadError);}
@@ -538,7 +539,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function hydrateFromCache(){/* caching removed: nothing is hydrated from local storage; data loads fresh from the repo */}
   // Load EVERYTHING fresh from the repo. No seed, no cache. The section list itself comes from sections.json.
   function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);
-    ramClear(); RENDERREG={}; IMAGES={}; METAPHORS=null; OUTLINES={}; var P='acpp.dmbok-v3-ch1.';
+    ramClear(); RENDERREG={}; IMAGES={}; METAPHORS=null; OUTLINES={}; var P=('acpp.'+sel.value+'.');
     function get(fn){return ghGetJson(GH.dir()+'/'+fn);}  // cache-busted
     var pre=[
       get('sources.json').then(function(sj){if(sj)buildSrcIndex(sj);}),
@@ -550,7 +551,8 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     return get('sections.json').then(function(sj){
       if(!sj||!sj.sections||!sj.sections.length){proj.sections=[];proj._loadError='Could not load sections.json from the repo — check the connection and the data path.';return 0;}
       proj._loadError=null; SECTIONSRAW=sj;
-      proj.sections=sj.sections.map(function(s){return {sid:s.section_id,label:s.label||s.section_id,prose:s.prose_status||s.prose||'',gates:s.gates||{},note:s.note||'',art:{},aiq:[]};});
+      // sections.json is shared across projects; show only the selected project's sections.
+      proj.sections=sj.sections.filter(function(s){return s.project_id===sel.value;}).map(function(s){return {sid:s.section_id,label:s.label||s.section_id,prose:s.prose_status||s.prose||'',gates:s.gates||{},note:s.note||'',art:{},aiq:[]};});
       return Promise.all(pre).then(function(){
         var jobs=[];
         proj.sections.forEach(function(sec){var sid=sec.sid;
@@ -608,7 +610,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     ghCommitOrDownload('board_content.json',bc,btn);}
   try{window.__acpp={applyBoardContent:applyBoardContent,pullContent:ghPullContent,publishContent:ghPublishContent};}catch(e){}
   // ===== Word-count analysis of the rendered prose (live from the loaded render registers) =====
-  var WC_H1={1:'Introduction',2:'Key Terms',3:'Foundations of Data Management',4:'Tools',5:'Techniques',6:'Roles',7:'Activities',8:'Metrics',9:'Risk Management',10:'Interrelation with Data Governance'};
+  // WC_H1 removed — H1 names come from publication_control.required_structure via h1name()
   function wcWords(t){var m=String(t==null?'':t).match(/[A-Za-z0-9'’\-]+/g);return m?m.length:0;}
   function wcParaText(para){if(typeof para==='string')return para;if(Array.isArray(para))return para.map(function(sp){return typeof sp==='string'?sp:((sp&&sp.text)||'');}).join(' ');return '';}
   function wcVariant(rv){if(!rv||!rv.paragraphs)return 0;return rv.paragraphs.reduce(function(x,p){return x+wcWords(wcParaText(p));},0);}
@@ -622,7 +624,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var rows=wcRows();var totA=0,totB=0,nR=0,nO=0,nN=0;
     rows.forEach(function(r){totA+=r.a;totB+=r.b;if(r.st==='rendered')nR++;else if(r.st==='opener')nO++;else nN++;});
     var byH={};rows.forEach(function(r){(byH[r.h1]||(byH[r.h1]=[])).push(r);});
-    var by_h1=Object.keys(byH).map(Number).sort(function(a,b){return a-b;}).map(function(h){var rs=byH[h];return {h1:h,name:WC_H1[h]||('Section '+h),plain:rs.reduce(function(x,r){return x+r.a;},0),illustrated:rs.reduce(function(x,r){return x+r.b;},0)};});
+    var by_h1=Object.keys(byH).map(Number).sort(function(a,b){return a-b;}).map(function(h){var rs=byH[h];return {h1:h,name:h1name(h),plain:rs.reduce(function(x,r){return x+r.a;},0),illustrated:rs.reduce(function(x,r){return x+r.b;},0)};});
     return {
       _note:"ACPP chapter word-count record. DERIVED from the render.<id>.json files (plain=A_plain, illustrated=B_illustrated; a word is a /[A-Za-z0-9'’-]+/ token). Not a source of truth — regenerate from the renders; do not hand-edit.",
       project_id:sel.value,
@@ -641,7 +643,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var rendB=rows.filter(function(r){return r.st==='rendered';}).reduce(function(x,r){return x+r.b;},0);
     var meanB=nR?Math.round(rendB/nR):0;
     var byH={};rows.forEach(function(r){(byH[r.h1]||(byH[r.h1]=[])).push(r);});
-    var secs=Object.keys(byH).map(Number).sort(function(a,b){return a-b;}).map(function(h){var rs=byH[h];return {h:h,name:WC_H1[h]||('Section '+h),a:rs.reduce(function(x,r){return x+r.a;},0),b:rs.reduce(function(x,r){return x+r.b;},0),rows:rs};});
+    var secs=Object.keys(byH).map(Number).sort(function(a,b){return a-b;}).map(function(h){var rs=byH[h];return {h:h,name:h1name(h),a:rs.reduce(function(x,r){return x+r.a;},0),b:rs.reduce(function(x,r){return x+r.b;},0),rows:rs};});
     var maxSec=Math.max.apply(null,secs.map(function(s){return s.b;}))||1;
     var kpis=[['Chapter · illustrated',fmt(totB),'words (B)'],['Chapter · plain',fmt(totA),'words (A) · +'+fmt(totB-totA)],['Rendered',nR+' / '+rows.length,nO+' opener · '+nN+' pending'],['Mean / rendered',fmt(meanB),'words (B)']];
     var html='<div class="wc-head"><h2>Word count — rendered prose</h2><span class="cap">live from the loaded renders · '+esc(sel.value)+'</span><button class="rv-export" id="wcCommit" title="Write the committed word_count.json record to the data repo">⬆ Commit word_count.json</button><button class="wcx" id="wcClose">✕ Close</button></div>';
@@ -757,7 +759,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       GHset('owner',document.getElementById('ghOwner').value.trim());GHset('repo',document.getElementById('ghRepo').value.trim());
       GHset('branch',document.getElementById('ghBranch').value.trim());GHset('dir',document.getElementById('ghDir').value.trim());
       GHset('pat',document.getElementById('ghPat').value.trim());document.getElementById('ghMsg').textContent=' saved';ghConnect();});
-    document.getElementById('ghPull').addEventListener('click',function(){var m=document.getElementById('ghMsg');m.textContent=' refreshing from repo…';ghRefreshFiles().then(function(){return ghRehydrate(true);}).then(function(c){var pr=PROJECTS[sel.value];m.textContent=(pr&&pr._loadError)?(' '+pr._loadError):(' refreshed '+c+' sections from repo');try{render(sel.value);}catch(e){}});});
+    document.getElementById('ghPull').addEventListener('click',function(){var m=document.getElementById('ghMsg');m.textContent=' refreshing from repo…';ghRefreshFiles().then(loadProjects).then(function(){return ghRehydrate(true);}).then(function(c){var pr=PROJECTS[sel.value];m.textContent=(pr&&pr._loadError)?(' '+pr._loadError):(' refreshed '+c+' sections from repo');try{render(sel.value);}catch(e){}});});
     var _pb=document.getElementById('ghPublish');if(_pb)_pb.addEventListener('click',function(){ghPublishContent(_pb);});
     document.getElementById('ghForget').addEventListener('click',function(){try{localStorage.removeItem('acpp.gh.pat');}catch(e){}document.getElementById('ghPat').value='';document.getElementById('ghMsg').textContent=' token forgotten';ghStatus('not connected');GHFILES={};try{render(sel.value);}catch(e){}});
     ghConnect();
@@ -767,7 +769,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   // In-app review for G4 Evidence: Accept / Needs-source / Reject + SRC-ID + comment per claim,
   // saved to localStorage, exportable as evidence_links.json for Howard to commit.
   function buildEvidenceReview(c, sec){
-    var proj="dmbok-v3-ch1";
+    var proj=sel.value;
     var props={}; var g2o=(sec.art&&sec.art.G2)||{}; var g2=g2o.props||g2o.backfill||[]; var tIdx=g2o.props?2:3; g2.forEach(function(p){props[p[0]]=p[tIdx];});
     var rows=sec.art.G4.evid;
     var keyOf=function(pid){return 'acpp.'+proj+'.'+sec.sid+'.G4.'+pid;};
@@ -847,30 +849,43 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   var GATES=[["G0","Frame"],["G1","Outline"],["G2","Propositions"],["G3","Argument"],
              ["G4","Evidence"],["G5","Freeze"],["G6","Render"],["G7","Assure"]];
 
-  var FRAME={
-    headings:["Introduction","Key Terms","Foundations of Data Management","Tools","Techniques","Roles","Activities","Metrics","Risk Management","Interrelation with Data Governance"],
-    glossary:"Glossary Workbench — Ch 01 Key Terms (23 governed terms)",
-    citation:"Zotero (Modelware Source Library) via MS Word plugin",
-    genai:"Substantive GenAI use must be disclosed (CDC pattern).",
-    boundary:"Introduce / Develop / Refer Online / Refer to another KA"
-  };
+  // G0 frame comes from publication_control.json (per project) — nothing hardcoded.
+  function frame(){var c=pubCtrl()||{};return {
+    headings:(c.required_structure||[]).map(function(x){return String(x).replace(/^\s*\d+\.\s*/,'');}),
+    glossary:c.authoritative_terminology_source||'',
+    citation:c.citation_standard||'',
+    genai:c.ai_genai_policy||'',
+    boundary:(c.boundary_vocabulary||[]).join(' / ')
+  };}
 
   // Real outline artifacts (mirror of database/outlines.json) keyed by section_id.
   var OUTLINES={};   // NO SEED: built fresh from outlines.json on load
 
-  var PROJECTS={
-    "dmbok-v3-ch1":{
-      title:"DAMA-DMBOK v3.0 — Chapter 1: Data Management", type:"dmbok-chapter",
-      sections:[],   // NO SEED: built fresh from sections.json on every load
-      _loadError:null
-    }
-  };
+  // Projects are built from ACPP/projects.json — the registry the selector reads. Nothing hardcoded.
+  var PROJECTS={};
+  function pubCtrl(){return ((PUBCTRL&&PUBCTRL.controls)||[]).filter(function(c){return c.project_id===sel.value;})[0]||null;}
+  function reqStruct(){var c=pubCtrl();return (c&&c.required_structure)||[];}
+  function h1name(hn){var rs=reqStruct();var nm=rs[hn-1];if(nm!=null&&String(nm).trim())return String(nm).replace(/^\s*\d+\.\s*/,'');return 'Section '+hn;}
+  function loadProjects(){
+    return ghGetJson(acppRoot()+'/projects.json').then(function(pj){
+      var list=(pj&&pj.projects)||[];
+      if(!list.length)return 0;
+      var prev=sel.value;
+      PROJECTS={};
+      list.forEach(function(p){PROJECTS[p.project_id]={title:p.title||p.project_id,type:p.publication_type||p.template_id||'project',sections:[],_loadError:null};});
+      sel.innerHTML='';
+      list.forEach(function(p){var o=document.createElement('option');o.value=p.project_id;o.textContent=p.title||p.project_id;sel.appendChild(o);});
+      var remembered='';try{remembered=localStorage.getItem('acpp.board.proj')||'';}catch(e){}
+      sel.value=(prev&&PROJECTS[prev])?prev:((remembered&&PROJECTS[remembered])?remembered:list[0].project_id);
+      return list.length;
+    });
+  }
   var DLAB={complete:"done",active:"active",backfill:"backfill",waiting:"waiting",ready:"ready"};
 
   // Derive a gate's status from the viewer's saved review decisions (localStorage), falling back to the
   // seed status when no review exists or none have been decided. This makes the chip reflect accept/reject.
   function reviewTally(sec, gk){
-    var proj="dmbok-v3-ch1", a=(sec.art||{})[gk], ids=null, needSrc=false;
+    var proj=sel.value, a=(sec.art||{})[gk], ids=null, needSrc=false;
     if(gk==='G4' && a && a.evid){ ids=a.evid.map(function(e){return e[0];}); needSrc=true; }
     else if(gk==='G2' && a && a.backfill){ ids=a.backfill.map(function(e){return e[0];}); }
     else if(gk==='G3' && a && a.nodes){ ids=g3Active(sec).map(function(n){return n[0];}); }
@@ -888,7 +903,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   }
 
   function propositionsSummary(sec){
-    var proj="dmbok-v3-ch1", ol=OUTLINES[sec.sid]||{}, g2=sec.art.G2, rows;
+    var proj=sel.value, ol=OUTLINES[sec.sid]||{}, g2=sec.art.G2, rows;
     if(g2.backfill){rows=g2.backfill.map(function(e){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G2.'+e[0])||{};return {id:e[0],bullet:e[1],type:e[2],text:(s.text!=null&&s.text!==''?s.text:e[3]),status:(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending'))};});}
     else {rows=(g2.props||[]).map(function(p){return {id:p[0],bullet:'',type:p[1],text:p[2],status:p[3]};});}
     var acc=rows.filter(function(r){return r.status==='Approved';}).length, hasB=rows.some(function(r){return r.bullet;});
@@ -896,14 +911,14 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var recon=(g2.terms?'<p class="note" style="font-weight:600;color:'+(acc===g2.terms?'#2f6f4f':'#c2410c')+'">'+acc+' propositions ↔ '+g2.terms+' governed terms'+(acc===g2.terms?' ✓ reconciled':' ⚠ mismatch')+'</p>':'');
     var tbl='<table><thead><tr><th>P-ID</th>'+(hasB?'<th>Bullet</th>':'')+'<th>Type</th><th>Text</th><th>Status</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td class="idc">'+r.id+'</td>'+(hasB?'<td class="idc">'+esc(r.bullet||'')+'</td>':'')+'<td>'+esc(r.type)+'</td><td>'+esc(r.text)+'</td><td><span class="pill '+(r.status==='Approved'?'ok':'need')+'">'+r.status+'</span></td></tr>';}).join('')+'</tbody></table>';
     return head+recon+tbl;}
-  function argumentSummary(sec){var proj="dmbok-v3-ch1", nodes=g3Active(sec);
+  function argumentSummary(sec){var proj=sel.value, nodes=g3Active(sec);
     return '<table><thead><tr><th>Node</th><th>Type</th><th>P-ID</th><th>Text</th><th>Status</th></tr></thead><tbody>'+nodes.map(function(nn){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+nn[0])||{};var t=(s.comment&&s.comment.trim()?s.comment:nn[4]);var st=(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending'));return '<tr><td class="idc">'+nn[0]+'</td><td>'+esc(nn[1])+'</td><td class="idc">'+esc(nn[2])+'</td><td>'+esc(t)+'</td><td><span class="pill '+(st==='Approved'?'ok':'need')+'">'+st+'</span></td></tr>';}).join('')+'</tbody></table>';}
-  function evidenceSummary(sec){var proj="dmbok-v3-ch1", rows=sec.art.G4.evid, g2o=(sec.art&&sec.art.G2)||{}, g2=g2o.props||g2o.backfill||[], tIdx=g2o.props?2:3, props={}; g2.forEach(function(p){props[p[0]]=p[tIdx];});
+  function evidenceSummary(sec){var proj=sel.value, rows=sec.art.G4.evid, g2o=(sec.art&&sec.art.G2)||{}, g2=g2o.props||g2o.backfill||[], tIdx=g2o.props?2:3, props={}; g2.forEach(function(p){props[p[0]]=p[tIdx];});
     return '<table><thead><tr><th>Claim</th><th>Accepted source</th><th>Status</th></tr></thead><tbody>'+rows.map(function(e){var pid=e[0], s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+pid)||{};var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');return '<tr><td><span class="idc">'+pid+'</span> '+esc(String(props[pid]||'').slice(0,80))+'</td><td class="idc">'+esc(s.src||'—')+'</td><td><span class="pill '+(status==='Supported'?'ok':'need')+'">'+status+'</span></td></tr>';}).join('')+'</tbody></table>';}
   function gateSummary(sec,gk){var inner=gk==='G2'?propositionsSummary(sec):gk==='G3'?argumentSummary(sec):gk==='G4'?evidenceSummary(sec):'';var vis=(gk==='G2')?' <button class="rv-btn vismap" data-gk="'+gk+'">◇ Visual map</button>':'';return inner+'<p class="note"><button class="rv-btn reedit" data-gk="'+gk+'">✎ Re-edit</button>'+vis+'</p>';}
   function gateHead(sec,gk){var g=GATES.find(function(x){return x[0]===gk;});return '<div class="dh"><b>'+gk+' · '+(g?g[1]:'')+'</b><span class="src">'+esc(sec.label)+' — re-editing</span></div>';}
   function buildPropositionReview(c, sec){
-    var proj="dmbok-v3-ch1";
+    var proj=sel.value;
     var rows=sec.art.G2.backfill, drift=(sec.art.G2.drift||[]), src=sec.art.G2.sources||"";
     var keyOf=function(pid){return 'acpp.'+proj+'.'+sec.sid+'.G2.'+pid;};
     c.innerHTML='<div class="rv-bar"><span class="rv-prog" id="rpProg"></span>'+
@@ -965,11 +980,11 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var body;
     if(gk==="G0"){
       body='<table><tbody>'+
-        '<tr><th>Required headings</th><td>'+FRAME.headings.join(" · ")+'</td></tr>'+
-        '<tr><th>Glossary source</th><td>'+esc(FRAME.glossary)+'</td></tr>'+
-        '<tr><th>Citation</th><td>'+esc(FRAME.citation)+'</td></tr>'+
-        '<tr><th>GenAI policy</th><td>'+esc(FRAME.genai)+'</td></tr>'+
-        '<tr><th>Boundary vocab</th><td>'+esc(FRAME.boundary)+'</td></tr></tbody></table>'+
+        '<tr><th>Required headings</th><td>'+frame().headings.join(" · ")+'</td></tr>'+
+        '<tr><th>Glossary source</th><td>'+esc(frame().glossary)+'</td></tr>'+
+        '<tr><th>Citation</th><td>'+esc(frame().citation)+'</td></tr>'+
+        '<tr><th>GenAI policy</th><td>'+esc(frame().genai)+'</td></tr>'+
+        '<tr><th>Boundary vocab</th><td>'+esc(frame().boundary)+'</td></tr></tbody></table>'+
         '<p class="note">Shared frame — identical for every section in this project.</p>';
     } else if(gk==="G1"){
       body=renderOutline(OUTLINES[sec.sid]);
@@ -1000,15 +1015,15 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     return head+body;
   }
 
-  function g3Active(sec){var proj="dmbok-v3-ch1",seed=(sec.art&&sec.art.G3&&sec.art.G3.nodes)?sec.art.G3.nodes:[],add=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.added')||[];return seed.concat(add).filter(function(n){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+n[0])||{};return s.decision!=='rej';});}
+  function g3Active(sec){var proj=sel.value,seed=(sec.art&&sec.art.G3&&sec.art.G3.nodes)?sec.art.G3.nodes:[],add=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.added')||[];return seed.concat(add).filter(function(n){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+n[0])||{};return s.decision!=='rej';});}
   function evListedFor(sec,pid){var g4=sec.art&&sec.art.G4;return !!(g4&&g4.evid&&g4.evid.some(function(e){return e[0]===pid;}));}
   function g3defaults(sec){var nodes=g3Active(sec),cont=null,conc=null,sup=[];nodes.forEach(function(n){if(n[1]==='Contention')cont=n[0];else if(n[1]==='Conclusion')conc=n[0];else sup.push(n[0]);});var d={};nodes.forEach(function(n){var id=n[0],t=n[1],rec={fn:t,dep:[],leads:[],ev:false};
     if(n.length>5&&(n[5]||n[6])){rec.dep=(n[5]||[]).slice();rec.leads=(n[6]||[]).slice();rec.ev=(n[7]!=null)?!!n[7]:evListedFor(sec,n[2]);}
     else if(t==='Contention'){rec.leads=sup.slice();}else if(t==='Conclusion'){rec.dep=sup.slice();}else{if(cont)rec.dep=[cont];if(conc)rec.leads=[conc];rec.ev=evListedFor(sec,n[2]);}
     d[id]=rec;});return d;}
-  function g3L(sec,id){var rec=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G3L.'+id);if(rec)return {fn:rec.fn||'',dep:rec.dep||[],leads:rec.leads||[],ev:!!rec.ev};var def=g3defaults(sec);return def[id]||{fn:'',dep:[],leads:[],ev:false};}
+  function g3L(sec,id){var rec=lsGet(('acpp.'+sel.value+'.')+sec.sid+'.G3L.'+id);if(rec)return {fn:rec.fn||'',dep:rec.dep||[],leads:rec.leads||[],ev:!!rec.ev};var def=g3defaults(sec);return def[id]||{fn:'',dep:[],leads:[],ev:false};}
   function buildArgumentReview(c, sec){
-    var proj="dmbok-v3-ch1";
+    var proj=sel.value;
     var kOf=function(id){return 'acpp.'+proj+'.'+sec.sid+'.G3.'+id;};
     var addedKey='acpp.'+proj+'.'+sec.sid+'.G3.added';
     function added(){return lsGet(addedKey)||[];}
@@ -1056,7 +1071,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     draw();
   }
   function buildFreezeReview(c, sec){
-    var proj="dmbok-v3-ch1", g5=sec.art.G5, key='acpp.'+proj+'.'+sec.sid+'.G5.freeze';
+    var proj=sel.value, g5=sec.art.G5, key='acpp.'+proj+'.'+sec.sid+'.G5.freeze';
     var openAiq=(sec.aiq||[]).filter(function(q){var st=lsGet('acpp.'+proj+'.'+sec.sid+'.AIQ.'+q[0])||{};return st.decision!=='accept'&&st.decision!=='reject';}).length;
     function draw(){
       var st=lsGet(key)||{decision:'open'}, frozen=st.decision==='frozen';
@@ -1080,7 +1095,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     }
     draw();
   }
-  function g4acc(sec,pid){var s=lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G4.'+pid)||{};return (s.decision==='acc'&&s.src)?{src:s.src,quote:s.quote||''}:null;}
+  function g4acc(sec,pid){var s=lsGet(('acpp.'+sel.value+'.')+sec.sid+'.G4.'+pid)||{};return (s.decision==='acc'&&s.src)?{src:s.src,quote:s.quote||''}:null;}
   function srcCite(sec,srcId){var found='';((sec.art&&sec.art.G4&&sec.art.G4.evid)||[]).forEach(function(e){(e[4]||[]).forEach(function(cd){if(cd.id===srcId&&cd.cite)found=cd.cite;});});return found||srcId;}
   // ===== G6 render viewer (reads the skill-authored render.<sid>.json register) =====
   function acppRoot(){return (GH.dir()||'ACPP/database').replace(/\/database\/?$/,'')||'ACPP';}
@@ -1140,7 +1155,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     ghGetImgDataUrl(src).then(function(url){if(url){img.onload=function(){if(slot)slot.remove();};img.onerror=function(){if(slot)slot.innerHTML='<span class="img-warn">⚠ Could not display '+esc(src)+'</span>';};img.src=url;}else{if(slot)slot.innerHTML='<span class="img-warn">⚠ Image asset not found in repo: '+esc(src)+'</span>';}});
   });}
   function buildRenderViewer(c,sec,reg){
-    var proj="dmbok-v3-ch1";
+    var proj=sel.value;
     var fz=lsGet('acpp.'+proj+'.'+sec.sid+'.G5.freeze')||{};var fh=fz.hash||'';
     var stale=fh&&!/^B[0-9A-Z]{3,8}$/.test(fh)&&!hashMatch(reg.content_hash,fh);
     var vkey='acpp.'+proj+'.'+sec.sid+'.G6.view';
@@ -1202,16 +1217,16 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 
   // ===== Metaphor track (family / mappings / fidelity / guards + in-board authoring) =====
   var MT_EDIT={meta:null,map:null,addMapFor:null,addMeta:false};
-  function mtData(){return lsGet('acpp.dmbok-v3-ch1.metaphors.draft')||METAPHORS||null;}
-  function mtDirty(){return !!lsGet('acpp.dmbok-v3-ch1.metaphors.draft');}
-  function mtSave(obj){lsSet('acpp.dmbok-v3-ch1.metaphors.draft',obj);}
+  function mtData(){return lsGet(('acpp.'+sel.value+'.metaphors.draft'))||METAPHORS||null;}
+  function mtDirty(){return !!lsGet(('acpp.'+sel.value+'.metaphors.draft'));}
+  function mtSave(obj){lsSet(('acpp.'+sel.value+'.metaphors.draft'),obj);}
   function mtClone(){return JSON.parse(JSON.stringify(mtData()||{}));}
   function claimIndex(){var idx={};Object.keys(RENDERREG).forEach(function(sid){var reg=RENDERREG[sid];if(!reg||!reg.renders)return;
     Object.keys(reg.renders).forEach(function(vk){(reg.renders[vk].paragraphs||[]).forEach(function(para){if(!Array.isArray(para))return;para.forEach(function(sp){
       if(sp&&sp.kind==='claim'&&sp.p_id){var e=idx[sp.p_id]||(idx[sp.p_id]={pid:sp.p_id,text:'',an:sp.an_id||'',ant:sp.an_type||'',secs:{},maps:{}});
         if(!e.text||vk==='A_plain')e.text=sp.text;e.secs[sid]=1;if(sp.map_id)e.maps[sp.map_id]=1;}});});});});return idx;}
   function approvedPids(){var s={},ci=claimIndex();Object.keys(ci).forEach(function(p){s[p]=1;});
-    var proj=PROJECTS['dmbok-v3-ch1'];if(proj)(proj.sections||[]).forEach(function(sec){var g2=sec.art&&sec.art.G2;if(g2&&g2.backfill)g2.backfill.forEach(function(e){var d=(lsGet('acpp.dmbok-v3-ch1.'+sec.sid+'.G2.'+e[0])||{}).decision;if(d!=='rej')s[e[0]]=1;});});return s;}
+    var proj=PROJECTS[sel.value];if(proj)(proj.sections||[]).forEach(function(sec){var g2=sec.art&&sec.art.G2;if(g2&&g2.backfill)g2.backfill.forEach(function(e){var d=(lsGet(('acpp.'+sel.value+'.')+sec.sid+'.G2.'+e[0])||{}).decision;if(d!=='rej')s[e[0]]=1;});});return s;}
   // All map_ids linked to a proposition: from render claim spans (map_id) and from metaphors.json mappings that illustrate it.
   function mtPidMaps(pid){var out={};try{var ci=claimIndex();if(ci[pid])Object.keys(ci[pid].maps||{}).forEach(function(k){out[k]=1;});var d=mtData();if(d)(d.metaphors||[]).forEach(function(m){(m.mappings||[]).forEach(function(mp){if((mp.illustrates||[]).indexOf(pid)>=0)out[mp.map_id]=1;});});}catch(e){}return Object.keys(out);}
   function openMetaphorTrack(focusMap,focusPid){var p=document.getElementById('metaPanel');var gp=document.getElementById('ghPanel');if(gp)gp.hidden=true;var wp=document.getElementById('wcPanel');if(wp)wp.hidden=true;var dp=document.getElementById('docPanel');if(dp)dp.hidden=true;p.hidden=false;buildMetaphorTrack(p,focusMap,focusPid);p.scrollIntoView({behavior:'smooth',block:'start'});}
@@ -1231,7 +1246,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var d=mtData();
     if(!d){c.innerHTML='<div class="dh"><b>◆ Metaphor Track</b></div><p class="empty">No metaphor track loaded yet. Open <b>⚙ GitHub</b>, connect, and the board will load <code>metaphors.json</code>. It carries the chapter’s metaphor family, its mappings and entailment guards.</p>';return;}
     var ci=claimIndex(),appr=approvedPids();
-    var mtView='track';try{var _mv=lsGet('acpp.dmbok-v3-ch1.metaphors.view');if(_mv&&_mv.v)mtView=_mv.v;}catch(e){}
+    var mtView='track';try{var _mv=lsGet(('acpp.'+sel.value+'.metaphors.view'));if(_mv&&_mv.v)mtView=_mv.v;}catch(e){}
     if(focusMap||focusPid)mtView='track';
     function lexEntry(n){var L=(d.architecture&&d.architecture.canonical_lexicon)||[];for(var i=0;i<L.length;i++){if(L[i].n===n)return L[i];}return null;}
     function lexBlock(L){if(!L)return '';return '<div class="lexrow"><div class="lexdt">'+esc(L.dining_term||('n='+L.n))+' <span class="idc">n='+esc(L.n)+'</span></div>'+(L.dm_term?'<div><b>DM term:</b> '+esc(L.dm_term)+'</div>':'')+(L.semantic_type?'<div><b>Semantic type:</b> '+esc(L.semantic_type)+'</div>':'')+(L.rendering_rule?'<div><b>Rendering rule:</b> '+esc(L.rendering_rule)+'</div>':'')+'</div>';}
@@ -1321,12 +1336,12 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         '<div class="mt-bar"><span>'+(pi<0?'':'<button class="rv-btn rej" id="pfDel" data-mi="'+mi+'" data-pi="'+pi+'">Delete mapping</button>')+'</span><span><button class="rv-btn" id="pfCancel">Cancel</button> <button class="rv-btn acc on" id="pfSave" data-mi="'+mi+'" data-pi="'+pi+'">Save</button></span></div></div>';
     }
     function wire(){
-      c.querySelectorAll('[data-mtv]').forEach(function(b){b.addEventListener('click',function(){var v=b.dataset.mtv;if(v===mtView)return;mtView=v;try{lsSet('acpp.dmbok-v3-ch1.metaphors.view',{v:v});}catch(e){}draw();});});
+      c.querySelectorAll('[data-mtv]').forEach(function(b){b.addEventListener('click',function(){var v=b.dataset.mtv;if(v===mtView)return;mtView=v;try{lsSet(('acpp.'+sel.value+'.metaphors.view'),{v:v});}catch(e){}draw();});});
       c.querySelectorAll('.ktd-dining').forEach(function(el){el.addEventListener('click',function(){var i=el.dataset.kti;var dr=c.querySelector('#ktd-d-'+i);if(!dr)return;var cell=dr.querySelector('td');var ch=el.querySelector('.ktd-chev');
         if(dr.hidden){var K=(d.architecture||{}).key_term_dining_map||{};cell.innerHTML=lexDetailHtml((K.terms||[])[+i]||{});dr.hidden=false;if(ch)ch.textContent='▾';}
         else{dr.hidden=true;if(ch)ch.textContent='▸';}});});
       var cm=c.querySelector('#mtCommit');if(cm)cm.addEventListener('click',function(){ghCommitOrDownload('metaphors.json',mtData(),this);});
-      var rv=c.querySelector('#mtRevert');if(rv)rv.addEventListener('click',function(){try{localStorage.removeItem('acpp.dmbok-v3-ch1.metaphors.draft');}catch(e){}MT_EDIT={meta:null,map:null,addMapFor:null,addMeta:false};draw();});
+      var rv=c.querySelector('#mtRevert');if(rv)rv.addEventListener('click',function(){try{localStorage.removeItem(('acpp.'+sel.value+'.metaphors.draft'));}catch(e){}MT_EDIT={meta:null,map:null,addMapFor:null,addMeta:false};draw();});
       var am=c.querySelector('#mtAddMeta');if(am)am.addEventListener('click',function(){MT_EDIT.addMeta=true;draw();});
       c.querySelectorAll('[data-editmeta]').forEach(function(b){b.addEventListener('click',function(){MT_EDIT={meta:+b.dataset.editmeta,map:null,addMapFor:null,addMeta:false};draw();});});
       c.querySelectorAll('[data-editmap]').forEach(function(b){b.addEventListener('click',function(){MT_EDIT={meta:null,map:b.dataset.editmap,addMapFor:null,addMeta:false};draw();});});
@@ -1359,7 +1374,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   }
 
   function buildRenderReview(c,sec){
-    var proj="dmbok-v3-ch1";
+    var proj=sel.value;
     if(RENDERREG[sec.sid]&&RENDERREG[sec.sid].renders){return buildRenderViewer(c,sec,RENDERREG[sec.sid]);}
     var frozen=(lsGet('acpp.'+proj+'.'+sec.sid+'.G5.freeze')||{}).decision==='frozen';
     if(!frozen){c.innerHTML='<p class="empty">G6 Render needs a frozen baseline. Freeze the section at G5 first, then return here — render assembles only from a frozen baseline.</p>';return;}
@@ -1398,7 +1413,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     c.querySelector('#g6commit').addEventListener('click',function(){var s=lsGet(dkey)||{};var obj={_note:'ACPP G6 Render — assembled from the frozen baseline; author-edited draft.',project_id:proj,section_id:sec.sid,draft:(s.draft!=null&&s.draft!==''?s.draft:draft),paragraphs:paras.length,paragraph_trace:trace,references:refList.map(function(x){return {src_id:x,cite:srcCite(sec,x)};}),complete:s.decision==='complete',author_id:'HD'};ghCommitOrDownload('render.'+sec.sid+'.json',obj,this);});
   }
   function buildAssureReview(c,sec){
-    var proj="dmbok-v3-ch1";
+    var proj=sel.value;
     var key='acpp.'+proj+'.'+sec.sid+'.G7.assure';
     var nodes=g3Active(sec).filter(function(n){return (lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+n[0])||{}).decision!=='rej';});
     var frozen=(lsGet('acpp.'+proj+'.'+sec.sid+'.G5.freeze')||{}).decision==='frozen';
@@ -1434,9 +1449,9 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       else if(gk==='G4'&&a&&a.evid) ids=a.evid.map(function(e){return e[0];});
       else if(gk==='G5'&&a&&a.baseline) freeze=true;
       if(ids){var t=reviewTally(s,gk)||{total:ids.length,acc:0};var pend=t.total-t.acc;if(gateStatus(s,gk)!=='complete'&&pend>0)out.push({gk:gk,pending:pend});}
-      else if(freeze){var fs=lsGet('acpp.dmbok-v3-ch1.'+s.sid+'.G5.freeze')||{};if(fs.decision!=='frozen')out.push({gk:gk,pending:1});}
+      else if(freeze){var fs=lsGet(('acpp.'+sel.value+'.')+s.sid+'.G5.freeze')||{};if(fs.decision!=='frozen')out.push({gk:gk,pending:1});}
     });return out;}
-  function buildAiqReview(c, sec){var proj="dmbok-v3-ch1", items=sec.aiq||[];
+  function buildAiqReview(c, sec){var proj=sel.value, items=sec.aiq||[];
     var keyOf=function(id){return 'acpp.'+proj+'.'+sec.sid+'.AIQ.'+id;};
     c.innerHTML='<div class="dh"><b>AIQ · Quarantine</b><span class="src">'+esc(sec.label)+'</span></div>'+
       '<p class="note">Substantive ideas not yet carried by an approved proposition. Resolve each before freeze: accept it as a warrant (routed into G3), reject it, or defer.</p>'+
@@ -1471,7 +1486,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       '<text x="'+(x+11)+'" y="'+(y+17)+'" font-size="10" font-weight="700" fill="'+stroke+'" font-family="ui-monospace,monospace">'+esc(l1)+'</text>';
     body.forEach(function(ln,i){t+='<text x="'+(x+11)+'" y="'+(y+33+i*14)+'" font-size="11" fill="#1d2630">'+esc(ln)+'</text>';});
     return t;}
-  function genArgumentSVG(sec){var proj="dmbok-v3-ch1";
+  function genArgumentSVG(sec){var proj=sel.value;
     function dec(g,id){return lsGet('acpp.'+proj+'.'+sec.sid+'.'+g+'.'+id)||{};}
     function evSup(pid){var s=dec('G4',pid);return s.decision==='acc'&&!!s.src;}
     function evListed(pid){var g4=sec.art&&sec.art.G4;return !!(g4&&g4.evid&&g4.evid.some(function(e){return e[0]===pid;}));}
@@ -1539,7 +1554,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     Conclusion:['#dcfce7','#16a34a']
   };
   var PROPTYPEORDER=['Principle','Contention','Claim','Definition','Distinction','Qualification','Counterpoint','Reason','Warrant','Consequence','Recommendation','Conclusion'];
-  function genPropositionSVG(sec){var proj="dmbok-v3-ch1";
+  function genPropositionSVG(sec){var proj=sel.value;
     function dec(id){return lsGet('acpp.'+proj+'.'+sec.sid+'.G2.'+id)||{};}
     var g2=sec.art&&sec.art.G2; if(!g2||!g2.backfill||!g2.backfill.length) return '<p class="empty">No propositions to map for this section.</p>';
     function pTier(type,tier){if(tier!=null&&tier>=1&&tier<=7)return tier;return {Principle:1,Contention:2,Claim:2,Definition:2,Distinction:3,Qualification:3,Counterpoint:3,Reason:4,Warrant:5,Consequence:6,Recommendation:6,Conclusion:7}[type]||2;}
@@ -1654,11 +1669,11 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     wireDetail(det,sec,gk);}
   function render(id){
     var p=PROJECTS[id];
+    if(!p){document.getElementById('projMeta').textContent='';document.getElementById('sections').innerHTML='<div class="sec"><div class="empty" style="padding:28px;text-align:center">'+(ghConfigured()?'Loading projects from the repo…':'Not connected. Open <b>⚙ GitHub</b>, add your details and connect — the board loads the project list and everything else live from the repo.')+'</div></div>';return;}
     document.getElementById('projMeta').textContent=p.type+" · "+id+" · "+p.sections.length+" sections";
     if(p._loadError){document.getElementById('sections').innerHTML='<div class="sec"><div class="empty" style="padding:28px;text-align:center"><b>Could not load from the repo.</b><br>'+esc(p._loadError)+'<br><br>The board shows only what is committed — it never falls back to cached or seed data. Fix the connection in ⚙ GitHub and press <b>Pull latest ↓</b>.</div></div>';return;}
     if(!p.sections.length){document.getElementById('sections').innerHTML='<div class="sec"><div class="empty" style="padding:28px;text-align:center">'+(ghConfigured()?'Loading sections fresh from the repo…':'Not connected. Open <b>⚙ GitHub</b>, add your details and connect — the board loads everything live from the repo (no local cache, no seed).')+'</div></div>';return;}
     var secs=p.sections.slice().sort(function(a,b){var k=function(s){var m=String(s.label).match(/^(\d+)\.(\d+)/)||[0,0,0];return [+m[1],+m[2]];};var ka=k(a),kb=k(b);return ka[0]-kb[0]||ka[1]-kb[1];});
-    var H1NAMES={1:'Introduction',2:'Key Terms',3:'Foundations of Data Management',4:'Tools',5:'Techniques',6:'Roles',7:'Activities',8:'Metrics',9:'Risk Management',10:'Interrelation with Data Governance'};
     function secCard(s,si){
       var rmap={}; reviewItems(s).forEach(function(r){rmap[r.gk]=r.pending;});
       var strip=GATES.map(function(g){var st=gateStatus(s,g[0]);var pend=rmap[g[0]];
@@ -1667,7 +1682,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var reviewLine=totpend?'<div class="reviewline">▶ '+totpend+' item'+(totpend>1?'s':'')+' to review — '+Object.keys(rmap).map(function(k){return k+' ('+rmap[k]+')';}).join(', ')+'. Click a highlighted gate.</div>':'';
       var bf=GATES.filter(function(g){return gateStatus(s,g[0])==="backfill" && !rmap[g[0]];}).map(function(g){return g[0];});
       var flag=bf.length?'<div class="flag">⚠ Backfill needed: '+bf.join(", ")+'</div>':'';
-      var aiqOpen=(s.aiq||[]).filter(function(q){var st=lsGet('acpp.dmbok-v3-ch1.'+s.sid+'.AIQ.'+q[0])||{};return st.decision!=='accept'&&st.decision!=='reject';}).length;
+      var aiqOpen=(s.aiq||[]).filter(function(q){var st=lsGet(('acpp.'+sel.value+'.')+s.sid+'.AIQ.'+q[0])||{};return st.decision!=='accept'&&st.decision!=='reject';}).length;
       var aiq=(s.aiq&&s.aiq.length)?'<button class="aiqbtn" data-si="'+si+'">Review AIQ ('+aiqOpen+' open of '+s.aiq.length+')</button>':'';
       var ghExp=[['propositions','propositions.'+s.sid+'.json'],['argument','argument_nodes.'+s.sid+'.json'],['evidence','evidence_links.'+s.sid+'.json'],['freeze','freeze.'+s.sid+'.json']];
       var ghLine=ghConfigured()?'<div class="ghline">private repo: '+ghExp.map(function(x){return (GHFILES[x[1]]?'✓ ':'· ')+x[0];}).join('   ')+'</div>':'';
@@ -1683,7 +1698,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var col=!!h1coll[g.hn];
       var doneN=g.items.filter(function(x){return gateDone(x.s);}).length;
       var cards=g.items.map(function(x){return secCard(x.s,x.si);}).join('');
-      return '<div class="h1group"><div class="h1head" data-h1="'+g.hn+'"><span class="h1caret">'+(col?'▸':'▾')+'</span><b>'+g.hn+'. '+esc(H1NAMES[g.hn]||('Section '+g.hn))+'</b><span class="h1count">'+doneN+'/'+g.items.length+' done</span></div><div class="h1body'+(col?' collapsed':'')+'">'+cards+'</div></div>';
+      return '<div class="h1group"><div class="h1head" data-h1="'+g.hn+'"><span class="h1caret">'+(col?'▸':'▾')+'</span><b>'+g.hn+'. '+esc(h1name(g.hn))+'</b><span class="h1count">'+doneN+'/'+g.items.length+' done</span></div><div class="h1body'+(col?' collapsed':'')+'">'+cards+'</div></div>';
     }).join('');
     document.querySelectorAll('.gate').forEach(function(btn){
       btn.addEventListener('click',function(){
@@ -1720,8 +1735,10 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     try{renderGhFiles();}catch(e){}
     try{var wp=document.getElementById('wcPanel');if(wp&&!wp.hidden)buildWordCount(wp);}catch(e){}
   }
-  sel.addEventListener('change',function(){render(sel.value);});
-  try{for(var _i=localStorage.length-1;_i>=0;_i--){var _k=localStorage.key(_i);if(_k&&_k.indexOf('acpp.dmbok-v3-ch1.')===0)localStorage.removeItem(_k);}}catch(e){}  // purge any stale cache from earlier versions
+  sel.addEventListener('change',function(){try{localStorage.setItem('acpp.board.proj',sel.value);}catch(e){}
+    if(ghConfigured()){document.getElementById('projMeta').textContent='loading '+sel.value+'…';ghRehydrate(true).then(function(){try{render(sel.value);}catch(e){}});}
+    else{render(sel.value);}});
+  try{for(var _i=localStorage.length-1;_i>=0;_i--){var _k=localStorage.key(_i);if(_k&&_isReg(_k))localStorage.removeItem(_k);}}catch(e){}  // purge any stale registry cache from earlier versions (any project)
   hydrateFromCache();
   render(sel.value);
   ghInitPanel();

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.7.0">
+<meta name="version" content="1.8.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -52,6 +52,9 @@
   .col{padding:0 12px 24px}
   .col h2{position:sticky;top:0;background:var(--surface);z-index:2;text-align:center;font-size:.85rem;margin:0;padding:12px 0 8px;border-bottom:2px solid var(--line)}
   .col h2 .n{display:block;font:.68rem var(--mono);color:var(--soft);font-weight:400}
+  .col-part{position:relative;z-index:1;background:var(--accent);color:#fff;border-radius:7px;padding:4px 9px;margin:14px 0 4px;font:700 .68rem/1.3 var(--mono);letter-spacing:.02em}
+  .col-part .pt{font-weight:400;opacity:.82;font-style:italic}
+  .col-sec{position:relative;z-index:1;font:600 .7rem var(--mono);color:var(--soft);margin:8px 0 2px;padding:2px 2px 3px;border-bottom:1px dashed var(--line)}
   .node{position:relative;z-index:1;border:1.5px solid var(--line);border-left-width:5px;border-radius:9px;background:var(--bg);padding:8px 10px;margin:10px 0;cursor:pointer;transition:opacity .15s,box-shadow .15s}
   .node .id{font:700 .68rem var(--mono);color:var(--soft)}
   .node .tx{font-size:.8rem;margin-top:3px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -198,6 +201,7 @@
     return (s.match(/\d+/g)||[]).map(Number).indexOf(hn)>=0;}
   function h1ofLabel(label){var m=String(label).match(/^(\d+)/);return m?+m[1]:0;}
   function partMetaIdx(key){for(var i=0;i<PARTSMETA.length;i++){var p=PARTSMETA[i];if(p.label===key||p.part_id===key||p.id===key)return i;}return 999;}
+  function secSortKey(sid){var info=SECTIONS[sid]||{};return [partMetaIdx(info.part_key||''),h1ofLabel(info.label||sid)];}
   function partForSection(s){var pk=null;
     if(s&&(s.part_label||s.part_id))pk={key:s.part_label||s.part_id,label:s.part_label||'',title:s.part_title||''};
     else{var hn=h1ofLabel(s&&s.label);for(var i=0;i<PARTSMETA.length;i++){if(partChaptersInclude(PARTSMETA[i].chapters,hn)){pk={key:PARTSMETA[i].label||('P'+i),label:PARTSMETA[i].label||'',title:PARTSMETA[i].title||''};break;}}}
@@ -258,7 +262,7 @@
     // metaphor node section membership = union of its mappings' sections
     Object.keys(NODES).forEach(function(id){var n=NODES[id];if(n.mkind==='met'){var secs={};(OUT_ADJ[id]||[]).forEach(function(mid){var mm=NODES[mid];if(mm&&mm.secs)Object.keys(mm.secs).forEach(function(s){secs[s]=1;});});n.secs=secs;}});
     // Outline-level metaphor linkage (e.g. the KYV book, before propositions exist):
-    // architecture.section_bullet_map maps each outline bullet directly to its primary (and other-lens) metaphor.
+    // (a) legacy shape — architecture.section_bullet_map maps each bullet to its primary/other-lens metaphor id.
     (md&&md.architecture&&md.architecture.section_bullet_map||[]).forEach(function(se){
       var sec=se.outline_id||'';
       (se.bullets||[]).forEach(function(bl){ if(!bl||!bl.b_id||!NODES[bl.b_id])return;
@@ -268,6 +272,20 @@
           addEdge(bl.b_id,mm);                         // bullet → metaphor (illustrates)
           NODES[mm].mkind='met';
           NODES[mm].secs=NODES[mm].secs||{}; if(sec)NODES[mm].secs[sec]=1; else if(NODES[bl.b_id].section)NODES[mm].secs[NODES[bl.b_id].section]=1;
+        });
+      });
+    });
+    // (b) current shape — each metaphor (and each mapping) carries illustrates_bullets: the outline bullets it illustrates.
+    (mroot||[]).forEach(function(m){ if(!m||!m.metaphor_id||!NODES[m.metaphor_id])return;
+      (m.illustrates_bullets||[]).forEach(function(bid){ if(!NODES[bid])return;
+        addEdge(bid,m.metaphor_id);                    // bullet → metaphor (illustrates)
+        NODES[m.metaphor_id].mkind='met';
+        NODES[m.metaphor_id].secs=NODES[m.metaphor_id].secs||{}; if(NODES[bid].section)NODES[m.metaphor_id].secs[NODES[bid].section]=1;
+      });
+      (m.mappings||[]).forEach(function(mp){ if(!mp||!mp.map_id||!NODES[mp.map_id])return;
+        (mp.illustrates_bullets||[]).forEach(function(bid){ if(!NODES[bid])return;
+          addEdge(bid,mp.map_id);                      // bullet → mapping (fine-grained, when present)
+          NODES[mp.map_id].secs=NODES[mp.map_id].secs||{}; if(NODES[bid].section)NODES[mp.map_id].secs[NODES[bid].section]=1;
         });
       });
     });
@@ -358,24 +376,47 @@
     TIERS.forEach(function(t){
       var col=document.createElement('div');col.className='col';
       col.innerHTML='<h2><i class="tchip t'+t[0]+'">'+(t[0]==='A'?'AN':t[0]==='E'?'EV':t[0])+'</i> '+t[1]+'<span class="n">'+t[2]+'</span></h2>';
-      Object.keys(NODES).filter(function(id){var n=NODES[id];
+      var ids=Object.keys(NODES).filter(function(id){var n=NODES[id];
         if(n.tier!==t[0])return false;
         if(secF){
           if(t[0]==='M'){ var sx=n.secs||{}; if(Object.keys(sx).length && !sx[secF]) return false; }
           else if(n.section!==secF) return false;
         }
         return true;
-      }).sort(function(a,b){var na=NODES[a],nb=NODES[b];var ka=na.sortkey||a,kb=nb.sortkey||b;return ka<kb?-1:(ka>kb?1:0);}).forEach(function(id){
+      }).sort(function(a,b){var na=NODES[a],nb=NODES[b];var ka=na.sortkey||a,kb=nb.sortkey||b;return ka<kb?-1:(ka>kb?1:0);});
+      function nodeEl(id){
         var n=NODES[id];
         var dim = keep && !keep[id];
-        if(onlyConn && keep && dim) return; // hide unconnected when focusing
+        if(onlyConn && keep && dim) return null; // hide unconnected when focusing
         var el=document.createElement('div');
         el.className='node '+t[0]+(focus.indexOf(id)>=0?' sel':'')+(dim?' dim':'');
         el.id='nd-'+cssid(id); el.dataset.id=id;
         el.innerHTML='<div class="id">'+esc(id)+'</div><div class="tx">'+esc(n.text)+'</div>'+(n.meta?'<div class="meta">'+esc(n.meta)+'</div>':'');
         el.addEventListener('click',function(){toggleFocus(id);});
-        col.appendChild(el);
-      });
+        return el;
+      }
+      // Metaphor column is cross-cutting — flat. Other tiers group by section, under Part bands.
+      if(t[0]==='M' || !ids.some(function(id){return NODES[id].section;})){
+        ids.forEach(function(id){var el=nodeEl(id);if(el)col.appendChild(el);});
+      } else {
+        // order sections by part then chapter number, keep node order within a section
+        var bySec={},secOrder=[];
+        ids.forEach(function(id){var s=NODES[id].section||'';if(!(s in bySec)){bySec[s]=[];secOrder.push(s);}bySec[s].push(id);});
+        secOrder.sort(function(a,b){var ka=secSortKey(a),kb=secSortKey(b);return ka[0]-kb[0]||ka[1]-kb[1]||(a<b?-1:1);});
+        var curPart=null;
+        secOrder.forEach(function(s){
+          var info=SECTIONS[s]||{};
+          var pk=info.part_key||'';
+          if(pk&&pk!==curPart){curPart=pk;
+            var pb=document.createElement('div');pb.className='col-part';
+            pb.innerHTML=esc(info.part_label||pk)+(info.part_title?' <span class="pt">— '+esc(info.part_title)+'</span>':'');
+            col.appendChild(pb);
+          }
+          var sh=document.createElement('div');sh.className='col-sec';sh.textContent=(info.label||s);
+          col.appendChild(sh);
+          bySec[s].forEach(function(id){var el=nodeEl(id);if(el)col.appendChild(el);});
+        });
+      }
       cols.appendChild(col);
     });
     requestAnimationFrame(function(){drawLinks(keep,onlyConn);});

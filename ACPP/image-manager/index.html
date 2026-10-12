@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.10.1">
+<meta name="version" content="1.11.0">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -125,14 +125,19 @@
   .pill.err{background:rgba(178,59,59,.14);color:var(--bad)}
   .pill.rework{background:rgba(181,115,26,.18);color:var(--warn);border:1px solid rgba(181,115,26,.4)}
   .imgcard.rework{box-shadow:inset 0 0 0 2px rgba(181,115,26,.45)}
+  .pill.ready{background:rgba(37,99,235,.14);color:var(--accent);border:1px solid rgba(37,99,235,.4)}
+  .imgcard.ready{box-shadow:inset 0 0 0 2px rgba(37,99,235,.45)}
+  .cr.applied{border-left-color:var(--accent);background:rgba(37,99,235,.07)}
+  .cr.applied .crstat{color:var(--accent)}
+  .cr.reviewed{border-left-color:var(--good);background:rgba(46,125,87,.06);opacity:.8}
+  .cr.reviewed .crstat{color:var(--good)}
   .crwrap{margin:0 12px 10px}
   .crlist{list-style:none;margin:0 0 8px;padding:0}
   .cr{border-left:3px solid var(--warn);background:rgba(181,115,26,.08);border-radius:0 6px 6px 0;padding:6px 9px;margin:5px 0}
-  .cr.applied{border-left-color:var(--good);background:rgba(46,125,87,.08);opacity:.85}
   .cr .crtxt{font-size:.85rem;color:var(--ink);white-space:pre-wrap}
   .cr .crmeta{font-size:.7rem;color:var(--soft);margin-top:3px;font-family:ui-monospace,monospace}
   .cr .crstat{text-transform:uppercase;letter-spacing:.04em;font-weight:700}
-  .cr.open .crstat{color:var(--warn)} .cr.applied .crstat{color:var(--good)}
+  .cr.open .crstat{color:var(--warn)}
   .crlink{background:none;border:none;color:var(--accent);cursor:pointer;font:inherit;padding:0 2px;text-decoration:underline}
   .crform{display:flex;flex-direction:column;gap:6px}
   .crform textarea{width:100%;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);padding:7px 9px;font:inherit;resize:vertical}
@@ -221,6 +226,7 @@
       <button data-f="approved">Approved</button>
       <button data-f="issues">Issues</button>
       <button data-f="changes">Changes</button>
+      <button data-f="completed">Completed</button>
     </div>
     <div class="seg" id="variantSeg" title="Show only images of one kind">
       <button data-v="all" class="on">Both variants</button>
@@ -381,6 +387,7 @@ function matchImg(sid,im){
   if(FILTER==='approved'&&im.status!=='approved')return false;
   if(FILTER==='issues'&&imgIssues(sid,im).length===0)return false;
   if(FILTER==='changes'&&!hasOpenCR(im))return false;
+  if(FILTER==='completed'&&!isCompleted(im))return false;
   if(VFILTER==='metaphor'){if(!isMetaphor(im))return false;}
   else if(VFILTER!=='all'){if((im.variants||[]).indexOf(VFILTER)<0)return false;}
   return true;
@@ -390,6 +397,10 @@ function isMetaphor(im){if(typeof im.metaphor==='boolean')return im.metaphor;ret
 // Change requests: a running list on each image — {cr_id,text,by,at,status:'open'|'applied'}. The image skill reads open ones, regenerates, sets them applied.
 function openCRs(im){return ((im&&im.change_requests)||[]).filter(function(c){return c&&c.status!=='applied';});}
 function hasOpenCR(im){return openCRs(im).length>0;}
+// Applied by the skill but not yet reviewed by Howard (reviewed_at set = reviewed, kept as history).
+function appliedUnreviewedCRs(im){return ((im&&im.change_requests)||[]).filter(function(c){return c&&c.status==='applied'&&!c.reviewed_at;});}
+// "Completed": every requested change applied (none still open) and at least one awaiting review.
+function isCompleted(im){return appliedUnreviewedCRs(im).length>0 && openCRs(im).length===0;}
 function nextCrId(im){var max=0;((im&&im.change_requests)||[]).forEach(function(c){var m=/CR-(\d+)/.exec((c&&c.cr_id)||'');if(m)max=Math.max(max,+m[1]);});return 'CR-'+('0'+(max+1)).slice(-2);}
 var editing=null;          // {sid, idx} when editing an existing image, else null
 
@@ -525,13 +536,16 @@ function cardHtml(s,im,doc){
   var statusPill=issues.length?'<span class="pill err">needs fix</span>':(im.status==='approved'?'<span class="pill ok">approved</span>':'<span class="pill draft">draft</span>');
   var nOpen=openCRs(im).length;
   var reworkPill=nOpen?'<span class="pill rework">✎ '+nOpen+' change'+(nOpen===1?'':'s')+' requested</span>':'';
+  var nReview=appliedUnreviewedCRs(im).length;
+  var completed=isCompleted(im);
+  var reviewPill=completed?'<span class="pill ready">✓ '+nReview+' applied · review</span>':'';
   var vtags=(im.variants||[]).map(function(v){return '<span class="tag v">'+(v==='A'?'A plain':'B illus')+'</span>';}).join('');
   var issHtml=issues.length?'<ul class="issues">'+issues.map(function(i){return '<li>'+i+'</li>';}).join('')+'</ul>':'';
   var draftGen=(im.status!=='approved'&&im.prompt)?' data-draftgen="1"':'';
-  return '<div class="imgcard'+(issues.length?' bad':'')+(nOpen?' rework':'')+'" data-sid="'+esc(s.sid)+'" data-idx="'+realIdx+'">'+
+  return '<div class="imgcard'+(issues.length?' bad':'')+(nOpen?' rework':(completed?' ready':''))+'" data-sid="'+esc(s.sid)+'" data-idx="'+realIdx+'">'+
     '<div class="thumb" data-imgsrc="'+esc(im.src||'')+'"'+draftGen+'><span class="ph">'+(im.src?'<span class="spin"></span>':'no src')+'</span></div>'+
     '<div class="imgmeta">'+
-      '<div class="r1"><span class="idc">'+esc(im.img_id||'(no id)')+'</span>'+statusPill+reworkPill+'</div>'+
+      '<div class="r1"><span class="idc">'+esc(im.img_id||'(no id)')+'</span>'+statusPill+reworkPill+reviewPill+'</div>'+
       '<div class="r1">'+vtags+'<span class="tag">'+esc(im.width||'wide')+'</span>'+(isMetaphor(im)?'<span class="tag meta">metaphor</span>':'')+'</div>'+
       '<div class="anch">⚓ '+esc(anchorDesc(im))+'</div>'+
       (im.alt?'<div class="alt">'+esc(im.alt)+'</div>':'<div class="issues">missing alt text</div>')+
@@ -551,13 +565,16 @@ function cardHtml(s,im,doc){
 function crPanel(im){
   var crs=(im&&im.change_requests)||[];
   var list=crs.length?('<ul class="crlist">'+crs.map(function(c,ci){
-    var applied=(c.status==='applied');
+    var st=(c.status==='applied')?(c.reviewed_at?'reviewed':'applied'):'open';
     var when=String(c.at||'').slice(0,10);
-    var ctrls=applied
-      ? '<button class="crlink crreopen" data-ci="'+ci+'">reopen</button> <button class="crlink crdel" data-ci="'+ci+'">remove</button>'
-      : '<button class="crlink crresolve" data-ci="'+ci+'">mark applied</button> <button class="crlink crdel" data-ci="'+ci+'">remove</button>';
-    return '<li class="cr '+(applied?'applied':'open')+'"><div class="crtxt">'+esc(c.text||'')+'</div>'+
-      '<div class="crmeta"><span class="crstat">'+(applied?'applied':'open')+'</span>'+(when?(' · '+esc(when)):'')+(c.by?(' · '+esc(c.by)):'')+' · '+ctrls+'</div></li>';
+    var extra=(st==='reviewed'&&c.reviewed_at)?(' · reviewed '+String(c.reviewed_at).slice(0,10))
+             :(st==='applied'&&c.applied_at)?(' · applied '+String(c.applied_at).slice(0,10)):'';
+    var ctrls;
+    if(st==='open')ctrls='<button class="crlink crresolve" data-ci="'+ci+'">mark applied</button> <button class="crlink crdel" data-ci="'+ci+'">remove</button>';
+    else if(st==='applied')ctrls='<button class="crlink crreview" data-ci="'+ci+'">✓ Reviewed</button> <button class="crlink crreopen" data-ci="'+ci+'">reopen</button> <button class="crlink crdel" data-ci="'+ci+'">remove</button>';
+    else ctrls='<button class="crlink crreopen" data-ci="'+ci+'">reopen</button> <button class="crlink crdel" data-ci="'+ci+'">remove</button>';
+    return '<li class="cr '+st+'"><div class="crtxt">'+esc(c.text||'')+'</div>'+
+      '<div class="crmeta"><span class="crstat">'+st+'</span>'+(when?(' · '+esc(when)):'')+(c.by?(' · '+esc(c.by)):'')+esc(extra)+' · '+ctrls+'</div></li>';
   }).join('')+'</ul>'):'';
   var form='<div class="crform" hidden><textarea class="crinput" rows="2" placeholder="Describe the change this image needs — the skill will apply it…"></textarea>'+
     '<div class="crformbtns"><button class="btn sm p crsave">Save request</button><button class="btn sm crcancel">Cancel</button></div></div>';
@@ -668,7 +685,8 @@ function wire(){
   document.querySelectorAll('.imgcard .crcancel').forEach(function(b){b.onclick=function(){var f=b.closest('.crform');if(f){f.hidden=true;var ta=f.querySelector('.crinput');if(ta)ta.value='';}};});
   document.querySelectorAll('.imgcard .crsave').forEach(function(b){b.onclick=function(){var card=b.closest('.imgcard');var ta=card.querySelector('.crinput');var txt=(ta&&ta.value||'').trim();if(!txt)return;addChangeRequest(card.dataset.sid,+card.dataset.idx,txt);};});
   document.querySelectorAll('.imgcard .crresolve').forEach(function(b){b.onclick=function(){var card=b.closest('.imgcard');setCRStatus(card.dataset.sid,+card.dataset.idx,+b.dataset.ci,'applied');};});
-  document.querySelectorAll('.imgcard .crreopen').forEach(function(b){b.onclick=function(){var card=b.closest('.imgcard');setCRStatus(card.dataset.sid,+card.dataset.idx,+b.dataset.ci,'open');};});
+  document.querySelectorAll('.imgcard .crreview').forEach(function(b){b.onclick=function(){var card=b.closest('.imgcard');reviewCR(card.dataset.sid,+card.dataset.idx,+b.dataset.ci);};});
+  document.querySelectorAll('.imgcard .crreopen').forEach(function(b){b.onclick=function(){var card=b.closest('.imgcard');reopenCR(card.dataset.sid,+card.dataset.idx,+b.dataset.ci);};});
   document.querySelectorAll('.imgcard .crdel').forEach(function(b){b.onclick=function(){var card=b.closest('.imgcard');removeCR(card.dataset.sid,+card.dataset.idx,+b.dataset.ci);};});
   document.querySelectorAll('.commit').forEach(function(b){b.onclick=function(e){e.stopPropagation();commitSection(b.dataset.sid,b);};});
   document.querySelectorAll('.h1head[data-h1]').forEach(function(h){h.onclick=function(e){if(e.target.closest('button'))return;var hn=+h.dataset.h1;var now=(hn in COLLAPSE)?COLLAPSE[hn]:true;COLLAPSE[hn]=!now;persistUI();var grp=h.closest('.h1group');var body=grp.querySelector('.h1body');grp.classList.toggle('open',!COLLAPSE[hn]);body.classList.toggle('collapsed',!!COLLAPSE[hn]);if(!COLLAPSE[hn])hydrateThumbs();};});
@@ -702,8 +720,20 @@ function addChangeRequest(sid,idx,text){
 }
 function setCRStatus(sid,idx,ci,status){
   var im=(IMAGES[sid]&&IMAGES[sid].images||[])[idx];if(!im||!im.change_requests||!im.change_requests[ci])return;
-  im.change_requests[ci].status=status;
-  if(status==='applied')im.change_requests[ci].applied_at=new Date().toISOString();
+  var c=im.change_requests[ci];c.status=status;
+  if(status==='applied'){c.applied_at=new Date().toISOString();delete c.reviewed_at;}
+  DIRTY[sid]=true;render();
+}
+function reviewCR(sid,idx,ci){  // mark an applied request as reviewed (kept as history; leaves the Completed queue)
+  var im=(IMAGES[sid]&&IMAGES[sid].images||[])[idx];if(!im||!im.change_requests||!im.change_requests[ci])return;
+  var c=im.change_requests[ci];
+  if(c.status!=='applied'){c.status='applied';if(!c.applied_at)c.applied_at=new Date().toISOString();}
+  c.reviewed_at=new Date().toISOString();
+  DIRTY[sid]=true;render();
+}
+function reopenCR(sid,idx,ci){  // send back to the Changes queue for the skill
+  var im=(IMAGES[sid]&&IMAGES[sid].images||[])[idx];if(!im||!im.change_requests||!im.change_requests[ci])return;
+  var c=im.change_requests[ci];c.status='open';delete c.applied_at;delete c.reviewed_at;
   DIRTY[sid]=true;render();
 }
 function removeCR(sid,idx,ci){

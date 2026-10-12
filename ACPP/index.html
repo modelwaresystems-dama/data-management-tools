@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.14.2">
+<meta name="version" content="4.15.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -443,7 +443,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   <p class="sub">Each section runs its own eight-gate pipeline. <strong>Click any gate</strong> to see that
   section's real artifact. G0 (the frame) is shared across all sections. <span class="prose">Artifacts read from the registers; Phase 4 wires the live repo.</span></p>
 
-  <div class="h1tools"><button id="h1collAll" class="btn sm">Collapse all headings</button></div>
+  <div class="h1tools"><button id="approveAllG0" class="btn sm" title="Approve the frame (G0) for every section not yet approved, in one commit" style="margin-right:auto">✓ Approve all G0</button><button id="h1collAll" class="btn sm">Collapse all headings</button></div>
   <div id="sections"></div>
 
   <div class="legend">
@@ -489,10 +489,12 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function ghPut(path,str,msg){return ghGetSha(path).then(function(sha){var body={message:msg,content:b64(str),branch:GH.branch()};if(sha)body.sha=sha;return fetch(ghUrl(path),{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body)}).then(function(r){return r.json().then(function(j){return {ok:r.ok,url:(j.commit&&j.commit.html_url)||'',error:j.message||('HTTP '+r.status)};});});}).catch(function(e){return {ok:false,error:String(e)};});}
   function ghToast(btn,msg,warn){try{var p=btn.parentNode;var e=p.querySelector('.ghmsg');if(!e){e=document.createElement('span');e.className='ghmsg';p.appendChild(e);}e.textContent=' '+msg;e.style.color=warn?'#c2410c':'';}catch(x){}}
   function ghCommitOrDownload(fn,obj,btn){var str=JSON.stringify(obj,null,2);
-    if(!ghConfigured()){download(fn,str);ghToast(btn,'no token — downloaded. Set up ⚙ GitHub to commit',true);return;}
+    if(!ghConfigured()){download(fn,str);ghToast(btn,'no token — downloaded. Set up ⚙ GitHub to commit',true);ghStatus('⚠ '+fn+' downloaded — connect ⚙ GitHub to commit instead','');return Promise.resolve({ok:false,downloaded:true});}
     ghToast(btn,'committing…');
-    ghPut(GH.dir()+'/'+fn,str,'ACPP data: '+fn+' (board commit)').then(function(r){
-      if(r.ok){GHFILES[fn]=1;ghToast(btn,'✓ committed to '+GH.repo());}else{download(fn,str);ghToast(btn,'commit failed: '+r.error+' — downloaded instead',true);}});}
+    return ghPut(GH.dir()+'/'+fn,str,'ACPP data: '+fn+' (board commit)').then(function(r){
+      if(r.ok){GHFILES[fn]=1;ghToast(btn,'✓ committed to '+GH.repo());}
+      else{download(fn,str);ghToast(btn,'commit failed: '+r.error+' — downloaded instead',true);ghStatus('⚠ commit of '+fn+' failed ('+r.error+') — downloaded as a fallback','');}
+      return r;});}
   function ghStatus(t,ok){var e=document.getElementById('ghStat');if(e){e.textContent=t;e.className='ghstat'+(ok?' on':'');}}
   function ghRefreshFiles(){if(!ghConfigured())return Promise.resolve();
     return fetch(ghUrl(GH.dir())+'?ref='+encodeURIComponent(GH.branch())+'&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'}).then(function(r){return r.ok?r.json():[];}).then(function(arr){
@@ -618,9 +620,11 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     if(!APPROVALSRAW||!APPROVALSRAW.approvals)APPROVALSRAW={_note:'ACPP approvals log.',approvals:[]};
     var already=APPROVALSRAW.approvals.some(function(a){return a.section_id===sec.sid&&a.gate===gate;});
     if(!already){APPROVALSRAW.approvals.push({apr_id:nextApr(),section_id:sec.sid,gate:gate,author_id:'HD',date:new Date().toISOString().slice(0,10),decision:decisionText});}
-    if(flipped)ghCommitOrDownload('sections.json',SECTIONSRAW,btn);
-    if(!already)ghCommitOrDownload('approvals.json',APPROVALSRAW,btn);
-    try{render(sel.value);}catch(e){}
+    // Commit the two shared files one after the other — GitHub rejects near-simultaneous writes to the same repo.
+    var p=Promise.resolve();
+    if(flipped)p=p.then(function(){return ghCommitOrDownload('sections.json',SECTIONSRAW,btn);});
+    if(!already)p=p.then(function(){return ghCommitOrDownload('approvals.json',APPROVALSRAW,btn);});
+    p.then(function(){try{render(sel.value);}catch(e){}});
   }
   // Re-open a gate that was approved (used for G0/G1): set it back to 'active' and drop its approval-log entry.
   function reopenGate(sec,gate,btn){
@@ -630,9 +634,31 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     if(sec.gates&&sec.gates[gate]==='complete')sec.gates[gate]='active';
     var removed=false;
     if(APPROVALSRAW&&APPROVALSRAW.approvals){var n0=APPROVALSRAW.approvals.length;APPROVALSRAW.approvals=APPROVALSRAW.approvals.filter(function(a){return !(a.section_id===sec.sid&&a.gate===gate);});removed=APPROVALSRAW.approvals.length!==n0;}
-    if(flipped)ghCommitOrDownload('sections.json',SECTIONSRAW,btn);
-    if(removed)ghCommitOrDownload('approvals.json',APPROVALSRAW,btn);
-    try{render(sel.value);}catch(e){}
+    var p=Promise.resolve();
+    if(flipped)p=p.then(function(){return ghCommitOrDownload('sections.json',SECTIONSRAW,btn);});
+    if(removed)p=p.then(function(){return ghCommitOrDownload('approvals.json',APPROVALSRAW,btn);});
+    p.then(function(){try{render(sel.value);}catch(e){}});
+  }
+  // Bulk-approve the frame (G0) for every section in the current project that isn't already approved — one commit each for the two shared files.
+  function approveAllG0(btn){
+    if(!ghConfigured()){ghToast(btn,'connect ⚙ GitHub to update gates',true);return;}
+    var proj=PROJECTS[sel.value]; if(!proj||!proj.sections){return;}
+    var todo=proj.sections.filter(function(s){return gateStatus(s,'G0')!=='complete';});
+    if(!todo.length){ghToast(btn,'all G0 frames already approved');return;}
+    if(!confirm('Approve the frame (G0) for all '+todo.length+' section'+(todo.length===1?'':'s')+' not yet approved in “'+(proj.title||sel.value)+'”?'))return;
+    if(!APPROVALSRAW||!APPROVALSRAW.approvals)APPROVALSRAW={_note:'ACPP approvals log.',approvals:[]};
+    var flipped=false;
+    todo.forEach(function(sec){
+      if(SECTIONSRAW&&SECTIONSRAW.sections){SECTIONSRAW.sections.forEach(function(s){if(s.section_id===sec.sid){s.gates=s.gates||{};if(s.gates.G0!=='complete'){s.gates.G0='complete';flipped=true;}}});}
+      if(sec.gates)sec.gates.G0='complete';
+      if(!APPROVALSRAW.approvals.some(function(a){return a.section_id===sec.sid&&a.gate==='G0';})){
+        APPROVALSRAW.approvals.push({apr_id:nextApr(),section_id:sec.sid,gate:'G0',author_id:'HD',date:new Date().toISOString().slice(0,10),decision:'G0 Frame approved in bulk by the author from the board.'});}
+    });
+    ghToast(btn,'approving G0 for '+todo.length+'…');
+    var p=Promise.resolve();
+    if(flipped)p=p.then(function(){return ghCommitOrDownload('sections.json',SECTIONSRAW,btn);});
+    p=p.then(function(){return ghCommitOrDownload('approvals.json',APPROVALSRAW,btn);});
+    p.then(function(r){if(r&&r.ok!==false)ghToast(btn,'✓ approved G0 for '+todo.length+' section'+(todo.length===1?'':'s'));try{render(sel.value);}catch(e){}});
   }
   function applyBoardContent(bc){
     if(!bc||!bc.sections||!bc.sections.length)return false;
@@ -806,6 +832,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var map={ghOwner:'owner',ghRepo:'repo',ghBranch:'branch',ghDir:'dir',ghPat:'pat'};
     Object.keys(map).forEach(function(id){var el=document.getElementById(id);if(el){var v=GHget(map[id],'');if(v)el.value=v;}});
     document.getElementById('ghToggle').addEventListener('click',function(){var p=document.getElementById('ghPanel');p.hidden=!p.hidden;});
+    var ag0=document.getElementById('approveAllG0');if(ag0)ag0.addEventListener('click',function(){approveAllG0(this);});
     var mtg=document.getElementById('metaToggle');if(mtg)mtg.addEventListener('click',function(){var p=document.getElementById('metaPanel');if(p.hidden){openMetaphorTrack('','');}else{p.hidden=true;}});
     var wtg=document.getElementById('wcToggle');if(wtg)wtg.addEventListener('click',function(){var p=document.getElementById('wcPanel');if(p.hidden){openWordCount();}else{p.hidden=true;}});
     var dtg=document.getElementById('docToggle');if(dtg)dtg.addEventListener('click',function(){var p=document.getElementById('docPanel');if(p.hidden){openDocument();}else{p.hidden=true;}});

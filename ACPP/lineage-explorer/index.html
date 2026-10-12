@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.8.0">
+<meta name="version" content="1.9.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -24,7 +24,7 @@
   header .sub{color:#9fb4cf;font-size:.8rem;margin-top:2px}
   .vbadge{font:600 .7rem var(--mono);background:#1e3350;color:#9fd0ff;border-radius:20px;padding:.2em .7em}
   .proj{margin-left:auto;background:#1e3350;color:#cfe0f5;border-radius:8px;padding:6px 12px;font-size:.82rem}
-  .wrap{max-width:1680px;margin:0 auto;padding:16px}
+  .wrap{max-width:none;margin:0;padding:16px}
   .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}
   .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
   label.fl{display:block;font:600 .7rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--soft);margin-bottom:4px}
@@ -101,15 +101,19 @@
   <div class="panel">
     <div class="row" style="align-items:flex-start">
       <div>
-        <label class="fl">1 · Section</label>
+        <label class="fl">1 · Part</label>
+        <select id="partFilter" class="secfilter"><option value="">All parts</option></select>
+      </div>
+      <div>
+        <label class="fl">2 · Section</label>
         <select id="secFilter" class="secfilter"><option value="">All sections</option></select>
       </div>
       <div style="flex:1;min-width:260px">
-        <label class="fl" for="picker">2 · Add element to trace</label>
+        <label class="fl" for="picker">3 · Add element to trace</label>
         <select id="picker" style="width:100%"><option value="">Type or pick an element…</option></select>
       </div>
       <div>
-        <label class="fl">3 · Direction</label>
+        <label class="fl">4 · Direction</label>
         <div class="seg" id="dirSeg">
           <button data-d="anc">Ancestors ↑</button>
           <button data-d="both" class="on">Both</button>
@@ -125,7 +129,7 @@
         <span id="status" style="display:inline-block;padding-top:8px">loading…</span>
       </div>
     </div>
-    <div class="hint">Choose a Section first to narrow the elements, then add an element to trace its chain. Direction sets ancestors (upstream) / descendants (downstream) / both.</div>
+    <div class="hint">Narrow by Part, then Section, then add an element to trace its chain. Direction sets ancestors (upstream) / descendants (downstream) / both.</div>
     <div class="chips" id="focusChips"></div>
     <div class="legend">
       <span><i class="tchip tB">B</i> Outline bullet</span>
@@ -289,6 +293,13 @@
         });
       });
     });
+    // A mapping with no section link of its own inherits its parent metaphor's sections, so the
+    // Section/Part filter keeps a metaphor and its mappings together (and hides them where the metaphor doesn't reach).
+    (mroot||[]).forEach(function(m){ if(!m||!m.metaphor_id||!NODES[m.metaphor_id])return; var psecs=NODES[m.metaphor_id].secs||{};
+      (m.mappings||[]).forEach(function(mp){ if(!mp||!mp.map_id||!NODES[mp.map_id])return; var mm=NODES[mp.map_id];
+        if(!mm.secs||!Object.keys(mm.secs).length){mm.secs={};Object.keys(psecs).forEach(function(s){mm.secs[s]=1;});}
+      });
+    });
   }
 
   // ---- loading ----
@@ -325,25 +336,46 @@
   var focus=[], dir='both';
   function populatePicker(){
     var secF=document.getElementById('secFilter').value;
+    var partF=(document.getElementById('partFilter')||{}).value||'';
+    var partSecs={}; if(partF){Object.keys(SECTIONS).forEach(function(s){if((SECTIONS[s].part_key||'')===partF)partSecs[s]=1;});}
     var pk=document.getElementById('picker');
     pk.innerHTML='<option value="">Type or pick an element…</option>';
     var order={B:0,P:1,A:2,E:3,R:4,M:5};
-    Object.keys(NODES).filter(function(id){return !secF||NODES[id].section===secF;})
+    Object.keys(NODES).filter(function(id){var n=NODES[id];
+        if(secF)return n.tier==='M'?!!(n.secs&&n.secs[secF]):n.section===secF;
+        if(partF)return n.tier==='M'?Object.keys(n.secs||{}).some(function(s){return partSecs[s];}):!!partSecs[n.section];
+        return true;})
       .sort(function(a,b){var na=NODES[a],nb=NODES[b];return (order[na.tier]-order[nb.tier])||(a<b?-1:1);})
       .forEach(function(id){var n=NODES[id];var o=document.createElement('option');o.value=id;o.textContent=n.tier+' · '+id+' · '+String(n.text).slice(0,50);pk.appendChild(o);});
   }
-  function populateControls(){
-    var sf=document.getElementById('secFilter'); sf.innerHTML='<option value="">All sections</option>';
+  function partBuckets(){
     var sids=Object.keys(SECTIONS).sort(function(a,b){return h1ofLabel(SECTIONS[a].label)-h1ofLabel(SECTIONS[b].label)||(a<b?-1:1);});
-    var usingParts=sids.some(function(s){return !!SECTIONS[s].part_key;});
-    if(usingParts){
-      var buckets=[],binx={};
-      sids.forEach(function(s){var key=SECTIONS[s].part_key||'__none__';if(!(key in binx)){binx[key]=buckets.length;buckets.push({key:key,label:SECTIONS[s].part_label,title:SECTIONS[s].part_title,sids:[]});}buckets[binx[key]].sids.push(s);});
-      if(PARTSMETA.length)buckets.sort(function(a,b){return partMetaIdx(a.key)-partMetaIdx(b.key);});
-      buckets.forEach(function(bk){var og=document.createElement('optgroup');og.label=(bk.label||'Unassigned')+(bk.title?' — '+bk.title:'');bk.sids.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=SECTIONS[s].label;og.appendChild(o);});sf.appendChild(og);});
+    var buckets=[],binx={};
+    sids.forEach(function(s){var key=SECTIONS[s].part_key||'__none__';if(!(key in binx)){binx[key]=buckets.length;buckets.push({key:key,label:SECTIONS[s].part_label,title:SECTIONS[s].part_title,sids:[]});}buckets[binx[key]].sids.push(s);});
+    if(PARTSMETA.length)buckets.sort(function(a,b){return partMetaIdx(a.key)-partMetaIdx(b.key);});
+    return {buckets:buckets,sids:sids,usingParts:sids.some(function(s){return !!SECTIONS[s].part_key;})};
+  }
+  function fillSecFilter(){
+    var sf=document.getElementById('secFilter'); var partF=(document.getElementById('partFilter')||{}).value||'';
+    sf.innerHTML='<option value="">All sections'+(partF?' in part':'')+'</option>';
+    var pb=partBuckets();
+    if(pb.usingParts){
+      pb.buckets.forEach(function(bk){ if(partF && bk.key!==partF) return;
+        var og=document.createElement('optgroup');og.label=(bk.label||'Unassigned')+(bk.title?' — '+bk.title:'');
+        bk.sids.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=SECTIONS[s].label;og.appendChild(o);});sf.appendChild(og);});
     } else {
-      sids.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=SECTIONS[s].label;sf.appendChild(o);});
+      pb.sids.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=SECTIONS[s].label;sf.appendChild(o);});
     }
+  }
+  function populateControls(){
+    var pb=partBuckets();
+    var pf=document.getElementById('partFilter');
+    if(pf){ pf.innerHTML='<option value="">All parts</option>';
+      if(pb.usingParts){ pf.style.display=''; (pf.previousElementSibling&&(pf.parentElement.style.display=''));
+        pb.buckets.forEach(function(bk){ if(bk.key==='__none__')return; var o=document.createElement('option');o.value=bk.key;o.textContent=(bk.label||bk.key)+(bk.title?' — '+bk.title:'');pf.appendChild(o);});
+      } else { if(pf.parentElement)pf.parentElement.style.display='none'; }
+    }
+    fillSecFilter();
     populatePicker();
     // gaps
     var bulletsNoP=0,propsNoA=0,propsNoE=0,secNoR=0,propsNoM=0,haveM=false;
@@ -359,9 +391,12 @@
   function connectedSet(){
     if(!focus.length)return null;
     var keep={};
+    // Do NOT traverse same-tier (metaphor↔mapping parentage) edges: focusing a bullet/section
+    // should surface only the metaphor elements actually linked to it, not every sibling mapping.
+    function sameTier(a,b){return NODES[a]&&NODES[b]&&NODES[a].tier===NODES[b].tier;}
     focus.forEach(function(f){ keep[f]=1;
-      if(dir==='anc'||dir==='both'){var st=[f];while(st.length){var c=st.pop();(IN_ADJ[c]||[]).forEach(function(p){if(!keep[p]){keep[p]=1;st.push(p);}});}}
-      if(dir==='desc'||dir==='both'){var st2=[f];while(st2.length){var c=st2.pop();(OUT_ADJ[c]||[]).forEach(function(p){if(!keep[p]){keep[p]=1;st2.push(p);}});}}
+      if(dir==='anc'||dir==='both'){var st=[f];while(st.length){var c=st.pop();(IN_ADJ[c]||[]).forEach(function(p){if(!keep[p]&&!sameTier(c,p)){keep[p]=1;st.push(p);}});}}
+      if(dir==='desc'||dir==='both'){var st2=[f];while(st2.length){var c=st2.pop();(OUT_ADJ[c]||[]).forEach(function(p){if(!keep[p]&&!sameTier(c,p)){keep[p]=1;st2.push(p);}});}}
     });
     return keep;
   }
@@ -369,6 +404,8 @@
   function render(){
     var cols=document.getElementById('cols'); var svg=document.getElementById('links');
     var secF=document.getElementById('secFilter').value;
+    var partF=(document.getElementById('partFilter')||{}).value||'';
+    var partSecs={}; if(partF){Object.keys(SECTIONS).forEach(function(s){if((SECTIONS[s].part_key||'')===partF)partSecs[s]=1;});}
     var onlyConn=document.getElementById('onlyConn').checked;
     var keep=connectedSet();
     document.getElementById('emptyMsg').hidden=Object.keys(NODES).length>0;
@@ -378,9 +415,13 @@
       col.innerHTML='<h2><i class="tchip t'+t[0]+'">'+(t[0]==='A'?'AN':t[0]==='E'?'EV':t[0])+'</i> '+t[1]+'<span class="n">'+t[2]+'</span></h2>';
       var ids=Object.keys(NODES).filter(function(id){var n=NODES[id];
         if(n.tier!==t[0])return false;
-        if(secF){
-          if(t[0]==='M'){ var sx=n.secs||{}; if(Object.keys(sx).length && !sx[secF]) return false; }
-          else if(n.section!==secF) return false;
+        if(t[0]==='M'){
+          var sx=n.secs||{};
+          if(secF){ if(!sx[secF]) return false; }                                   // section: only metaphors linked to it
+          else if(partF){ if(!Object.keys(sx).some(function(s){return partSecs[s];})) return false; } // part: linked to any section in the part
+        } else {
+          if(secF){ if(n.section!==secF) return false; }
+          else if(partF){ if(!partSecs[n.section]) return false; }
         }
         return true;
       }).sort(function(a,b){var na=NODES[a],nb=NODES[b];var ka=na.sortkey||a,kb=nb.sortkey||b;return ka<kb?-1:(ka>kb?1:0);});
@@ -405,6 +446,8 @@
         secOrder.sort(function(a,b){var ka=secSortKey(a),kb=secSortKey(b);return ka[0]-kb[0]||ka[1]-kb[1]||(a<b?-1:1);});
         var curPart=null;
         secOrder.forEach(function(s){
+          var els=[];bySec[s].forEach(function(id){var el=nodeEl(id);if(el)els.push(el);});
+          if(!els.length)return;                       // no visible node in this section → no header (e.g. unconnected Render)
           var info=SECTIONS[s]||{};
           var pk=info.part_key||'';
           if(pk&&pk!==curPart){curPart=pk;
@@ -414,7 +457,7 @@
           }
           var sh=document.createElement('div');sh.className='col-sec';sh.textContent=(info.label||s);
           col.appendChild(sh);
-          bySec[s].forEach(function(id){var el=nodeEl(id);if(el)col.appendChild(el);});
+          els.forEach(function(el){col.appendChild(el);});
         });
       }
       cols.appendChild(col);
@@ -457,6 +500,7 @@
   document.getElementById('ghForget').addEventListener('click',function(){LS.del('acpp.gh.pat');document.getElementById('ghPat').value='';setStatus('token forgotten');});
   document.getElementById('picker').addEventListener('change',function(){if(this.value){if(focus.indexOf(this.value)<0){focus.push(this.value);renderChips();render();}this.value='';}});
   document.getElementById('secFilter').addEventListener('change',function(){populatePicker();render();});
+  var _pf=document.getElementById('partFilter'); if(_pf)_pf.addEventListener('change',function(){fillSecFilter();populatePicker();render();});
   document.getElementById('projSel').addEventListener('change',function(){GHset('proj',this.value);loadAll(true);});  // shared current-project across all ACPP tools
   document.getElementById('onlyConn').addEventListener('change',render);
   document.querySelectorAll('#dirSeg button').forEach(function(b){b.addEventListener('click',function(){dir=b.dataset.d;document.querySelectorAll('#dirSeg button').forEach(function(x){x.classList.toggle('on',x===b);});render();});});

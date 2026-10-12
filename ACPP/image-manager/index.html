@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.10.0">
+<meta name="version" content="1.10.1">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -352,6 +352,16 @@ function ghListNames(dirPath){return fetch(ghUrl(dirPath)+'?ref='+encodeURICompo
 /* ---------- utils ---------- */
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function sidMid(sid){var m=String(sid).match(/^DM-\d\d-(\d\d)-(\d\d)/);return m?(m[1]+'.'+m[2]):null;}
+// Section token for image ids — unique per section, for any project id shape.
+// DMBOK: DM-01-06-04 -> 06.04 (unchanged). Otherwise drop the leading project tag and
+// keep the rest of the id (e.g. KYV-C01 -> C01, KYV-C01-02 -> C01-02).
+function sidToken(sid){
+  var dm=sidMid(sid); if(dm)return dm;
+  var s=String(sid||'').trim(); if(!s)return '00.00';
+  var parts=s.split('-');
+  var tok=(parts.length>=2?parts.slice(1).join('-'):s).toUpperCase();
+  return tok||'00.00';
+}
 function $(id){return document.getElementById(id);}
 
 /* ---------- in-memory model ---------- */
@@ -706,9 +716,10 @@ function removeCR(sid,idx,ci){
 
 /* ---------- editor ---------- */
 function nextImgId(sid){
-  var mid=sidMid(sid)||'00.00';var max=0;
-  (IMAGES[sid]&&IMAGES[sid].images||[]).forEach(function(im){var m=/IMG-[\d.]+-(\d+)/.exec(im.img_id||'');if(m)max=Math.max(max,+m[1]);});
-  return 'IMG-'+mid+'-'+('0'+(max+1)).slice(-2);
+  var tok=sidToken(sid);var max=0;
+  var re=new RegExp('^IMG-'+tok.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'-(\\d+)$');
+  (IMAGES[sid]&&IMAGES[sid].images||[]).forEach(function(im){var m=re.exec(im.img_id||'');if(m)max=Math.max(max,+m[1]);});
+  return 'IMG-'+tok+'-'+('0'+(max+1)).slice(-2);
 }
 function fillSecSelect(){
   $('fSec').innerHTML=SECTIONS.map(function(s){return '<option value="'+esc(s.sid)+'">'+esc(s.label)+(s.title?' — '+esc(s.title):'')+' ('+esc(s.sid)+')</option>';}).join('');

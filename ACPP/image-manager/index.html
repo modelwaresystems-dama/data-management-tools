@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.8.0">
+<meta name="version" content="1.9.0">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -94,6 +94,7 @@
   .dirty{color:var(--warn);font-size:.78rem;font-weight:600}
 
   .imgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;padding:6px 4px 8px}
+  .secempty{grid-column:1/-1;color:var(--soft);font-size:.82rem;font-style:italic;padding:4px 2px 6px}
   .imgcard{border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden;display:flex;flex-direction:column}
   .imgcard.bad{border-color:var(--bad)}
   .thumb{aspect-ratio:16/10;background:var(--surface2);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
@@ -514,7 +515,7 @@ function cardHtml(s,im,doc){
   '</div>';
 }
 function secBlock(s,active){
-  var doc=IMAGES[s.sid];var imgs=(doc.images||[]).filter(function(im){return matchImg(s.sid,im);});
+  var doc=IMAGES[s.sid]||{images:[]};var imgs=(doc.images||[]).filter(function(im){return matchImg(s.sid,im);});
   var cards=imgs.map(function(im){return cardHtml(s,im,doc);}).join('');
   var shownCount=active?(imgs.length+' of '+(doc.images||[]).length):((doc.images||[]).length+' image'+((doc.images||[]).length===1?'':'s'));
   return '<div class="sec" data-sid="'+esc(s.sid)+'">'+
@@ -523,7 +524,7 @@ function secBlock(s,active){
       (DIRTY[s.sid]?'<span class="dirty">● unsaved</span>':'')+
       '<button class="btn sm addhere" data-sid="'+esc(s.sid)+'">＋ Add</button>'+
       '<button class="btn sm p commit" data-sid="'+esc(s.sid)+'"'+(DIRTY[s.sid]?'':' disabled')+'>Commit</button>'+
-    '</div><div class="imgrid">'+cards+'</div></div>';
+    '</div><div class="imgrid">'+(cards||'<div class="secempty">No placements yet — use <b>＋ Add</b> to place an image here.</div>')+'</div></div>';
 }
 function render(){
   var total=0,withImgs=0;
@@ -531,8 +532,12 @@ function render(){
   setStatus(total+' image'+(total===1?'':'s')+' across '+withImgs+' section'+(withImgs===1?'':'s')+'. Connected to <span class="idc">'+esc(GH.owner()+'/'+GH.repo())+'</span>.');
   var board=$('board');
   var active=(FILTER!=='all')||(VFILTER!=='all');
-  // sub-sections that have at least one image matching the current filters
-  var rows=SECTIONS.filter(function(s){var imgs=(IMAGES[s.sid]&&IMAGES[s.sid].images)||[];return imgs.length&&imgs.some(function(im){return matchImg(s.sid,im);});});
+  // Default view (no image filter): show the FULL structure — every Part, chapter and sub-section,
+  // even those with no image yet, so placements can be added anywhere.
+  // Filtered view (Draft/Approved/Issues or a variant): narrow to sub-sections with matching images.
+  var rows= active
+    ? SECTIONS.filter(function(s){var imgs=(IMAGES[s.sid]&&IMAGES[s.sid].images)||[];return imgs.length&&imgs.some(function(im){return matchImg(s.sid,im);});})
+    : SECTIONS.slice();
   if(active){
     var shown=0;rows.forEach(function(s){shown+=(IMAGES[s.sid].images||[]).filter(function(im){return matchImg(s.sid,im);}).length;});
     var vlabel=VFILTER==='A'?' · Plain (A)':(VFILTER==='B'?' · Illustrated (B)':(VFILTER==='metaphor'?' · Metaphor':''));
@@ -544,7 +549,7 @@ function render(){
   var hs=Object.keys(byH).map(Number).sort(function(a,b){return a-b;});
   function h1groupHtml(h){
     var secs=byH[h].slice().sort(function(a,b){return h2of(a.label)-h2of(b.label);});
-    var imgCount=0;secs.forEach(function(s){imgCount+=(IMAGES[s.sid].images||[]).filter(function(im){return matchImg(s.sid,im);}).length;});
+    var imgCount=0;secs.forEach(function(s){imgCount+=((IMAGES[s.sid]&&IMAGES[s.sid].images)||[]).filter(function(im){return matchImg(s.sid,im);}).length;});
     var collapsed=(h in COLLAPSE)?COLLAPSE[h]:true;  // default collapsed, board-style
     var body=secs.map(function(s){return secBlock(s,active);}).join('');
     return '<section class="h1group'+(collapsed?'':' open')+'" data-h1="'+h+'">'+
@@ -562,7 +567,7 @@ function render(){
     if(PARTSMETA.length)buckets.sort(function(a,b){return partMetaIdx(a.key)-partMetaIdx(b.key);});
     board.innerHTML=buckets.map(function(bk){
       var col=!!PARTCOLLAPSE[bk.key];
-      var imgCount=0;bk.hs.forEach(function(h){byH[h].forEach(function(s){imgCount+=(IMAGES[s.sid].images||[]).filter(function(im){return matchImg(s.sid,im);}).length;});});
+      var imgCount=0;bk.hs.forEach(function(h){byH[h].forEach(function(s){imgCount+=((IMAGES[s.sid]&&IMAGES[s.sid].images)||[]).filter(function(im){return matchImg(s.sid,im);}).length;});});
       var ttl=bk.title?' — '+esc(bk.title):'';
       var tl=bk.tagline?'<span class="partagline">'+esc(bk.tagline)+'</span>':'';
       var inner=bk.hs.map(h1groupHtml).join('');

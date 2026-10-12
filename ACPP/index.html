@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.12.1">
+<meta name="version" content="4.13.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -216,6 +216,7 @@ table.wc-t th{text-align:left;font-size:.66rem;text-transform:uppercase;letter-s
 table.wc-t th.num,table.wc-t td.num{text-align:right;font-variant-numeric:tabular-nums}
 table.wc-t td{padding:5px 7px;border-bottom:1px solid var(--line);color:var(--ink)}
 table.wc-t tr.grp td{background:var(--surface2);font-weight:600}
+table.wc-t tr.wc-part td{background:var(--accentbg,#2b2f36);color:#fff;font-weight:700;letter-spacing:.2px}
 table.wc-t tr.sub td{font-weight:600;color:var(--soft);border-bottom:2px solid var(--soft)}
 .wc-sid{color:var(--soft);font-variant-numeric:tabular-nums;margin-right:6px}
 .wc-rowbar{position:relative;height:12px;background:var(--surface2);border-radius:3px;min-width:60px}
@@ -283,6 +284,13 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   .h1body.collapsed{display:none}
   .h1body .sec{margin-bottom:12px}
   .h1body .sec:last-child{margin-bottom:0}
+  .partgroup{margin:0 0 18px}
+  .parthead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:10px 14px;cursor:pointer;background:var(--accentbg,#2b2f36);color:#fff;border-radius:12px;margin:0 0 10px}
+  .parthead b{font-size:15px;letter-spacing:.2px}
+  .parthead .partcaret{font-size:12px;width:12px;flex:none;opacity:.85}
+  .parthead .partagline{font-size:12.5px;font-style:italic;opacity:.8;margin-left:auto}
+  .parthead .partcount{font:12px var(--mono,monospace);opacity:.8}
+  .partbody.collapsed{display:none}
   /* G6 render viewer + metaphor track (v3.3.0) */
   .rvseg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .rvseg button{border:0;border-right:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:.82rem;padding:6px 12px;cursor:pointer}
@@ -553,7 +561,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       if(!sj||!sj.sections||!sj.sections.length){proj.sections=[];proj._loadError='Could not load sections.json from the repo — check the connection and the data path.';return 0;}
       proj._loadError=null; SECTIONSRAW=sj;
       // sections.json is shared across projects; show only the selected project's sections.
-      proj.sections=sj.sections.filter(function(s){return s.project_id===sel.value;}).map(function(s){return {sid:s.section_id,label:s.label||s.section_id,prose:s.prose_status||s.prose||'',gates:s.gates||{},note:s.note||'',art:{},aiq:[]};});
+      proj.sections=sj.sections.filter(function(s){return s.project_id===sel.value;}).map(function(s){return {sid:s.section_id,label:s.label||s.section_id,prose:s.prose_status||s.prose||'',gates:s.gates||{},note:s.note||'',part_id:s.part_id||'',part_label:s.part_label||'',part_title:s.part_title||'',art:{},aiq:[]};});
       return Promise.all(pre).then(function(){
         var jobs=[];
         proj.sections.forEach(function(sec){var sid=sec.sid;
@@ -627,10 +635,15 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function wcWords(t){var m=String(t==null?'':t).match(/[A-Za-z0-9'’\-]+/g);return m?m.length:0;}
   function wcParaText(para){if(typeof para==='string')return para;if(Array.isArray(para))return para.map(function(sp){return typeof sp==='string'?sp:((sp&&sp.text)||'');}).join(' ');return '';}
   function wcVariant(rv){if(!rv||!rv.paragraphs)return 0;return rv.paragraphs.reduce(function(x,p){return x+wcWords(wcParaText(p));},0);}
+  function wcPartOf(row,hn){var pk=null;
+    if(row&&(row.part_label||row.part_id))pk={key:row.part_label||row.part_id,label:row.part_label||'',title:row.part_title||'',tagline:''};
+    else{var pm=partsMeta();for(var i=0;i<pm.length;i++){if(partChaptersInclude(pm[i].chapters,hn)){pk={key:pm[i].label||('P'+i),label:pm[i].label||'',title:pm[i].title||'',tagline:pm[i].tagline||''};break;}}}
+    if(pk){var mm=partMetaFor(pk.key);if(mm){if(!pk.title)pk.title=mm.title||'';if(!pk.tagline)pk.tagline=mm.tagline||'';if(!pk.label)pk.label=mm.label||'';}}
+    return pk;}
   function wcRows(){var proj=PROJECTS[sel.value];var rows=[];((proj&&proj.sections)||[]).forEach(function(sec){
       var reg=RENDERREG[sec.sid];var a=0,b=0,st='none';
       if(reg&&reg.renders){a=wcVariant(reg.renders.A_plain);b=wcVariant(reg.renders.B_illustrated);st=reg._opener?'opener':'rendered';}
-      var m=String(sec.label).match(/^(\d+)\.(\d+)/);rows.push({sid:sec.sid,label:sec.label,a:a,b:b,st:st,h1:m?+m[1]:0,h2:m?+m[2]:0});});
+      var m=String(sec.label).match(/^(\d+)\.(\d+)/);rows.push({sid:sec.sid,label:sec.label,a:a,b:b,st:st,h1:m?+m[1]:0,h2:m?+m[2]:0,part_label:sec.part_label||'',part_id:sec.part_id||'',part_title:sec.part_title||''});});
     rows.sort(function(x,y){return x.h1-y.h1||x.h2-y.h2;});return rows;}
   // Committed word-count record (same numbers the panel shows, derived from the renders). Schema shared with the render skill.
   function wcRecord(){
@@ -638,6 +651,8 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     rows.forEach(function(r){totA+=r.a;totB+=r.b;if(r.st==='rendered')nR++;else if(r.st==='opener')nO++;else nN++;});
     var byH={};rows.forEach(function(r){(byH[r.h1]||(byH[r.h1]=[])).push(r);});
     var by_h1=Object.keys(byH).map(Number).sort(function(a,b){return a-b;}).map(function(h){var rs=byH[h];return {h1:h,name:h1name(h),plain:rs.reduce(function(x,r){return x+r.a;},0),illustrated:rs.reduce(function(x,r){return x+r.b;},0)};});
+    var byP={},pOrder=[];rows.forEach(function(r){var pk=wcPartOf(r,r.h1);if(!pk)return;if(!(pk.key in byP)){byP[pk.key]={part:pk.label||pk.key,title:pk.title||'',plain:0,illustrated:0,chapters:{}};pOrder.push(pk.key);}byP[pk.key].plain+=r.a;byP[pk.key].illustrated+=r.b;byP[pk.key].chapters[r.h1]=1;});
+    var by_part=pOrder.map(function(k){var e=byP[k];return {part:e.part,title:e.title,chapters:Object.keys(e.chapters).map(Number).sort(function(a,b){return a-b;}),plain:e.plain,illustrated:e.illustrated};});
     return {
       _note:"ACPP chapter word-count record. DERIVED from the render.<id>.json files (plain=A_plain, illustrated=B_illustrated; a word is a /[A-Za-z0-9'’-]+/ token). Not a source of truth — regenerate from the renders; do not hand-edit.",
       project_id:sel.value,
@@ -645,6 +660,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       generated_by:"board",
       totals:{sections:rows.length,rendered:nR,opener_only:nO,not_rendered:nN,plain:totA,illustrated:totB},
       by_section:rows.map(function(r){var st=(r.st==='opener'?'opener_only':(r.st==='none'?'not_rendered':'rendered'));return {section_id:r.sid,label:r.label,plain:r.a,illustrated:r.b,state:st};}),
+      by_part:by_part,
       by_h1:by_h1
     };
   }
@@ -656,7 +672,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var rendB=rows.filter(function(r){return r.st==='rendered';}).reduce(function(x,r){return x+r.b;},0);
     var meanB=nR?Math.round(rendB/nR):0;
     var byH={};rows.forEach(function(r){(byH[r.h1]||(byH[r.h1]=[])).push(r);});
-    var secs=Object.keys(byH).map(Number).sort(function(a,b){return a-b;}).map(function(h){var rs=byH[h];return {h:h,name:h1name(h),a:rs.reduce(function(x,r){return x+r.a;},0),b:rs.reduce(function(x,r){return x+r.b;},0),rows:rs};});
+    var secs=Object.keys(byH).map(Number).sort(function(a,b){return a-b;}).map(function(h){var rs=byH[h];return {h:h,name:h1name(h),part:wcPartOf(rs[0],h),a:rs.reduce(function(x,r){return x+r.a;},0),b:rs.reduce(function(x,r){return x+r.b;},0),rows:rs};});
     var maxSec=Math.max.apply(null,secs.map(function(s){return s.b;}))||1;
     var kpis=[['Chapter · illustrated',fmt(totB),'words (B)'],['Chapter · plain',fmt(totA),'words (A) · +'+fmt(totB-totA)],['Rendered',nR+' / '+rows.length,nO+' opener · '+nN+' pending'],['Mean / rendered',fmt(meanB),'words (B)']];
     var html='<div class="wc-head"><h2>Word count — rendered prose</h2><span class="cap">live from the loaded renders · '+esc(sel.value)+'</span><button class="rv-export" id="wcCommit" title="Write the committed word_count.json record to the data repo">⬆ Commit word_count.json</button><button class="wcx" id="wcClose">✕ Close</button></div>';
@@ -664,7 +680,12 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     html+='<div class="wc-legend"><b style="color:var(--ink)">By section</b><span><i class="wc-lgbar"></i>Illustrated (B)</span><span><i class="wc-lgtick"></i>Plain (A)</span></div>';
     html+='<div class="wc-sec">'+secs.map(function(s){var wB=s.b/maxSec*100,wA=s.a/maxSec*100;return '<div class="lab" title="'+esc(s.h+'. '+s.name)+'">'+esc(s.h+'. '+s.name)+'</div><div class="wc-track" title="'+esc(s.h+'. '+s.name+' — illustrated '+fmt(s.b)+' · plain '+fmt(s.a))+'"><div class="wc-fill" style="width:'+wB.toFixed(1)+'%"></div><div class="wc-tick" style="left:calc('+wA.toFixed(1)+'% - 1px)"></div></div><div class="v">'+fmt(s.b)+'</div>';}).join('')+'</div>';
     html+='<table class="wc-t"><thead><tr><th>Sub-section</th><th class="num">Plain</th><th class="num">Illus.</th><th class="wchide">Length</th><th>State</th></tr></thead><tbody>';
+    var wcCurPart=null;
     secs.forEach(function(s){
+      if(s.part&&s.part.key!==wcCurPart){wcCurPart=s.part.key;
+        var pa=0,pb=0;secs.forEach(function(ss){if(ss.part&&ss.part.key===s.part.key){pa+=ss.a;pb+=ss.b;}});
+        var ptl=s.part.tagline?' — <span style="font-style:italic;opacity:.75">'+esc(s.part.tagline)+'</span>':(s.part.title?' — '+esc(s.part.title):'');
+        html+='<tr class="wc-part"><td>'+esc(s.part.label||'Part')+ptl+'</td><td class="num">'+fmt(pa)+'</td><td class="num">'+fmt(pb)+'</td><td class="wchide"></td><td></td></tr>';}
       html+='<tr class="grp"><td>'+esc(s.h+'. '+s.name)+'</td><td class="num">'+fmt(s.a)+'</td><td class="num">'+fmt(s.b)+'</td><td class="wchide"></td><td></td></tr>';
       s.rows.forEach(function(r){var wB=maxSub?r.b/maxSub*100:0,wA=maxSub?r.a/maxSub*100:0;
         var chip=r.st==='opener'?'<span class="wc-chip op">opener only</span>':(r.st==='none'?'<span class="wc-chip no">not rendered</span>':'');
@@ -879,6 +900,13 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function pubCtrl(){return ((PUBCTRL&&PUBCTRL.controls)||[]).filter(function(c){return c.project_id===sel.value;})[0]||null;}
   function reqStruct(){var c=pubCtrl();return (c&&c.required_structure)||[];}
   function h1name(hn){var rs=reqStruct();var nm=rs[hn-1];if(nm!=null&&String(nm).trim())return String(nm).replace(/^\s*\d+\.\s*/,'');return 'Section '+hn;}
+  function partsMeta(){var c=pubCtrl();return (c&&c.parts)||[];}
+  function partChaptersInclude(ch,hn){if(ch==null)return false;
+    if(Array.isArray(ch))return ch.some(function(x){var n=parseInt(String(x).replace(/[^0-9]/g,''),10);return n===hn;});
+    var s=String(ch);var m=s.match(/(\d+)\s*[-–]\s*(\d+)/);if(m)return hn>=+m[1]&&hn<=+m[2];
+    return (s.match(/\d+/g)||[]).map(Number).indexOf(hn)>=0;}
+  function partMetaFor(key){var pm=partsMeta();for(var i=0;i<pm.length;i++){var p=pm[i];if(p.label===key||p.part_id===key||p.id===key)return p;}return null;}
+  function partMetaIdx(key){var pm=partsMeta();for(var i=0;i<pm.length;i++){var p=pm[i];if(p.label===key||p.part_id===key||p.id===key)return i;}return 999;}
   function loadProjects(){
     return ghGetJson(acppRoot()+'/projects.json').then(function(pj){
       var list=(pj&&pj.projects)||[];
@@ -1726,12 +1754,49 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var groups=[],gidx={};
     secs.forEach(function(s,si){var m=String(s.label).match(/^(\d+)\./);var hn=m?+m[1]:0;if(!(hn in gidx)){gidx[hn]=groups.length;groups.push({hn:hn,items:[]});}groups[gidx[hn]].items.push({s:s,si:si});});
     function gateDone(s){return GATES.every(function(g){return gateStatus(s,g[0])==='complete';});}
-    document.getElementById('sections').innerHTML=groups.map(function(g){
+    function renderGroup(g){
       var col=!!h1coll[g.hn];
       var doneN=g.items.filter(function(x){return gateDone(x.s);}).length;
       var cards=g.items.map(function(x){return secCard(x.s,x.si);}).join('');
       return '<div class="h1group"><div class="h1head" data-h1="'+g.hn+'"><span class="h1caret">'+(col?'▸':'▾')+'</span><b>'+g.hn+'. '+esc(h1name(g.hn))+'</b><span class="h1count">'+doneN+'/'+g.items.length+' done</span></div><div class="h1body'+(col?' collapsed':'')+'">'+cards+'</div></div>';
-    }).join('');
+    }
+    // --- Parts layer (data-driven; only when sections carry part fields or publication_control has a parts array) ---
+    function groupPart(g){var s=g.items[0]&&g.items[0].s;
+      if(s&&(s.part_id||s.part_label))return {key:s.part_label||s.part_id,label:s.part_label||'',title:s.part_title||''};
+      var pm=partsMeta();for(var i=0;i<pm.length;i++){if(partChaptersInclude(pm[i].chapters,g.hn))return {key:pm[i].label||pm[i].part_id||('P'+i),label:pm[i].label||'',title:pm[i].title||''};}
+      return null;}
+    var usingParts=groups.some(function(g){return !!groupPart(g);});
+    var sectionsHtml;
+    if(usingParts){
+      var partcoll=lsGet('acpp.board.partcoll')||{};
+      var buckets=[],binx={};
+      groups.forEach(function(g){var pk=groupPart(g);var key=pk?pk.key:'__none__';
+        if(!(key in binx)){binx[key]=buckets.length;buckets.push({key:key,label:pk?pk.label:'',title:pk?pk.title:'',groups:[]});}
+        buckets[binx[key]].groups.push(g);});
+      if(partsMeta().length)buckets.sort(function(a,b){return partMetaIdx(a.key)-partMetaIdx(b.key);});
+      buckets.forEach(function(bk){var pm=partMetaFor(bk.key);if(pm){bk.tagline=pm.tagline||'';if(!bk.title)bk.title=pm.title||'';if(!bk.label)bk.label=pm.label||'';}});
+      sectionsHtml=buckets.map(function(bk){
+        var col=!!partcoll[bk.key];
+        var allItems=[];bk.groups.forEach(function(g){g.items.forEach(function(x){allItems.push(x);});});
+        var doneN=allItems.filter(function(x){return gateDone(x.s);}).length;
+        var ttl=bk.title?' — '+esc(bk.title):'';
+        var tl=bk.tagline?'<span class="partagline">'+esc(bk.tagline)+'</span>':'';
+        var hdr=bk.label?esc(bk.label):'Unassigned';
+        var inner=bk.groups.map(renderGroup).join('');
+        return '<div class="partgroup"><div class="parthead" data-part="'+esc(bk.key)+'"><span class="partcaret">'+(col?'▸':'▾')+'</span><b>'+hdr+ttl+'</b><span class="partcount">'+doneN+'/'+allItems.length+' done</span>'+tl+'</div><div class="partbody'+(col?' collapsed':'')+'">'+inner+'</div></div>';
+      }).join('');
+    } else {
+      sectionsHtml=groups.map(renderGroup).join('');
+    }
+    document.getElementById('sections').innerHTML=sectionsHtml;
+    document.querySelectorAll('.parthead').forEach(function(head){head.addEventListener('click',function(){
+      var key=head.dataset.part, body=head.nextElementSibling, car=head.querySelector('.partcaret');
+      var pc=lsGet('acpp.board.partcoll')||{};
+      var nowCol=!body.classList.contains('collapsed');
+      body.classList.toggle('collapsed',nowCol); if(car)car.textContent=nowCol?'▸':'▾';
+      if(nowCol)pc[key]=1; else delete pc[key];
+      lsSet('acpp.board.partcoll',pc);
+    });});
     document.querySelectorAll('.gate').forEach(function(btn){
       btn.addEventListener('click',function(){
         var si=+btn.dataset.si, gk=btn.dataset.gk, det=document.getElementById('det-'+si);

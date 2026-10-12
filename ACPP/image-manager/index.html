@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.7.1">
+<meta name="version" content="1.8.0">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -77,6 +77,13 @@
   .h1count{margin-left:auto;font-size:.76rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--soft)}
   .h1body{padding:6px 12px 12px}
   .h1body.collapsed{display:none}
+  .partgroup{margin:0 0 20px}
+  .parthead{display:flex;align-items:baseline;gap:11px;flex-wrap:wrap;padding:11px 16px;cursor:pointer;user-select:none;background:var(--accentbg,#2b2f36);color:#fff;border-radius:12px;margin:0 0 10px}
+  .parthead b{font-size:1rem;letter-spacing:.2px}
+  .parthead .partcaret{font-size:.8rem;width:12px;flex:none;opacity:.85}
+  .parthead .partcount{font-size:.76rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;opacity:.85}
+  .parthead .partagline{font-size:.8rem;font-style:italic;opacity:.8;margin-left:auto}
+  .partbody.collapsed{display:none}
   .sec{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
   .sec:first-child{border-top:0;margin-top:0}
   .secsub{display:flex;flex-wrap:wrap;gap:9px;align-items:center;padding:6px 4px}
@@ -342,7 +349,7 @@ var VFILTER='all';          // 'all' | 'A' | 'B' — show only images that appea
 var COLLAPSE={};            // sid -> true if its section is collapsed
 try{var _vf=localStorage.getItem('acpp.imgmgr.vfilter');if(_vf)VFILTER=_vf;}catch(e){}
 try{COLLAPSE=JSON.parse(localStorage.getItem('acpp.imgmgr.collapse')||'{}')||{};}catch(e){COLLAPSE={};}
-function persistUI(){try{localStorage.setItem('acpp.imgmgr.vfilter',VFILTER);localStorage.setItem('acpp.imgmgr.collapse',JSON.stringify(COLLAPSE));}catch(e){}}
+function persistUI(){try{localStorage.setItem('acpp.imgmgr.vfilter',VFILTER);localStorage.setItem('acpp.imgmgr.collapse',JSON.stringify(COLLAPSE));localStorage.setItem('acpp.imgmgr.partcollapse',JSON.stringify(PARTCOLLAPSE));}catch(e){}}
 function matchImg(sid,im){
   if(FILTER==='draft'&&im.status==='approved')return false;
   if(FILTER==='approved'&&im.status!=='approved')return false;
@@ -403,7 +410,8 @@ function loadReqStruct(){
   return ghGetJson(GH.dir()+'/publication_control.json').then(function(pc){
     var ctrls=(pc&&pc.controls)||[];var c=ctrls.filter(function(x){return x.project_id===curProj();})[0];
     REQSTRUCT=(c&&c.required_structure)||[];
-  }).catch(function(){REQSTRUCT=[];});
+    PARTSMETA=(c&&c.parts)||[];
+  }).catch(function(){REQSTRUCT=[];PARTSMETA=[];});
 }
 
 /* ---------- load ---------- */
@@ -420,7 +428,7 @@ function reloadProject(){
   return loadReqStruct().then(function(){return ghGetJson(GH.dir()+'/sections.json');}).then(function(sj){
     if(!sj||!sj.sections||!sj.sections.length){setStatus('<span style="color:var(--bad)">Could not load sections.json. Check the owner / repo / data dir / token.</span>');return;}
     // sections.json is shared across projects — show only the selected project's sections
-    SECTIONS=sj.sections.filter(function(s){return s.project_id===curProj();}).map(function(s){return {sid:s.section_id,label:s.label||s.section_id,title:s.title||s.section_title||''};});
+    SECTIONS=sj.sections.filter(function(s){return s.project_id===curProj();}).map(function(s){return {sid:s.section_id,label:s.label||s.section_id,title:s.title||s.section_title||'',part_id:s.part_id||'',part_label:s.part_label||'',part_title:s.part_title||''};});
     var jobs=[];
     SECTIONS.forEach(function(sec){
       var sid=sec.sid;
@@ -461,8 +469,23 @@ function promptPanel(im){
   '</details>';
 }
 var REQSTRUCT=[];          // required_structure of the current project (H1 heading names) — from publication_control.json
+var PARTSMETA=[];          // parts array of the current project (label/title/tagline/chapters) — from publication_control.json
+var PARTCOLLAPSE={};       // per-part collapse state
+try{PARTCOLLAPSE=JSON.parse(localStorage.getItem('acpp.imgmgr.partcollapse')||'{}')||{};}catch(e){PARTCOLLAPSE={};}
 function h1name(h){var nm=REQSTRUCT[h-1];if(nm!=null&&String(nm).trim())return String(nm).replace(/^\s*\d+\.\s*/,'');return 'Section '+h;}
 function h1of(label){var m=String(label).match(/^(\d+)/);return m?+m[1]:0;}
+function partChaptersInclude(ch,hn){if(ch==null)return false;
+  if(Array.isArray(ch))return ch.some(function(x){var n=parseInt(String(x).replace(/[^0-9]/g,''),10);return n===hn;});
+  var s=String(ch);var m=s.match(/(\d+)\s*[-–]\s*(\d+)/);if(m)return hn>=+m[1]&&hn<=+m[2];
+  return (s.match(/\d+/g)||[]).map(Number).indexOf(hn)>=0;}
+function partMetaFor(key){for(var i=0;i<PARTSMETA.length;i++){var p=PARTSMETA[i];if(p.label===key||p.part_id===key||p.id===key)return p;}return null;}
+function partMetaIdx(key){for(var i=0;i<PARTSMETA.length;i++){var p=PARTSMETA[i];if(p.label===key||p.part_id===key||p.id===key)return i;}return 999;}
+function partForChapter(h){var sec=SECTIONS.filter(function(s){return h1of(s.label)===h;})[0];
+  var pk=null;
+  if(sec&&(sec.part_label||sec.part_id))pk={key:sec.part_label||sec.part_id,label:sec.part_label||'',title:sec.part_title||'',tagline:''};
+  else{for(var i=0;i<PARTSMETA.length;i++){if(partChaptersInclude(PARTSMETA[i].chapters,h)){pk={key:PARTSMETA[i].label||('P'+i),label:PARTSMETA[i].label||'',title:PARTSMETA[i].title||'',tagline:PARTSMETA[i].tagline||''};break;}}}
+  if(pk){var mm=partMetaFor(pk.key);if(mm){if(!pk.title)pk.title=mm.title||'';if(!pk.tagline)pk.tagline=mm.tagline||'';if(!pk.label)pk.label=mm.label||'';}}
+  return pk;}
 function h2of(label){var m=String(label).match(/^\d+\.(\d+)/);return m?+m[1]:0;}
 function allH1s(){var set={};SECTIONS.forEach(function(s){set[h1of(s.label)]=1;});return Object.keys(set).map(Number);}
 function cardHtml(s,im,doc){
@@ -519,7 +542,7 @@ function render(){
   // group sub-sections under their top-level section (the N in N.M), accordion-style
   var byH={};rows.forEach(function(s){var h=h1of(s.label);(byH[h]||(byH[h]=[])).push(s);});
   var hs=Object.keys(byH).map(Number).sort(function(a,b){return a-b;});
-  board.innerHTML=hs.map(function(h){
+  function h1groupHtml(h){
     var secs=byH[h].slice().sort(function(a,b){return h2of(a.label)-h2of(b.label);});
     var imgCount=0;secs.forEach(function(s){imgCount+=(IMAGES[s.sid].images||[]).filter(function(im){return matchImg(s.sid,im);}).length;});
     var collapsed=(h in COLLAPSE)?COLLAPSE[h]:true;  // default collapsed, board-style
@@ -528,7 +551,31 @@ function render(){
       '<div class="h1head" data-h1="'+h+'"><span class="h1caret">▸</span><b>'+h+'. '+esc(h1name(h))+'</b><span class="h1count">'+imgCount+' image'+(imgCount===1?'':'s')+' · '+secs.length+' sub-section'+(secs.length===1?'':'s')+'</span></div>'+
       '<div class="h1body'+(collapsed?' collapsed':'')+'">'+body+'</div>'+
     '</section>';
-  }).join('');
+  }
+  // Parts layer — only when sections carry part fields or publication_control has a parts array
+  var partOf={},usingParts=false;hs.forEach(function(h){var pk=partForChapter(h);partOf[h]=pk;if(pk)usingParts=true;});
+  if(usingParts){
+    var buckets=[],binx={};
+    hs.forEach(function(h){var pk=partOf[h];var key=pk?pk.key:'__none__';
+      if(!(key in binx)){binx[key]=buckets.length;buckets.push({key:key,label:pk?pk.label:'',title:pk?pk.title:'',tagline:pk?pk.tagline:'',hs:[]});}
+      buckets[binx[key]].hs.push(h);});
+    if(PARTSMETA.length)buckets.sort(function(a,b){return partMetaIdx(a.key)-partMetaIdx(b.key);});
+    board.innerHTML=buckets.map(function(bk){
+      var col=!!PARTCOLLAPSE[bk.key];
+      var imgCount=0;bk.hs.forEach(function(h){byH[h].forEach(function(s){imgCount+=(IMAGES[s.sid].images||[]).filter(function(im){return matchImg(s.sid,im);}).length;});});
+      var ttl=bk.title?' — '+esc(bk.title):'';
+      var tl=bk.tagline?'<span class="partagline">'+esc(bk.tagline)+'</span>':'';
+      var inner=bk.hs.map(h1groupHtml).join('');
+      return '<section class="partgroup"><div class="parthead" data-part="'+esc(bk.key)+'"><span class="partcaret">'+(col?'▸':'▾')+'</span><b>'+esc(bk.label||'Part')+ttl+'</b><span class="partcount">'+imgCount+' image'+(imgCount===1?'':'s')+'</span>'+tl+'</div><div class="partbody'+(col?' collapsed':'')+'">'+inner+'</div></section>';
+    }).join('');
+  } else {
+    board.innerHTML=hs.map(h1groupHtml).join('');
+  }
+  document.querySelectorAll('.parthead[data-part]').forEach(function(head){head.onclick=function(e){if(e.target.closest('button'))return;
+    var key=head.dataset.part;PARTCOLLAPSE[key]=!PARTCOLLAPSE[key];persistUI();
+    var body=head.nextElementSibling;body.classList.toggle('collapsed',!!PARTCOLLAPSE[key]);
+    var car=head.querySelector('.partcaret');if(car)car.textContent=PARTCOLLAPSE[key]?'▸':'▾';
+    if(!PARTCOLLAPSE[key])hydrateThumbs();};});
   wire();
   hydrateThumbs();
 }
@@ -537,6 +584,7 @@ function hydrateThumbs(){
   document.querySelectorAll('.thumb[data-imgsrc]').forEach(function(t){
     if(t.dataset.hydrated)return;                 // already loaded — don't refetch
     if(t.closest('.h1body.collapsed'))return;     // deferred until the group is expanded
+    if(t.closest('.partbody.collapsed'))return;   // deferred until the part is expanded
     var src=t.getAttribute('data-imgsrc');if(!src)return;
     t.dataset.hydrated='1';
     ghGetImgDataUrl(src).then(function(url){
@@ -743,8 +791,8 @@ $('projSel').onchange=function(){GHset('proj',this.value);syncProjType();reloadP
 $('newBtn').onclick=function(){if(!SECTIONS.length){alert('Load sections first (Connect & load).');return;}openEditor(SECTIONS[0].sid,null);};
 $('filterSeg').querySelectorAll('button').forEach(function(b){b.onclick=function(){FILTER=b.dataset.f;$('filterSeg').querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});render();};});
 $('variantSeg').querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.v===VFILTER);b.onclick=function(){VFILTER=b.dataset.v;persistUI();$('variantSeg').querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});render();};});
-$('expandAll').onclick=function(){allH1s().forEach(function(h){COLLAPSE[h]=false;});persistUI();render();};
-$('collapseAll').onclick=function(){allH1s().forEach(function(h){COLLAPSE[h]=true;});persistUI();render();};
+$('expandAll').onclick=function(){allH1s().forEach(function(h){COLLAPSE[h]=false;});PARTCOLLAPSE={};persistUI();render();};
+$('collapseAll').onclick=function(){allH1s().forEach(function(h){COLLAPSE[h]=true;});allH1s().forEach(function(h){var pk=partForChapter(h);if(pk)PARTCOLLAPSE[pk.key]=true;});persistUI();render();};
 $('fSec').onchange=function(){fillAnIds(this.value);if(!editing)$('fId').value=nextImgId(this.value);};
 $('fAnchorType').onchange=syncAnchorRows;
 $('edSave').onclick=saveEditor;

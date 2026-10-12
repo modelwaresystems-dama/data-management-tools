@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.6.0">
+<meta name="version" content="1.7.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -191,6 +191,18 @@
   var EDGES=[];   // {from,to}
   var OUT_ADJ={}, IN_ADJ={};
   var SECTIONS={}; // section_id -> label
+  var PARTSMETA=[]; // parts array from publication_control (current project)
+  function partChaptersInclude(ch,hn){if(ch==null)return false;
+    if(Array.isArray(ch))return ch.some(function(x){var n=parseInt(String(x).replace(/[^0-9]/g,''),10);return n===hn;});
+    var s=String(ch);var m=s.match(/(\d+)\s*[-–]\s*(\d+)/);if(m)return hn>=+m[1]&&hn<=+m[2];
+    return (s.match(/\d+/g)||[]).map(Number).indexOf(hn)>=0;}
+  function h1ofLabel(label){var m=String(label).match(/^(\d+)/);return m?+m[1]:0;}
+  function partMetaIdx(key){for(var i=0;i<PARTSMETA.length;i++){var p=PARTSMETA[i];if(p.label===key||p.part_id===key||p.id===key)return i;}return 999;}
+  function partForSection(s){var pk=null;
+    if(s&&(s.part_label||s.part_id))pk={key:s.part_label||s.part_id,label:s.part_label||'',title:s.part_title||''};
+    else{var hn=h1ofLabel(s&&s.label);for(var i=0;i<PARTSMETA.length;i++){if(partChaptersInclude(PARTSMETA[i].chapters,hn)){pk={key:PARTSMETA[i].label||('P'+i),label:PARTSMETA[i].label||'',title:PARTSMETA[i].title||''};break;}}}
+    if(pk&&!pk.title){for(var j=0;j<PARTSMETA.length;j++){if(PARTSMETA[j].label===pk.key){pk.title=PARTSMETA[j].title||'';break;}}}
+    return pk;}
 
   function addNode(id,tier,text,section,meta){ if(!id)return; if(!NODES[id])NODES[id]={id:id,tier:tier,text:text||'',section:section||'',meta:meta||''}; }
   function addEdge(a,b){ if(!a||!b||!NODES[a]||!NODES[b])return; EDGES.push({from:a,to:b}); (OUT_ADJ[a]=OUT_ADJ[a]||[]).push(b); (IN_ADJ[b]=IN_ADJ[b]||[]).push(a); }
@@ -201,7 +213,9 @@
     NODES={};EDGES=[];OUT_ADJ={};IN_ADJ={};SECTIONS={};
     // sections (labels + render state) — only the current project (sections.json is shared across projects)
     var PROJ=curProj();
-    arrOf(data.sections,['sections']).forEach(function(s){if(s.project_id!==PROJ)return;SECTIONS[s.section_id]={label:s.label||s.heading||s.section_id,g6:((s.gates||{}).G6)||'waiting'};});
+    var pcc=((data.pubctrl&&data.pubctrl.controls)||[]).filter(function(c){return c.project_id===PROJ;})[0];
+    PARTSMETA=(pcc&&pcc.parts)||[];
+    arrOf(data.sections,['sections']).forEach(function(s){if(s.project_id!==PROJ)return;var pk=partForSection(s);SECTIONS[s.section_id]={label:s.label||s.heading||s.section_id,g6:((s.gates||{}).G6)||'waiting',part_key:pk?pk.key:'',part_label:pk?pk.label:'',part_title:pk?pk.title:''};});
     // outlines -> bullets (skip sections not in the current project)
     arrOf(data.outlines,['outlines']).forEach(function(o){
       var sec=o.section_id; if(!SECTIONS[sec])return;
@@ -275,13 +289,14 @@
         Promise.all(evidFiles.map(function(f){return ghGetJson(f).then(function(d){return {d:d,sec:secOf(f)};});})),
         ghGetJson(GH.dir()+'/sources.json'),
         ghGetJson(GH.dir()+'/sections.json'),
-        loadMetaphors()
+        loadMetaphors(),
+        ghGetJson(GH.dir()+'/publication_control.json')
       ]).then(function(res){
         var props=[],nodes=[],evid=[];
         res[1].forEach(function(x){arrOf(x.d,['propositions','items']).forEach(function(p){p.section=p.section||(x.d&&x.d.section_id)||x.sec;props.push(p);});});
         res[2].forEach(function(x){arrOf(x.d,['argument_nodes','nodes','items']).forEach(function(n){n.section=n.section||(x.d&&x.d.section_id)||x.sec;nodes.push(n);});});
         res[3].forEach(function(x){arrOf(x.d,['links','items']).forEach(function(e){e.section=e.section||(x.d&&x.d.section_id)||x.sec;evid.push(e);});});
-        buildModel({outlines:res[0],props:props,nodes:nodes,evid:evid,sources:res[4],sections:res[5],metaphors:res[6]});
+        buildModel({outlines:res[0],props:props,nodes:nodes,evid:evid,sources:res[4],sections:res[5],metaphors:res[6],pubctrl:res[7]});
         setStatus('loaded '+Object.keys(NODES).length+' elements · '+EDGES.length+' links');
         populateControls(); render();
       });
@@ -301,7 +316,16 @@
   }
   function populateControls(){
     var sf=document.getElementById('secFilter'); sf.innerHTML='<option value="">All sections</option>';
-    Object.keys(SECTIONS).sort().forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=SECTIONS[s].label;sf.appendChild(o);});
+    var sids=Object.keys(SECTIONS).sort(function(a,b){return h1ofLabel(SECTIONS[a].label)-h1ofLabel(SECTIONS[b].label)||(a<b?-1:1);});
+    var usingParts=sids.some(function(s){return !!SECTIONS[s].part_key;});
+    if(usingParts){
+      var buckets=[],binx={};
+      sids.forEach(function(s){var key=SECTIONS[s].part_key||'__none__';if(!(key in binx)){binx[key]=buckets.length;buckets.push({key:key,label:SECTIONS[s].part_label,title:SECTIONS[s].part_title,sids:[]});}buckets[binx[key]].sids.push(s);});
+      if(PARTSMETA.length)buckets.sort(function(a,b){return partMetaIdx(a.key)-partMetaIdx(b.key);});
+      buckets.forEach(function(bk){var og=document.createElement('optgroup');og.label=(bk.label||'Unassigned')+(bk.title?' — '+bk.title:'');bk.sids.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=SECTIONS[s].label;og.appendChild(o);});sf.appendChild(og);});
+    } else {
+      sids.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=SECTIONS[s].label;sf.appendChild(o);});
+    }
     populatePicker();
     // gaps
     var bulletsNoP=0,propsNoA=0,propsNoE=0,secNoR=0,propsNoM=0,haveM=false;

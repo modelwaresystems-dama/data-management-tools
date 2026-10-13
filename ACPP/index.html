@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.16.0">
+<meta name="version" content="4.16.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -99,6 +99,8 @@
   .candchip{font-size:.74rem;border:1px dashed var(--warn,#b5731a);color:var(--ink);background:color-mix(in srgb,var(--warn,#b5731a) 8%,transparent);border-radius:12px;padding:1px 9px}
   .bridgeflag{font:600 .68rem var(--mono);color:var(--good,#2e7d57);background:color-mix(in srgb,var(--good,#2e7d57) 9%,transparent);border-radius:6px;padding:3px 8px;margin:5px 0}
   .rv-row.promoted{box-shadow:inset 3px 0 0 var(--good,#2e7d57)}
+  table tr.prsub>td{background:color-mix(in srgb,var(--soft) 7%,transparent);border-top:0;padding:4px 10px 9px}
+  table tr.prsub .deriv{margin:4px 0}
   .rp-text{width:100%;min-height:54px;border:1px solid var(--line);border-radius:7px;padding:8px 10px;font:inherit;font-size:.88rem;background:var(--bg);color:var(--ink);resize:vertical;margin:6px 0}
   .rp-text:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
   .rv-ctrls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
@@ -1007,15 +1009,28 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 
   function propositionsSummary(sec){
     var proj=sel.value, ol=OUTLINES[sec.sid]||{}, g2=sec.art.G2, rows;
-    if(g2.backfill){rows=g2.backfill.map(function(e){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G2.'+e[0])||{};return {id:e[0],bullet:e[1],type:e[2],text:(s.text!=null&&s.text!==''?s.text:e[3]),status:(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending'))};});}
+    if(g2.backfill){rows=g2.backfill.map(function(e){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G2.'+e[0])||{};return {id:e[0],bullet:e[1],type:e[2],text:(s.text!=null&&s.text!==''?s.text:e[3]),status:(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending')),deriv:e[6],cands:e[7]};});}
     else {rows=(g2.props||[]).map(function(p){return {id:p[0],bullet:'',type:p[1],text:p[2],status:p[3]};});}
     var acc=rows.filter(function(r){return r.status==='Approved';}).length, hasB=rows.some(function(r){return r.bullet;});
+    var ncol=(hasB?5:4);
     var head=(ol.intended_conclusion?'<p class="note"><b>Intended conclusion.</b> '+esc(ol.intended_conclusion)+'</p>':'');
     var recon=(g2.terms?'<p class="note" style="font-weight:600;color:'+(acc===g2.terms?'#2f6f4f':'#c2410c')+'">'+acc+' propositions ↔ '+g2.terms+' governed terms'+(acc===g2.terms?' ✓ reconciled':' ⚠ mismatch')+'</p>':'');
-    var tbl='<table><thead><tr><th>P-ID</th>'+(hasB?'<th>Bullet</th>':'')+'<th>Type</th><th>Text</th><th>Status</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td class="idc">'+r.id+'</td>'+(hasB?'<td class="idc">'+esc(r.bullet||'')+'</td>':'')+'<td>'+esc(r.type)+'</td><td>'+esc(r.text)+'</td><td><span class="pill '+(r.status==='Approved'?'ok':'need')+'">'+r.status+'</span></td></tr>';}).join('')+'</tbody></table>';
-    return head+recon+tbl;}
+    var anyNotes=rows.some(function(r){return (r.deriv&&r.deriv.text)||(r.cands&&r.cands.length);});
+    var hint=anyNotes?'<p class="note">Each proposition with AI-derived reasoning or candidate sources shows a <b>⊕ reasoning / candidates</b> row — click to expand.</p>':'';
+    var tbl='<table><thead><tr><th>P-ID</th>'+(hasB?'<th>Bullet</th>':'')+'<th>Type</th><th>Text</th><th>Status</th></tr></thead><tbody>'+rows.map(function(r){
+      var main='<tr><td class="idc">'+r.id+'</td>'+(hasB?'<td class="idc">'+esc(r.bullet||'')+'</td>':'')+'<td>'+esc(r.type)+'</td><td>'+esc(r.text)+'</td><td><span class="pill '+(r.status==='Approved'?'ok':'need')+'">'+r.status+'</span></td></tr>';
+      var notes=candRow(r.cands)+derivRow(r.deriv);
+      var sub=notes?('<tr class="prsub"><td colspan="'+ncol+'">'+notes+'</td></tr>'):'';
+      return main+sub;}).join('')+'</tbody></table>';
+    return head+recon+hint+tbl;}
   function argumentSummary(sec){var proj=sel.value, nodes=g3Active(sec);
-    return '<table><thead><tr><th>Node</th><th>Type</th><th>P-ID</th><th>Text</th><th>Status</th></tr></thead><tbody>'+nodes.map(function(nn){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+nn[0])||{};var t=(s.comment&&s.comment.trim()?s.comment:nn[4]);var st=(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending'));return '<tr><td class="idc">'+nn[0]+'</td><td>'+esc(nn[1])+'</td><td class="idc">'+esc(nn[2])+'</td><td>'+esc(t)+'</td><td><span class="pill '+(st==='Approved'?'ok':'need')+'">'+st+'</span></td></tr>';}).join('')+'</tbody></table>';}
+    var anyNotes=nodes.some(function(nn){return (nn[9]&&nn[9].text)||(nn[10]&&nn[10].bridge);});
+    var hint=anyNotes?'<p class="note">Nodes with AI-derived reasoning or a promoted bridge show an expandable row beneath them.</p>':'';
+    return hint+'<table><thead><tr><th>Node</th><th>Type</th><th>P-ID</th><th>Text</th><th>Status</th></tr></thead><tbody>'+nodes.map(function(nn){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+nn[0])||{};var t=(s.comment&&s.comment.trim()?s.comment:nn[4]);var st=(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending'));
+      var meta=nn[10]||{};var bridge=meta.bridge?('<tr class="prsub"><td colspan="5"><div class="bridgeflag">⬆ Promoted bridge'+(meta.from?(' (from '+esc(meta.from)+')'):'')+'</div></td></tr>'):'';
+      var deriv=derivRow(nn[9]);var derivTr=deriv?('<tr class="prsub"><td colspan="5">'+deriv+'</td></tr>'):'';
+      var main='<tr><td class="idc">'+nn[0]+'</td><td>'+esc(nn[1])+'</td><td class="idc">'+esc(nn[2])+'</td><td>'+esc(t)+'</td><td><span class="pill '+(st==='Approved'?'ok':'need')+'">'+st+'</span></td></tr>';
+      return main+bridge+derivTr;}).join('')+'</tbody></table>';}
   function evidenceSummary(sec){var proj=sel.value, rows=sec.art.G4.evid, g2o=(sec.art&&sec.art.G2)||{}, g2=g2o.props||g2o.backfill||[], tIdx=g2o.props?2:3, props={}; g2.forEach(function(p){props[p[0]]=p[tIdx];});
     return '<table><thead><tr><th>Claim</th><th>Accepted source</th><th>Status</th></tr></thead><tbody>'+rows.map(function(e){var pid=e[0], s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+pid)||{};var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');return '<tr><td><span class="idc">'+pid+'</span> '+esc(String(props[pid]||'').slice(0,80))+'</td><td class="idc">'+esc(s.src||'—')+'</td><td><span class="pill '+(status==='Supported'?'ok':'need')+'">'+status+'</span></td></tr>';}).join('')+'</tbody></table>';}
   function gateSummary(sec,gk){var inner=gk==='G2'?propositionsSummary(sec):gk==='G3'?argumentSummary(sec):gk==='G4'?evidenceSummary(sec):'';var vis=(gk==='G2')?' <button class="rv-btn vismap" data-gk="'+gk+'">◇ Visual map</button>':'';return inner+'<p class="note"><button class="rv-btn reedit" data-gk="'+gk+'">✎ Re-edit</button>'+vis+'</p>';}

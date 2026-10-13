@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.19.1">
+<meta name="version" content="4.20.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -181,6 +181,18 @@
 .qchk.qdisp .qr{color:var(--warn,#b5731a)} .qchk.qdisp{background:color-mix(in srgb,var(--warn,#b5731a) 7%,transparent)}
 .qnote{grid-column:1 / -1;font-size:.72rem;font-style:italic;color:var(--soft,#667);margin-top:1px}
 .qpropnote{font:600 .72rem var(--sans,inherit);color:var(--warn,#b5731a);margin-bottom:6px}
+.passcell>summary{cursor:pointer;list-style:none;font:inherit}
+.passcell>summary::-webkit-details-marker{display:none}
+.passcell>summary .idc{border-bottom:1px dashed var(--soft,#9aa)}
+.passcell>summary::before{content:"▸ ";color:var(--soft,#667)}
+.passcell[open]>summary::before{content:"▾ "}
+.passbox{margin:6px 0 2px;padding:8px 10px;border-left:3px solid var(--good,#2e7d57);background:color-mix(in srgb,var(--good,#2e7d57) 5%,transparent);border-radius:6px;max-width:460px;white-space:normal}
+.passq{font-size:.82rem;font-style:italic;color:var(--ink,#222);line-height:1.5}
+.passloc{font:600 .68rem var(--mono,monospace);color:var(--soft,#667);margin-top:4px}
+.passlinks{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:7px;font-size:.74rem}
+.passsrc{font:600 .68rem var(--mono,monospace);color:var(--soft,#667)}
+.passsm{color:var(--accent,#4f46e5);text-decoration:none;font-weight:600}
+.passsm:hover{text-decoration:underline}
 header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .ghbtn{font-size:.78rem;border:1px solid var(--line,#ddd);background:var(--surface,#fff);color:var(--ink,#222);border-radius:7px;padding:3px 9px;cursor:pointer}
 .ghstat{font-size:.74rem;color:var(--muted,#667)}
@@ -1147,8 +1159,22 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var main='<tr class="qrow"'+attrs+'><td class="idc">'+nn[0]+'</td><td>'+esc(nn[1])+'</td><td class="idc">'+esc(nn[2])+'</td><td>'+esc(t)+'</td><td><span class="pill '+(st==='Approved'?'ok':'need')+'">'+st+'</span></td>'+(hasAQ?'<td class="qcell">'+qBadge(ar,AQBLOCKTITLE)+'</td>':'')+'</tr>';
       return main+bridge+subTr;}).join('')+'</tbody></table>';
     return aqPanelRollup(sec)+hint+tbl;}
+  function g4AcceptedSrc(e,s){var list=(e&&e[4])||[],id=(s&&s.src)||'',m=null;list.forEach(function(x){if(x.id===id)m=x;});
+    if(!m&&id){var it=(SRCIDX.items&&SRCIDX.items[id])||{};m={id:id,cite:it.title||id,url:it.URL||'',quote:(s&&s.quote)||'',locator:(s&&s.locator)||'',supports:''};}
+    if(m){if(!m.quote&&s&&s.quote)m.quote=s.quote;if(!m.locator&&s&&s.locator)m.locator=s.locator;}
+    return m;}
+  function srcCell(e,s){
+    if(!s||!s.src)return '<td class="idc">—</td>';
+    var src=g4AcceptedSrc(e,s),passage=(src&&src.quote)||'',loc=(src&&src.locator)||'',title=(src&&src.cite)||s.src;
+    var sm='source-manager/index.html?src='+encodeURIComponent(s.src);
+    var body='<div class="passbox">'+
+      (passage?('<div class="passq">“'+esc(passage)+'”</div>'+(loc?'<div class="passloc">'+esc(loc)+'</div>':'')):'<div class="passloc">No passage bound yet.</div>')+
+      '<div class="passlinks"><span class="passsrc">'+esc(title)+'</span><a class="passsm" href="'+sm+'" target="_blank" rel="noopener">↗ Open in Source Manager</a></div></div>';
+    return '<td><details class="passcell"><summary><span class="idc">'+esc(s.src)+'</span></summary>'+body+'</details></td>';}
   function evidenceSummary(sec){var proj=sel.value, rows=sec.art.G4.evid, g2o=(sec.art&&sec.art.G2)||{}, g2=g2o.props||g2o.backfill||[], tIdx=g2o.props?2:3, props={}; g2.forEach(function(p){props[p[0]]=p[tIdx];});
-    return '<table><thead><tr><th>Claim</th><th>Accepted source</th><th>Status</th></tr></thead><tbody>'+rows.map(function(e){var pid=e[0], s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+pid)||{};var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');return '<tr><td><span class="idc">'+pid+'</span> '+esc(String(props[pid]||'').slice(0,80))+'</td><td class="idc">'+esc(s.src||'—')+'</td><td><span class="pill '+(status==='Supported'?'ok':'need')+'">'+status+'</span></td></tr>';}).join('')+'</tbody></table>';}
+    var anyPass=rows.some(function(e){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+e[0])||{};var src=g4AcceptedSrc(e,s);return src&&src.quote;});
+    var hint=anyPass?'<p class="note">Click an accepted source to see the bound passage, or open it in the Source Manager.</p>':'';
+    return hint+'<table><thead><tr><th>Claim</th><th>Accepted source</th><th>Status</th></tr></thead><tbody>'+rows.map(function(e){var pid=e[0], s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+pid)||{};var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');return '<tr><td><span class="idc">'+pid+'</span> '+esc(String(props[pid]||'').slice(0,80))+'</td>'+srcCell(e,s)+'<td><span class="pill '+(status==='Supported'?'ok':'need')+'">'+status+'</span></td></tr>';}).join('')+'</tbody></table>';}
   function gateSummary(sec,gk){var inner=gk==='G2'?propositionsSummary(sec):gk==='G3'?argumentSummary(sec):gk==='G4'?evidenceSummary(sec):'';var vis=(gk==='G2')?' <button class="rv-btn vismap" data-gk="'+gk+'">◇ Visual map</button>':'';return inner+'<p class="note"><button class="rv-btn reedit" data-gk="'+gk+'">✎ Re-edit</button>'+vis+'</p>';}
   function gateHead(sec,gk){var g=GATES.find(function(x){return x[0]===gk;});return '<div class="dh"><b>'+gk+' · '+(g?g[1]:'')+'</b><span class="src">'+esc(sec.label)+' — re-editing</span></div>';}
   // AI-derived reasoning (generated, not author-gated) — collapsible, visually distinct, never shown as canon.

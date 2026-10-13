@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.12.0">
+<meta name="version" content="1.13.0">
 <title>ACPP Source Manager</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -45,6 +45,7 @@
   .pill.reb{border-color:var(--bad);color:var(--bad)}
   .pill.node{border-color:var(--viol);color:var(--viol)}
   .srcitem{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 8px;background:var(--surface)}
+  .srcitem.srcfocus{outline:2px solid #4f46e5;outline-offset:2px;box-shadow:0 0 0 4px color-mix(in srgb,#4f46e5 18%,transparent);transition:box-shadow .3s}
   .srcitem h3{margin:0 0 3px;font-size:14px}
   .srcmeta{font-size:12px;color:var(--soft)}
   .srcactions{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
@@ -1469,6 +1470,21 @@
     syncCollBtn();
   }
 
+  // Deep-link: source-manager/index.html?src=<SRC-ID> opens the library on that source, expanded, and scrolls to it.
+  function focusSource(id){
+    if(!id)return;var it=ITEMS.filter(function(x){return x.id===id;})[0];if(!it)return;
+    var sb=document.getElementById('libSearch');if(sb)sb.value='';
+    PROJFILTER='';var pf=document.getElementById('projFilter');if(pf)pf.value='';try{localStorage.setItem('acpp.srcmgr.projfilter','');}catch(e){}
+    try{delete LGCOLL[workOf(it)];}catch(e){}
+    delete COLL[id];
+    var lt=[].slice.call(document.querySelectorAll('.tab')).filter(function(t){return t.dataset.t==='lib';})[0];if(lt&&!lt.classList.contains('on'))lt.click();
+    renderLib();
+    setTimeout(function(){
+      var esc2=(window.CSS&&CSS.escape)?CSS.escape(id):id.replace(/"/g,'\\"');
+      var head=document.querySelector('.srchead[data-tog="'+esc2+'"]');
+      if(head){var card=head.closest('.srcitem')||head;card.scrollIntoView({behavior:'smooth',block:'center'});card.classList.add('srcfocus');setTimeout(function(){card.classList.remove('srcfocus');},2800);}
+    },120);
+  }
   document.getElementById('libSearch').addEventListener('input',renderLib);
   document.getElementById('projFilter').addEventListener('change',function(){PROJFILTER=this.value;try{localStorage.setItem('acpp.srcmgr.projfilter',PROJFILTER);}catch(e){}renderLib();});
   function libGroupKeys(){var s={};ITEMS.forEach(function(it){s[workOf(it)]=1;});return Object.keys(s);}
@@ -1871,12 +1887,15 @@
   cfgLoad();
   fillProjFilter();
   renderLib();
+  var DEEPSRC=(function(){try{return new URLSearchParams(location.search).get('src')||'';}catch(e){return '';}})();
+  if(DEEPSRC)focusSource(DEEPSRC);  // try with whatever is already loaded
   if(ghConfigured()){
     ghStatus('auto-refreshing from private repo…');
     Promise.all([pullSources(false),pullRefs(false),loadProjects()]).then(function(){
       ghStatus('auto-refreshed: '+ITEMS.length+' sources, '+LINKS.length+' links, '+REFS.props.length+' propositions','ok');
       var cur=document.querySelector('.tab.on');
       if(cur&&cur.dataset.t==='byarg')renderByArg();
+      if(DEEPSRC)focusSource(DEEPSRC);  // re-focus once the repo data is in
     });
   }
 })();

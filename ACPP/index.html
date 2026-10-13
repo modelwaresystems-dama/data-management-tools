@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.20.0">
+<meta name="version" content="4.20.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -135,6 +135,8 @@
   code{font-family:var(--mono);font-size:.85em}
   footer{margin-top:22px;border-top:1px solid var(--line);padding-top:12px;font-size:.78rem;color:var(--soft)}
 .gate.rvpend{border-color:#c2410c !important}
+.gate.filemiss{box-shadow:inset 0 0 0 2px var(--warn,#b5731a)}
+.gate .gwarn{color:var(--warn,#b5731a);font-weight:800;margin-left:4px}
 .gate .rvb{display:block;margin-top:3px;font-size:.55rem;font-weight:800;letter-spacing:.03em;color:#c2410c;text-transform:uppercase}
 .reviewline{font-size:.82rem;color:#c2410c;font-weight:600;margin:6px 0 2px}
 .aiqbtn{margin:6px 8px 2px 0;font-size:.8rem;border:1px solid #c2410c;color:#c2410c;background:transparent;border-radius:7px;padding:4px 10px;cursor:pointer;font-weight:600}
@@ -2092,12 +2094,18 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var secs=p.sections.slice().sort(function(a,b){var k=function(s){var m=String(s.label).match(/^(\d+)\.(\d+)/)||[0,0,0];return [+m[1],+m[2]];};var ka=k(a),kb=k(b);return ka[0]-kb[0]||ka[1]-kb[1];});
     function secCard(s,si){
       var rmap={}; reviewItems(s).forEach(function(r){rmap[r.gk]=r.pending;});
+      // "Marked complete but its register file is missing from the repo" — the gate isn't really done.
+      var GFILE={G2:'propositions',G3:'argument_nodes',G4:'evidence_links',G5:'freeze',G6:'render'};
+      var ghReady=ghConfigured()&&Object.keys(GHFILES).length>0;
+      var missSet={};var missGates=ghReady?Object.keys(GFILE).filter(function(gk){return (s.gates&&s.gates[gk]==='complete')&&!GHFILES[GFILE[gk]+'.'+s.sid+'.json'];}):[];
+      missGates.forEach(function(g){missSet[g]=1;});
       var strip=GATES.map(function(g){var st=gateStatus(s,g[0]);var pend=rmap[g[0]];
-        return '<button class="gate '+st+(pend?' rvpend':'')+'" data-si="'+si+'" data-gk="'+g[0]+'"><span class="g">'+g[0]+'</span><span class="n">'+g[1]+'</span><span class="d">'+DLAB[st]+'</span>'+(pend?'<span class="rvb">review '+pend+'</span>':'')+'</button>';}).join('');
+        return '<button class="gate '+st+(pend?' rvpend':'')+(missSet[g[0]]?' filemiss':'')+'" data-si="'+si+'" data-gk="'+g[0]+'"><span class="g">'+g[0]+'</span><span class="n">'+g[1]+'</span><span class="d">'+DLAB[st]+'</span>'+(missSet[g[0]]?'<span class="gwarn" title="Marked complete but '+esc(GFILE[g[0]]+'.'+s.sid+'.json')+' is missing from the repo">⚠</span>':'')+(pend?'<span class="rvb">review '+pend+'</span>':'')+'</button>';}).join('');
       var totpend=0;for(var k in rmap)totpend+=rmap[k];
       var reviewLine=totpend?'<div class="reviewline">▶ '+totpend+' item'+(totpend>1?'s':'')+' to review — '+Object.keys(rmap).map(function(k){return k+' ('+rmap[k]+')';}).join(', ')+'. Click a highlighted gate.</div>':'';
       var bf=GATES.filter(function(g){return gateStatus(s,g[0])==="backfill" && !rmap[g[0]];}).map(function(g){return g[0];});
       var flag=bf.length?'<div class="flag">⚠ Backfill needed: '+bf.join(", ")+'</div>':'';
+      var missFlag=missGates.length?'<div class="flag">⚠ Marked done but the register file is missing from the repo: '+missGates.map(function(g){return g+' ('+esc(GFILE[g]+'.'+s.sid+'.json')+')';}).join(', ')+' — this gate is not really complete; re-run it.</div>':'';
       var aiqTot=(s.aiq&&s.aiq.length)||0;
       var aiqOpen=(s.aiq||[]).filter(function(q){var st=lsGet(('acpp.'+sel.value+'.')+s.sid+'.AIQ.'+q[0])||{};return st.decision!=='accept'&&st.decision!=='reject';}).length;
       var aiqProm=(s.aiq||[]).filter(function(q){var st=lsGet(('acpp.'+sel.value+'.')+s.sid+'.AIQ.'+q[0])||{};return st.decision==='accept'&&(q[5]||q[6]);}).length;
@@ -2112,7 +2120,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var ghExp=[['propositions','propositions.'+s.sid+'.json'],['argument','argument_nodes.'+s.sid+'.json'],['evidence','evidence_links.'+s.sid+'.json'],['freeze','freeze.'+s.sid+'.json']];
       var ghLine=ghConfigured()?'<div class="ghline">private repo: '+ghExp.map(function(x){return (GHFILES[x[1]]?'✓ ':'· ')+x[0];}).join('   ')+'</div>':'';
       return '<div class="sec"><div class="top"><h2>'+esc(s.label)+'</h2><span class="prose">'+esc(s.prose)+'</span></div>'+
-        '<div class="strip">'+strip+'</div>'+reviewLine+flag+'<div class="note">'+esc(s.note)+'</div>'+aiq+q25+q35+ghLine+
+        '<div class="strip">'+strip+'</div>'+reviewLine+flag+missFlag+'<div class="note">'+esc(s.note)+'</div>'+aiq+q25+q35+ghLine+
         '<div class="detail" id="det-'+si+'" hidden></div></div>';
     }
     var h1coll=lsGet('acpp.board.h1coll')||{};

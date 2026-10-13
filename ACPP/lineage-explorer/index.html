@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.9.0">
+<meta name="version" content="1.10.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -129,7 +129,7 @@
         <span id="status" style="display:inline-block;padding-top:8px">loading…</span>
       </div>
     </div>
-    <div class="hint">Narrow by Part, then Section, then add an element to trace its chain. Direction sets ancestors (upstream) / descendants (downstream) / both.</div>
+    <div class="hint">Narrow by Part, then Section, then add an element to trace its chain. Direction sets ancestors (upstream) / descendants (downstream) / both. Add a second element to <b>narrow to the shared lineage</b> — only the chain that connects every selected element stays.</div>
     <div class="chips" id="focusChips"></div>
     <div class="legend">
       <span><i class="tchip tB">B</i> Outline bullet</span>
@@ -388,16 +388,25 @@
     document.getElementById('gaps').innerHTML='Gaps: <b>'+bulletsNoP+'</b> bullets w/o proposition · <b>'+propsNoA+'</b> props w/o argument · <b>'+propsNoE+'</b> props w/o evidence · <b>'+secNoR+'</b> sections not rendered'+(haveM?(' · <b>'+propsNoM+'</b> props w/o metaphor'):'');
   }
 
+  // Do NOT traverse same-tier (metaphor↔mapping parentage) edges: focusing a bullet/section
+  // should surface only the metaphor elements actually linked to it, not every sibling mapping.
+  function sameTier(a,b){return NODES[a]&&NODES[b]&&NODES[a].tier===NODES[b].tier;}
+  function reachFrom(f,d){ var keep={}; keep[f]=1;
+    if(d==='anc'||d==='both'){var st=[f];while(st.length){var c=st.pop();(IN_ADJ[c]||[]).forEach(function(p){if(!keep[p]&&!sameTier(c,p)){keep[p]=1;st.push(p);}});}}
+    if(d==='desc'||d==='both'){var st2=[f];while(st2.length){var c=st2.pop();(OUT_ADJ[c]||[]).forEach(function(p){if(!keep[p]&&!sameTier(c,p)){keep[p]=1;st2.push(p);}});}}
+    return keep; }
   function connectedSet(){
     if(!focus.length)return null;
-    var keep={};
-    // Do NOT traverse same-tier (metaphor↔mapping parentage) edges: focusing a bullet/section
-    // should surface only the metaphor elements actually linked to it, not every sibling mapping.
-    function sameTier(a,b){return NODES[a]&&NODES[b]&&NODES[a].tier===NODES[b].tier;}
-    focus.forEach(function(f){ keep[f]=1;
-      if(dir==='anc'||dir==='both'){var st=[f];while(st.length){var c=st.pop();(IN_ADJ[c]||[]).forEach(function(p){if(!keep[p]&&!sameTier(c,p)){keep[p]=1;st.push(p);}});}}
-      if(dir==='desc'||dir==='both'){var st2=[f];while(st2.length){var c=st2.pop();(OUT_ADJ[c]||[]).forEach(function(p){if(!keep[p]&&!sameTier(c,p)){keep[p]=1;st2.push(p);}});}}
-    });
+    if(focus.length===1) return reachFrom(focus[0],dir);
+    // Multiple selections NARROW (intersect): keep the "spine" of nodes connected to EVERY
+    // selected element, then expand each connecting proposition to its full vertical lineage
+    // (its argument, evidence, render and metaphor) so the shared chain reads top-to-bottom.
+    var sets=focus.map(function(f){return reachFrom(f,dir);});
+    var spine={};
+    Object.keys(sets[0]).forEach(function(id){ if(sets.every(function(s){return s[id];})) spine[id]=1; });
+    focus.forEach(function(f){spine[f]=1;});
+    var keep={}; Object.keys(spine).forEach(function(id){keep[id]=1;});
+    Object.keys(spine).forEach(function(id){ if(NODES[id]&&NODES[id].tier==='P'){ var r=reachFrom(id,dir); Object.keys(r).forEach(function(x){keep[x]=1;}); } });
     return keep;
   }
 

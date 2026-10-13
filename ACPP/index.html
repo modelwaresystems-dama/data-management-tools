@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.17.0">
+<meta name="version" content="4.18.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -151,11 +151,14 @@
 .qcell{white-space:nowrap}
 .qokc{display:inline-block;font:700 .66rem var(--mono,monospace);color:var(--good,#2e7d57);border:1px solid var(--good,#2e7d57);border-radius:5px;padding:1px 6px}
 .qblocktxt{color:var(--bad,#c2410c)} .qoktxt{color:var(--good,#2e7d57)}
-.q25btn{margin:6px 8px 2px 0;font:600 .8rem var(--sans,inherit);border:1px solid var(--warn,#b5731a);color:var(--warn,#b5731a);background:transparent;border-radius:7px;padding:4px 10px;cursor:pointer}
-.q25btn.done{border-color:var(--good,#2e7d57);color:var(--good,#2e7d57)}
+.q25btn,.q35btn{margin:6px 8px 2px 0;font:600 .8rem var(--sans,inherit);border:1px solid var(--warn,#b5731a);color:var(--warn,#b5731a);background:transparent;border-radius:7px;padding:4px 10px;cursor:pointer}
+.q35btn{border-color:var(--accent,#4f46e5);color:var(--accent,#4f46e5)}
+.q25btn.done,.q35btn.done{border-color:var(--good,#2e7d57);color:var(--good,#2e7d57)}
 .q25btn.sel{background:var(--warn,#b5731a);color:#fff}
-.q25btn.done.sel{background:var(--good,#2e7d57);color:#fff}
+.q35btn.sel{background:var(--accent,#4f46e5);color:#fff}
+.q25btn.done.sel,.q35btn.done.sel{background:var(--good,#2e7d57);color:#fff}
 .q25roll{border:1px solid var(--line,#d8d8d8);border-left:4px solid var(--warn,#b5731a);border-radius:8px;padding:9px 12px;margin:8px 0}
+.q25roll.q35roll{border-left-color:var(--accent,#4f46e5)}
 .q25head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:.82rem}
 .q25meta{color:var(--soft,#667);font-size:.74rem}
 .qbar{display:inline-flex;flex-wrap:wrap;gap:4px}
@@ -530,6 +533,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   var RENDERREG={};   // section_id -> render register (G6 skill output)
   var IMAGES={};      // section_id -> images.<SID>.json (image placements; data chat owns the data)
   var QUALITY={};     // section_id -> proposition_quality.<SID>.json (G2.5 scorecard; read-only, data chat owns it)
+  var AQUALITY={};    // section_id -> argument_quality.<SID>.json (G3.5 node-wiring scorecard; read-only, data chat owns it)
   var METAPHORS=null; // metaphors.<proj>.json (per-project metaphor track), or legacy metaphors.json
   var METAPHORSFILE='metaphors.json'; // the file the Metaphor Track commits back to (per-project when one exists)
   var PUBCTRL=null;   // publication_control.json (baselines)
@@ -624,7 +628,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function hydrateFromCache(){/* caching removed: nothing is hydrated from local storage; data loads fresh from the repo */}
   // Load EVERYTHING fresh from the repo. No seed, no cache. The section list itself comes from sections.json.
   function ghRehydrate(overwrite){if(!ghConfigured())return Promise.resolve(0);var proj=PROJECTS[sel.value];if(!proj)return Promise.resolve(0);
-    ramClear(); RENDERREG={}; IMAGES={}; QUALITY={}; METAPHORS=null; METAPHORSFILE='metaphors.'+sel.value+'.json'; OUTLINES={}; var P=('acpp.'+sel.value+'.');
+    ramClear(); RENDERREG={}; IMAGES={}; QUALITY={}; AQUALITY={}; METAPHORS=null; METAPHORSFILE='metaphors.'+sel.value+'.json'; OUTLINES={}; var P=('acpp.'+sel.value+'.');
     function get(fn){return ghGetJson(GH.dir()+'/'+fn);}  // cache-busted
     var pre=[
       get('sources.json').then(function(sj){if(sj)buildSrcIndex(sj);}),
@@ -660,6 +664,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
           jobs.push(get('ai_quarantine.'+sid+'.json').then(function(o){sec.aiq=buildAIQ(o);((o&&o.items)||[]).forEach(function(it){if(!it.aiq_id)return;var st=String(it.status||'');var d=/Resolved|Promoted/.test(st)?'accept':(/Rejected/.test(st)?'reject':(/Deferred/.test(st)?'defer':'pending'));lsSet(P+sid+'.AIQ.'+it.aiq_id,{decision:d,comment:it.resolution||''});});}));
           jobs.push(get('images.'+sid+'.json').then(function(o){if(o&&o.images)IMAGES[sid]=o;}));  // image placements (absent = no images)
           jobs.push(get('proposition_quality.'+sid+'.json').then(function(o){if(o&&o.results){var byP={};o.results.forEach(function(r){if(r.p_id)byP[padId(r.p_id)]=r;});o._byP=byP;QUALITY[sid]=o;}}));  // G2.5 scorecard (absent = no quality view)
+          jobs.push(get('argument_quality.'+sid+'.json').then(function(o){if(o&&o.results){var byN={};o.results.forEach(function(r){if(r.an_id)byN[padId(r.an_id)]=r;});o._byN=byN;AQUALITY[sid]=o;}}));  // G3.5 node-wiring scorecard (absent = no view)
         });
         return Promise.all(jobs).then(function(){return proj.sections.length;});
       });
@@ -1058,20 +1063,21 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function qGradeCls(g){g=String(g||'').charAt(0).toUpperCase();return g==='A'?'qa':(g==='B'?'qb':'qc');}
   function qFor(sid,pid){var q=QUALITY[sid];return (q&&q._byP&&q._byP[pid])||null;}
   function qDisps(r){return (r&&Array.isArray(r.dispositions))?r.dispositions:[];}
-  function qBadge(r){if(!r)return '';
-    var prov=(r.status&&r.status!=='Approved')?' qprop':'';
+  function qBadge(r,blockTitle){if(!r)return '';
+    var prov=(r.status&&r.status!=='Approved'&&r.status!=='Clean')?' qprop':'';
     var ttl=(r.status||'Approved')+(prov?' — AI-assessed, not yet author-accepted':'');
-    var blk=r.blocking?'<span class="qblock" title="Structural-Integrity fail — split/rewrite before argument-ready">BLOCK</span>':'';
+    var blk=r.blocking?'<span class="qblock" title="'+esc(blockTitle||'Structural-Integrity fail — split/rewrite before argument-ready')+'">BLOCK</span>':'';
     return '<span class="qbadge '+qGradeCls(r.grade)+prov+'" title="'+esc(ttl)+'">'+(r.score_pct!=null?r.score_pct+'% ':'')+esc(r.grade||'')+'</span>'+blk;}
-  function qCheckGrid(r){if(!r||!r.checks)return '';
-    var dims=QDIM.map(function(d){
+  function qCheckGrid(r,dimset,labelset){if(!r||!r.checks)return '';
+    var DIMS=dimset||QDIM, LBL=labelset||QLABEL;
+    var dims=DIMS.map(function(d){
       var items=d[1].map(function(k){var c=r.checks[k]||{result:'N/A'};var res=c.result||'N/A';
         var cls=res==='Pass'?'qpass':(res==='N/A'?'qna':'qdisp');
         var mark=res==='Pass'?'✓':(res==='N/A'?'–':esc(res));
         var note=(c.note&&res!=='Pass'&&res!=='N/A')?'<div class="qnote">'+esc(c.note)+'</div>':'';
-        return '<div class="qchk '+cls+'"><span class="qk">'+esc(QLABEL[k]||k)+'</span><span class="qr">'+mark+'</span>'+note+'</div>';}).join('');
+        return '<div class="qchk '+cls+'"><span class="qk">'+esc(LBL[k]||k)+'</span><span class="qr">'+mark+'</span>'+note+'</div>';}).join('');
       return '<div class="qdim"><div class="qdimh">'+esc(d[0])+'</div>'+items+'</div>';}).join('');
-    var provNote=(r.status&&r.status!=='Approved')?'<div class="qpropnote">⚠ Proposed — AI-assessed, author-gated; dispositions not final until you accept.</div>':'';
+    var provNote=(r.status&&r.status&&r.status!=='Approved'&&r.status!=='Clean')?'<div class="qpropnote">⚠ Proposed — AI-assessed, author-gated; dispositions not final until you accept.</div>':'';
     return '<details class="qcard"><summary><span class="qsumlbl">Quality scorecard</span> '+qBadge(r)+'</summary><div class="qgrid">'+provNote+dims+'</div></details>';}
   function qDispBar(s){var dc=(s&&s.disposition_counts)||{};var ks=Object.keys(dc);if(!ks.length)return '';
     return '<span class="qbar">'+ks.map(function(k){return '<span class="qdc">'+esc(k)+' '+dc[k]+'</span>';}).join('')+'</span>';}
@@ -1085,6 +1091,28 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     return '<div class="q25roll"><div class="q25head"><span class="qbadge '+qGradeCls(s.grade)+'">'+(s.avg_score_pct!=null?s.avg_score_pct+'% ':'')+esc(s.grade||'')+'</span> '+blk+
       ' <span class="q25meta">'+(s.n_props!=null?s.n_props+' propositions · ':'')+'scorecard v'+esc(q.scorecard_version||'1.0')+(q.reviewed?(' · '+esc(q.reviewed)):'')+'</span> '+qDispBar(s)+'</div>'+
       '<div class="q25lens">Quality lens: '+lenses+'</div></div>';}
+
+  // ---- G3.5 Argument Node Quality (sibling of G2.5; scores the depends_on/leads_to wiring, not the claim) ----
+  var AQDIM=[['Structural Completeness & Wiring',['W1_anchored','W2_wired','W3_entry_terminal']],
+             ['Logical Coherence & Inferential Integrity',['L1_warrant','L2_compound','L3_qualify','L4_function']],
+             ['AI Control & Evidence Readiness',['E1_quarantine','E2_evidence','E3_gaps']]];
+  var AQLABEL={W1_anchored:'W1 Anchored to a proposition',W2_wired:'W2 Wired (depends_on / leads_to)',W3_entry_terminal:'W3 Entry / terminal correct',
+    L1_warrant:'L1 Warrant present',L2_compound:'L2 Not compound',L3_qualify:'L3 Qualification handled',L4_function:'L4 Function fits tier',
+    E1_quarantine:'E1 AI-warrant quarantined',E2_evidence:'E2 Evidence-needed tagged',E3_gaps:'E3 No gaps'};
+  var AQBLOCKTITLE='Wiring / logic fail (W or L) or E1 Quarantine — map not freeze-ready until cleared';
+  function aqFor(sid,anid){var q=AQUALITY[sid];return (q&&q._byN&&q._byN[anid])||null;}
+  function aqCardChip(sec,si){var q=AQUALITY[sec.sid];if(!q)return '';var s=q.section_summary||{};
+    var dang=(s.dangling_after&&s.dangling_after.length)?('<span class="qblock" title="Still dangling after review">'+s.dangling_after.length+' dangling</span>'):'';
+    var blk=s.blocking_count?('<span class="qblock">'+s.blocking_count+' blocking</span>'):'<span class="qokc">0 blocking</span>';
+    return '<button class="q35btn'+((s.blocking_count||(s.dangling_after&&s.dangling_after.length))?'':' done')+'" data-si="'+si+'" title="Open G3.5 argument-node quality">G3.5 '+(s.avg_score_pct!=null?s.avg_score_pct+'% ':'')+esc(s.grade||'')+' · '+blk+(dang?' · '+dang:'')+'</button>';}
+  function aqPanelRollup(sec){var q=AQUALITY[sec.sid];if(!q)return '';var s=q.section_summary||{};
+    var blk=s.blocking_count?('<b class="qblocktxt">'+s.blocking_count+' blocking</b>'):'<b class="qoktxt">0 blocking</b>';
+    var dang=(s.dangling_after&&s.dangling_after.length)?(' <b class="qblocktxt" title="Nodes still dangling after the review">⚠ dangling: '+s.dangling_after.map(esc).join(', ')+'</b>'):' <b class="qoktxt">no dangling</b>';
+    var lenses=['<button class="qlens sel" data-qf="all">All</button>','<button class="qlens" data-qf="blocking">Blocking only</button>']
+      .concat(Object.keys((s.disposition_counts)||{}).map(function(k){return '<button class="qlens" data-qf="'+esc(k)+'">'+esc(k)+'</button>';})).join('');
+    return '<div class="q25roll q35roll"><div class="q25head"><span class="qbadge '+qGradeCls(s.grade)+'">'+(s.avg_score_pct!=null?s.avg_score_pct+'% ':'')+esc(s.grade||'')+'</span> '+blk+dang+
+      ' <span class="q25meta">'+(s.n_nodes!=null?s.n_nodes+' nodes · ':'')+'wiring scorecard v'+esc(q.scorecard_version||'1.0')+(q.reviewed?(' · '+esc(q.reviewed)):'')+'</span> '+qDispBar(s)+'</div>'+
+      '<div class="q25lens">Wiring lens: '+lenses+'</div></div>';}
 
   function propositionsSummary(sec){
     var proj=sel.value, ol=OUTLINES[sec.sid]||{}, g2=sec.art.G2, rows;
@@ -1106,13 +1134,19 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       return main+sub;}).join('')+'</tbody></table>';
     return head+recon+qPanelRollup(sec)+hint+tbl;}
   function argumentSummary(sec){var proj=sel.value, nodes=g3Active(sec);
+    var hasAQ=!!AQUALITY[sec.sid];
+    var cspan=hasAQ?6:5;
     var anyNotes=nodes.some(function(nn){return (nn[9]&&nn[9].text)||(nn[10]&&nn[10].bridge);});
     var hint=anyNotes?'<p class="note">Nodes with AI-derived reasoning or a promoted bridge show an expandable row beneath them.</p>':'';
-    return hint+'<table><thead><tr><th>Node</th><th>Type</th><th>P-ID</th><th>Text</th><th>Status</th></tr></thead><tbody>'+nodes.map(function(nn){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+nn[0])||{};var t=(s.comment&&s.comment.trim()?s.comment:nn[4]);var st=(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending'));
-      var meta=nn[10]||{};var bridge=meta.bridge?('<tr class="prsub"><td colspan="5"><div class="bridgeflag">⬆ Promoted bridge'+(meta.from?(' (from '+esc(meta.from)+')'):'')+'</div></td></tr>'):'';
-      var deriv=derivRow(nn[9]);var derivTr=deriv?('<tr class="prsub"><td colspan="5">'+deriv+'</td></tr>'):'';
-      var main='<tr><td class="idc">'+nn[0]+'</td><td>'+esc(nn[1])+'</td><td class="idc">'+esc(nn[2])+'</td><td>'+esc(t)+'</td><td><span class="pill '+(st==='Approved'?'ok':'need')+'">'+st+'</span></td></tr>';
-      return main+bridge+derivTr;}).join('')+'</tbody></table>';}
+    var tbl='<table><thead><tr><th>Node</th><th>Type</th><th>P-ID</th><th>Text</th><th>Status</th>'+(hasAQ?'<th>Wiring</th>':'')+'</tr></thead><tbody>'+nodes.map(function(nn){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G3.'+nn[0])||{};var t=(s.comment&&s.comment.trim()?s.comment:nn[4]);var st=(s.decision==='rej'?'Rejected':(s.decision==='acc'?'Approved':'Pending'));
+      var ar=hasAQ?aqFor(sec.sid,nn[0]):null;
+      var attrs=hasAQ?(' data-pid="'+nn[0]+'" data-blk="'+(ar&&ar.blocking?'1':'0')+'" data-disp="'+esc(qDisps(ar).join('|'))+'"'):'';
+      var meta=nn[10]||{};var bridge=meta.bridge?('<tr class="prsub"><td colspan="'+cspan+'"><div class="bridgeflag">⬆ Promoted bridge'+(meta.from?(' (from '+esc(meta.from)+')'):'')+'</div></td></tr>'):'';
+      var sub=derivRow(nn[9])+(ar?qCheckGrid(ar,AQDIM,AQLABEL):'');
+      var subTr=sub?('<tr class="prsub"'+(hasAQ?' data-subfor="'+nn[0]+'"':'')+'><td colspan="'+cspan+'">'+sub+'</td></tr>'):'';
+      var main='<tr class="qrow"'+attrs+'><td class="idc">'+nn[0]+'</td><td>'+esc(nn[1])+'</td><td class="idc">'+esc(nn[2])+'</td><td>'+esc(t)+'</td><td><span class="pill '+(st==='Approved'?'ok':'need')+'">'+st+'</span></td>'+(hasAQ?'<td class="qcell">'+qBadge(ar,AQBLOCKTITLE)+'</td>':'')+'</tr>';
+      return main+bridge+subTr;}).join('')+'</tbody></table>';
+    return aqPanelRollup(sec)+hint+tbl;}
   function evidenceSummary(sec){var proj=sel.value, rows=sec.art.G4.evid, g2o=(sec.art&&sec.art.G2)||{}, g2=g2o.props||g2o.backfill||[], tIdx=g2o.props?2:3, props={}; g2.forEach(function(p){props[p[0]]=p[tIdx];});
     return '<table><thead><tr><th>Claim</th><th>Accepted source</th><th>Status</th></tr></thead><tbody>'+rows.map(function(e){var pid=e[0], s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+pid)||{};var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');return '<tr><td><span class="idc">'+pid+'</span> '+esc(String(props[pid]||'').slice(0,80))+'</td><td class="idc">'+esc(s.src||'—')+'</td><td><span class="pill '+(status==='Supported'?'ok':'need')+'">'+status+'</span></td></tr>';}).join('')+'</tbody></table>';}
   function gateSummary(sec,gk){var inner=gk==='G2'?propositionsSummary(sec):gk==='G3'?argumentSummary(sec):gk==='G4'?evidenceSummary(sec):'';var vis=(gk==='G2')?' <button class="rv-btn vismap" data-gk="'+gk+'">◇ Visual map</button>':'';return inner+'<p class="note"><button class="rv-btn reedit" data-gk="'+gk+'">✎ Re-edit</button>'+vis+'</p>';}
@@ -1266,10 +1300,13 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         function chips(kind){var html=ids.filter(function(o){return o!==id;}).map(function(o){var on=(L[kind]||[]).indexOf(o)>=0;return '<button class="chip'+(on?' on':'')+'" data-id="'+id+'" data-'+kind+'="'+o+'">'+o+'</button>';}).join('');return html||'<i>—</i>';}
         var meta=n[10]||{};
         var bridge=meta.bridge?('<div class="bridgeflag">⬆ Promoted bridge'+(meta.from?(' (from '+esc(meta.from)+')'):'')+(n[2]?(' → '+esc(n[2])):'')+'</div>'):'';
-        return '<div class="rv-row" data-id="'+id+'"><div class="rv-claim"><span class="idc">'+id+'</span> '+fnsel+' · <span class="idc">'+esc(n[2]||'')+'</span></div>'+
+        var ar=aqFor(sec.sid,id);
+        var aqat=ar?(' data-blk="'+(ar.blocking?'1':'0')+'" data-disp="'+esc(qDisps(ar).join('|'))+'"'):'';
+        return '<div class="rv-row qrow" data-id="'+id+'"'+aqat+'><div class="rv-claim"><span class="idc">'+id+'</span> '+fnsel+' · <span class="idc">'+esc(n[2]||'')+'</span>'+(ar?(' '+qBadge(ar,AQBLOCKTITLE)):'')+'</div>'+
           '<div class="sup">'+esc(s.comment&&s.comment.trim()?s.comment:n[4])+'</div>'+
           bridge+
           derivRow(n[9])+
+          (ar?qCheckGrid(ar,AQDIM,AQLABEL):'')+
           '<div class="g3lk"><b>Depends on</b> '+chips('dep')+'</div>'+
           '<div class="g3lk"><b>Leads to</b> '+chips('leads')+'</div>'+
           '<div class="rv-ctrls"><button class="rv-btn acc'+(s.decision==='acc'?' on':'')+'" data-act="acc">Accept</button>'+
@@ -1279,7 +1316,8 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       }).join('');
       var rem=removed.length?('<p class="note">Removed ('+removed.length+'): '+removed.map(function(n){return '<span class="idc">'+n[0]+'</span> <button class="linklike" data-restore="'+n[0]+'">↩ restore</button>';}).join('   ')+'</p>'):'';
       var addf='<div class="addnode"><b>+ Add a node</b><div class="ar-form"><select id="anType"><option value="Contention">Opening Contention</option><option value="Reason" selected>Supporting Reason</option><option value="Warrant">Warrant</option><option value="Qualification">Qualification</option><option value="Counterpoint">Counterpoint</option><option value="Conclusion">Intended Conclusion</option></select><input id="anPid" placeholder="P-ID (optional)"><input id="anText" placeholder="Node text"><button class="rv-btn" id="anAdd">Add</button></div></div>';
-      c.innerHTML=bar+map+hint+cards+rem+addf;
+      c.innerHTML=bar+aqPanelRollup(sec)+map+hint+cards+rem+addf;
+      wireQLens(c);
       var vf=c.querySelector('.visfull');if(vf)vf.addEventListener('click',function(){openFullMap(sec,'G3');});
       function flash(){var e=c.querySelector('#agSave');if(e){e.textContent='saved';setTimeout(function(){e.textContent='';},900);}}
       c.querySelectorAll('.rv-row').forEach(function(row){var id=row.dataset.id;
@@ -1793,16 +1831,16 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var W=1320,bw=240,bh=70,ew=180,eh=46,gapX=30,rowGap=30,bandGap=36,pad=20;
     var BLUE=['#dbeafe','#2563eb'],GREEN=['#dcfce7','#16a34a'],AMBER=['#fef3c7','#d97706'],RED=['#fee2e2','#dc2626'],GREY='#5b6b7a';
     function perRow(nodeW){return Math.max(1,Math.floor((W-2*pad+gapX)/(nodeW+gapX)));}
-    var pos={},p=[],y=pad,bandMeta=[];
+    var pos={},geo={},p=[],y=pad,bandMeta=[];
     var BANDS=[];[1,2,3,4,5,6,7].forEach(function(ti){if(tiers[ti]&&tiers[ti].length)BANDS.push({lab:'T'+ti,arr:tiers[ti],ev:false});});
     if(evNodes.length)BANDS.push({lab:'EV',arr:evNodes,ev:true});
     BANDS.forEach(function(bnd){var arr=bnd.arr,isEv=bnd.ev,single=(arr.length===1&&!isEv);var nodeW=isEv?ew:(single?360:bw),pr=perRow(nodeW),rows=Math.ceil(arr.length/pr),bandTop=y;
       arr.forEach(function(it){it._w=nodeW;it._h=isEv?eh:boxHeight(it.text,nodeW);});
       var rowH=[];for(var r=0;r<rows;r++){var mh=0;for(var i=r*pr;i<Math.min((r+1)*pr,arr.length);i++){mh=Math.max(mh,arr[i]._h);}rowH[r]=mh;}
       var rowTop=[],acc=bandTop;for(var r=0;r<rows;r++){rowTop[r]=acc;acc+=rowH[r]+rowGap;}
-      arr.forEach(function(it,i){var r=Math.floor(i/pr),cI=i%pr,cnt=Math.min(pr,arr.length-r*pr),rowW=cnt*nodeW+(cnt-1)*gapX,sx=(W-rowW)/2+cI*(nodeW+gapX),sy=rowTop[r];it._x=sx;it._y=sy;pos[it.id]={cx:sx+nodeW/2,top:sy,bot:sy+it._h};});
+      arr.forEach(function(it,i){var r=Math.floor(i/pr),cI=i%pr,cnt=Math.min(pr,arr.length-r*pr),rowW=cnt*nodeW+(cnt-1)*gapX,sx=(W-rowW)/2+cI*(nodeW+gapX),sy=rowTop[r];it._x=sx;it._y=sy;pos[it.id]={cx:sx+nodeW/2,top:sy,bot:sy+it._h};geo[it.id]={x:sx,y:sy,w:nodeW,h:it._h};});
       var bandH=acc-rowGap-bandTop;bandMeta.push({ti:bnd.lab,top:bandTop,bot:bandTop+bandH});y=bandTop+bandH+bandGap;});
-    var H=y+2;
+    var H=y+2+((usingNodes&&AQUALITY[sec.sid])?30:0);  // extra room for Wire dangling stubs
     p.push('<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="'+GREY+'"/></marker><marker id="aha" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d97706"/></marker></defs>');
     bandMeta.forEach(function(b){p.push('<text x="4" y="'+(b.top+11)+'" font-size="9" fill="#9aa7b4" font-family="ui-monospace,monospace">'+b.ti+'</text>');});
     function edge(aId,bId,solid,amber){var a=pos[aId],b=pos[bId];if(!a||!b)return;var x1=a.cx,x2=b.cx,y1,y2;if(b.top>=a.bot){y1=a.bot;y2=b.top;}else if(b.bot<=a.top){y1=a.top;y2=b.bot;}else{y1=a.bot;y2=b.top;}var col=amber?'#d97706':GREY;p.push('<path d="M'+x1+','+y1+' L'+x2+','+y2+'" stroke="'+col+'" stroke-width="1.4" fill="none" marker-end="url(#'+(amber?'aha':'ah')+')"'+(solid?'':' stroke-dasharray="5 4"')+'/>');}
@@ -1823,6 +1861,21 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var did=nodeId+((usingNodes&&it.pid&&it.pid!==nodeId)?('  ·  '+it.pid):'');
       p.push('<g><title>'+esc(nodeId+(it.pid&&it.pid!==nodeId?' ('+it.pid+')':'')+' · '+flab+' — '+it.text)+'</title>'+vmBox(it._x,it._y,it._w,it._h,fill,stroke,did,flab,it.text)+'</g>');}
     [1,2,3,4,5,6,7].forEach(function(ti){(tiers[ti]||[]).forEach(drawProp);});
+    // G3.5 wiring overlay: tint nodes a disposition touches; a Wire node shows a dashed "dangling" stub where its missing leads_to would go.
+    if(usingNodes && AQUALITY[sec.sid]){
+      var AQBLUE='#4f46e5';
+      list.forEach(function(it){var ar=aqFor(sec.sid,it.id);if(!ar)return;var g=geo[it.id];if(!g)return;
+        var disps=qDisps(ar), isWire=disps.indexOf('Wire')>=0;
+        var qualExempt=(it.fn==='Qualification' && ((ar.checks&&ar.checks.W2_wired&&ar.checks.W2_wired.result)==='N/A'));
+        if(!ar.blocking && !disps.length) return;
+        var ring=ar.blocking?RED[1]:AMBER[1];
+        p.push('<rect x="'+(g.x-3)+'" y="'+(g.y-3)+'" rx="9" width="'+(g.w+6)+'" height="'+(g.h+6)+'" fill="none" stroke="'+ring+'" stroke-width="2.4" opacity="0.9"><title>G3.5 '+esc((ar.score_pct!=null?ar.score_pct+'% ':'')+(ar.grade||'')+(ar.blocking?' · BLOCK':'')+(disps.length?' · '+disps.join(', '):''))+'</title></rect>');
+        if(ar.blocking)p.push('<circle cx="'+(g.x+g.w-2)+'" cy="'+(g.y+2)+'" r="7" fill="'+RED[1]+'"/><text x="'+(g.x+g.w-2)+'" y="'+(g.y+5.5)+'" font-size="9" font-weight="800" fill="#fff" text-anchor="middle" font-family="ui-monospace,monospace">!</text>');
+        if(isWire && !qualExempt){var sx=g.x+g.w/2, sy=g.y+g.h, ey=sy+26;
+          p.push('<path d="M'+sx+','+sy+' L'+sx+','+ey+'" stroke="'+AQBLUE+'" stroke-width="1.8" stroke-dasharray="3 3" fill="none" marker-end="url(#ahw)"/><text x="'+(sx+6)+'" y="'+(ey-2)+'" font-size="8.5" fill="'+AQBLUE+'" font-family="ui-monospace,monospace">needs leads_to</text>');}
+      });
+      p.push('<defs><marker id="ahw" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#4f46e5"/></marker></defs>');
+    }
     evNodes.forEach(function(ev){var fill=ev.ok?GREEN[0]:RED[0],stroke=ev.ok?'#2f6f4f':RED[1];p.push('<g><title>'+esc('Evidence for '+ev.owner+' — '+ev.cite)+'</title><rect x="'+ev._x+'" y="'+ev._y+'" rx="7" width="'+ev._w+'" height="'+ev._h+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.4"'+(ev.ok?'':' stroke-dasharray="5 4"')+'/><g transform="translate('+(ev._x+9)+','+(ev._y+9)+')"><rect x="0" y="0" width="13" height="16" rx="1.5" fill="#ffffff" stroke="'+stroke+'" stroke-width="1.2"/><path d="M9,0 L13,4 L9,4 Z" fill="'+stroke+'"/><line x1="3" y1="7" x2="10" y2="7" stroke="'+stroke+'" stroke-width="1"/><line x1="3" y1="10" x2="10" y2="10" stroke="'+stroke+'" stroke-width="1"/></g><text x="'+(ev._x+30)+'" y="'+(ev._y+17)+'" font-size="9" font-weight="700" fill="'+stroke+'" font-family="ui-monospace,monospace">'+esc(ev.pid)+'</text><text x="'+(ev._x+30)+'" y="'+(ev._y+33)+'" font-size="10" fill="#1d2630">'+esc(ev.cite)+'</text></g>');});
     return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:'+W+'px" xmlns="http://www.w3.org/2000/svg">'+p.join('')+'</svg>';}
   // Typed palette for the Proposition inventory map — one colour per proposition type [fill, stroke].
@@ -1882,7 +1935,10 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     '<span><i class="k" style="background:#fee2e2;border-color:#dc2626"></i>Gap / unsupported</span>'+
     '<span>📄 <i class="k" style="background:#dcfce7;border-color:#2f6f4f"></i>evidence verified</span>'+
     '<span>📄 <i class="k" style="background:#fee2e2;border-color:#dc2626"></i>evidence needed (source still open)</span>'+
-    '<span>— solid = approved · - - dashed = proposed/unverified</span></div>';}
+    '<span>— solid = approved · - - dashed = proposed/unverified</span>'+
+    '<span class="ovlk"><i class="k" style="background:transparent;border-color:#dc2626;border-width:2px"></i>G3.5 blocking node</span>'+
+    '<span class="ovlk"><i class="k" style="background:transparent;border-color:#d97706;border-width:2px"></i>G3.5 disposition</span>'+
+    '<span class="ovlk" style="color:#4f46e5">⇣ needs leads_to (Wire)</span></div>';}
   function buildG3Manual(det,sec){
     function row(sw,bd,el,mean){return '<tr><td style="white-space:nowrap"><span class="gsw" style="background:'+sw+';border-color:'+bd+'"></span><b>'+el+'</b></td><td>'+mean+'</td></tr>';}
     var grammar='<table><tbody>'+
@@ -1994,10 +2050,11 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       else {aiqLbl='AIQ ✓ '+aiqTot+' resolved';}
       var aiq=aiqTot?'<button class="aiqbtn'+(aiqOpen>0?'':' done')+'" data-si="'+si+'">'+aiqLbl+'</button>':'';
       var q25=qCardChip(s,si);
+      var q35=aqCardChip(s,si);
       var ghExp=[['propositions','propositions.'+s.sid+'.json'],['argument','argument_nodes.'+s.sid+'.json'],['evidence','evidence_links.'+s.sid+'.json'],['freeze','freeze.'+s.sid+'.json']];
       var ghLine=ghConfigured()?'<div class="ghline">private repo: '+ghExp.map(function(x){return (GHFILES[x[1]]?'✓ ':'· ')+x[0];}).join('   ')+'</div>':'';
       return '<div class="sec"><div class="top"><h2>'+esc(s.label)+'</h2><span class="prose">'+esc(s.prose)+'</span></div>'+
-        '<div class="strip">'+strip+'</div>'+reviewLine+flag+'<div class="note">'+esc(s.note)+'</div>'+aiq+q25+ghLine+
+        '<div class="strip">'+strip+'</div>'+reviewLine+flag+'<div class="note">'+esc(s.note)+'</div>'+aiq+q25+q35+ghLine+
         '<div class="detail" id="det-'+si+'" hidden></div></div>';
     }
     var h1coll=lsGet('acpp.board.h1coll')||{};
@@ -2070,6 +2127,15 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       document.querySelectorAll('.q25btn[data-si="'+si+'"]').forEach(function(b){b.classList.remove('sel');});
       if(open){det.hidden=true;return;}
       btn.classList.add('sel'); det.hidden=false; openGate(det, secs[si], 'G2');
+    });});
+    document.querySelectorAll('.q35btn').forEach(function(btn){btn.addEventListener('click',function(){
+      var si=+btn.dataset.si, det=document.getElementById('det-'+si), open=btn.classList.contains('sel');
+      document.querySelectorAll('.gate[data-si="'+si+'"]').forEach(function(b){b.classList.remove('sel');});
+      document.querySelectorAll('.aiqbtn[data-si="'+si+'"]').forEach(function(b){b.classList.remove('sel');});
+      document.querySelectorAll('.q25btn[data-si="'+si+'"]').forEach(function(b){b.classList.remove('sel');});
+      document.querySelectorAll('.q35btn[data-si="'+si+'"]').forEach(function(b){b.classList.remove('sel');});
+      if(open){det.hidden=true;return;}
+      btn.classList.add('sel'); det.hidden=false; openGate(det, secs[si], 'G3');
     });});
     document.querySelectorAll('.h1head').forEach(function(head){head.addEventListener('click',function(){
       var hn=head.dataset.h1, body=head.nextElementSibling, car=head.querySelector('.h1caret');

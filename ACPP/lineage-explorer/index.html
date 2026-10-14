@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.12.0">
+<meta name="version" content="1.13.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -243,7 +243,10 @@
     Object.keys(SECTIONS).forEach(function(sec){
       var g6=SECTIONS[sec].g6; var rid='R-'+sec;
       addNode(rid,'R',SECTIONS[sec].label+' — '+(g6==='complete'?'Rendered':'Not yet rendered'),sec,(g6==='complete'?'G6 complete':'G6 '+g6));
-      Object.keys(NODES).forEach(function(nid){var nn=NODES[nid];if(nn.tier==='P'&&nn.section===sec)addEdge(nid,rid);});
+      // Every proposition AND every argument node in the section flows into its rendered prose
+      // (P→R backbone + A→R): all argument nodes go into the Render, so any node — a Principle
+      // included — reaches the render, and through it the metaphors the illustrated text uses.
+      Object.keys(NODES).forEach(function(nid){var nn=NODES[nid];if((nn.tier==='P'||nn.tier==='A')&&nn.section===sec)addEdge(nid,rid);});
     });
     // metaphors -> M tier: metaphor nodes + mapping nodes.
     // Anchor each mapping to the OUTLINE BULLET of the proposition it illustrates (matches metaphors.json
@@ -261,7 +264,7 @@
         (mp.illustrates||[]).forEach(function(pp){var an=anchorFor(pp);if(an&&NODES[an].section){secs[NODES[an].section]=1;if(!sec)sec=NODES[an].section;}});
         // Node-level bindings (KYV): mappings[].illustrates_nodes[] — approved an_id → mapping bindings (the field the board missed).
         var nbinds=(mp.illustrates_nodes||[]).filter(function(e){return e&&e.an_id&&(e.status==='approved'||!e.status);});
-        nbinds.forEach(function(e){var s=e.section_id||'';if(s){secs[s]=1;if(!sec)sec=s;}BOUNDNODES[e.an_id]=1;});
+        nbinds.forEach(function(e){var s=e.section_id||'';if(s){secs[s]=1;if(!sec)sec=s;}(BOUNDNODES[e.an_id]=BOUNDNODES[e.an_id]||[]).push({map:mp.map_id,fid:e.fidelity||''});});
         var nbLbl=nbinds.length?(' · '+nbinds.map(function(e){return '⬌ '+e.an_id+(e.fidelity?(' ('+e.fidelity+')'):'')+((e.guards&&e.guards.length)?(': '+e.guards.join('; ')):'');}).join('  ·  ')):'';
         addNode(mp.map_id,'M',(mp.vehicle||'')+' → '+(mp.tenor||''),sec,'illustrates '+((mp.illustrates||[]).join(', '))+(mp.fidelity?(' · '+mp.fidelity):'')+nbLbl);
         NODES[mp.map_id].sortkey=midx+'#1#'+mp.map_id; NODES[mp.map_id].mkind='map'; NODES[mp.map_id].secs=secs; NODES[mp.map_id].binds=nbinds;
@@ -309,6 +312,26 @@
         if(!mm.secs||!Object.keys(mm.secs).length){mm.secs={};Object.keys(psecs).forEach(function(s){mm.secs[s]=1;});}
       });
     });
+    // Render → Metaphor: the metaphor mappings the ILLUSTRATED text actually uses.
+    // Source is render.<sec>.json → renders.B_illustrated metaphor spans (map_id). Resolve-or-skip:
+    // only link a map_id that is a real mapping node, so malformed spans create no false edges.
+    // This is where the metaphor "finds its home" — reachable from any node via node→render→metaphor.
+    (data.renders||[]).forEach(function(x){
+      var d=x&&x.d; if(!d)return; var sec=x.sec||d.section_id||''; if(!SECTIONS[sec])return;
+      var rid='R-'+sec; if(!NODES[rid])return;
+      var bi=(d.renders&&(d.renders.B_illustrated||d.renders.b_illustrated))||null; if(!bi)return;
+      var seen={};
+      (function walk(v){ if(!v)return;
+        if(Array.isArray(v)){v.forEach(walk);return;}
+        if(typeof v==='object'){
+          if(v.kind==='metaphor'&&v.map_id&&NODES[v.map_id]&&NODES[v.map_id].tier==='M'&&!seen[v.map_id]){
+            seen[v.map_id]=1; addEdge(rid,v.map_id);
+            NODES[v.map_id].secs=NODES[v.map_id].secs||{}; NODES[v.map_id].secs[sec]=1;
+          }
+          Object.keys(v).forEach(function(k){walk(v[k]);});
+        }
+      })(bi);
+    });
   }
 
   // ---- loading ----
@@ -318,7 +341,7 @@
     return loadProjects().then(function(){return ghList(GH.dir());}).then(function(files){
       var names=(files||[]).map(function(f){return f&&f.name;}).filter(Boolean);
       function pick(re){return names.filter(function(n){return re.test(n);}).map(function(n){return GH.dir()+'/'+n;});}
-      var propFiles=pick(/^propositions.*\.json$/), nodeFiles=pick(/^argument_nodes.*\.json$/), evidFiles=pick(/^evidence_links.*\.json$/), imgFiles=pick(/^images\..*\.json$/);
+      var propFiles=pick(/^propositions.*\.json$/), nodeFiles=pick(/^argument_nodes.*\.json$/), evidFiles=pick(/^evidence_links.*\.json$/), imgFiles=pick(/^images\..*\.json$/), renderFiles=pick(/^render\..*\.json$/);
       function secOf(fn){var m=fn.match(/\.([A-Z]+-[0-9A-Za-z-]+)\.json$/);return m?m[1]:'';}
       return Promise.all([
         ghGetJson(GH.dir()+'/outlines.json'),
@@ -329,14 +352,15 @@
         ghGetJson(GH.dir()+'/sections.json'),
         loadMetaphors(),
         ghGetJson(GH.dir()+'/publication_control.json'),
-        Promise.all(imgFiles.map(function(f){return ghGetJson(f).then(function(d){return {d:d,sec:secOf(f)};});}))
+        Promise.all(imgFiles.map(function(f){return ghGetJson(f).then(function(d){return {d:d,sec:secOf(f)};});})),
+        Promise.all(renderFiles.map(function(f){return ghGetJson(f).then(function(d){return {d:d,sec:secOf(f)};});}))
       ]).then(function(res){
         var props=[],nodes=[],evid=[],images=[];
         res[1].forEach(function(x){arrOf(x.d,['propositions','items']).forEach(function(p){p.section=p.section||(x.d&&x.d.section_id)||x.sec;props.push(p);});});
         res[2].forEach(function(x){arrOf(x.d,['argument_nodes','nodes','items']).forEach(function(n){n.section=n.section||(x.d&&x.d.section_id)||x.sec;nodes.push(n);});});
         res[3].forEach(function(x){arrOf(x.d,['links','items']).forEach(function(e){e.section=e.section||(x.d&&x.d.section_id)||x.sec;evid.push(e);});});
         (res[8]||[]).forEach(function(x){arrOf(x.d,['images','items']).forEach(function(g){g.section=g.section||(x.d&&x.d.section_id)||x.sec;images.push(g);});});
-        buildModel({outlines:res[0],props:props,nodes:nodes,evid:evid,sources:res[4],sections:res[5],metaphors:res[6],pubctrl:res[7],images:images});
+        buildModel({outlines:res[0],props:props,nodes:nodes,evid:evid,sources:res[4],sections:res[5],metaphors:res[6],pubctrl:res[7],images:images,renders:res[9]});
         setStatus('loaded '+Object.keys(NODES).length+' elements · '+EDGES.length+' links');
         populateControls(); render();
       });
@@ -453,10 +477,12 @@
         var n=NODES[id];
         var dim = keep && !keep[id];
         if(onlyConn && keep && dim) return null; // hide unconnected when focusing
+        var bound = (t[0]==='A' && BOUNDNODES[id] && BOUNDNODES[id].length) ? BOUNDNODES[id] : null;
         var el=document.createElement('div');
-        el.className='node '+t[0]+(focus.indexOf(id)>=0?' sel':'')+(dim?' dim':'');
+        el.className='node '+t[0]+(focus.indexOf(id)>=0?' sel':'')+(dim?' dim':'')+(bound?' mbound':'');
         el.id='nd-'+cssid(id); el.dataset.id=id;
-        el.innerHTML='<div class="id">'+esc(id)+'</div><div class="tx">'+esc(n.text)+'</div>'+(n.meta?'<div class="meta">'+esc(n.meta)+'</div>':'');
+        var mb = bound ? '<span class="mbind" title="metaphor-bound — click to see it in the Metaphor column">⬌ '+esc(bound.map(function(x){return x.map+(x.fid?(' '+x.fid):'');}).join(', '))+'</span>' : '';
+        el.innerHTML='<div class="id">'+esc(id)+mb+'</div><div class="tx">'+esc(n.text)+'</div>'+(n.meta?'<div class="meta">'+esc(n.meta)+'</div>':'');
         el.addEventListener('click',function(){toggleFocus(id);});
         return el;
       }

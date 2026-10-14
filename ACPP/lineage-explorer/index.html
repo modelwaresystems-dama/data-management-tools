@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.11.1">
+<meta name="version" content="1.12.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -199,6 +199,8 @@
   var OUT_ADJ={}, IN_ADJ={};
   var SECTIONS={}; // section_id -> label
   var PARTSMETA=[]; // parts array from publication_control (current project)
+  var BOUNDNODES={}; // an_id -> 1 : argument nodes with an approved illustrates_nodes metaphor binding
+  var ILLNODES={};   // an_id -> 1 : argument nodes that carry a node-anchored metaphor image (are "illustrated")
   function partChaptersInclude(ch,hn){if(ch==null)return false;
     if(Array.isArray(ch))return ch.some(function(x){var n=parseInt(String(x).replace(/[^0-9]/g,''),10);return n===hn;});
     var s=String(ch);var m=s.match(/(\d+)\s*[-–]\s*(\d+)/);if(m)return hn>=+m[1]&&hn<=+m[2];
@@ -218,7 +220,7 @@
   function arrOf(d,keys){ if(Array.isArray(d))return d; if(!d)return []; for(var i=0;i<keys.length;i++){ if(Array.isArray(d[keys[i]]))return d[keys[i]]; } return []; }
 
   function buildModel(data){
-    NODES={};EDGES=[];OUT_ADJ={};IN_ADJ={};SECTIONS={};
+    NODES={};EDGES=[];OUT_ADJ={};IN_ADJ={};SECTIONS={};BOUNDNODES={};ILLNODES={};
     // sections (labels + render state) — only the current project (sections.json is shared across projects)
     var PROJ=curProj();
     var pcc=((data.pubctrl&&data.pubctrl.controls)||[]).filter(function(c){return c.project_id===PROJ;})[0];
@@ -257,10 +259,15 @@
       NODES[m.metaphor_id].sortkey=midx+'#0#'+m.metaphor_id; NODES[m.metaphor_id].mkind='met';
       (m.mappings||[]).forEach(function(mp){ if(!mp||!mp.map_id)return; var secs={},sec='';
         (mp.illustrates||[]).forEach(function(pp){var an=anchorFor(pp);if(an&&NODES[an].section){secs[NODES[an].section]=1;if(!sec)sec=NODES[an].section;}});
-        addNode(mp.map_id,'M',(mp.vehicle||'')+' → '+(mp.tenor||''),sec,'illustrates '+((mp.illustrates||[]).join(', '))+(mp.fidelity?(' · '+mp.fidelity):''));
-        NODES[mp.map_id].sortkey=midx+'#1#'+mp.map_id; NODES[mp.map_id].mkind='map'; NODES[mp.map_id].secs=secs;
+        // Node-level bindings (KYV): mappings[].illustrates_nodes[] — approved an_id → mapping bindings (the field the board missed).
+        var nbinds=(mp.illustrates_nodes||[]).filter(function(e){return e&&e.an_id&&(e.status==='approved'||!e.status);});
+        nbinds.forEach(function(e){var s=e.section_id||'';if(s){secs[s]=1;if(!sec)sec=s;}BOUNDNODES[e.an_id]=1;});
+        var nbLbl=nbinds.length?(' · '+nbinds.map(function(e){return '⬌ '+e.an_id+(e.fidelity?(' ('+e.fidelity+')'):'')+((e.guards&&e.guards.length)?(': '+e.guards.join('; ')):'');}).join('  ·  ')):'';
+        addNode(mp.map_id,'M',(mp.vehicle||'')+' → '+(mp.tenor||''),sec,'illustrates '+((mp.illustrates||[]).join(', '))+(mp.fidelity?(' · '+mp.fidelity):'')+nbLbl);
+        NODES[mp.map_id].sortkey=midx+'#1#'+mp.map_id; NODES[mp.map_id].mkind='map'; NODES[mp.map_id].secs=secs; NODES[mp.map_id].binds=nbinds;
         addEdge(m.metaphor_id,mp.map_id); // parentage (same-tier; not drawn)
-        (mp.illustrates||[]).forEach(function(pp){var an=anchorFor(pp);if(an)addEdge(an,mp.map_id);});
+        (mp.illustrates||[]).forEach(function(pp){var an=anchorFor(pp);if(an)addEdge(an,mp.map_id);});    // DMBOK: p_id/bullet → mapping
+        nbinds.forEach(function(e){var an=e.an_id;if(NODES[an])addEdge(an,mp.map_id);});                  // KYV: argument node → mapping
       });
     });
     // metaphor node section membership = union of its mappings' sections
@@ -293,13 +300,8 @@
         });
       });
     });
-    // Mapping is realised in the section's render: link each MAPPING (not the top-level metaphor, per author
-    // decision) to the Render of every section it illustrates ON ITS OWN — using only the sections resolved from
-    // the mapping's own illustrates / illustrates_bullets, computed BEFORE the inheritance fallback below. A mapping
-    // that has no section of its own (and would only inherit its metaphor's whole span) gets NO render link, so one
-    // render is never flooded with every mapping of a metaphor that merely touches that section.
-    Object.keys(NODES).forEach(function(id){var n=NODES[id];
-      if(n.mkind==='map'&&n.secs){Object.keys(n.secs).forEach(function(s){var rid='R-'+s;if(NODES[rid])addEdge(rid,id);});}});
+    // Illustrated nodes (for the gap counter): an argument node carrying a node-anchored metaphor image (a map_id).
+    (data.images||[]).forEach(function(g){var a=g&&g.anchor;if(a&&a.type==='node'&&a.an_id&&g.map_id){ILLNODES[a.an_id]=1;}});
     // A mapping with no section link of its own inherits its parent metaphor's sections, so the
     // Section/Part filter keeps a metaphor and its mappings together (and hides them where the metaphor doesn't reach).
     (mroot||[]).forEach(function(m){ if(!m||!m.metaphor_id||!NODES[m.metaphor_id])return; var psecs=NODES[m.metaphor_id].secs||{};
@@ -316,7 +318,7 @@
     return loadProjects().then(function(){return ghList(GH.dir());}).then(function(files){
       var names=(files||[]).map(function(f){return f&&f.name;}).filter(Boolean);
       function pick(re){return names.filter(function(n){return re.test(n);}).map(function(n){return GH.dir()+'/'+n;});}
-      var propFiles=pick(/^propositions.*\.json$/), nodeFiles=pick(/^argument_nodes.*\.json$/), evidFiles=pick(/^evidence_links.*\.json$/);
+      var propFiles=pick(/^propositions.*\.json$/), nodeFiles=pick(/^argument_nodes.*\.json$/), evidFiles=pick(/^evidence_links.*\.json$/), imgFiles=pick(/^images\..*\.json$/);
       function secOf(fn){var m=fn.match(/\.([A-Z]+-[0-9A-Za-z-]+)\.json$/);return m?m[1]:'';}
       return Promise.all([
         ghGetJson(GH.dir()+'/outlines.json'),
@@ -326,13 +328,15 @@
         ghGetJson(GH.dir()+'/sources.json'),
         ghGetJson(GH.dir()+'/sections.json'),
         loadMetaphors(),
-        ghGetJson(GH.dir()+'/publication_control.json')
+        ghGetJson(GH.dir()+'/publication_control.json'),
+        Promise.all(imgFiles.map(function(f){return ghGetJson(f).then(function(d){return {d:d,sec:secOf(f)};});}))
       ]).then(function(res){
-        var props=[],nodes=[],evid=[];
+        var props=[],nodes=[],evid=[],images=[];
         res[1].forEach(function(x){arrOf(x.d,['propositions','items']).forEach(function(p){p.section=p.section||(x.d&&x.d.section_id)||x.sec;props.push(p);});});
         res[2].forEach(function(x){arrOf(x.d,['argument_nodes','nodes','items']).forEach(function(n){n.section=n.section||(x.d&&x.d.section_id)||x.sec;nodes.push(n);});});
         res[3].forEach(function(x){arrOf(x.d,['links','items']).forEach(function(e){e.section=e.section||(x.d&&x.d.section_id)||x.sec;evid.push(e);});});
-        buildModel({outlines:res[0],props:props,nodes:nodes,evid:evid,sources:res[4],sections:res[5],metaphors:res[6],pubctrl:res[7]});
+        (res[8]||[]).forEach(function(x){arrOf(x.d,['images','items']).forEach(function(g){g.section=g.section||(x.d&&x.d.section_id)||x.sec;images.push(g);});});
+        buildModel({outlines:res[0],props:props,nodes:nodes,evid:evid,sources:res[4],sections:res[5],metaphors:res[6],pubctrl:res[7],images:images});
         setStatus('loaded '+Object.keys(NODES).length+' elements · '+EDGES.length+' links');
         populateControls(); render();
       });
@@ -385,14 +389,18 @@
     fillSecFilter();
     populatePicker();
     // gaps
-    var bulletsNoP=0,propsNoA=0,propsNoE=0,secNoR=0,propsNoM=0,haveM=false;
+    var bulletsNoP=0,propsNoA=0,propsNoE=0,secNoR=0,haveM=false;
     Object.keys(NODES).forEach(function(id){if(NODES[id].tier==='M')haveM=true;});
     Object.keys(NODES).forEach(function(id){var n=NODES[id];
       if(n.tier==='B'&&!(OUT_ADJ[id]||[]).some(function(x){return NODES[x].tier==='P';}))bulletsNoP++;
-      if(n.tier==='P'){ if(!(OUT_ADJ[id]||[]).some(function(x){return NODES[x].tier==='A';}))propsNoA++; if(!(OUT_ADJ[id]||[]).some(function(x){return NODES[x].tier==='E';}))propsNoE++; if(!(OUT_ADJ[id]||[]).some(function(x){return NODES[x].tier==='M';}))propsNoM++; }
+      if(n.tier==='P'){ if(!(OUT_ADJ[id]||[]).some(function(x){return NODES[x].tier==='A';}))propsNoA++; if(!(OUT_ADJ[id]||[]).some(function(x){return NODES[x].tier==='E';}))propsNoE++; }
     });
     Object.keys(SECTIONS).forEach(function(s){if(SECTIONS[s].g6!=='complete')secNoR++;});
-    document.getElementById('gaps').innerHTML='Gaps: <b>'+bulletsNoP+'</b> bullets w/o proposition · <b>'+propsNoA+'</b> props w/o argument · <b>'+propsNoE+'</b> props w/o evidence · <b>'+secNoR+'</b> sections not rendered'+(haveM?(' · <b>'+propsNoM+'</b> props w/o metaphor'):'');
+    // Metaphor gap = illustrated nodes (carry a node-anchored metaphor image) that have no approved illustrates_nodes binding.
+    // (Un-illustrated nodes are not gaps — dosage = illustrated nodes only. Counting the old empty illustrates p_id field over-reported.)
+    var illNoBind=Object.keys(ILLNODES).filter(function(an){return !BOUNDNODES[an];}).length;
+    var illTot=Object.keys(ILLNODES).length;
+    document.getElementById('gaps').innerHTML='Gaps: <b>'+bulletsNoP+'</b> bullets w/o proposition · <b>'+propsNoA+'</b> props w/o argument · <b>'+propsNoE+'</b> props w/o evidence · <b>'+secNoR+'</b> sections not rendered'+(haveM?(' · <b>'+illNoBind+'</b> illustrated nodes w/o metaphor'+(illTot?(' <span class="muted">('+Object.keys(BOUNDNODES).length+' bound)</span>'):'')):'');
   }
 
   // Do NOT traverse same-tier (metaphor↔mapping parentage) edges: focusing a bullet/section

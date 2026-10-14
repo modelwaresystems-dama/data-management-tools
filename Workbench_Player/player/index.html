@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.22.10">
+<meta name="version" content="1.22.11">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -147,6 +147,20 @@
 
   /* quiz */
   .backrow{display:flex;align-items:center;margin-bottom:6px;flex:none;}
+  .grouptoggle{display:flex;gap:6px;}
+  .grouptoggle .gt{border:1px solid var(--line);background:var(--surface);color:var(--muted);font-weight:700;font-size:12px;padding:7px 12px;border-radius:8px;cursor:pointer;}
+  .grouptoggle .gt.on{background:var(--accent);color:#04211d;border-color:var(--accent);}
+  .grphdrline{display:flex;align-items:center;gap:10px;justify-content:space-between;}
+  .mini.startday{border:1px solid var(--line2);background:var(--surface2);color:var(--accent-ink);font-weight:700;font-size:12px;padding:6px 10px;border-radius:8px;cursor:pointer;flex:none;}
+  .daynav{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 10px;border:1px solid var(--line2);background:var(--surface2);border-radius:12px;flex:none;}
+  .daynav .dnbtn{border:1px solid var(--line2);background:var(--surface);color:var(--ink);font-weight:700;font-size:13px;padding:8px 12px;border-radius:9px;cursor:pointer;flex:none;}
+  .daynav .dnbtn:disabled{opacity:.4;cursor:default;}
+  .daynav .dninfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;align-items:center;text-align:center;}
+  .daynav .dnttl{font-family:"Sora",sans-serif;font-weight:700;font-size:13px;color:var(--accent-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+  .daynav .dnrow{display:flex;align-items:center;gap:8px;max-width:100%;}
+  .daynav .dnsel{background:var(--surface);color:var(--ink);border:1px solid var(--line2);border-radius:8px;padding:5px 8px;font-size:12.5px;max-width:52vw;}
+  .daynav .dnpos{font-size:11px;color:var(--faint);font-family:"IBM Plex Mono",monospace;white-space:nowrap;}
+  @media (max-width:520px){ .daynav{gap:6px;padding:7px 8px;} .daynav .dnbtn{padding:8px 10px;font-size:12px;} }
   .backbtn{border:1px solid var(--line2);background:var(--surface2);color:var(--muted);font-weight:600;font-size:13px;padding:7px 13px;border-radius:9px;}
   .qn{font-family:"IBM Plex Mono",monospace;color:var(--faint);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;}
   .qtext{font-family:"Sora",sans-serif;font-weight:700;font-size:clamp(20px,3.4vw,28px);line-height:1.25;margin:0 0 20px;text-wrap:balance;}
@@ -262,7 +276,7 @@
 </aside>
 
 <script src="../app-config.js"></script>
-<script>window.PAGE_BUILD="1.22.10";</script>
+<script>window.PAGE_BUILD="1.22.11";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ============ Workbench Player ============
@@ -296,6 +310,11 @@ let curAsset=null;                    // {path,title,type,...} being played
 let QUIZ=null, CARDS=null, QUIZ_SRC="", MAP=null;
 let qi=0, chosen=null, score=0, answers=[], hintShown=false, quizStarted=false;
 let ci=0, flipped=false;
+let SESSIONS=[];                      // rosters.sessions: training days [{id,title,course,courseId,quizzes:[path]}]
+let libGroup="topic";                 // library grouping: "topic" (notebook) | "day"
+let dayCollapsed=new Set();           // collapsed day groups in By-day view
+let dayDefaulted=false;               // collapse every day on first populated render
+let activeDay=null;                   // {id,title,course,quizzes:[path],idx} while running a day
 
 /* selection for the Training Session */
 let SESSION=loadSession();
@@ -356,13 +375,14 @@ function syncSeg(){
 async function loadManifest(){
   try{ MANIFEST=await fetchAsset("manifest.json","../manifest.sample.json"); ASSETS=MANIFEST.assets||MANIFEST.quizzes||[]; }
   catch(e){ MANIFEST={error:e.message}; ASSETS=[]; }
-  try{ const r=await fetchAsset("rosters.json",""); const set=new Set(); (r.sessions||[]).forEach(se=>(se.quizzes||[]).forEach(p=>{ const seg=String(p).split("/")[0]; if(seg)set.add(seg); })); COURSE_SLUGS=set.size?set:null; }
-  catch(e){ COURSE_SLUGS=null; }
+  try{ const r=await fetchAsset("rosters.json",""); SESSIONS=(r.sessions||[]); const set=new Set(); SESSIONS.forEach(se=>(se.quizzes||[]).forEach(p=>{ const seg=String(p).split("/")[0]; if(seg)set.add(seg); })); COURSE_SLUGS=set.size?set:null; }
+  catch(e){ COURSE_SLUGS=null; SESSIONS=[]; }
   renderLibrary();
 }
 function inSession(path){ return SESSION.items.some(i=>i.path===path); }
 function renderLibrary(){
   setProg(0);
+  if(libGroup==="day") return renderDayLibrary();
   if(MANIFEST&&MANIFEST.error){
     stage.innerHTML=`<div class="wrap"><div class="stagew"><div class="center"><div class="card"><h1>Couldn't load the library</h1><p>${esc(MANIFEST.error)}</p><p style="color:var(--faint);font-size:13px">Check that <code>manifest.json</code> exists in the private data store.</p></div></div></div></div>`;
     return;
@@ -409,6 +429,7 @@ function renderLibrary(){
   stage.innerHTML=`<div class="libwrap">
     <div class="libhead">
       <h1>Library</h1>
+      ${groupToggle()}
       <div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="libq" placeholder="Search quizzes, flashcards & mindmaps…" value="${esc(libSearch)}"></div>
       <div class="filters">
         <button class="chip" data-f="all" aria-pressed="${libFilter==='all'}">All</button>
@@ -438,6 +459,7 @@ function renderLibrary(){
   const qbox=document.getElementById("libq");
   qbox.oninput=()=>{ libSearch=qbox.value; const pos=qbox.selectionStart; renderLibrary(); const nb=document.getElementById("libq"); if(nb){nb.focus(); try{nb.setSelectionRange(pos,pos);}catch(e){}} };
   stage.querySelectorAll(".chip[data-f]").forEach(c=>c.onclick=()=>{ libFilter=c.dataset.f; renderLibrary(); });
+  stage.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ libGroup=b.dataset.g; renderLibrary(); });
   stage.querySelectorAll(".row").forEach(r=>{
     const path=r.dataset.path, a=ASSETS.find(x=>x.path===path);
     r.querySelector('[data-act="play"]').onclick=()=>playAsset(a);
@@ -445,8 +467,40 @@ function renderLibrary(){
   });
 }
 
+/* ---------- day/session navigation (jump between a day's quizzes) ---------- */
+function assetByPath(p){ return ASSETS.find(a=>a.path===p)||null; }
+function titleForPath(p){ const a=assetByPath(p); if(a&&a.title) return a.title; const b=String(p||"").split("/").pop()||p; return String(b).replace(/\.json$/i,""); }
+function dayById(id){ return SESSIONS.find(s=>s.id===id)||null; }
+function groupToggle(){ return `<div class="grouptoggle"><button class="gt ${libGroup==='topic'?'on':''}" data-g="topic" type="button">By notebook</button><button class="gt ${libGroup==='day'?'on':''}" data-g="day" type="button">By day</button></div>`; }
+function playFromDay(day, idx){ if(!day) return; const paths=day.quizzes||[]; if(idx<0||idx>=paths.length) return; activeDay={id:day.id,title:day.title,course:day.course||"",quizzes:paths.slice(),idx:idx}; const a=assetByPath(paths[idx])||{path:paths[idx],title:titleForPath(paths[idx]),type:"quiz",topic:day.course||""}; playAsset(a,true); }
+function dayNav(){ if(!activeDay) return ""; const N=activeDay.quizzes.length,i=activeDay.idx; const opts=activeDay.quizzes.map((p,k)=>`<option value="${k}" ${k===i?"selected":""}>${esc((k+1)+". "+titleForPath(p))}</option>`).join(""); return `<div class="daynav"><button class="dnbtn" id="dnPrev" ${i<=0?"disabled":""}>‹ Prev</button><div class="dninfo"><span class="dnttl">${esc(activeDay.course?activeDay.course+" · ":"")}${esc(activeDay.title)}</span><div class="dnrow"><select class="dnsel" id="dnSel" title="Jump to a quiz in this day">${opts}</select><span class="dnpos">Quiz ${i+1} / ${N}</span></div></div><button class="dnbtn" id="dnNext" ${i>=N-1?"disabled":""}>Next ›</button></div>`; }
+function wireDayNav(){ if(!activeDay) return; const p=document.getElementById("dnPrev"); if(p)p.onclick=()=>playFromDay(activeDay,activeDay.idx-1); const n=document.getElementById("dnNext"); if(n)n.onclick=()=>playFromDay(activeDay,activeDay.idx+1); const s=document.getElementById("dnSel"); if(s)s.onchange=()=>playFromDay(activeDay,parseInt(s.value,10)); }
+function renderDayLibrary(){
+  setProg(0);
+  const q=libSearch.trim().toLowerCase();
+  let days=SESSIONS.slice();
+  if(q) days=days.filter(d=>(d.title||"").toLowerCase().includes(q)||(d.course||"").toLowerCase().includes(q)||(d.quizzes||[]).some(p=>titleForPath(p).toLowerCase().includes(q)));
+  if(!dayDefaulted && days.length){ days.forEach(d=>dayCollapsed.add(d.id)); dayDefaulted=true; }
+  const groups=days.map(d=>{
+    const collapsed=dayCollapsed.has(d.id), n=(d.quizzes||[]).length;
+    const rows=(d.quizzes||[]).map((p,k)=>{ const a=assetByPath(p); return `<div class="row" data-day="${esc(d.id)}" data-idx="${k}"><span class="badge quiz">Quiz</span><div class="rowmain"><div class="nm">${esc((k+1)+". "+titleForPath(p))}</div><div class="dt">${a?((a.count||0)+" questions"):"quiz"}</div></div><div class="rowact"><button class="mini play" data-act="playday">Play</button></div></div>`; }).join("");
+    return `<div class="grp"><div class="grphdrline"><button class="grphdr ${collapsed?'collapsed':''}" data-day="${esc(d.id)}" type="button"><span class="car">▼</span>${esc(d.course?d.course+" · ":"")}${esc(d.title)}<span class="ct">${n} quiz${n!==1?'zes':''}</span></button><button class="mini startday" data-day="${esc(d.id)}" title="Play this day from quiz 1">Start day →</button></div><div class="grpbody ${collapsed?'hide':''}" data-body="${esc(d.id)}">${rows}</div></div>`;
+  }).join("");
+  const bodyHtml=days.length?groups:`<div class="empty-lib">${ SESSIONS.length? ('No days match “'+esc(libSearch)+'”.') : "No training days yet — set up a course in the Course Builder." }</div>`;
+  stage.innerHTML=`<div class="libwrap"><div class="libhead"><h1>Library</h1>${groupToggle()}<div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="libq" placeholder="Search days, courses & quizzes…" value="${esc(libSearch)}"></div><div class="libtools"><button id="expandAll" type="button">Expand all</button><button id="collapseAll" type="button">Collapse all</button></div></div><div class="liblist">${bodyHtml}</div></div>`;
+  stage.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ libGroup=b.dataset.g; renderLibrary(); });
+  const ea=document.getElementById("expandAll"), ca=document.getElementById("collapseAll");
+  if(ea)ea.onclick=()=>{ dayCollapsed.clear(); renderDayLibrary(); };
+  if(ca)ca.onclick=()=>{ days.forEach(d=>dayCollapsed.add(d.id)); renderDayLibrary(); };
+  stage.querySelectorAll(".grphdr[data-day]").forEach(h=>h.onclick=()=>{ const id=h.dataset.day; if(dayCollapsed.has(id))dayCollapsed.delete(id); else dayCollapsed.add(id); h.classList.toggle("collapsed"); const bd=stage.querySelector(`.grpbody[data-body="${CSS.escape(id)}"]`); if(bd)bd.classList.toggle("hide"); });
+  stage.querySelectorAll(".startday").forEach(b=>b.onclick=()=>{ const d=dayById(b.dataset.day); if(d)playFromDay(d,0); });
+  stage.querySelectorAll('.row[data-day] [data-act="playday"]').forEach(b=>{ const row=b.closest(".row"); b.onclick=()=>{ const d=dayById(row.dataset.day); if(d)playFromDay(d, parseInt(row.dataset.idx,10)); }; });
+  const qbox=document.getElementById("libq"); qbox.oninput=()=>{ libSearch=qbox.value; const pos=qbox.selectionStart; renderDayLibrary(); const nb=document.getElementById("libq"); if(nb){nb.focus(); try{nb.setSelectionRange(pos,pos);}catch(e){}} };
+}
+
 /* ---------- play a chosen asset ---------- */
-async function playAsset(a){
+async function playAsset(a, fromDay){
+  if(!fromDay) activeDay=null;
   curAsset=a; QUIZ=null; CARDS=null; MAP=null; qi=0;chosen=null;score=0;answers=[];hintShown=false;quizStarted=false; ci=0;flipped=false;
   const type=a.type||"quiz";
   stage.innerHTML=`<div class="wrap"><div class="stagew"><div class="center"><div class="card"><h1>Loading…</h1><p>${esc(a.title)}</p></div></div></div></div>`;
@@ -654,6 +708,7 @@ function renderQuizCover(){
   const N=QUIZ.questions.length;
   stage.innerHTML=`<div class="wrap"><div class="stagew">
     ${backBar()}
+    ${dayNav()}
     <div class="cover">
       <img src="${QUIZ.image}" alt="${esc(QUIZ.title||'Quiz')}">
       <h1 class="disp covt">${esc(QUIZ.title||"Quiz")}</h1>
@@ -661,7 +716,7 @@ function renderQuizCover(){
       <button class="btn primary covbtn" id="startQuiz">Start quiz →</button>
     </div>
   </div></div>`;
-  wireBack();
+  wireBack(); wireDayNav();
   const sb=document.getElementById("startQuiz"); if(sb)sb.onclick=()=>{ quizStarted=true; render(); };
 }
 function renderQuiz(){
@@ -680,6 +735,7 @@ function renderQuiz(){
   }).join("");
   stage.innerHTML=`<div class="wrap"><div class="stagew">
     ${backBar()}
+    ${dayNav()}
     <h1 class="t disp">${esc(QUIZ.title||"Quiz")}</h1>
     <div class="meta">${esc(QUIZ.category||(curAsset&&curAsset.topic)||"")}</div>
     <div class="qn">Question ${qi+1} of ${N}</div>
@@ -692,7 +748,7 @@ function renderQuiz(){
       <span class="scorepill">${score} / ${N}</span>
     </div>
   </div></div>`;
-  wireBack();
+  wireBack(); wireDayNav();
   if(!answered){ stage.querySelectorAll(".opt").forEach(b=>b.onclick=()=>{ chosen=parseInt(b.dataset.i,10); if(chosen===q.correct)score++; answers.push({qi,pick:chosen,ok:chosen===q.correct}); render(); }); }
   const sh=document.getElementById("showHint"); if(sh)sh.onclick=()=>{ hintShown=true; render(); };
   const nx=document.getElementById("next"); if(nx)nx.onclick=()=>{ qi++; chosen=null; hintShown=false; render(); };
@@ -700,13 +756,14 @@ function renderQuiz(){
 function renderResult(){
   const N=QUIZ.questions.length, pct=Math.round(score/N*100), R=70,CC=2*Math.PI*R,off=CC*(1-score/N);
   let tier= pct>=80?"Master pass":pct>=60?"Practitioner":pct>=40?"Associate":"Keep going";
-  stage.innerHTML=`<div class="wrap"><div class="stagew">${backBar()}<div class="result">
+  stage.innerHTML=`<div class="wrap"><div class="stagew">${backBar()}${dayNav()}<div class="result">
     <div class="ring"><svg width="160" height="160"><circle cx="80" cy="80" r="${R}" fill="none" stroke="var(--line)" stroke-width="12"/><circle cx="80" cy="80" r="${R}" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" stroke-dasharray="${CC.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg><span class="c">${pct}%</span></div>
     <div class="big disp">${score} / ${N}</div>
     <div class="lbl">${tier}</div>
-    <div class="navrow" style="justify-content:center"><button class="btn primary" id="again">Try again</button><button class="btn" id="tolib">← Back to Library</button></div>
+    <div class="navrow" style="justify-content:center">${(activeDay&&activeDay.idx<activeDay.quizzes.length-1)?'<button class="btn primary" id="nextq">Next quiz →</button>':''}<button class="btn${(activeDay&&activeDay.idx<activeDay.quizzes.length-1)?'':' primary'}" id="again">Try again</button><button class="btn" id="tolib">← Back to Library</button></div>
   </div></div></div>`;
-  wireBack();
+  wireBack(); wireDayNav();
+  { const nq=document.getElementById("nextq"); if(nq)nq.onclick=()=>playFromDay(activeDay, activeDay.idx+1); }
   document.getElementById("again").onclick=()=>{ shuffleQuiz(QUIZ); qi=0;chosen=null;score=0;answers=[];hintShown=false;quizStarted=true;render(); };
   document.getElementById("tolib").onclick=()=>{ view="lib"; syncSeg(); renderLibrary(); };
 }

@@ -38,7 +38,8 @@ const outDir = join(here, "..", "manifests");
 mkdirSync(outDir, { recursive: true });
 
 function manifest(n, guid) {
-  const src = `${BASE_URL}/index.html?slot=${n}&label=${encodeURIComponent("Asset " + n)}`;
+  const rawSrc = `${BASE_URL}/index.html?slot=${n}&label=${encodeURIComponent("Asset " + n)}`;
+  const src = rawSrc.replace(/&/g, "&amp;"); // escape & — a raw & is invalid XML and fails manifest validation
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

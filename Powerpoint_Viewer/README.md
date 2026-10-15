@@ -133,6 +133,9 @@ interactive version" follow-ups.
    add-in box.
 3. You present the live add-in; recipients without it see the recorded MP4 play.
 
+Full step-by-step (recording shortcuts, PowerPoint playback settings, sizing to match the
+add-in box): see **`FALLBACK-RECORDING.md`**.
+
 ---
 
 ## Known limits (so nothing surprises you)

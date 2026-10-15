@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.20.2">
+<meta name="version" content="4.21.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -1842,6 +1842,17 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       '<text x="'+(x+11)+'" y="'+(y+17)+'" font-size="10" font-weight="700" fill="'+stroke+'" font-family="ui-monospace,monospace">'+esc(l1)+'</text>';
     body.forEach(function(ln,i){t+='<text x="'+(x+11)+'" y="'+(y+33+i*14)+'" font-size="11" fill="#1d2630">'+esc(ln)+'</text>';});
     return t;}
+  function g3TierOf(fn){return {Principle:1,Contention:2,Claim:2,Definition:2,Distinction:3,Qualification:3,Counterpoint:3,Reason:4,Warrant:5,Consequence:6,Recommendation:6,Transition:3,Auxiliary:3,Conclusion:7}[fn]||2;}
+  // Orphan = an argument node below the top tier that has no incoming dependency (no parent).
+  // The top-most occupied tier (Principles, or whatever sits highest) are legitimate roots and never flag.
+  function g3OrphanIds(sec){
+    if(!(sec.art&&sec.art.G3&&sec.art.G3.nodes))return [];
+    var nodes=g3Active(sec); if(!nodes.length)return [];
+    var info=nodes.map(function(n){var L=g3L(sec,n[0]);var fn=L.fn||n[1];var tr=(n.length>8&&n[8]!=null&&n[8]>=1&&n[8]<=7)?n[8]:g3TierOf(fn);return {id:n[0],fn:fn,tier:tr,dep:L.dep||[],leads:L.leads||[]};});
+    var incoming={};info.forEach(function(x){x.leads.forEach(function(t){incoming[t]=1;});if(x.dep.length)incoming[x.id]=1;});
+    var minT=Math.min.apply(null,info.map(function(x){return x.tier;}));
+    return info.filter(function(x){return x.tier>minT && !incoming[x.id];}).map(function(x){return x.id;});
+  }
   function genArgumentSVG(sec){var proj=sel.value;
     function dec(g,id){return lsGet('acpp.'+proj+'.'+sec.sid+'.'+g+'.'+id)||{};}
     function evSup(pid){var s=dec('G4',pid);return s.decision==='acc'&&!!s.src;}
@@ -1893,6 +1904,17 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var oid=it.id||it.pid;
       p.push('<g class="argnode" data-id="'+esc(oid)+'" data-tier="'+(it._tier||2)+'" data-out="'+esc((adjOut[oid]||[]).join(','))+'" data-in="'+esc((adjIn[oid]||[]).join(','))+'"><title>'+esc(nodeId+(it.pid&&it.pid!==nodeId?' ('+it.pid+')':'')+' · '+flab+' — '+it.text)+'</title>'+vmBox(it._x,it._y,it._w,it._h,fill,stroke,did,flab,it.text)+'</g>');}
     [1,2,3,4,5,6,7].forEach(function(ti){(tiers[ti]||[]).forEach(drawProp);});
+    // Orphan flag (always on, independent of G3.5): an argument node with no parent gets an amber
+    // "no parent" up-stub and a corner badge, so a missing depends_on is obvious at a glance.
+    if(usingNodes){
+      var _orph={}; g3OrphanIds(sec).forEach(function(id){_orph[id]=1;}); var _hasOrph=false;
+      list.forEach(function(it){ if(!_orph[it.id])return; var g=geo[it.id]; if(!g)return; _hasOrph=true;
+        var cx=g.x+g.w/2, ty=g.y-26;
+        p.push('<path d="M'+cx+','+ty+' L'+cx+','+g.y+'" stroke="#d97706" stroke-width="1.8" stroke-dasharray="3 3" fill="none" marker-end="url(#ahp)"/><text x="'+(cx+6)+'" y="'+(ty+9)+'" font-size="8.5" fill="#d97706" font-family="ui-monospace,monospace">no parent</text>');
+        p.push('<circle cx="'+(g.x+2)+'" cy="'+(g.y+2)+'" r="7" fill="#d97706"><title>No parent — this argument node has no depends_on (nothing links into it)</title></circle><text x="'+(g.x+2)+'" y="'+(g.y+5.6)+'" font-size="10" font-weight="800" fill="#fff" text-anchor="middle" font-family="ui-monospace,monospace">!</text>');
+      });
+      if(_hasOrph)p.push('<defs><marker id="ahp" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d97706"/></marker></defs>');
+    }
     // G3.5 wiring overlay: tint nodes a disposition touches; a Wire node shows a dashed "dangling" stub where its missing leads_to would go.
     if(usingNodes && AQUALITY[sec.sid]){
       var AQBLUE='#4f46e5';
@@ -1970,7 +1992,8 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     '<span>— solid = approved · - - dashed = proposed/unverified</span>'+
     '<span class="ovlk"><i class="k" style="background:transparent;border-color:#dc2626;border-width:2px"></i>G3.5 blocking node</span>'+
     '<span class="ovlk"><i class="k" style="background:transparent;border-color:#d97706;border-width:2px"></i>G3.5 disposition</span>'+
-    '<span class="ovlk" style="color:#4f46e5">⇣ needs leads_to (Wire)</span></div>';}
+    '<span class="ovlk" style="color:#4f46e5">⇣ needs leads_to (Wire)</span>'+
+    '<span class="ovlk" style="color:#d97706">⇡ no parent (missing depends_on)</span></div>';}
   function buildG3Manual(det,sec){
     function row(sw,bd,el,mean){return '<tr><td style="white-space:nowrap"><span class="gsw" style="background:'+sw+';border-color:'+bd+'"></span><b>'+el+'</b></td><td>'+mean+'</td></tr>';}
     var grammar='<table><tbody>'+
@@ -2101,13 +2124,16 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var ghReady=ghConfigured()&&Object.keys(GHFILES).length>0;
       var missSet={};var missGates=ghReady?Object.keys(GFILE).filter(function(gk){return (s.gates&&s.gates[gk]==='complete')&&!GHFILES[GFILE[gk]+'.'+s.sid+'.json'];}):[];
       missGates.forEach(function(g){missSet[g]=1;});
+      var g3orph=g3OrphanIds(s);
       var strip=GATES.map(function(g){var st=gateStatus(s,g[0]);var pend=rmap[g[0]];
-        return '<button class="gate '+st+(pend?' rvpend':'')+(missSet[g[0]]?' filemiss':'')+'" data-si="'+si+'" data-gk="'+g[0]+'"><span class="g">'+g[0]+'</span><span class="n">'+g[1]+'</span><span class="d">'+DLAB[st]+'</span>'+(missSet[g[0]]?'<span class="gwarn" title="Marked complete but '+esc(GFILE[g[0]]+'.'+s.sid+'.json')+' is missing from the repo">⚠</span>':'')+(pend?'<span class="rvb">review '+pend+'</span>':'')+'</button>';}).join('');
+        var orphW=(g[0]==='G3'&&g3orph.length)?'<span class="gwarn" title="'+g3orph.length+' argument node'+(g3orph.length>1?'s':'')+' with no parent (missing depends_on): '+esc(g3orph.join(', '))+'">⚠ '+g3orph.length+'</span>':'';
+        return '<button class="gate '+st+(pend?' rvpend':'')+(missSet[g[0]]?' filemiss':'')+((g[0]==='G3'&&g3orph.length)?' filemiss':'')+'" data-si="'+si+'" data-gk="'+g[0]+'"><span class="g">'+g[0]+'</span><span class="n">'+g[1]+'</span><span class="d">'+DLAB[st]+'</span>'+(missSet[g[0]]?'<span class="gwarn" title="Marked complete but '+esc(GFILE[g[0]]+'.'+s.sid+'.json')+' is missing from the repo">⚠</span>':'')+orphW+(pend?'<span class="rvb">review '+pend+'</span>':'')+'</button>';}).join('');
       var totpend=0;for(var k in rmap)totpend+=rmap[k];
       var reviewLine=totpend?'<div class="reviewline">▶ '+totpend+' item'+(totpend>1?'s':'')+' to review — '+Object.keys(rmap).map(function(k){return k+' ('+rmap[k]+')';}).join(', ')+'. Click a highlighted gate.</div>':'';
       var bf=GATES.filter(function(g){return gateStatus(s,g[0])==="backfill" && !rmap[g[0]];}).map(function(g){return g[0];});
       var flag=bf.length?'<div class="flag">⚠ Backfill needed: '+bf.join(", ")+'</div>':'';
       var missFlag=missGates.length?'<div class="flag">⚠ Marked done but the register file is missing from the repo: '+missGates.map(function(g){return g+' ('+esc(GFILE[g]+'.'+s.sid+'.json')+')';}).join(', ')+' — this gate is not really complete; re-run it.</div>':'';
+      var orphFlag=g3orph.length?'<div class="flag">⚠ G3 has '+g3orph.length+' argument node'+(g3orph.length>1?'s':'')+' with no parent (missing depends_on): '+esc(g3orph.join(', '))+' — wire each to a parent in the G3 review / Data Chat.</div>':'';
       var aiqTot=(s.aiq&&s.aiq.length)||0;
       var aiqOpen=(s.aiq||[]).filter(function(q){var st=lsGet(('acpp.'+sel.value+'.')+s.sid+'.AIQ.'+q[0])||{};return st.decision!=='accept'&&st.decision!=='reject';}).length;
       var aiqProm=(s.aiq||[]).filter(function(q){var st=lsGet(('acpp.'+sel.value+'.')+s.sid+'.AIQ.'+q[0])||{};return st.decision==='accept'&&(q[5]||q[6]);}).length;
@@ -2122,7 +2148,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var ghExp=[['propositions','propositions.'+s.sid+'.json'],['argument','argument_nodes.'+s.sid+'.json'],['evidence','evidence_links.'+s.sid+'.json'],['freeze','freeze.'+s.sid+'.json']];
       var ghLine=ghConfigured()?'<div class="ghline">private repo: '+ghExp.map(function(x){return (GHFILES[x[1]]?'✓ ':'· ')+x[0];}).join('   ')+'</div>':'';
       return '<div class="sec"><div class="top"><h2>'+esc(s.label)+'</h2><span class="prose">'+esc(s.prose)+'</span></div>'+
-        '<div class="strip">'+strip+'</div>'+reviewLine+flag+missFlag+'<div class="note">'+esc(s.note)+'</div>'+aiq+q25+q35+ghLine+
+        '<div class="strip">'+strip+'</div>'+reviewLine+flag+missFlag+orphFlag+'<div class="note">'+esc(s.note)+'</div>'+aiq+q25+q35+ghLine+
         '<div class="detail" id="det-'+si+'" hidden></div></div>';
     }
     var h1coll=lsGet('acpp.board.h1coll')||{};

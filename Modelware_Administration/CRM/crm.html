@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="ddc12c8b604b" data-built="7 Oct 2026" data-version="1.53.1">
+<meta name="crm-build" content="fddadd82fc81" data-built="15 Oct 2026" data-version="1.55.0">
 <!-- Repo versioning standard: the Asset Navigator build reads this. Written by
      dev/stamp-build.py from the crm-build line above, never typed twice. -->
-<meta name="version" content="1.53.1">
+<meta name="version" content="1.55.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -118,13 +118,18 @@ a{color:var(--accent)}
    downward as lines are added, and a header that scrolls out of the box is a
    header nobody reads. */
 .lines{display:flex;flex-direction:column;gap:4px;margin:4px 0}
-.line-row,.line-head{display:grid;grid-template-columns:1fr 72px 66px 58px 26px;gap:4px;align-items:center}
+.line-row,.line-head{display:grid;grid-template-columns:minmax(0,1fr) 96px 84px 62px 62px 28px;
+  gap:6px;align-items:center}
 .line-row input{width:100%;min-width:0;padding:4px 6px;font-size:12px}
 .line-head span{font-size:10.5px;color:var(--muted);font-family:var(--mono);text-align:right}
+/* The column heads were right-aligned over left-aligned inputs, so the label
+   and the figure it names never lined up. Money reads right-aligned anyway:
+   the units stack under each other and a stray digit shows up. */
+.line-row input:not(:first-child){text-align:right}
 .line-head span:first-child{text-align:left}
 .line-row .btn{padding:2px 6px;line-height:1}
 @media (max-width:560px){
-  .line-row,.line-head{grid-template-columns:1fr 60px 54px 48px 24px;gap:3px}
+  .line-row,.line-head{grid-template-columns:minmax(0,1fr) 64px 56px 46px 46px 22px;gap:4px}
   .line-row input{padding:3px 4px;font-size:11.5px}
 }
 .content{padding:22px;max-width:1180px;width:100%}
@@ -284,10 +289,25 @@ button.band-head:focus-visible{outline:2px solid var(--accent);outline-offset:2p
 /* ---------- slide-over ---------- */
 .scrim{position:fixed;inset:0;background:rgba(22,32,44,.28);z-index:70}
 .panel{
-  position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--surface);
+  /* 560px was chosen when the panel held a deal's facts and its history. It now
+     carries purchase orders, quotes, a money table of six columns and an
+     invoice editor six fields wide, and at 560 the line items were being
+     squeezed into something nobody could read. The width is also DRAGGABLE and
+     remembered per browser (see panelResizer) — one screen is not every screen,
+     and a number picked here cannot be right on all of them. */
+  position:fixed;top:0;right:0;bottom:0;width:min(760px,100%);background:var(--surface);
   border-left:1px solid var(--line);box-shadow:var(--shadow);z-index:71;
   display:flex;flex-direction:column;animation:slide .18s ease-out
 }
+/* The grab edge. Wide enough to hit without hunting, invisible until pointed
+   at, and gone on a phone where the panel is the whole screen anyway. */
+.panel .grip{
+  position:absolute;left:-3px;top:0;bottom:0;width:9px;cursor:col-resize;z-index:2;
+  background:transparent;border:0;padding:0
+}
+.panel .grip:hover,.panel .grip:focus-visible{background:var(--accent-soft)}
+.panel .grip:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.panel.sizing{animation:none;user-select:none}
 @keyframes slide{from{transform:translateX(18px);opacity:.6}to{transform:none;opacity:1}}
 .panel header{padding:16px 18px;border-bottom:1px solid var(--line)}
 .panel .scroll{overflow:auto;padding:16px 18px;flex:1}
@@ -1259,6 +1279,10 @@ function foldEvents(events){
           dueDate:p.dueDate || null,
           currency:p.currency || "ZAR",
           net:money(p.net), passThrough:money(p.passThrough), vat:money(p.vat),
+          /* F6b. The rate a line with no rate of its own inherits. null means
+             nobody has decided, and the typed `vat` above stands — which is
+             every invoice raised before 15 Oct 2026. */
+          vatRate: p.vatRate == null ? null : +p.vatRate,
           /* null means "whatever the deal says". A number here overrides it for
              this invoice alone — one deal can bill training that earns
              commission and books that do not. */
@@ -1295,6 +1319,8 @@ function foldEvents(events){
              as "not supplied" and leave the override in place for ever.
              The same trap applies to every one of these: `undefined` is "not
              supplied", `null` is "clear it". */
+          if (p.vatRate !== undefined)
+            st.invoices[p.invoiceId].vatRate = p.vatRate == null ? null : +p.vatRate;
           if (p.commissionRate !== undefined)
             st.invoices[p.invoiceId].commissionRate =
               p.commissionRate == null ? null : +p.commissionRate;
@@ -2176,6 +2202,23 @@ function normLines(lines){
       /* Somebody else's revenue sitting inside this line. The DMBOK PDF on the
          SARB quote is a publisher's product; we bill it and pass it on. */
       passThrough: money(l.passThrough),
+      /* F6b. VAT IS A FACT ABOUT THE LINE, NOT THE INVOICE.
+
+         "The VAT is not calculating properly when I add the Invoice Line. We
+         need to be able to set the VAT % on the line and the total VAT should be
+         the VAT on all the lines." (Howard, 15 Oct 2026.)
+
+         He is right, and the reason is the same one that gave lines a commission
+         rate: one invoice really does bill two things. A local course is
+         standard-rated and the DMBOK shipped to Gaborone is an export at zero —
+         on one piece of paper the customer is holding. One VAT box for the whole
+         invoice cannot say that, so the number was typed by hand and then sat
+         there unrelated to the lines underneath it.
+
+         Blank is NOT 0% (C23). A blank line rate follows the invoice's rate; a
+         blank invoice rate means nobody has decided, and the invoice keeps its
+         own typed VAT exactly as before. */
+      vatRate: l.vatRate == null || l.vatRate === "" ? null : +l.vatRate,
       commissionRate: l.commissionRate == null || l.commissionRate === ""
                         ? null : +l.commissionRate
     };
@@ -2195,6 +2238,63 @@ function invoicePassThrough(inv){
     return round2(inv.lines.reduce(function (t, l){ return t + l.passThrough; }, 0));
   return round2(inv.passThrough);
 }
+/* THE VAT RATE THAT ACTUALLY APPLIES TO ONE LINE.
+
+   Exactly the shape `lineRate` already uses for commission — line, then
+   invoice, then nothing — because an invoice that inherits one way and not the
+   other is two rules to remember instead of one. `from` is carried so a screen
+   can say WHERE the rate came from; "15%" with no provenance is how somebody
+   ends up arguing with a number nobody set. */
+function lineVatRate(inv, line){
+  if (line && line.vatRate != null) return { rate:+line.vatRate, from:"line" };
+  if (inv && inv.vatRate != null)   return { rate:+inv.vatRate, from:"invoice" };
+  return { rate:null, from:null };
+}
+/* Does anything on this invoice carry a VAT rate at all? Until something does,
+   the invoice keeps the single typed VAT it has always had — every invoice
+   raised before today has no rates, the log is append-only, and they must go on
+   folding to the same numbers for ever. */
+function linesCarryVat(inv){
+  if (!(inv && inv.lines && inv.lines.length)) return false;
+  if (inv.vatRate != null) return true;
+  return inv.lines.some(function (l){ return l.vatRate != null; });
+}
+/* The VAT per line, and where each rate came from. Lines with no rate anywhere
+   are returned with rate null and vat 0 — they contribute nothing, and the
+   caller is expected to SAY so rather than let a silent zero pass as a decision. */
+function invoiceVatParts(inv){
+  if (!linesCarryVat(inv)) return [];
+  return inv.lines.map(function (l){
+    var r = lineVatRate(inv, l);
+    return { line:l, rate:r.rate, from:r.from,
+             base: round2(l.net),
+             vat: r.rate == null ? 0 : round2(round2(l.net) * r.rate) };
+  });
+}
+/* The VAT an invoice actually carries. With rated lines it is the sum of them —
+   derived, never stored twice, for the same reason the net is. Without them it
+   is the invoice's own VAT, exactly as before. */
+function invoiceVat(inv){
+  if (!linesCarryVat(inv)) return round2(inv.vat);
+  return round2(invoiceVatParts(inv).reduce(function (t, p){ return t + p.vat; }, 0));
+}
+/* A stored VAT that disagrees with the rated lines. The UI writes the derived
+   figure back on save so this cannot arise by hand, but an import can carry
+   both — and a contradiction is surfaced, never resolved quietly. */
+function invoiceVatMismatch(inv){
+  if (!linesCarryVat(inv)) return null;
+  if (inv.vat == null) return null;
+  var d = round2(invoiceVat(inv) - round2(inv.vat));
+  return Math.abs(d) < 0.005 ? null : { stated: round2(inv.vat), fromLines: invoiceVat(inv), by: d };
+}
+/* Lines that carry no VAT rate on an invoice where the others do. Not an error
+   — an export line really is unrated — but it is the difference between "zero
+   because somebody said so" and "zero because nobody did", and only one of those
+   is safe to total. */
+function linesMissingVat(inv){
+  return invoiceVatParts(inv).filter(function (p){ return p.rate == null; });
+}
+
 /* A supplied net that disagrees with the lines is a contradiction, not a
    rounding question. Surface it; do not pick a winner quietly. */
 function invoiceLineMismatch(inv){
@@ -2242,7 +2342,8 @@ function effectiveDue(inv){
 
 function invoiceState(st, inv){
   var net = invoiceNet(inv), pt = invoicePassThrough(inv);
-  var gross = round2(net + inv.vat);
+  var vat = invoiceVat(inv);
+  var gross = round2(net + vat);
   var paid = 0;
   Object.keys(st.payments).forEach(function (k){
     if (st.payments[k].invoiceId === inv.id) paid += st.payments[k].amount; });
@@ -2279,7 +2380,13 @@ function invoiceState(st, inv){
   return { invoice:inv, gross:gross, paid:paid, credited:credited, creditedNet:creditedNet,
            balance: cancelled ? 0 : balance,
            settled:settled, cancelled:cancelled,
-           net:net, passThrough:pt,
+           net:net, passThrough:pt, vat:vat,
+           /* Where the VAT came from, so a screen never has to guess whether
+              the figure beside it was typed or worked out. */
+           vatFromLines: linesCarryVat(inv),
+           vatParts: invoiceVatParts(inv),
+           vatMissing: linesMissingVat(inv),
+           vatMismatch: invoiceVatMismatch(inv),
            lineMismatch: invoiceLineMismatch(inv),
            /* COMMISSION FOLLOWS THE CASH (ruled 2026-09-18 by Howard).
 
@@ -3248,18 +3355,18 @@ function moneyBook(st, cfg, today, opts){
         bag[who][c] = round2((bag[who][c] || 0) + cm.total);
         book.commissionRows.push({ deal:d, state:s, invoice:s.invoice, currency:c,
           who:who, settled:s.settled, parts:cm.parts, commission:cm.total,
-          net:s.net, vat:round2(s.invoice.vat), passThrough:s.passThrough,
+          net:s.net, vat:s.vat, passThrough:s.passThrough,
           creditedNet:s.creditedNet, base:s.commissionBase, rate:invoiceRate(d, s.invoice).rate });
         add(book.commissionBase, c, s.commissionBase);
         /* The VAT that is deliberately NOT in anybody's commission. Said as a
            figure, because "excludes VAT" in a footnote is a claim and this is
            the evidence for it. */
-        add(book.vatExcluded, c, round2(s.invoice.vat));
+        add(book.vatExcluded, c, s.vat);
         /* An invoice carrying no VAT at all. Legitimate on an export, and the
            signature of a VAT-inclusive amount typed into the net box — which
            WOULD pay commission on the VAT, through the data rather than the
            arithmetic. */
-        if (round2(s.invoice.vat) === 0) book.noVat.push({ deal:d, state:s, currency:c });
+        if (s.vat === 0) book.noVat.push({ deal:d, state:s, currency:c });
       }
     });
   });
@@ -3964,10 +4071,10 @@ var TRIAGE_QUOTE_FIELDS    = { number:1, amount:1, currency:1, issuedOn:1, statu
 var TRIAGE_PO_FIELDS       = { number:1, receivedOn:1, currency:1, amount:1, issuedBy:1,
                                status:1, note:1 };
 var TRIAGE_INVOICE_FIELDS  = { number:1, issuedOn:1, dueDate:1, currency:1, net:1, vat:1,
-                               passThrough:1, commissionRate:1, earner:1, quoteNumber:1,
-                               poNumber:1, lines:1, note:1 };
+                               vatRate:1, passThrough:1, commissionRate:1, earner:1,
+                               quoteNumber:1, poNumber:1, lines:1, note:1 };
 var TRIAGE_LINE_FIELDS     = { description:1, quantity:1, unitPrice:1, net:1,
-                               passThrough:1, commissionRate:1 };
+                               passThrough:1, vatRate:1, commissionRate:1 };
 var TRIAGE_PAYMENT_FIELDS  = { invoiceNumber:1, amount:1, receivedOn:1, reference:1, currency:1 };
 var QUOTE_STATUSES         = { issued:1, accepted:1, superseded:1, expired:1, declined:1 };
 
@@ -4250,17 +4357,34 @@ function financialEvents(r, deal, st, cfg, ctx, where){
       warn(label + " has no commission rate anywhere — not on the line, the invoice or the " +
         "deal. It imports with a blank rate, which is not 0%: nobody has decided yet.");
 
+    /* F6b. The same contradiction check the net already gets. A batch carrying
+       both a VAT figure and rated lines that disagree is two claims about one
+       document, and choosing between them quietly is how the CRM comes to
+       disagree with the paperwork. */
+    var invVatRate = (iv.vatRate == null || iv.vatRate === "") ? null : +iv.vatRate;
+    var probe = { vat:money(iv.vat), vatRate:invVatRate, lines:lines };
+    var derivedVat = linesCarryVat(probe) ? invoiceVat(probe) : null;
+    if (derivedVat != null && iv.vat != null && iv.vat !== "" &&
+        Math.abs(round2(derivedVat - money(iv.vat))) >= 0.005)
+      return refuse(label + ": the VAT on the lines adds to " + derivedVat +
+        " but the invoice says " + money(iv.vat) +
+        ". One of the two is wrong and I will not choose which.");
     var payload = { invoiceId:iid, dealId:dealId, number:num,
       issuedOn: parseDateInput(iv.issuedOn, today) || today,
       dueDate: iv.dueDate ? parseDateInput(iv.dueDate, today) : null,
-      currency:cur, net:net, passThrough:passThrough, vat:money(iv.vat),
+      currency:cur, net:net, passThrough:passThrough,
+      vat: derivedVat != null ? derivedVat : money(iv.vat),
+      vatRate: invVatRate,
       commissionRate:invRate, earner:earner, quoteId:qid, poId:poid, lines:lines };
     var already = existing && existing.net === net && existing.currency === cur &&
-                  existing.vat === money(iv.vat) && existing.passThrough === passThrough &&
+                  existing.vat === payload.vat &&
+                  (existing.vatRate == null ? null : +existing.vatRate) === invVatRate &&
+                  existing.passThrough === passThrough &&
                   existing.earner === earner && existing.commissionRate === invRate &&
                   (existing.lines || []).length === lines.length;
     out.records.invoices.push({ number:num || "(unnumbered)", net:net, currency:cur,
-      vat:money(iv.vat), lines:lines.length, earner:earner, rate:lr.rate,
+      vat:payload.vat, vatFromLines: derivedVat != null,
+      lines:lines.length, earner:earner, rate:lr.rate,
       rateFrom:lr.from, noCommission:noComm,
       already:!!already, updating: !!existing && !already });
     if (already) return;
@@ -5870,6 +5994,9 @@ var API = {
   lastContact:lastContact, openDeals:openDeals, subjectLabel:subjectLabel,
   dealParty:dealParty, money:money, round2:round2,
   invoiceState:invoiceState, invoicesFor:invoicesFor, paymentsFor:paymentsFor,
+  invoiceVat:invoiceVat, invoiceVatParts:invoiceVatParts, lineVatRate:lineVatRate,
+  linesCarryVat:linesCarryVat, linesMissingVat:linesMissingVat,
+  invoiceVatMismatch:invoiceVatMismatch,
   creditNotesFor:creditNotesFor, creditNoteGross:creditNoteGross,
   customerLedger:customerLedger, debtorsBook:debtorsBook, agedDebtors:agedDebtors,
   quotedNotInvoiced:quotedNotInvoiced, debtorCoverage:debtorCoverage,
@@ -6176,7 +6303,10 @@ var LS = {
      every laptop would tell the team something none of them can act on. The
      cost is that it is per-browser, so the wording must say so — "no export
      from this browser" is true and "never exported" would not be. */
-  lastExp:   "crm.export.last"
+  lastExp:   "crm.export.last",
+  /* How wide the slide-over is. A view preference like openCos and shutBands:
+     per browser, never near the repo, and costing one drag if it is lost. */
+  panelW:    "crm.panel.width"
 };
 /* ---------------- local storage, defensively ----------------
    Three different failures wear the same exception, and they need three
@@ -8045,6 +8175,78 @@ function openSubject(f){
 
 function closePanel(){ closeLayers("panel"); App.openDealId = null; }
 
+/* THE SLIDE-OVER, AT A WIDTH SOMEBODY CHOSE.
+
+   "Please extend the size of the dialog on the right hand side as it is getting
+   squashed and the Invoice line items dont align." (Howard, 15 Oct 2026.)
+
+   560px was right when the panel held a deal's facts and its history. It now
+   also carries purchase orders, quotes, a six-column money table and an invoice
+   editor six fields wide. The default goes to 760 — but a single number cannot
+   be right on a laptop and a 32-inch monitor both, so the edge is draggable and
+   the answer is remembered. Bounded at both ends: too narrow and the money table
+   is unreadable, wider than the viewport and the scrim has nothing to click. */
+var PANEL_MIN = 420, PANEL_DEFAULT = 760;
+function panelMax(){
+  return Math.max(PANEL_MIN, (document.documentElement.clientWidth || 1024) - 80);
+}
+function panelWidth(){
+  var w = +lsGet(LS.panelW, 0);
+  if (!(w > 0)) w = PANEL_DEFAULT;
+  return Math.round(Math.max(PANEL_MIN, Math.min(w, panelMax())));
+}
+/* Below the mobile floor the panel IS the screen, so a grab edge there would
+   only be something to catch a thumb on. */
+function panelSizable(){ return (document.documentElement.clientWidth || 0) > 820; }
+
+function makePanel(label){
+  var panel = h("aside", { class:"panel", data:{ kind:"panel" }, role:"dialog",
+                           "aria-label":label, tabindex:"-1" });
+  if (!panelSizable()) return panel;
+  panel.style.width = panelWidth() + "px";
+
+  var grip = h("button", { class:"grip", type:"button",
+    "aria-label":"Drag to resize this panel — arrow keys also work",
+    title:"Drag to make this wider or narrower. Double-click to reset." });
+  var set = function (w){
+    w = Math.round(Math.max(PANEL_MIN, Math.min(w, panelMax())));
+    panel.style.width = w + "px";
+    lsSet(LS.panelW, w);
+  };
+  grip.addEventListener("pointerdown", function (e){
+    e.preventDefault();
+    var startX = e.clientX, startW = panel.offsetWidth;
+    panel.classList.add("sizing");
+    /* Captured on the grip, so the pointer can run over the scrim, over an
+       input, off the window edge — and the drag still ends where it should. */
+    try { grip.setPointerCapture(e.pointerId); } catch (err){}
+    var move = function (ev){ set(startW + (startX - ev.clientX)); };
+    var up = function (){
+      panel.classList.remove("sizing");
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      grip.removeEventListener("pointercancel", up);
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+    grip.addEventListener("pointercancel", up);
+  });
+  /* A drag is not available to everybody. Arrows do the same job from the
+     keyboard, and a double-click puts it back. */
+  grip.addEventListener("keydown", function (e){
+    var step = e.shiftKey ? 80 : 20;
+    if (e.key === "ArrowLeft"){ e.preventDefault(); set(panel.offsetWidth + step); }
+    else if (e.key === "ArrowRight"){ e.preventDefault(); set(panel.offsetWidth - step); }
+    else if (e.key === "Home"){ e.preventDefault(); set(PANEL_DEFAULT); }
+  });
+  grip.addEventListener("dblclick", function (){
+    set(PANEL_DEFAULT);
+    toast("Panel width reset.");
+  });
+  panel.appendChild(grip);
+  return panel;
+}
+
 /* THE STATEMENT OF ACCOUNT.
 
    Devoteam's finance team asked for one before paying, and there was no way to
@@ -8101,8 +8303,7 @@ function openStatement(companyId){
   var led = C.customerLedger(App.st, companyId, App.today);
   closeLayers("panel");
   var scrim = h("div", { class:"scrim", data:{ kind:"panel" }, onclick:closePanel });
-  var panel = h("aside", { class:"panel", data:{ kind:"panel" }, role:"dialog",
-                           "aria-label":"Statement \u2014 " + co.name, tabindex:"-1" });
+  var panel = makePanel("Statement \u2014 " + co.name);
 
   panel.appendChild(h("header", null,
     h("div", { style:"display:flex;align-items:flex-start;gap:12px" },
@@ -8277,8 +8478,7 @@ function openDeal(dealId){
   closeLayers("panel");
   var co = C.dealParty(App.st, d);
   var scrim = h("div", { class:"scrim", data:{ kind:"panel" }, onclick:closePanel });
-  var panel = h("aside", { class:"panel", data:{ kind:"panel" }, role:"dialog",
-                           "aria-label":"Deal — " + d.name, tabindex:"-1" });
+  var panel = makePanel("Deal — " + d.name);
 
   /* header */
   var head = h("header", null,
@@ -8807,10 +9007,37 @@ function openDeal(dealId){
                        C.fmtMoney(st_.lineMismatch.stated, inv.currency) +
                        ". The lines are being used." })
               : null,
+            /* F6b. The same treatment for VAT. A saved figure that disagrees
+               with the rates on the lines is two claims about one document. */
+            st_.vatMismatch
+              ? h("div", { class:"note", style:"color:var(--overdue)",
+                  text:"The VAT on the lines adds to " +
+                       C.fmtMoney(st_.vatMismatch.fromLines, inv.currency) +
+                       " but the invoice was saved as " +
+                       C.fmtMoney(st_.vatMismatch.stated, inv.currency) +
+                       ". The lines are being used." })
+              : null,
             (inv.lines && inv.lines.length)
               ? h("div", { class:"note", text: inv.lines.length + " line" +
                   (inv.lines.length === 1 ? "" : "s") + ": " +
                   inv.lines.map(function (l){ return l.description || "unnamed"; }).join(" · ") })
+              : null,
+            /* Said on every invoice that carries VAT, because "R 44 432 owed"
+               without it leaves the reader to work out which part is the work
+               and which part is the Receiver's. */
+            st_.vat
+              ? h("div", { class:"note", text:
+                  C.fmtMoneyExact(st_.net, inv.currency) + " net + " +
+                  C.fmtMoneyExact(st_.vat, inv.currency) + " VAT" +
+                  (st_.vatFromLines ? " — worked out per line" : "") })
+              : null,
+            /* A line nobody has rated adds nothing to the VAT, which looks
+               exactly like a line that is genuinely zero-rated. Only one of
+               those is a decision somebody made. */
+            (st_.vatFromLines && st_.vatMissing.length)
+              ? h("div", { class:"note", style:"color:var(--warn)", text:
+                  st_.vatMissing.length + " line" + (st_.vatMissing.length === 1 ? "" : "s") +
+                  " with no VAT rate anywhere, adding nothing. Blank is not 0%." })
               : null),
           /* Exact, like the quote above it. An invoice is a document the
              customer is holding a copy of, and R 207 109 sitting under a quote
@@ -9347,7 +9574,11 @@ function invoicePopover(anchorEl, d, inv){
   box.appendChild(h("div", { class:"row2" },
     h("label", { class:"fld" }, h("span", { text:"Net (excl VAT)" }), net),
     h("label", { class:"fld" }, h("span", { text:"of which resale" }), thru)));
-  box.appendChild(h("label", { class:"fld" }, h("span", { text:"VAT" }), vat));
+  var vatFieldRow = h("div", { class:"row2" },
+    h("label", { class:"fld" }, h("span", { text:"VAT" }), vat));
+  box.appendChild(vatFieldRow);
+  var vatWhere = h("div", { class:"note", style:"margin:-4px 0 6px" });
+  box.appendChild(vatWhere);
 
   /* THE VAT-INCLUSIVE AMOUNT, CAUGHT WHERE IT IS TYPED.
 
@@ -9356,18 +9587,44 @@ function invoicePopover(anchorEl, d, inv){
      through the data. The app cannot know: an invoice with no VAT is right on
      an export and wrong on a local sale. So it says what the number would be
      if the amount includes VAT, and splits it on one press. */
-  var vatRate = h("input", { type:"text", value:String(C.round2(
-      ((App.config && App.config.vatRate) != null ? App.config.vatRate : C.DEFAULT_VAT_RATE) * 100)),
-    "aria-label":"VAT rate %", style:"width:70px" });
+  /* F6b. The invoice's own VAT rate, and what every line with a blank rate
+     inherits — the same line → invoice → nothing ladder commission already uses.
+     An invoice that has one is VAT-derived: the VAT box stops being typed and
+     starts being worked out, exactly as the net does once there are lines. */
+  var vatRate = h("input", { type:"text", "aria-label":"VAT rate %", style:"width:70px",
+    placeholder:"not set",
+    value: inv && inv.vatRate != null ? String(C.round2(inv.vatRate * 1000) / 10) : "" });
+  /* The rate the Split-it button offers when nobody has set one. A suggestion in
+     a button is not a decision stored on an invoice, so it never becomes the
+     line rate by itself — C23. */
+  var defaultVatPct = C.round2(
+    ((App.config && App.config.vatRate) != null ? App.config.vatRate : C.DEFAULT_VAT_RATE) * 100);
+  /* The field itself goes in beside VAT, now that the input exists. A DOM node
+     lives in one place, so the Split-it row below gets its own box rather than
+     borrowing this one and quietly emptying the field. */
+  vatFieldRow.appendChild(h("label", { class:"fld" },
+    h("span", { text:"VAT % on this invoice" }), vatRate));
+  var splitPct = h("input", { type:"text", value:String(defaultVatPct),
+    "aria-label":"Split at %", style:"width:70px" });
   var splitBtn = h("button", { class:"btn btn-sm", type:"button" }, "Split it");
   var vatHint = h("div", { class:"note vat-hint", style:"color:var(--warn);display:none" });
   var vatRow = h("div", { class:"vat-split", style:"display:none;align-items:baseline;gap:8px;margin:-4px 0 8px" },
-    splitBtn, h("span", { class:"k", text:"at" }), vatRate, h("span", { class:"k", text:"%" }));
-  var splitRate = function (){
+    splitBtn, h("span", { class:"k", text:"at" }), splitPct, h("span", { class:"k", text:"%" }));
+  /* The rate as typed: null when the box is empty, which is a different thing
+     from 0% and is what the lines inherit (or do not). */
+  var invVatRate = function (){
     var raw = String(vatRate.value || "").replace(/[^\d.]/g, "");
     return raw === "" ? null : C.round2(+raw) / 100;
   };
-  vatRate.addEventListener("input", function (){ repaint(); });
+  /* What "Split it" should use. Its own box, because splitting a VAT-inclusive
+     amount is a one-press calculation, not a rate stored on the invoice — and
+     a suggestion that silently became the invoice's rate would be C23 all over
+     again. */
+  var splitRate = function (){
+    var raw = String(splitPct.value || "").replace(/[^\d.]/g, "");
+    return raw === "" ? C.round2(defaultVatPct) / 100 : C.round2(+raw) / 100;
+  };
+  splitPct.addEventListener("input", function (){ repaint(); });
   splitBtn.addEventListener("click", function (){
     var sp = C.splitVatInclusive(C.money(net.value), splitRate());
     if (!(sp.net > 0)) return;
@@ -9466,7 +9723,7 @@ function invoicePopover(anchorEl, d, inv){
      two places to enter the same total is two places for it to drift. */
   var lines = inv && inv.lines ? inv.lines.map(function (l){
     return { description:l.description, net:l.net, passThrough:l.passThrough,
-             commissionRate:l.commissionRate };
+             vatRate:l.vatRate, commissionRate:l.commissionRate };
   }) : [];
   var linesHost = h("div", { class:"lines" });
   var linesNote = h("div", { class:"note" });
@@ -9476,6 +9733,18 @@ function invoicePopover(anchorEl, d, inv){
     return { net: C.round2(lines.reduce(function (t,l){ return t + C.money(l.net); }, 0)),
              thru: C.round2(lines.reduce(function (t,l){ return t + C.money(l.passThrough); }, 0)) };
   }
+  /* The half-typed invoice, in the shape core understands, so the dialog and the
+     saved record are never two implementations of the same sum. */
+  function draft(){
+    return { vat: C.money(vat.value), vatRate: invVatRate(),
+             lines: lines.map(function (l){
+               return { description:l.description || "", net:C.money(l.net),
+                        passThrough:C.money(l.passThrough),
+                        vatRate: l.vatRate == null ? null : l.vatRate,
+                        commissionRate: l.commissionRate == null ? null : l.commissionRate };
+             }) };
+  }
+  function vatIsDerived(){ return C.linesCarryVat(draft()); }
   function paintLines(){
     clear(linesHost);
     lines.forEach(function (l, i){
@@ -9489,6 +9758,12 @@ function invoicePopover(anchorEl, d, inv){
       /* Blank follows the invoice, which may itself follow the deal. Typing 0
          says this line earns nobody — a different statement from saying nothing,
          and the placeholder names whichever rate it is currently inheriting. */
+      /* F6b. Blank follows the invoice's rate; typing 0 says this line is
+         zero-rated — an export, a disbursement — which is a decision somebody
+         made, not the absence of one. The placeholder names whichever it is. */
+      var lvat = h("input", { type:"text",
+        value: l.vatRate == null ? "" : String(Math.round(l.vatRate * 1000) / 10),
+        placeholder: "follows", "aria-label":"Line " + (i+1) + " VAT %" });
       var lrate = h("input", { type:"text",
         value: l.commissionRate == null ? "" : String(Math.round(l.commissionRate * 1000) / 10),
         placeholder: "follows", "aria-label":"Line " + (i+1) + " commission %" });
@@ -9498,17 +9773,23 @@ function invoicePopover(anchorEl, d, inv){
       desc.addEventListener("input", function (){ l.description = desc.value; });
       lnet.addEventListener("input", function (){ l.net = lnet.value; repaint(); });
       lthru.addEventListener("input", function (){ l.passThrough = lthru.value; repaint(); });
+      lvat.addEventListener("input", function (){
+        var raw = lvat.value.replace(/[^\d.]/g, "");
+        l.vatRate = raw === "" ? null : C.round2(+raw) / 100;
+        repaint();
+      });
       lrate.addEventListener("input", function (){
         var raw = lrate.value.replace(/[^\d.]/g, "");
         l.commissionRate = raw === "" ? null : C.round2(+raw) / 100;
         repaint();
       });
-      linesHost.appendChild(h("div", { class:"line-row" }, desc, lnet, lthru, lrate, del));
+      linesHost.appendChild(h("div", { class:"line-row" }, desc, lnet, lthru, lvat, lrate, del));
     });
     if (lines.length)
       linesHost.appendChild(h("div", { class:"line-head" },
         h("span", { text:"description" }), h("span", { text:"net" }),
-        h("span", { text:"resale" }), h("span", { text:"comm %" }), h("span", { text:"" })));
+        h("span", { text:"resale" }), h("span", { text:"vat %" }),
+        h("span", { text:"comm %" }), h("span", { text:"" })));
     syncTotals();
   }
   /* The net follows the lines on EVERY keystroke, not only when a line is added.
@@ -9521,9 +9802,33 @@ function invoicePopover(anchorEl, d, inv){
       var t = linesTotal();
       net.value = String(t.net); thru.value = String(t.thru);
     }
+    /* F6b. And the VAT does the same once anything carries a rate. Two places to
+       enter one total is two places for it to drift — which is exactly what
+       Howard saw: a line added, the net zeroed to follow it, and the VAT box
+       left sitting at a figure that belonged to nothing. */
+    var derived = vatIsDerived();
+    vat.disabled = derived;
+    if (derived) vat.value = String(C.invoiceVat(draft()));
+    clear(vatWhere);
+    if (derived){
+      var miss = C.linesMissingVat(draft()).length;
+      vatWhere.appendChild(h("span", { text:
+        "VAT is the sum of the lines below. The box above follows them." +
+        (invVatRate() == null ? " No invoice rate, so each line needs its own."
+           : " Lines with no rate of their own use " + pct(invVatRate()) + ".") }));
+      if (miss)
+        vatWhere.appendChild(h("div", { style:"color:var(--warn)", text:
+          miss + " line" + (miss === 1 ? " has" : "s have") + " no VAT rate anywhere \u2014 " +
+          "contributing nothing. Blank is not 0%: put 0 in to say the line really is " +
+          "zero-rated." }));
+    } else if (lines.length){
+      vatWhere.appendChild(h("span", { text:
+        "No VAT rate on the invoice or on any line, so the VAT above is the single " +
+        "figure you type. Set a rate to work it out per line instead." }));
+    }
   }
   addBtn.addEventListener("click", function (){
-    lines.push({ description:"", net:"", passThrough:"", commissionRate:null });
+    lines.push({ description:"", net:"", passThrough:"", vatRate:null, commissionRate:null });
     paintLines(); repaint();
   });
   box.appendChild(h("div", { style:"display:flex;align-items:baseline;gap:8px;margin-top:10px" },
@@ -9562,10 +9867,22 @@ function invoicePopover(anchorEl, d, inv){
                 ", once it is settled in full");
     if (t > n) bits.push("resale is more than the net \u2014 check the split");
     /* Shown only where it could be wrong: an amount with no VAT beside it. */
-    var noVat = !(v > 0.005) && n > 0 && !lines.length;
-    vatRow.style.display = noVat ? "flex" : "none";
+    /* Was `&& !lines.length`, which silenced it on exactly the invoices that
+       most need it: add a line, watch the net move and the VAT stay where it
+       was. An amount with no VAT beside it is worth saying out loud whatever
+       shape the invoice has. Splitting, though, is only offered where there is
+       a single typed net to split. */
+    var noVat = !(v > 0.005) && n > 0;
+    vatRow.style.display = (noVat && !lines.length) ? "flex" : "none";
     vatHint.style.display = noVat ? "" : "none";
-    if (noVat){
+    if (noVat && lines.length){
+      vatHint.textContent = vatIsDerived()
+        ? "The lines carry VAT rates but add to nothing. Check the rates \u2014 a blank " +
+          "rate contributes nothing, and 0% has to be typed to mean zero-rated."
+        : "No VAT on this invoice. Right for an export or a zero-rated sale. " +
+          "Otherwise put the VAT % on the invoice or on each line and it will be " +
+          "worked out from them.";
+    } else if (noVat){
       var sp = C.splitVatInclusive(n, splitRate());
       vatHint.textContent = "No VAT on this invoice. Right for an export or a zero-rated sale. " +
         "If " + C.fmtMoneyExact(n, cur.value) + " already INCLUDES VAT, the work is " +
@@ -9592,16 +9909,29 @@ function invoicePopover(anchorEl, d, inv){
       return;
     }
     var tot = linesTotal();
+    var dr = draft();
     var fake = { commissionRate: dealPays && rateIn.value.replace(/[^\d.]/g, "") !== ""
                    ? C.round2(+rateIn.value.replace(/[^\d.]/g, "")) / 100 : null };
-    var sum = null, anyBlank = false;
-    lines.forEach(function (l){
+    var sum = null, anyBlank = false, vatSum = 0, vatBlank = 0;
+    var derivedVat = vatIsDerived();
+    lines.forEach(function (l, li){
       var lr = C.lineRate(d, fake, { commissionRate: l.commissionRate });
       var base = C.round2(C.money(l.net) - C.money(l.passThrough));
       if (lr.rate == null) anyBlank = true;
       else sum = C.round2((sum || 0) + base * lr.rate);
+      /* The VAT said beside the commission, per line, because the two are
+         different questions about the same money and reading one as the other
+         is how commission came to be paid on the VAT in the first place. */
+      var vp = derivedVat ? C.invoiceVatParts(dr)[li] : null;
+      if (vp){ vatSum = C.round2(vatSum + vp.vat); if (vp.rate == null) vatBlank++; }
       linesNote.appendChild(h("div", { text:
-        (l.description || "unnamed line") + " \u00b7 base " + C.fmtMoneyExact(base, cur.value) +
+        (l.description || "unnamed line") +
+        " \u00b7 net " + C.fmtMoneyExact(C.money(l.net), cur.value) +
+        (vp ? " \u00b7 VAT " + (vp.rate == null
+                 ? "no rate anywhere \u2014 nothing added"
+                 : pct(vp.rate) + " from the " + vp.from + " \u2192 " +
+                   C.fmtMoneyExact(vp.vat, cur.value)) : "") +
+        " \u00b7 base " + C.fmtMoneyExact(base, cur.value) +
         " \u00b7 " + (lr.rate === 0 ? "earns nobody anything"
                    : lr.rate == null ? "no rate anywhere \u2014 nothing computed"
                    : pct(lr.rate) + " from the " + lr.from +
@@ -9610,12 +9940,16 @@ function invoicePopover(anchorEl, d, inv){
     linesNote.appendChild(h("div", { style:"margin-top:4px", text:
       "Lines add to " + C.fmtMoneyExact(tot.net, cur.value) +
       (tot.thru ? " with " + C.fmtMoneyExact(tot.thru, cur.value) + " resale inside it" : "") +
+      (derivedVat ? " \u00b7 VAT " + C.fmtMoneyExact(vatSum, cur.value) +
+         (vatBlank ? " (" + vatBlank + " line" + (vatBlank === 1 ? "" : "s") +
+                     " with no rate, adding nothing)" : "") +
+         " \u00b7 customer owes " + C.fmtMoneyExact(C.round2(tot.net + vatSum), cur.value) : "") +
       " \u00b7 commission " + (sum == null ? "nothing computed" :
         sum === 0 ? "nothing" : C.fmtMoneyExact(sum, cur.value)) +
       (anyBlank && sum != null ? " (some lines have no rate)" : "") +
       ", once it is settled in full." }));
   };
-  [net, thru, vat, cur, rateIn].forEach(function (el){
+  [net, thru, vat, vatRate, cur, rateIn].forEach(function (el){
     el.addEventListener("input", repaint); el.addEventListener("change", repaint); });
   earner.addEventListener("change", repaint);
   paintLines();
@@ -9646,6 +9980,9 @@ function invoicePopover(anchorEl, d, inv){
       dueDate: due.value.trim() ? C.parseDateInput(due.value, App.today) : null,
       currency:cur.value, net:C.money(net.value),
       passThrough:C.money(thru.value), vat:C.money(vat.value),
+      /* null is how an invoice goes back to having no rate at all, so it is
+         written explicitly rather than left undefined (C29). */
+      vatRate: invVatRate(),
       /* null puts it back to following the deal — a real value, not "unset" */
       commissionRate: (function (){
         if (!dealPays) return null;
@@ -9662,6 +9999,7 @@ function invoicePopover(anchorEl, d, inv){
       lines: lines.map(function (l){
         return { description:l.description || "", net:C.money(l.net),
                  passThrough:C.money(l.passThrough),
+                 vatRate: l.vatRate == null ? null : l.vatRate,
                  commissionRate: l.commissionRate == null ? null : l.commissionRate };
       })
     };
@@ -9669,6 +10007,11 @@ function invoicePopover(anchorEl, d, inv){
       payload.net = payload.lines.reduce(function (t,l){ return C.round2(t + l.net); }, 0);
       payload.passThrough = payload.lines.reduce(function (t,l){ return C.round2(t + l.passThrough); }, 0);
     }
+    /* The derived VAT is written into `vat` as well as being derivable from the
+       rates. Everything that reads an invoice without folding it \u2014 an export, a
+       statement, a batch written by hand \u2014 goes on finding one number where it
+       always was, and `invoiceVatMismatch` catches the two ever disagreeing. */
+    if (C.linesCarryVat(payload)) payload.vat = C.invoiceVat(payload);
     closeLayers("pop");
     if (inv) emit("invoice.updated", Object.assign({ invoiceId:inv.id }, payload));
     else     emit("invoice.raised",  Object.assign({ invoiceId:C.uid("inv") }, payload));
@@ -9677,10 +10020,11 @@ function invoicePopover(anchorEl, d, inv){
       (payload.dueDate ? "" : " No due date, so nothing will call it late."));
   } }, inv ? "Save" : "Raise"));
   box.appendChild(foot);
-  /* Wider than the default: the line editor is five columns and at 280px the
-     rate box was too narrow to show "12.5". openPopover clamps to the viewport,
-     so on a phone this still comes out full-width and centred. */
-  openPopover(anchorEl, box, { width:380 });
+  /* Wider than the default, and wider again now that a line carries a VAT rate
+     as well as a commission one: SIX columns, and at 380px the description was
+     down to about seventy pixels — "DMC cou". openPopover clamps to the
+     viewport, so on a phone this still comes out full-width and centred. */
+  openPopover(anchorEl, box, { width:600 });
 }
 
 /* The commission column on one invoice row.
@@ -9715,13 +10059,13 @@ function commissionCell(deal, m, st_){
     if (only.rate != null)
       box.appendChild(h("div", { class:"note",
         text: pct(only.rate) + " of " + C.fmtMoneyExact(only.base, cur) +
-              (st_.invoice.vat > 0.005 ? "  (VAT excluded)" : "") }));
+              (st_.vat > 0.005 ? "  (VAT excluded)" : "") }));
     if (only.overridden)
       box.appendChild(h("div", { class:"note", text: m.rate == null
         ? "rate set on this invoice"
         : pct(only.rate) + ", not " + pct(m.rate) }));
     /* The data defect, named where the money is read. */
-    if (only.rate != null && !(st_.invoice.vat > 0.005) &&
+    if (only.rate != null && !(st_.vat > 0.005) &&
         !(st_.invoice.lines && st_.invoice.lines.length))
       box.appendChild(h("div", { class:"note", style:"color:var(--warn)",
         text:"no VAT recorded \u2014 if this amount includes VAT, the base is too high. Edit to split it." }));
@@ -13182,7 +13526,8 @@ function viewSettings(el){
         m.records.invoices.forEach(function (iv){
           sec.appendChild(h("div", { class:"note", text:
             "invoice " + iv.number + " · " + C.fmtMoneyExact(iv.net, iv.currency) + " net" +
-            (iv.vat ? " + " + C.fmtMoneyExact(iv.vat, iv.currency) + " VAT" : "") +
+            (iv.vat ? " + " + C.fmtMoneyExact(iv.vat, iv.currency) + " VAT" +
+                      (iv.vatFromLines ? " (from the lines)" : "") : "") +
             (iv.lines ? " · " + iv.lines + " line" + (iv.lines === 1 ? "" : "s") : "") +
             /* Blank named as blank, zero as a word. A currency-formatted zero
                reads as an arithmetic result waiting to change; it never will. */
@@ -14052,7 +14397,8 @@ globalThis.CRMApp = { App:App, emit:emit, refold:refold, render:render,
                       completeFollowup:completeFollowup, doDefer:doDefer, rowKeys:rowKeys,
                       ghUrl:ghUrl, ghPrefix:ghPrefix, ghRelPath:ghRelPath,
                       testConnection:testConnection, ghExplain:ghExplain,
-                      openDeal:openDeal, deleteDeal:deleteDeal, restoreDeal:restoreDeal,
+                      openDeal:openDeal, closePanel:closePanel,
+                      deleteDeal:deleteDeal, restoreDeal:restoreDeal,
                       foldDeal:foldDeal, unfoldDeal:unfoldDeal,
                       /* the hand-over file, so the suite can read what actually
                          leaves the app rather than trusting that it is right */

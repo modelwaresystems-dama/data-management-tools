@@ -21,6 +21,12 @@ const describe = t => console.log('\n\x1b[1m' + t + '\x1b[0m');
   const stamp = path.join(__dirname, '..', 'stamp-build.py');
 
   const metaOf = f => (/<meta name="version" content="([^"]*)">/.exec(fs.readFileSync(f, 'utf8')) || [])[1];
+  /* The build DATE the app is actually carrying. This test re-stamps the real
+     crm.html to prove the two files move together, and it used to pass a
+     hard-coded "2 Oct 2026" — so every run quietly dated the build wrong and
+     the Navigator card would have shown it. Put back what was there. */
+  const builtOf = f => (/<meta name="crm-build" content="[^"]*" data-built="([^"]*)"/
+    .exec(fs.readFileSync(f, 'utf8')) || [])[1];
 
   describe('the number lives in one place, in both files');
   const appV = metaOf(app), idxV = metaOf(index);
@@ -46,11 +52,14 @@ const describe = t => console.log('\n\x1b[1m' + t + '\x1b[0m');
   ok(drift.code !== 0 && /index\.html says 1\.33\.0/.test(drift.out),
      'and FAILS when index.html falls behind, naming what the card would show', drift.out.trim());
 
-  const bumped = check(['--file', app, '--version', appV, '--date', '2 Oct 2026']);
+  const appBuilt = builtOf(app);
+  const bumped = check(['--file', app, '--version', appV, '--date', appBuilt]);
   ok(/index\.html -> v/.test(bumped.out), 'stamping writes index.html as well as crm.html', bumped.out.trim());
   ok(metaOf(index) === appV, '…back in step without anybody typing it twice', metaOf(index));
   const after = check(['--file', app, '--check']);
   ok(after.code === 0, '…and the check passes again', after.out.trim());
+  ok(builtOf(app) === appBuilt,
+     '…and the test left the build date exactly as it found it', builtOf(app) + ' vs ' + appBuilt);
 
   describe('the page shows what the meta says');
   const b = await chromium.launch(require('./browser.js'));

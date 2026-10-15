@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.22.11">
+<meta name="version" content="1.22.12">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -340,7 +340,7 @@
 <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>document.write('<scr'+'ipt src="../app-config.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
-<script>window.PAGE_BUILD="1.22.11";</script>
+<script>window.PAGE_BUILD="1.22.12";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ================= datasherpa Live Quiz — engine ================= */
@@ -1013,7 +1013,7 @@ function hostStateForWire(){
 function publishState(){ if(chState) chState.publish("s", hostStateForWire()); }
 
 function wireHostButtons(){
-  document.getElementById("h-start").onclick=()=>{ if(H.phase==="lobby")hostNext(); };
+  document.getElementById("h-start").onclick=()=>{ if(H.phase==="lobby"||H.phase==="ready")hostNext(); };
   document.getElementById("h-reveal").onclick=()=>{ if(H.phase==="question")hostReveal(); };
   document.getElementById("h-next").onclick=()=>{ if(H.phase==="reveal")hostNext(); else if(H.phase==="interlude")hostNextQuiz(); };
   document.getElementById("h-restart").onclick=()=>hostRestart();
@@ -1172,7 +1172,7 @@ async function jumpToQuiz(i){
   const item=PLAN.items[i];
   try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(item.path,"quiz.sample.json"))); }catch(e){ QUIZ={title:item.title,questions:[]}; }
   H.qi=-1; H.answers=new Map(); H.counts=[0,0,0,0];
-  hostNext();
+  H.phase="ready"; publishState(); renderHost();   // wait on a staging lobby; host presses Start to run Q1
 }
 function hostEndQuiz(){
   if(!H || !(H.phase==="question"||H.phase==="reveal") || !QUIZ || !QUIZ.questions) return;
@@ -1189,7 +1189,7 @@ async function hostNextQuiz(){
   const item=PLAN.items[PLAN.idx];
   try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(item.path,"quiz.sample.json"))); }catch(e){ QUIZ={title:item.title,questions:[]}; }
   H.qi=-1; H.answers=new Map(); H.counts=[0,0,0,0];
-  hostNext();
+  H.phase="ready"; publishState(); renderHost();   // wait on a staging lobby; host presses Start to run Q1
 }
 /* host render (projector) */
 function renderHost(){
@@ -1197,7 +1197,7 @@ function renderHost(){
   syncHostBar(s);
   try{document.body.classList.add("projecting");}catch(e){}
   mount.innerHTML=projectorHTML(s);
-  if(s.phase==="lobby")drawQR(s.joinUrl);
+  if(s.phase==="lobby"||s.phase==="ready")drawQR(s.joinUrl);
   updateProgress();
   wireResults();
   fitResults();
@@ -1223,7 +1223,7 @@ function updateProgress(){
   } else { el.hidden=true; }
 }
 function syncHostBar(s){
-  document.getElementById("h-start").disabled=s.phase!=="lobby";
+  { const sb=document.getElementById("h-start"); sb.disabled=!(s.phase==="lobby"||s.phase==="ready"); sb.textContent=(s.phase==="ready")?"Start quiz →":"Start round"; }
   document.getElementById("h-reveal").disabled=s.phase!=="question";
   { const eq=document.getElementById("h-endquiz"); if(eq) eq.disabled=!(s.phase==="question"||s.phase==="reveal"); }
   { const en=(s.phase==="question"&&!s.untimed); const at=document.getElementById("h-addtime"),stb=document.getElementById("h-subtime"); if(at)at.disabled=!en; if(stb)stb.disabled=!en; }
@@ -1234,6 +1234,7 @@ function syncHostBar(s){
   { const pb=document.getElementById("h-pause"); if(pb) pb.disabled=!(PLAN||SOLO); }
   let t="";
   if(s.phase==="lobby")t=`${s.roomN} joined · waiting`;
+  else if(s.phase==="ready")t=`Ready · ${s.roomN} in the room · press Start quiz`;
   else if(s.phase==="question")t=`Q${s.qi+1}/${s.total} · ${s.answeredN}/${s.roomN} answered · ${s.untimed?"no timer":(Math.max(0,Math.ceil((s.endsAt-Date.now())/1000))+"s")}`;
   else if(s.phase==="reveal")t=`Q${s.qi+1}/${s.total} revealed`;
   else if(s.phase==="interlude")t="Quiz complete \u00b7 press Next quiz";
@@ -1269,6 +1270,22 @@ function projectorHTML(s){
         <div class="code mono">${esc(s.code)}</div>
         <div class="url">📱 Scan the QR &nbsp;·&nbsp; 💻 open <b style="color:var(--ink)">${esc(s.joinBase)}</b><br>and enter code <b style="color:var(--accent-ink)">${esc(s.code)}</b></div>${s.className?`<div class="url" style="margin-top:6px">Class: <b style="color:var(--accent-ink)">${esc(s.className)}</b></div>`:""}
         <div class="joiners"><div class="cnt"><b>${s.roomN}</b> in the room</div><div class="chips">${chips||'<span style="color:var(--faint);font-size:14px">Waiting for people to join…</span>'}</div></div>
+      </div>
+      <div class="art">${(typeof QUIZ!=="undefined"&&QUIZ&&QUIZ.image)?`<img class="lobbyimg" src="${QUIZ.image}" alt="">`:""}<div class="qr" id="qrbox"></div><div class="mono" style="color:var(--faint);font-size:13px">${esc(s.category||"")}</div></div>
+    </div>${jumpControl()}${dayControl()}`;
+  }
+  if(s.phase==="ready"){
+    const chips=[...H.players.entries()].filter(([id,p])=>inRun(p)).map(([id,p])=>`<span class="chip"><span class="av" style="background:${color(id)};font-size:14px">${emoji(id)}</span>${esc(p.name)}</span>`).join("");
+    const upTitle=(s.plan&&s.plan.quizTitle)||s.title||"Next quiz";
+    const upNo=s.plan?`Quiz ${s.plan.idx+1} of ${s.plan.total}`:"";
+    return `<div class="lobby">
+      <div class="join">
+        <h2>Ready for the next quiz</h2>
+        <div class="mono" style="color:var(--faint);font-size:13px;margin-top:2px">${esc(upNo)}</div>
+        <div class="qname" style="margin:2px 0 4px">${esc(upTitle)}</div>
+        <div class="url">Back from a break? 📱 Scan the QR &nbsp;·&nbsp; 💻 ${esc(s.joinBase)} &nbsp;·&nbsp; code <b style="color:var(--accent-ink)">${esc(s.code)}</b></div>${s.className?`<div class="url" style="margin-top:6px">Class: <b style="color:var(--accent-ink)">${esc(s.className)}</b></div>`:""}
+        <div class="joiners"><div class="cnt"><b>${s.roomN}</b> in the room</div><div class="chips">${chips||'<span style="color:var(--faint);font-size:14px">Waiting for people to return…</span>'}</div></div>
+        <div class="rnext" style="margin-top:12px">Host: press <b style="color:var(--accent-ink)">Start quiz →</b> when everyone is back.</div>
       </div>
       <div class="art">${(typeof QUIZ!=="undefined"&&QUIZ&&QUIZ.image)?`<img class="lobbyimg" src="${QUIZ.image}" alt="">`:""}<div class="qr" id="qrbox"></div><div class="mono" style="color:var(--faint);font-size:13px">${esc(s.category||"")}</div></div>
     </div>${jumpControl()}${dayControl()}`;
@@ -1502,7 +1519,7 @@ async function addQuizLive(path, title){
   PLAN.idx=PLAN.items.length-1;
   try{ QUIZ=shuffleQuiz(normalizeQuiz(await fetchAsset(path,"quiz.sample.json"))); }catch(e){ QUIZ={title:title||"Quiz",questions:[]}; }
   H.qi=-1; H.answers=new Map(); H.counts=[0,0,0,0];
-  hostNext();
+  H.phase="ready"; publishState(); renderHost();   // wait on a staging lobby; host presses Start to run Q1
 }
 function revealWhy(s){
   const opts=(s.question&&s.question.options)||[], rats=s.rats||[], c=s.correct;
@@ -1562,6 +1579,7 @@ function renderPlayer(){
   if(!P){ return renderPlayerWaiting("Waiting for the host to start…"); }
   const head=`<div class="pv-h"><span class="who"><span class="me-em">${emoji(nameKey(myName))}</span> ${esc(myName)}</span><span class="sc">${myScore()} pts</span></div>`;
   if(P.phase==="lobby"){ mount.innerHTML=`<div class="pv">${head}<div class="pv-wait"><div class="bigemoji">${emoji(nameKey(myName))}</div><div class="big">You're in!</div><div>That's your emoji up on the big screen — waiting for the host to start…</div></div></div>`; return; }
+  if(P.phase==="ready"){ const up=(P.plan&&P.plan.quizTitle)||P.title||"the next quiz"; mount.innerHTML=`<div class="pv">${head}<div class="pv-wait"><div class="bigemoji">${emoji(nameKey(myName))}</div><div class="big">Next up: ${esc(up)}</div><div>Take your seats — waiting for the host to start the next quiz…</div></div></div>`; return; }
   if(P.phase==="question"){
     const sec=Math.max(0,Math.ceil((P.endsAt-Date.now())/1000));
     if(myPick==null && myAnsweredQi!==P.qi){

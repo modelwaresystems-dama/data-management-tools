@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.11.0">
+<meta name="version" content="1.12.0">
 <title>ACPP Image Manager</title>
 <style>
   :root{
@@ -102,7 +102,15 @@
   .thumb.zoom{cursor:zoom-in}
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.86);display:none;align-items:center;justify-content:center;flex-direction:column;z-index:1000;padding:28px}
   .lightbox.on{display:flex}
-  .lightbox img{max-width:96vw;max-height:84vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,.6);background:#111}
+  .lb-stage{max-width:96vw;max-height:84vh;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:6px;touch-action:none}
+  .lightbox img{max-width:96vw;max-height:84vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,.6);background:#111;transform-origin:center center;will-change:transform;cursor:zoom-in;transition:transform .12s ease}
+  .lightbox img.zoomed{cursor:grab}
+  .lightbox img.grabbing{cursor:grabbing}
+  .lightbox img.notrans{transition:none}
+  .lb-zoomctl{display:flex;align-items:center;gap:6px;margin-top:12px}
+  .lb-zoomctl button{background:rgba(255,255,255,.14);color:#fff;border:0;border-radius:7px;min-width:34px;height:32px;padding:0 11px;font-size:1rem;cursor:pointer;line-height:1}
+  .lb-zoomctl button:hover{background:rgba(255,255,255,.26)}
+  .lb-zoomctl #lbZoomPct{color:#ddd;font-size:.8rem;min-width:48px;text-align:center;font-variant-numeric:tabular-nums}
   .lb-cap{color:#eee;font-size:.88rem;margin-top:14px;max-width:min(96vw,900px);text-align:center;line-height:1.45}
   .lb-cap .idc{color:#9cd1e6;margin-right:8px}
   .lb-close{position:absolute;top:16px;right:20px;font-size:1.5rem;color:#fff;background:rgba(255,255,255,.14);border:0;border-radius:8px;width:40px;height:40px;cursor:pointer;line-height:1}
@@ -305,7 +313,7 @@
   </form>
 </dialog>
 
-<div class="lightbox" id="lightbox"><button class="lb-close" id="lbClose" aria-label="Close" type="button">✕</button><img id="lbImg" alt=""><div class="lb-cap" id="lbCap"></div><div class="lb-hint">Click anywhere or press Esc to close</div></div>
+<div class="lightbox" id="lightbox"><button class="lb-close" id="lbClose" aria-label="Close" type="button">✕</button><div class="lb-stage" id="lbStage"><img id="lbImg" alt=""></div><div class="lb-cap" id="lbCap"></div><div class="lb-zoomctl" id="lbZoomCtl"><button type="button" id="lbZoomOut" aria-label="Zoom out" title="Zoom out (−)">−</button><span id="lbZoomPct">100%</span><button type="button" id="lbZoomIn" aria-label="Zoom in" title="Zoom in (+)">+</button><button type="button" id="lbZoomReset" aria-label="Reset zoom" title="Reset (0)">Reset</button></div><div class="lb-hint">Scroll or +/− to zoom · drag to pan · double-click to toggle · Esc to close</div></div>
 
 <script>
 "use strict";
@@ -872,13 +880,33 @@ function commitSection(sid,btn){
   });
 }
 
-/* ---------- lightbox (click an image to view full size) ---------- */
+/* ---------- lightbox (click an image to view full size, zoom + pan) ---------- */
+var LBZ={scale:1,tx:0,ty:0,drag:null};
+function lbApply(){
+  var img=$('lbImg');
+  img.style.transform='translate('+LBZ.tx+'px,'+LBZ.ty+'px) scale('+LBZ.scale+')';
+  img.classList.toggle('zoomed',LBZ.scale>1.001);
+  var pct=$('lbZoomPct'); if(pct)pct.textContent=Math.round(LBZ.scale*100)+'%';
+}
+function lbReset(){LBZ.scale=1;LBZ.tx=0;LBZ.ty=0;var img=$('lbImg');if(img)img.classList.remove('notrans','grabbing');lbApply();}
+// Zoom to newScale, keeping the point (cx,cy) in viewport coords fixed; null → anchor at centre.
+function lbZoomTo(newScale,cx,cy){
+  newScale=Math.max(1,Math.min(8,newScale));
+  var lb=$('lightbox');var r=lb.getBoundingClientRect();
+  var centerX=r.left+r.width/2, centerY=r.top+r.height/2;
+  var Cx=(cx==null?0:cx-centerX), Cy=(cy==null?0:cy-centerY);
+  var k=newScale/LBZ.scale;
+  LBZ.tx=Cx-(Cx-LBZ.tx)*k; LBZ.ty=Cy-(Cy-LBZ.ty)*k; LBZ.scale=newScale;
+  if(LBZ.scale<=1.001){LBZ.tx=0;LBZ.ty=0;}
+  lbApply();
+}
 function openLightbox(url,idc,cap){
   var lb=$('lightbox');$('lbImg').src=url;
   $('lbCap').innerHTML=(idc?'<span class="idc">'+esc(idc)+'</span>':'')+(cap?esc(cap):'');
+  lbReset();
   lb.classList.add('on');
 }
-function closeLightbox(){var lb=$('lightbox');lb.classList.remove('on');$('lbImg').removeAttribute('src');}
+function closeLightbox(){var lb=$('lightbox');lb.classList.remove('on');$('lbImg').removeAttribute('src');lbReset();}
 
 /* ---------- config panel ---------- */
 function cfgLoad(){
@@ -910,9 +938,40 @@ $('edSave').onclick=saveEditor;
 $('edCancel').onclick=function(){editing=null;$('editor').close();};
 $('edClose').onclick=function(){editing=null;$('editor').close();};
 $('upBtn').onclick=uploadAsset;
-$('lightbox').onclick=closeLightbox;
+// Close only when the backdrop itself (or the hint text) is clicked — not the image or controls.
+$('lightbox').onclick=function(e){if(e.target===this||e.target.classList.contains('lb-hint'))closeLightbox();};
 $('lbClose').onclick=function(e){e.stopPropagation();closeLightbox();};
-document.addEventListener('keydown',function(e){if(e.key==='Escape'&&$('lightbox').classList.contains('on'))closeLightbox();});
+$('lbZoomIn').onclick=function(e){e.stopPropagation();lbZoomTo(LBZ.scale*1.4,null,null);};
+$('lbZoomOut').onclick=function(e){e.stopPropagation();lbZoomTo(LBZ.scale/1.4,null,null);};
+$('lbZoomReset').onclick=function(e){e.stopPropagation();lbReset();};
+// Wheel zoom, anchored under the cursor.
+$('lightbox').addEventListener('wheel',function(e){
+  if(!$('lightbox').classList.contains('on'))return;
+  e.preventDefault();
+  var img=$('lbImg');img.classList.add('notrans');
+  lbZoomTo(LBZ.scale*(e.deltaY<0?1.15:1/1.15),e.clientX,e.clientY);
+},{passive:false});
+// Double-click toggles between fit and 2.5×, anchored at the cursor.
+$('lbImg').addEventListener('dblclick',function(e){e.preventDefault();e.stopPropagation();lbZoomTo(LBZ.scale>1.001?1:2.5,e.clientX,e.clientY);});
+// Drag to pan when zoomed in.
+$('lbImg').addEventListener('mousedown',function(e){
+  if(LBZ.scale<=1.001)return;
+  e.preventDefault();e.stopPropagation();
+  var img=$('lbImg');img.classList.add('notrans','grabbing');
+  LBZ.drag={x:e.clientX,y:e.clientY,tx:LBZ.tx,ty:LBZ.ty};
+});
+document.addEventListener('mousemove',function(e){
+  if(!LBZ.drag)return;
+  LBZ.tx=LBZ.drag.tx+(e.clientX-LBZ.drag.x); LBZ.ty=LBZ.drag.ty+(e.clientY-LBZ.drag.y); lbApply();
+});
+document.addEventListener('mouseup',function(){if(LBZ.drag){LBZ.drag=null;var img=$('lbImg');if(img)img.classList.remove('grabbing');}});
+document.addEventListener('keydown',function(e){
+  if(!$('lightbox').classList.contains('on'))return;
+  if(e.key==='Escape'){closeLightbox();}
+  else if(e.key==='+'||e.key==='='){e.preventDefault();lbZoomTo(LBZ.scale*1.4,null,null);}
+  else if(e.key==='-'||e.key==='_'){e.preventDefault();lbZoomTo(LBZ.scale/1.4,null,null);}
+  else if(e.key==='0'){e.preventDefault();lbReset();}
+});
 cfgLoad();
 if(ghConfigured())loadAll();else setStatus('Add your GitHub connection above, then <b>Connect &amp; load</b>.');
 

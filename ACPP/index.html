@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.21.0">
+<meta name="version" content="4.21.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -633,7 +633,10 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function _supportsFor(srcId,pid){for(var i=0;i<SRCIDX.links.length;i++){var l=SRCIDX.links[i];if(l.source_id===srcId&&padId(l.proposition_id)===padId(pid))return {sup:l.passage||'',strg:l.support_strength||''};}return {sup:'',strg:''};}
   function buildG2(o){return {sources:"Committed propositions."+(o.section_id||'')+".json (register)",backfill:(o.propositions||[]).map(function(p){return [padId(p.p_id),p.outline_id||'',p.type||'Claim',p.text||'',(p.tier!=null?p.tier:null),(Array.isArray(p.grounded_on)?p.grounded_on:(p.grounded_on?[p.grounded_on]:[])).map(padId),(p.derivation||null),(Array.isArray(p.evidence_candidates)?p.evidence_candidates:[])];})};}
   function buildG3(o){return {sources:"Committed argument_nodes."+(o.section_id||'')+".json (register)",nodes:((o.argument_nodes||o.nodes)||[]).map(function(n){return [padId(n.an_id),n.type,padId(n.p_id),n.outline_id||'',n.text||'',(n.depends_on||[]).map(padId),(n.leads_to||[]).map(padId),(n.evidence_needed!=null?!!n.evidence_needed:!!n.evidence_marker),(n.tier!=null?n.tier:null),(n.derivation||null),{bridge:!!n.authored_bridge,from:n.promoted_from||''}];}),drift:[],aiqNote:""};}
-  function buildAIQ(o){return ((o&&o.items)||[]).map(function(it){return [it.aiq_id,it.type||'Warrant',it.text||'',it.target_p_id||it.p_id||'',it.status||'Pending',it.promoted_to||'',it.argument_node||''];});}
+  function buildAIQ(o){return ((o&&o.items)||[]).map(function(it){return [it.aiq_id,it.type||'Warrant',it.text||'',it.target_p_id||it.p_id||'',it.status||'Pending',it.promoted_to||'',it.argument_node||'',it.source||''];});}
+  // Metaphor node-binding AIQ items (source "metaphor-align node-binding"; type NodeBinding; id AIQ-<SID>-NB-*)
+  // belong to the metaphor layer, not the argument graph — they must never appear on the argument-map canvas.
+  function isNodeBindingAiq(q){return !!q && ((q[7]==='metaphor-align node-binding') || /NodeBinding/i.test(q[1]||'') || /-NB-/.test(q[0]||''));}
   function buildG4(o){return {sources:"Committed evidence_links + sources.json (registers)",findings:"Built from the committed registers.",evid:(o.links||[]).map(function(l){var it=SRCIDX.items[l.src_id]||{};var at=_authTier(it.note);var s=_supportsFor(l.src_id,l.p_id);var status=l.status==='Supported'?'Supported':(l.status==='Rejected'?'Rejected':'NEEDS-SOURCE');return [padId(l.p_id),null,status,at.tier||at.auth||'',[{id:l.src_id||'',tier:at.tier||l.support_strength||'',cite:it.title||l.src_id||'',auth:at.auth||'',supports:s.sup||l.reviewer_comment||'',url:it.URL||'',quote:l.passage||'',locator:l.locator||''}]];})};}
   function buildG1map(oj){var arr=(oj&&(oj.outlines||oj.items))||(Array.isArray(oj)?oj:[]);var m={};arr.forEach(function(e){var sid=e.section_id||e.sid;if(sid)m[sid]={heading:e.heading||'',boundary:e.boundary||'',intended_conclusion:e.intended_conclusion||'',bullets:e.bullets||[],threads:e.threads||[]};});return m;}
   function installGate(sec,gate,struct){if(sec&&struct){if(!sec.art)sec.art={};sec.art[gate]=struct;}}
@@ -1866,7 +1869,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     function tierOfNode(it){return (it.tier!=null&&it.tier>=1&&it.tier<=7)?it.tier:tierOf(it.fn);}
     var tiers={1:[],2:[],3:[],4:[],5:[],6:[],7:[]};
     list.forEach(function(it){var t=tierOfNode(it);it._tier=t;(tiers[t]||(tiers[t]=[])).push(it);});
-    var aiqs=(sec.aiq||[]).map(function(q){var s=dec('AIQ',q[0]);return {id:q[0],fn:'Warrant',text:q[2],aiq:true,state:(s.decision==='accept'?'acc':(s.decision==='reject'?'rej':'pend'))};});
+    var aiqs=(sec.aiq||[]).filter(function(q){return !isNodeBindingAiq(q);}).map(function(q){var s=dec('AIQ',q[0]);return {id:q[0],fn:'Warrant',text:q[2],aiq:true,state:(s.decision==='accept'?'acc':(s.decision==='reject'?'rej':'pend'))};});
     aiqs.forEach(function(a){a._tier=5;tiers[5].push(a);});
     var evNodes=[];
     list.forEach(function(it){if(it.fn==='Conclusion')return;if(it.ev||it.evOk){evNodes.push({id:'EV-'+it.id,owner:it.id,ok:it.evOk,cite:(it.evOk?'SRC verified':'SRC needed'),pid:it.pid,_tier:8});}});

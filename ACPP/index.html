@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.21.1">
+<meta name="version" content="4.22.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -311,6 +311,8 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .ghline{font-size:.72rem;color:var(--muted,#667);font-family:ui-monospace,monospace;margin:4px 0 0}
 .ghmsg{font-size:.74rem;color:var(--muted,#667)}
 .vismapwrap{overflow:auto;border:1px solid var(--line,#ddd);border-radius:10px;padding:8px;background:#fcfcfd;margin:6px 0}
+/* full-bleed: let the argument map use the whole viewport width, not just the 1400px column */
+.vismapwrap.argwide{width:96vw;max-width:96vw;position:relative;left:50%;margin-left:-48vw}
 .rendoc{background:var(--surface2,#f0ebe0);border:1px solid var(--line,#ddd);border-radius:8px;padding:10px 12px;font-size:.9rem;line-height:1.55;margin:6px 0}
 .rendoc p{margin:0 0 8px}
 .rendoc p:last-child{margin-bottom:0}
@@ -1282,7 +1284,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     } else if(gk==="G2" && a && a.props){
       body=gateSummary(sec,'G2');
     } else if(gk==="G3" && a && a.nodes){
-      body='<p class="note"><button class="rv-btn g3man">? G3 Manual</button></p>'+(a.sources?'<p class="note"><b>Two sources:</b> '+esc(a.sources)+'</p>':'')+(a.aiqNote?'<p class="note">'+esc(a.aiqNote)+'</p>':'')+(gateStatus(sec,'G3')==='complete'?('<div class="vismapwrap">'+genArgumentSVG(sec)+'</div>'+gateSummary(sec,'G3')):'<div id="argReview"></div>');
+      body='<p class="note"><button class="rv-btn g3man">? G3 Manual</button></p>'+(a.sources?'<p class="note"><b>Two sources:</b> '+esc(a.sources)+'</p>':'')+(a.aiqNote?'<p class="note">'+esc(a.aiqNote)+'</p>':'')+(gateStatus(sec,'G3')==='complete'?('<div class="vismapwrap argwide">'+genArgumentSVG(sec)+'</div>'+gateSummary(sec,'G3')):'<div id="argReview"></div>');
     } else if(gk==="G3" && a && a.contention){
       body='<p class="note"><button class="rv-btn g3man">? G3 Manual</button></p>'+'<div class="vismapwrap">'+genArgumentSVG(sec)+'</div>'+'<div style="font-size:.88rem"><div style="font-weight:600;margin-bottom:6px">'+esc(a.contention)+'</div><ul style="margin:6px 0;padding-left:18px">'+
         a.reasons.map(function(r){return '<li style="margin:3px 0"><span class="idc">'+r[0]+'</span> — '+esc(r[1])+' '+(r[2]?'<span class="pill need">needs evidence</span>':'')+'</li>';}).join('')+
@@ -1326,7 +1328,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var acc=active.filter(function(n){var s=lsGet(kOf(n[0]))||{};return s.decision==='acc';}).length;
       var ids=active.map(function(n){return n[0];});
       var bar='<div class="rv-bar"><span class="rv-prog">'+acc+' of '+active.length+' accepted</span><span><span class="rv-save" id="agSave"></span><button class="rv-export" id="agExport">⬆ Commit argument_nodes.json</button></span></div>';
-      var map='<div class="maptools"><button class="rv-btn visfull">⤢ Full screen</button></div><div class="vismapwrap" style="margin-bottom:10px">'+genArgumentSVG(sec)+'</div>';
+      var map='<div class="maptools"><button class="rv-btn visfull">⤢ Full screen</button></div><div class="vismapwrap argwide" style="margin-bottom:10px">'+genArgumentSVG(sec)+'</div>';
       var hint='<div class="rv-cands-h">Provide the argument for each proposition: set its function and its Depends-on / Leads-to links. The map updates live. Reject removes a node.</div>';
       var cards=active.map(function(n){var id=n[0];var s=lsGet(kOf(id))||{decision:'nd',comment:''};var L=g3L(sec,id);
         var fnsel='<select class="g3fn" data-id="'+id+'">'+FN.map(function(x){return '<option'+(L.fn===x?' selected':'')+'>'+x+'</option>';}).join('')+'</select>';
@@ -1873,20 +1875,63 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     aiqs.forEach(function(a){a._tier=5;tiers[5].push(a);});
     var evNodes=[];
     list.forEach(function(it){if(it.fn==='Conclusion')return;if(it.ev||it.evOk){evNodes.push({id:'EV-'+it.id,owner:it.id,ok:it.evOk,cite:(it.evOk?'SRC verified':'SRC needed'),pid:it.pid,_tier:8});}});
-    var W=1320,bw=240,bh=70,ew=180,eh=46,gapX=30,rowGap=30,bandGap=36,pad=20;
+    var bw=240,bh=70,ew=180,eh=46,gapX=30,rowGap=30,bandGap=36,pad=20;
     var BLUE=['#dbeafe','#2563eb'],GREEN=['#dcfce7','#16a34a'],AMBER=['#fef3c7','#d97706'],RED=['#fee2e2','#dc2626'],GREY='#5b6b7a';
+    // ---- Swim-lane setup: one lane per Principle; a node owned by exactly one principle sits in that lane,
+    //      a node that converges across principles goes to the shared central spine. ≥2 principles → swim layout.
+    var typeOf={},depOf={}; list.forEach(function(it){typeOf[it.id]=it.fn;});
+    if(usingNodes){g3Active(sec).forEach(function(n){depOf[n[0]]=(g3L(sec,n[0]).dep||[]);});}
+    var princList=list.filter(function(it){return it.fn==='Principle';}).map(function(it){return it.id;});
+    var nLanes=princList.length, swim=usingNodes && nLanes>=2, laneIdx={}; princList.forEach(function(pid,i){laneIdx[pid]=i;});
+    function ancPrinc(id){var out={},seen={},st=[id];while(st.length){var c=st.pop();if(seen[c])continue;seen[c]=1;if(c!==id&&typeOf[c]==='Principle'){out[c]=1;continue;}(depOf[c]||[]).forEach(function(d){if(!seen[d])st.push(d);});} if(typeOf[id]==='Principle')out[id]=1; return Object.keys(out);}
+    function laneOfNode(it){ if(!swim)return null; if(it.fn==='Principle')return laneIdx[it.id]; if(it.aiq)return 'S'; var ap=ancPrinc(it.id); return (ap.length===1&&laneIdx[ap[0]]!=null)?laneIdx[ap[0]]:'S'; }
+    list.forEach(function(it){it._lane=laneOfNode(it);}); aiqs.forEach(function(a){a._lane='S';});
+    var W, topOff=swim?36:0, laneW=0;
+    if(swim){ laneW=Math.max(360, 2*(bw+gapX)); W=nLanes*laneW; } else { W=1320; }
+    function laneCx(i){return i*laneW + laneW/2;}
     function perRow(nodeW){return Math.max(1,Math.floor((W-2*pad+gapX)/(nodeW+gapX)));}
-    var pos={},geo={},adjOut={},adjIn={},p=[],y=pad,bandMeta=[];
+    var pos={},geo={},adjOut={},adjIn={},p=[],y=pad+topOff,bandMeta=[],laneBandBottom=pad+topOff;
     var BANDS=[];[1,2,3,4,5,6,7].forEach(function(ti){if(tiers[ti]&&tiers[ti].length)BANDS.push({lab:'T'+ti,arr:tiers[ti],ev:false});});
     if(evNodes.length)BANDS.push({lab:'EV',arr:evNodes,ev:true});
-    BANDS.forEach(function(bnd){var arr=bnd.arr,isEv=bnd.ev,single=(arr.length===1&&!isEv);var nodeW=isEv?ew:(single?360:bw),pr=perRow(nodeW),rows=Math.ceil(arr.length/pr),bandTop=y;
-      arr.forEach(function(it){it._w=nodeW;it._h=isEv?eh:boxHeight(it.text,nodeW);});
-      var rowH=[];for(var r=0;r<rows;r++){var mh=0;for(var i=r*pr;i<Math.min((r+1)*pr,arr.length);i++){mh=Math.max(mh,arr[i]._h);}rowH[r]=mh;}
-      var rowTop=[],acc=bandTop;for(var r=0;r<rows;r++){rowTop[r]=acc;acc+=rowH[r]+rowGap;}
-      arr.forEach(function(it,i){var r=Math.floor(i/pr),cI=i%pr,cnt=Math.min(pr,arr.length-r*pr),rowW=cnt*nodeW+(cnt-1)*gapX,sx=(W-rowW)/2+cI*(nodeW+gapX),sy=rowTop[r];it._x=sx;it._y=sy;pos[it.id]={cx:sx+nodeW/2,top:sy,bot:sy+it._h};geo[it.id]={x:sx,y:sy,w:nodeW,h:it._h};});
-      var bandH=acc-rowGap-bandTop;bandMeta.push({ti:bnd.lab,top:bandTop,bot:bandTop+bandH});y=bandTop+bandH+bandGap;});
+    function place(it,x,yy){it._x=x;it._y=yy;pos[it.id]={cx:x+it._w/2,top:yy,bot:yy+it._h};geo[it.id]={x:x,y:yy,w:it._w,h:it._h};}
+    BANDS.forEach(function(bnd){var arr=bnd.arr,isEv=bnd.ev,bandTop=y;
+      if(swim && !isEv){
+        var laneNodes={},shared=[]; arr.forEach(function(it){ if(it._lane==='S'||it._lane==null)shared.push(it); else (laneNodes[it._lane]=laneNodes[it._lane]||[]).push(it); });
+        var sy=bandTop, hasLane=Object.keys(laneNodes).length>0;
+        if(hasLane){ var perLane=Math.max(1,Math.floor((laneW-16+gapX)/(bw+gapX))), maxBottom=sy;
+          Object.keys(laneNodes).forEach(function(li){var nodes=laneNodes[li];nodes.forEach(function(it){it._w=bw;it._h=boxHeight(it.text,bw);});
+            var rows=Math.ceil(nodes.length/perLane),acc=sy;
+            for(var r=0;r<rows;r++){var cnt=Math.min(perLane,nodes.length-r*perLane),rowW=cnt*bw+(cnt-1)*gapX,startX=laneCx(+li)-rowW/2,mh=0;
+              for(var k=0;k<cnt;k++){var it2=nodes[r*perLane+k];place(it2,startX+k*(bw+gapX),acc);mh=Math.max(mh,it2._h);}
+              acc+=mh+rowGap;}
+            maxBottom=Math.max(maxBottom,acc-rowGap);});
+          sy=maxBottom+(shared.length?rowGap:0); laneBandBottom=Math.max(laneBandBottom,maxBottom);
+        }
+        if(shared.length){ var nodeW=(shared.length===1?Math.min(420,W-2*pad):bw);
+          shared.forEach(function(it){it._w=nodeW;it._h=boxHeight(it.text,nodeW);});
+          var pr=perRow(nodeW),rows=Math.ceil(shared.length/pr),acc=sy,rowTop=[],rowH=[];
+          for(var r=0;r<rows;r++){var mh=0;for(var i=r*pr;i<Math.min((r+1)*pr,shared.length);i++)mh=Math.max(mh,shared[i]._h);rowH[r]=mh;rowTop[r]=acc;acc+=mh+rowGap;}
+          shared.forEach(function(it,i){var r=Math.floor(i/pr),cI=i%pr,cnt=Math.min(pr,shared.length-r*pr),rowW=cnt*nodeW+(cnt-1)*gapX,startX=(W-rowW)/2;place(it,startX+cI*(nodeW+gapX),rowTop[r]);});
+          sy=acc-rowGap;
+        }
+        var bandH=sy-bandTop;bandMeta.push({ti:bnd.lab,top:bandTop,bot:bandTop+bandH});y=bandTop+bandH+bandGap;
+      } else {
+        var single=(arr.length===1&&!isEv),nodeW=isEv?ew:(single?360:bw),pr=perRow(nodeW),rows=Math.ceil(arr.length/pr);
+        arr.forEach(function(it){it._w=nodeW;it._h=isEv?eh:boxHeight(it.text,nodeW);});
+        var rowH=[];for(var r=0;r<rows;r++){var mh=0;for(var i=r*pr;i<Math.min((r+1)*pr,arr.length);i++){mh=Math.max(mh,arr[i]._h);}rowH[r]=mh;}
+        var rowTop=[],acc=bandTop;for(var r=0;r<rows;r++){rowTop[r]=acc;acc+=rowH[r]+rowGap;}
+        arr.forEach(function(it,i){var r=Math.floor(i/pr),cI=i%pr,cnt=Math.min(pr,arr.length-r*pr),rowW=cnt*nodeW+(cnt-1)*gapX,sx=(W-rowW)/2+cI*(nodeW+gapX);place(it,sx,rowTop[r]);});
+        var bandH=acc-rowGap-bandTop;bandMeta.push({ti:bnd.lab,top:bandTop,bot:bandTop+bandH});y=bandTop+bandH+bandGap;
+      }});
     var H=y+2+((usingNodes&&AQUALITY[sec.sid])?30:0);  // extra room for Wire dangling stubs
     p.push('<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="'+GREY+'"/></marker><marker id="aha" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d97706"/></marker></defs>');
+    // Swim-lane backgrounds + principle headers (BPMN style), drawn behind everything.
+    if(swim){ for(var _i=0;_i<nLanes;_i++){var lx=_i*laneW; var pid=princList[_i]; var pt=((list.filter(function(x){return x.id===pid;})[0]||{}).text)||'';
+        p.push('<rect x="'+(lx+4)+'" y="'+pad+'" width="'+(laneW-8)+'" height="'+(laneBandBottom-pad+6)+'" rx="11" fill="'+(_i%2?'#eef3f9':'#f5f8fc')+'" stroke="#dbe4ee" stroke-width="1"/>');
+        p.push('<text x="'+(lx+16)+'" y="'+(pad+14)+'" font-size="10.5" font-weight="800" fill="#4a5b6b" font-family="ui-monospace,monospace">'+esc(pid)+' · Principle</text>');
+        p.push('<text x="'+(lx+16)+'" y="'+(pad+28)+'" font-size="9" fill="#8a98a6">'+esc(String(pt).slice(0,Math.floor(laneW/6)))+'</text>'); }
+      if(laneBandBottom<H-18)p.push('<text x="8" y="'+(laneBandBottom+15)+'" font-size="9.5" font-weight="800" fill="#9aa7b4" font-family="ui-monospace,monospace">▽ CONVERGENCE — shared across principles, flowing to the Conclusion</text>');
+    }
     bandMeta.forEach(function(b){p.push('<text x="4" y="'+(b.top+11)+'" font-size="9" fill="#9aa7b4" font-family="ui-monospace,monospace">'+b.ti+'</text>');});
     function edge(aId,bId,solid,amber){var a=pos[aId],b=pos[bId];if(!a||!b)return;(adjOut[aId]=adjOut[aId]||[]).push(bId);(adjIn[bId]=adjIn[bId]||[]).push(aId);var x1=a.cx,x2=b.cx,y1,y2;if(b.top>=a.bot){y1=a.bot;y2=b.top;}else if(b.bot<=a.top){y1=a.top;y2=b.bot;}else{y1=a.bot;y2=b.top;}var col=amber?'#d97706':GREY;p.push('<path class="argedge" data-from="'+esc(aId)+'" data-to="'+esc(bId)+'" d="M'+x1+','+y1+' L'+x2+','+y2+'" stroke="'+col+'" stroke-width="1.4" fill="none" marker-end="url(#'+(amber?'aha':'ah')+')"'+(solid?'':' stroke-dasharray="5 4"')+'/>');}
     if(usingNodes){var seen={};g3Active(sec).forEach(function(n){var L=g3L(sec,n[0]);(L.leads||[]).forEach(function(t){var k=n[0]+'>'+t;if(!seen[k]&&pos[n[0]]&&pos[t]){seen[k]=1;edge(n[0],t,accOf(n[0]));}});(L.dep||[]).forEach(function(dp){var k=dp+'>'+n[0];if(!seen[k]&&pos[dp]&&pos[n[0]]){seen[k]=1;edge(dp,n[0],accOf(dp));}});});}

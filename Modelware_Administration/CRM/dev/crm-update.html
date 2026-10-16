@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="version" content="1.0.0">
+<title>Today's CRM Update</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@500;650;750&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* One narrow column of deal cards, a sticky day header with the confirmation tally,
+   Howard's controls inline on each card. */
+:root {
+  --bg: #f3f5f4; --surface: #ffffff; --ink: #18221f; --muted: #5b6863; --line: #d9e0dd;
+  --accent: #0f6b5c; --accent-ink: #ffffff; --accent-soft: #e0efeb;
+  --draft: #8a5a00; --draft-soft: #fbf0d9; --ok: #1f7a3a; --ok-soft: #e1f3e6;
+  --bad: #a3322a; --bad-soft: #f8e3e0;
+  --font-display: "Libre Franklin", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111715; --surface: #18201d; --ink: #e6ece9; --muted: #9aa8a2; --line: #2b3632;
+    --accent: #4fb8a3; --accent-ink: #0b1311; --accent-soft: #1b322c;
+    --draft: #e9b44c; --draft-soft: #33290f; --ok: #6fcf8a; --ok-soft: #173023;
+    --bad: #f08a80; --bad-soft: #3a1c19; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111715; --surface: #18201d; --ink: #e6ece9; --muted: #9aa8a2; --line: #2b3632;
+  --accent: #4fb8a3; --accent-ink: #0b1311; --accent-soft: #1b322c;
+  --draft: #e9b44c; --draft-soft: #33290f; --ok: #6fcf8a; --ok-soft: #173023;
+  --bad: #f08a80; --bad-soft: #3a1c19; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 760px; margin: 0 auto; padding-inline: 16px; padding-block: 0 48px; display: grid; gap: 20px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h1 { font-size: 1.45rem; font-weight: 750; letter-spacing: -0.01em; }
+h2 { font-size: 0.78rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.day { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-block: 14px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+.titlerow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.draft { background: var(--draft-soft); color: var(--draft); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.plain { background: var(--accent-soft); color: var(--accent); }
+.daypick { margin-left: auto; }
+select, input[type="text"], input[type="date"], input[type="password"], textarea { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; max-width: 100%; }
+
+.tally { display: flex; flex-wrap: wrap; gap: 6px; }
+.who { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 0.82rem; }
+.who b { font-weight: 600; }
+.who.done { border-color: var(--ok); } .who.done .n { color: var(--ok); }
+.who.flag { border-color: var(--bad); } .who.flag .n { color: var(--bad); }
+
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); padding: 5px 12px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 6px 12px; font-weight: 500; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.good[aria-pressed="true"] { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); }
+.btn.warn[aria-pressed="true"] { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.whoami { font-size: 0.85rem; }
+
+.cards { display: grid; gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.card.mine { border-color: var(--accent); }
+.card.dropped .summary, .card.dropped .step-what { text-decoration: line-through; color: var(--muted); }
+.cardhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.company { font-family: var(--font-display); font-weight: 650; font-size: 1.02rem; }
+.deal { color: var(--muted); }
+.cardhead .pill { margin-left: auto; }
+.meta { font-size: 0.8rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.summary { margin: 0; overflow-wrap: anywhere; }
+.was { font-size: 0.8rem; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
+.step { border-top: 1px dashed var(--line); padding-top: 10px; display: grid; gap: 4px; }
+.step-label { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.step-what { overflow-wrap: anywhere; }
+.step-meta { font-size: 0.85rem; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.owner { font-weight: 600; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.actions .label { font-size: 0.8rem; color: var(--muted); margin-right: 2px; }
+.comment { width: 100%; }
+.flags { display: grid; gap: 4px; font-size: 0.85rem; }
+.flags .f { padding: 6px 10px; border-radius: 6px; background: var(--bad-soft); color: var(--ink); overflow-wrap: anywhere; }
+.flags .f.okf { background: var(--ok-soft); }
+.edit { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.edit label, .connect label { font-size: 0.8rem; color: var(--muted); display: grid; gap: 3px; }
+.edit .row2, .connect .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.count { font-size: 0.75rem; text-align: right; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; display: grid; gap: 8px; }
+.panel ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.panel p { margin: 0; }
+.mbx { display: grid; grid-template-columns: max-content max-content 1fr; gap: 4px 14px; font-size: 0.85rem; overflow-x: auto; }
+.empty { text-align: center; padding: 40px 16px; color: var(--muted); }
+.err { color: var(--bad); }
+.toast { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; max-width: calc(100% - 32px); }
+@media (max-width: 480px) { .edit .row2, .connect .row2 { grid-template-columns: 1fr; } .daypick { margin-left: 0; } }
+</style></head><body>
+
+<div class="wrap">
+  <header class="day">
+    <div class="titlerow">
+      <h1 id="dayTitle">CRM update</h1>
+      <span id="stateBadge" class="pill draft" hidden>Draft</span>
+      <select id="dayPick" class="daypick" aria-label="Choose a day" hidden></select>
+    </div>
+    <div id="tally" class="tally" aria-label="Who has confirmed their next steps"></div>
+    <div class="bar">
+      <div class="seg" role="group" aria-label="Show">
+        <button id="showMine" aria-pressed="true">My next steps</button>
+        <button id="showAll" aria-pressed="false">Everything</button>
+      </div>
+      <span id="whoami" class="whoami muted"></span>
+      <button id="refresh" class="btn">Refresh</button>
+      <button id="approveAll" class="btn primary" hidden>Approve all</button>
+    </div>
+  </header>
+
+  <section id="connectPanel" class="panel connect" hidden>
+    <h2>Connect to the CRM repo</h2>
+    <p class="muted">This page reads and writes <span class="mono">CRM_Data/triage</span> in the private
+    <span class="mono">modelware_app_storage</span> repo with <b>your own</b> GitHub token, the same
+    connection the CRM uses. If you have connected the CRM in this browser, you are already connected.
+    The token stays in this browser and is only ever sent to github.com.</p>
+    <div class="row2">
+      <label>Owner <input type="text" id="cOwner" value="modelwaresystems-dama"></label>
+      <label>Repo <input type="text" id="cRepo" value="modelware_app_storage"></label>
+    </div>
+    <div class="row2">
+      <label>Folder in repo <input type="text" id="cPath" value="CRM_Data"></label>
+      <label>Your CRM user id <input type="text" id="cUser" placeholder="e.g. debbie"></label>
+    </div>
+    <label>Your GitHub token <input type="password" id="cToken" placeholder="github_pat_… with Contents: read and write on this repo"></label>
+    <div class="actions"><button id="cSave" class="btn primary">Connect</button><span id="cMsg" class="muted"></span></div>
+  </section>
+
+  <section id="cards" class="cards" aria-live="polite">
+    <div class="empty" id="emptyState"><p>Loading…</p></div>
+  </section>
+
+  <section id="questionsPanel" class="panel" hidden>
+    <h2>Questions for Howard</h2>
+    <ul id="questions"></ul>
+  </section>
+
+  <section id="mailPanel" class="panel" hidden>
+    <h2>What the run could read</h2>
+    <div id="mailboxes" class="mbx"></div>
+    <p id="sourceLine" class="muted" style="font-size:0.8rem"></p>
+  </section>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+(function () {
+  /* Data lives in the private repo, never in this page:
+       <folder>/triage/batches/<date>.json         the morning run's batch (display fields only)
+       <folder>/triage/decisions/<date>.json       Howard's approve / edit / drop
+       <folder>/triage/confirm/<date>/<user>.json  each person's confirmations, one writer per file
+       <folder>/triage/imported/<date>.json        written by the run once the import has landed
+     The connection is the CRM's own (localStorage "crm.github"), so one setup covers both. */
+  const GH_KEY = "crm.github";
+  const KIND = { email: "Email", meeting: "Meeting", call: "Call", whatsapp: "WhatsApp", note: "Note", linkedin: "LinkedIn" };
+  const $ = (id) => document.getElementById(id);
+  const S = {
+    gh: null, me: "", isOwner: false, dates: [], date: null,
+    batch: null, decisions: {}, decSha: null, imported: null, confirms: {}, mySha: null,
+    view: "mine", editing: null, readOnly: false, loading: false
+  };
+
+  function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+  function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function fmtDay(iso) {
+    if (!iso) return "";
+    return new Date(iso + "T12:00:00").toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" });
+  }
+  function fmtTime(ts) {
+    if (!ts) return "";
+    return new Date(ts).toLocaleString("en-ZA", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  }
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  let toastT = null;
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3200);
+  }
+  function rosterName(id) {
+    const r = (S.batch && S.batch.roster || []).find((u) => u.id === id);
+    return r ? r.name.split(" ")[0] : (id || "Howard");
+  }
+
+  /* ---------- GitHub contents API, same calls as crm.html ---------- */
+  function b64encode(str) {
+    const bytes = new TextEncoder().encode(str); let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function b64decode(b64) {
+    const bin = atob(String(b64).replace(/\n/g, ""));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  function headers() {
+    return { "Accept": "application/vnd.github+json", "Authorization": "Bearer " + S.gh.token, "X-GitHub-Api-Version": "2022-11-28" };
+  }
+  function rel(p) {
+    const base = String(S.gh.path || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+    return (base ? base + "/" : "") + "triage/" + p;
+  }
+  function url(p) {
+    return "https://api.github.com/repos/" + encodeURIComponent(S.gh.owner) + "/" + encodeURIComponent(S.gh.repo) +
+      "/contents/" + rel(p).split("/").map(encodeURIComponent).join("/");
+  }
+  function explain(status) {
+    if (status === 401) return "GitHub rejected your token (401). It has expired or was pasted short. Paste a fresh one.";
+    if (status === 403) return "GitHub refused (403). Your token needs Contents: read and write on " + S.gh.repo + ".";
+    if (status === 404) return "GitHub can't see " + S.gh.owner + "/" + S.gh.repo + " with your token (404).";
+    if (status === 409 || status === 422) return "Someone saved at the same moment. Try again.";
+    return "GitHub said " + status + ".";
+  }
+  async function ghList(p) {
+    const r = await fetch(url(p) + "?ref=" + encodeURIComponent(S.gh.branch || "main"), { headers: headers(), cache: "no-store" });
+    if (r.status === 404) return [];
+    if (!r.ok) { const e = new Error(explain(r.status)); e.status = r.status; throw e; }
+    const j = await r.json();
+    return Array.isArray(j) ? j : [];
+  }
+  async function ghGet(p) {
+    const r = await fetch(url(p) + "?ref=" + encodeURIComponent(S.gh.branch || "main"), { headers: headers(), cache: "no-store" });
+    if (r.status === 404) return null;
+    if (!r.ok) { const e = new Error(explain(r.status)); e.status = r.status; throw e; }
+    const j = await r.json();
+    return { sha: j.sha, data: JSON.parse(b64decode(j.content)) };
+  }
+  async function ghPut(p, obj, sha, message) {
+    const body = { message: message, content: b64encode(JSON.stringify(obj, null, 2) + "\n"), branch: S.gh.branch || "main" };
+    if (sha) body.sha = sha;
+    const r = await fetch(url(p), { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, headers()), body: JSON.stringify(body) });
+    if (!r.ok) { const e = new Error(explain(r.status)); e.status = r.status; throw e; }
+    return (await r.json()).content.sha;
+  }
+  /* Read, change, write. A clash (someone else saved first) re-reads and re-applies,
+     so two people never overwrite each other. */
+  async function readModifyWrite(p, blank, change, message) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const cur = await ghGet(p);
+      const doc = cur ? cur.data : blank();
+      change(doc);
+      try { const sha = await ghPut(p, doc, cur && cur.sha, message); return { doc: doc, sha: sha }; }
+      catch (e) { if ((e.status === 409 || e.status === 422) && attempt < 2) continue; throw e; }
+    }
+  }
+  const queue = { p: Promise.resolve() };
+  function enqueue(fn) { const next = queue.p.then(fn, fn); queue.p = next.catch(() => {}); return next; }
+  function writeFailed(e) {
+    if (e && e.status === 403) { S.readOnly = true; render(); }
+    toast((e && e.message) || "That didn't save. Check your connection and try again.");
+  }
+
+  /* ---------- Howard's decisions ---------- */
+  function decide(rowId, patch) {
+    if (!S.isOwner) return Promise.resolve();
+    return enqueue(async () => {
+      const res = await readModifyWrite("decisions/" + S.date + ".json",
+        () => ({ date: S.date, approveAll: false, rows: {} }),
+        (doc) => {
+          doc.rows = doc.rows || {};
+          const row = Object.assign({}, doc.rows[rowId] || {}, patch);
+          for (const k of Object.keys(row)) if (row[k] === null && k !== "nextStep") delete row[k];
+          if (!row.status) delete row.nextStep;
+          doc.rows[rowId] = row;
+          doc.updatedAt = new Date().toISOString();
+        }, "crm-update: Howard's decision on " + S.date + " " + rowId);
+      S.decisions = res.doc; render();
+    }).catch(writeFailed);
+  }
+  function approveAll() {
+    return enqueue(async () => {
+      const res = await readModifyWrite("decisions/" + S.date + ".json",
+        () => ({ date: S.date, approveAll: false, rows: {} }),
+        (doc) => { doc.approveAll = true; doc.updatedAt = new Date().toISOString(); },
+        "crm-update: Howard approved all for " + S.date);
+      S.decisions = res.doc; render();
+      toast("Everything not dropped will be imported at the next morning run.");
+    }).catch(writeFailed);
+  }
+  function statusOf(rowId) {
+    const d = (S.decisions.rows || {})[rowId] || {};
+    if (d.status === "dropped") return "dropped";
+    if (d.status === "edited") return "edited";
+    if (d.status === "approved" || S.decisions.approveAll) return "approved";
+    return "draft";
+  }
+
+  /* ---------- staff confirmations: one file per person per day ---------- */
+  function confirmStep(rowId, state, comment) {
+    if (!S.me) { toast("Connect with your CRM user id first."); return; }
+    const entry = { state: state, comment: comment || "", at: new Date().toISOString() };
+    return enqueue(async () => {
+      const res = await readModifyWrite("confirm/" + S.date + "/" + S.me + ".json",
+        () => ({ rosterId: S.me, date: S.date, rows: {} }),
+        (doc) => { doc.rosterId = S.me; doc.rows = doc.rows || {}; doc.rows[rowId] = entry; },
+        "crm-update: " + S.me + " confirms " + S.date + " " + rowId);
+      S.confirms[S.me] = res.doc; render();
+    }).catch(writeFailed);
+  }
+  function confirmationsFor(rowId) {
+    const out = [];
+    for (const who in S.confirms) {
+      const c = S.confirms[who];
+      if (c && c.rows && c.rows[rowId]) out.push({ rosterId: c.rosterId || who, entry: c.rows[rowId] });
+    }
+    return out;
+  }
+  function myEntry(rowId) {
+    const c = S.confirms[S.me];
+    return c && c.rows && c.rows[rowId] || null;
+  }
+
+  /* ---------- rendering ---------- */
+  function effectiveStep(row) {
+    const d = (S.decisions.rows || {})[row.rowId] || {};
+    if ("nextStep" in d) return d.nextStep;   /* same rule as build_approved.js */
+    return row.nextStep;
+  }
+  function effectiveSummary(row) {
+    const d = (S.decisions.rows || {})[row.rowId] || {};
+    return d.summary ? d.summary : row.summary;
+  }
+  function locked() { return !!S.imported; }
+
+  function renderTally() {
+    const t = $("tally"); t.textContent = "";
+    if (!S.batch) return;
+    const owners = {};
+    for (const row of S.batch.rows) {
+      if (statusOf(row.rowId) === "dropped") continue;
+      const st = effectiveStep(row);
+      if (!st || !st.what) continue;
+      const o = st.owner || "howard";
+      owners[o] = owners[o] || { total: 0, done: 0, flagged: 0 };
+      owners[o].total++;
+      const answers = confirmationsFor(row.rowId).filter((c) => c.rosterId === o);
+      if (answers.some((c) => c.entry.state === "confirmed")) owners[o].done++;
+      else if (answers.length) owners[o].flagged++;
+    }
+    const ids = Object.keys(owners).sort((a, b) => rosterName(a).localeCompare(rosterName(b)));
+    if (!ids.length) { t.appendChild(el("span", "muted", "No next steps to confirm today.")); return; }
+    for (const id of ids) {
+      const o = owners[id];
+      const chip = el("span", "who" + (o.done === o.total ? " done" : o.flagged ? " flag" : ""));
+      chip.appendChild(el("b", "", rosterName(id)));
+      chip.appendChild(el("span", "n mono", o.done + "/" + o.total));
+      if (o.flagged) chip.appendChild(el("span", "muted", o.flagged + " flagged"));
+      t.appendChild(chip);
+    }
+  }
+
+  function renderCard(row) {
+    const status = statusOf(row.rowId);
+    const step = effectiveStep(row);
+    const stepOwner = step && step.what ? (step.owner || "howard") : "";
+    const mine = !!S.me && stepOwner === S.me;
+    const card = el("article", "card" + (mine ? " mine" : "") + (status === "dropped" ? " dropped" : ""));
+
+    const head = el("div", "cardhead");
+    head.appendChild(el("span", "company", row.company || "No company"));
+    if (row.deal) head.appendChild(el("span", "deal", row.deal));
+    const badge = { draft: ["draft", "Draft"], approved: ["ok", "Approved"], edited: ["ok", "Edited"], dropped: ["bad", "Dropped"] }[status];
+    head.appendChild(el("span", "pill " + badge[0], badge[1]));
+    card.appendChild(head);
+
+    const meta = el("div", "meta");
+    meta.appendChild(el("span", "mono", fmtDay(row.occurredAt)));
+    meta.appendChild(el("span", "", KIND[row.kind] || row.kind));
+    if (row.dealOwner) meta.appendChild(el("span", "", "Account: " + rosterName(row.dealOwner)));
+    card.appendChild(meta);
+
+    card.appendChild(el("p", "summary", effectiveSummary(row)));
+    if (effectiveSummary(row) !== row.summary) card.appendChild(el("p", "was", "Draft said: " + row.summary));
+
+    if (step && step.what) {
+      const s = el("div", "step");
+      s.appendChild(el("span", "step-label", "Next step"));
+      s.appendChild(el("span", "step-what", step.what));
+      const sm = el("div", "step-meta");
+      sm.appendChild(el("span", "owner", rosterName(stepOwner)));
+      if (step.dueDate) sm.appendChild(el("span", "mono", "due " + fmtDay(step.dueDate)));
+      s.appendChild(sm);
+      card.appendChild(s);
+    } else if (row.nextStep) {
+      card.appendChild(el("p", "was", "Next step removed by Howard."));
+    }
+
+    const answers = confirmationsFor(row.rowId);
+    if (answers.length) {
+      const f = el("div", "flags");
+      for (const a of answers) {
+        const label = { confirmed: "confirmed", not_mine: "says this is not theirs", wrong: "says this is wrong" }[a.entry.state] || a.entry.state;
+        const line = el("div", "f" + (a.entry.state === "confirmed" ? " okf" : ""));
+        line.textContent = rosterName(a.rosterId) + " " + label + (a.entry.comment ? ": " + a.entry.comment : "");
+        f.appendChild(line);
+      }
+      card.appendChild(f);
+    }
+
+    if (mine && status !== "dropped" && !S.readOnly && !locked()) {
+      const mineNow = myEntry(row.rowId);
+      const acts = el("div", "actions");
+      acts.appendChild(el("span", "label", "Your step:"));
+      const b1 = el("button", "btn good", "Confirm"); b1.setAttribute("aria-pressed", String(!!mineNow && mineNow.state === "confirmed"));
+      const b2 = el("button", "btn warn", "Not mine"); b2.setAttribute("aria-pressed", String(!!mineNow && mineNow.state === "not_mine"));
+      const b3 = el("button", "btn warn", "Something's wrong"); b3.setAttribute("aria-pressed", String(!!mineNow && mineNow.state === "wrong"));
+      const comment = el("input", "comment"); comment.type = "text"; comment.id = "c_" + row.rowId; comment.maxLength = 200;
+      comment.placeholder = "Comment for Howard (needed for Not mine / Something's wrong)";
+      comment.value = mineNow && mineNow.comment || "";
+      b1.onclick = () => confirmStep(row.rowId, "confirmed", comment.value.trim());
+      const flag = (state) => {
+        if (!comment.value.trim()) { comment.focus(); toast("Add a short comment so Howard knows what to fix."); return; }
+        confirmStep(row.rowId, state, comment.value.trim());
+      };
+      b2.onclick = () => flag("not_mine");
+      b3.onclick = () => flag("wrong");
+      acts.append(b1, b2, b3);
+      card.appendChild(acts);
+      card.appendChild(comment);
+    }
+
+    if (S.isOwner && !locked() && !S.readOnly) {
+      if (S.editing === row.rowId) card.appendChild(renderEditor(row));
+      else {
+        const acts = el("div", "actions");
+        acts.appendChild(el("span", "label", "Howard:"));
+        const a = el("button", "btn good", "Approve"); a.setAttribute("aria-pressed", String(status === "approved"));
+        a.onclick = () => decide(row.rowId, { status: "approved" });
+        const e = el("button", "btn", "Edit"); e.onclick = () => { S.editing = row.rowId; render(); };
+        const d = el("button", "btn warn", status === "dropped" ? "Undo drop" : "Drop"); d.setAttribute("aria-pressed", String(status === "dropped"));
+        d.onclick = () => decide(row.rowId, { status: status === "dropped" ? null : "dropped" });
+        acts.append(a, e, d);
+        card.appendChild(acts);
+      }
+    }
+    return card;
+  }
+
+  function renderEditor(row) {
+    const box = el("div", "edit");
+    const sum = el("textarea"); sum.id = "ed_sum_" + row.rowId; sum.rows = 2; sum.maxLength = 200;
+    sum.value = effectiveSummary(row);
+    const cnt = el("div", "count mono muted");
+    const upd = () => { sum.value = sum.value.replace(/[\r\n]+/g, " "); cnt.textContent = sum.value.length + "/200"; };
+    sum.oninput = upd; upd();
+    const l1 = el("label", "", "Summary (one line)"); l1.append(sum, cnt);
+    const step = effectiveStep(row) || {};
+    const what = el("input"); what.type = "text"; what.id = "ed_what_" + row.rowId; what.maxLength = 140; what.value = step.what || "";
+    const l2 = el("label", "", "Next step (leave empty for none)"); l2.appendChild(what);
+    const due = el("input"); due.type = "date"; due.id = "ed_due_" + row.rowId; due.value = step.dueDate || "";
+    const l3 = el("label", "", "Due"); l3.appendChild(due);
+    const own = el("select"); own.id = "ed_own_" + row.rowId;
+    for (const u of S.batch.roster) { const o = el("option", "", u.name); o.value = u.id; own.appendChild(o); }
+    own.value = step.owner || "howard";
+    const l4 = el("label", "", "Who does it"); l4.appendChild(own);
+    const r2 = el("div", "row2"); r2.append(l3, l4);
+    const acts = el("div", "actions");
+    const saveB = el("button", "btn primary", "Save edit");
+    saveB.onclick = () => {
+      const s = sum.value.trim();
+      if (!s) { toast("The summary can't be empty."); return; }
+      const ns = what.value.trim() ? { what: what.value.trim(), dueDate: due.value || "", owner: own.value } : null;
+      S.editing = null;
+      decide(row.rowId, { status: "edited", summary: s, nextStep: ns }).then(() => toast("Saved. This wording is what gets imported."));
+    };
+    const cancel = el("button", "btn", "Cancel"); cancel.onclick = () => { S.editing = null; render(); };
+    acts.append(saveB, cancel);
+    box.append(l1, l2, r2, acts);
+    return box;
+  }
+
+  function render() {
+    const cards = $("cards");
+    $("whoami").textContent = S.me ? "Signed in as " + rosterName(S.me) + (S.readOnly ? " (read only)" : "") : "";
+    if (!S.batch) { $("dayTitle").textContent = "CRM update"; $("stateBadge").hidden = true; return; }
+    $("dayTitle").textContent = "CRM update · " + fmtDay(S.batch.date);
+    const badge = $("stateBadge"); badge.hidden = false;
+    if (S.imported) { badge.className = "pill ok"; badge.textContent = "Imported " + fmtTime(S.imported.importedAt); }
+    else if (S.decisions.approveAll) { badge.className = "pill plain"; badge.textContent = "Approved, imports next morning"; }
+    else { badge.className = "pill draft"; badge.textContent = "Draft"; }
+    $("approveAll").hidden = !S.isOwner || locked() || !!S.decisions.approveAll || S.readOnly;
+
+    renderTally();
+    const keep = document.activeElement && document.activeElement.id;
+    cards.textContent = "";
+    let rows = S.batch.rows.slice();
+    if (S.view === "mine" && S.me) rows = rows.filter((r) => { const st = effectiveStep(r); return st && st.what && (st.owner || "howard") === S.me; });
+    if (!S.batch.rows.length) {
+      cards.appendChild(el("div", "empty", "Nothing tagged CRM since the last run. No rows to confirm today."));
+    } else if (!rows.length) {
+      const e = el("div", "empty");
+      e.appendChild(el("p", "", "You have no next steps in this batch."));
+      const b = el("button", "btn", "Show everything"); b.onclick = () => setView("all");
+      e.appendChild(b);
+      cards.appendChild(e);
+    } else {
+      for (const r of rows) cards.appendChild(renderCard(r));
+    }
+    if (keep && $(keep)) $(keep).focus();
+
+    const q = S.batch.questions || [];
+    $("questionsPanel").hidden = !q.length;
+    const ql = $("questions"); ql.textContent = "";
+    for (const x of q) ql.appendChild(el("li", "", x.text));
+
+    const mb = S.batch.mailboxes || [];
+    $("mailPanel").hidden = !mb.length;
+    const box = $("mailboxes"); box.textContent = "";
+    const STATUS = { ok: "read", none: "no CRM-tagged mail or meetings found", refused: "mailbox refused (403)", error: "could not be read" };
+    for (const m of mb) {
+      box.appendChild(el("span", "", rosterName(m.user)));
+      box.appendChild(el("span", "mono", m.status === "ok" ? m.threads + " threads" : "—"));
+      box.appendChild(el("span", m.status === "ok" || m.status === "none" ? "muted" : "", (STATUS[m.status] || m.status) + (m.note ? ". " + m.note : "")));
+    }
+    const src = S.batch.source;
+    $("sourceLine").textContent = src ? "CRM read from the " + src.kind + ", " + src.events + " events, newest " + fmtTime(src.newestEvent) + ". Drafted " + fmtTime(S.batch.generatedAt) + "." : "";
+  }
+
+  function setView(v) {
+    S.view = v; save("crm_update_view", v);
+    $("showMine").setAttribute("aria-pressed", String(v === "mine"));
+    $("showAll").setAttribute("aria-pressed", String(v === "all"));
+    render();
+  }
+
+  function showEmpty(msg, isErr) {
+    const c = $("cards"); c.textContent = "";
+    const d = el("div", "empty"); d.appendChild(el("p", isErr ? "err" : "", msg)); c.appendChild(d);
+  }
+
+  async function loadDay(date) {
+    S.date = date; S.editing = null;
+    const [b, d, imp, confirmFiles] = await Promise.all([
+      ghGet("batches/" + date + ".json"), ghGet("decisions/" + date + ".json"),
+      ghGet("imported/" + date + ".json"), ghList("confirm/" + date)
+    ]);
+    S.batch = b ? b.data : null;
+    S.decisions = d ? d.data : {};
+    S.imported = imp ? imp.data : null;
+    const confirms = {};
+    await Promise.all(confirmFiles.filter((f) => /\.json$/.test(f.name)).map(async (f) => {
+      const c = await ghGet("confirm/" + date + "/" + f.name);
+      if (c) confirms[f.name.replace(/\.json$/, "")] = c.data;
+    }));
+    S.confirms = confirms;
+    resolveMe();
+    if (!S.batch) showEmpty("No batch for " + fmtDay(date) + ".");
+    render();
+  }
+
+  async function refresh() {
+    if (S.loading || !S.gh) return;
+    S.loading = true;
+    try {
+      const files = await ghList("batches");
+      S.dates = files.map((f) => f.name).filter((n) => /^\d{4}-\d{2}-\d{2}\.json$/.test(n))
+        .map((n) => n.slice(0, 10)).sort().reverse().slice(0, 14);
+      const pick = $("dayPick"); pick.textContent = "";
+      for (const d of S.dates) { const o = el("option", "", fmtDay(d)); o.value = d; pick.appendChild(o); }
+      pick.hidden = S.dates.length < 2;
+      if (!S.dates.length) {
+        showEmpty("No batch yet. The morning run drafts one from mail tagged CRM and puts it in CRM_Data/triage/batches.");
+        return;
+      }
+      const date = S.dates.indexOf(S.date) >= 0 ? S.date : S.dates[0];
+      pick.value = date;
+      await loadDay(date);
+    } catch (e) {
+      showEmpty(e.message || "The CRM update couldn't load.", true);
+      if (e.status === 401 || e.status === 404) { $("connectPanel").hidden = false; }
+    } finally { S.loading = false; }
+  }
+
+  /* The CRM user id is what someone typed into the CRM's Settings ("paul bolton",
+     "Paul"). Next steps are owned by roster ids ("paul"). Match on id, full name,
+     first name or email so the same person is never two people. */
+  function resolveMe() {
+    const raw = String(S.gh && S.gh.user || "").trim().toLowerCase();
+    const roster = (S.batch && S.batch.roster) || [];
+    const hit = roster.find((u) => u.id === raw) ||
+      roster.find((u) => (u.name || "").toLowerCase() === raw) ||
+      roster.find((u) => (u.email || "").toLowerCase() === raw) ||
+      roster.find((u) => (u.name || "").toLowerCase().split(" ")[0] === raw.split(" ")[0] &&
+        roster.filter((v) => (v.name || "").toLowerCase().split(" ")[0] === raw.split(" ")[0]).length === 1);
+    S.me = hit ? hit.id : raw;
+    S.isOwner = S.me === "howard";
+  }
+
+  function readConnection() {
+    let g = null;
+    try { g = JSON.parse(load(GH_KEY) || "null"); } catch (e) { g = null; }
+    if (!g || !g.owner || !g.repo || !g.token) return null;
+    return g;
+  }
+
+  function connect() {
+    S.gh = readConnection();
+    if (!S.gh) {
+      $("connectPanel").hidden = false;
+      showEmpty("Connect to the CRM repo above to see the update.");
+      return;
+    }
+    $("connectPanel").hidden = true;
+    S.me = String(S.gh.user || "").toLowerCase();
+    S.isOwner = S.me === "howard";
+    refresh();
+  }
+
+  function start() {
+    setView(load("crm_update_view") === "all" ? "all" : "mine");
+    $("showMine").onclick = () => setView("mine");
+    $("showAll").onclick = () => setView("all");
+    $("approveAll").onclick = approveAll;
+    $("refresh").onclick = () => refresh();
+    $("dayPick").onchange = (e) => { S.loading = true; loadDay(e.target.value).catch((err) => showEmpty(err.message, true)).finally(() => { S.loading = false; }); };
+    $("cSave").onclick = () => {
+      const prev = readConnection() || {};
+      const g = Object.assign({}, prev, {
+        owner: $("cOwner").value.trim(), repo: $("cRepo").value.trim(), branch: prev.branch || "main",
+        path: $("cPath").value.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, ""),
+        user: $("cUser").value.trim().toLowerCase(), token: $("cToken").value.trim()
+      });
+      if (!g.owner || !g.repo || !g.user || !g.token) { $("cMsg").textContent = "Owner, repo, user id and token are all needed."; return; }
+      save(GH_KEY, JSON.stringify(g));
+      $("cMsg").textContent = "";
+      connect();
+    };
+    const prev = readConnection();
+    if (prev) { $("cOwner").value = prev.owner; $("cRepo").value = prev.repo; $("cPath").value = prev.path || ""; $("cUser").value = prev.user || ""; }
+    window.addEventListener("focus", () => refresh());
+    setInterval(() => { if (!document.hidden && !S.editing) refresh(); }, 60000);
+    connect();
+  }
+  start();
+})();
+</script>
+</body></html>

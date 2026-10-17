@@ -61,6 +61,23 @@ const describe = t => console.log('\n\x1b[1m' + t + '\x1b[0m');
   ok(builtOf(app) === appBuilt,
      '…and the test left the build date exactly as it found it', builtOf(app) + ' vs ' + appBuilt);
 
+  /* 16 Oct 2026: the number also sat in data-version on the crm-build line, and
+     stamping copied THAT over the meta, so a bump made the standard way (edit
+     the meta only) was silently put back. The meta is the only place now. */
+  describe('a bump made only in the meta survives stamping');
+  const appSrc = fs.readFileSync(app, 'utf8');
+  ok(!/data-version=/.test(appSrc), 'crm.html writes the version nowhere but the meta');
+  const probe = appV.replace(/(\d+)$/, n => String(+n + 1));
+  fs.writeFileSync(app, appSrc.replace(/<meta name="version" content="[^"]*">/,
+    '<meta name="version" content="' + probe + '">'));
+  const restamp = check(['--file', app, '--date', appBuilt]);
+  ok(metaOf(app) === probe, 'stamping keeps the bumped meta in crm.html', metaOf(app) + ' ' + restamp.out.trim());
+  ok(metaOf(index) === probe, '…and copies it to index.html for the Navigator card', metaOf(index));
+  fs.writeFileSync(app, appSrc);
+  check(['--file', app, '--date', appBuilt]);
+  ok(metaOf(app) === appV && metaOf(index) === appV && check(['--file', app, '--check']).code === 0,
+     '…and the test put both files back as it found them', metaOf(app) + ' / ' + metaOf(index));
+
   describe('the page shows what the meta says');
   const b = await chromium.launch(require('./browser.js'));
   const page = await b.newPage({ viewport:{ width:1100, height:800 } });
@@ -75,6 +92,14 @@ const describe = t => console.log('\n\x1b[1m' + t + '\x1b[0m');
   ok(shown.foot === appV, 'and so does the footer build line', shown.foot);
   ok(!/1\.33\.0/.test(shown.body), 'nothing on the page still says 1.33.0');
   ok(!errs.length, 'nothing threw', errs.join(' | '));
+
+  const appPage = await b.newPage({ viewport:{ width:1100, height:800 } });
+  const appErrs = []; appPage.on('pageerror', e => appErrs.push(String(e)));
+  await appPage.goto('file://' + app);
+  await appPage.waitForTimeout(800);
+  const inApp = await appPage.evaluate(() => typeof buildInfo === 'function' ? buildInfo().version : null);
+  ok(inApp === appV, 'the app\'s own version badge reads the meta', String(inApp));
+  ok(!appErrs.length, 'and the app loaded without throwing', appErrs.join(' | '));
   await b.close();
 
   console.log('\n' + '─'.repeat(58));

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="mw-asset" content="true">
-<meta name="version" content="2.0.0">
+<meta name="version" content="2.3.0">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mind Map Renderer — mindmap.v1</title>
@@ -130,6 +130,9 @@ body.dropping::after{content:"Drop mindmap.v1.json files to add them";position:f
 
 /* ---------- stage ---------- */
 .stage{flex:1 1 auto;position:relative;overflow:hidden}
+#stage:fullscreen{width:100vw;height:100vh;background:#fff}
+#stage:-webkit-full-screen{width:100vw;height:100vh;background:#fff}
+html.taxohidden .chipbar{display:none !important}
 svg#map{width:100%;height:100%;display:block;cursor:grab;background:var(--canvas)}
 svg#map.drag{cursor:grabbing}
 .zoom{position:absolute;left:14px;bottom:14px;display:flex;gap:6px;background:#fff;
@@ -224,6 +227,35 @@ button.s.warn{color:#B4443E;border-color:#EBD3D1}
 .repoprog{position:fixed;left:0;top:0;height:3px;width:0;background:var(--accent);z-index:9999;transition:width .18s ease;opacity:0;box-shadow:0 0 6px var(--accent)}
 .repoprog.on{opacity:1}
 button.t[disabled]{opacity:.55;cursor:progress}
+
+/* ---------- deep link (2.1.0) ----------
+   body.className is reassigned wholesale by showInventory()/openMap(), so embed
+   state lives on <html> where nothing overwrites it. */
+html.embed header,
+html.embed .chipbar,
+html.embed #taxobar{display:none !important}
+html.embed body{background:#fff}
+html.embed .stage{height:100vh;height:100dvh}
+.dlfull{position:fixed;right:12px;bottom:12px;z-index:40;background:#fff;border:1px solid #d8ddd4;
+        border-radius:3px;padding:5px 10px;font-size:12px;color:#5b6673;text-decoration:none;
+        box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.dlfull:hover{border-color:#C0392B;color:#C0392B}
+html.embed .hint{bottom:46px}   /* make room for the full-workbench link */
+#dlBanner{display:none;align-items:flex-start;gap:12px;background:#fbeae7;border-bottom:1px solid #f0cfc9;
+          color:#8d2c20;padding:11px 18px;font-size:13.5px;line-height:1.45}
+#dlBanner.on{display:flex}
+#dlBanner code{background:#f6d9d4;padding:1px 5px;border-radius:2px;
+               font-family:Consolas,ui-monospace,monospace;font-size:12.5px}
+#dlBanner .sp{flex:1}
+#dlBanner button{background:transparent;border:1px solid #d9a69d;color:#8d2c20;border-radius:3px;
+                 padding:3px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
+#dlBanner button:hover{background:#f6d9d4}
+.card{position:relative}
+.card .copylink{position:absolute;top:8px;right:8px;z-index:3;opacity:0;transition:opacity .12s;
+                background:rgba(255,255,255,.94);border:1px solid #d8ddd4;border-radius:3px;
+                padding:3px 8px;font-size:11px;color:#5b6673;cursor:pointer}
+.card:hover .copylink,.card:focus-within .copylink{opacity:1}
+.card .copylink:hover{border-color:#C0392B;color:#C0392B}
 </style>
 </head>
 <body>
@@ -233,6 +265,7 @@ button.t[disabled]{opacity:.55;cursor:progress}
   <button class="t back" id="btnBack" title="Back to the inventory">← Inventory</button>
   <div class="mapname" id="mapname"></div>
   <div class="badge" id="prov"></div>
+  <button class="t on" id="btnTaxo" title="Hide the taxonomy drill-down bar">Taxonomy ▾</button>
   <div class="tools" id="mapTools">
     <select class="t sel" id="depth" title="How much detail to show">
       <option value="">Detail: custom</option>
@@ -250,6 +283,8 @@ button.t[disabled]{opacity:.55;cursor:progress}
     <button class="t" id="btnTagMode" title="Lift repeated label prefixes into tags, or leave them inline">Tags: lifted</button>
     <button class="t" id="btnSvg">Export SVG</button>
     <button class="t" id="btnPng">Export PNG</button>
+    <button class="t" id="btnCopyLink" title="Copy a link that opens this map directly">Copy link</button>
+    <button class="t" id="btnFull" title="Expand just the map to fill the whole screen (Esc to exit)">Full screen</button>
   </div>
   <div class="tools" id="invTools">
     <span class="badge quiet" id="storage"></span>
@@ -264,6 +299,9 @@ button.t[disabled]{opacity:.55;cursor:progress}
     <button class="t" id="btnTags" title="View the taxonomy, create tags, assign and approve">Tags &amp; Taxonomy</button>
   </div>
 </header>
+
+<div id="dlBanner" role="status"><div class="sp" id="dlBannerMsg"></div>
+  <button id="dlClear">Clear link and show everything</button></div>
 
 <div class="chipbar" id="chipbar"></div>
 
@@ -1829,6 +1867,12 @@ function assetCard(e){
     }
     openAsset(e);
   };
+  { const cl = document.createElement("button");
+    cl.className = "copylink"; cl.type = "button";
+    cl.textContent = "Copy link";
+    cl.title = "Copy a link that opens this asset directly";
+    cl.onclick = ev => { ev.stopPropagation(); DL.copy(DL.linkFor(e, false)); };
+    card.appendChild(cl); }
   card.onclick = go;
   card.onkeydown = ev => { if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); go(); } };
   return card;
@@ -1878,6 +1922,12 @@ function cardFor(e, dupKey){
        (s.method === "imported" ? '<span class="mini">Imported</span>' : "")
      }</div>`;
   card.appendChild(b);
+  { const cl = document.createElement("button");
+    cl.className = "copylink"; cl.type = "button";
+    cl.textContent = "Copy link";
+    cl.title = "Copy a link that opens this entry directly";
+    cl.onclick = ev => { ev.stopPropagation(); DL.copy(DL.linkFor(e, false)); };
+    card.appendChild(cl); }
   card.onclick = () => openMap(e, 0);
   card.onkeydown = ev => { if(ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); openMap(e,0); } };
   return card;
@@ -2707,6 +2757,111 @@ function libraryTree(){
   bar.appendChild(wrap);
 }
 
+/* ---------- deep link (2.1.0) --------------------------------------------
+   Contract, as decided 16 Oct 2026:
+     ?notebook=<id|title-slug>&asset=<key|artifact-uuid|title-slug>[&embed=1]
+   Resolver cascade: exact entry key -> artifact id -> exact title slug, scoped
+   by notebook when given. More than one hit is a MISS, never a guess - opening
+   the wrong map in front of a client is worse than opening nothing.
+   Always opens the latest version; there is deliberately no version parameter. */
+const DL = (() => {
+  const q = new URLSearchParams(location.search);
+  const nb = (q.get("notebook") || "").trim();
+  const as = (q.get("asset") || q.get("map") || "").trim();
+  const embed = q.get("embed") === "1";
+  let done = false, settled = false;
+
+  const slug = v => String(v || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const data0 = e => (e.versions && e.versions[0] && e.versions[0].data) || null;
+  const artId = e => { const d = data0(e); return (d && ((d.map && d.map.artifact_id) ||
+                       (d.asset && d.asset.artifact_id))) || ""; };
+  const nbId  = e => { const d = data0(e); return (d && ((d.map && d.map.notebook && d.map.notebook.id) ||
+                       (d.asset && d.asset.notebook && d.asset.notebook.id))) || ""; };
+
+  function scope(){
+    if(!nb) return library.slice();
+    const want = slug(nb);
+    return library.filter(e => nbId(e) === nb || slug(e.notebook) === want);
+  }
+  function resolve(){
+    const pool = scope();
+    if(!pool.length) return { miss:"notebook" };
+    const want = as, ws = slug(as);
+    let hit = pool.filter(e => e.key === want);
+    if(!hit.length) hit = pool.filter(e => artId(e) === want);
+    if(!hit.length) hit = pool.filter(e => slug(e.title) === ws);
+    if(hit.length === 1) return { entry:hit[0] };
+    if(hit.length > 1)  return { miss:"ambiguous", n:hit.length };
+    return { miss:"asset" };
+  }
+  function banner(html){
+    const b = document.getElementById("dlBanner");
+    document.getElementById("dlBannerMsg").innerHTML = html;
+    b.classList.add("on");
+  }
+  function esc(v){ return escapeHtml(String(v || "")); }
+
+  function settle(){
+    if(done || settled || !as) return;
+    settled = true;
+    const r = resolve();
+    if(r.miss === "notebook")
+      banner("No notebook matches <code>" + esc(nb) + "</code>, so <code>" + esc(as) +
+             "</code> could not be looked up. Showing the whole library instead.");
+    else if(r.miss === "ambiguous")
+      banner("<b>" + r.n + " entries</b> match <code>" + esc(as) + "</code>" +
+             (nb ? " in <code>" + esc(nb) + "</code>" : "") +
+             ". Refusing to guess which one you meant - pick it below.");
+    else
+      banner("Nothing in the library matches <code>" + esc(as) + "</code>" +
+             (nb ? " in <code>" + esc(nb) + "</code>" : "") +
+             ". It may not have been extracted yet. Showing the whole library instead.");
+  }
+
+  /* phase "cache": the local library is restored but the repository may still
+     be arriving. phase "repo": everything that is coming has arrived. */
+  function attempt(phase){
+    if(done || !as) return;
+    const r = resolve();
+    if(r.entry){
+      done = true;
+      document.getElementById("dlBanner").classList.remove("on");
+      openMap(r.entry, 0);
+      if(embed) addFullLink();
+      return;
+    }
+    if(phase === "repo") settle();
+  }
+
+  function addFullLink(){
+    if(document.querySelector(".dlfull")) return;
+    const u = new URL(location.href);
+    u.searchParams.delete("embed");
+    const a = document.createElement("a");
+    a.className = "dlfull"; a.href = u.toString(); a.target = "_blank"; a.rel = "noopener";
+    a.textContent = "Open full workbench \u2192";
+    document.body.appendChild(a);
+  }
+
+  function linkFor(e, asEmbed){
+    const u = new URL(location.href.split("?")[0]);
+    u.searchParams.set("notebook", nbId(e) || slug(e.notebook));
+    u.searchParams.set("asset", slug(e.title));
+    if(asEmbed) u.searchParams.set("embed", "1");
+    return u.toString();
+  }
+  function copy(url){
+    const ok = () => toast("Link copied.");
+    if(navigator.clipboard && navigator.clipboard.writeText)
+      navigator.clipboard.writeText(url).then(ok).catch(()=>window.prompt("Copy this link:", url));
+    else window.prompt("Copy this link:", url);
+  }
+
+  if(embed) document.documentElement.classList.add("embed");
+  return { wanted: !!as, embed, attempt, settle, linkFor, copy };
+})();
+
 document.addEventListener("DOMContentLoaded", () => {
   const vEl = document.getElementById("appVersion");
   if(vEl){ vEl.textContent = "v" + BUILD;
@@ -2716,6 +2871,39 @@ document.addEventListener("DOMContentLoaded", () => {
   $("zOut").onclick = ()=>zoomBy(1/1.22);
   $("zFit").onclick = fit;
   $("z100").onclick = fitAt1;
+  // Full screen — put just the asset (the map canvas) into the browser's fullscreen (Esc to exit)
+  (function(){
+    const stage = $("stage"), btn = $("btnFull");
+    if(!stage || !btn) return;
+    const fsEl  = () => document.fullscreenElement || document.webkitFullscreenElement;
+    const enter = () => { const r = stage.requestFullscreen || stage.webkitRequestFullscreen; if(r) r.call(stage); };
+    const exit  = () => { const x = document.exitFullscreen || document.webkitExitFullscreen; if(x) x.call(document); };
+    btn.onclick = () => { (fsEl() === stage) ? exit() : enter(); };
+    const onChange = () => {
+      const on = fsEl() === stage;
+      btn.classList.toggle("on", on);
+      btn.textContent = on ? "Exit full screen" : "Full screen";
+      if(document.body.className === "view-map") setTimeout(fit, 60);
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    document.addEventListener("webkitfullscreenchange", onChange);
+  })();
+  // Taxonomy bar — hide/show the "Drill down by taxonomy" strip to reclaim canvas
+  (function(){
+    const KEY = "mmw.taxoHidden", btn = $("btnTaxo");
+    if(!btn) return;
+    const isHidden = () => { try { return localStorage.getItem(KEY) === "1"; } catch(e){ return false; } };
+    const apply = () => {
+      const h = isHidden();
+      document.documentElement.classList.toggle("taxohidden", h);
+      btn.classList.toggle("on", !h);
+      btn.textContent = h ? "Taxonomy ▸" : "Taxonomy ▾";
+      btn.title = h ? "Show the taxonomy drill-down bar" : "Hide the taxonomy drill-down bar";
+      if(document.body.className === "view-map") setTimeout(fit, 60);
+    };
+    btn.onclick = () => { try { localStorage.setItem(KEY, isHidden() ? "0" : "1"); } catch(e){} apply(); };
+    apply();
+  })();
   $("btnBack").onclick = showInventory;
   $("scrim").addEventListener("click", ev => { if(ev.target === $("scrim")) closeDialog(); });
   $("verSel").onchange = e => { if(current) openMap(current.entry, +e.target.value); };
@@ -2787,6 +2975,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const fs2 = [...e.target.files].filter(f => /\.(json|png|jpe?g|webp|pdf|mp3|m4a|wav|md|txt)$/i.test(f.name));
     if(!fs2.length){ toast("No .json files in that folder."); e.target.value = ""; return; }
     readFiles(fs2); e.target.value = "";
+  };
+  $("btnCopyLink").onclick = () => {
+    if(!current) return;
+    DL.copy(DL.linkFor(current.entry, false));
+  };
+  $("dlClear").onclick = () => {
+    history.replaceState(null, "", location.pathname);
+    document.getElementById("dlBanner").classList.remove("on");
   };
   $("btnRepo").onclick = () => loadRepository(false);
   $("btnRepoAll").onclick = () => loadRepository(true);
@@ -2918,8 +3114,11 @@ document.addEventListener("DOMContentLoaded", () => {
         showInventory();
         toast(back + " saved map" + (back===1?"":"s") + " reloaded."); }
       storageChip();
-      if(location.protocol !== "file:") loadRepository(false);
+      DL.attempt("cache");                       /* D5: cache first, open instantly if it is there */
+      const repoP = (location.protocol !== "file:") ? loadRepository(false) : null;
       if(repoReady()) loadIndex();
+      if(repoP && repoP.then) repoP.then(() => DL.attempt("repo"), () => DL.attempt("repo"));
+      else DL.settle();
     });
   };
   if(document.fonts && document.fonts.load){

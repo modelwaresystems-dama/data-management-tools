@@ -19,6 +19,7 @@ browser you already have.
 
 | File | What it checks |
 |---|---|
+| `crm-update.html` | The staff page for the morning CRM triage: each day's drafted lines, Howard's approve / edit / drop, and each person confirming the next steps they own. Holds no data: it reads and writes `CRM_Data/triage/` in modelware_app_storage with your own token (the CRM's `crm.github` connection) |
 | `stamp-build.py` | Stamps `crm.html` with version, date and a content fingerprint, and writes the repo-standard `<meta name="version">` from the same number; `--check` verifies both. Run after every change: `python3 stamp-build.py --file ../crm.html --version 1.x.0 --date "D Mon YYYY"` |
 | `tests/handover.js` | Reassigning a deal carries its open steps; stranded steps are shown and fixable; imports carry them too (49 checks) |
 | `tests/register-0921.js` | Unpaid seats before a course; 30-day default terms; domain proposals; creating a partner from a deal (80 checks) |

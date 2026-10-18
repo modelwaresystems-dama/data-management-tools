@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.36.0">
+<meta name="version" content="4.38.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -748,7 +748,20 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function pTermStatus(p){return (p&&p.length>9&&p[9])||'';}
   function pAnchors(p){return (p&&p.length>10&&p[10])||[];}
   function pIsAnchor(p){return p&&(p[2]==='Definition'||p[2]==='Elaboration'||pAnchors(p).length>0);}
-  function buildG3(o){return {sources:"Committed argument_nodes."+(o.section_id||'')+".json (register)",nodes:((o.argument_nodes||o.nodes)||[]).map(function(n){return [padId(n.an_id),n.type,padId(n.p_id),n.outline_id||'',n.text||'',(n.depends_on||[]).map(padId),(n.leads_to||[]).map(padId),(n.evidence_needed!=null?!!n.evidence_needed:!!n.evidence_marker),(n.tier!=null?n.tier:null),(n.derivation||null),{bridge:!!n.authored_bridge,from:n.promoted_from||''},(n.function||''),(n.transition||''),(n.metaphor||null),(n.anchors||[])];}),drift:[],aiqNote:""};}
+  // §9 — real evidence status comes from the node's evidence_marker + a Supported G4 link, NEVER from the
+  // proposition's evidence_state (a G2 readiness tag that lags). NEEDS-SOURCE shows only when genuinely unsourced.
+  var EVCMAP={'NEEDS-SOURCE':'#dc2626','Author Rationale':'#2563eb','Framework Analysis':'#0891b2','Case Study':'#16a34a','Sourced':'#16a34a'};
+  function propSupported(sec,pid){try{var s=lsGet('acpp.'+sel.value+'.'+sec.sid+'.G4.'+pid)||{};return s.decision==='acc';}catch(e){return false;}}
+  function propSourced(sec,pid){if(propSupported(sec,pid))return true;var ok=false;g3Active(sec).forEach(function(n){if(n[2]===pid && /SRC-BOUND|Author Rationale|Domain Axiom|inherits|synthes/i.test(anEvMarker(n)))ok=true;});return ok;}
+  function propNeedsSource(sec,pid){if(propSourced(sec,pid))return false;var need=false;g3Active(sec).forEach(function(n){if(n[2]===pid && /SRC-?NEEDED/i.test(anEvMarker(n)))need=true;});return need;}
+  // The evidence chip to actually show for a proposition: red NEEDS-SOURCE only when genuinely unsourced; else Sourced, else its real readiness tag.
+  function propEvDisplay(sec,p){var pid=p[0];if(propNeedsSource(sec,pid))return {t:'NEEDS-SOURCE',c:'#dc2626'};if(propSourced(sec,pid))return {t:'Sourced',c:'#16a34a'};var ev=pEvState(p);if(ev&&ev!=='NEEDS-SOURCE')return {t:ev,c:EVCMAP[ev]||'#64748b'};return null;}
+  // §1b — the 5-Question Decomposition origin of a proposition, derived 1:1 from its type.
+  var DECOMPQ={Principle:'Axiom',Contention:'Contention',Claim:'Contention',Definition:'Anchor',Elaboration:'Anchor',Distinction:'Contrast',Qualification:'Contrast',Counterpoint:'Contrast',Reason:'Mechanism',Consequence:'Risk/Impact',Recommendation:'Risk/Impact',Conclusion:'Terminal'};
+  function pDecompQ(p){return DECOMPQ[p&&p[2]]||'';}
+  function buildG3(o){return {sources:"Committed argument_nodes."+(o.section_id||'')+".json (register)",nodes:((o.argument_nodes||o.nodes)||[]).map(function(n){return [padId(n.an_id),n.type,padId(n.p_id),n.outline_id||'',n.text||'',(n.depends_on||[]).map(padId),(n.leads_to||[]).map(padId),(n.evidence_marker?/SRC-?NEEDED/i.test(String(n.evidence_marker)):!!n.evidence_needed),(n.tier!=null?n.tier:null),(n.derivation||null),{bridge:!!n.authored_bridge,from:n.promoted_from||''},(n.function||''),(n.transition||''),(n.metaphor||null),(n.anchors||[]),(n.evidence_marker||'')];}),drift:[],aiqNote:""};}
+  // n[7] = GENUINELY needs a source (marker is SRC-NEEDED), not merely "has a marker"; n[15] = raw evidence_marker.
+  function anEvMarker(n){return (n&&n.length>15&&n[15])||'';}
   // Transformation Architecture additions (all optional — absent until a section is re-run through the updated gates):
   //   n[11] function (structural role), n[12] transition (how the node moves the argument on),
   //   n[13] metaphor {map_id,fidelity,guardrail}, n[14] anchors[] (semantic-anchor links).
@@ -2003,6 +2016,8 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   // and collapsing the others isolates it. Each row expands to show the raw proposition (claim↔framing),
   // its metaphor (fidelity + guardrail) and evidence state.
   function g3PropText(sec,pid){var g2=sec.art&&sec.art.G2; if(!g2||!pid)return ''; var arr=g2.props||g2.backfill||[]; for(var i=0;i<arr.length;i++){if(arr[i][0]===pid)return (g2.props?arr[i][2]:arr[i][3])||'';} return '';}
+  // §2.4 Textual Value-Add defect — an active node whose framed text is byte-identical (trimmed) to its proposition AND carries no transition: it adds nothing.
+  function anCopyDefect(sec,n){if(!n||!n[2])return false;var claim=g3PropText(sec,n[2]);if(!claim)return false;var framed=(n[4]||'').trim();return !!framed && framed===String(claim).trim() && !anTrans(n);}
   // Function → colour, so each role reads at a glance (Claim teal · Warrant amber · Reason green · Principle blue).
   var FNCOLOR={'Principle':'#2563eb','Opening Contention':'#0e7490','Contention':'#0e7490','Claim':'#0891b2',
     'Boundary':'#7c3aed','Distinction':'#7c3aed','Qualification':'#7c3aed','Counterpoint':'#7c3aed',
@@ -2033,7 +2048,8 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var badges=((trans&&!isWarr)?'<span class="ltrans" title="transition — how this node moves the argument on (not its type)">↝ '+esc(trans)+'</span>':'')
         +(tier?'<span class="ltier">T'+esc(String(tier))+'</span>':'')
         +(meta?'<span class="lfid" title="metaphor fidelity '+esc(meta.fidelity||'')+'" style="background:'+(FIDC[meta.fidelity]||'#94a3b8')+'">'+esc(meta.fidelity||'·')+'</span>':'')
-        +(n[7]?'<span class="lneed">needs evidence</span>':'');
+        +(n[7]?'<span class="lneed">needs evidence</span>':'')
+        +(anCopyDefect(sec,n)?'<span class="lungr" title="Textual Value-Add defect (§2.4) — framed text is a copy of the proposition with no transition">⚠ copy, no value-add</span>':'');
       var head='<div class="lhead"><span class="lcaret">▸</span>'
         +'<span class="llabel" style="color:'+color+'">'+esc(func)+' ('+esc(idShown)+'):</span> '
         +warrTag+'<span class="lbodytext">'+esc(framed||claim||'')+'</span> <span class="lbadges">'+badges+'</span></div>';
@@ -2138,10 +2154,11 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var func=anFunc(n)||n[1], meta=anMeta(n), framed=n[4]||'', claim=g3PropText(sec,n[2]);
     var color=FNCOLOR[func]||TIER_COLOR[n[8]]||'#475569';
     var FIDC={H:'#16a34a',M:'#d97706',L:'#94a3b8'};
-    var ev=propEvState(sec,n[2]); var needs=!!n[7];
-    var evVal = needs?'<div class="swimneed">NEEDS-SOURCE</div>':(ev?'<div class="swimval">'+esc(ev)+'</div>':'<div class="swimval swimdim">no evidence state yet</div>');
-    if(ev&&needs===false){} // ev already shown
-    else if(ev&&needs){evVal='<div class="swimneed">NEEDS-SOURCE</div><div class="swimval">'+esc(ev)+'</div>';}
+    // §9 — real sourcing from the node marker + G4 Supported link, not evidence_state.
+    var pid=n[2], needs=propNeedsSource(sec,pid), sourced=propSourced(sec,pid);
+    var evVal = needs?'<div class="swimneed">NEEDS-SOURCE</div>'
+      :(sourced?'<div class="swimval" style="color:#16a34a;font-weight:700">Sourced ✓</div>'
+      :(pid?('<div class="swimval">'+esc(propEvState(sec,pid)||'—')+'</div>'):'<div class="swimval swimdim">bridge node — no proposition</div>'));
     var metaVal = meta?('<div class="swimval"><span class="idc">'+esc(meta.map_id||'')+'</span>'+(meta.fidelity?(' · fidelity <span class="nbfid" style="background:'+(FIDC[meta.fidelity]||'#94a3b8')+'">'+esc(meta.fidelity)+'</span>'):'')+'</div>'+(meta.guardrail?'<div class="swimguard">'+esc(meta.guardrail)+'</div>':'')):'<div class="swimval swimdim">no metaphor bound</div>';
     return '<div class="swimctx">'
       +'<div class="swimhead"><b class="idc">'+esc(id)+'</b> · <span style="color:'+color+';font-weight:700">'+esc(func)+'</span></div>'
@@ -2201,6 +2218,8 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       flags.push('<div class="gflag gwarn">⚠ No <b>Warrant</b> in this bullet — its reasons/consequences are not licensed by an explicit warrant'+(aiqN?(' ('+aiqN+' quarantined warrant'+(aiqN>1?'s':'')+' in AIQ — wire one in here)'):'')+'.</div>');
     }
     if(orph.length)flags.push('<div class="gflag gwarn">⚠ <b>'+orph.length+'</b> orphan node'+(orph.length>1?'s':'')+' (no parent — missing depends_on): '+esc(orph.join(', '))+'.</div>');
+    var copyDef=all.filter(function(n){return keep[n[0]] && anCopyDefect(sec,n);}).map(function(n){return n[0];});
+    if(copyDef.length)flags.push('<div class="gflag gwarn">⚠ <b>'+copyDef.length+'</b> node'+(copyDef.length>1?'s':'')+' add no value (framed text copies the proposition, no transition): '+esc(copyDef.join(', '))+'.</div>');
     if(Object.keys(concIds).length && !reachesAny)flags.push('<div class="gflag gwarn">⚠ This bullet\'s line does not yet reach the chapter <b>Conclusion</b>.</div>');
     if(!Object.keys(concIds).length)flags.push('<div class="gflag gmut">No Conclusion node exists in this chapter yet.</div>');
     if(!flags.length)flags.push('<div class="gflag gok">✓ No structural gaps found for this bullet.</div>');
@@ -2495,7 +2514,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     // propositions → Map / Grouped (+ group-by); arguments → Map / Threads / Logic (+ bullet filter).
     var inner;
     if(isP){
-      inner='<div class="maptools argvtoggle" style="margin-bottom:10px"><button class="rv-btn pvt on" data-v="map">◇ Map</button><button class="rv-btn pvt" data-v="grouped">≡ Grouped</button><button class="rv-btn pvt" data-v="gtree">⌥ Logic</button><span class="argbulwrap">&nbsp;bullet <select class="pbul"><option value="">All bullets</option>'+g2Bullets(sec).map(function(bl){return '<option value="'+esc(bl)+'">'+esc(bl)+'</option>';}).join('')+'</select></span><span class="pgrpwrap" hidden>&nbsp;group by <select class="pgrp"><option value="type">Type</option><option value="tier">Tier</option><option value="bullet">Bullet</option></select></span></div>'
+      inner='<div class="maptools argvtoggle" style="margin-bottom:10px"><button class="rv-btn pvt on" data-v="map">◇ Map</button><button class="rv-btn pvt" data-v="grouped">≡ Grouped</button><button class="rv-btn pvt" data-v="gtree">⌥ Logic</button><span class="argbulwrap">&nbsp;bullet <select class="pbul"><option value="">All bullets</option>'+g2Bullets(sec).map(function(bl){return '<option value="'+esc(bl)+'">'+esc(bl)+'</option>';}).join('')+'</select></span><span class="pgrpwrap" hidden>&nbsp;group by <select class="pgrp"><option value="type">Type</option><option value="tier">Tier</option><option value="bullet">Bullet</option><option value="decomp">5-Question</option></select></span></div>'
         +'<div class="pmap vismapwrap" style="width:100%">'+svg+'</div>'
         +'<div class="pgrouped" hidden style="width:100%">'+genPropositionList(sec,'type')+'</div>'
         +'<div class="pgtreepane" hidden style="width:100%">'+genGroundingTree(sec)+'</div>';
@@ -2527,10 +2546,11 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     if(!rows.length)return '<p class="note">No propositions'+(bullet?(' for '+esc(bullet)):'')+'.</p>';
     var EVC={'NEEDS-SOURCE':'#dc2626','Author Rationale':'#2563eb','Framework Analysis':'#0891b2','Case Study':'#16a34a'};
     var TSC={'Unresolved':'#d97706','Change Proposed':'#7c3aed','Glossary-Aligned':'#16a34a'};
-    function chips(p){var ev=pEvState(p),ts=pTermStatus(p),tier=p[4],go=p[5]||[];
+    function chips(p){var ts=pTermStatus(p),tier=p[4],go=p[5]||[],evd=propEvDisplay(sec,p),dq=pDecompQ(p);
       return '<span class="pchips">'
         +(tier?'<span class="pchip pt">T'+esc(String(tier))+'</span>':'')
-        +(ev?'<span class="pchip" style="border-color:'+(EVC[ev]||'#cbd5e1')+';color:'+(EVC[ev]||'#475569')+'">'+esc(ev)+'</span>':'')
+        +(dq?'<span class="pchip" style="border-color:#c7d2fe;color:#4f46e5" title="5-Question Decomposition origin">'+esc(dq)+'</span>':'')
+        +(evd?'<span class="pchip" style="border-color:'+evd.c+';color:'+evd.c+'">'+esc(evd.t)+'</span>':'')
         +(ts?'<span class="pchip" style="border-color:'+(TSC[ts]||'#cbd5e1')+';color:'+(TSC[ts]||'#475569')+'">'+esc(ts)+'</span>':'')
         +(go.length?'<span class="pchip pg">grounded on '+esc(go.join(', '))+'</span>':'')
         +'</span>';}
@@ -2538,7 +2558,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var anchors=rows.filter(pIsAnchor), actives=rows.filter(function(p){return !pIsAnchor(p);});
     var rail='<div class="pfound"><div class="pfhd">Foundations — T2 semantic anchors ('+anchors.length+') · definitions &amp; elaborations, held out of the argument chain</div>'+(anchors.length?anchors.map(rowH).join(''):'<p class="note">None.</p>')+'</div>';
     var groups={},order=[];
-    function keyOf(p){if(groupBy==='type')return p[2]||'—'; if(groupBy==='bullet')return p[1]||'(no bullet)'; return 'T'+(p[4]||'?');}
+    function keyOf(p){if(groupBy==='type')return p[2]||'—'; if(groupBy==='bullet')return p[1]||'(no bullet)'; if(groupBy==='decomp')return pDecompQ(p)||'—'; return 'T'+(p[4]||'?');}
     actives.forEach(function(p){var k=keyOf(p);if(!(k in groups)){groups[k]=[];order.push(k);}groups[k].push(p);});
     if(groupBy==='tier')order.sort(function(a,b){return (parseInt(a.slice(1),10)||99)-(parseInt(b.slice(1),10)||99);}); else order.sort();
     var grouped=order.map(function(k){return '<div class="pgroup"><div class="pghd">'+esc(k)+' <span class="pgn">'+groups[k].length+'</span></div>'+groups[k].map(rowH).join('')+'</div>';}).join('');
@@ -2552,19 +2572,18 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     if(!rows.length && g2&&g2.props){rows=g2.props.map(function(pp){return [pp[0],'',pp[1],pp[2],null,[],null,[],'','',[]];});}
     if(bullet)rows=rows.filter(function(p){return p[1]===bullet;});
     if(!rows.length)return '<p class="note">No propositions'+(bullet?(' for '+esc(bullet)):'')+'.</p>';
-    var EVC={'NEEDS-SOURCE':'#dc2626','Author Rationale':'#2563eb','Framework Analysis':'#0891b2','Case Study':'#16a34a'};
-    var NEEDSGROUND={Claim:1,Contention:1,Consequence:1,Recommendation:1};
+    var NEEDSGROUND={Claim:1,Contention:1};  // §9 — grounded_on is a T1→T2 link; flag ONLY a Claim/Opening Contention with none, never a Consequence etc.
     function prank(p){var t=p[2]||''; return (LOGIC_ORDER[t]!=null?LOGIC_ORDER[t]:(TIER_RANK[p[4]]!=null?TIER_RANK[p[4]]:2.5));}
     function btextOf(b){try{var o=(typeof OUTLINES!=='undefined'&&OUTLINES[sec.sid])||null;if(o&&o.bullets){for(var i=0;i<o.bullets.length;i++){if(o.bullets[i].id===b)return o.bullets[i].text||'';}}}catch(e){}return '';}
     function rowHTML(p){
       var id=p[0], type=p[2]||'', color=FNCOLOR[type]||TIER_COLOR[p[4]]||'#475569';
-      var tier=p[4], ev=pEvState(p), go=(p[5]||[]), ts=pTermStatus(p);
+      var tier=p[4], go=(p[5]||[]), ts=pTermStatus(p), evd=propEvDisplay(sec,p);
       var isWarr=(type==='Warrant'||p[4]===5);
       var ri=Math.round(prank(p)); var ind=(LOGIC_INDENT[ri]!=null?LOGIC_INDENT[ri]:2)*20;
       var ungr=(NEEDSGROUND[type] && !(go&&go.length));
       var warrTag=isWarr?'<span class="ltlog">[Transition Logic]</span> ':'';
       var badges=(tier?'<span class="ltier">T'+esc(String(tier))+'</span>':'')
-        +(ev?'<span class="lneed" style="background:'+(EVC[ev]||'#64748b')+';color:#fff">'+esc(ev)+'</span>':'')
+        +(evd?'<span class="lneed" style="background:'+evd.c+';color:#fff">'+esc(evd.t)+'</span>':'')
         +((go&&go.length)?'<span class="ltrans">grounded on '+esc(go.join(', '))+'</span>':'')
         +(ungr?'<span class="lungr">⚠ ungrounded</span>':'');
       var head='<div class="lhead"><span class="lcaret">·</span><span class="llabel" style="color:'+color+'">'+esc(type)+' ('+esc(id)+'):</span> '+warrTag+'<span class="lbodytext">'+esc(p[3])+'</span> <span class="lbadges">'+badges+'</span></div>';
@@ -2574,7 +2593,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     rows.forEach(function(p){var b=p[1]||'(no bullet)';if(!(b in byBullet)){byBullet[b]=[];order.push(b);}byBullet[b].push(p);});
     order.sort();
     var ungroundedAll=rows.filter(function(p){return NEEDSGROUND[p[2]] && !((p[5]||[]).length);}).length;
-    var note='<p class="lhint">Each bullet’s propositions in the same top-down logic order as the argument — Claim/Conclusion, then the Warrant, Reasons, Distinctions, Principle and Definitions beneath, and the Consequence. Indentation shows the layer. '+(ungroundedAll?('<b>'+ungroundedAll+'</b> claim/contention/consequence with no grounding is flagged.'):'All claims are grounded.')+'</p>';
+    var note='<p class="lhint">Each bullet’s propositions in the same top-down logic order as the argument — Claim/Conclusion, then the Warrant, Reasons, Distinctions, Principle and Definitions beneath, and the Consequence. Indentation shows the layer. '+(ungroundedAll?('<b>'+ungroundedAll+'</b> claim/contention with no grounding is flagged.'):'All claims are grounded.')+'</p>';
     var blocks=order.map(function(b){
       var props=byBullet[b].slice().sort(function(x,y){return prank(x)-prank(y)||((x[4]||9)-(y[4]||9))||(x[0]<y[0]?-1:1);});
       var hdr=(b==='(no bullet)')?'<div class="laccb"><b>Section-level / unassigned</b></div>':'<div class="laccb"><b>'+esc(btextOf(b)||b)+'</b> <span class="laccbid">'+esc(b)+'</span></div>';
@@ -2587,7 +2606,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var tail=leg+'<p class="note" style="font-style:italic;color:var(--muted,#667)">'+cap+'</p><p class="note"><button class="rv-btn visback">← Back to summary</button></p>';
     if(isP){
       det.innerHTML=head
-        +'<div class="maptools argvtoggle"><button class="rv-btn pvt on" data-v="map">◇ Map</button><button class="rv-btn pvt" data-v="grouped">≡ Grouped</button><button class="rv-btn pvt" data-v="gtree">⌥ Logic</button><span class="argbulwrap">&nbsp;bullet <select class="pbul"><option value="">All bullets</option>'+g2Bullets(sec).map(function(bl){return '<option value="'+esc(bl)+'">'+esc(bl)+'</option>';}).join('')+'</select></span><span class="pgrpwrap" hidden>&nbsp;group by <select class="pgrp"><option value="type">Type</option><option value="tier">Tier</option><option value="bullet">Bullet</option></select></span><button class="rv-btn visfull">⤢ Full screen</button></div>'
+        +'<div class="maptools argvtoggle"><button class="rv-btn pvt on" data-v="map">◇ Map</button><button class="rv-btn pvt" data-v="grouped">≡ Grouped</button><button class="rv-btn pvt" data-v="gtree">⌥ Logic</button><span class="argbulwrap">&nbsp;bullet <select class="pbul"><option value="">All bullets</option>'+g2Bullets(sec).map(function(bl){return '<option value="'+esc(bl)+'">'+esc(bl)+'</option>';}).join('')+'</select></span><span class="pgrpwrap" hidden>&nbsp;group by <select class="pgrp"><option value="type">Type</option><option value="tier">Tier</option><option value="bullet">Bullet</option><option value="decomp">5-Question</option></select></span><button class="rv-btn visfull">⤢ Full screen</button></div>'
         +'<div class="pmap vismapwrap">'+svg+'</div>'
         +'<div class="pgrouped" hidden>'+genPropositionList(sec,'type')+'</div>'
         +'<div class="pgtreepane" hidden>'+genGroundingTree(sec)+'</div>'+tail;

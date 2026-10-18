@@ -66,9 +66,13 @@ const SABOTAGES = {
   'escape-leak':   [`blurb: "Strict brand alignment, centralised content IP, DAMA REP compliance. Entry tier."`,
                     `blurb: "Strict brand alignment \\\\u2014 centralised content IP, DAMA REP compliance. Entry tier."`],
   'overflow':      [`<style>`, `<style>\nbody{min-width:2600px}\n`],
-  /* The version-stamp rule: the hand-written source comment and the changelog must both
-     keep up with APP_VERSION. Nothing else can drift, because everything else is generated. */
-  'stale-comment': [`<!-- Modelware Partner Pack Builder — v`, `<!-- Modelware Partner Pack Builder — v0.0.0 — stale — v`],
+  /* The repo's versioning standard. The meta tag is the only place the number may live,
+     the changelog must keep up with it, and no second copy may creep back in. */
+  'meta-missing':  [`<meta name="version" content="1.30.0">`, `<!-- tag removed -->`],
+  'meta-typed':    [`var v = m ? String(m.content || "").trim() : "";`,
+                    `var v = "1.29.2";`],
+  'stray-comment': [`<meta name="version" content="1.30.0">`,
+                    `<meta name="version" content="1.30.0">\n<!-- Partner Pack Builder v1.10.2 -->`],
   'no-changelog':  [`var APP_CHANGELOG = [\n  ["1.30.0"`, `var APP_CHANGELOG = [\n  ["0.0.1"`],
   'new-partner':   [`  d.partner.legalName=o.name||"";`, `  /* leak */`],
   'merge-clobber': [`      for(j in obj[k]){ if(obj[k][j]!==undefined) base[k][j]=obj[k][j]; }`,
@@ -204,15 +208,25 @@ async function run() {
      hand-written HTML comment near the top can drift — and it did, sitting at v1.10.2
      through nineteen releases. The changelog has the same problem: a release with no
      entry has no record of what changed. */
-  const headComment = (src.slice(0, 4000).match(/<!--\s*Modelware Partner Pack Builder[^>]*-->/) || [''])[0];
-  /* Read the version the comment DECLARES — the first vN.N.N in it — rather than asking
-     whether the right number appears anywhere inside. A substring test passed a comment
-     reading "v0.0.0 — stale — v1.30.0", which is exactly the drift this check is for. */
-  const declared = (headComment.match(/v(\d+\.\d+\.\d+)/) || [])[1] || '(none)';
-  const declaredBuild = (headComment.match(/build\s+([0-9-]+\s+[0-9:]+\s+SAST)/) || [])[1] || '(none)';
-  check('source comment declares this version', declared, ver.version);
-  check('source comment declares this build stamp', declaredBuild, ver.build);
-  if (declared !== ver.version || declaredBuild !== ver.build) console.log('    comment reads: ' + headComment);
+  /* The repo's versioning standard: <meta name="version"> in the head is the single
+     source of truth, the Asset Navigator's build-manifest.mjs reads it, and nothing else
+     may carry the number independently. Before this, the version was typed in script and
+     again in a hand-written comment — which sat at v1.10.2 through nineteen releases. */
+  const meta = (src.match(/<meta\s+name=["']version["']\s+content=["']([^"']*)["']\s*\/?>/i) || [])[1];
+  check('head carries a version meta tag', meta !== undefined, true);
+  check('meta version is semver', /^\d+\.\d+\.\d+$/.test(meta || ''), true);
+  check('APP_VERSION comes from the meta tag', ver.version, meta);
+  check('APP_VERSION is not the missing-tag fallback', ver.version !== '0.0.0-unknown', true);
+  /* Nothing else may declare a version of its own, or there are two sources again. */
+  const strayComment = (src.slice(0, 6000).match(/<!--[^>]*?\bv\d+\.\d+\.\d+[^>]*?-->/) || [])[0];
+  check('no comment declares a version of its own', strayComment === undefined, true);
+  if (strayComment) console.log('    stray: ' + strayComment.slice(0, 120));
+  const onScreen = await page.evaluate(() => {
+    const el = document.getElementById('verChip');
+    return el ? (el.textContent || '').trim() : '(no chip)';
+  });
+  check('version badge shows it on screen', onScreen, 'v' + ver.version);
+
   const logged = await page.evaluate((v) => APP_CHANGELOG.some(c => c[0] === v), ver.version);
   check('changelog has an entry for this version', logged, true);
   const newest = await page.evaluate(() => APP_CHANGELOG[0][0]);

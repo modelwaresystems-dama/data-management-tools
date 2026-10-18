@@ -13,7 +13,7 @@
      file name and the saved partner records all follow it automatically.
      MAJOR.MINOR.PATCH — patch for a fix, minor for new behaviour, major for a break.
      The build stamp is separate: it is a time, not a version, so it stays in script. -->
-<meta name="version" content="1.30.0">
+<meta name="version" content="1.31.0">
 <style>
 :root{
   --ink:#12212b; --ink-2:#3d5361; --line:#d8e2e8; --line-2:#eef3f6;
@@ -334,8 +334,9 @@ var APP_VERSION = (function(){
   var v = m ? String(m.content || "").trim() : "";
   return /^\d+\.\d+\.\d+$/.test(v) ? v : "0.0.0-unknown";
 })();
-var APP_BUILD   = "2026-10-18 14:25 SAST";   /* a time, not a version — set when this file is generated */
+var APP_BUILD   = "2026-10-18 15:29 SAST";   /* a time, not a version — set when this file is generated */
 var APP_CHANGELOG = [
+  ["1.31.0","2026-10-18","The repository now holds what a partner was actually sent. Until now it held only the inputs, on the reasoning that a pack regenerates from its record — and v1.30.0 proved that wrong by changing both what a Reseller pack contains and the record itself on load, so rebuilding a partner today does not reproduce the pack issued last week. Record what was issued writes the contract set as docx and pdf plus the workbook to partners/<slug>/issued/<ref>_<date>_v<builder>/, with a manifest naming every file, who issued it, when, and the builder version that produced it. Internal documents are excluded — the checklist and the runbook are ours and were never issued. Files are written one at a time rather than all at once, and a pack where any write failed is labelled INCOMPLETE in the list instead of being counted as sent. The countersigned copy is filed into the same folder by hand and recorded against the manifest, so an executed original never depends on a browser upload. The partner listing is untouched: it reads partners/ for .json files and ignores directories. Also on the repo's versioning standard — the number now lives in a single meta tag in the head, which the Asset Navigator reads, and a missing tag shows as 0.0.0-unknown rather than a plausible version."],
   ["1.30.0","2026-10-18","The Training Reseller is no longer held to the delivery models' rules. A reseller sells the Services and never delivers them — Schedule F2 already said it is not granted access to the Facilitator Materials at all — yet the pre-send check still demanded a courseware licence, named trainers and a library address, and the courseware one blocked the pack from being produced. Those three checks now apply only to models that actually license content. Schedule D1 is inverted for a reseller: instead of requiring the partner to maintain certified trainers, which contradicted its own obligations clause in the same agreement, it is now a warranty by us about the trainers we supply, including course-specific certification and substitution at no extra cost. The Courseware Protection Onboarding Checklist and the Access Withdrawal Runbook are no longer produced for a reseller — there is nothing to provision and nothing to withdraw, and the checklist was instructing us to create a library and guest accounts that must not exist. Two record bugs behind the same symptom: loading a saved partner never applied the model's rules, so a record that had once been an Authorised Delivery Partner came back carrying its royalty, override and tiers whatever model it now claimed to be; and a reseller's deliberately empty inventory account was mistaken for a record written before cost lines existed and refilled with the default lines. Both paths now strip only what the model forbids, leave every negotiated value the model permits, and say in the status line exactly what was removed."],
   ["1.29.2","2026-09-06","Onboarding step B1 now says which kind of site to create: a communication site, not a Teams site. A Teams site is group-connected, so it brings a Microsoft 365 group, a mailbox, a calendar and a chat space, and group membership grants access to all of it \u2014 two overlapping membership systems to unpick on the day you are withdrawing access."],
   ["1.29.1","2026-09-06","The header now says who you have open. The partner\u2019s legal name sits where the strapline used to be, with the agreement reference, the operating model and the stage on the line beneath, and the app name shrinks to a label above it. With nothing loaded it says so and points at + New partner. It follows the record, so switching partner or changing the model updates it immediately, and it narrows rather than pushing the buttons off the row."],
@@ -4321,6 +4322,7 @@ var GH = {
   connected:false,
   login:"",
   files:[],        /* [{slug,path,sha,name}] from partners/ */
+  issued:[],       /* [{path,name,manifest,sha}] issued packs for the OPEN partner only */
   entries:{},      /* slug -> register entry, cached to avoid refetching */
   refs:{allocations:[],sha:null},   /* the contract-reference ledger */
   userId:"",       /* who is writing — stamped on every claim and commit */
@@ -4585,6 +4587,138 @@ function ghPutFile(p,text,message,sha){
   if(sha) body.sha=sha;
   return ghApi(ghContentPath(p),{method:"PUT",body:body});
 }
+/* The same call for a document rather than text. The Contents API takes base64 either
+   way; the difference is that a docx or pdf must NOT go through strToB64, which encodes
+   a JS string as UTF-8 and would corrupt every byte above 0x7F. */
+function ghPutBytes(p,bytes,message,sha){
+  var body={message:message,content:bytesToB64(bytes),branch:GH.branch};
+  if(sha) body.sha=sha;
+  return ghApi(ghContentPath(p),{method:"PUT",body:body});
+}
+
+/* ------------------------------------------------- issued packs
+   Until v1.31.0 the repository held only the inputs, on the reasoning that a pack
+   regenerates from its record. That stopped being true: v1.30.0 changed what a Reseller
+   pack contains and changed the record itself on load, so rebuilding MWS-PP-2026-010
+   today does not reproduce the pack issued last week. What a partner was actually sent
+   is now written down.
+
+   Layout, per partner:  partners/<slug>/issued/<ref>_<date>_v<builder>/
+   ghRefresh lists partners/ and keeps only type==="file" ending .json, so these
+   subfolders are invisible to it and the partner listing is unaffected.
+
+   Internal documents are deliberately excluded — the checklist and the runbook are ours
+   and were never issued. contractFiles() already returns only non-internal documents. */
+function issuedDirFor(d,when){
+  var stamp=(when||sastNow()).slice(0,10).replace(/[^0-9-]/g,"");
+  var tag=safeName(d.ref||"REF").replace(/\s+/g,"-");
+  return ghPathFor(PARTNER_DIR+"/"+partnerSlug(d)+"/issued/"+tag+"_"+stamp+"_v"+APP_VERSION);
+}
+function issuedManifest(d,dir,files,when){
+  return {
+    schema:"modelware-issued-pack/1",
+    ref:d.ref, slug:partnerSlug(d), partner:d.partner.legalName||"",
+    model:(MODELS[d.modelKey]||MODELS.ADP).name, modelKey:d.modelKey,
+    issuedOn:when, issuedBy:ghWho(), path:dir,
+    builder:{name:APP_NAME, version:APP_VERSION, build:APP_BUILD},
+    recordPath:ghPathFor(PARTNER_DIR+"/"+partnerSlug(d)+".json"),
+    files:files.map(function(f){ return {name:f.name, bytes:f.data.length}; }),
+    /* Filled in by hand once the countersigned copy is filed into this same folder.
+       The app records THAT it exists and who signed; it does not upload it. */
+    signed:{received:false, fileName:"", signedOn:"", signatory:"", note:""}
+  };
+}
+function ghRecordIssued(){
+  if(GH.busy) return Promise.resolve();
+  if(!GH.connected){ ghSetStatus("Connect to the repository first.","err"); return Promise.resolve(); }
+  if(contractsBlocked()){ refuseContracts("Issued pack"); return Promise.resolve(); }
+  if(!String(D.ref||"").trim()){ ghSetStatus("Give the agreement a reference first — it names the folder.","err"); return Promise.resolve(); }
+  if(!String(D.partner.legalName||"").trim()){ ghSetStatus("Give the partner a legal name first.","err"); return Promise.resolve(); }
+
+  var when=sastNow(), dir=issuedDirFor(D,when), files=[];
+  try{
+    contractFiles("docx").forEach(function(f){ files.push(f); });
+    contractFiles("pdf").forEach(function(f){ files.push(f); });
+    files.push({name:"Partner account workbook.xlsx", data:buildXlsx(buildWorkbook(D))});
+  }catch(e){ ghSetStatus("Could not build the pack: "+(e.message||e),"err"); return Promise.resolve(); }
+
+  GH.busy=true;
+  var msg="Record issued pack: "+D.partner.legalName+" "+D.ref+" ["+APP_NAME+" v"+APP_VERSION+"]";
+  var done=0, failed=[];
+  /* One at a time, on purpose. Firing nineteen PUTs at once against one repository is
+     how you meet the secondary rate limit, and a half-written pack is worse than none. */
+  var chain=Promise.resolve();
+  files.forEach(function(f){
+    chain=chain.then(function(){
+      ghSetStatus("Writing "+(done+1)+" of "+files.length+" to "+dir+"…","");
+      return ghPutBytes(dir+"/"+f.name, f.data, msg).then(function(r){
+        if(r.ok) done++; else failed.push(f.name+": "+ghErr(r,f.name));
+      });
+    });
+  });
+  return chain.then(function(){
+    var man=issuedManifest(D,dir,files,when);
+    man.written=done; man.failed=failed;
+    return ghPutFile(dir+"/manifest.json", JSON.stringify(man,null,2)+"\n", msg);
+  }).then(function(r){
+    if(!r.ok) throw new Error(ghErr(r,dir+"/manifest.json"));
+    /* Say what did NOT get there. A count of successes alone reads as a complete pack. */
+    if(failed.length){
+      ghSetStatus(done+" of "+files.length+" written to "+dir+" — "+failed.length+" FAILED. The pack on file is incomplete: "+failed[0],"err");
+    } else {
+      ghSetStatus("Issued pack recorded: "+files.length+" file(s) in "+dir+". File the signed copy into the same folder and record it below.","ok");
+    }
+    return ghRefreshIssued();
+  }).catch(function(e){ ghSetStatus(e.message||String(e),"err"); })
+    .then(function(){ GH.busy=false; refresh(); });
+}
+/* Reads the issued folders for the open partner, so the panel lists what is on file
+   rather than what this session happens to have written. */
+function ghRefreshIssued(){
+  var base=ghPathFor(PARTNER_DIR+"/"+partnerSlug(D)+"/issued");
+  GH.issued=[];
+  return ghApi(ghContentPath(base)+"?ref="+encodeURIComponent(GH.branch)).then(function(r){
+    if(r.status===404) return null;                 /* none yet is not an error */
+    if(!r.ok) return null;
+    var dirs=(Array.isArray(r.json)?r.json:[]).filter(function(x){ return x.type==="dir"; });
+    var chain=Promise.resolve();
+    dirs.forEach(function(dd){
+      chain=chain.then(function(){
+        return ghApi(ghContentPath(dd.path+"/manifest.json")+"?ref="+encodeURIComponent(GH.branch))
+          .then(function(mr){
+            var man=null;
+            if(mr.ok && mr.json && mr.json.content){
+              try{ man=JSON.parse(b64ToStr(mr.json.content)); }catch(e){ man=null; }
+            }
+            GH.issued.push({path:dd.path, name:dd.name, manifest:man, sha:(mr.json&&mr.json.sha)||""});
+          });
+      });
+    });
+    return chain;
+  }).catch(function(){ return null; });
+}
+/* Records that the countersigned copy has been filed. It updates the manifest only —
+   the executed document itself is filed by hand, which is the point: an executed
+   original should not depend on a browser upload path. */
+function ghRecordSigned(path,sha,fields){
+  if(!GH.connected){ ghSetStatus("Connect to the repository first.","err"); return Promise.resolve(); }
+  if(!String(fields.fileName||"").trim()){ ghSetStatus("Name the signed file as you filed it.","err"); return Promise.resolve(); }
+  var entry=GH.issued.filter(function(x){ return x.path===path; })[0];
+  if(!entry || !entry.manifest){ ghSetStatus("Could not read that pack's manifest.","err"); return Promise.resolve(); }
+  var man=JSON.parse(JSON.stringify(entry.manifest));
+  man.signed={received:true, fileName:String(fields.fileName||"").trim(),
+              signedOn:String(fields.signedOn||"").trim(), signatory:String(fields.signatory||"").trim(),
+              note:String(fields.note||"").trim(), recordedOn:sastNow(), recordedBy:ghWho()};
+  GH.busy=true;
+  return ghPutFile(path+"/manifest.json", JSON.stringify(man,null,2)+"\n",
+                   "Record signed copy: "+man.partner+" "+man.ref+" [builder v"+APP_VERSION+"]", sha)
+    .then(function(r){
+      if(!r.ok) throw new Error(ghErr(r,path+"/manifest.json"));
+      ghSetStatus("Signed copy recorded against "+entry.name+".","ok");
+      return ghRefreshIssued();
+    }).catch(function(e){ ghSetStatus(e.message||String(e),"err"); })
+    .then(function(){ GH.busy=false; refresh(); });
+}
 
 /* ------------------------------------------------------------- connect */
 function ghFileUrl(p){
@@ -4744,8 +4878,11 @@ function ghOpen(slug, keepTab){
     D=mergeIntoBlank(recordToData(obj));
     D.slug=slug;
     if(!keepTab) activeTab="WB";        /* a row action must not throw you out of the list */
-    ghSetStatus("Opened "+fb(D.partner.legalName,"partner")+" from GitHub."+modelClearedNote(),"ok");
+    var opened="Opened "+fb(D.partner.legalName,"partner")+" from GitHub."+modelClearedNote();
     refresh();
+    /* The issued list is per-partner, so it is read when a partner is opened. A failure
+       here must not make the open look like it failed — it did not. */
+    return ghRefreshIssued().then(function(){ ghSetStatus(opened,"ok"); refresh(); });
   }).catch(function(e){ ghSetStatus(e.message||String(e),"err"); refresh(); });
 }
 function ghReadPartner(path){
@@ -5880,6 +6017,48 @@ function repoHtml(){
     });
   }
   h+='</div>';
+  /* ----------------------------------------------- issued packs, open partner */
+  h+='<h2 class="sec">Issued packs — '+esc(D.partner.legalName||partnerSlug(D))+'</h2>';
+  h+='<div class="hint" style="font-size:11.5px;color:#7c8f9a;margin-bottom:10px">'+
+     'What this partner was actually sent, kept because a pack does not reliably regenerate: '+
+     'the documents change between builder versions, and so does the record. Internal documents '+
+     'are not included — they were never issued.</div>';
+  h+='<div class="repolist">';
+  if(!GH.issued.length){
+    h+='<div class="empty">Nothing recorded for this partner. Press <strong>Record what was issued</strong> '+
+       'after you send a pack, and it is written to <code>'+esc(ghPathFor(PARTNER_DIR+"/"+partnerSlug(D)+"/issued"))+'/</code>.</div>';
+  } else {
+    GH.issued.forEach(function(it){
+      var m=it.manifest||{};
+      var sub=(m.issuedOn?("Issued "+m.issuedOn):"(no manifest)")+
+              (m.issuedBy?" by "+m.issuedBy:"")+
+              (m.builder&&m.builder.version?" · builder v"+m.builder.version:"")+
+              (m.files?" · "+m.files.length+" file(s)":"");
+      /* A pack written with failures must not look like a clean one. */
+      if(m.failed && m.failed.length) sub+=" · INCOMPLETE — "+m.failed.length+" file(s) failed to write";
+      var sg=m.signed||{};
+      sub+= sg.received ? (" · signed "+(sg.signedOn||"(no date)")+(sg.signatory?" by "+sg.signatory:""))
+                        : " · no signed copy recorded";
+      h+='<div class="rowitem"><div><div class="nm">'+esc(it.name)+'</div>'+
+         '<div class="sub">'+esc(sub)+'</div></div>'+
+         '<a class="btn light sm" style="text-decoration:none" target="_blank" rel="noopener" href="'+
+         esc(ghWebUrl(it.path))+'">Open</a></div>';
+      if(!sg.received){
+        h+='<div class="rowitem" style="display:block"><div class="sub" style="margin-bottom:6px">'+
+           'File the countersigned copy into that folder yourself, then record it here.</div>'+
+           '<div class="grid3">'+
+           '<input class="in" id="sgName_'+esc(it.name)+'" placeholder="Signed file name as filed">'+
+           '<input class="in" id="sgOn_'+esc(it.name)+'" placeholder="Signed on (yyyy-mm-dd)">'+
+           '<input class="in" id="sgBy_'+esc(it.name)+'" placeholder="Signed by">'+
+           '</div>'+
+           '<button class="btn light sm" data-sgrec="'+esc(it.path)+'" data-sgname="'+esc(it.name)+'" '+
+           'data-sgsha="'+esc(it.sha)+'" style="margin-top:6px">Record signed copy</button></div>';
+      }
+    });
+  }
+  h+='</div>';
+  h+='<div style="margin:10px 0 18px"><button class="btn" id="btnRecordIssued">Record what was issued</button></div>';
+
   h+='<div class="repolist"><div class="rowitem"><div><div class="nm">What this repository holds</div>'+
      '<div class="sub">One JSON record per partner in <code>'+esc(ghPathFor(PARTNER_DIR))+'/</code>, plus a generated <code>'+esc(ghPathFor("register.json"))+'</code> and <code>'+esc(ghPathFor("README.md"))+'</code> table. '+
      'Contracts and workbooks are not stored — they are regenerated from these records.</div></div><div></div></div></div>';
@@ -6369,6 +6548,13 @@ document.addEventListener("click", function(e){
   if(id==="pipeClear"||id==="pipeClear2"){ PIPE.q=""; PIPE.status=""; PIPE.model=""; render(); return; }
   if(t.dataset && t.dataset.one){ exportOne(t.dataset.one); return; }
   if(t.dataset && t.dataset.ghopen){ ghOpen(t.dataset.ghopen); return; }
+  if(t.dataset && t.dataset.sgrec){
+    var nm=t.dataset.sgname||"";
+    var g=function(p){ var el=document.getElementById(p+nm); return el?el.value:""; };
+    ghRecordSigned(t.dataset.sgrec, t.dataset.sgsha||"", {
+      fileName:g("sgName_"), signedOn:g("sgOn_"), signatory:g("sgBy_")});
+    return;
+  }
   if(t.dataset && t.dataset.ghdocx){ ghOpenThen(t.dataset.ghdocx, function(){ exportContracts("docx"); }); return; }
   if(t.dataset && t.dataset.ghpack){ ghOpenThen(t.dataset.ghpack, function(){ exportAll(); }); return; }
   switch(id){
@@ -6430,6 +6616,7 @@ document.addEventListener("click", function(e){
       var ov2=document.getElementById("npOverlay"); if(ov2) ov2.remove();
       break; }
     case "btnGhSave2": ghSave(); break;
+    case "btnRecordIssued": ghRecordIssued(); break;
     case "btnRefNext": {
       if(!GH.connected){ toast("Connect to the repository first.",true); break; }
       ghLoadRefs().then(function(){
@@ -6558,6 +6745,9 @@ window.MW = {
     return zipMake(files);
   },
   demo:demoData, refresh:refresh, MODELS:MODELS,
+  issuedDir:function(){ return issuedDirFor(D); },
+  recordIssued:ghRecordIssued, recordSigned:ghRecordSigned, refreshIssued:ghRefreshIssued,
+  issued:function(){ return GH.issued; },
   intakeHtml:function(){ return buildIntakeHtml(D); },
   loadPayload:loadPayload,
   newPartner:newPartner,

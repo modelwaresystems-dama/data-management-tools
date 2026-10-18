@@ -68,12 +68,19 @@ const SABOTAGES = {
   'overflow':      [`<style>`, `<style>\nbody{min-width:2600px}\n`],
   /* The repo's versioning standard. The meta tag is the only place the number may live,
      the changelog must keep up with it, and no second copy may creep back in. */
-  'meta-missing':  [`<meta name="version" content="1.30.0">`, `<!-- tag removed -->`],
+  'meta-missing':  [`<meta name="version" content="1.31.0">`, `<!-- tag removed -->`],
   'meta-typed':    [`var v = m ? String(m.content || "").trim() : "";`,
                     `var v = "1.29.2";`],
-  'stray-comment': [`<meta name="version" content="1.30.0">`,
-                    `<meta name="version" content="1.30.0">\n<!-- Partner Pack Builder v1.10.2 -->`],
-  'no-changelog':  [`var APP_CHANGELOG = [\n  ["1.30.0"`, `var APP_CHANGELOG = [\n  ["0.0.1"`],
+  'stray-comment': [`<meta name="version" content="1.31.0">`,
+                    `<meta name="version" content="1.31.0">\n<!-- Partner Pack Builder v1.10.2 -->`],
+  'no-changelog':  [`var APP_CHANGELOG = [\n  ["1.31.0"`, `var APP_CHANGELOG = [\n  ["0.0.1"`],
+  /* Issued packs. */
+  'issued-utf8':   [`  var body={message:message,content:bytesToB64(bytes),branch:GH.branch};`,
+                    `  var body={message:message,content:strToB64(String.fromCharCode.apply(null,bytes.subarray(0,100))),branch:GH.branch};`],
+  'issued-internal':[`    contractFiles("docx").forEach(function(f){ files.push(f); });`,
+                    `    contractFiles("docx").forEach(function(f){ files.push(f); });\n    contractFiles("docx","internal").forEach(function(f){ files.push(f); });`],
+  'issued-silent': [`    if(failed.length){`, `    if(false){`],
+  'signed-flag':   [`  man.signed={received:true,`, `  man.signed={received:false,`],
   'new-partner':   [`  d.partner.legalName=o.name||"";`, `  /* leak */`],
   'merge-clobber': [`      for(j in obj[k]){ if(obj[k][j]!==undefined) base[k][j]=obj[k][j]; }`,
                     `      /* dropped */`],
@@ -528,15 +535,41 @@ print('OK', len(wb.sheetnames), len(d.paragraphs), len(r.pages), len(names))
     const p = m ? decodeURIComponent(m[1]) : '';
     const store = global.__ghStore || (global.__ghStore = {});
     if (method === 'GET') {
-      if (p === '' || p === 'partners') {
+      /* An exact file wins; otherwise behave like the Contents API and return a directory
+         listing for any prefix that has children, with type "dir" for sub-paths and
+         "file" for direct children. The first version of this mock only listed the root
+         and partners/, so a feature that lists its own subfolder could not be tested at
+         all — the check failed and looked like an app bug. */
+      if (store[p]) {
         return route.fulfill({ status: 200, contentType: 'application/json',
-          body: JSON.stringify(Object.keys(store).map(k => ({ name: k.split('/').pop(), path: k, sha: store[k].sha, type: 'file' }))) });
+          body: JSON.stringify({ content: store[p].content, sha: store[p].sha, path: p }) });
       }
-      if (!store[p]) return route.fulfill({ status: 404, contentType: 'application/json', body: '{"message":"Not Found"}' });
+      const prefix = p === '' ? '' : p.replace(/\/+$/, '') + '/';
+      const seen = new Map();
+      for (const k of Object.keys(store)) {
+        if (prefix && k.indexOf(prefix) !== 0) continue;
+        const rest = k.slice(prefix.length);
+        if (!rest) continue;
+        const cut = rest.indexOf('/');
+        const name = cut < 0 ? rest : rest.slice(0, cut);
+        const full = prefix + name;
+        if (!seen.has(name)) {
+          seen.set(name, cut < 0
+            ? { name, path: full, sha: store[k].sha, type: 'file' }
+            : { name, path: full, sha: '', type: 'dir' });
+        }
+      }
+      if (!seen.size) return route.fulfill({ status: 404, contentType: 'application/json', body: '{"message":"Not Found"}' });
       return route.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify({ content: store[p].content, sha: store[p].sha, path: p }) });
+        body: JSON.stringify(Array.from(seen.values())) });
     }
     if (method === 'PUT') {
+      /* Injected failure, so the "a pack with a failed write is INCOMPLETE" path can be
+         exercised. Without it that branch never runs against the mock and a sabotage
+         that silences it goes undetected. */
+      if (global.__ghFailOn && global.__ghFailOn.test(p)) {
+        return route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"injected failure"}' });
+      }
       const body = JSON.parse(route.request().postData() || '{}');
       if (store[p] && body.sha && body.sha !== store[p].sha) {
         return route.fulfill({ status: 409, contentType: 'application/json', body: '{"message":"sha mismatch"}' });
@@ -558,6 +591,155 @@ print('OK', len(wb.sheetnames), len(d.paragraphs), len(r.pages), len(names))
       catch (e) { return { ok: false, status: -1 }; }
     });
     check('missing file reports not-found, does not throw', r404.ok, false);
+  }
+
+  // ============================================================ N. issued packs
+  /* Against the same mock. Everything written goes through ghPutBytes/ghPutFile, so the
+     store below is what the repository would actually contain. */
+  console.log('N. issued packs');
+  const issued = await page.evaluate(async (rec) => {
+    MW.setApi('https://api.github.com/__mockgh');
+    GH.connected = true; GH.owner = 'o'; GH.repo = 'r'; GH.branch = 'main'; GH.token = 't';
+    GH.login = 'tester';
+    MW.data = mergeIntoBlank(recordToData(rec));
+    const dir = MW.issuedDir();
+    await MW.recordIssued();
+    return { dir, status: GH.status, kind: GH.statusKind };
+  }, RESELLER_REC);
+
+  const store = global.__ghStore || {};
+  const written = Object.keys(store);
+  const inDir = written.filter(p => p.indexOf('/issued/') >= 0);
+  check('issued pack wrote files', inDir.length > 0, true);
+  check('path is partners/<slug>/issued/...',
+        /partners\/your-partner-technologies-sdn-bhd\/issued\/MWS-PP-2026-010_\d{4}-\d{2}-\d{2}_v\d+\.\d+\.\d+\//.test(inDir[0] || ''), true);
+  check('a manifest was written', inDir.some(p => /\/manifest\.json$/.test(p)), true);
+  check('nine docx issued', inDir.filter(p => /\.docx$/.test(p)).length, 9);
+  check('nine pdf issued', inDir.filter(p => /\.pdf$/.test(p)).length, 9);
+  check('workbook issued', inDir.filter(p => /\.xlsx$/.test(p)).length, 1);
+  /* Internal documents are ours. A pack claiming to be what the partner received must
+     not contain the runbook or the provisioning checklist. */
+  check('no runbook in the issued pack', inDir.some(p => /Runbook/i.test(p)), false);
+  check('no onboarding checklist in the issued pack', inDir.some(p => /Onboarding Checklist/i.test(p)), false);
+
+  /* Read a stored file's leading bytes, reporting a miss as a failure rather than
+     throwing. A broken build legitimately writes nothing, and the harness dying on the
+     first absent file hides every check after it. */
+  const head = (what, re, n, want) => {
+    const p = inDir.filter(x => re.test(x))[0];
+    if (!p || !store[p]) { fail++; console.log(`  FAIL  ${what}: no such file was written`); return; }
+    check(what, Buffer.from(store[p].content, 'base64').slice(0, n).toString('latin1'), want);
+  };
+  /* The documents must survive the round trip as bytes. A docx is a zip: PK\x03\x04.
+     The magic bytes alone are NOT enough: every byte below 0x80 survives a UTF-8 text
+     encode unchanged, so a document mangled or truncated by the wrong encoder still
+     starts "PK\x03\x04". A sabotage that encoded the first 100 bytes as text passed this
+     check until the length comparison below was added. */
+  head('docx round-trips as bytes, not text', /\.docx$/, 4, 'PK\u0003\u0004');
+  head('pdf round-trips as bytes', /\.pdf$/, 5, '%PDF-');
+  head('xlsx round-trips as bytes', /\.xlsx$/, 2, 'PK');
+
+  const manPath = inDir.filter(p => /\/manifest\.json$/.test(p))[0];
+  let man = null;
+  if (manPath && store[manPath]) {
+    try { man = JSON.parse(Buffer.from(store[manPath].content, 'base64').toString('utf8')); }
+    catch (e) { man = null; }
+  }
+  if (!man) {
+    fail++; console.log('  FAIL  manifest could not be read back');
+  } else {
+    check('manifest names the reference', man.ref, 'MWS-PP-2026-010');
+    check('manifest names the model', man.modelKey, 'RESELLER');
+    check('manifest records the builder version', man.builder.version, ver.version);
+    check('manifest records the build stamp', man.builder.build, ver.build);
+    check('manifest lists every file', man.files.length, 19);
+    check('manifest records who issued it', man.issuedBy && man.issuedBy.length > 0, true);
+    check('manifest starts with no signed copy', man.signed.received, false);
+    check('manifest reports nothing failed', (man.failed || []).length, 0);
+    /* Every file in the repo must be exactly as long as the manifest says. This is what
+       catches a document written through the wrong encoder, which the magic-byte check
+       above cannot see. */
+    let wrongLen = [];
+    for (const f of man.files) {
+      const rec = store[man.path + '/' + f.name];
+      if (!rec) { wrongLen.push(f.name + ': missing'); continue; }
+      const got = Buffer.from(rec.content, 'base64').length;
+      if (got !== f.bytes) wrongLen.push(f.name + ': ' + got + ' vs ' + f.bytes);
+    }
+    check('every stored file is the length the manifest records', wrongLen.length, 0);
+    if (wrongLen.length) console.log('    ' + wrongLen.slice(0, 3).join('\n    '));
+  }
+  check('status line says it was recorded', /recorded/i.test(issued.status), true);
+
+  /* The signed copy: the app records that it exists, it does not upload it. */
+  await page.evaluate(() => MW.refreshIssued());
+  const sg = await page.evaluate(async () => {
+    const list = MW.issued();
+    if (!list.length) return { err: 'no packs listed' };
+    await MW.recordSigned(list[0].path, list[0].sha,
+      { fileName: 'MWS-PP-2026-010 countersigned.pdf', signedOn: '2026-11-02', signatory: 'Agha M' });
+    return { path: list[0].path, status: GH.status };
+  });
+  check('issued packs are listed back from the repo', !sg.err, true);
+  const man2rec = !sg.err && store[sg.path + '/manifest.json'];
+  if (!man2rec) {
+    if (!sg.err) { fail++; console.log('  FAIL  signed-copy manifest could not be read back'); }
+  } else {
+    const man2 = JSON.parse(Buffer.from(man2rec.content, 'base64').toString('utf8'));
+    check('signed copy is recorded', man2.signed.received, true);
+    check('signed file name is recorded', man2.signed.fileName, 'MWS-PP-2026-010 countersigned.pdf');
+    check('signed date is recorded', man2.signed.signedOn, '2026-11-02');
+    check('signatory is recorded', man2.signed.signatory, 'Agha M');
+    check('the pack itself is unchanged', man2.files.length, 19);
+    /* The executed document is filed by hand — the app must not have written one. */
+    const after = Object.keys(global.__ghStore || {}).filter(p => p.indexOf('/issued/') >= 0);
+    check('no signed document was uploaded', after.some(p => /countersigned/i.test(p)), false);
+  }
+
+  /* The partner listing must be unaffected by the new subfolders. */
+  const listed = await page.evaluate(async () => {
+    await ghRefresh(true);
+    return GH.files.map(f => f.slug);
+  });
+  check('issued subfolders do not appear as partners', listed.some(s => /issued/.test(s)), false);
+
+  /* A DELIVERY model has internal documents. They are ours and were never issued, so
+     they must not be in the pack — which is only testable on a model that has them. */
+  const adpIssued = await page.evaluate(async (rec) => {
+    MW.data = mergeIntoBlank(recordToData(rec));
+    await MW.recordIssued();
+    return { dir: MW.issuedDir(), status: GH.status };
+  }, ADP);
+  /* Filter by the ADP's own reference, not its slug — adpRecord() is built from the
+     reseller fixture and shares its slug, so a slug filter picks up both packs and the
+     docx count came back as 18. */
+  const adpFiles = Object.keys(global.__ghStore || {}).filter(p => p.indexOf('/MWS-PP-2026-011_') >= 0);
+  check('ADP pack was written', adpFiles.length > 0, true);
+  check('ADP pack excludes the runbook', adpFiles.some(p => /Runbook/i.test(p)), false);
+  check('ADP pack excludes the onboarding checklist', adpFiles.some(p => /Onboarding Checklist/i.test(p)), false);
+  check('ADP pack has nine issued docx, not eleven', adpFiles.filter(p => /\.docx$/.test(p)).length, 9);
+
+  /* A pack where a write failed must say so. Reporting only the successes makes an
+     incomplete pack read as a sent one. */
+  console.log('O. a failed write');
+  global.__ghFailOn = /Schedule A.*\.pdf$/;
+  const broke = await page.evaluate(async (rec) => {
+    const r = JSON.parse(JSON.stringify(rec));
+    r.data.ref = 'MWS-PP-2026-099';
+    MW.data = mergeIntoBlank(recordToData(r));
+    await MW.recordIssued();
+    return { dir: MW.issuedDir(), status: GH.status, kind: GH.statusKind };
+  }, RESELLER_REC);
+  global.__ghFailOn = null;
+  check('a failed write is reported as a failure', broke.kind, 'err');
+  check('the status says the pack is incomplete', /incomplete/i.test(broke.status), true);
+  if (!/incomplete/i.test(broke.status)) console.log('    status: ' + broke.status);
+  const brokeMan = Object.keys(global.__ghStore || {}).filter(p => p.indexOf('MWS-PP-2026-099') >= 0 && /manifest\.json$/.test(p))[0];
+  if (!brokeMan) { fail++; console.log('  FAIL  no manifest written for the incomplete pack'); }
+  else {
+    const bm = JSON.parse(Buffer.from(global.__ghStore[brokeMan].content, 'base64').toString('utf8'));
+    check('the manifest names what failed', (bm.failed || []).length > 0, true);
+    check('the manifest does not claim every file was written', bm.written < bm.files.length, true);
   }
 
   await browser.close();

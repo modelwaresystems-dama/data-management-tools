@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.39.0">
+<meta name="version" content="4.41.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -375,6 +375,9 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .ldirtog .ldirlbl{font:700 .66rem var(--mono,ui-monospace,monospace);color:var(--soft,#64748b);letter-spacing:.04em;text-transform:uppercase}
 .ldir{font-size:.72rem;padding:3px 9px}
 .ldir.on{background:var(--accent,#2563eb);color:#fff;border-color:var(--accent,#2563eb)}
+.logicacc .lkids{margin-left:15px;padding-left:11px;border-left:1.5px solid var(--line,#e2e8f0);margin-top:3px}
+.logicacc .lrow.lhaskids>.lhead{cursor:pointer}
+.logicacc .lrow.lhaskids>.lhead .lcaret{color:var(--accent,#2563eb);font-weight:800}
 .logicacc .lrow.lref>.lhead{opacity:.6}
 .logicacc .lrow.lref .lrefnote{font-size:.64rem;color:var(--soft,#64748b);font-style:italic}
 .laccflow .lhead{display:block;align-items:initial;line-height:1.45}
@@ -1297,8 +1300,11 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var notes=candRow(r.cands)+derivRow(r.deriv)+(qr?qCheckGrid(qr):'');
       var sub=notes?('<tr class="prsub" data-pbullet="'+esc(r.bullet||'')+'"'+(hasQ?' data-subfor="'+r.id+'"':'')+'><td colspan="'+ncol+'">'+notes+'</td></tr>'):'';
       return main+sub;}).join('')+'</tbody></table>';
-    var bulletSel=hasB?('<div class="maptools" style="margin:6px 0"><span class="argbulwrap">bullet <select class="psumbul"><option value="">All bullets</option>'+bl.map(function(x){return '<option value="'+esc(x)+'">'+esc(x)+'</option>';}).join('')+'</select></span></div>'):'';
-    return head+recon+qPanelRollup(sec)+hint+bulletSel+tbl;}
+    // Visual map clip at the TOP of the proposition summary (Howard's layout) — the full inventory of points, with the
+    // bullet filter in its toolbar so the SAME control narrows both the map and the table below. ⤢ opens the full multi-view.
+    var bsel=hasB?('<span class="argbulwrap" style="margin-left:10px">bullet <select class="psumbul"><option value="">All bullets</option>'+bl.map(function(x){return '<option value="'+esc(x)+'">'+esc(x)+'</option>';}).join('')+'</select></span>'):'';
+    var mapBlock='<div class="maptools" style="margin:6px 0"><b>◇ Proposition map</b>'+bsel+' <button class="rv-btn visfull">⤢ Full screen</button></div><div class="psummap vismapwrap">'+genPropositionSVG(sec)+'</div>';
+    return head+mapBlock+recon+qPanelRollup(sec)+hint+tbl;}
   function argumentSummary(sec){var proj=sel.value, nodes=g3Active(sec);
     var hasAQ=!!AQUALITY[sec.sid];
     var cspan=hasAQ?6:5;
@@ -2043,6 +2049,22 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     'Distinction':3,'Boundary':3,'Qualification':3,'Counterpoint':3,'Reason':4,'Pillar':4,'Warrant':5,
     'Consequence':6,'Recommendation':6,'Conclusion':7,'Terminal Synthesis':7};
   function fwdRank(role,tier){return (tier!=null&&tier!==''&&!isNaN(+tier))?+tier:(ROLE_TIER[role]!=null?ROLE_TIER[role]:3.5);}
+  // AUDIT drilldown: build a COLLAPSED depends-on tree from a flat ranked list. The Claim/Conclusion (rank 0) is the
+  // root; each deeper layer nests inside the previous (Warrant → Reason → Distinction → Principle), so the author drills
+  // Claim → … → Principle. Consequences (rank ≥5) are the Claim's direct outcome, attached as children of the root.
+  function auditTreeHTML(list, rankFn, renderRow){
+    var items=list.slice().sort(function(a,b){return rankFn(a)-rankFn(b);});
+    var support=items.filter(function(x){return rankFn(x)<5;}), outcomes=items.filter(function(x){return rankFn(x)>=5;});
+    var roots=[], stack=[];
+    support.forEach(function(it){var node={it:it,kids:[]};
+      while(stack.length && rankFn(stack[stack.length-1].it)>=rankFn(it))stack.pop();
+      if(stack.length)stack[stack.length-1].kids.push(node); else roots.push(node);
+      stack.push(node);});
+    if(roots.length)outcomes.forEach(function(o){roots[0].kids.push({it:o,kids:[]});});
+    else outcomes.forEach(function(o){roots.push({it:o,kids:[]});});
+    function rec(node){return renderRow(node.it, node.kids.map(rec).join(''), node.kids.length>0);}
+    return roots.map(rec).join('');
+  }
   // Direction Toggle on every Logic view (Howard's author-controlled spec). FORWARD = tier-aligned construction order,
   // foundation (T1) at the top down to the Conclusion (T7), flat under the bullet — the DEFAULT for authoring, matching
   // the G3 Canvas and the Power BI table. AUDIT = depends-on order, the debate-worthy Claim/Conclusion at the top and
@@ -2059,11 +2081,10 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var ordered=nodes.slice().sort(fwd
       ? function(a,b){return fwdRank(anFunc(a)||a[1],a[8])-fwdRank(anFunc(b)||b[1],b[8])||rankOf(a)-rankOf(b)||(a[0]<b[0]?-1:1);}
       : function(a,b){return rankOf(a)-rankOf(b)||((a[8]||9)-(b[8]||9))||(a[0]<b[0]?-1:1);});
-    function rowHTML(n){
+    function rowHTML(n,kidsHTML){
       var id=n[0], func=anFunc(n)||n[1], color=FNCOLOR[func]||FNCOLOR[n[1]]||TIER_COLOR[n[8]]||'#475569';
       var idShown=n[2]||id, trans=anTrans(n), meta=anMeta(n), tier=n[8], framed=n[4]||'', claim=g3PropText(sec,n[2]);
       var isWarr=(func==='Warrant'||n[1]==='Warrant'||n[8]===5);
-      var ri=Math.round(rankOf(n)); var ind=fwd?0:((LOGIC_INDENT[ri]!=null?LOGIC_INDENT[ri]:2)*20);
       var warrTag=isWarr?'<span class="ltlog">[Transition Logic]</span> ':'';
       var badges=((trans&&!isWarr)?'<span class="ltrans" title="transition — how this node moves the argument on (not its type)">↝ '+esc(trans)+'</span>':'')
         +(tier?'<span class="ltier">T'+esc(String(tier))+'</span>':'')
@@ -2077,12 +2098,14 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         +(claim?'<div class="lclaim"><span class="lk">Claim ↔ framing</span>'+esc(claim)+'</div>':(n[2]?'':'<div class="lclaim"><span class="lk">Claim</span><i>bridge node — no proposition</i></div>'))
         +(meta?'<div class="lmet"><span class="lk">Metaphor</span>'+esc(meta.map_id||'')+' · fidelity '+esc(meta.fidelity||'')+(meta.guardrail?' — guardrail: <i>'+esc(meta.guardrail)+'</i>':'')+'</div>':'')
         +'</div>';
-      return '<div class="lrow'+(isWarr?' lwarr':'')+'" data-id="'+esc(id)+'" style="margin-left:'+ind+'px">'+head+detail+'</div>';
+      var kids=kidsHTML?'<div class="lkids" hidden>'+kidsHTML+'</div>':'';
+      return '<div class="lrow'+(isWarr?' lwarr':'')+(kidsHTML?' lhaskids':'')+'" data-id="'+esc(id)+'">'+head+detail+kids+'</div>';
     }
     var hint='<p class="lhint">'+(fwd
       ? 'Tier-aligned (construction order): the foundation at the top — Principle (T1) up through the Claim, Distinction, Reason and Warrant to the Consequence/Conclusion (T7). Flat under the bullet; the tier badge shows the layer. The Warrant is amber.'
-      : 'Depends-on (audit order): the debate-worthy Claim/Conclusion at the top; each indent answers “why accept that?”, down to the Principle as the foundation leaf. The Warrant is amber.')+' Click a row for its claim↔framing and metaphor guardrail.</p>';
-    var rows=ordered.map(rowHTML).join('');
+      : 'Depends-on (audit order): the Claim/Conclusion is the root — click to drill down into the Warrant, Reasons, Distinctions and Principle beneath it; the Consequence hangs off the Claim as its outcome. The Warrant is amber.')+' Click a row for its claim↔framing and metaphor guardrail.</p>';
+    var rows=fwd?ordered.map(function(n){return rowHTML(n);}).join('')
+                :auditTreeHTML(ordered,rankOf,rowHTML);
     if(bullet){
       var btext=''; try{var o=(typeof OUTLINES!=='undefined'&&OUTLINES[sec.sid])||null; if(o&&o.bullets){for(var bi=0;bi<o.bullets.length;bi++){if(o.bullets[bi].id===bullet){btext=o.bullets[bi].text||'';break;}}}}catch(e){}
       return '<div class="logicacc laccflow" data-dir="'+dir+'">'+logicDirToggle(dir)+hint+'<div class="laccb"><b>'+esc(btext||bullet)+'</b> <span class="laccbid">'+esc(bullet)+'</span></div><div class="laccbkids">'+rows+'</div></div>';
@@ -2599,19 +2622,20 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     function prank(p){var t=p[2]||''; return (LOGIC_ORDER[t]!=null?LOGIC_ORDER[t]:(TIER_RANK[p[4]]!=null?TIER_RANK[p[4]]:2.5));}
     function pfwd(p){return fwdRank(p[2]||'',p[4]);}  // tier-aligned rank (foundation first)
     function btextOf(b){try{var o=(typeof OUTLINES!=='undefined'&&OUTLINES[sec.sid])||null;if(o&&o.bullets){for(var i=0;i<o.bullets.length;i++){if(o.bullets[i].id===b)return o.bullets[i].text||'';}}}catch(e){}return '';}
-    function rowHTML(p){
+    function rowHTML(p,kidsHTML){
       var id=p[0], type=p[2]||'', color=FNCOLOR[type]||TIER_COLOR[p[4]]||'#475569';
       var tier=p[4], go=(p[5]||[]), ts=pTermStatus(p), evd=propEvDisplay(sec,p);
       var isWarr=(type==='Warrant'||p[4]===5);
-      var ri=Math.round(prank(p)); var ind=fwd?0:((LOGIC_INDENT[ri]!=null?LOGIC_INDENT[ri]:2)*20);
       var ungr=(NEEDSGROUND[type] && !(go&&go.length));
       var warrTag=isWarr?'<span class="ltlog">[Transition Logic]</span> ':'';
       var badges=(tier?'<span class="ltier">T'+esc(String(tier))+'</span>':'')
         +(evd?'<span class="lneed" style="background:'+evd.c+';color:#fff">'+esc(evd.t)+'</span>':'')
         +((go&&go.length)?'<span class="ltrans">grounded on '+esc(go.join(', '))+'</span>':'')
         +(ungr?'<span class="lungr">⚠ ungrounded</span>':'');
-      var head='<div class="lhead"><span class="lcaret">·</span><span class="llabel" style="color:'+color+'">'+esc(type)+' ('+esc(id)+'):</span> '+warrTag+'<span class="lbodytext">'+esc(p[3])+'</span> <span class="lbadges">'+badges+'</span></div>';
-      return '<div class="lrow'+(isWarr?' lwarr':'')+(ungr?' lungrounded':'')+'" data-id="'+esc(id)+'" style="margin-left:'+ind+'px">'+head+'</div>';
+      var caret=kidsHTML?'▸':'·';
+      var head='<div class="lhead"><span class="lcaret">'+caret+'</span><span class="llabel" style="color:'+color+'">'+esc(type)+' ('+esc(id)+'):</span> '+warrTag+'<span class="lbodytext">'+esc(p[3])+'</span> <span class="lbadges">'+badges+'</span></div>';
+      var kids=kidsHTML?'<div class="lkids" hidden>'+kidsHTML+'</div>':'';
+      return '<div class="lrow'+(isWarr?' lwarr':'')+(ungr?' lungrounded':'')+(kidsHTML?' lhaskids':'')+'" data-id="'+esc(id)+'">'+head+kids+'</div>';
     }
     var byBullet={},order=[];
     rows.forEach(function(p){var b=p[1]||'(no bullet)';if(!(b in byBullet)){byBullet[b]=[];order.push(b);}byBullet[b].push(p);});
@@ -2619,13 +2643,14 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var ungroundedAll=rows.filter(function(p){return NEEDSGROUND[p[2]] && !((p[5]||[]).length);}).length;
     var note='<p class="lhint">'+(fwd
       ? 'Tier-aligned (construction order): each bullet’s propositions foundation-first — Principle (T1) up through the Claim, Distinctions, Reasons to the Consequence (T7), flat; the tier badge shows the layer.'
-      : 'Depends-on (audit order): the Claim/Conclusion at the top of each bullet; each indent answers “why accept that?”, down to the Principle and Definitions as the foundation leaves.')+' '+(ungroundedAll?('<b>'+ungroundedAll+'</b> claim/contention with no grounding is flagged.'):'All claims are grounded.')+'</p>';
+      : 'Depends-on (audit order): the Claim/Conclusion is the root of each bullet — click to drill down into the Reasons, Distinctions and Principle beneath it; the Consequence hangs off the Claim as its outcome.')+' '+(ungroundedAll?('<b>'+ungroundedAll+'</b> claim/contention with no grounding is flagged.'):'All claims are grounded.')+'</p>';
     var blocks=order.map(function(b){
       var props=byBullet[b].slice().sort(fwd
         ? function(x,y){return pfwd(x)-pfwd(y)||prank(x)-prank(y)||(x[0]<y[0]?-1:1);}
         : function(x,y){return prank(x)-prank(y)||((x[4]||9)-(y[4]||9))||(x[0]<y[0]?-1:1);});
       var hdr=(b==='(no bullet)')?'<div class="laccb"><b>Section-level / unassigned</b></div>':'<div class="laccb"><b>'+esc(btextOf(b)||b)+'</b> <span class="laccbid">'+esc(b)+'</span></div>';
-      return hdr+'<div class="laccbkids">'+props.map(rowHTML).join('')+'</div>';
+      var inner=fwd?props.map(function(p){return rowHTML(p);}).join(''):auditTreeHTML(props,prank,rowHTML);
+      return hdr+'<div class="laccbkids">'+inner+'</div>';
     }).join('');
     return '<div class="logicacc laccflow pgtree" data-dir="'+dir+'">'+logicDirToggle(dir)+note+blocks+'</div>';
   }
@@ -2682,6 +2707,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     // Proposition summary table bullet filter: show only the chosen bullet's rows (+ their expandable sub-rows).
     det.querySelectorAll('.psumbul').forEach(function(sb){sb.addEventListener('change',function(){var bv=this.value;
       det.querySelectorAll('.qrow[data-pbullet],.prsub[data-pbullet]').forEach(function(tr){tr.style.display=(!bv||tr.getAttribute('data-pbullet')===bv)?'':'none';});
+      var sm=det.querySelector('.psummap'); if(sm)sm.innerHTML=genPropositionSVG(sec,bv);  // the top map clip follows the same bullet filter
     });});
     // Proposition bullet filter: scope all three proposition views (Map / Grouped / Logic) to one outline bullet.
     var pbul=det.querySelector('.pbul'); if(pbul)pbul.addEventListener('change',function(){var bv=this.value;
@@ -2689,15 +2715,23 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var gr=det.querySelector('.pgrouped'); if(gr){var gs=det.querySelector('.pgrp');gr.innerHTML=genPropositionList(sec,(gs?gs.value:'type'),bv);}
       var gt=det.querySelector('.pgtreepane'); if(gt)gt.innerHTML=genGroundingTree(sec,bv,curDir(gt));
     });
-    // Direction Toggle on the Logic views (↑ Tier / ↓ Audit) — re-render the containing pane, keep the current bullet.
+    // Direction Toggle (↑ Tier / ↓ Audit) + Logic Accordion expand/collapse. BOTH are delegated on the stable `det`, so
+    // they survive the pane re-renders from the toggle and the bullet filter. wireDetail can run twice on the same det
+    // (summary + map view), so the handler is stored and removed-then-re-added to avoid stacking duplicates that cancel out.
     function curDir(pane){var b=pane&&pane.querySelector('.ldir.on');return (b&&b.dataset.dir==='audit')?'audit':'fwd';}
-    det.addEventListener('click',function(ev){var btn=ev.target.closest&&ev.target.closest('.ldir');if(!btn||!det.contains(btn))return;
-      var nd=(btn.dataset.dir==='audit')?'audit':'fwd';
-      var acc=btn.closest('.argacc'); if(acc){var bv=(det.querySelector('.argbul')||{}).value||'';var keep=bv?g3BulletKeep(sec,bv):null;acc.innerHTML=genLogicAccordion(sec,keep,bv,nd);return;}
-      var gtp=btn.closest('.pgtreepane'); if(gtp){var pv=(det.querySelector('.pbul')||{}).value||'';gtp.innerHTML=genGroundingTree(sec,pv,nd);return;}
-    });
-    // Logic Accordion expand/collapse (event-delegated on the header row)
-    det.querySelectorAll('.logicacc').forEach(function(acc){acc.addEventListener('click',function(ev){var h=ev.target.closest('.lhead');if(!h||!acc.contains(h))return;var row=h.parentNode;var d=row.querySelector(':scope > .ldetail'),k=row.querySelector(':scope > .lkids');var open=row.classList.toggle('lopen');if(d)d.hidden=!open;if(k)k.hidden=!open;var c=h.querySelector('.lcaret');if(c&&c.textContent!=='·')c.textContent=open?'▾':'▸';});});
+    if(det._logicClick)det.removeEventListener('click',det._logicClick);
+    det._logicClick=function(ev){
+      var btn=ev.target.closest&&ev.target.closest('.ldir');
+      if(btn&&det.contains(btn)){var nd=(btn.dataset.dir==='audit')?'audit':'fwd';
+        var acc=btn.closest('.argacc'); if(acc){var bv=(det.querySelector('.argbul')||{}).value||'';var keep=bv?g3BulletKeep(sec,bv):null;acc.innerHTML=genLogicAccordion(sec,keep,bv,nd);return;}
+        var gtp=btn.closest('.pgtreepane'); if(gtp){var pv=(det.querySelector('.pbul')||{}).value||'';gtp.innerHTML=genGroundingTree(sec,pv,nd);return;}
+        return;}
+      var h=ev.target.closest&&ev.target.closest('.lhead'); if(!h||!det.contains(h)||!h.closest('.logicacc'))return;
+      var row=h.parentNode;var d=row.querySelector(':scope > .ldetail'),k=row.querySelector(':scope > .lkids');if(!d&&!k)return;
+      var open=row.classList.toggle('lopen');if(d)d.hidden=!open;if(k)k.hidden=!open;
+      var c=h.querySelector('.lcaret');if(c&&c.textContent!=='·')c.textContent=open?'▾':'▸';
+    };
+    det.addEventListener('click',det._logicClick);
     det.querySelectorAll('.reedit').forEach(function(rb){rb.addEventListener('click',function(){var g=rb.dataset.gk;var map={G2:['propReview',buildPropositionReview],G3:['argReview',buildArgumentReview],G4:['evReview',buildEvidenceReview],G5:['frzReview',buildFreezeReview]};var m=map[g];if(!m)return;det.innerHTML=gateHead(sec,g)+'<div id="'+m[0]+'"></div>';m[1](det.querySelector('#'+m[0]),sec);});});
     det.querySelectorAll('.vismap').forEach(function(vb){vb.addEventListener('click',function(){buildVisualMap(det,sec,vb.dataset.gk);});});
     det.querySelectorAll('.g3man').forEach(function(mb){mb.addEventListener('click',function(){buildG3Manual(det,sec);});});

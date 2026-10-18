@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.30.2">
+<meta name="version" content="4.31.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -1987,14 +1987,14 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   // Function → colour, so each role reads at a glance (Claim teal · Warrant amber · Reason green · Principle blue).
   var FNCOLOR={'Principle':'#2563eb','Opening Contention':'#0e7490','Contention':'#0e7490','Claim':'#0891b2',
     'Boundary':'#7c3aed','Distinction':'#7c3aed','Qualification':'#7c3aed','Counterpoint':'#7c3aed',
-    'Pillar':'#16a34a','Reason':'#16a34a','Warrant':'#d97706',
+    'Pillar':'#16a34a','Reason':'#16a34a','Warrant':'#d97706','Definition':'#64748b','Elaboration':'#64748b',
     'Consequence':'#c2410c','Recommendation':'#c2410c','Terminal Synthesis':'#15803d','Conclusion':'#15803d'};
   // §7a Logic Accordion — the bullet's argument as a top-down LOGIC DECOMPOSITION in a fixed reading order
   // (Claim → Warrant → Reasons → Boundary → Principle, with the Consequence it drives), indented by layer.
   // This gives the author's required order regardless of how the raw depends_on/leads_to edges are wired.
   var LOGIC_ORDER={'Opening Contention':0,'Contention':0,'Claim':0,'Conclusion':0,'Terminal Synthesis':0,
     'Warrant':1,'Pillar':2,'Reason':2,'Boundary':3,'Distinction':3,'Qualification':3,'Counterpoint':3,
-    'Principle':4,'Consequence':5,'Recommendation':5};
+    'Principle':4,'Definition':4,'Elaboration':4,'Consequence':5,'Recommendation':5};
   var LOGIC_INDENT={0:0,1:1,2:2,3:3,4:4,5:1};  // the Consequence sits as a direct outcome of the claim, not the deepest layer
   // Tier is numeric and stable, so order + colour fall back to it when a role NAME isn't recognised — this keeps
   // the layout intact if the author renames a function in the data. T2 claim→top … T1 principle→deepest · T5 warrant.
@@ -2388,7 +2388,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     // propositions → Map / Grouped (+ group-by); arguments → Map / Threads / Logic (+ bullet filter).
     var inner;
     if(isP){
-      inner='<div class="maptools argvtoggle" style="margin-bottom:10px"><button class="rv-btn pvt on" data-v="map">◇ Map</button><button class="rv-btn pvt" data-v="grouped">≡ Grouped</button><button class="rv-btn pvt" data-v="gtree">⌥ Grounding</button><span class="pgrpwrap" hidden>&nbsp;group by <select class="pgrp"><option value="type">Type</option><option value="tier">Tier</option><option value="bullet">Bullet</option></select></span></div>'
+      inner='<div class="maptools argvtoggle" style="margin-bottom:10px"><button class="rv-btn pvt on" data-v="map">◇ Map</button><button class="rv-btn pvt" data-v="grouped">≡ Grouped</button><button class="rv-btn pvt" data-v="gtree">⌥ Logic</button><span class="pgrpwrap" hidden>&nbsp;group by <select class="pgrp"><option value="type">Type</option><option value="tier">Tier</option><option value="bullet">Bullet</option></select></span></div>'
         +'<div class="pmap vismapwrap" style="width:100%">'+svg+'</div>'
         +'<div class="pgrouped" hidden style="width:100%">'+genPropositionList(sec,'type')+'</div>'
         +'<div class="pgtreepane" hidden style="width:100%">'+genGroundingTree(sec)+'</div>';
@@ -2436,52 +2436,49 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var grouped=order.map(function(k){return '<div class="pgroup"><div class="pghd">'+esc(k)+' <span class="pgn">'+groups[k].length+'</span></div>'+groups[k].map(rowH).join('')+'</div>';}).join('');
     return '<div class="plist">'+rail+'<div class="pinv">'+grouped+'</div></div>';
   }
-  // Third proposition view (Grounding tree): mirrors the argument Logic view but on propositions — rooted at the
-  // Conclusion and nesting DOWN each proposition's grounded_on links, so you follow one claim back to the
-  // principles/definitions it rests on. Flags claims/contentions/consequences that carry no grounding.
+  // Third proposition view (Logic decomposition): the SAME top-down order as the argument Logic Accordion, applied
+  // to propositions by type — Claim/Conclusion → Warrant → Reasons → Distinctions → Principle/Definitions, then the
+  // Consequence — grouped per outline bullet, indented by layer. Claims with no grounding are flagged.
   function genGroundingTree(sec){
     var g2=sec.art&&sec.art.G2; var rows=(g2&&g2.backfill)||[];
     if(!rows.length && g2&&g2.props){rows=g2.props.map(function(pp){return [pp[0],'',pp[1],pp[2],null,[],null,[],'','',[]];});}
     if(!rows.length)return '<p class="note">No propositions.</p>';
-    var byId={}; rows.forEach(function(p){byId[p[0]]=p;});
-    function groundOf(id){var p=byId[id];return ((p&&p[5])||[]).filter(function(d){return byId[d]&&d!==id;});}
-    var referenced={}; rows.forEach(function(p){groundOf(p[0]).forEach(function(d){referenced[d]=1;});});
-    var concRoots=rows.filter(function(p){return p[2]==='Conclusion';}).map(function(p){return p[0];});
-    var topRoots=rows.filter(function(p){return !referenced[p[0]];}).map(function(p){return p[0];});
-    var roots=concRoots.concat(topRoots.filter(function(id){return concRoots.indexOf(id)<0;}));
-    if(!roots.length)roots=rows.slice(0,1).map(function(p){return p[0];});
     var EVC={'NEEDS-SOURCE':'#dc2626','Author Rationale':'#2563eb','Framework Analysis':'#0891b2','Case Study':'#16a34a'};
-    var FOUNDATION={Definition:1,Principle:1,Elaboration:1};  // legitimately rest on nothing — never flagged as ungrounded
-    var NEEDSGROUND={Claim:1,Contention:1,Consequence:1,Recommendation:1};  // assertive/concluding types that should rest on something
-    var seen={};
-    function rowHTML(id,depth){
-      depth=depth||0; var op=(depth===0);
-      var p=byId[id]; if(!p)return '';
-      var type=p[2]||'', tier=p[4], ev=pEvState(p), kids=groundOf(id);
-      if(seen[id])return '<div class="lrow lref" data-id="'+esc(id)+'"><div class="lhead"><span class="lcaret">↑</span><b class="lid">'+esc(id)+'</b><span class="lfunc">'+esc(type)+'</span><span class="lrefnote">shown above</span></div></div>';
-      seen[id]=1;
-      var ungr=(!kids.length && (NEEDSGROUND[type]||type==='Conclusion'));
-      var head='<div class="lhead"><span class="lcaret">'+(kids.length?(op?'▾':'▸'):'·')+'</span><b class="lid">'+esc(id)+'</b><span class="lfunc">'+esc(type)+'</span>'
-        +(tier?'<span class="ltier">T'+esc(String(tier))+'</span>':'')
+    var NEEDSGROUND={Claim:1,Contention:1,Consequence:1,Recommendation:1};
+    function prank(p){var t=p[2]||''; return (LOGIC_ORDER[t]!=null?LOGIC_ORDER[t]:(TIER_RANK[p[4]]!=null?TIER_RANK[p[4]]:2.5));}
+    function btextOf(b){try{var o=(typeof OUTLINES!=='undefined'&&OUTLINES[sec.sid])||null;if(o&&o.bullets){for(var i=0;i<o.bullets.length;i++){if(o.bullets[i].id===b)return o.bullets[i].text||'';}}}catch(e){}return '';}
+    function rowHTML(p){
+      var id=p[0], type=p[2]||'', color=FNCOLOR[type]||TIER_COLOR[p[4]]||'#475569';
+      var tier=p[4], ev=pEvState(p), go=(p[5]||[]), ts=pTermStatus(p);
+      var isWarr=(type==='Warrant'||p[4]===5);
+      var ri=Math.round(prank(p)); var ind=(LOGIC_INDENT[ri]!=null?LOGIC_INDENT[ri]:2)*20;
+      var ungr=(NEEDSGROUND[type] && !(go&&go.length));
+      var warrTag=isWarr?'<span class="ltlog">[Transition Logic]</span> ':'';
+      var badges=(tier?'<span class="ltier">T'+esc(String(tier))+'</span>':'')
         +(ev?'<span class="lneed" style="background:'+(EVC[ev]||'#64748b')+';color:#fff">'+esc(ev)+'</span>':'')
-        +(ungr?'<span class="lungr">⚠ ungrounded</span>':'')+'</div>';
-      var kidsHTML=kids.length?('<div class="lkids"'+(op?'':' hidden')+'>'+kids.map(function(k){return rowHTML(k,depth+1);}).join('')+'</div>'):'';
-      return '<div class="lrow'+(op?' lopen':'')+(ungr?' lungrounded':'')+'" data-id="'+esc(id)+'">'+head+'<div class="ltext">'+esc(p[3])+'</div>'+kidsHTML+'</div>';
+        +((go&&go.length)?'<span class="ltrans">grounded on '+esc(go.join(', '))+'</span>':'')
+        +(ungr?'<span class="lungr">⚠ ungrounded</span>':'');
+      var head='<div class="lhead"><span class="lcaret">·</span><span class="llabel" style="color:'+color+'">'+esc(type)+' ('+esc(id)+'):</span> '+warrTag+'<span class="lbodytext">'+esc(p[3])+'</span> <span class="lbadges">'+badges+'</span></div>';
+      return '<div class="lrow'+(isWarr?' lwarr':'')+(ungr?' lungrounded':'')+'" data-id="'+esc(id)+'" style="margin-left:'+ind+'px">'+head+'</div>';
     }
-    var ungrounded=rows.filter(function(p){return NEEDSGROUND[p[2]] && !groundOf(p[0]).length;}).map(function(p){return p[0];});
-    var ungrConc=concRoots.filter(function(id){return !groundOf(id).length;});
-    var bits=[];
-    if(ungrConc.length)bits.push('the <b>Conclusion</b> ('+esc(ungrConc.join(', '))+') is not grounded on any claim yet');
-    if(ungrounded.length)bits.push('<b>'+ungrounded.length+'</b> claim/contention/consequence with no grounding ('+esc(ungrounded.join(', '))+')');
-    var note='<p class="lhint">Rooted at the Conclusion, each row nests DOWN its <b>grounded-on</b> links — follow a claim back to the principles and definitions it rests on. '+(bits.length?('⚠ '+bits.join('; ')+'.'):'All claims and the conclusion are grounded.')+'</p>';
-    return '<div class="logicacc pgtree">'+note+roots.map(function(r){return rowHTML(r,0);}).join('')+'</div>';
+    var byBullet={},order=[];
+    rows.forEach(function(p){var b=p[1]||'(no bullet)';if(!(b in byBullet)){byBullet[b]=[];order.push(b);}byBullet[b].push(p);});
+    order.sort();
+    var ungroundedAll=rows.filter(function(p){return NEEDSGROUND[p[2]] && !((p[5]||[]).length);}).length;
+    var note='<p class="lhint">Each bullet’s propositions in the same top-down logic order as the argument — Claim/Conclusion, then the Warrant, Reasons, Distinctions, Principle and Definitions beneath, and the Consequence. Indentation shows the layer. '+(ungroundedAll?('<b>'+ungroundedAll+'</b> claim/contention/consequence with no grounding is flagged.'):'All claims are grounded.')+'</p>';
+    var blocks=order.map(function(b){
+      var props=byBullet[b].slice().sort(function(x,y){return prank(x)-prank(y)||((x[4]||9)-(y[4]||9))||(x[0]<y[0]?-1:1);});
+      var hdr=(b==='(no bullet)')?'<div class="laccb"><b>Section-level / unassigned</b></div>':'<div class="laccb"><b>'+esc(btextOf(b)||b)+'</b> <span class="laccbid">'+esc(b)+'</span></div>';
+      return hdr+'<div class="laccbkids">'+props.map(rowHTML).join('')+'</div>';
+    }).join('');
+    return '<div class="logicacc laccflow pgtree">'+note+blocks+'</div>';
   }
   function buildVisualMap(det,sec,gk){var isP=(gk==='G2');var svg=isP?genPropositionSVG(sec):genArgumentSVG(sec);var leg=isP?vmLegendProps():vmLegend();var ttl=isP?'Proposition inventory (typed, by tier)':'Standardized Visual Grammar';var cap=isP?'“The proposition map is the inventory of claims — one node per proposition, grounded-on links shown.”':'Click a node to trace its chain up and down the wiring — everything else is hidden. Click it again, or the background, to show all. “The flowchart is not a picture of the prose — it is a picture of your reasoning.”';
     var head='<div class="dh"><b>◇ Visual map</b><span class="src">'+esc(sec.label)+' — '+ttl+'</span></div>';
     var tail=leg+'<p class="note" style="font-style:italic;color:var(--muted,#667)">'+cap+'</p><p class="note"><button class="rv-btn visback">← Back to summary</button></p>';
     if(isP){
       det.innerHTML=head
-        +'<div class="maptools argvtoggle"><button class="rv-btn pvt on" data-v="map">◇ Map</button><button class="rv-btn pvt" data-v="grouped">≡ Grouped</button><button class="rv-btn pvt" data-v="gtree">⌥ Grounding</button><span class="pgrpwrap" hidden>&nbsp;group by <select class="pgrp"><option value="type">Type</option><option value="tier">Tier</option><option value="bullet">Bullet</option></select></span><button class="rv-btn visfull">⤢ Full screen</button></div>'
+        +'<div class="maptools argvtoggle"><button class="rv-btn pvt on" data-v="map">◇ Map</button><button class="rv-btn pvt" data-v="grouped">≡ Grouped</button><button class="rv-btn pvt" data-v="gtree">⌥ Logic</button><span class="pgrpwrap" hidden>&nbsp;group by <select class="pgrp"><option value="type">Type</option><option value="tier">Tier</option><option value="bullet">Bullet</option></select></span><button class="rv-btn visfull">⤢ Full screen</button></div>'
         +'<div class="pmap vismapwrap">'+svg+'</div>'
         +'<div class="pgrouped" hidden>'+genPropositionList(sec,'type')+'</div>'
         +'<div class="pgtreepane" hidden>'+genGroundingTree(sec)+'</div>'+tail;

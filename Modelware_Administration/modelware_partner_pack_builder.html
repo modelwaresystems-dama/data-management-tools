@@ -315,9 +315,10 @@ details.adv .body{padding-top:9px}
 
 /* ------------------------------------------------------- version and build */
 var APP_NAME    = "Modelware Partner Pack Builder";
-var APP_VERSION = "1.29.2";
-var APP_BUILD   = "2026-09-06 11:00 SAST";   /* set when this file is generated */
+var APP_VERSION = "1.30.0";
+var APP_BUILD   = "2026-10-18 14:25 SAST";   /* set when this file is generated */
 var APP_CHANGELOG = [
+  ["1.30.0","2026-10-18","The Training Reseller is no longer held to the delivery models' rules. A reseller sells the Services and never delivers them — Schedule F2 already said it is not granted access to the Facilitator Materials at all — yet the pre-send check still demanded a courseware licence, named trainers and a library address, and the courseware one blocked the pack from being produced. Those three checks now apply only to models that actually license content. Schedule D1 is inverted for a reseller: instead of requiring the partner to maintain certified trainers, which contradicted its own obligations clause in the same agreement, it is now a warranty by us about the trainers we supply, including course-specific certification and substitution at no extra cost. The Courseware Protection Onboarding Checklist and the Access Withdrawal Runbook are no longer produced for a reseller — there is nothing to provision and nothing to withdraw, and the checklist was instructing us to create a library and guest accounts that must not exist. Two record bugs behind the same symptom: loading a saved partner never applied the model's rules, so a record that had once been an Authorised Delivery Partner came back carrying its royalty, override and tiers whatever model it now claimed to be; and a reseller's deliberately empty inventory account was mistaken for a record written before cost lines existed and refilled with the default lines. Both paths now strip only what the model forbids, leave every negotiated value the model permits, and say in the status line exactly what was removed."],
   ["1.29.2","2026-09-06","Onboarding step B1 now says which kind of site to create: a communication site, not a Teams site. A Teams site is group-connected, so it brings a Microsoft 365 group, a mailbox, a calendar and a chat space, and group membership grants access to all of it \u2014 two overlapping membership systems to unpick on the day you are withdrawing access."],
   ["1.29.1","2026-09-06","The header now says who you have open. The partner\u2019s legal name sits where the strapline used to be, with the agreement reference, the operating model and the stage on the line beneath, and the app name shrinks to a label above it. With nothing loaded it says so and points at + New partner. It follows the record, so switching partner or changing the model updates it immediately, and it narrows rather than pushing the buttons off the row."],
   ["1.29.0","2026-09-06","Online delivery is now ours to control. Schedule F4 requires every online delivery to run in a meeting hosted on the Modelware tenant and organised by a Modelware account \u2014 which is the enforcement, because a trainer who joins as a presenter cannot open Meeting options at all. The schedule prints the settings: presenters limited to the organiser, recording off, transcription off, attendee screen share off, everyone signs in, lobby on, and no third-party notetaker or AI assistant admitted. Turning any of those on now raises a prompt that says what it costs you. And a Courseware Protection Onboarding Checklist per partner, in seven stages from paperwork through provisioning to a test that a removed trainer can no longer open the deck \u2014 as a document in the pack and as a live sheet in the workbook that counts what is still open and answers whether the partner is ready for a first delivery. Nothing is provisioned before Schedule F is signed, which is the whole point of the ordering."],
@@ -562,6 +563,65 @@ var COST_LINES = {
 };
 function usesInventory(k){ return k!=="RESELLER"; }
 function usesRoyalty(k){ return k!=="RESELLER"; }
+/* A reseller SELLS the Services and never delivers them, so it is granted no courseware,
+   no library and no named trainers — Schedule F2 says so outright. Checks and documents
+   written for the delivery models must not be applied to it: a gate demanding a courseware
+   licence from a partner who is contractually denied one cannot be satisfied, and blocked
+   the pack from being produced at all. Keep this predicate distinct from usesInventory even
+   though both currently exclude only RESELLER — they answer different questions, and a
+   future model could use one without the other. */
+function usesContentLicence(k){ return k!=="RESELLER"; }
+/* What a model forbids outright, as paths on the record. Used both when the model is
+   switched and when a saved record is loaded, so the two paths cannot drift apart. */
+var FORBIDDEN_BY_MODEL = {
+  RESELLER: {
+    nums: ["commercial.royaltyPct","commercial.marketingPct","commercial.minAnnualRoyalty",
+           "commercial.initialFee","commercial.overridePct","commercial.contribFeePerDelivery",
+           "inventory.partnerOnboarding","inventory.partnerSystems"],
+    empties: ["commercial.tiers","inventory.lines"],
+    why: "a Training Reseller buys delivery at a price per course week — there is no royalty, no override, no initial fee and no inventory account"
+  }
+};
+/* What the last load stripped. Deliberately NOT a field on the record: it is a note about
+   one load, not part of the deal, and anything on the record ends up in the repo JSON. */
+var LAST_MODEL_CLEARED = [];
+var FORBIDDEN_LABELS = {
+  "commercial.royaltyPct":"royalty %", "commercial.marketingPct":"marketing %",
+  "commercial.minAnnualRoyalty":"minimum annual royalty", "commercial.initialFee":"initial fee",
+  "commercial.overridePct":"override %", "commercial.contribFeePerDelivery":"contribution per delivery",
+  "commercial.tiers":"royalty tiers", "inventory.lines":"inventory cost lines",
+  "inventory.partnerOnboarding":"partner onboarding estimate", "inventory.partnerSystems":"partner systems estimate"
+};
+function forbiddenLabels(list){
+  return (list||[]).map(function(p){ return FORBIDDEN_LABELS[p]||p; }).join(", ");
+}
+/* Said out loud on every load that changed something. A value removed without a word is
+   indistinguishable from a value that was never there. */
+function modelClearedNote(){
+  if(!LAST_MODEL_CLEARED.length) return "";
+  var s=" Cleared on load, not used by "+MODELS[D.modelKey].name+": "+forbiddenLabels(LAST_MODEL_CLEARED)+".";
+  LAST_MODEL_CLEARED=[];    /* consumed — a note must not be shown twice for one load */
+  return s;
+}
+function pathGet(o,p){ var a=p.split("."),i; for(i=0;i<a.length;i++){ if(o==null) return undefined; o=o[a[i]]; } return o; }
+function pathSet(o,p,v){ var a=p.split("."),i; for(i=0;i<a.length-1;i++){ if(o[a[i]]==null) o[a[i]]={}; o=o[a[i]]; } o[a[a.length-1]]=v; }
+/* Strips only what the model forbids. It must NOT reset negotiated values the model DOES
+   allow — term, exclusivity, prices — or loading a record would undo a negotiation, which
+   is the opposite of the merge-on-import rule. Returns the labels it changed so the caller
+   can say what happened rather than altering the record silently. */
+function clearTermsNotInModel(d){
+  var spec=FORBIDDEN_BY_MODEL[d.modelKey], changed=[], i, v;
+  if(!spec) return changed;
+  for(i=0;i<spec.nums.length;i++){
+    v=pathGet(d,spec.nums[i]);
+    if(v!==undefined && v!==null && Number(v)!==0){ pathSet(d,spec.nums[i],0); changed.push(spec.nums[i]); }
+  }
+  for(i=0;i<spec.empties.length;i++){
+    v=pathGet(d,spec.empties[i]);
+    if(Array.isArray(v) && v.length){ pathSet(d,spec.empties[i],[]); changed.push(spec.empties[i]); }
+  }
+  return changed;
+}
 function costLinesFor(key){
   var src=COST_LINES[key]||COST_LINES.DEFAULT;
   return JSON.parse(JSON.stringify(src));
@@ -1132,17 +1192,17 @@ function packIssues(d){
       m:"Reseller appointments are non-exclusive by default. Exclusive here locks you out of appointing a second reseller in the same market and out of selling direct.",
       f:{p:"territory.exclusivity", l:"Basis", t:"select", o:["Exclusive","Non-exclusive"]},
       fix:{label:"Make it non-exclusive", set:{"territory.exclusivity":"Non-exclusive"}}});
-  if(!ctActiveItems(d).length)
+  if(usesContentLicence(d.modelKey) && !ctActiveItems(d).length)
     out.push({k:"err", sec:"licensed-content", t:"No courseware licensed",
       q:"Which courses is this partner licensed to deliver?",
       m:"Schedule F is the list of what they may teach. With nothing on it the agreement grants a general right to the Courseware, which is exactly what you are trying to avoid.",
       f:{p:"content.libraryUrl", l:"Partner library address", t:"text"}});
-  if(usesInventory(d.modelKey) && !ctActiveTrainers(d).length)
+  if(usesContentLicence(d.modelKey) && !ctActiveTrainers(d).length)
     out.push({k:"warn", sec:"licensed-content", t:"No named trainers",
       q:"Who at this partner may open the facilitator material?",
       m:"Access is granted to named people, not to the organisation. Without a name on the list there is nobody to give access to \u2014 and nobody to take it from on termination.",
       f:{p:"content.libraryUrl", l:"Partner library address", t:"text"}});
-  if(!String(ct(d).libraryUrl||"").trim())
+  if(usesContentLicence(d.modelKey) && !String(ct(d).libraryUrl||"").trim())
     out.push({k:"warn", sec:"licensed-content", t:"No partner library address",
       q:"Where does this partner's courseware live?",
       m:"Schedule F names the location the material is accessed from, and the revocation runbook needs it to know what to switch off.",
@@ -1957,6 +2017,22 @@ function buildDocs(d){
   b.push(h1("SCHEDULE D — QUALITY STANDARDS, CERTIFICATION AND SUPPORT LEVELS"));
   b.push(p("This Schedule forms part of the "+M.agreementTitle+" bearing reference "+refBase+"."));
   b.push(h2("D1. Certification requirements"));
+  if(d.modelKey==="RESELLER"){
+    /* The obligation runs the other way on this model. The Reseller does not deliver, so a
+       requirement that IT maintain certified trainers would contradict its own obligations
+       clause in the same agreement. What it is buying is a competent trainer, so this is a
+       warranty by us about ours. */
+    b.push(p("The "+R+" does not deliver the Services and is therefore under no obligation to hold, maintain or certify trainers. The certification standard below is a warranty given by the "+O+" in respect of the trainers it supplies under "+cx("ourobl")+"."));
+    b.push(tbl(["Warranted by the "+O,"Standard"],[
+      ["Trainer qualification", d.quality.certification],
+      ["Course certification", "Every trainer supplied is certified on the specific course delivered, at the version current at the date of the engagement"],
+      ["Assessment", "Every trainer has completed the "+F.brand+" train-the-trainer programme and passed an observed delivery assessment"],
+      ["Recertification", "Annual refresher and re-assessment. A trainer whose certification lapses is not assigned to an engagement"],
+      ["Substitution", "Where a nominated trainer becomes unavailable the "+O+" supplies a substitute meeting the same standard, at no additional cost to the "+R],
+      ["Evidence", "The "+O+" confirms the certification position of the assigned trainer on request, before the engagement"]
+    ]));
+    b.push(p("D1.1 Where the Parties agree in writing under Schedule B9 that the "+R+"'s own trainer will deliver a particular engagement, that trainer is certified by the "+O+" first and the Authorised Delivery Partner certification terms apply to them for that engagement."));
+  } else {
   b.push(tbl(["Requirement","Standard"],[
     ["Certified trainers", "Not fewer than "+d.quality.minCertifiedTrainers+" at all times"],
     ["Qualification", d.quality.certification],
@@ -1965,6 +2041,7 @@ function buildDocs(d){
     ["Recertification", "Annual refresher and re-assessment; lapse suspends the right to deliver the affected course"],
     ["New courses", "A trainer may deliver a course only after certification on that specific course"]
   ]));
+  }
   b.push(h2("D2. Delivery standards"));
   b.push(ol([
     "Deliver to the published course structure, duration and learning outcomes, using current materials only.",
@@ -2262,7 +2339,13 @@ function buildDocs(d){
 
   /* ================================ COURSEWARE PROTECTION ONBOARDING */
   /* Internal. The order is the point: nothing is provisioned before the
-     agreement is signed, and nobody gets access before the controls are on. */
+     agreement is signed, and nobody gets access before the controls are on.
+     Both this and the withdrawal runbook exist to grant and then take away partner
+     access to the Facilitator Materials. A Reseller is never granted any — Schedule F2
+     says so outright — so for that model there is nothing to provision and nothing to
+     withdraw, and a checklist instructing us to create a library and guest accounts for
+     them would describe work that must not happen. Neither document is produced. */
+  if(usesContentLicence(d.modelKey)){
   b=[];
   b.push(h1("COURSEWARE PROTECTION \u2014 PARTNER ONBOARDING CHECKLIST"));
   b.push(p("Internal procedure for "+d.franchisor.brand+". Steps marked \u201cPartner\u201d need something from "+partyName(d)+"; everything else is ours."));
@@ -2476,6 +2559,7 @@ function buildDocs(d){
 
   b.push(note("Completed by ____________________  Date ____________  Countersigned ____________________"));
   docs.push({id:"RUNBOOK", code:"11", internal:true, title:"Access Withdrawal Runbook (internal)", subtitle:refBase+" \u2014 "+partyName(d), stamp:buildStamp(), blocks:xrefResolve(b)});
+  }   /* end usesContentLicence \u2014 documents 10 and 11 */
 
   return docs;
 }
@@ -4566,10 +4650,23 @@ function mergeIntoBlank(obj){
   if(!Array.isArray(base.content.trainers)) base.content.trainers=[];
   if(!Array.isArray(base.territory.countries)) base.territory.countries=[];
   if(!Array.isArray(base.commercial.tiers)) base.commercial.tiers=[];
-  if(!base.inventory || !Array.isArray(base.inventory.lines) || !base.inventory.lines.length){
-    base.inventory=base.inventory||{};
+  base.inventory=base.inventory||{};
+  /* Refill cost lines only for a model that is SUPPOSED to have them. COST_LINES.RESELLER
+     is deliberately empty — "its inventory account is deliberately empty rather than merely
+     zeroed" — and the old test (!lines.length) could not tell that apart from a record
+     written before cost lines existed, so it injected the DEFAULT lines into a reseller and
+     manufactured an inventory account the model forbids. */
+  if(usesInventory(base.modelKey) &&
+     (!Array.isArray(base.inventory.lines) || !base.inventory.lines.length)){
     base.inventory.lines=costLinesFor(base.modelKey==="ADP"?"ADP":"DEFAULT");   /* records that predate cost lines */
   }
+  if(!Array.isArray(base.inventory.lines)) base.inventory.lines=[];
+  /* Switching the model with the radio calls applyModelDefaults, which clears the terms the
+     new model does not use. Loading a saved record did not, so a record that had ever been
+     an ADP came back carrying its royalty, override and tiers whatever model it now claimed
+     to be — and the saved JSON in the repo stayed wrong. Strip what the model forbids, keep
+     everything it permits, and record what was stripped so the load can say so. */
+  LAST_MODEL_CLEARED = clearTermsNotInModel(base);
   return base;
 }
 /* the next checkpoint that has not fallen due yet — this is what makes the register useful */
@@ -4590,7 +4687,7 @@ function ghOpen(slug, keepTab){
     D=mergeIntoBlank(recordToData(obj));
     D.slug=slug;
     if(!keepTab) activeTab="WB";        /* a row action must not throw you out of the list */
-    ghSetStatus("Opened "+fb(D.partner.legalName,"partner")+" from GitHub.","ok");
+    ghSetStatus("Opened "+fb(D.partner.legalName,"partner")+" from GitHub."+modelClearedNote(),"ok");
     refresh();
   }).catch(function(e){ ghSetStatus(e.message||String(e),"err"); refresh(); });
 }
@@ -5907,6 +6004,10 @@ function applyModelDefaults(d,key){
   d.territory.exclusivity=m.exclusivity; d.term.termYears=m.termYears; d.term.renewYears=m.renewYears;
   d.commercial.tiers=[{from:Math.round(m.initialFee*10),pct:Math.max(5,m.royaltyPct-3)},
                       {from:Math.round(m.initialFee*20),pct:Math.max(5,m.royaltyPct-5)}];
+  /* The defaults above leave overridePct, the per-delivery contribution and a pair of
+     zero-threshold tiers behind on a model that forbids all three, so the same strip the
+     load path uses runs here too. One rule, both paths. */
+  return clearTermsNotInModel(d);
 }
 
 /* ================================================================ WIRING */
@@ -6136,7 +6237,13 @@ document.addEventListener("change", function(e){
   if(t.id==="pipeStatus"){ PIPE.status=t.value; render(); return; }
   if(t.id==="pipeModel"){ PIPE.model=t.value; render(); return; }
   if(t.id==="pipeSort"){ PIPE.sort=t.value; render(); return; }
-  if(t.name==="mk"){ D.modelKey=t.value; applyModelDefaults(D,t.value); activeTab=activeTab==="WB"?"WB":"AGREEMENT"; refresh(); }
+  if(t.name==="mk"){
+    D.modelKey=t.value;
+    var _cleared=applyModelDefaults(D,t.value);
+    activeTab=activeTab==="WB"?"WB":"AGREEMENT"; refresh();
+    toast(MODELS[t.value].name+" terms applied."+
+          (_cleared && _cleared.length ? " Removed, not used by this model: "+forbiddenLabels(_cleared)+"." : ""));
+  }
 });
 /* A typed country must never be lost. Enter, the Add button, a comma, or simply
    clicking away all commit it — requiring one specific keystroke silently threw
@@ -6337,7 +6444,7 @@ function loadPayload(txt){
   var isIntake = obj && obj.schema===SCHEMA_INTAKE && obj.answers;
   if(!isIntake){
     D=mergeIntoBlank(recordToData(obj));
-    activeTab="WB"; refresh(); toast("Partner data loaded.");
+    activeTab="WB"; refresh(); toast("Partner data loaded."+modelClearedNote());
     return;
   }
   var answers=obj.answers, issued=obj.issued||{};

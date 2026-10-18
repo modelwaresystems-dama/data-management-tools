@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.41.0">
+<meta name="version" content="4.42.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -754,7 +754,9 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function pEvState(p){return (p&&p.length>8&&p[8])||'';}
   function pTermStatus(p){return (p&&p.length>9&&p[9])||'';}
   function pAnchors(p){return (p&&p.length>10&&p[10])||[];}
-  function pIsAnchor(p){return p&&(p[2]==='Definition'||p[2]==='Elaboration'||pAnchors(p).length>0);}
+  // A T2 semantic anchor is ONLY a Definition or Elaboration. The `anchors` field (p[10]) is a list of outline bullets the
+  // proposition is linked to — active nodes (Principle, Claim, Consequence…) carry it too — so it must NOT decide anchor-hood.
+  function pIsAnchor(p){return p&&(p[2]==='Definition'||p[2]==='Elaboration');}
   // §9 — real evidence status comes from the node's evidence_marker + a Supported G4 link, NEVER from the
   // proposition's evidence_state (a G2 readiness tag that lags). NEEDS-SOURCE shows only when genuinely unsourced.
   var EVCMAP={'NEEDS-SOURCE':'#dc2626','Author Rationale':'#2563eb','Framework Analysis':'#0891b2','Case Study':'#16a34a','Sourced':'#16a34a'};
@@ -1300,11 +1302,18 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var notes=candRow(r.cands)+derivRow(r.deriv)+(qr?qCheckGrid(qr):'');
       var sub=notes?('<tr class="prsub" data-pbullet="'+esc(r.bullet||'')+'"'+(hasQ?' data-subfor="'+r.id+'"':'')+'><td colspan="'+ncol+'">'+notes+'</td></tr>'):'';
       return main+sub;}).join('')+'</tbody></table>';
-    // Visual map clip at the TOP of the proposition summary (Howard's layout) — the full inventory of points, with the
-    // bullet filter in its toolbar so the SAME control narrows both the map and the table below. ⤢ opens the full multi-view.
-    var bsel=hasB?('<span class="argbulwrap" style="margin-left:10px">bullet <select class="psumbul"><option value="">All bullets</option>'+bl.map(function(x){return '<option value="'+esc(x)+'">'+esc(x)+'</option>';}).join('')+'</select></span>'):'';
-    var mapBlock='<div class="maptools" style="margin:6px 0"><b>◇ Proposition map</b>'+bsel+' <button class="rv-btn visfull">⤢ Full screen</button></div><div class="psummap vismapwrap">'+genPropositionSVG(sec)+'</div>';
-    return head+mapBlock+recon+qPanelRollup(sec)+hint+tbl;}
+    // Full Map / Grouped / ⌥ Logic switcher at the TOP of the proposition summary (Howard's layout) — all three views, not
+    // just the map, with ONE bullet filter in the toolbar that narrows the views AND the table below. ⤢ opens full screen.
+    var bsel=hasB?('<span class="argbulwrap">&nbsp;bullet <select class="pbul"><option value="">All bullets</option>'+bl.map(function(x){return '<option value="'+esc(x)+'">'+esc(x)+'</option>';}).join('')+'</select></span>'):'';
+    var viewsBlock='<div class="maptools argvtoggle" style="margin:6px 0">'
+      +'<button class="rv-btn pvt on" data-v="map">◇ Map</button><button class="rv-btn pvt" data-v="grouped">≡ Grouped</button><button class="rv-btn pvt" data-v="gtree">⌥ Logic</button>'
+      +bsel
+      +'<span class="pgrpwrap" hidden>&nbsp;group by <select class="pgrp"><option value="type">Type</option><option value="tier">Tier</option><option value="bullet">Bullet</option><option value="decomp">5-Question</option></select></span>'
+      +'<button class="rv-btn visfull">⤢ Full screen</button></div>'
+      +'<div class="pmap vismapwrap">'+genPropositionSVG(sec)+'</div>'
+      +'<div class="pgrouped" hidden>'+genPropositionList(sec,'type')+'</div>'
+      +'<div class="pgtreepane" hidden>'+genGroundingTree(sec)+'</div>';
+    return head+viewsBlock+recon+qPanelRollup(sec)+hint+tbl;}
   function argumentSummary(sec){var proj=sel.value, nodes=g3Active(sec);
     var hasAQ=!!AQUALITY[sec.sid];
     var cspan=hasAQ?6:5;
@@ -1335,7 +1344,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var anyPass=rows.some(function(e){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+e[0])||{};var src=g4AcceptedSrc(e,s);return src&&src.quote;});
     var hint=anyPass?'<p class="note">Click an accepted source to see the bound passage, or open it in the Source Manager.</p>':'';
     return hint+'<table><thead><tr><th>Claim</th><th>Accepted source</th><th>Status</th></tr></thead><tbody>'+rows.map(function(e){var pid=e[0], s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+pid)||{};var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');return '<tr><td><span class="idc">'+pid+'</span> '+esc(String(props[pid]||'').slice(0,80))+'</td>'+srcCell(e,s)+'<td><span class="pill '+(status==='Supported'?'ok':'need')+'">'+status+'</span></td></tr>';}).join('')+'</tbody></table>';}
-  function gateSummary(sec,gk){var inner=gk==='G2'?propositionsSummary(sec):gk==='G3'?argumentSummary(sec):gk==='G4'?evidenceSummary(sec):'';var vis=(gk==='G2')?' <button class="rv-btn vismap" data-gk="'+gk+'">◇ Visual map</button>':'';return inner+'<p class="note"><button class="rv-btn reedit" data-gk="'+gk+'">✎ Re-edit</button>'+vis+'</p>';}
+  function gateSummary(sec,gk){var inner=gk==='G2'?propositionsSummary(sec):gk==='G3'?argumentSummary(sec):gk==='G4'?evidenceSummary(sec):'';return inner+'<p class="note"><button class="rv-btn reedit" data-gk="'+gk+'">✎ Re-edit</button></p>';}
   function gateHead(sec,gk){var g=GATES.find(function(x){return x[0]===gk;});return '<div class="dh"><b>'+gk+' · '+(g?g[1]:'')+'</b><span class="src">'+esc(sec.label)+' — re-editing</span></div>';}
   // AI-derived reasoning (generated, not author-gated) — collapsible, visually distinct, never shown as canon.
   function derivRow(d){if(!d||!d.text||d.status==='Approved')return '';
@@ -2600,14 +2609,14 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         +(go.length?'<span class="pchip pg">grounded on '+esc(go.join(', '))+'</span>':'')
         +'</span>';}
     function rowH(p){return '<div class="prow"><div class="prhead"><b class="prid">'+esc(p[0])+'</b> <span class="prtype">'+esc(p[2])+'</span>'+chips(p)+'</div><div class="prtext">'+esc(p[3])+'</div></div>';}
-    var anchors=rows.filter(pIsAnchor), actives=rows.filter(function(p){return !pIsAnchor(p);});
-    var rail='<div class="pfound"><div class="pfhd">Foundations — T2 semantic anchors ('+anchors.length+') · definitions &amp; elaborations, held out of the argument chain</div>'+(anchors.length?anchors.map(rowH).join(''):'<p class="note">None.</p>')+'</div>';
+    // Definitions & Elaborations (T2 anchors) are FOLDED INTO the grouping (Howard's decision) — every proposition sits in
+    // its own group (Anchor under 5-Question, Definition/Elaboration under Type, T2 under Tier). No separate Foundations rail.
     var groups={},order=[];
     function keyOf(p){if(groupBy==='type')return p[2]||'—'; if(groupBy==='bullet')return p[1]||'(no bullet)'; if(groupBy==='decomp')return pDecompQ(p)||'—'; return 'T'+(p[4]||'?');}
-    actives.forEach(function(p){var k=keyOf(p);if(!(k in groups)){groups[k]=[];order.push(k);}groups[k].push(p);});
+    rows.forEach(function(p){var k=keyOf(p);if(!(k in groups)){groups[k]=[];order.push(k);}groups[k].push(p);});
     if(groupBy==='tier')order.sort(function(a,b){return (parseInt(a.slice(1),10)||99)-(parseInt(b.slice(1),10)||99);}); else order.sort();
     var grouped=order.map(function(k){return '<div class="pgroup"><div class="pghd">'+esc(k)+' <span class="pgn">'+groups[k].length+'</span></div>'+groups[k].map(rowH).join('')+'</div>';}).join('');
-    return '<div class="plist">'+rail+'<div class="pinv">'+grouped+'</div></div>';
+    return '<div class="plist"><div class="pinv">'+grouped+'</div></div>';
   }
   // Third proposition view (Logic decomposition): the SAME top-down order as the argument Logic Accordion, applied
   // to propositions by type — Claim/Conclusion → Warrant → Reasons → Distinctions → Principle/Definitions, then the
@@ -2704,16 +2713,12 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     // G2 proposition view toggle (Map / Grouped) + group-by selector
     det.querySelectorAll('.pvt').forEach(function(b){b.addEventListener('click',function(){var v=b.dataset.v;det.querySelectorAll('.pvt').forEach(function(x){x.classList.toggle('on',x===b);});var mp=det.querySelector('.pmap'),gr=det.querySelector('.pgrouped'),gw=det.querySelector('.pgrpwrap'),gt=det.querySelector('.pgtreepane');if(mp)mp.hidden=(v!=='map');if(gr)gr.hidden=(v!=='grouped');if(gw)gw.hidden=(v!=='grouped');if(gt)gt.hidden=(v!=='gtree');});});
     var pg=det.querySelector('.pgrp'); if(pg)pg.addEventListener('change',function(){var gr=det.querySelector('.pgrouped');var bv=(det.querySelector('.pbul')||{}).value||'';if(gr)gr.innerHTML=genPropositionList(sec,this.value,bv);});
-    // Proposition summary table bullet filter: show only the chosen bullet's rows (+ their expandable sub-rows).
-    det.querySelectorAll('.psumbul').forEach(function(sb){sb.addEventListener('change',function(){var bv=this.value;
-      det.querySelectorAll('.qrow[data-pbullet],.prsub[data-pbullet]').forEach(function(tr){tr.style.display=(!bv||tr.getAttribute('data-pbullet')===bv)?'':'none';});
-      var sm=det.querySelector('.psummap'); if(sm)sm.innerHTML=genPropositionSVG(sec,bv);  // the top map clip follows the same bullet filter
-    });});
-    // Proposition bullet filter: scope all three proposition views (Map / Grouped / Logic) to one outline bullet.
+    // Proposition bullet filter: ONE control scopes all three views (Map / Grouped / Logic) AND the summary table below.
     var pbul=det.querySelector('.pbul'); if(pbul)pbul.addEventListener('change',function(){var bv=this.value;
       var mp=det.querySelector('.pmap'); if(mp)mp.innerHTML=genPropositionSVG(sec,bv);
       var gr=det.querySelector('.pgrouped'); if(gr){var gs=det.querySelector('.pgrp');gr.innerHTML=genPropositionList(sec,(gs?gs.value:'type'),bv);}
       var gt=det.querySelector('.pgtreepane'); if(gt)gt.innerHTML=genGroundingTree(sec,bv,curDir(gt));
+      det.querySelectorAll('.qrow[data-pbullet],.prsub[data-pbullet]').forEach(function(tr){tr.style.display=(!bv||tr.getAttribute('data-pbullet')===bv)?'':'none';});  // the summary table follows the same filter
     });
     // Direction Toggle (↑ Tier / ↓ Audit) + Logic Accordion expand/collapse. BOTH are delegated on the stable `det`, so
     // they survive the pane re-renders from the toggle and the bullet filter. wireDetail can run twice on the same det

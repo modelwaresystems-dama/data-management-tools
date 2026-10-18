@@ -571,6 +571,15 @@ function usesRoyalty(k){ return k!=="RESELLER"; }
    though both currently exclude only RESELLER — they answer different questions, and a
    future model could use one without the other. */
 function usesContentLicence(k){ return k!=="RESELLER"; }
+/* Reduces a certification standard written as a partner obligation to the standard itself,
+   for the one place it is read as OUR warranty. Trims a trailing "for at least one nominated
+   trainer", "for N trainers" and the like, and leaves anything it does not recognise alone —
+   a half-understood sentence is worse than a slightly long one. */
+function certStandardOnly(s){
+  var t=String(s||"").trim();
+  var cut=t.replace(/[,;]?\s+for\s+(at\s+least\s+)?(one|two|three|\d+)\s+(of\s+its\s+)?(nominated\s+|certified\s+|named\s+)?trainers?\.?$/i,"");
+  return cut.trim() || t;
+}
 /* What a model forbids outright, as paths on the record. Used both when the model is
    switched and when a saved record is loaded, so the two paths cannot drift apart. */
 var FORBIDDEN_BY_MODEL = {
@@ -2023,8 +2032,12 @@ function buildDocs(d){
        clause in the same agreement. What it is buying is a competent trainer, so this is a
        warranty by us about ours. */
     b.push(p("The "+R+" does not deliver the Services and is therefore under no obligation to hold, maintain or certify trainers. The certification standard below is a warranty given by the "+O+" in respect of the trainers it supplies under "+cx("ourobl")+"."));
+    /* quality.certification is one free-text field shared by every model, and it is
+       written as a partner obligation — "...for at least one nominated trainer". Read as
+       a warranty by us that trailing phrase is nonsense, so it is dropped here only. The
+       field itself is untouched: the delivery models still print it whole. */
     b.push(tbl(["Warranted by the "+O,"Standard"],[
-      ["Trainer qualification", d.quality.certification],
+      ["Trainer qualification", certStandardOnly(d.quality.certification)],
       ["Course certification", "Every trainer supplied is certified on the specific course delivered, at the version current at the date of the engagement"],
       ["Assessment", "Every trainer has completed the "+F.brand+" train-the-trainer programme and passed an observed delivery assessment"],
       ["Recertification", "Annual refresher and re-assessment. A trainer whose certification lapses is not assigned to an engagement"],
@@ -2043,6 +2056,31 @@ function buildDocs(d){
   ]));
   }
   b.push(h2("D2. Delivery standards"));
+  if(d.modelKey==="RESELLER"){
+    /* The generic list below never names who owes the duty. Read against a partner that
+       does not deliver, it is at best unclear and at worst asserts obligations the
+       Agreement puts on us. Split explicitly: the delivery standards are ours, and what
+       the Reseller owes is the sale, the booking and the delegate logistics. */
+    b.push(p("Delivery is performed by the "+O+". The standards below are therefore split: D2.1 binds the "+O+" in respect of each course week it delivers, and D2.2 binds the "+R+" in respect of what it sells and arranges."));
+    b.push(p("D2.1 The "+O+" will:"));
+    b.push(ol([
+      "Deliver to the published course structure, duration and learning outcomes, using current materials only.",
+      "Observe the published minimum and maximum class size for each course, and agree any deviation in writing before the engagement is confirmed.",
+      "Issue attendance and results records through "+fb(d.ops.lms,"the learning platform")+" so that the learner record is centrally held.",
+      "Run the standard evaluation instrument after every delivery and load results within five (5) business days.",
+      "Maintain an average satisfaction score of at least "+d.quality.minSatisfaction+" out of 5 across deliveries made for the "+R+", measured over a rolling four-delivery window, and share the result with the "+R+".",
+      "Deliver any advisory engagement sold by the "+R+" to the "+F.brand+" methodology, with the standard deliverable templates and a documented quality review before client issue."
+    ]));
+    b.push(p("D2.2 The "+R+" will:"));
+    b.push(ol([
+      "Describe the course structure, duration, outcomes and class-size limits to its clients exactly as published, and sell no variation that has not been agreed in writing.",
+      "Confirm each booking in writing with the client, dates, venue, delegate numbers and the delegate list, in time for the "+O+" to prepare and travel.",
+      "Arrange the venue, equipment, catering and delegate logistics to a standard fit for the delivery, and tell the "+O+" of anything at the venue that would prevent delivery.",
+      "Pass the evaluation results to its client unaltered where the client asks for them, and raise any complaint with the "+O+" within five (5) business days of receiving it.",
+      "Not alter, re-badge or add to the course materials, the evaluation instrument or the attendance and results records."
+    ]));
+    b.push(p("D2.3 A satisfaction score below the standard in D2.1 is remedied by the "+O+", at its cost, and is not a breach by the "+R+"."));
+  } else {
   b.push(ol([
     "Deliver to the published course structure, duration and learning outcomes, using current materials only.",
     "Maintain a minimum and maximum class size as published for each course; deviations require consent.",
@@ -2051,6 +2089,7 @@ function buildDocs(d){
     "Maintain an average satisfaction score of at least "+d.quality.minSatisfaction+" out of 5, measured over a rolling four-delivery window.",
     "Advisory engagements follow the "+F.brand+" methodology, with the standard deliverable templates and a documented quality review before client issue."
   ]));
+  }
   b.push(h2("D3. Quality assurance and audit"));
   b.push(tbl(["Activity","Frequency","Owner"],[
     ["Delivery observation by a senior trainer", String(d.quality.auditsPerYear)+" per year", O],

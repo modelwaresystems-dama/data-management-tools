@@ -13,7 +13,7 @@
      file name and the saved partner records all follow it automatically.
      MAJOR.MINOR.PATCH — patch for a fix, minor for new behaviour, major for a break.
      The build stamp is separate: it is a time, not a version, so it stays in script. -->
-<meta name="version" content="1.31.0">
+<meta name="version" content="1.31.1">
 <style>
 :root{
   --ink:#12212b; --ink-2:#3d5361; --line:#d8e2e8; --line-2:#eef3f6;
@@ -334,8 +334,9 @@ var APP_VERSION = (function(){
   var v = m ? String(m.content || "").trim() : "";
   return /^\d+\.\d+\.\d+$/.test(v) ? v : "0.0.0-unknown";
 })();
-var APP_BUILD   = "2026-10-18 15:29 SAST";   /* a time, not a version — set when this file is generated */
+var APP_BUILD   = "2026-10-18 16:16 SAST";   /* a time, not a version — set when this file is generated */
 var APP_CHANGELOG = [
+  ["1.31.1","2026-10-18","Fixes a defect in 1.31.0: the issued-pack panel was written into repoHtml(), a function nothing has called since v1.17.0 moved Team sync onto its own tab. The feature worked and its tests passed, because they drove it through the window.MW hook rather than through the screen — but there was no way to reach it in the app. The panel and the Record what was issued control now sit on the Team sync tab with the rest of the repository controls, the dead function is renamed so nothing can be added to it by mistake, and the suite now checks that the control is on the tab and actually drawn, not merely present in the page."],
   ["1.31.0","2026-10-18","The repository now holds what a partner was actually sent. Until now it held only the inputs, on the reasoning that a pack regenerates from its record — and v1.30.0 proved that wrong by changing both what a Reseller pack contains and the record itself on load, so rebuilding a partner today does not reproduce the pack issued last week. Record what was issued writes the contract set as docx and pdf plus the workbook to partners/<slug>/issued/<ref>_<date>_v<builder>/, with a manifest naming every file, who issued it, when, and the builder version that produced it. Internal documents are excluded — the checklist and the runbook are ours and were never issued. Files are written one at a time rather than all at once, and a pack where any write failed is labelled INCOMPLETE in the list instead of being counted as sent. The countersigned copy is filed into the same folder by hand and recorded against the manifest, so an executed original never depends on a browser upload. The partner listing is untouched: it reads partners/ for .json files and ignores directories. Also on the repo's versioning standard — the number now lives in a single meta tag in the head, which the Asset Navigator reads, and a missing tag shows as 0.0.0-unknown rather than a plausible version."],
   ["1.30.0","2026-10-18","The Training Reseller is no longer held to the delivery models' rules. A reseller sells the Services and never delivers them — Schedule F2 already said it is not granted access to the Facilitator Materials at all — yet the pre-send check still demanded a courseware licence, named trainers and a library address, and the courseware one blocked the pack from being produced. Those three checks now apply only to models that actually license content. Schedule D1 is inverted for a reseller: instead of requiring the partner to maintain certified trainers, which contradicted its own obligations clause in the same agreement, it is now a warranty by us about the trainers we supply, including course-specific certification and substitution at no extra cost. The Courseware Protection Onboarding Checklist and the Access Withdrawal Runbook are no longer produced for a reseller — there is nothing to provision and nothing to withdraw, and the checklist was instructing us to create a library and guest accounts that must not exist. Two record bugs behind the same symptom: loading a saved partner never applied the model's rules, so a record that had once been an Authorised Delivery Partner came back carrying its royalty, override and tiers whatever model it now claimed to be; and a reseller's deliberately empty inventory account was mistaken for a record written before cost lines existed and refilled with the default lines. Both paths now strip only what the model forbids, leave every negotiated value the model permits, and say in the status line exactly what was removed."],
   ["1.29.2","2026-09-06","Onboarding step B1 now says which kind of site to create: a communication site, not a Teams site. A Teams site is group-connected, so it brings a Microsoft 365 group, a mailbox, a calendar and a chat space, and group membership grants access to all of it \u2014 two overlapping membership systems to unpick on the day you are withdrawing access."],
@@ -5746,6 +5747,52 @@ function syncPanelHtml(){
   }
   h+='<div class="synchint">Your computer\u2019s copy of the repo does NOT update on its own &mdash; run <code>git pull</code> to see these files locally.</div>';
   h+='<div class="synchint">Expected layout &mdash; <code>'+esc(f?f+"/":"")+'partners/&lt;partner-slug&gt;.json</code> per partner, plus <code>contract-references.json</code>, <code>register.json</code> and <code>README.md</code> generated alongside. Push writes only the open partner and the generated index; it never rewrites another partner\u2019s file.</div>';
+  /* Issued packs live on THIS tab, with the rest of the repository controls. They were
+     first written into repoHtml(), which has been unreferenced since v1.17.0 moved Team
+     sync onto its own tab — so the whole feature rendered nowhere while its tests passed,
+     because the tests drove it through window.MW rather than through the screen. */
+  /* ----------------------------------------------- issued packs, open partner */
+  h+='<h2 class="sec">Issued packs — '+esc(D.partner.legalName||partnerSlug(D))+'</h2>';
+  h+='<div class="hint" style="font-size:11.5px;color:#7c8f9a;margin-bottom:10px">'+
+     'What this partner was actually sent, kept because a pack does not reliably regenerate: '+
+     'the documents change between builder versions, and so does the record. Internal documents '+
+     'are not included — they were never issued.</div>';
+  h+='<div class="repolist">';
+  if(!GH.issued.length){
+    h+='<div class="empty">Nothing recorded for this partner. Press <strong>Record what was issued</strong> '+
+       'after you send a pack, and it is written to <code>'+esc(ghPathFor(PARTNER_DIR+"/"+partnerSlug(D)+"/issued"))+'/</code>.</div>';
+  } else {
+    GH.issued.forEach(function(it){
+      var m=it.manifest||{};
+      var sub=(m.issuedOn?("Issued "+m.issuedOn):"(no manifest)")+
+              (m.issuedBy?" by "+m.issuedBy:"")+
+              (m.builder&&m.builder.version?" · builder v"+m.builder.version:"")+
+              (m.files?" · "+m.files.length+" file(s)":"");
+      /* A pack written with failures must not look like a clean one. */
+      if(m.failed && m.failed.length) sub+=" · INCOMPLETE — "+m.failed.length+" file(s) failed to write";
+      var sg=m.signed||{};
+      sub+= sg.received ? (" · signed "+(sg.signedOn||"(no date)")+(sg.signatory?" by "+sg.signatory:""))
+                        : " · no signed copy recorded";
+      h+='<div class="rowitem"><div><div class="nm">'+esc(it.name)+'</div>'+
+         '<div class="sub">'+esc(sub)+'</div></div>'+
+         '<a class="btn light sm" style="text-decoration:none" target="_blank" rel="noopener" href="'+
+         esc(ghWebUrl(it.path))+'">Open</a></div>';
+      if(!sg.received){
+        h+='<div class="rowitem" style="display:block"><div class="sub" style="margin-bottom:6px">'+
+           'File the countersigned copy into that folder yourself, then record it here.</div>'+
+           '<div class="grid3">'+
+           '<input class="in" id="sgName_'+esc(it.name)+'" placeholder="Signed file name as filed">'+
+           '<input class="in" id="sgOn_'+esc(it.name)+'" placeholder="Signed on (yyyy-mm-dd)">'+
+           '<input class="in" id="sgBy_'+esc(it.name)+'" placeholder="Signed by">'+
+           '</div>'+
+           '<button class="btn light sm" data-sgrec="'+esc(it.path)+'" data-sgname="'+esc(it.name)+'" '+
+           'data-sgsha="'+esc(it.sha)+'" style="margin-top:6px">Record signed copy</button></div>';
+      }
+    });
+  }
+  h+='</div>';
+  h+='<div style="margin:10px 0 18px"><button class="btn" id="btnRecordIssued">Record what was issued</button></div>';
+
   h+='<div class="syncstatus '+esc(GH.statusKind||"")+'">'+esc(GH.status)+'</div>';
   h+='</div>';
   return h;
@@ -5985,7 +6032,12 @@ function pipelineHtml(){
   }
   return h;
 }
-function repoHtml(){
+/* UNREFERENCED since v1.17.0, when Team sync moved onto its own tab and the old
+   Repository tab was split into Pipeline (pipelineHtml) and Team sync (syncPanelHtml).
+   Nothing calls this. It is left here rather than deleted because it is the only record
+   of the old layout, but DO NOT ADD TO IT — anything put in here renders nowhere, which
+   is exactly what happened to the issued-pack panel in v1.31.0. */
+function repoHtml_UNUSED(){
   var h='<div class="bar"><span class="pill'+(GH.connected?" soft":"")+'">'+
         (GH.connected?"Connected":"Not connected")+'</span>'+
         '<span class="pill">'+esc(GH.owner+"/"+GH.repo)+'</span>'+
@@ -6017,48 +6069,6 @@ function repoHtml(){
     });
   }
   h+='</div>';
-  /* ----------------------------------------------- issued packs, open partner */
-  h+='<h2 class="sec">Issued packs — '+esc(D.partner.legalName||partnerSlug(D))+'</h2>';
-  h+='<div class="hint" style="font-size:11.5px;color:#7c8f9a;margin-bottom:10px">'+
-     'What this partner was actually sent, kept because a pack does not reliably regenerate: '+
-     'the documents change between builder versions, and so does the record. Internal documents '+
-     'are not included — they were never issued.</div>';
-  h+='<div class="repolist">';
-  if(!GH.issued.length){
-    h+='<div class="empty">Nothing recorded for this partner. Press <strong>Record what was issued</strong> '+
-       'after you send a pack, and it is written to <code>'+esc(ghPathFor(PARTNER_DIR+"/"+partnerSlug(D)+"/issued"))+'/</code>.</div>';
-  } else {
-    GH.issued.forEach(function(it){
-      var m=it.manifest||{};
-      var sub=(m.issuedOn?("Issued "+m.issuedOn):"(no manifest)")+
-              (m.issuedBy?" by "+m.issuedBy:"")+
-              (m.builder&&m.builder.version?" · builder v"+m.builder.version:"")+
-              (m.files?" · "+m.files.length+" file(s)":"");
-      /* A pack written with failures must not look like a clean one. */
-      if(m.failed && m.failed.length) sub+=" · INCOMPLETE — "+m.failed.length+" file(s) failed to write";
-      var sg=m.signed||{};
-      sub+= sg.received ? (" · signed "+(sg.signedOn||"(no date)")+(sg.signatory?" by "+sg.signatory:""))
-                        : " · no signed copy recorded";
-      h+='<div class="rowitem"><div><div class="nm">'+esc(it.name)+'</div>'+
-         '<div class="sub">'+esc(sub)+'</div></div>'+
-         '<a class="btn light sm" style="text-decoration:none" target="_blank" rel="noopener" href="'+
-         esc(ghWebUrl(it.path))+'">Open</a></div>';
-      if(!sg.received){
-        h+='<div class="rowitem" style="display:block"><div class="sub" style="margin-bottom:6px">'+
-           'File the countersigned copy into that folder yourself, then record it here.</div>'+
-           '<div class="grid3">'+
-           '<input class="in" id="sgName_'+esc(it.name)+'" placeholder="Signed file name as filed">'+
-           '<input class="in" id="sgOn_'+esc(it.name)+'" placeholder="Signed on (yyyy-mm-dd)">'+
-           '<input class="in" id="sgBy_'+esc(it.name)+'" placeholder="Signed by">'+
-           '</div>'+
-           '<button class="btn light sm" data-sgrec="'+esc(it.path)+'" data-sgname="'+esc(it.name)+'" '+
-           'data-sgsha="'+esc(it.sha)+'" style="margin-top:6px">Record signed copy</button></div>';
-      }
-    });
-  }
-  h+='</div>';
-  h+='<div style="margin:10px 0 18px"><button class="btn" id="btnRecordIssued">Record what was issued</button></div>';
-
   h+='<div class="repolist"><div class="rowitem"><div><div class="nm">What this repository holds</div>'+
      '<div class="sub">One JSON record per partner in <code>'+esc(ghPathFor(PARTNER_DIR))+'/</code>, plus a generated <code>'+esc(ghPathFor("register.json"))+'</code> and <code>'+esc(ghPathFor("README.md"))+'</code> table. '+
      'Contracts and workbooks are not stored — they are regenerated from these records.</div></div><div></div></div></div>';

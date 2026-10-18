@@ -81,6 +81,10 @@ const SABOTAGES = {
                     `    contractFiles("docx").forEach(function(f){ files.push(f); });\n    contractFiles("docx","internal").forEach(function(f){ files.push(f); });`],
   'issued-silent': [`    if(failed.length){`, `    if(false){`],
   'signed-flag':   [`  man.signed={received:true,`, `  man.signed={received:false,`],
+  /* The panel put somewhere nothing renders — the v1.31.0 defect itself. */
+  'panel-orphan':  [`function repoHtml_UNUSED(){`, `function repoHtml(){`],
+  'panel-gone':    [`  h+='<div style="margin:10px 0 18px"><button class="btn" id="btnRecordIssued">Record what was issued</button></div>';`,
+                    `  /* control removed */`],
   'new-partner':   [`  d.partner.legalName=o.name||"";`, `  /* leak */`],
   'merge-clobber': [`      for(j in obj[k]){ if(obj[k][j]!==undefined) base[k][j]=obj[k][j]; }`,
                     `      /* dropped */`],
@@ -670,6 +674,36 @@ print('OK', len(wb.sheetnames), len(d.paragraphs), len(r.pages), len(names))
     if (wrongLen.length) console.log('    ' + wrongLen.slice(0, 3).join('\n    '));
   }
   check('status line says it was recorded', /recorded/i.test(issued.status), true);
+
+  /* IT MUST BE ON THE SCREEN. The whole feature was first written into repoHtml(), which
+     has been unreferenced since v1.17.0 — so every check above passed while the panel
+     rendered nowhere, because they drive the app through window.MW rather than the UI.
+     Reach it the way Howard does: switch to the tab and look for the control. */
+  const ui = await page.evaluate(async () => {
+    MW.tab('SYNC');
+    const btn = document.getElementById('btnRecordIssued');
+    /* Match case-insensitively: h2.sec is uppercased by CSS and innerText returns the
+       TRANSFORMED text, so a case-sensitive test against "Issued packs" fails on a
+       heading that is rendering perfectly well. Measure the box too — present in the
+       DOM is not the same as drawn on the screen, which is the whole point here. */
+    const body = document.body.innerText || '';
+    const h = Array.from(document.querySelectorAll('h2.sec'))
+      .filter(x => /issued packs/i.test(x.textContent || ''))[0];
+    const r = h ? h.getBoundingClientRect() : null;
+    const br = btn ? btn.getBoundingClientRect() : null;
+    return { button: !!btn, heading: /issued packs/i.test(body),
+             label: btn ? (btn.textContent || '').trim() : '',
+             drawn: !!(r && r.width > 0 && r.height > 0 && h.offsetParent !== null),
+             btnDrawn: !!(br && br.width > 0 && br.height > 0 && btn.offsetParent !== null) };
+  });
+  check('the Record control is on the Team sync tab', ui.button, true);
+  check('the issued packs heading renders', ui.heading, true);
+  check('the heading is actually drawn, not just in the DOM', ui.drawn, true);
+  check('the Record control is actually drawn', ui.btnDrawn, true);
+  check('the control is labelled', ui.label, 'Record what was issued');
+  /* And no panel may be built by a function nothing calls. */
+  const orphan = /function\s+(repoHtml)\s*\(/.test(src);
+  check('no live-looking orphan named repoHtml', orphan, false);
 
   /* The signed copy: the app records that it exists, it does not upload it. */
   await page.evaluate(() => MW.refreshIssued());

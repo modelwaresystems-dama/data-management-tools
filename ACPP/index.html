@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.42.0">
+<meta name="version" content="4.43.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -395,6 +395,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .argctx{margin:8px 0 4px;min-height:40px}
 .argctx .ctxhint{color:var(--soft,#64748b);font-style:italic;font-size:.84rem;padding:10px;border:1px dashed var(--line,#e2e8f0);border-radius:8px;text-align:center}
 .swimrow{display:flex;gap:12px;align-items:flex-start;margin:6px 0}
+.swimrow[hidden]{display:none}  /* the class display:flex would otherwise override the UA [hidden] rule, so the map stayed visible under the Logic view */
 .swimrow .argmapwrap{flex:1;min-width:0;margin:0}
 .swimrow .argctx{width:290px;flex:none;margin:0}
 .argviews.swimon .swimrow .argctx{border:1px solid var(--line,#e2e8f0);border-radius:10px;padding:10px;background:var(--surface2,#f6f8fb)}
@@ -776,6 +777,10 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   //   n[13] metaphor {map_id,fidelity,guardrail}, n[14] anchors[] (semantic-anchor links).
   function anFunc(n){return (n&&n.length>11&&n[11])||'';}
   function anTrans(n){return (n&&n.length>12&&n[12])||'';}
+  // A node's TRANSITION is how it moves the argument on — a connective, NOT a type. Display it as a plain connective so
+  // 'Consequence'/'Conclusion' transitions can't be misread as a Consequence/Conclusion NODE. (Data values stay as-is.)
+  var TRANS_CONNECTIVE={Addition:'and',Contrast:'but',Consequence:'therefore',Qualification:'although',Conclusion:'in sum'};
+  function transLabel(t){t=t||'';return TRANS_CONNECTIVE[t]||t;}
   function anMeta(n){return (n&&n.length>13)?n[13]:null;}
   function anAnchors(n){return (n&&n.length>14&&n[14])||[];}
   // A semantic anchor (Definition/Elaboration, or a node carrying anchors[]) is deliberately OUT of the arrow chain — never an orphan.
@@ -2095,7 +2100,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       var idShown=n[2]||id, trans=anTrans(n), meta=anMeta(n), tier=n[8], framed=n[4]||'', claim=g3PropText(sec,n[2]);
       var isWarr=(func==='Warrant'||n[1]==='Warrant'||n[8]===5);
       var warrTag=isWarr?'<span class="ltlog">[Transition Logic]</span> ':'';
-      var badges=((trans&&!isWarr)?'<span class="ltrans" title="transition — how this node moves the argument on (not its type)">↝ '+esc(trans)+'</span>':'')
+      var badges=((trans&&!isWarr)?'<span class="ltrans" title="transition (connective) — how this node moves the argument on, not its type; data value: '+esc(trans)+'">↝ '+esc(transLabel(trans))+'</span>':'')
         +(tier?'<span class="ltier">T'+esc(String(tier))+'</span>':'')
         +(meta?'<span class="lfid" title="metaphor fidelity '+esc(meta.fidelity||'')+'" style="background:'+(FIDC[meta.fidelity]||'#94a3b8')+'">'+esc(meta.fidelity||'·')+'</span>':'')
         +(n[7]?'<span class="lneed">needs evidence</span>':'')
@@ -2192,7 +2197,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var func=anFunc(n)||n[1], trans=anTrans(n), meta=anMeta(n), tier=n[8], framed=n[4]||'', claim=g3PropText(sec,n[2]);
     var FIDC={H:'#16a34a',M:'#d97706',L:'#94a3b8'};
     return '<div class="ctxcard">'
-      +'<div class="ctxhead"><b>'+esc(id)+'</b> · '+esc(func)+(tier?(' · T'+esc(String(tier))):'')+(trans?' · <span class="ltrans">'+esc(trans)+'</span>':'')+(meta?' <span class="lfid" title="fidelity" style="background:'+(FIDC[meta.fidelity]||'#94a3b8')+'">'+esc(meta.fidelity||'·')+'</span>':'')+'</div>'
+      +'<div class="ctxhead"><b>'+esc(id)+'</b> · '+esc(func)+(tier?(' · T'+esc(String(tier))):'')+(trans?' · <span class="ltrans" title="transition (connective); data value: '+esc(trans)+'">↝ '+esc(transLabel(trans))+'</span>':'')+(meta?' <span class="lfid" title="fidelity" style="background:'+(FIDC[meta.fidelity]||'#94a3b8')+'">'+esc(meta.fidelity||'·')+'</span>':'')+'</div>'
       +(framed?'<div class="ctxrow"><span class="lk">Framed</span>'+esc(framed)+'</div>':'')
       +(claim?'<div class="ctxrow"><span class="lk">Claim</span>'+esc(claim)+'</div>':(n[2]?'':'<div class="ctxrow"><span class="lk">Claim</span><i>bridge node — no proposition</i></div>'))
       +(meta?'<div class="ctxrow"><span class="lk">Metaphor</span>'+esc(meta.map_id||'')+' · fidelity '+esc(meta.fidelity||'')+(meta.guardrail?' — guardrail: <i>'+esc(meta.guardrail)+'</i>':'')+'</div>':'')
@@ -2297,6 +2302,25 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     aiqs.forEach(function(a){a._tier=5;tiers[5].push(a);});
     var evNodes=[];
     list.forEach(function(it){if(it.fn==='Conclusion')return;if(it.ev||it.evOk){evNodes.push({id:'EV-'+it.id,owner:it.id,ok:it.evOk,cite:(it.evOk?'SRC verified':'SRC needed'),pid:it.pid,_tier:8});}});
+    // Ghost warrant (Howard's decision): in a bullet view, if the bullet's reasons/consequence route THROUGH a Warrant
+    // not placed in this slice (quarantined in AIQ, or an approved warrant defined in another bullet), draw it as an amber
+    // dashed placeholder in the T5 lane so the Reason→Warrant→Consequence edges route through it and nothing dangles.
+    if(usingNodes && keep){
+      var placedIds={}; list.forEach(function(it){placedIds[it.id]=1;});
+      var allById={}; g3Active(sec).forEach(function(n){allById[n[0]]=n;});
+      var ghostSeen={};
+      list.forEach(function(it){var L=g3L(sec,it.id);
+        (L.leads||[]).concat(L.dep||[]).forEach(function(t){
+          if(placedIds[t]||ghostSeen[t])return;
+          var tn=allById[t];
+          var isW=tn?((tn.length>8&&tn[8]===5)||tn[1]==='Warrant'||anFunc(tn)==='Warrant'):/(^|[-_])W\d*$/i.test(t);
+          if(!isW)return;
+          ghostSeen[t]=1;
+          var wtext=(tn&&tn[4])||'This bullet’s reasons are licensed by this warrant.';
+          tiers[5].push({id:t,ghost:true,fn:'Warrant',_tier:5,ghostAnchor:(tn&&tn[3])||'',text:wtext});
+        });
+      });
+    }
     var bw=240,bh=70,ew=180,eh=46,gapX=30,rowGap=30,bandGap=36,pad=20;
     var BLUE=['#dbeafe','#2563eb'],GREEN=['#dcfce7','#16a34a'],AMBER=['#fef3c7','#d97706'],RED=['#fee2e2','#dc2626'],GREY='#5b6b7a';
     // ---- Swim-lane setup: one lane per Principle; a node owned by exactly one principle sits in that lane,
@@ -2362,6 +2386,17 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     evNodes.forEach(function(ev){edge(ev.owner,ev.id,ev.ok);});
     function funcDisplay(fn){return {Contention:'Opening Contention',Conclusion:'Intended Conclusion'}[fn]||fn;}
     function drawProp(it){var fill,stroke,flab;
+      if(it.ghost){
+        var gx=it._x,gy=it._y,gw=it._w,gh=it._h;
+        var hdr=it.id+'   ⚠ '+(it.ghostAnchor?('Warrant · from '+it.ghostAnchor):'Warrant · quarantined (AIQ)');
+        var glines=vmLines(it.text,gw);
+        var gt='<g class="argnode argghost" data-id="'+esc(it.id)+'" data-tier="5"><title>'+esc(it.id+' — warrant not native to this bullet'+(it.ghostAnchor?(' (defined in '+it.ghostAnchor+')'):' (quarantined in the AIQ)')+'. Its reasons and consequence route through it; wire or promote it to license this bullet.')+'</title>'
+          +'<rect x="'+gx+'" y="'+gy+'" rx="8" width="'+gw+'" height="'+gh+'" fill="#fff8ec" stroke="#d97706" stroke-width="1.6" stroke-dasharray="5 4"/>'
+          +'<text x="'+(gx+11)+'" y="'+(gy+17)+'" font-size="10" font-weight="700" fill="#b45309" font-family="ui-monospace,monospace">'+esc(hdr)+'</text>';
+        glines.forEach(function(ln,i){gt+='<text x="'+(gx+11)+'" y="'+(gy+33+i*14)+'" font-size="11" fill="#7c5a16">'+esc(ln)+'</text>';});
+        p.push(gt+'</g>');
+        return;
+      }
       if(it.aiq){
         if(it.state==='acc'){fill=BLUE[0];stroke=BLUE[1];flab='Warrant (approved)';}
         else if(it.state==='rej'){fill='#edf0f3';stroke='#9aa7b4';flab='Warrant (rejected)';}
@@ -2371,7 +2406,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       else{fill=BLUE[0];stroke=BLUE[1];flab=funcDisplay(it.fn);}
       // Transformation Architecture: prefer the structural `function` as the role label, and show the `transition` (how the node moves the argument on) when present.
       if(!it.aiq && it.func){flab=it.func;}
-      if(it.trans){flab=flab+' ↝ '+it.trans;}  // ↝ marks the transition (how the node moves the argument on) — NOT the node's type
+      if(it.trans){flab=flab+' ↝ '+transLabel(it.trans);}  // ↝ marks the transition as a connective (not a type), so it can't be read as a Consequence/Conclusion node
       var nodeId=usingNodes?(it.id||it.pid):(it.pid||it.id);
       var did=nodeId+((usingNodes&&it.pid&&it.pid!==nodeId)?('  ·  '+it.pid):'');
       var oid=it.id||it.pid;

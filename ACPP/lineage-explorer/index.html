@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.13.0">
+<meta name="version" content="1.14.0">
 <title>ACPP Lineage Explorer</title>
 <style>
   :root{
@@ -108,6 +108,10 @@
         <label class="fl">2 · Section</label>
         <select id="secFilter" class="secfilter"><option value="">All sections</option></select>
       </div>
+      <div>
+        <label class="fl">2b · Bullet</label>
+        <select id="bulletFilter" class="secfilter"><option value="">All bullets</option></select>
+      </div>
       <div style="flex:1;min-width:260px">
         <label class="fl" for="picker">3 · Add element to trace</label>
         <select id="picker" style="width:100%"><option value="">Type or pick an element…</option></select>
@@ -129,7 +133,7 @@
         <span id="status" style="display:inline-block;padding-top:8px">loading…</span>
       </div>
     </div>
-    <div class="hint">Narrow by Part, then Section, then add an element to trace its chain. Direction sets ancestors (upstream) / descendants (downstream) / both. Add a second element to <b>narrow to the shared lineage</b> — only the chain that connects every selected element stays.</div>
+    <div class="hint">Narrow by Part, then Section, then Bullet to review one outline bullet's full chain (proposition → argument → evidence → render → metaphor). Add an element to trace its chain; Direction sets ancestors (upstream) / descendants (downstream) / both. Add a second element to <b>narrow to the shared lineage</b> — only the chain that connects every selected element stays. Argument nodes show their <b>function · transition</b> role.</div>
     <div class="chips" id="focusChips"></div>
     <div class="legend">
       <span><i class="tchip tB">B</i> Outline bullet</span>
@@ -235,7 +239,7 @@
     data.props.forEach(function(p){ if(!SECTIONS[p.section])return; addNode(p.p_id,'P',p.text,p.section,(p.type||'')); if(p.outline_id)addEdge(p.outline_id,p.p_id); });
     // argument nodes -> A, link P->A ; index p_id -> an_id (for metaphor resolution of C-/unfiled claims)
     var ANBYPID={};
-    data.nodes.forEach(function(n){ if(!SECTIONS[n.section])return; addNode(n.an_id,'A',n.text,n.section,(n.type||'')); if(n.p_id){addEdge(n.p_id,n.an_id);if(!ANBYPID[n.p_id])ANBYPID[n.p_id]=n.an_id;} });
+    data.nodes.forEach(function(n){ if(!SECTIONS[n.section])return; addNode(n.an_id,'A',n.text,n.section,(n.type||'')); var _an=NODES[n.an_id]; if(_an){_an.fn=n.function||'';_an.tr=n.transition||'';_an.anBullet=n.outline_id||'';_an.meta2=[(n.function||''),(n.transition||'')].filter(Boolean).join(' · ');} if(n.p_id){addEdge(n.p_id,n.an_id);if(!ANBYPID[n.p_id])ANBYPID[n.p_id]=n.an_id;} });
     // evidence links -> E (source), link P->E
     var srcTitle={}; arrOf(data.sources,['items','sources']).forEach(function(s){srcTitle[s.id]=s.title||s.id;});
     data.evid.forEach(function(e){ if(!SECTIONS[e.section])return; var id=e.link_id||(e.p_id+'·'+e.src_id); var label=(srcTitle[e.src_id]||e.src_id||'source'); addNode(id,'E',label,e.section,(e.src_id||'')+(e.support_strength?(' · '+e.support_strength):'')+(e.status?(' · '+e.status):'')); if(e.p_id)addEdge(e.p_id,id); });
@@ -402,6 +406,20 @@
       pb.sids.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=SECTIONS[s].label;sf.appendChild(o);});
     }
   }
+  function fillBulletFilter(){
+    var bf=document.getElementById('bulletFilter'); if(!bf)return;
+    var secF=document.getElementById('secFilter').value;
+    var partF=(document.getElementById('partFilter')||{}).value||'';
+    var partSecs={}; if(partF){Object.keys(SECTIONS).forEach(function(s){if((SECTIONS[s].part_key||'')===partF)partSecs[s]=1;});}
+    var cur=bf.value;
+    bf.innerHTML='<option value="">All bullets</option>';
+    Object.keys(NODES).filter(function(id){var n=NODES[id];if(n.tier!=='B')return false;
+        if(secF)return n.section===secF; if(partF)return !!partSecs[n.section]; return true;})
+      .sort(function(a,b){return a<b?-1:1;})
+      .forEach(function(id){var n=NODES[id];var o=document.createElement('option');o.value=id;o.textContent=id+' · '+String(n.text).slice(0,44);bf.appendChild(o);});
+    var keepCur=false;for(var i=0;i<bf.options.length;i++){if(bf.options[i].value===cur){keepCur=true;break;}}
+    bf.value=keepCur?cur:'';
+  }
   function populateControls(){
     var pb=partBuckets();
     var pf=document.getElementById('partFilter');
@@ -411,6 +429,7 @@
       } else { if(pf.parentElement)pf.parentElement.style.display='none'; }
     }
     fillSecFilter();
+    fillBulletFilter();
     populatePicker();
     // gaps
     var bulletsNoP=0,propsNoA=0,propsNoE=0,secNoR=0,haveM=false;
@@ -455,6 +474,9 @@
     var partF=(document.getElementById('partFilter')||{}).value||'';
     var partSecs={}; if(partF){Object.keys(SECTIONS).forEach(function(s){if((SECTIONS[s].part_key||'')===partF)partSecs[s]=1;});}
     var onlyConn=document.getElementById('onlyConn').checked;
+    var bulletF=(document.getElementById('bulletFilter')||{}).value||'';
+    var bulletKeep=null;
+    if(bulletF && NODES[bulletF]){ bulletKeep=reachFrom(bulletF,'desc'); bulletKeep[bulletF]=1; }
     var keep=connectedSet();
     document.getElementById('emptyMsg').hidden=Object.keys(NODES).length>0;
     cols.innerHTML=''; svg.innerHTML='';
@@ -463,6 +485,7 @@
       col.innerHTML='<h2><i class="tchip t'+t[0]+'">'+(t[0]==='A'?'AN':t[0]==='E'?'EV':t[0])+'</i> '+t[1]+'<span class="n">'+t[2]+'</span></h2>';
       var ids=Object.keys(NODES).filter(function(id){var n=NODES[id];
         if(n.tier!==t[0])return false;
+        if(bulletKeep && !bulletKeep[id])return false;
         if(t[0]==='M'){
           var sx=n.secs||{};
           if(secF){ if(!sx[secF]) return false; }                                   // section: only metaphors linked to it
@@ -482,7 +505,9 @@
         el.className='node '+t[0]+(focus.indexOf(id)>=0?' sel':'')+(dim?' dim':'')+(bound?' mbound':'');
         el.id='nd-'+cssid(id); el.dataset.id=id;
         var mb = bound ? '<span class="mbind" title="metaphor-bound — click to see it in the Metaphor column">⬌ '+esc(bound.map(function(x){return x.map+(x.fid?(' '+x.fid):'');}).join(', '))+'</span>' : '';
-        el.innerHTML='<div class="id">'+esc(id)+mb+'</div><div class="tx">'+esc(n.text)+'</div>'+(n.meta?'<div class="meta">'+esc(n.meta)+'</div>':'');
+        var metaLine = n.meta||'';
+        if(t[0]==='A' && n.meta2) metaLine = n.meta2;  // function · transition (richer than the bare node type)
+        el.innerHTML='<div class="id">'+esc(id)+mb+'</div><div class="tx">'+esc(n.text)+'</div>'+(metaLine?'<div class="meta">'+esc(metaLine)+'</div>':'');
         el.addEventListener('click',function(){toggleFocus(id);});
         return el;
       }
@@ -549,8 +574,9 @@
   document.getElementById('ghPull').addEventListener('click',function(){loadAll(true);});
   document.getElementById('ghForget').addEventListener('click',function(){LS.del('acpp.gh.pat');document.getElementById('ghPat').value='';setStatus('token forgotten');});
   document.getElementById('picker').addEventListener('change',function(){if(this.value){if(focus.indexOf(this.value)<0){focus.push(this.value);renderChips();render();}this.value='';}});
-  document.getElementById('secFilter').addEventListener('change',function(){populatePicker();render();});
-  var _pf=document.getElementById('partFilter'); if(_pf)_pf.addEventListener('change',function(){fillSecFilter();populatePicker();render();});
+  document.getElementById('secFilter').addEventListener('change',function(){fillBulletFilter();populatePicker();render();});
+  var _pf=document.getElementById('partFilter'); if(_pf)_pf.addEventListener('change',function(){fillSecFilter();fillBulletFilter();populatePicker();render();});
+  document.getElementById('bulletFilter').addEventListener('change',render);
   document.getElementById('projSel').addEventListener('change',function(){GHset('proj',this.value);loadAll(true);});  // shared current-project across all ACPP tools
   document.getElementById('onlyConn').addEventListener('change',render);
   document.querySelectorAll('#dirSeg button').forEach(function(b){b.addEventListener('click',function(){dir=b.dataset.d;document.querySelectorAll('#dirSeg button').forEach(function(x){x.classList.toggle('on',x===b);});render();});});

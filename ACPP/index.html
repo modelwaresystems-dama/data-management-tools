@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.38.0">
+<meta name="version" content="4.39.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -371,6 +371,10 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 .logicacc .lclaim{margin:2px 0}
 .logicacc .lmet{margin:4px 0 2px;color:#475569}
 .logicacc .lhint{color:var(--soft,#64748b);font-style:italic;margin:2px 0 8px}
+.ldirtog{display:flex;align-items:center;gap:6px;margin:0 0 8px;flex-wrap:wrap}
+.ldirtog .ldirlbl{font:700 .66rem var(--mono,ui-monospace,monospace);color:var(--soft,#64748b);letter-spacing:.04em;text-transform:uppercase}
+.ldir{font-size:.72rem;padding:3px 9px}
+.ldir.on{background:var(--accent,#2563eb);color:#fff;border-color:var(--accent,#2563eb)}
 .logicacc .lrow.lref>.lhead{opacity:.6}
 .logicacc .lrow.lref .lrefnote{font-size:.64rem;color:var(--soft,#64748b);font-style:italic}
 .laccflow .lhead{display:block;align-items:initial;line-height:1.45}
@@ -2034,16 +2038,32 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   // the layout intact if the author renames a function in the data. T2 claim→top … T1 principle→deepest · T5 warrant.
   var TIER_RANK={1:4,2:0,3:3,4:2,5:1,6:5,7:0};
   var TIER_COLOR={1:'#2563eb',2:'#0891b2',3:'#7c3aed',4:'#16a34a',5:'#d97706',6:'#c2410c',7:'#15803d'};
-  function genLogicAccordion(sec,keep,bullet){
+  // Role→tier fallback so a FORWARD (tier-aligned) sort still works when a row carries no numeric tier.
+  var ROLE_TIER={'Principle':1,'Axiom':1,'Claim':2,'Opening Contention':2,'Contention':2,'Definition':2,'Elaboration':2,
+    'Distinction':3,'Boundary':3,'Qualification':3,'Counterpoint':3,'Reason':4,'Pillar':4,'Warrant':5,
+    'Consequence':6,'Recommendation':6,'Conclusion':7,'Terminal Synthesis':7};
+  function fwdRank(role,tier){return (tier!=null&&tier!==''&&!isNaN(+tier))?+tier:(ROLE_TIER[role]!=null?ROLE_TIER[role]:3.5);}
+  // Direction Toggle on every Logic view (Howard's author-controlled spec). FORWARD = tier-aligned construction order,
+  // foundation (T1) at the top down to the Conclusion (T7), flat under the bullet — the DEFAULT for authoring, matching
+  // the G3 Canvas and the Power BI table. AUDIT = depends-on order, the debate-worthy Claim/Conclusion at the top and
+  // the Principle as the deepest leaf, indented so each level answers "why should I accept that?" — for Gate G3 challenge.
+  function logicDirToggle(dir){var fwd=(dir!=='audit');
+    return '<div class="ldirtog"><span class="ldirlbl">Order</span>'
+      +'<button class="rv-btn ldir'+(fwd?' on':'')+'" data-dir="fwd" title="Tier-aligned construction order — foundation first (T1 → T7), flat">↑ Tier · foundation-first</button>'
+      +'<button class="rv-btn ldir'+(fwd?'':' on')+'" data-dir="audit" title="Depends-on audit order — Claim first, Principle as the foundation leaf, nested">↓ Audit · depends-on</button></div>';}
+  function genLogicAccordion(sec,keep,bullet,dir){
+    dir=(dir==='audit')?'audit':'fwd'; var fwd=(dir!=='audit');
     var nodes=g3Active(sec).filter(function(n){return !keep||keep[n[0]];}); if(!nodes.length)return '<p class="note">No argument nodes for this filter.</p>';
     var FIDC={H:'#16a34a',M:'#d97706',L:'#94a3b8'};
     function rankOf(n){var f=anFunc(n)||n[1];return (LOGIC_ORDER[f]!=null?LOGIC_ORDER[f]:(TIER_RANK[n[8]]!=null?TIER_RANK[n[8]]:2.5));}
-    var ordered=nodes.slice().sort(function(a,b){return rankOf(a)-rankOf(b)||((a[8]||9)-(b[8]||9))||(a[0]<b[0]?-1:1);});
+    var ordered=nodes.slice().sort(fwd
+      ? function(a,b){return fwdRank(anFunc(a)||a[1],a[8])-fwdRank(anFunc(b)||b[1],b[8])||rankOf(a)-rankOf(b)||(a[0]<b[0]?-1:1);}
+      : function(a,b){return rankOf(a)-rankOf(b)||((a[8]||9)-(b[8]||9))||(a[0]<b[0]?-1:1);});
     function rowHTML(n){
       var id=n[0], func=anFunc(n)||n[1], color=FNCOLOR[func]||FNCOLOR[n[1]]||TIER_COLOR[n[8]]||'#475569';
       var idShown=n[2]||id, trans=anTrans(n), meta=anMeta(n), tier=n[8], framed=n[4]||'', claim=g3PropText(sec,n[2]);
       var isWarr=(func==='Warrant'||n[1]==='Warrant'||n[8]===5);
-      var ri=Math.round(rankOf(n)); var ind=(LOGIC_INDENT[ri]!=null?LOGIC_INDENT[ri]:2)*20;
+      var ri=Math.round(rankOf(n)); var ind=fwd?0:((LOGIC_INDENT[ri]!=null?LOGIC_INDENT[ri]:2)*20);
       var warrTag=isWarr?'<span class="ltlog">[Transition Logic]</span> ':'';
       var badges=((trans&&!isWarr)?'<span class="ltrans" title="transition — how this node moves the argument on (not its type)">↝ '+esc(trans)+'</span>':'')
         +(tier?'<span class="ltier">T'+esc(String(tier))+'</span>':'')
@@ -2059,13 +2079,15 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         +'</div>';
       return '<div class="lrow'+(isWarr?' lwarr':'')+'" data-id="'+esc(id)+'" style="margin-left:'+ind+'px">'+head+detail+'</div>';
     }
-    var hint='<p class="lhint">Logic decomposition, top-down: the Claim, the Warrant that licenses it, the Reasons, the Boundary and the Principle beneath, then the Consequence it drives. Indentation shows the layer; click a row for its claim↔framing and metaphor guardrail. The Warrant is amber.</p>';
+    var hint='<p class="lhint">'+(fwd
+      ? 'Tier-aligned (construction order): the foundation at the top — Principle (T1) up through the Claim, Distinction, Reason and Warrant to the Consequence/Conclusion (T7). Flat under the bullet; the tier badge shows the layer. The Warrant is amber.'
+      : 'Depends-on (audit order): the debate-worthy Claim/Conclusion at the top; each indent answers “why accept that?”, down to the Principle as the foundation leaf. The Warrant is amber.')+' Click a row for its claim↔framing and metaphor guardrail.</p>';
     var rows=ordered.map(rowHTML).join('');
     if(bullet){
       var btext=''; try{var o=(typeof OUTLINES!=='undefined'&&OUTLINES[sec.sid])||null; if(o&&o.bullets){for(var bi=0;bi<o.bullets.length;bi++){if(o.bullets[bi].id===bullet){btext=o.bullets[bi].text||'';break;}}}}catch(e){}
-      return '<div class="logicacc laccflow">'+hint+'<div class="laccb"><b>'+esc(btext||bullet)+'</b> <span class="laccbid">'+esc(bullet)+'</span></div><div class="laccbkids">'+rows+'</div></div>';
+      return '<div class="logicacc laccflow" data-dir="'+dir+'">'+logicDirToggle(dir)+hint+'<div class="laccb"><b>'+esc(btext||bullet)+'</b> <span class="laccbid">'+esc(bullet)+'</span></div><div class="laccbkids">'+rows+'</div></div>';
     }
-    return '<div class="logicacc laccflow">'+hint+rows+'</div>';
+    return '<div class="logicacc laccflow" data-dir="'+dir+'">'+logicDirToggle(dir)+hint+rows+'</div>';
   }
   // §7c Warrant-Centric Graph — premises (Reasons/Principles/Distinctions) route THROUGH the Warrant to the Claim.
   // The Warrant is the hub; amber (+dashed) while unapproved, and a missing warrant shows a dashed gap gate — so an
@@ -2567,19 +2589,21 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   // Third proposition view (Logic decomposition): the SAME top-down order as the argument Logic Accordion, applied
   // to propositions by type — Claim/Conclusion → Warrant → Reasons → Distinctions → Principle/Definitions, then the
   // Consequence — grouped per outline bullet, indented by layer. Claims with no grounding are flagged.
-  function genGroundingTree(sec,bullet){
+  function genGroundingTree(sec,bullet,dir){
+    dir=(dir==='audit')?'audit':'fwd'; var fwd=(dir!=='audit');
     var g2=sec.art&&sec.art.G2; var rows=(g2&&g2.backfill)||[];
     if(!rows.length && g2&&g2.props){rows=g2.props.map(function(pp){return [pp[0],'',pp[1],pp[2],null,[],null,[],'','',[]];});}
     if(bullet)rows=rows.filter(function(p){return p[1]===bullet;});
     if(!rows.length)return '<p class="note">No propositions'+(bullet?(' for '+esc(bullet)):'')+'.</p>';
     var NEEDSGROUND={Claim:1,Contention:1};  // §9 — grounded_on is a T1→T2 link; flag ONLY a Claim/Opening Contention with none, never a Consequence etc.
     function prank(p){var t=p[2]||''; return (LOGIC_ORDER[t]!=null?LOGIC_ORDER[t]:(TIER_RANK[p[4]]!=null?TIER_RANK[p[4]]:2.5));}
+    function pfwd(p){return fwdRank(p[2]||'',p[4]);}  // tier-aligned rank (foundation first)
     function btextOf(b){try{var o=(typeof OUTLINES!=='undefined'&&OUTLINES[sec.sid])||null;if(o&&o.bullets){for(var i=0;i<o.bullets.length;i++){if(o.bullets[i].id===b)return o.bullets[i].text||'';}}}catch(e){}return '';}
     function rowHTML(p){
       var id=p[0], type=p[2]||'', color=FNCOLOR[type]||TIER_COLOR[p[4]]||'#475569';
       var tier=p[4], go=(p[5]||[]), ts=pTermStatus(p), evd=propEvDisplay(sec,p);
       var isWarr=(type==='Warrant'||p[4]===5);
-      var ri=Math.round(prank(p)); var ind=(LOGIC_INDENT[ri]!=null?LOGIC_INDENT[ri]:2)*20;
+      var ri=Math.round(prank(p)); var ind=fwd?0:((LOGIC_INDENT[ri]!=null?LOGIC_INDENT[ri]:2)*20);
       var ungr=(NEEDSGROUND[type] && !(go&&go.length));
       var warrTag=isWarr?'<span class="ltlog">[Transition Logic]</span> ':'';
       var badges=(tier?'<span class="ltier">T'+esc(String(tier))+'</span>':'')
@@ -2593,13 +2617,17 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     rows.forEach(function(p){var b=p[1]||'(no bullet)';if(!(b in byBullet)){byBullet[b]=[];order.push(b);}byBullet[b].push(p);});
     order.sort();
     var ungroundedAll=rows.filter(function(p){return NEEDSGROUND[p[2]] && !((p[5]||[]).length);}).length;
-    var note='<p class="lhint">Each bullet’s propositions in the same top-down logic order as the argument — Claim/Conclusion, then the Warrant, Reasons, Distinctions, Principle and Definitions beneath, and the Consequence. Indentation shows the layer. '+(ungroundedAll?('<b>'+ungroundedAll+'</b> claim/contention with no grounding is flagged.'):'All claims are grounded.')+'</p>';
+    var note='<p class="lhint">'+(fwd
+      ? 'Tier-aligned (construction order): each bullet’s propositions foundation-first — Principle (T1) up through the Claim, Distinctions, Reasons to the Consequence (T7), flat; the tier badge shows the layer.'
+      : 'Depends-on (audit order): the Claim/Conclusion at the top of each bullet; each indent answers “why accept that?”, down to the Principle and Definitions as the foundation leaves.')+' '+(ungroundedAll?('<b>'+ungroundedAll+'</b> claim/contention with no grounding is flagged.'):'All claims are grounded.')+'</p>';
     var blocks=order.map(function(b){
-      var props=byBullet[b].slice().sort(function(x,y){return prank(x)-prank(y)||((x[4]||9)-(y[4]||9))||(x[0]<y[0]?-1:1);});
+      var props=byBullet[b].slice().sort(fwd
+        ? function(x,y){return pfwd(x)-pfwd(y)||prank(x)-prank(y)||(x[0]<y[0]?-1:1);}
+        : function(x,y){return prank(x)-prank(y)||((x[4]||9)-(y[4]||9))||(x[0]<y[0]?-1:1);});
       var hdr=(b==='(no bullet)')?'<div class="laccb"><b>Section-level / unassigned</b></div>':'<div class="laccb"><b>'+esc(btextOf(b)||b)+'</b> <span class="laccbid">'+esc(b)+'</span></div>';
       return hdr+'<div class="laccbkids">'+props.map(rowHTML).join('')+'</div>';
     }).join('');
-    return '<div class="logicacc laccflow pgtree">'+note+blocks+'</div>';
+    return '<div class="logicacc laccflow pgtree" data-dir="'+dir+'">'+logicDirToggle(dir)+note+blocks+'</div>';
   }
   function buildVisualMap(det,sec,gk){var isP=(gk==='G2');var svg=isP?genPropositionSVG(sec):genArgumentSVG(sec);var leg=isP?vmLegendProps():vmLegend();var ttl=isP?'Proposition inventory (typed, by tier)':'Standardized Visual Grammar';var cap=isP?'“The proposition map is the inventory of claims — one node per proposition, grounded-on links shown.”':'Click a node to trace its chain up and down the wiring — everything else is hidden. Click it again, or the background, to show all. “The flowchart is not a picture of the prose — it is a picture of your reasoning.”';
     var head='<div class="dh"><b>◇ Visual map</b><span class="src">'+esc(sec.label)+' — '+ttl+'</span></div>';
@@ -2643,7 +2671,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     if(abul)abul.addEventListener('change',function(){var bv=this.value;var keep=bv?g3BulletKeep(sec,bv):null;
       var v=(det.querySelector('.avt.on')?det.querySelector('.avt.on').dataset.v:'swim');
       var mw=det.querySelector('.argmapwrap'); if(mw){mw.innerHTML=(v==='warrant')?genWarrantGraph(sec,keep,bv):genArgumentSVG(sec,keep);if(v!=='warrant')wireArgTrace(det);}  // compact re-render for the active view
-      var ac=det.querySelector('.argacc'); if(ac)ac.innerHTML=genLogicAccordion(sec,keep,bv);
+      var ac=det.querySelector('.argacc'); if(ac)ac.innerHTML=genLogicAccordion(sec,keep,bv,curDir(ac));
       var gp=det.querySelector('.arggap'); if(gp)gp.innerHTML=genGapStrip(sec,bv);
       var gb=det.querySelector('.g3below'); if(gb)gb.hidden=!!bv;  // the full node table below is unfiltered — hide it while a bullet is in focus
       var cx=det.querySelector('.argctx'); if(cx&&!cx.hidden)cx.innerHTML='<p class="ctxhint">Showing bullet '+esc(bv||'(all)')+'. Click a node to isolate its line and see its evidence &amp; metaphor.</p>';
@@ -2659,7 +2687,14 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var pbul=det.querySelector('.pbul'); if(pbul)pbul.addEventListener('change',function(){var bv=this.value;
       var mp=det.querySelector('.pmap'); if(mp)mp.innerHTML=genPropositionSVG(sec,bv);
       var gr=det.querySelector('.pgrouped'); if(gr){var gs=det.querySelector('.pgrp');gr.innerHTML=genPropositionList(sec,(gs?gs.value:'type'),bv);}
-      var gt=det.querySelector('.pgtreepane'); if(gt)gt.innerHTML=genGroundingTree(sec,bv);
+      var gt=det.querySelector('.pgtreepane'); if(gt)gt.innerHTML=genGroundingTree(sec,bv,curDir(gt));
+    });
+    // Direction Toggle on the Logic views (↑ Tier / ↓ Audit) — re-render the containing pane, keep the current bullet.
+    function curDir(pane){var b=pane&&pane.querySelector('.ldir.on');return (b&&b.dataset.dir==='audit')?'audit':'fwd';}
+    det.addEventListener('click',function(ev){var btn=ev.target.closest&&ev.target.closest('.ldir');if(!btn||!det.contains(btn))return;
+      var nd=(btn.dataset.dir==='audit')?'audit':'fwd';
+      var acc=btn.closest('.argacc'); if(acc){var bv=(det.querySelector('.argbul')||{}).value||'';var keep=bv?g3BulletKeep(sec,bv):null;acc.innerHTML=genLogicAccordion(sec,keep,bv,nd);return;}
+      var gtp=btn.closest('.pgtreepane'); if(gtp){var pv=(det.querySelector('.pbul')||{}).value||'';gtp.innerHTML=genGroundingTree(sec,pv,nd);return;}
     });
     // Logic Accordion expand/collapse (event-delegated on the header row)
     det.querySelectorAll('.logicacc').forEach(function(acc){acc.addEventListener('click',function(ev){var h=ev.target.closest('.lhead');if(!h||!acc.contains(h))return;var row=h.parentNode;var d=row.querySelector(':scope > .ldetail'),k=row.querySelector(':scope > .lkids');var open=row.classList.toggle('lopen');if(d)d.hidden=!open;if(k)k.hidden=!open;var c=h.querySelector('.lcaret');if(c&&c.textContent!=='·')c.textContent=open?'▾':'▸';});});

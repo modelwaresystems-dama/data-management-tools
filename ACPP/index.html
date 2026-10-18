@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.22.1">
+<meta name="version" content="4.23.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -632,7 +632,16 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function _authTier(note){var a='',t='';var m=/Authority:\s*([^·]+)/.exec(note||'');if(m)a=m[1].trim();var m2=/·\s*(.+)$/.exec(note||'');if(m2)t=m2[1].trim();return {auth:a,tier:t};}
   function _supportsFor(srcId,pid){for(var i=0;i<SRCIDX.links.length;i++){var l=SRCIDX.links[i];if(l.source_id===srcId&&padId(l.proposition_id)===padId(pid))return {sup:l.passage||'',strg:l.support_strength||''};}return {sup:'',strg:''};}
   function buildG2(o){return {sources:"Committed propositions."+(o.section_id||'')+".json (register)",backfill:(o.propositions||[]).map(function(p){return [padId(p.p_id),p.outline_id||'',p.type||'Claim',p.text||'',(p.tier!=null?p.tier:null),(Array.isArray(p.grounded_on)?p.grounded_on:(p.grounded_on?[p.grounded_on]:[])).map(padId),(p.derivation||null),(Array.isArray(p.evidence_candidates)?p.evidence_candidates:[])];})};}
-  function buildG3(o){return {sources:"Committed argument_nodes."+(o.section_id||'')+".json (register)",nodes:((o.argument_nodes||o.nodes)||[]).map(function(n){return [padId(n.an_id),n.type,padId(n.p_id),n.outline_id||'',n.text||'',(n.depends_on||[]).map(padId),(n.leads_to||[]).map(padId),(n.evidence_needed!=null?!!n.evidence_needed:!!n.evidence_marker),(n.tier!=null?n.tier:null),(n.derivation||null),{bridge:!!n.authored_bridge,from:n.promoted_from||''}];}),drift:[],aiqNote:""};}
+  function buildG3(o){return {sources:"Committed argument_nodes."+(o.section_id||'')+".json (register)",nodes:((o.argument_nodes||o.nodes)||[]).map(function(n){return [padId(n.an_id),n.type,padId(n.p_id),n.outline_id||'',n.text||'',(n.depends_on||[]).map(padId),(n.leads_to||[]).map(padId),(n.evidence_needed!=null?!!n.evidence_needed:!!n.evidence_marker),(n.tier!=null?n.tier:null),(n.derivation||null),{bridge:!!n.authored_bridge,from:n.promoted_from||''},(n.function||''),(n.transition||''),(n.metaphor||null),(n.anchors||[])];}),drift:[],aiqNote:""};}
+  // Transformation Architecture additions (all optional — absent until a section is re-run through the updated gates):
+  //   n[11] function (structural role), n[12] transition (how the node moves the argument on),
+  //   n[13] metaphor {map_id,fidelity,guardrail}, n[14] anchors[] (semantic-anchor links).
+  function anFunc(n){return (n&&n.length>11&&n[11])||'';}
+  function anTrans(n){return (n&&n.length>12&&n[12])||'';}
+  function anMeta(n){return (n&&n.length>13)?n[13]:null;}
+  function anAnchors(n){return (n&&n.length>14&&n[14])||[];}
+  // A semantic anchor (Definition/Elaboration, or a node carrying anchors[]) is deliberately OUT of the arrow chain — never an orphan.
+  function isSemAnchor(type,n){return type==='Definition'||type==='Elaboration'||(anAnchors(n).length>0);}
   function buildAIQ(o){return ((o&&o.items)||[]).map(function(it){return [it.aiq_id,it.type||'Warrant',it.text||'',it.target_p_id||it.p_id||'',it.status||'Pending',it.promoted_to||'',it.argument_node||'',it.source||''];});}
   // Metaphor node-binding AIQ items (source "metaphor-align node-binding"; type NodeBinding; id AIQ-<SID>-NB-*)
   // belong to the metaphor layer, not the argument graph — they must never appear on the argument-map canvas.
@@ -1851,10 +1860,11 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   function g3OrphanIds(sec){
     if(!(sec.art&&sec.art.G3&&sec.art.G3.nodes))return [];
     var nodes=g3Active(sec); if(!nodes.length)return [];
-    var info=nodes.map(function(n){var L=g3L(sec,n[0]);var fn=L.fn||n[1];var tr=(n.length>8&&n[8]!=null&&n[8]>=1&&n[8]<=7)?n[8]:g3TierOf(fn);return {id:n[0],fn:fn,tier:tr,dep:L.dep||[],leads:L.leads||[]};});
+    var info=nodes.map(function(n){var L=g3L(sec,n[0]);var fn=L.fn||n[1];var tr=(n.length>8&&n[8]!=null&&n[8]>=1&&n[8]<=7)?n[8]:g3TierOf(fn);return {id:n[0],fn:fn,tier:tr,dep:L.dep||[],leads:L.leads||[],anchor:isSemAnchor(fn,n)};});
     var incoming={};info.forEach(function(x){x.leads.forEach(function(t){incoming[t]=1;});if(x.dep.length)incoming[x.id]=1;});
     var minT=Math.min.apply(null,info.map(function(x){return x.tier;}));
-    return info.filter(function(x){return x.tier>minT && !incoming[x.id];}).map(function(x){return x.id;});
+    // Semantic anchors (Definitions/Elaborations) are OUT of the arrow chain by design — never flag them as orphans (Transformation Architecture §3/§9).
+    return info.filter(function(x){return x.tier>minT && !incoming[x.id] && !x.anchor;}).map(function(x){return x.id;});
   }
   function genArgumentSVG(sec){var proj=sel.value;
     function dec(g,id){return lsGet('acpp.'+proj+'.'+sec.sid+'.'+g+'.'+id)||{};}
@@ -1863,7 +1873,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     function accOf(id){return dec('G3',id).decision==='acc';}
     var usingNodes=!!(sec.art.G3&&sec.art.G3.nodes);
     var list=[];
-    if(usingNodes){g3Active(sec).forEach(function(n){var s=dec('G3',n[0]);var st=s.decision==='acc'?'acc':(s.decision==='rej'?'rej':'pend');var L=g3L(sec,n[0]);list.push({id:n[0],fn:(L.fn||n[1]),pid:n[2],text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:st,ev:(!!L.ev||evListed(n[2])),evOk:evSup(n[2]),tier:(n.length>8&&n[8]!=null?n[8]:null)});});}
+    if(usingNodes){g3Active(sec).forEach(function(n){var s=dec('G3',n[0]);var st=s.decision==='acc'?'acc':(s.decision==='rej'?'rej':'pend');var L=g3L(sec,n[0]);list.push({id:n[0],fn:(L.fn||n[1]),pid:n[2],text:(s.comment&&s.comment.trim()?s.comment:n[4]),status:st,ev:(!!L.ev||evListed(n[2])),evOk:evSup(n[2]),tier:(n.length>8&&n[8]!=null?n[8]:null),func:anFunc(n),trans:anTrans(n),meta:anMeta(n)});});}
     else if(sec.art.G2){var g2=sec.art.G2;list=(g2.props?g2.props.map(function(pp){return {id:pp[0],fn:pp[1],text:pp[2],pid:pp[0],status:'acc'};}):(g2.backfill||[]).map(function(e){var s=dec('G2',e[0]);return {id:e[0],fn:e[2],text:(s.text&&s.text!==''?s.text:e[3]),pid:e[0],status:s.decision==='rej'?'rej':(s.decision==='acc'?'acc':'pend')};})).map(function(it){it.ev=evListed(it.pid);it.evOk=evSup(it.pid);return it;});}
     function tierOf(fn){return {Principle:1,Contention:2,Claim:2,Definition:2,Distinction:3,Qualification:3,Counterpoint:3,Reason:4,Warrant:5,Consequence:6,Recommendation:6,Transition:3,Auxiliary:3,Conclusion:7}[fn]||2;}
     function tierOfNode(it){return (it.tier!=null&&it.tier>=1&&it.tier<=7)?it.tier:tierOf(it.fn);}
@@ -1945,6 +1955,9 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       }else if(it.fn==='Conclusion'){fill=GREEN[0];stroke=GREEN[1];flab=funcDisplay(it.fn);}
       else if(it.status==='rej'){fill=RED[0];stroke=RED[1];flab=funcDisplay(it.fn);}
       else{fill=BLUE[0];stroke=BLUE[1];flab=funcDisplay(it.fn);}
+      // Transformation Architecture: prefer the structural `function` as the role label, and show the `transition` (how the node moves the argument on) when present.
+      if(!it.aiq && it.func){flab=it.func;}
+      if(it.trans){flab=flab+' · '+it.trans;}
       var nodeId=usingNodes?(it.id||it.pid):(it.pid||it.id);
       var did=nodeId+((usingNodes&&it.pid&&it.pid!==nodeId)?('  ·  '+it.pid):'');
       var oid=it.id||it.pid;

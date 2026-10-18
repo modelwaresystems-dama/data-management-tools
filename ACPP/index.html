@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.45.0">
+<meta name="version" content="4.45.1">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -797,7 +797,7 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   // Metaphor node-binding AIQ items (source "metaphor-align node-binding"; type NodeBinding; id AIQ-<SID>-NB-*)
   // belong to the metaphor layer, not the argument graph — they must never appear on the argument-map canvas.
   function isNodeBindingAiq(q){return !!q && ((q[7]==='metaphor-align node-binding') || /NodeBinding/i.test(q[1]||'') || /-NB-/.test(q[0]||''));}
-  function buildG4(o){return {sources:"Committed evidence_links + sources.json (registers)",findings:"Built from the committed registers.",evid:(o.links||[]).map(function(l){var it=SRCIDX.items[l.src_id]||{};var at=_authTier(it.note);var s=_supportsFor(l.src_id,l.p_id);var status=l.status==='Supported'?'Supported':(l.status==='Rejected'?'Rejected':'NEEDS-SOURCE');return [padId(l.p_id),null,status,at.tier||at.auth||'',[{id:l.src_id||'',tier:at.tier||l.support_strength||'',cite:it.title||l.src_id||'',auth:at.auth||'',supports:s.sup||l.reviewer_comment||'',url:it.URL||'',quote:l.passage||'',locator:l.locator||''}]];})};}
+  function buildG4(o){return {sources:"Committed evidence_links + sources.json (registers)",findings:"Built from the committed registers.",evid:(o.links||[]).map(function(l){var it=SRCIDX.items[l.src_id]||{};var at=_authTier(it.note);var s=_supportsFor(l.src_id,l.p_id);var status=l.status==='Supported'?'Supported':(l.status==='Rejected'?'Rejected':'NEEDS-SOURCE');return [padId(l.p_id),null,status,at.tier||at.auth||'',[{id:l.src_id||'',tier:at.tier||l.support_strength||'',cite:it.title||l.src_id||'',auth:at.auth||'',supports:s.sup||l.reviewer_comment||'',url:it.URL||'',quote:l.passage||'',locator:l.locator||'',lstatus:l.status||'',strength:l.support_strength||''}]];})};}
   function buildG1map(oj){var arr=(oj&&(oj.outlines||oj.items))||(Array.isArray(oj)?oj:[]);var m={};arr.forEach(function(e){var sid=e.section_id||e.sid;if(sid)m[sid]={heading:e.heading||'',boundary:e.boundary||'',intended_conclusion:e.intended_conclusion||'',bullets:e.bullets||[],threads:e.threads||[]};});return m;}
   function installGate(sec,gate,struct){if(sec&&struct){if(!sec.art)sec.art={};sec.art[gate]=struct;}}
   function cacheSet(key,val){/* caching removed: repo is the only source of truth */}
@@ -1351,10 +1351,25 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
       (passage?('<div class="passq">“'+esc(passage)+'”</div>'+(loc?'<div class="passloc">'+esc(loc)+'</div>':'')):'<div class="passloc">No passage bound yet.</div>')+
       '<div class="passlinks"><span class="passsrc">'+esc(title)+'</span><a class="passsm" href="'+sm+'" target="_blank" rel="noopener">↗ Open in Source Manager</a></div></div>';
     return '<td><details class="passcell"><summary><span class="idc">'+esc(s.src)+'</span></summary>'+body+'</details></td>';}
-  function evidenceSummary(sec){var proj=sel.value, rows=sec.art.G4.evid, g2o=(sec.art&&sec.art.G2)||{}, g2=g2o.props||g2o.backfill||[], tIdx=g2o.props?2:3, props={}; g2.forEach(function(p){props[p[0]]=p[tIdx];});
-    var anyPass=rows.some(function(e){var s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+e[0])||{};var src=g4AcceptedSrc(e,s);return src&&src.quote;});
-    var hint=anyPass?'<p class="note">Click an accepted source to see the bound passage, or open it in the Source Manager.</p>':'';
-    return hint+'<table><thead><tr><th>Claim</th><th>Accepted source</th><th>Status</th></tr></thead><tbody>'+rows.map(function(e){var pid=e[0], s=lsGet('acpp.'+proj+'.'+sec.sid+'.G4.'+pid)||{};var status=(s.decision==='acc'&&s.src)?'Supported':(s.decision==='rej'?'Rejected':'NEEDS-SOURCE');return '<tr><td><span class="idc">'+pid+'</span> '+esc(String(props[pid]||'').slice(0,80))+'</td>'+srcCell(e,s)+'<td><span class="pill '+(status==='Supported'?'ok':'need')+'">'+status+'</span></td></tr>';}).join('')+'</tbody></table>';}
+  // §6b: resolve each G4 row's source from its OWN link (e[4][0]) — never a per-claim join a non-unique link_id can corrupt.
+  function srcCellRow(e){var src=(e&&e[4]&&e[4][0])||null;
+    if(!src||!src.id)return '<td class="idc">—</td>';
+    var passage=src.quote||'',loc=src.locator||'',title=src.cite||src.id;
+    var sm='source-manager/index.html?src='+encodeURIComponent(src.id);
+    var body='<div class="passbox">'+(passage?('<div class="passq">“'+esc(passage)+'”</div>'+(loc?'<div class="passloc">'+esc(loc)+'</div>':'')):'<div class="passloc">No passage bound yet.</div>')
+      +'<div class="passlinks"><span class="passsrc">'+esc(title)+'</span>'+(src.strength?' <span class="pchip" style="border-color:#cbd5e1;color:#64748b">'+esc(src.strength)+'</span>':'')+'<a class="passsm" href="'+sm+'" target="_blank" rel="noopener">↗ Open in Source Manager</a></div></div>';
+    return '<td><details class="passcell"><summary><span class="idc">'+esc(src.id)+'</span></summary>'+body+'</details></td>';}
+  // §6b: STATUS from the claim's BASIS (evidence_state) + this row's strongest link — not a Supported/else binary.
+  function evG4Badge(sec,pid,src){var est=String(propEvState(sec,pid)||'').trim(), ls=String((src&&src.lstatus)||'').trim();
+    if(est==='Author Rationale')return ls?{t:'Author Rationale · corroborated',c:'#2563eb'}:{t:'Author Rationale',c:'#2563eb'};
+    if(ls==='Supported')return {t:'Supported',c:'#16a34a'};
+    if(ls==='Corroborating')return {t:'Corroborated',c:'#16a34a'};
+    if(ls==='Rejected')return {t:'Rejected',c:'#94a3b8'};
+    return {t:'NEEDS-SOURCE',c:'#dc2626'};}  // only a genuinely empirical claim with no satisfying link
+  function evidenceSummary(sec){var g2o=(sec.art&&sec.art.G2)||{}, g2=g2o.props||g2o.backfill||[], tIdx=g2o.props?2:3, props={}, rows=sec.art.G4.evid; g2.forEach(function(p){props[p[0]]=p[tIdx];});
+    var anyPass=rows.some(function(e){var src=(e&&e[4]&&e[4][0]);return src&&src.quote;});
+    var hint=anyPass?'<p class="note">Each row is one claim→source link, labelled by the claim’s basis and resolved to its own source. An Author-Rationale claim with corroboration reads “Author Rationale · corroborated”, not NEEDS-SOURCE. Click a source for its bound passage.</p>':'';
+    return hint+'<table><thead><tr><th>Claim</th><th>Source</th><th>Status</th></tr></thead><tbody>'+rows.map(function(e){var pid=e[0], src=(e[4]&&e[4][0])||null, bd=evG4Badge(sec,pid,src);return '<tr><td><span class="idc">'+esc(pid)+'</span> '+esc(String(props[pid]||'').slice(0,80))+'</td>'+srcCellRow(e)+'<td><span class="pill" style="background:'+bd.c+';color:#fff;border:1px solid '+bd.c+'">'+esc(bd.t)+'</span></td></tr>';}).join('')+'</tbody></table>';}
   function gateSummary(sec,gk){var inner=gk==='G2'?propositionsSummary(sec):gk==='G3'?argumentSummary(sec):gk==='G4'?evidenceSummary(sec):'';return inner+'<p class="note"><button class="rv-btn reedit" data-gk="'+gk+'">✎ Re-edit</button></p>';}
   function gateHead(sec,gk){var g=GATES.find(function(x){return x[0]===gk;});return '<div class="dh"><b>'+gk+' · '+(g?g[1]:'')+'</b><span class="src">'+esc(sec.label)+' — re-editing</span></div>';}
   // AI-derived reasoning (generated, not author-gated) — collapsible, visually distinct, never shown as canon.
@@ -2276,10 +2291,20 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     var reachesAny=ids.some(reachesConc);
     var orphSet={}; g3OrphanIds(sec).forEach(function(id){orphSet[id]=1;});
     var orph=ids.filter(function(id){return orphSet[id];});
-    var roleChips=[1,2,3,4,5,6,7].map(function(t){var c=(byTier[t]||[]).length;return '<span class="grole '+(c?'gok':'gmut')+'">'+esc(TIERROLE[t])+' <b>'+c+'</b></span>';}).join('');
+    // §6-note: ONE section warrant licenses reasons from MANY bullets. A bullet "has a warrant" if its reasons feed a
+    // Warrant's depends_on — NOT only if a Warrant shares its outline_id. Detect the shared warrant that licenses this bullet.
+    var warrDeps={}; all.forEach(function(n){if(funcAll[n[0]]==='Warrant'||typeAll[n[0]]==='Warrant'||n[8]===5){(g3L(sec,n[0]).dep||[]).forEach(function(d){warrDeps[d]=n[0];});}});
+    var ownWarrant=(byTier[5]||[]).length>0, sharedWarrant=null;
+    if(!ownWarrant)ids.some(function(id){if(warrDeps[id]){sharedWarrant=warrDeps[id];return true;}return false;});
+    var roleChips=[1,2,3,4,5,6,7].map(function(t){var c=(byTier[t]||[]).length;
+      if(t===5 && !c && sharedWarrant)return '<span class="grole gok" title="Shared section warrant '+esc(sharedWarrant)+' — licenses this bullet\'s reasons">'+esc(TIERROLE[t])+' <b>1</b> <span style="font-weight:400;font-size:.9em">shared</span></span>';
+      return '<span class="grole '+(c?'gok':'gmut')+'">'+esc(TIERROLE[t])+' <b>'+c+'</b></span>';}).join('');
     var flags=[];
-    if(!(byTier[5]||[]).length && ((byTier[4]||[]).length||(byTier[6]||[]).length)){
-      var aiqN=(sec.aiq||[]).filter(function(q){return !isNodeBindingAiq(q);}).length;
+    if(sharedWarrant && !ownWarrant){
+      flags.push('<div class="gflag gok">✓ Licensed by the shared section <b>Warrant</b> '+esc(sharedWarrant)+' — this bullet’s reasons route through it (it is defined under another bullet).</div>');
+    } else if(!ownWarrant && ((byTier[4]||[]).length||(byTier[6]||[]).length)){
+      // §6-note: a Promoted/resolved AIQ warrant is NOT quarantined — count only genuinely open (pending) warrant proposals.
+      var aiqN=(sec.aiq||[]).filter(function(q){return !isNodeBindingAiq(q) && /Warrant/i.test(q[1]||'') && !/^(Promoted|Approved|Accepted|Rejected|Resolved|Done)$/i.test(String(q[4]||''));}).length;
       flags.push('<div class="gflag gwarn">⚠ No <b>Warrant</b> in this bullet — its reasons/consequences are not licensed by an explicit warrant'+(aiqN?(' ('+aiqN+' quarantined warrant'+(aiqN>1?'s':'')+' in AIQ — wire one in here)'):'')+'.</div>');
     }
     if(orph.length)flags.push('<div class="gflag gwarn">⚠ <b>'+orph.length+'</b> orphan node'+(orph.length>1?'s':'')+' (no parent — missing depends_on): '+esc(orph.join(', '))+'.</div>');

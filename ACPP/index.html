@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="4.45.1">
+<meta name="version" content="4.46.0">
 <title>ACPP Pipeline Board</title>
 <style>
   :root{--bg:#f3efe7;--surface:#fbf8f2;--surface2:#f0ebe0;--ink:#1d2229;--soft:#4c535d;--line:#ddd5c6;
@@ -494,6 +494,12 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   .introbox .ib-tag{display:block;font:600 .6rem var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-bottom:4px}
   .renderprose{background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:12px 15px;font-size:.95rem;line-height:1.7;margin:8px 0}
   .renderprose p{margin:0 0 10px}.renderprose p:last-child{margin:0}
+  .renderprose .rb-head{font:700 1.02rem var(--sans,system-ui);color:var(--ink,#1d2630);margin:18px 0 6px;padding-bottom:3px;border-bottom:2px solid var(--line,#e2e8f0)}
+  .renderprose .rb-head:first-child{margin-top:2px}
+  .renderprose .rb-warr{color:#b45309;border-bottom-color:#fde4b0}
+  .renderprose .rb-concl{margin-top:16px;padding:10px 12px;border-left:3px solid var(--good,#16a34a);background:rgba(22,163,74,.05);border-radius:6px}
+  .renderprose .rb-ctag{font:700 .62rem var(--mono,ui-monospace,monospace);color:var(--good,#2f6f4f);letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px}
+  .renderprose .citechip{font:600 .74rem var(--mono,ui-monospace,monospace);color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:4px;padding:0 4px;margin:0 1px;white-space:nowrap}
   .sp-meta{color:var(--soft);font-style:italic}
   .sp-conn{color:var(--ink)}
   .renderprose.var-illus .sp-conn{font-style:italic}  /* illustrated variant: metaphor + bridge text italic; cited claims stay upright */
@@ -1627,6 +1633,21 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     });
     return res;
   }
+  // §by-bullet images: structured prose carries no inline an_id spans, so node-anchored images attach to the BULLET their
+  // anchor node belongs to (an_id → outline_id = bullet_id); zone images keep their zones. Nothing is dropped.
+  function imgCollectBB(sec,vcode){
+    var res={byBullet:{},zones:{section_start:[],after_intro:[],section_end:[]},warnings:[]};
+    var doc=IMAGES[sec.sid]; if(!doc||!doc.images||vcode==null)return res;
+    var nodeBullet={}; g3Active(sec).forEach(function(n){nodeBullet[n[0]]=n[3]||'';});
+    doc.images.forEach(function(im){
+      var w=imgCheck(im); if(w){res.warnings.push((im&&im.img_id?im.img_id:'image')+': '+w);return;}
+      if(im.variants.indexOf(vcode)<0)return;
+      var a=im.anchor;
+      if(a.type==='node'){var b=nodeBullet[a.an_id]; if(!b){res.warnings.push(im.img_id+': anchor node '+a.an_id+' not in this section — skipped.');return;} (res.byBullet[b]=res.byBullet[b]||[]).push(im);}
+      else{var z=a.zone; if(z==='after_intro'&&vcode==='A')z='section_start'; res.zones[z].push(im);}
+    });
+    return res;
+  }
   function imgFig(im){
     var wc='imgw-'+String(im.width||'wide').replace('inline-','in');
     var mw=(im.size_hint&&im.size_hint.max_width_px)?(' style="max-width:'+(parseInt(im.size_hint.max_width_px,10)||0)+'px"'):'';
@@ -1653,7 +1674,8 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
     function draw(){
       var ks=Object.keys(ren);
       var rv=ren[variant]||ren[ks[0]];
-      var seg='<div class="rvseg">'+ks.map(function(k){return '<button data-v="'+k+'"'+(k===variant?' class="on"':'')+'>'+esc(ren[k].label||k)+'</button>';}).join('')+'</div>';
+      var VLAB={A_plain:'Plain',B_illustrated:'Illustrated'};
+      var seg='<div class="rvseg">'+ks.map(function(k){return '<button data-v="'+k+'"'+(k===variant?' class="on"':'')+'>'+esc((ren[k]&&ren[k].label)||VLAB[k]||k)+'</button>';}).join('')+'</div>';
       var togg='<label class="rvtogg"><input type="checkbox" id="annTog"'+(ann?' checked':'')+'> Annotations</label>';
       var bar='<div class="rv-bar"><span style="display:inline-flex;gap:14px;align-items:center;flex-wrap:wrap">'+seg+togg+'</span><span class="rv-prog">'+esc(reg.baseline||sec.sid)+' · '+esc(reg.metaphor_family||'')+' · rendered '+esc(reg.render_date||'')+'</span></div>';
       var stalew=stale?'<div class="stalewarn">⚠ Render baseline hash ('+esc(String(reg.content_hash).slice(0,12))+'…) does not match the current frozen baseline. Re-run G6 render after re-freezing.</div>':'';
@@ -1669,6 +1691,30 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
           return '<span class="sp-'+(kind==='metaphor'?'meta':'conn')+'">'+esc(sp.text)+'</span>';}
       // Images: collect placements for the active variant (A_plain -> 'A', B_illustrated -> 'B'); opener has no images.
       var vcode=(variant==='A_plain')?'A':(variant==='B_illustrated')?'B':null;
+      // Prose → paragraphs; citations stay inline as [SRC-ID, locator] chips (render-by-bullet handover).
+      function renderProse(txt){if(txt==null||txt==='')return '';
+        return String(txt).split(/\n{2,}/).filter(function(p){return p.trim();}).map(function(par){
+          return '<p>'+esc(par).replace(/\[([^\]]+)\]/g,'<span class="citechip">[$1]</span>')+'</p>';}).join('');}
+      var isBB=(reg.structure==='by-bullet')||(rv&&Array.isArray(rv.bullets));
+      var body, startFigs, imgWarn;
+      if(isBB){
+        // §render-by-bullet: opener (no heading) → each bullet as heading + prose → Warrant under its own heading → Intended Conclusion.
+        var imgb=imgCollectBB(sec,vcode);
+        var parts=[imgFigs(imgb.zones.after_intro)];
+        if(variant==='B_illustrated'&&Array.isArray(rv.metaphor_opener))rv.metaphor_opener.forEach(function(p){parts.push('<p>'+esc(p)+'</p>');});
+        else if(rv.opener)parts.push(renderProse(rv.opener));
+        (rv.bullets||[]).forEach(function(bl){
+          parts.push('<h3 class="rb-head" data-bullet="'+esc(bl.bullet_id||'')+'">'+esc(bl.heading||bl.bullet_id||'')+'</h3>');
+          parts.push(renderProse(bl.prose));
+          (imgb.byBullet[bl.bullet_id]||[]).forEach(function(im){parts.push(imgFig(im));});
+        });
+        if(rv.warrant)parts.push('<h3 class="rb-head rb-warr">'+esc(rv.warrant.heading||'The Licensing Rule')+'</h3>'+renderProse(rv.warrant.prose));
+        if(rv.conclusion)parts.push('<div class="rb-concl"><div class="rb-ctag">Intended Conclusion</div>'+renderProse(rv.conclusion)+'</div>');
+        parts.push(imgFigs(imgb.zones.section_end));
+        body=parts.join('');
+        startFigs=imgFigs(imgb.zones.section_start);
+        imgWarn=imgb.warnings.length?('<div class="img-warnbox">⚠ Image notes<ul>'+imgb.warnings.map(function(w){return '<li>'+esc(w)+'</li>';}).join('')+'</ul></div>'):'';
+      } else {
       var imgr=imgCollect(sec,vcode);
       // Paragraphs may be plain strings (most render files) or arrays of annotation spans (annotated renders). Handle both, and insert images at their anchors.
       var bodyParts=[imgFigs(imgr.zones.after_intro)];
@@ -1680,9 +1726,10 @@ table.wc-t tr.wc-click.on td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
         anIds.forEach(function(an){if(imgr.node[an])bodyParts.push(imgFigs(imgr.node[an].after));});
       });
       bodyParts.push(imgFigs(imgr.zones.section_end));
-      var body=bodyParts.join('');
-      var startFigs=imgFigs(imgr.zones.section_start);
-      var imgWarn=imgr.warnings.length?('<div class="img-warnbox">⚠ Image notes<ul>'+imgr.warnings.map(function(w){return '<li>'+esc(w)+'</li>';}).join('')+'</ul></div>'):'';
+      body=bodyParts.join('');
+      startFigs=imgFigs(imgr.zones.section_start);
+      imgWarn=imgr.warnings.length?('<div class="img-warnbox">⚠ Image notes<ul>'+imgr.warnings.map(function(w){return '<li>'+esc(w)+'</li>';}).join('')+'</ul></div>'):'';
+      }
       c.innerHTML=bar+stalew+opn+(rv.note?'<p class="note">'+esc(rv.note)+'</p>':'')+dl+startFigs+intro+'<div class="renderprose '+(ann?'an-on ':'')+(variant==='B_illustrated'?'var-illus ':'')+'" id="rprose">'+body+'</div>'+imgWarn+'<div id="annDetail"></div>';
       hydrateImages(c);
       c.querySelectorAll('.rvseg button').forEach(function(b){b.addEventListener('click',function(){variant=b.dataset.v;setS('variant',variant);draw();});});

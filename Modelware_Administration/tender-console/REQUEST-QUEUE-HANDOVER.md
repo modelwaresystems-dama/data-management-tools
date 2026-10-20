@@ -1,14 +1,14 @@
 # Tender Console — Assessment Request Queue · Handover
 
-**Status:** design agreed (register `JEZw6qDkq7kogYKAuMSdHS`), not yet built.
-**Decisions this implements:** RX0 = request queue + Claude worker · RX1 = a separate `requests.json` queue · RX2 = the worker auto-commits & pushes with its own token.
-**Date:** 2026-10-20 · **App today:** v1.9.0 (no request button yet) · **Data contract:** v1.4.1
+**Status:** worker mechanism decided (register `EJwjtgC8WToykzEqK1vm3n`) — **GitHub Actions**, draft-then-confirm. App request-queue support built (v1.10.0); worker + Confirm button to deploy.
+**Decisions:** RX0 = request queue + Claude worker · RX1 = separate `requests.json` · ~~RX2 = worker auto-pushes with its own PAT~~ **superseded** → **A** draft-then-confirm · **B** official `claude-code-action` runs the real skill · **C** Claude subscription OAuth token · **D** trigger on push to `requests.json` · **E** commit with built-in `GITHUB_TOKEN`, no PAT.
+**Date:** 2026-10-20 · **App:** v1.10.0 (request button live; Confirm button = v1.11.0, to build) · **Data contract:** v1.6.0 · **Setup/runbook:** `WORKER-SETUP.md`
 
 ---
 
 ## 1. Why this exists (the one-paragraph version)
 
-A salesperson should be able to click **Request assessment** in the Tender Console and get a bid / partner / leave recommendation back — without you running anything by hand. The Console is a *static public web page with no backend*, so it cannot run the `rfp-cv-tailor` skill itself: a page can read and write files in the repo, but it cannot reason over the CVs. The queue bridges that gap. The app **writes a request** into `data/requests.json`; a **Claude worker** (a scheduled, or on-demand, Claude session) reads the queue, runs the real `rfp-cv-tailor` triage against the proposed team's CVs, writes the `assessment{}` back onto the tender, marks the request done, and **commits & pushes with its own token**. The staff member sees “Requested → In progress → Done” and the assessment appears on the next sync. No second copy of the assessment logic exists — the worker runs the actual skill.
+A salesperson should be able to click **Request assessment** in the Tender Console and get a bid / partner / leave recommendation back — without you running anything by hand. The Console is a *static public web page with no backend*, so it cannot run the `rfp-cv-tailor` skill itself: a page can read and write files in the repo, but it cannot reason over the CVs. The queue bridges that gap. The app **writes a request** into `data/requests.json`; a **GitHub Actions workflow in the private data repo** reads the queue, runs the real `rfp-cv-tailor` triage against the proposed team's CVs, writes a **draft** `assessment{}` (`status:"proposed"`) back onto the tender, marks the request done, and commits with the built-in `GITHUB_TOKEN`. An admin then taps **Confirm** in the app to finalise it. The staff member sees "Requested → In progress → Done → (a drafted assessment awaiting confirm)". No second copy of the assessment logic exists — the Action runs the actual skill.
 
 ---
 
@@ -18,32 +18,36 @@ A salesperson should be able to click **Request assessment** in the Tender Conso
   Salesperson (browser, their own PAT)
         │  clicks "Request assessment" on a tender
         ▼
-  App appends a request to  data/requests.json   (status: queued)   ──commit via their PAT──►  GitHub (private data repo)
-                                                                                                      │
-                                                                     ┌────────────────────────────────┘
-                                                                     ▼
-  Claude WORKER  (scheduled task OR fired on demand; its OWN bot PAT)
-     1. pull requests.json  →  find status="queued"
-     2. claim it            →  status="running", claimedBy, claimedAt   (commit)
-     3. read the tender, team.json, each proposed person's CV, the RFP
-     4. run rfp-cv-tailor  TRIAGE MODE  →  per-person fit, partner needs, disqualifiers, bid/partner/leave
-     5. write assessment{} onto the tender in tenders.json
-     6. request  →  status="done", result summary, completedAt
-     7. COMMIT & PUSH tenders.json + requests.json   (worker's own PAT)
-        on failure → status="error", error message, attempts++
-                                                                     │
-        ┌────────────────────────────────────────────────────────────┘
+  App appends a request to  data/requests.json  (status: queued)  ──commit via their PAT──►  GitHub (private data repo)
+                                                                                                     │
+                                                                          push to requests.json fires│
+                                                                                                     ▼
+  GitHub Actions: "Assessment worker"  (.github/workflows/assessment-worker.yml)
+     1. checkout the data repo  (includes .claude/skills/rfp-cv-tailor/)
+     2. anthropics/claude-code-action@v1  — auth: CLAUDE_CODE_OAUTH_TOKEN
+          runs  /rfp-cv-tailor  in WORKER MODE (headless, no approval gates):
+            · find the oldest queued request → its tenderId
+            · read the tender, team.json, each proposed person's CV, the RFP
+            · run triage → per-person fit, partner needs, disqualifiers, bid/partner/leave
+            · write assessment{} onto the tender  (status:"proposed")
+            · request → status:"done", result summary, completedAt
+     3. workflow step: git commit + push  (GITHUB_TOKEN — no PAT, does not re-trigger)
+                                                                                                     │
+        ┌────────────────────────────────────────────────────────────────────────────────────────┘
         ▼
-  App (any staff browser) syncs the remote → shows the assessment + "Done"
+  App (any staff browser) syncs the remote → shows the DRAFT assessment + "Done"
+        │
+        ▼
+  Admin taps CONFIRM  →  assessment.status:"confirmed", confirmedBy, confirmedAt  (commit via their PAT)
 ```
 
-There is **no server** anywhere in this picture. The only new long-lived credential is the worker's own scoped token (§6).
+There is **no server** anywhere in this picture, and **no long-lived GitHub PAT for the worker** — the Action commits with the per-run `GITHUB_TOKEN`. The only secret is the Claude subscription OAuth token, used to authenticate the model (§6).
 
 ---
 
 ## 3. The queue file — `data/requests.json`
 
-Lives alongside the other data files, in the app's data folder (`tender-console-data/data/`). One file, append-only in practice (old `done` rows are trimmed periodically).
+Lives alongside the other data files in the app's data folder. One file, append-only in practice (old `done` rows are trimmed periodically).
 
 ```json
 {
@@ -55,15 +59,15 @@ Lives alongside the other data files, in the app's data folder (`tender-console-
       "id": "req-<epoch36>-<rand>",   // unique, app-generated
       "type": "triage",               // triage (now) | tailor | esa (future)
       "tenderId": "mict-seta-...",    // the tender to assess
-      "requestedBy": "jane-sales",    // person-id / Settings "Your name"
+      "requestedBy": "jane-sales",
       "requestedAt": "ISO",
       "status": "queued",             // queued → running → done | error | cancelled
-      "claimedBy": null,              // worker id while running (e.g. "worker:cloud")
+      "claimedBy": null,              // worker id (e.g. "worker:gha")
       "claimedAt": null,
       "completedAt": null,
       "attempts": 0,
-      "result": null,                 // short summary on success, e.g. "partner · team fit 71% (2 people)"
-      "error": null                   // message on failure
+      "result": null,                 // e.g. "partner · team fit 71% (2 people) · proposed"
+      "error": null
     }
   ]
 }
@@ -74,107 +78,102 @@ Lives alongside the other data files, in the app's data folder (`tender-console-
 | status | set by | meaning |
 |---|---|---|
 | `queued` | app | staff asked for it; waiting for the worker |
-| `running` | worker | worker has claimed it and is working |
-| `done` | worker | `assessment{}` written to the tender; `result` summarises |
+| `running` | worker | the Action has claimed it and is working |
+| `done` | worker | a **draft** `assessment{}` written to the tender; `result` summarises |
 | `error` | worker | run failed; `error` says why; `attempts` incremented |
 | `cancelled` | admin (app) | request withdrawn before it ran |
 
+The *request* reaching `done` means the worker drafted the assessment. Whether that draft is **confirmed** is tracked separately, on the assessment itself (`assessment.status`: `proposed` → `confirmed`).
+
 **Rules**
-- The **request `id` is the idempotency key.** The worker only acts on `queued` (or `running` rows older than the stale timeout — see §7). A `done` row is never re-processed.
+- The **request `id` is the idempotency key.** The worker only acts on `queued` (or `running` rows older than the stale timeout — §7). A `done` row is never re-processed; a retry is a **new** id.
 - A request is a *pointer*, not a copy: it names the `tenderId`; the worker reads the live tender, team and CVs at run time.
-- The worker **never** sets `goNoGo.decision` — that stays an admin's call in the app (decision SI4). It only writes `assessment{}` (the proposal) and the request's own status.
+- The worker **never** sets `goNoGo.decision` — that stays an admin's call in the app (SI4). It writes `assessment{}` (always `status:"proposed"`) and the request's own status, nothing else.
 
 ---
 
-## 4. The app side (to build — app v1.10.0)
+## 4. The app side
 
-Small, additive changes to `index.html`, in the same style as the existing panels. **Nothing here runs the skill** — it only reads and writes `requests.json`.
+**Built (v1.10.0):** `requests.json` in the `FILES` map, a `data.requests` branch in `parseFile`, a `fileBody` writer (schemaVersion 1), the **Request assessment** button in the tender modal's Assessment panel (enabled with a `teamProposed[]` + an uploaded RFP), the queued/running/done/error status display, and admin Cancel/Retry. Nothing here runs the skill — it only reads and writes `requests.json`.
 
-1. **Load `requests.json`** — add `requests:"requests.json"` to the `FILES` map, a `data.requests` branch in `parseFile`, and a `fileBody` writer (schemaVersion 1). Create the file lazily on first request if missing.
-2. **A “Request assessment” button** in the tender modal's Assessment panel (`#tmAssess`), enabled when the tender has a `teamProposed[]` and at least one uploaded RFP. On click: append a `{id,type:"triage",tenderId,requestedBy:me(),requestedAt,status:"queued",attempts:0}` row and `saveKey("requests", …)`.
-3. **Status display** — the Assessment panel shows the newest request's status for that tender: *Requested by Jane · queued* / *in progress…* / *done* (with `result`) / *error* (with message + a Retry that re-queues). It already renders `assessment{}` when present (v1.9.0).
-4. **Admin controls** (role = admin): Cancel a queued request; Retry an errored one.
-
-Version bump to **1.10.0** (minor, additive) via the `<meta name="version">` standard already in place.
+**To build (v1.11.0) — the Confirm button (draft-then-confirm, register card A):** the Assessment panel reads `assessment.status`. A **`proposed`** draft shows a *Drafted by the worker — review and confirm* banner; an **admin-only Confirm** sets `assessment.status:"confirmed"`, `confirmedBy:me()`, `confirmedAt:now` and commits. (Edit-before-confirm is optional.) A `confirmed` (or legacy, status-absent) assessment renders as it does today. Version bump to **1.11.0** via the `<meta name="version">` standard.
 
 ---
 
-## 5. The worker — runbook
+## 5. The worker — runbook (GitHub Actions)
 
-The worker is a **Claude session** running the `rfp-cv-tailor` skill in **triage mode** (per `DATA-CONTRACT.md` v1.4.1). It can run two ways; pick per §9.
+The worker is a **GitHub Actions workflow** (`.github/workflows/assessment-worker.yml`) in the private data repo, running `anthropics/claude-code-action@v1`, which runs the real `rfp-cv-tailor` skill (committed to the repo at `.claude/skills/rfp-cv-tailor/`) in **Worker mode**. Full setup: `WORKER-SETUP.md`.
 
-- **Scheduled** — a recurring Claude task (created with the scheduled-task tools, *not* the local cron) fires on a cadence, processes all `queued` requests, and exits.
-- **On demand** — the same task fired manually when something is waiting (lower cost; you or an admin trigger it).
+**Trigger (D):** `on: push` to `**/requests.json`, plus `workflow_dispatch` for manual test runs. A `concurrency` group serialises runs. One worker at a time; stateless between runs (the queue file is the entire shared state).
 
 **Each run:**
 
-1. **Authenticate** with the worker's own PAT (§6). Read `data/requests.json` via the GitHub Contents API.
-2. **Select** the oldest `status:"queued"` request (and any `running` row whose `claimedAt` is older than the stale timeout, §7).
-3. **Claim it:** set `status:"running"`, `claimedBy`, `claimedAt`; write `requests.json` back (store the returned blob SHA). This marks it so a second run won't double-process.
-4. **Gather inputs** for `tenderId`: the tender record from `tenders.json`; `team.json`; each `teamProposed[]` person's `cvRefs` (CV files under `cvs/base/<id>/`, fetched + text-extracted); the uploaded RFP under `rfp/<tenderId>/`; plus `experience.json` and `sfia-profile.json`.
-5. **Run triage** (the skill's triage mode): per-person fit (codes covered / gaps), team collective coverage, `partnerNeeds[]`, hard `disqualifiers[]` from the mandatory `compliance[]`, and a `recommendation` of bid / partner / leave / at-risk.
-6. **Write results:** merge `assessment{}` onto the tender in `tenders.json` (read whole file, change the one record, write back — last-writer-wins). Integrity: every `assessment.people[].personId` ∈ `teamProposed[]` ∈ `team.json`.
-7. **Close the request:** `status:"done"`, `completedAt`, `result` (one-line summary). Trim `done` rows older than, say, 30 days.
-8. **Commit & push** `tenders.json` and `requests.json` with the worker's PAT, message e.g. `"worker: assessment for <client> (req <id>)"`.
-9. **On any failure:** set the request `status:"error"`, `error` (the message), `attempts++`, commit the queue, and move on. Never leave a row stuck in `running` on a handled error.
+1. **Checkout** the data repo (brings the skill onto the runner).
+2. **claude-code-action** authenticates the model with `CLAUDE_CODE_OAUTH_TOKEN` (C) and runs `/rfp-cv-tailor` in Worker mode, headless — **no Phase 0/1 approval gates** (there is no human in CI; the human gate is the app's Confirm). Allowed tools: `Read, Edit, Write, Glob, Grep`; `--max-turns` caps cost.
+3. The skill: pick the oldest `queued` request; gather inputs for its `tenderId` (tender record, `team.json`, each `teamProposed[]` person's CV, the RFP, `experience.json`, `sfia-profile.json`); run triage (per-person fit, team coverage, `partnerNeeds[]`, `disqualifiers[]`, recommendation); merge `assessment{}` onto the one tender record with **`status:"proposed"`**, `assessedBy:"worker:gha"`; close the request (`done`, `result`, `completedAt`). Integrity: every `assessment.people[].personId` ∈ `teamProposed[]` ∈ `team.json`.
+4. **The workflow commits** the edited `tenders.json` + `requests.json` with `GITHUB_TOKEN` and pushes (E). The skill does **not** run git.
+5. **On any failure** handling a request: the skill sets it `status:"error"`, `error`, `attempts++`, leaves `tenders.json` untouched, and stops — never a row stuck in `running`.
 
-The worker is **stateless** between runs — the queue file is the entire shared state.
+The worker never writes to the public app repo, never edits `team.json`/`sfia-profile.json`, never sets `goNoGo.decision`, and never confirms its own assessment.
 
 ---
 
-## 6. Credentials & security (decision RX2 = a)
+## 6. Credentials & security (register C + E)
 
-For staff to get results **without you in the loop**, the worker pushes on its own authority. That means one new secret, handled carefully:
+No worker PAT exists any more. Two mechanisms, both scoped to the data repo:
 
-- **Worker PAT** — a dedicated fine-grained personal access token (ideally on a separate “bot” GitHub identity, or your account), scoped to **only the private data repo**, permission **Contents: Read and write**, with an **expiry** and a calendar reminder to rotate it.
-- **Where it lives:** in the worker's run configuration (the scheduled task's setup / the session that runs it) — **never** in the app, the public app repo, or any client. The public Pages page must never see this token; it is categorically different from the per-person staff PATs.
-- **Blast radius:** the token can read/write the data repo only. It cannot touch the public app repo, other repos, or account settings. If leaked, revoke + rotate; nothing else is exposed.
-- **Identity & authority:** the worker stamps its writes as a bot (`assessment.assessedBy:"rfp-cv-tailor"`, request `claimedBy:"worker:…"`). It writes `assessment{}` and request status **only** — it never sets `goNoGo.decision`, never edits `team.json` or `sfia-profile.json`, never writes to the public app repo.
-- **Honest caveat (carried from the register):** auto-push means a bad run reaches the remote unreviewed. Mitigations: the worker writes a *proposal* (`assessment{}`), not the decision; the recommendation is clearly the skill's, not an admin's; and an admin can disregard or re-run. If you later want a gate, that's a one-line switch to RX2 = b (worker writes locally, you push).
+- **Model auth — `CLAUDE_CODE_OAUTH_TOKEN`** (a repository Actions secret). A long-lived Claude subscription token from `claude setup-token`. It authorises the *model*, not GitHub. It is tied to your subscription (worker runs draw on your plan) and expires — rotate it when it does. It never appears in the app, the public repo, or any client.
+- **Git write — the built-in `GITHUB_TOKEN`.** GitHub mints a scoped, per-run token for the workflow (repo: *Settings → Actions → General → Workflow permissions → Read and write*). It can write only this repo, for the length of the run; nothing to store or rotate. Crucially, **pushes made with `GITHUB_TOKEN` do not trigger workflows**, so the worker's own commit cannot re-fire the worker (a job-level `if` guard on the `worker:` commit message is a second line of defence).
+- **Blast radius:** both are data-repo-only. Neither can touch the public app repo, other repos, or account settings.
+- **Identity & authority:** the worker stamps `assessment.assessedBy:"worker:gha"`, request `claimedBy:"worker:gha"`. It writes a **proposal** (`status:"proposed"`), never a decision — a bad run is disregardable, re-runnable, and cannot be mistaken for a signed-off assessment or the bid call.
+- **Draft-then-confirm (A) is the review gate** that RX2=a lacked: nothing the worker writes is treated as final until an admin taps Confirm. Auto-push reaches the remote unreviewed, but it arrives clearly marked `proposed`.
 
 ---
 
 ## 7. Concurrency, idempotency & safety
 
-- **One worker at a time.** A single scheduled worker avoids contention. If two ever overlap, the **claim step** (§5.3) is the guard: a worker only proceeds on a row it successfully set to `running`; a `running` row owned by another worker is skipped until a **stale timeout** (e.g. 20 min) passes, after which it may be reclaimed (a crashed run left it dangling).
-- **Last-writer-wins on `tenders.json`.** Staff may be editing a tender while the worker runs. The worker must **re-pull `tenders.json` immediately before writing**, modify only the one record's `assessment{}`, and write back — never hold a stale copy across the whole run. The app's existing save path already uses read-whole / change-one / write-back; the worker mirrors it, and retries once on a `409`/SHA conflict.
-- **Idempotent by request id.** Re-running the queue never double-writes: `done` rows are ignored; a re-queued retry is a *new* request id.
-- **No partial state.** Claim (commit) → work → results + close (commit). If it dies mid-work, the row sits in `running` until the stale timeout reclaims it; nothing is half-written to the tender because `assessment{}` is written in the single close step.
+- **One worker at a time** — the workflow's `concurrency` group serialises runs; `cancel-in-progress: false` lets a run finish.
+- **No self-trigger loop** — the worker commits with `GITHUB_TOKEN`, which GitHub does not use to trigger workflows, so the worker's push to `requests.json` does not re-fire the worker. Belt-and-braces: a job `if` skips any push whose head commit message starts with `worker:`.
+- **Last-writer-wins on `tenders.json`** — staff may edit a tender while the worker runs. The worker checks out fresh at run start and changes only the one record's `assessment{}`; on the rare overlap, re-run (idempotent by request id).
+- **Idempotent by request id** — `done` rows are ignored; a re-queued retry is a *new* id.
+- **No partial state** — the worker edits files in the workspace and the workflow commits once at the end; a crash before the commit leaves the remote untouched (and the row stays `queued`/`running` to be picked up again).
 
 ---
 
 ## 8. What staff and admins see
 
-- **Salesperson:** clicks **Request assessment** → the panel shows *queued* → *in progress…* → the assessment, with a one-line *result*. On error, the message plus **Retry**.
-- **Admin:** the same, plus **Cancel** (queued) and **Retry** (errored), and the full read-only assessment. The **Go / No-Go** decision stays admin-only (unchanged from v1.9.0).
-- **Latency:** equals the worker cadence. Hourly polling → up to ~1 hour; on-demand firing → minutes. Assessment is not time-critical, so either is fine; start with on-demand + a slow safety poll.
+- **Salesperson:** clicks **Request assessment** → *queued* → *in progress…* → a drafted assessment with a one-line *result*. On error, the message plus **Retry**.
+- **Admin:** the same, plus **Cancel** (queued), **Retry** (errored), and — new in v1.11.0 — **Confirm** on a `proposed` assessment (finalises it: `confirmedBy`, `confirmedAt`). The **Go / No-Go** decision stays a separate admin-only step (unchanged).
+- **Latency:** push-triggered, so seconds-to-minutes after the request commits (plus runner start-up). No polling cadence to tune.
 
 ---
 
-## 9. Build checklist (what's left)
+## 9. Build checklist
 
 | # | Item | Where | Status |
 |---|---|---|---|
-| 1 | `requests.json` in `FILES`/`parseFile`/`fileBody` | app `index.html` | to build |
-| 2 | “Request assessment” button + status display + Cancel/Retry | app tender modal | to build |
-| 3 | App version → **1.10.0** | app `<meta name="version">` | to build |
-| 4 | Worker PAT (scoped, expiring) | GitHub + worker config | **Howard** |
-| 5 | Worker = scheduled Claude task running `rfp-cv-tailor` triage over the queue | scheduled task | to build |
-| 6 | `rfp-cv-tailor` triage mode saved | skill (review card) | **Howard — pending save** |
-| 7 | Cadence chosen (on-demand vs hourly) + stale timeout | worker config | decide at build |
-| 8 | Push the app repo (v1.10.0) + hard-refresh Pages | **Howard** | after build |
+| 1 | `requests.json` in `FILES`/`parseFile`/`fileBody` | app `index.html` | **done (v1.10.0)** |
+| 2 | "Request assessment" button + status + Cancel/Retry | app tender modal | **done (v1.10.0)** |
+| 3 | `assessment.status` render + **Confirm** button (admin) | app `index.html` → **v1.11.0** | to build |
+| 4 | Workflow `assessment-worker.yml` | data repo `.github/workflows/` | **delivered — Howard installs** |
+| 5 | Skill copied into data repo `.claude/skills/rfp-cv-tailor/` | data repo | **Howard** |
+| 6 | `CLAUDE_CODE_OAUTH_TOKEN` secret (`claude setup-token`) | data repo Actions secrets | **Howard** |
+| 7 | Workflow permissions → Read and write | data repo settings | **Howard** |
+| 8 | `rfp-cv-tailor` Worker mode (GitHub Actions + `proposed`) saved | skill (review card) | **Howard — pending save** |
+| 9 | First live test via **Run workflow** | data repo Actions | **Howard + me** |
+| 10 | Revoke the pasted PAT | GitHub | **Howard** |
 
-Items 4, 6 and 8 are yours; the rest I build on your go.
+Items 5–10 are yours (with me on 3 and 9); I've delivered 4 and will build 3.
 
 ---
 
 ## 10. References
 
-- **Register (decisions):** `JEZw6qDkq7kogYKAuMSdHS` — RX0 a · RX1 b · RX2 a.
-- **`DATA-CONTRACT.md` v1.4.1** — the `assessment{}` schema, `teamProposed[]`, `team.json`, `rfp/<id>/`, and the triage integrity rules.
-- **`rfp-cv-tailor` (triage mode)** — reads the proposed team's CVs + the RFP, writes `assessment{}`, leaves the decision to an admin. (Review card pending save.)
-- **Access model (SI0):** per-person collaborator + scoped PAT for staff; the worker's bot PAT is separate and never touches the public app.
+- **Register (worker mechanism):** `EJwjtgC8WToykzEqK1vm3n` — A draft · B claude-code-action · C oauth · D push · E GITHUB_TOKEN. (Earlier queue-design register: `JEZw6qDkq7kogYKAuMSdHS` — RX0 a · RX1 b · RX2 a, with RX2 now superseded.)
+- **`WORKER-SETUP.md`** — step-by-step setup + runbook for the GitHub Actions worker.
+- **`DATA-CONTRACT.md` v1.6.0** — `assessment{}` (incl. `status`/`confirmedBy`/`confirmedAt`), `requests.json`, `teamProposed[]`, `team.json`, triage integrity rules.
+- **`rfp-cv-tailor` (Worker mode)** — reads the proposed team's CVs + the RFP, writes a `proposed` `assessment{}`, leaves confirm + the decision to an admin. (Review card pending save.)
 
 ---
 
-*Prepared for handover. The queue is deliberately the simplest thing that keeps the “static app, no backend, reuse the real skill” shape: one JSON file as the mailbox, one Claude worker as the runtime, one scoped token as the authority.*
+*The queue keeps the "static app, no backend, run the real skill" shape: one JSON file as the mailbox, one GitHub Action as the runtime, the built-in token as the authority, and your Confirm tap as the one human gate.*

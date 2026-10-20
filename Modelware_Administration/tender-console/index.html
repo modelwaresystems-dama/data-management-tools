@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.10.0">
+<meta name="version" content="1.11.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -535,7 +535,7 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-10-20 request queue";  // date/time of this build
+  var APP_BUILD="2026-10-20 confirm assessment";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -1479,7 +1479,11 @@
       return '<div class="reqrow"><span class="rr-w">'+(x.fit!=null?x.fit+"%":"—")+'</span><span class="rr-t"><b>'+esc(personName(x.personId))+'</b>'+((x.covers&&x.covers.length)?' <span class="hint">covers '+esc(x.covers.join(", "))+'</span>':'')+((x.gaps&&x.gaps.length)?'<br><span class="hint" style="color:var(--warn)">gaps: '+esc(x.gaps.join(", "))+'</span>':'')+'</span><span class="rr-r"><span class="rdot '+vc+'">'+esc(v||"—")+'</span></span></div>';}).join("");
     var needs=(a.partnerNeeds&&a.partnerNeeds.length)?'<div class="hint" style="margin-top:8px"><b>Partner would supply:</b> '+esc(a.partnerNeeds.join(", "))+'</div>':'';
     var dq=(a.disqualifiers&&a.disqualifiers.length&&a.disqualifiers.join("").toLowerCase().indexOf("none")<0)?'<div class="hint" style="margin-top:4px;color:var(--accent)"><b>Disqualifiers:</b> '+esc(a.disqualifiers.join(", "))+'</div>':'';
-    el.innerHTML=bar+'<div class="cov-head"><div><div style="font-family:var(--fm);font-size:.64rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)">Skill recommends</div><div class="cov-score" style="color:'+recCol+';font-size:1.5rem;text-transform:capitalize">'+esc(a.recommendation||"—")+'</div></div>'+(a.overallFit!=null?'<div><div class="hint">Team fit</div><div style="font-family:var(--fd);font-weight:800;font-size:1.3rem">'+a.overallFit+'%</div></div>':'')+'</div>'+(a.rationale?'<div class="hint" style="margin-bottom:8px">'+esc(a.rationale)+'</div>':'')+ppl+needs+dq+'<div class="hint" style="margin-top:8px">This is the skill’s proposal — the bid call is set in <b>Go / No-Go</b> above by an admin.</div>';
+    var _as=a.status||"confirmed";
+    var confBar;
+    if(_as==="proposed"){confBar='<div class="hint" style="margin:0 0 10px;padding:8px 11px;border-radius:8px;background:var(--warn-soft,rgba(180,110,30,.12));border:1px solid var(--warn)"><b>Draft assessment</b> — by the worker'+(a.assessedBy?' ('+esc(a.assessedBy)+')':'')+', awaiting review. '+(isAdmin()?'<button class="btn sm primary" type="button" data-confirmassess="1" style="margin-left:6px">Confirm</button>':'An admin needs to confirm it.')+'</div>';}
+    else{confBar=(a.confirmedBy?'<div class="hint" style="margin:0 0 8px;color:var(--good)">✓ Confirmed by '+esc(a.confirmedBy)+(a.confirmedAt?' · '+esc((a.confirmedAt||"").slice(0,10)):'')+'</div>':'');}
+    el.innerHTML=bar+confBar+'<div class="cov-head"><div><div style="font-family:var(--fm);font-size:.64rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)">Skill recommends</div><div class="cov-score" style="color:'+recCol+';font-size:1.5rem;text-transform:capitalize">'+esc(a.recommendation||"—")+'</div></div>'+(a.overallFit!=null?'<div><div class="hint">Team fit</div><div style="font-family:var(--fd);font-weight:800;font-size:1.3rem">'+a.overallFit+'%</div></div>':'')+'</div>'+(a.rationale?'<div class="hint" style="margin-bottom:8px">'+esc(a.rationale)+'</div>':'')+ppl+needs+dq+'<div class="hint" style="margin-top:8px">This is the skill’s proposal — the bid call is set in <b>Go / No-Go</b> above by an admin.</div>';
   }
   /* ---------- assessment request queue (v1.10) ---------- */
   function reqForTender(id){var r=(data.requests||[]).filter(function(x){return x.tenderId===id;});r.sort(function(a,b){return (b.requestedAt||"").localeCompare(a.requestedAt||"");});return r[0]||null;}
@@ -1499,6 +1503,18 @@
   }
   function cancelRequest(id){var r=(data.requests||[]).filter(function(x){return x.id===id;})[0];if(r&&r.status==="queued"){r.status="cancelled";renderTmAssess();saveKey("requests","Cancel assessment request");}}
   function retryRequest(id){var old=(data.requests||[]).filter(function(x){return x.id===id;})[0];if(!old)return;data.requests.push({id:newReqId(),type:"triage",tenderId:old.tenderId,requestedBy:me(),requestedAt:new Date().toISOString(),status:"queued",claimedBy:null,claimedAt:null,completedAt:null,attempts:0,result:null,error:null});renderTmAssess();saveKey("requests","Retry assessment request");}
+  function confirmAssessment(){
+    var e=editingT;if(!e||!e.assessment)return;
+    if(!isAdmin()){toast("Only an admin can confirm",true);return;}
+    if(!configured()){toast("Connect your repo first (Settings)",true);return;}
+    collectTender();
+    e.assessment.status="confirmed";e.assessment.confirmedBy=me();e.assessment.confirmedAt=new Date().toISOString();
+    var idx=-1;for(var i=0;i<data.tenders.length;i++){if(data.tenders[i].id===e.id){idx=i;break;}}
+    if(idx>=0)data.tenders[idx]=e;else data.tenders.push(e);
+    renderTmAssess();renderAll();
+    saveKey("tenders","Confirm assessment: "+(e.client||e.id));
+    toast("Assessment confirmed");
+  }
   /* ---------- events ---------- */
   $("tabs").addEventListener("click",function(ev){var b=ev.target.closest("button[data-tab]");if(!b)return;
     document.querySelectorAll("nav.tabs button").forEach(function(x){x.classList.toggle("active",x===b);});
@@ -1536,6 +1552,7 @@
     if(ev.target.closest("[data-reqassess]")){requestAssessment();return;}
     var rc=ev.target.closest("[data-reqcancel]");if(rc){cancelRequest(rc.dataset.reqcancel);return;}
     var rt=ev.target.closest("[data-reqretry]");if(rt){retryRequest(rt.dataset.reqretry);return;}
+    if(ev.target.closest("[data-confirmassess]")){confirmAssessment();return;}
   });
   $("sfSave").onclick=function(){saveKey("sfiaProfile","Update SFIA profile").then(function(){profileDirty=false;renderSfMaster();toast("Profile saved to GitHub");});};
   $("sfmSave").onclick=saveSfiaSkill;

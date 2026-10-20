@@ -1,118 +1,119 @@
-# Tender Console — data contract (v1.3)
+# Tender Console — data contract (v1.4.1)
 
-Contract between the Tender Console app and the `rfp-cv-tailor` skill (decision **D4 = Contract**). Both read/write the same files in the **private data repo**, so they must agree on this shape.
+Contract between the Tender Console app and the `rfp-cv-tailor` skill. Both read/write the same files in the **private data repo**, so they must agree on this shape.
 
-**v1.3 (2026-09-26):** added the **Expert Services Agreement (ESA)** layer. Each tender gains an optional `esa{}` block (parties, commercials, milestone deliverables linked to scope, clause-set reference, doc refs, status). A shared, versioned **`esa-standard-clauses.json`** holds Modelware's reusable protective clauses. Generated ESA documents live under `esa/<tenderId>/`. `rfp-cv-tailor` gains an ESA mode (decision **E5 = extend the existing skill**).
-**v1.2 (2026-09-16):** SFIA profile gained a **responsibility layer**; **app is the profile master**; `sfia-profile.json` schemaVersion **2**.
-**v1.1 (2026-09-16):** added `requirements[].sfia`, `requirements[].sfiaNote`, tender `sfiaFit`, and `sfia-profile.json`.
+**v1.4.1 (2026-10-20):** review of v1.4 against live data (decisions R1–R4). **R1** — `goNoGo.decision` enum gains **`at-risk`**; **`reason`** is the single free-text field (the `note` field used by some records is migrated to `reason` and retired). **R2** — external / JV people are now first-class in `team.json` via an **`external`** flag; the ad-hoc `cv.teamRefs[]` is **retired** in favour of `teamProposed[]` + each person's `cvRefs`. **R3** — every person's base CV lives under **`cvs/base/<personId>/`** (including Howard's); loose files at `cvs/base/` root are retired. **R4** — `createdBy` and `loadedBy` are both kept, with distinct meanings. App-side support for these (Team tab, RFP upload, Assessment panel, external people, the `cvs/base/<id>/` move) is a **target** until the salespeople app build lands; the app is v1.8.0 today.
+**v1.4 (2026-10-20):** opened the Console to **salespeople** — team registry (`team.json`), RFP uploads per tender (`rfp/<id>/`), proposed team (`teamProposed[]`), skill-written `assessment{}`, identity stamps. Access model (decision **SI0**): each person is a repo collaborator with their own fine-grained PAT. Salespeople **propose**, Howard **decides** (**SI4**).
+**v1.3 (2026-09-26):** ESA layer — `esa{}` block, `esa-standard-clauses.json`, `esa/<id>/`.
+**v1.2 (2026-09-16):** SFIA responsibility layer; app is the profile master; `sfia-profile.json` schemaVersion 2.
+
+## Access & enforcement (honest note)
+
+The app is a **public GitHub Pages page with no backend**. The `role: sales|admin` setting and the "salespeople propose, Howard decides" gate (**SI4**) are **conventions, not enforcement** — any viewer can flip the role in their own browser. The real control is **who holds a write-capable PAT** (decision **SI0**: per-person collaborator + scoped fine-grained PAT). Treat `goNoGo.decision` as Howard's call by agreement, not by a lock the app imposes.
 
 ## Repo layout (private data repo, default folder `data/`)
 
 ```
 data/
   tenders.json                # all tender records
+  team.json                   # team registry — people (incl. external/JV) who can be proposed  (v1.4; external flag v1.4.1)
   experience.json             # the experience bank
   harvest.json                # proposed reusable bullets awaiting approval
   sfia-profile.json           # governed SFIA 9 profile (app is master)
-  esa-standard-clauses.json   # Modelware ESA Standard Clauses — reusable protective overlay (versioned)
+  esa-standard-clauses.json   # Modelware ESA Standard Clauses (versioned)
 cvs/
-  base/                       # base CV(s)
+  base/<personId>/            # each person's base CV(s) — Howard included        (v1.4.1: no loose files at cvs/base/ root)
   tailored/<tenderId>/        # tailored CV + coverage map per tender
+rfp/
+  <tenderId>/                 # the uploaded RFP document(s) + addenda per tender  (v1.4)
 esa/
-  <tenderId>/                 # generated ESA docs per tender (ESA, Annex A, redline against base)
+  <tenderId>/                 # generated ESA docs per tender
 ```
 
-## `tenders.json`  (esa{} block added — otherwise unchanged from v1.2)
+## `tenders.json`  (v1.4 fields added — all optional, backwards-compatible)
 ```json
 {
-  "schemaVersion": 1,
-  "tenders": [
+  "id": "tender-xxxx", "client": "...", "title": "...", "sector": "...",
+  "status": "prospect|reviewing|bidding|submitted|won|lost|withdrawn|passed",
+  "goNoGo": { "decision": "undecided|bid|partner|leave|at-risk", "reason": "..." },
+  "owner": "Howard Diesel",
+  "createdBy": "jane-sales", "loadedBy": "jane-sales",
+  "teamProposed": ["howard-diesel", "debbie"],
+  "requirements": [ { "text": "...", "weight": "11%", "rating": "strong|partial|gap", "evidence": "...", "sfia": [...], "responsibility": [...] } ],
+  "compliance": [ { "label": "...", "done": false } ],
+  "cv": { "baseRef": "...", "tailoredRef": "...", "coverageRef": "..." },
+  "rfp": { "files": [ { "name": "RFP.pdf", "path": "rfp/<id>/RFP.pdf", "uploadedBy": "jane-sales", "uploadedAt": "ISO" } ] },
+  "esa": { "…see v1.3…" },
+  "assessment": { "…see below…" },
+  "outcome": { "result": "pending|won|lost|withdrawn", "notes": "..." },
+  "notes": "...", "createdAt": "ISO", "updatedAt": "ISO"
+}
+```
+- **`goNoGo.decision`** — the human bid call: **`bid`**, **`partner`** (bid jointly with another firm), **`leave`** (decline), **`at-risk`** (pursuing, but eligibility or fit is at risk — e.g. a mandatory gate unmet, or team gaps a partner must fill), or **`undecided`**. Old records using `pass` are read as `leave`. **`reason`** is the single free-text explanation (R1); any legacy `note` on `goNoGo` is migrated into `reason` and the `note` key dropped.
+- **Three separate states, never conflated** — `status` is the pipeline stage (where the tender sits in the process), `goNoGo.decision` is the bid call (whether/how to pursue), and `outcome.result` is what finally happened. A scoring gap in `requirements[]` is not a knockout; a knockout is a failed mandatory in `compliance[]`.
+- **`createdBy`** — the person-id who first created the record. **`loadedBy`** — the person-id who last loaded or updated it via the app. Same person in the common case; they differ when one person opens a tender another first created. Both are person-ids from `team.json` (or the Settings "Your name"), stamped by the app.
+- **`teamProposed[]`** — person-ids (from `team.json`, internal or external) proposed for this tender; the skill reviews these people's CVs for fit. `owner` stays the single lead. **This replaces the old `cv.teamRefs[]`** (R2): a record's people now live in `teamProposed[]`, and their CVs come from each person's `team.json` `cvRefs`, not from free-text paths on the record.
+- **`cv.baseRef`** — the **lead's** base CV (under `cvs/base/<id>/`). Per-person CVs used in triage come from each proposed person's `team.json` `cvRefs`, not from `baseRef`.
+- **`rfp.files[]`** — the uploaded RFP document(s) for this tender, stored under `rfp/<id>/`.
+
+## `team.json`  (the team registry — v1.4; `external` flag v1.4.1)
+```json
+{
+  "schemaVersion": 2, "_type": "team-registry", "updatedAt": "ISO",
+  "people": [
     {
-      "id": "tender-xxxx", "client": "...", "title": "...", "sector": "...",
-      "status": "prospect|reviewing|bidding|submitted|won|lost|withdrawn|passed",
-      "requirements": [ { "text": "...", "weight": "11%", "rating": "strong|partial|gap", "evidence": "...", "sfia": [...], "responsibility": [...] } ],
-      "compliance": [ { "label": "...", "done": false } ],
-      "cv": { "baseRef": "...", "tailoredRef": "...", "coverageRef": "..." },
-      "esa": { "…see below…" },
-      "outcome": { "result": "pending|won|lost|withdrawn", "notes": "..." },
-      "notes": "...", "createdAt": "ISO", "updatedAt": "ISO"
+      "id": "howard-diesel", "name": "Howard Diesel", "role": "Founder / Principal Consultant",
+      "org": "Modelware Systems", "external": false, "email": "howard@modelwaresystems.com", "active": true,
+      "cvRefs": [ { "label": "Base CV", "ref": "cvs/base/howard-diesel/CV.pdf" } ],
+      "sfiaRef": "sfia-profile.json", "tags": ["data governance", "..."],
+      "addedBy": "seed", "addedAt": "ISO"
     }
   ]
 }
 ```
-(SFIA fit lenses, `sfiaFit`, `responsibilityFit`, `scoringWeights`, `goNoGo`, `owner` unchanged — see v1.2.)
+- `id` — slug, unique; used by `teamProposed[]`, `createdBy`, `loadedBy`, and the CV folder `cvs/base/<id>/`.
+- **`external`** (R2) — `false`/absent for Modelware people; **`true`** for partner, JV, or associate people brought onto a specific bid (e.g. a JV PM, a consortium partner). `org` names their firm. External people are first-class ids so they can appear in `teamProposed[]` and carry their own `cvRefs`.
+- `cvRefs[]` — repo-relative paths to the person's CV file(s) under `cvs/base/<id>/`; uploaded via the app's Team tab.
+- `sfiaRef` — optional link to a SFIA profile (only Howard has one today; the app owns `sfia-profile.json`).
+- **The app's Team tab reads and writes `team.json`** and uploads CVs to `cvs/base/<id>/` *(target — not yet in app v1.8.0)*. The skill reads it (never edits it).
 
-## The `esa{}` block  (optional, per tender)
+## `assessment{}`  (skill-written triage — v1.4)
 ```json
-"esa": {
-  "status": "none|drafting|proposed|negotiating|signed|na",
-  "role": "Data Governance Expert — Key Expert 2 (K-2)",
-  "roleShort": "K-2",
-  "parties": {
-    "expert": "Modelware Systems (Pty) Limited",
-    "expertRep": "Howard Diesel",
-    "consultant": "Serefaco Consultants Limited",
-    "client": "Government of Zambia (SMART Zambia)"
-  },
-  "reference": "ZM-SZ-466193-CS-QBS",
-  "commercial": { "currency": "USD", "dailyRate": 1050, "loeDays": 45, "maxFee": 47250 },
-  "baseAgreement": { "source": "consultant|client|modelware", "ref": "esa/<id>/base-esa.docx", "note": "whose paper the ESA sits on" },
-  "clauseSet": {
-    "ref": "esa-standard-clauses.json", "version": "1.0.0",
-    "included": ["scope-boundaries","named-key-expert","milestone-deliverables","level-of-effort","acceptance","payment-protection","dependencies","change-control","background-ip","separation","order-of-precedence","continuity"],
-    "excluded": []
-  },
-  "milestones": [
-    {
-      "id": "M1", "name": "Inception & Situational Assessment", "days": 5, "fee": 5250,
-      "outputs": [
-        { "text": "Data Governance & Classification methodology", "reqRef": "W2", "done": false },
-        { "text": "Contribution to the Inception Report", "reqRef": null, "done": false }
-      ]
-    }
+"assessment": {
+  "recommendation": "bid|partner|leave|undecided",
+  "rationale": "one-paragraph why",
+  "overallFit": 78,
+  "people": [
+    { "personId": "howard-diesel", "fit": 89, "verdict": "strong|partial|gap",
+      "covers": ["W2", "W3", "C1"], "gaps": ["W1 cloud/infra"], "note": "..." }
   ],
-  "docs": {
-    "esaRef": "esa/<id>/ESA_<id>.docx",
-    "annexRef": "esa/<id>/AnnexA_<id>.docx",
-    "redlineRef": "esa/<id>/Redline_<id>.docx"
-  },
-  "updatedAt": "ISO"
+  "partnerNeeds": ["cloud architecture", "local Zambian presence"],
+  "disqualifiers": ["none"],
+  "assessedBy": "rfp-cv-tailor", "assessedAt": "ISO"
 }
 ```
+- Written by `rfp-cv-tailor` **triage mode** (**SI3** = extend the skill) *(target — not yet built)*; the app shows it read-only in the tender's Assessment panel *(target)*.
+- **Integrity rule:** every `assessment.people[].personId` must appear in the record's `teamProposed[]`, and every id in `teamProposed[]` must exist in `team.json`.
+- `recommendation` is the skill's **proposal**; the human `goNoGo.decision` is the actual call (Howard's).
+- `people[]` — one entry per proposed team member: fit %, requirement codes covered, gaps. `partnerNeeds[]` names capabilities missing from the team that a partner would supply.
 
-**Field notes**
-- `status` — drives the ESA badge in the app: `none` (not started), `drafting`, `proposed` (sent to the prime), `negotiating`, `signed`, `na` (no ESA needed).
-- `roleShort` — the short role tag (e.g. `K-2`) substituted into the standard clauses.
-- `commercial.maxFee` = `dailyRate × loeDays`; the app can recompute and flag a mismatch.
-- `baseAgreement.source` — records whose paper the ESA sits on (decision **E2 = client/consultant base + Modelware overlay**, but `modelware` is allowed when Modelware's own master is the base).
-- `clauseSet.included` / `excluded` — which standard clauses apply to this tender; ids come from `esa-standard-clauses.json`.
-- `milestones[].outputs[].reqRef` — links a deliverable output to a `requirements[].text` code (e.g. `"W2"`, `"C1"`) so ESA deliverables trace to the RFP scope already scored (decision **E4 = structured, linked**). `null` = no scope link.
-- `milestones[].days` / `fee` — the day/fee allocation per milestone; these feed the Separation clause's pro-rata valuation.
-- `docs.*` — repo-relative paths to the generated ESA, Annex A and (optional) redline against the base agreement.
+## How `rfp-cv-tailor` uses this (triage mode — target, SI3 = extend)
+When a salesperson has loaded a tender (+ RFP) and proposed a team, and asks to **review / assess** it:
+1. Read the tender record, the uploaded RFP under `rfp/<id>/`, `team.json`, and each proposed person's `cvRefs` (CVs under `cvs/base/<id>/`), plus `experience.json` and `sfia-profile.json`.
+2. Extract the tender's requirements (as in CV mode) and, **for each proposed person**, map their CV to the requirements → a per-person fit (codes covered, gaps).
+3. Compute the **team's collective coverage**, name the **gaps a partner would fill**, and flag any hard **disqualifiers** (mandatory clauses the team/firm can't meet).
+4. Write `assessment{}` with a **recommendation** of `bid` / `partner` / `leave` and a rationale — a **proposal only**. Leave `goNoGo.decision` for Howard.
+5. (As before) on request, produce tailored CVs / coverage / the ESA. Then tell the user what changed and that someone still needs to **commit & push**.
 
-## `esa-standard-clauses.json`  (shared, versioned — Modelware's reusable overlay)
-```json
-{
-  "schemaVersion": 1, "_type": "esa-standard-clauses", "version": "1.0.0",
-  "placeholders": { "EXPERT": "...", "ROLE": "...", "DAILY_RATE": "...", "LOE_DAYS": "...", "...": "..." },
-  "defaults": { "dailyRateUSD": 1050, "reviewBusinessDays": 10, "revisionCyclesIncluded": 1, "paymentLongstopDays": 90, "postSeparationPayDays": 30 },
-  "clauses": [ { "id": "scope-boundaries", "no": "1", "title": "...", "category": "scope", "include": "always|conditional", "intent": "...", "body": "markdown with {{PLACEHOLDERS}}" } ],
-  "annexTemplate": { "...": "..." }
-}
-```
-- 12 clauses in v1.0.0: `scope-boundaries`, `named-key-expert`, `milestone-deliverables`, `level-of-effort`, `acceptance`, `payment-protection`, `dependencies`, `change-control`, `background-ip`, `separation`, `order-of-precedence`, `continuity`.
-- `body` is markdown with `{{PLACEHOLDER}}` tokens filled per tender from the `esa{}` block (role, parties, rate, LoE, fees).
-- Versioned: bump `version` on any clause change; a tender records the `clauseSet.version` it was built against.
-- **The app reads this file** (to show which clauses apply and the clause-set version). The `rfp-cv-tailor` skill reads it to assemble the ESA. Neither the app nor the skill should hand-edit clause bodies inline on a tender — change the standard set and re-generate.
+The CV/coverage mode and ESA mode from v1.3 are unchanged; triage mode is the new multi-person, pre-decision step.
 
-## How `rfp-cv-tailor` uses this (ESA mode — target, decision E5 = extend)
-When asked for the ESA (or when a tender needs one), after the usual CV/coverage flow:
-1. Read the tender record, `esa-standard-clauses.json`, and the client/consultant **base ESA** if supplied (under `esa/<id>/`).
-2. Extract/confirm the ESA specifics from the RFP/TOR and the tender: parties, role, reference, level of effort, daily rate, max fee, and the milestone deliverables — each output linked to a `requirements[]` code where it maps to scope.
-3. Present the ESA plan for approval (the two-gate pattern): the milestone/deliverable breakdown, the day/fee split, and which standard clauses to include/exclude — recommend the full set, flag any the tender makes irrelevant.
-4. On approval, assemble the tailored **ESA `.docx`** (base terms + Modelware Standard Clauses with placeholders filled) and **Annex A** (deliverables, responsibilities, day/fee budget) into `esa/<id>/`; optionally a **redline** against the base.
-5. Write the `esa{}` block into `tenders.json` (status `proposed`), set `docs.*`, `updatedAt`. Never hand-edit clause bodies — reference the clause-set version.
-6. Tell Howard which files/records changed and that he still needs to **commit & push**.
+## `esa{}` / `esa-standard-clauses.json`
+Unchanged from v1.3 — see that section above.
 
 ## `sfia-profile.json` / `experience.json` / `harvest.json`
-Unchanged from v1.2 — see prior contract.
+Unchanged — see v1.2/v1.1.
+
+## Migration from v1.4 → v1.4.1 (apply once, as its own commit)
+- **`goNoGo.note` → `goNoGo.reason`** on every record that has it (MICT SETA, WCG, IRBA, data-ai-literacy, Parliament), then drop the `note` key. Records already using `at-risk` stay valid.
+- **`cv.teamRefs[]` → `teamProposed[]`**: for MICT SETA, add Melissa Tsalicoglou to `team.json` with `external: true`, set `teamProposed: ["howard-diesel", "<melissa-id>"]`, and move/keep her CV under `cvs/base/<melissa-id>/`.
+- **`cvs/base/` move**: relocate Howard's base CVs to `cvs/base/howard-diesel/`, populate his `team.json` `cvRefs`, and repoint the `cv.baseRef` of every record that references the old loose paths.

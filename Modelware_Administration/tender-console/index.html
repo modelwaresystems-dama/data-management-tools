@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.9.0">
+<meta name="version" content="1.10.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -535,13 +535,13 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-10-20 sales intake";  // date/time of this build
+  var APP_BUILD="2026-10-20 request queue";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
   var GO=["undecided","bid","partner","at-risk","leave"];
   var TEAM=["Howard Diesel","Debbie","Monica","Veronica"];  // Phase 2 team roster
-  var FILES={tenders:"tenders.json",team:"team.json",experience:"experience.json",harvest:"harvest.json",sfiaProfile:"sfia-profile.json"};
+  var FILES={tenders:"tenders.json",team:"team.json",requests:"requests.json",experience:"experience.json",harvest:"harvest.json",sfiaProfile:"sfia-profile.json"};
   var AI_FILE="sfia-ai-concepts.json";
   var AIW={DIRECT:1,CONTRIBUTING:0.6,SUPPORTING:0.3,"CONTEXT-DEPENDENT":0.3};
   var AICAT={"DATA FOUNDATIONS":"Data","CORE AI & MACHINE LEARNING TECHNIQUES":"Core AI/ML","BUILDING & INTEGRATING AI SYSTEMS":"Build & Integrate","ASSURING AI QUALITY, PERFORMANCE & SECURITY":"Assure","GOVERNING, PROTECTING & REGULATING AI":"Govern","WORKING WITH AI":"Work with AI","STRATEGY, VALUE & DELIVERY":"Strategy"};
@@ -550,7 +550,7 @@
 
   /* ---------- state ---------- */
   var cfg=loadCfg();
-  var data={tenders:[],team:[],experience:[],harvest:[]};
+  var data={tenders:[],team:[],requests:[],experience:[],harvest:[]};
   var sha={}, dirty={}, editingT=null, editingEx=null, editingP=null, diag={};
   var sfiaProf={loaded:false,byCode:{},count:0};
   var aiConcepts={loaded:false,concepts:[],counts:null,src:""};
@@ -629,6 +629,7 @@
       var n=0;
       if(key==="tenders"){data.tenders=obj.tenders||[];n=data.tenders.length;}
       else if(key==="team"){data.team=obj.people||[];n=data.team.length;}
+      else if(key==="requests"){data.requests=obj.requests||[];n=data.requests.length;}
       else if(key==="experience"){data.experience=obj.items||[];n=data.experience.length;}
       else if(key==="harvest"){data.harvest=obj.queue||[];n=data.harvest.length;}
       else if(key==="sfiaProfile"){
@@ -647,7 +648,7 @@
     function fx(k,label){var d=diag[k];if(!d)return label+" —";if(d.missing)return label+" MISSING";if(d.err)return label+" PARSE-ERR";return label+" "+d.count;}
     el.hidden=false;
     el.innerHTML='Reading <b>'+esc(cfg.owner||"?")+"/"+esc(cfg.repo||"?")+"@"+esc(cfg.branch||"main")+'</b> · folder <b>'+esc(cfg.path||"data")+'</b> · '+
-      fx("tenders","tenders")+" · "+fx("team","team")+" · "+fx("experience","bank")+" · "+fx("harvest","harvest")+" · "+fx("sfiaProfile","sfia");
+      fx("tenders","tenders")+" · "+fx("team","team")+" · "+fx("requests","queue")+" · "+fx("experience","bank")+" · "+fx("harvest","harvest")+" · "+fx("sfiaProfile","sfia");
     var anyMissing=["tenders","experience","harvest"].some(function(k){return diag[k]&&diag[k].missing;});
     el.className="diag"+(anyMissing?" warn":"");
   }
@@ -656,6 +657,7 @@
     if(key==="experience")return JSON.stringify({schemaVersion:1,items:data.experience},null,2);
     if(key==="harvest")return JSON.stringify({schemaVersion:1,queue:data.harvest},null,2);
     if(key==="team")return JSON.stringify({schemaVersion:2,_type:"team-registry",updatedAt:new Date().toISOString().slice(0,10),people:data.team},null,2);
+    if(key==="requests")return JSON.stringify({schemaVersion:1,_type:"assessment-request-queue",updatedAt:new Date().toISOString().slice(0,10),requests:data.requests},null,2);
     if(key==="sfiaProfile")return JSON.stringify({schemaVersion:sfiaProf.schemaVersion||2,_type:"sfia-profile",subject:sfiaProf.subject,framework:sfiaProf.framework||"SFIA 9",generated:sfiaProf.generated,source:sfiaProf.source,levelNames:sfiaProf.levelNames,evidence:sfiaProf.evidence,skills:sfiaProf.skills,attributes:sfiaProf.attributes,behaviours:sfiaProf.behaviours,strengths:sfiaProf.strengths},null,2);
   }
   function pullAll(){
@@ -1466,14 +1468,37 @@
   function renderTmAssess(){
     var el=$("tmAssess");if(!el||!editingT)return;
     var a=editingT.assessment;
-    if(!a){el.innerHTML='<div class="hint">No assessment yet. Propose a team, upload the RFP, commit &amp; push, then run <b>rfp-cv-tailor</b> (triage) for a bid / partner / leave recommendation per person.</div>';return;}
+    var _req=reqForTender(editingT.id),_ready=(editingT.teamProposed&&editingT.teamProposed.length)&&(editingT.rfp&&editingT.rfp.files&&editingT.rfp.files.length);
+    var bar;
+    if(_req&&(_req.status==="queued"||_req.status==="running")){bar='<div class="hint" style="margin-bottom:10px">Assessment <b>'+(_req.status==="running"?"in progress…":"requested")+'</b> by '+esc(_req.requestedBy||"?")+' · '+esc((_req.requestedAt||"").slice(0,16).replace("T"," "))+(isAdmin()?' <button class="btn sm" type="button" data-reqcancel="'+esc(_req.id)+'" style="margin-left:8px">Cancel</button>':'')+'</div>';}
+    else if(_req&&_req.status==="error"){bar='<div class="hint" style="margin-bottom:10px;color:var(--accent)">Assessment <b>failed</b>: '+esc(_req.error||"unknown")+' <button class="btn sm" type="button" data-reqretry="'+esc(_req.id)+'" style="margin-left:8px">Retry</button></div>';}
+    else{bar='<div style="margin-bottom:10px"><button class="btn sm primary" type="button" data-reqassess="1"'+(_ready?'':' disabled')+'>⚡ Request assessment</button>'+(_ready?'':'<span class="hint" style="margin-left:8px">needs a proposed team + an uploaded RFP</span>')+((_req&&_req.status==="done")?'<span class="hint" style="margin-left:8px">last run: '+esc(_req.result||"done")+'</span>':'')+'</div>';}
+    if(!a){el.innerHTML=bar+'<div class="hint">No assessment yet. A Claude worker runs rfp-cv-tailor on your request and writes the bid / partner / leave recommendation here; it appears after the next sync.</div>';return;}
     var recCol=a.recommendation==="bid"?"var(--good)":a.recommendation==="partner"?"var(--glacier)":a.recommendation==="leave"?"var(--accent)":"var(--warn)";
     var ppl=(a.people||[]).map(function(x){var v=x.verdict||"";var vc=v==="strong"?"strong":v==="partial"?"partial":"gap";
       return '<div class="reqrow"><span class="rr-w">'+(x.fit!=null?x.fit+"%":"—")+'</span><span class="rr-t"><b>'+esc(personName(x.personId))+'</b>'+((x.covers&&x.covers.length)?' <span class="hint">covers '+esc(x.covers.join(", "))+'</span>':'')+((x.gaps&&x.gaps.length)?'<br><span class="hint" style="color:var(--warn)">gaps: '+esc(x.gaps.join(", "))+'</span>':'')+'</span><span class="rr-r"><span class="rdot '+vc+'">'+esc(v||"—")+'</span></span></div>';}).join("");
     var needs=(a.partnerNeeds&&a.partnerNeeds.length)?'<div class="hint" style="margin-top:8px"><b>Partner would supply:</b> '+esc(a.partnerNeeds.join(", "))+'</div>':'';
     var dq=(a.disqualifiers&&a.disqualifiers.length&&a.disqualifiers.join("").toLowerCase().indexOf("none")<0)?'<div class="hint" style="margin-top:4px;color:var(--accent)"><b>Disqualifiers:</b> '+esc(a.disqualifiers.join(", "))+'</div>':'';
-    el.innerHTML='<div class="cov-head"><div><div style="font-family:var(--fm);font-size:.64rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)">Skill recommends</div><div class="cov-score" style="color:'+recCol+';font-size:1.5rem;text-transform:capitalize">'+esc(a.recommendation||"—")+'</div></div>'+(a.overallFit!=null?'<div><div class="hint">Team fit</div><div style="font-family:var(--fd);font-weight:800;font-size:1.3rem">'+a.overallFit+'%</div></div>':'')+'</div>'+(a.rationale?'<div class="hint" style="margin-bottom:8px">'+esc(a.rationale)+'</div>':'')+ppl+needs+dq+'<div class="hint" style="margin-top:8px">This is the skill’s proposal — the bid call is set in <b>Go / No-Go</b> above by an admin.</div>';
+    el.innerHTML=bar+'<div class="cov-head"><div><div style="font-family:var(--fm);font-size:.64rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)">Skill recommends</div><div class="cov-score" style="color:'+recCol+';font-size:1.5rem;text-transform:capitalize">'+esc(a.recommendation||"—")+'</div></div>'+(a.overallFit!=null?'<div><div class="hint">Team fit</div><div style="font-family:var(--fd);font-weight:800;font-size:1.3rem">'+a.overallFit+'%</div></div>':'')+'</div>'+(a.rationale?'<div class="hint" style="margin-bottom:8px">'+esc(a.rationale)+'</div>':'')+ppl+needs+dq+'<div class="hint" style="margin-top:8px">This is the skill’s proposal — the bid call is set in <b>Go / No-Go</b> above by an admin.</div>';
   }
+  /* ---------- assessment request queue (v1.10) ---------- */
+  function reqForTender(id){var r=(data.requests||[]).filter(function(x){return x.tenderId===id;});r.sort(function(a,b){return (b.requestedAt||"").localeCompare(a.requestedAt||"");});return r[0]||null;}
+  function newReqId(){return "req-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,6);}
+  function requestAssessment(){
+    var e=editingT;if(!e)return;
+    if(!(e.teamProposed&&e.teamProposed.length)||!(e.rfp&&e.rfp.files&&e.rfp.files.length)){toast("Propose a team and upload the RFP first",true);return;}
+    if(!configured()){toast("Connect your repo first (Settings)",true);return;}
+    collectTender();
+    var idx=-1;for(var i=0;i<data.tenders.length;i++){if(data.tenders[i].id===e.id){idx=i;break;}}
+    if(idx>=0)data.tenders[idx]=e;else data.tenders.push(e);
+    data.requests=data.requests||[];
+    data.requests.push({id:newReqId(),type:"triage",tenderId:e.id,requestedBy:me(),requestedAt:new Date().toISOString(),status:"queued",claimedBy:null,claimedAt:null,completedAt:null,attempts:0,result:null,error:null});
+    renderTmAssess();renderAll();
+    saveKey("tenders","Load tender: "+(e.client||e.id)).then(function(){return saveKey("requests","Request assessment: "+(e.client||e.id));});
+    toast("Assessment requested — a worker will pick it up");
+  }
+  function cancelRequest(id){var r=(data.requests||[]).filter(function(x){return x.id===id;})[0];if(r&&r.status==="queued"){r.status="cancelled";renderTmAssess();saveKey("requests","Cancel assessment request");}}
+  function retryRequest(id){var old=(data.requests||[]).filter(function(x){return x.id===id;})[0];if(!old)return;data.requests.push({id:newReqId(),type:"triage",tenderId:old.tenderId,requestedBy:me(),requestedAt:new Date().toISOString(),status:"queued",claimedBy:null,claimedAt:null,completedAt:null,attempts:0,result:null,error:null});renderTmAssess();saveKey("requests","Retry assessment request");}
   /* ---------- events ---------- */
   $("tabs").addEventListener("click",function(ev){var b=ev.target.closest("button[data-tab]");if(!b)return;
     document.querySelectorAll("nav.tabs button").forEach(function(x){x.classList.toggle("active",x===b);});
@@ -1506,7 +1531,12 @@
     if(t.id==="f_rfpfile"&&t.files&&t.files[0]){uploadRfp(t.files[0]);t.value="";}
     else if(t.dataset.team!=null){var id=t.dataset.team;editingT.teamProposed=editingT.teamProposed||[];var ix=editingT.teamProposed.indexOf(id);if(t.checked&&ix<0)editingT.teamProposed.push(id);else if(!t.checked&&ix>=0)editingT.teamProposed.splice(ix,1);}
   });
-  $("tmBody").addEventListener("click",function(ev){var b=ev.target.closest("[data-rfprm]");if(b){editingT.rfp.files.splice(+b.dataset.rfprm,1);renderTmRfp();}});
+  $("tmBody").addEventListener("click",function(ev){
+    var rm=ev.target.closest("[data-rfprm]");if(rm){editingT.rfp.files.splice(+rm.dataset.rfprm,1);renderTmRfp();return;}
+    if(ev.target.closest("[data-reqassess]")){requestAssessment();return;}
+    var rc=ev.target.closest("[data-reqcancel]");if(rc){cancelRequest(rc.dataset.reqcancel);return;}
+    var rt=ev.target.closest("[data-reqretry]");if(rt){retryRequest(rt.dataset.reqretry);return;}
+  });
   $("sfSave").onclick=function(){saveKey("sfiaProfile","Update SFIA profile").then(function(){profileDirty=false;renderSfMaster();toast("Profile saved to GitHub");});};
   $("sfmSave").onclick=saveSfiaSkill;
   $("sfmCancel").onclick=$("sfmClose").onclick=function(){$("sfiaModal").classList.remove("open");};

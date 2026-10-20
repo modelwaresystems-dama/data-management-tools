@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.8.0">
+<meta name="version" content="1.9.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -107,7 +107,7 @@
   .pill.withdrawn{background:var(--surface-2);color:var(--ink-faint)}
   .pill.passed{background:var(--surface-2);color:var(--ink-faint)}
   .go{font-family:var(--fm);font-size:.7rem;font-weight:600}
-  .go.bid{color:var(--good)} .go.pass{color:var(--accent)} .go.undecided{color:var(--ink-faint)}
+  .go.bid{color:var(--good)} .go.partner{color:var(--glacier)} .go.at-risk{color:var(--warn)} .go.leave{color:var(--accent)} .go.pass{color:var(--accent)} .go.undecided{color:var(--ink-faint)}
   .deadline.soon{color:var(--accent);font-weight:600}
 
   .empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:40px 24px;text-align:center;color:var(--ink-faint);margin-top:16px}
@@ -325,6 +325,7 @@
     <button data-tab="archive">Archive <span class="ct" id="ctArchive">0</span></button>
     <button data-tab="analytics">Analytics</button>
     <button data-tab="bank">Experience Bank <span class="ct" id="ctBank">0</span></button>
+    <button data-tab="team">Team <span class="ct" id="ctTeam">0</span></button>
     <button data-tab="sfia">SFIA Profile <span class="ct" id="ctSfia">0</span></button>
     <button data-tab="aiconcepts">AI Concepts <span class="ct" id="ctAi">0</span></button>
     <button data-tab="settings">Settings</button>
@@ -338,7 +339,7 @@
     <div class="row">
       <div><h2 class="sh">Live tenders</h2><p class="sub">Prospects and bids in flight. Closed ones move to Archive.</p></div>
       <div class="spacer"></div>
-      <button class="btn primary" id="newTenderBtn">+ New tender</button>
+      <button class="btn primary" id="newTenderBtn">+ Load tender</button>
     </div>
     <div class="searchbar"><input type="text" id="searchConsole" placeholder="Filter by client, title or sector…"></div>
     <div class="filters">
@@ -441,6 +442,12 @@
     <div class="ai-filters" id="aiExpFilters"></div>
     <div id="aiExpList"></div>
   </section>
+  <section class="section" id="sec-team">
+    <div class="row"><div><h2 class="sh">Team</h2><p class="sub">The people you can propose on a tender — the skill reviews each proposed person's CV for fit. CVs are stored in your data repo under <code>cvs/base/&lt;id&gt;/</code>. Mark partners and JV associates as <b>external</b>.</p></div>
+    <div class="spacer"></div><button class="btn primary" id="newPersonBtn">+ Add person</button></div>
+    <div class="searchbar"><input type="text" id="searchTeam" placeholder="Filter people…"></div>
+    <div id="teamList" style="margin-top:14px"></div>
+  </section>
   <section class="section" id="sec-settings">
     <h2 class="sh">Settings</h2>
     <p class="sub">Connect this app to your <b>private</b> data repository. Your token is stored only in this browser and is never committed.</p>
@@ -455,6 +462,11 @@
       </div>
       <div class="field"><label>Fine-grained personal access token</label><input type="password" id="setToken" placeholder="github_pat_…" autocomplete="off">
         <div class="hint">Scope it to <b>only</b> the data repo, permission <code>Contents: Read and write</code>, with an expiry. Stored in this browser's localStorage.</div></div>
+      <div class="two">
+        <div class="field"><label>Your name (stamps who loads a tender)</label><input type="text" id="setUserName" placeholder="e.g. Jane Smith" autocomplete="off"></div>
+        <div class="field"><label>Your role</label><select id="setRole"><option value="admin">Admin — can set bid / partner / leave</option><option value="sales">Sales — loads tenders, proposes teams</option></select></div>
+      </div>
+      <div class="hint" style="margin:-6px 0 12px">Multi-user: add each salesperson as a <b>collaborator</b> on the private data repo and have them paste their <b>own</b> fine-grained token (Contents: Read and write, this repo only, with an expiry). The app stamps their name on what they load; the bid / partner / leave call stays with an admin — a convention, not a lock (the app has no backend).</div>
       <div class="row">
         <button class="btn primary" id="saveSettingsBtn">Save &amp; test connection</button>
       </div>
@@ -498,6 +510,15 @@
   </div>
 </div>
 
+<!-- PERSON MODAL -->
+<div class="modal" id="personModal" role="dialog" aria-modal="true" aria-label="Team member">
+  <div class="sheet" style="max-width:600px">
+    <div class="sheet-h"><h3 id="pmTitle">Team member</h3><div class="spacer"></div><button class="iconbtn" id="pmClose" aria-label="Close">&#10005;</button></div>
+    <div class="sheet-b" id="pmBody"></div>
+    <div class="sheet-f"><button class="btn danger" id="pmDelete">Delete</button><div class="spacer"></div><button class="btn" id="pmCancel">Cancel</button><button class="btn primary" id="pmSave">Save person</button></div>
+  </div>
+</div>
+
 <!-- SFIA SKILL MODAL -->
 <div class="modal" id="sfiaModal" role="dialog" aria-modal="true" aria-label="SFIA skill">
   <div class="sheet" style="max-width:560px">
@@ -514,13 +535,13 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-09-26 ESA";  // date/time of this build
+  var APP_BUILD="2026-10-20 sales intake";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
-  var GO=["undecided","bid","pass"];
+  var GO=["undecided","bid","partner","at-risk","leave"];
   var TEAM=["Howard Diesel","Debbie","Monica","Veronica"];  // Phase 2 team roster
-  var FILES={tenders:"tenders.json",experience:"experience.json",harvest:"harvest.json",sfiaProfile:"sfia-profile.json"};
+  var FILES={tenders:"tenders.json",team:"team.json",experience:"experience.json",harvest:"harvest.json",sfiaProfile:"sfia-profile.json"};
   var AI_FILE="sfia-ai-concepts.json";
   var AIW={DIRECT:1,CONTRIBUTING:0.6,SUPPORTING:0.3,"CONTEXT-DEPENDENT":0.3};
   var AICAT={"DATA FOUNDATIONS":"Data","CORE AI & MACHINE LEARNING TECHNIQUES":"Core AI/ML","BUILDING & INTEGRATING AI SYSTEMS":"Build & Integrate","ASSURING AI QUALITY, PERFORMANCE & SECURITY":"Assure","GOVERNING, PROTECTING & REGULATING AI":"Govern","WORKING WITH AI":"Work with AI","STRATEGY, VALUE & DELIVERY":"Strategy"};
@@ -529,8 +550,8 @@
 
   /* ---------- state ---------- */
   var cfg=loadCfg();
-  var data={tenders:[],experience:[],harvest:[]};
-  var sha={}, dirty={}, editingT=null, editingEx=null, diag={};
+  var data={tenders:[],team:[],experience:[],harvest:[]};
+  var sha={}, dirty={}, editingT=null, editingEx=null, editingP=null, diag={};
   var sfiaProf={loaded:false,byCode:{},count:0};
   var aiConcepts={loaded:false,concepts:[],counts:null,src:""};
 
@@ -573,6 +594,21 @@
     return fetch(API+"/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+encodeURI(path),{method:"PUT",headers:ghHeaders(true),body:JSON.stringify(body)})
       .then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error((j&&j.message)||("HTTP "+r.status));});return r.json();});
   }
+  /* ---------- binary upload + identity helpers (v1.9) ---------- */
+  function ghPutRaw(path,b64,existingSha,message){
+    var body={message:message||"Upload via Tender Console",content:b64,branch:cfg.branch||"main"};
+    if(existingSha)body.sha=existingSha;
+    return fetch(API+"/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+encodeURI(path),{method:"PUT",headers:ghHeaders(true),body:JSON.stringify(body)})
+      .then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error((j&&j.message)||("HTTP "+r.status));});return r.json();});
+  }
+  function fileToB64(file){return new Promise(function(res,rej){var fr=new FileReader();fr.onload=function(){var s=String(fr.result||"");res(s.slice(s.indexOf(",")+1));};fr.onerror=rej;fr.readAsDataURL(file);});}
+  function safeName(n){return String(n||"file").replace(/[^A-Za-z0-9._-]+/g,"_");}
+  function slugify(n){return String(n||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")||("p"+Date.now().toString(36));}
+  function me(){return (cfg.userName||"").trim()||"unknown";}
+  function isAdmin(){return (cfg.role||"admin")!=="sales";}
+  function repoParent(){var d=(cfg.path||"data").replace(/^\/+|\/+$/g,"");return d.indexOf("/")>=0?d.slice(0,d.lastIndexOf("/")):"";}
+  function cvBasePath(id,name){var pp=repoParent();return (pp?pp+"/":"")+"cvs/base/"+id+"/"+safeName(name);}
+  function rfpPath(tid,name){var pp=repoParent();return (pp?pp+"/":"")+"rfp/"+tid+"/"+safeName(name);}
   function testConn(){
     return fetch(API+"/repos/"+cfg.owner+"/"+cfg.repo,{headers:ghHeaders(false)})
       .then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error((j&&j.message)||("HTTP "+r.status));});return r.json();});
@@ -592,6 +628,7 @@
       var obj=JSON.parse(b64dec(res.content));
       var n=0;
       if(key==="tenders"){data.tenders=obj.tenders||[];n=data.tenders.length;}
+      else if(key==="team"){data.team=obj.people||[];n=data.team.length;}
       else if(key==="experience"){data.experience=obj.items||[];n=data.experience.length;}
       else if(key==="harvest"){data.harvest=obj.queue||[];n=data.harvest.length;}
       else if(key==="sfiaProfile"){
@@ -610,7 +647,7 @@
     function fx(k,label){var d=diag[k];if(!d)return label+" —";if(d.missing)return label+" MISSING";if(d.err)return label+" PARSE-ERR";return label+" "+d.count;}
     el.hidden=false;
     el.innerHTML='Reading <b>'+esc(cfg.owner||"?")+"/"+esc(cfg.repo||"?")+"@"+esc(cfg.branch||"main")+'</b> · folder <b>'+esc(cfg.path||"data")+'</b> · '+
-      fx("tenders","tenders")+" · "+fx("experience","bank")+" · "+fx("harvest","harvest")+" · "+fx("sfiaProfile","sfia");
+      fx("tenders","tenders")+" · "+fx("team","team")+" · "+fx("experience","bank")+" · "+fx("harvest","harvest")+" · "+fx("sfiaProfile","sfia");
     var anyMissing=["tenders","experience","harvest"].some(function(k){return diag[k]&&diag[k].missing;});
     el.className="diag"+(anyMissing?" warn":"");
   }
@@ -618,6 +655,7 @@
     if(key==="tenders")return JSON.stringify({schemaVersion:1,tenders:data.tenders},null,2);
     if(key==="experience")return JSON.stringify({schemaVersion:1,items:data.experience},null,2);
     if(key==="harvest")return JSON.stringify({schemaVersion:1,queue:data.harvest},null,2);
+    if(key==="team")return JSON.stringify({schemaVersion:2,_type:"team-registry",updatedAt:new Date().toISOString().slice(0,10),people:data.team},null,2);
     if(key==="sfiaProfile")return JSON.stringify({schemaVersion:sfiaProf.schemaVersion||2,_type:"sfia-profile",subject:sfiaProf.subject,framework:sfiaProf.framework||"SFIA 9",generated:sfiaProf.generated,source:sfiaProf.source,levelNames:sfiaProf.levelNames,evidence:sfiaProf.evidence,skills:sfiaProf.skills,attributes:sfiaProf.attributes,behaviours:sfiaProf.behaviours,strengths:sfiaProf.strengths},null,2);
   }
   function pullAll(){
@@ -727,7 +765,7 @@
       '<div class="meta">'+
       (t.sector?'<span>'+esc(t.sector)+'</span>':'')+
       (dl?'<span class="'+dlcls+'">'+esc(dl)+(dt!=null&&dt>=0&&OPEN.indexOf(t.status)>=0?' ('+dt+'d)':'')+'</span>':'')+
-      '<span class="go '+go+'">'+(go==="bid"?"● Bid":go==="pass"?"● Pass":"○ Undecided")+'</span>'+
+      '<span class="go '+(go==="pass"?"leave":go)+'">'+(go==="bid"?"● Bid":go==="partner"?"◐ Partner":go==="at-risk"?"◑ At risk":(go==="leave"||go==="pass")?"● Leave":"○ Undecided")+'</span>'+
       ownerHtml+
       '</div></div>';
   }
@@ -767,6 +805,7 @@
     $("ctConsole").textContent=data.tenders.filter(function(t){return OPEN.indexOf(t.status)>=0;}).length;
     $("ctArchive").textContent=data.tenders.filter(function(t){return CLOSED.indexOf(t.status)>=0;}).length;
     $("ctBank").textContent=data.experience.length;
+    if($("ctTeam"))$("ctTeam").textContent=(data.team||[]).length;
   }
   function renderBank(){
     var q=($("searchBank").value||"").toLowerCase();
@@ -786,7 +825,7 @@
       ((x.tags&&x.tags.length)?'<div class="tags">'+x.tags.map(function(tg){return '<span class="tag">'+esc(tg)+'</span>';}).join("")+'</div>':'')+
       '<div class="acts"><button class="btn sm" data-exedit="'+x.id+'">Edit</button></div></div>';}).join("");
   }
-  function renderAll(){renderCounts();populateFilters();renderList("console");renderList("archive");renderBank();renderAnalytics();renderSfiaAnalytics();renderSfia();renderAiExplorer();}
+  function renderAll(){renderCounts();populateFilters();renderList("console");renderList("archive");renderBank();renderTeam();renderAnalytics();renderSfiaAnalytics();renderSfia();renderAiExplorer();}
 
   /* ---------- analytics (Phase 2) ---------- */
   function bar(label,val,max,valTxt){var pct=max>0?Math.round(val/max*100):0;
@@ -1187,6 +1226,8 @@
     $("tmTitle").textContent=t?"Edit tender":"New tender";
     var e=editingT;
     if(!e.esa)e.esa={status:"none"};
+    if(!e.rfp)e.rfp={files:[]};
+    if(!e.teamProposed)e.teamProposed=[];
     var statusOpts=STATUSES.map(function(s){return '<option value="'+s+'"'+(e.status===s?' selected':'')+'>'+s+'</option>';}).join("");
     var goOpts=GO.map(function(g){return '<option value="'+g+'"'+((e.goNoGo.decision||'undecided')===g?' selected':'')+'>'+g+'</option>';}).join("");
     var outOpts=["pending","won","lost","withdrawn"].map(function(o){return '<option value="'+o+'"'+((e.outcome.result||'pending')===o?' selected':'')+'>'+o+'</option>';}).join("");
@@ -1200,9 +1241,9 @@
       '<div class="two"><div class="field"><label>Source / reference</label><input id="f_source" type="text" value="'+esc(e.source)+'" placeholder="RFP no. / link"></div>'+
       '<div class="field"><label>Deadline</label><input id="f_deadline" type="date" value="'+esc(e.deadline)+'"></div></div>'+
       '<div class="two"><div class="field"><label>Status</label><select id="f_status">'+statusOpts+'</select></div>'+
-      '<div class="field"><label>Go / No-Go</label><select id="f_go">'+goOpts+'</select></div></div>'+
+      '<div class="field"><label>Go / No-Go'+(isAdmin()?'':' <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(admin sets this)</span>')+'</label><select id="f_go"'+(isAdmin()?'':' disabled')+'>'+goOpts+'</select></div></div>'+
       '<div class="two"><div class="field"><label>Owner / lead</label><select id="f_owner">'+ownerOpts+'</select></div>'+
-      '<div class="field"><label>Go / No-Go reason</label><textarea id="f_goreason" placeholder="Why bid or pass?" style="min-height:0">'+esc(e.goNoGo.reason)+'</textarea></div></div>'+
+      '<div class="field"><label>Go / No-Go reason</label><textarea id="f_goreason" placeholder="Why bid / partner / leave?" style="min-height:0">'+esc(e.goNoGo.reason)+'</textarea></div></div>'+
       '<fieldset><legend>Fit &amp; coverage <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(evidence coverage)</span></legend><div id="tmFit"></div></fieldset>'+
       '<fieldset><legend>SFIA fit <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(framework level vs your profile)</span></legend><div id="tmSfia"></div></fieldset>'+
       '<fieldset><legend>Requirements &amp; weights <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(ratings set by the CV skill)</span></legend><div id="reqList"></div><button class="btn sm" id="addReq" type="button">+ Requirement</button></fieldset>'+
@@ -1212,10 +1253,13 @@
       '<div class="field"><label>Tailored CV</label><input id="f_tailored" type="text" value="'+esc(e.cv.tailoredRef)+'" placeholder="cvs/tailored/'+esc(e.id)+'/CV.pdf"></div>'+
       '<div class="field"><label>Coverage map</label><input id="f_coverage" type="text" value="'+esc(e.cv.coverageRef)+'"></div></fieldset>'+
       '<fieldset><legend>Expert Services Agreement (ESA) <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(drafted by the CV/ESA skill)</span></legend><div id="tmEsa"></div></fieldset>'+
+      '<fieldset><legend>RFP document(s)</legend><div id="tmRfp"></div></fieldset>'+
+      '<fieldset><legend>Proposed team <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(whose CVs the skill reviews)</span></legend><div id="tmTeam"></div></fieldset>'+
+      '<fieldset><legend>Assessment <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(bid / partner / leave — proposed by the skill)</span></legend><div id="tmAssess"></div></fieldset>'+
       '<fieldset><legend>Outcome</legend><div class="two"><div class="field"><label>Result</label><select id="f_outcome">'+outOpts+'</select></div>'+
       '<div class="field"><label>&nbsp;</label><input id="f_outnotes" type="text" value="'+esc(e.outcome.notes)+'" placeholder="What went wrong / right (for trend analysis)"></div></div></fieldset>'+
       '<div class="field"><label>Notes</label><textarea id="f_notes">'+esc(e.notes)+'</textarea></div>';
-    renderReqs();renderComps();renderTmFit();renderTmSfia();renderTmEsa();
+    renderReqs();renderComps();renderTmFit();renderTmSfia();renderTmEsa();renderTmRfp();renderTmTeam();renderTmAssess();
     $("addReq").onclick=function(){editingT.requirements.push({text:"",weight:""});renderReqs();};
     $("addComp").onclick=function(){editingT.compliance.push({label:"",done:false});renderComps();};
     $("tmDelete").style.display=t?"":"none";
@@ -1258,12 +1302,14 @@
     var e=editingT;
     e.client=$("f_client").value.trim();e.sector=$("f_sector").value.trim();e.title=$("f_title").value.trim();
     e.source=$("f_source").value.trim();e.deadline=$("f_deadline").value;e.status=$("f_status").value;
-    e.goNoGo={decision:$("f_go").value,reason:$("f_goreason").value.trim()};
+    e.goNoGo={decision:isAdmin()?$("f_go").value:((editingT.goNoGo&&editingT.goNoGo.decision)||"undecided"),reason:$("f_goreason").value.trim()};
     e.owner=$("f_owner")?$("f_owner").value:(e.owner||"");
     e.cv={baseRef:$("f_base").value.trim(),tailoredRef:$("f_tailored").value.trim(),coverageRef:$("f_coverage").value.trim()};
     if($("f_esastatus")){e.esa=e.esa||{status:"none"};e.esa.status=$("f_esastatus").value;e.esa.updatedAt=new Date().toISOString();}
     e.outcome={result:$("f_outcome").value,notes:$("f_outnotes").value.trim()};
     e.notes=$("f_notes").value.trim();
+    if(!e.createdBy)e.createdBy=me();
+    e.loadedBy=me();
     e.updatedAt=new Date().toISOString();
     return e;
   }
@@ -1320,6 +1366,114 @@
     renderBank();saveKey("harvest","Reject harvested bullet");
   }
 
+  /* ---------- team registry + tender panels (v1.9) ---------- */
+  function personById(id){for(var i=0;i<(data.team||[]).length;i++)if(data.team[i].id===id)return data.team[i];return null;}
+  function personName(id){var p=personById(id);return p?p.name:id;}
+  function renderTeam(){
+    var wrap=$("teamList");if(!wrap)return;
+    var q=(($("searchTeam")||{}).value||"").toLowerCase();
+    var list=(data.team||[]).filter(function(p){return !q||((p.name||"")+" "+(p.role||"")+" "+(p.org||"")+" "+((p.tags||[]).join(" "))).toLowerCase().indexOf(q)>=0;});
+    if(!list.length){wrap.innerHTML='<div class="empty"><b>No people yet</b><br>Click “+ Add person” to build your team registry.</div>';return;}
+    wrap.innerHTML=list.map(function(p){
+      var cvs=(p.cvRefs||[]).map(function(c){return '<span class="tag">'+esc(c.label||"CV")+'</span>';}).join(" ")||'<span class="hint">no CV yet</span>';
+      var badges=(p.external?'<span class="tag" style="background:var(--warn-soft);color:var(--warn)">external</span> ':'')+(p.active===false?'<span class="tag">inactive</span> ':'');
+      return '<div class="ex-item" data-pid="'+esc(p.id)+'"><div class="cat">'+esc(p.role||"—")+(p.org?' · '+esc(p.org):'')+'</div>'+
+        '<div class="txt" style="font-weight:650">'+esc(p.name||p.id)+' '+badges+'</div>'+
+        '<div class="tags">'+cvs+'</div>'+
+        '<div class="acts"><button class="btn sm" data-pedit="'+esc(p.id)+'">Edit / CVs</button></div></div>';
+    }).join("");
+  }
+  function openPerson(p){
+    editingP=p?JSON.parse(JSON.stringify(p)):{id:"",name:"",role:"",org:"Modelware Systems",email:"",external:false,active:true,cvRefs:[],sfiaRef:"",tags:[],addedBy:me(),addedAt:new Date().toISOString().slice(0,10)};
+    $("pmTitle").textContent=p?"Edit person":"Add person";
+    var e=editingP;
+    $("pmBody").innerHTML=
+      '<div class="two"><div class="field"><label>Name</label><input id="p_name" type="text" value="'+esc(e.name)+'"></div>'+
+      '<div class="field"><label>Role</label><input id="p_role" type="text" value="'+esc(e.role)+'" placeholder="e.g. Project Manager"></div></div>'+
+      '<div class="two"><div class="field"><label>Organisation</label><input id="p_org" type="text" value="'+esc(e.org||"")+'"></div>'+
+      '<div class="field"><label>Email</label><input id="p_email" type="text" value="'+esc(e.email||"")+'"></div></div>'+
+      '<div class="two"><div class="checkrow" style="margin-top:6px"><input type="checkbox" id="p_external"'+(e.external?' checked':'')+'><label style="margin:0;text-transform:none;letter-spacing:0;font-family:var(--fb);font-size:.9rem;color:var(--ink)">External / partner / JV</label></div>'+
+      '<div class="checkrow" style="margin-top:6px"><input type="checkbox" id="p_active"'+(e.active!==false?' checked':'')+'><label style="margin:0;text-transform:none;letter-spacing:0;font-family:var(--fb);font-size:.9rem;color:var(--ink)">Active</label></div></div>'+
+      '<div class="field"><label>Tags (comma-separated)</label><input id="p_tags" type="text" value="'+esc((e.tags||[]).join(", "))+'"></div>'+
+      '<fieldset><legend>CVs <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(cvs/base/'+esc(e.id||"&lt;id&gt;")+'/)</span></legend><div id="pmCvs"></div>'+
+      '<label class="btn sm" style="margin-top:8px;display:inline-block">+ Upload CV<input type="file" id="p_cvfile" accept=".pdf,.doc,.docx" hidden></label>'+
+      '<span class="hint" id="pmCvState" style="margin-left:8px"></span></fieldset>';
+    renderPmCvs();
+    $("pmDelete").style.display=p?"":"none";
+    $("personModal").classList.add("open");
+  }
+  function renderPmCvs(){
+    var el=$("pmCvs");if(!el)return;var e=editingP;
+    el.innerHTML=(e.cvRefs||[]).length?e.cvRefs.map(function(c,i){return '<div class="listrow"><input type="text" value="'+esc(c.ref||"")+'" disabled style="flex:1;font-family:var(--fm);font-size:.76rem"><button class="btn sm rm" type="button" data-pcvrm="'+i+'">✕</button></div>';}).join(""):'<div class="hint">No CV uploaded yet.</div>';
+  }
+  function uid2Person(name){var base=slugify(name);var id=base,n=2;while(personById(id)){id=base+"-"+n;n++;}return id;}
+  function collectPerson(){
+    var e=editingP;
+    e.name=$("p_name").value.trim();e.role=$("p_role").value.trim();e.org=$("p_org").value.trim();
+    e.email=$("p_email").value.trim();e.external=$("p_external").checked;e.active=$("p_active").checked;
+    e.tags=$("p_tags").value.split(",").map(function(s){return s.trim();}).filter(Boolean);
+    if(!e.id)e.id=uid2Person(e.name);
+    return e;
+  }
+  function savePerson(){
+    var e=collectPerson();
+    if(!e.name){toast("Add a name",true);return;}
+    var idx=-1;for(var i=0;i<(data.team||[]).length;i++){if(data.team[i].id===e.id){idx=i;break;}}
+    if(idx>=0)data.team[idx]=e;else{data.team=data.team||[];data.team.push(e);}
+    $("personModal").classList.remove("open");renderTeam();renderCounts();
+    saveKey("team","Update team: "+(e.name||e.id));
+  }
+  function deletePerson(){
+    if(!editingP)return;
+    data.team=(data.team||[]).filter(function(p){return p.id!==editingP.id;});
+    $("personModal").classList.remove("open");renderTeam();renderCounts();
+    saveKey("team","Remove team member: "+(editingP.name||editingP.id));
+  }
+  function uploadPersonCv(file){
+    var e=editingP;if(!e.name){toast("Enter the name first",true);return;}
+    if(!e.id)e.id=uid2Person(e.name);
+    if(!configured()){toast("Connect your repo first (Settings)",true);return;}
+    var path=cvBasePath(e.id,file.name);var st=$("pmCvState");if(st)st.textContent="Uploading…";
+    fileToB64(file).then(function(b64){return ghPutRaw(path,b64,null,"Upload CV for "+(e.name||e.id));}).then(function(){
+      e.cvRefs=e.cvRefs||[];e.cvRefs.push({label:file.name.replace(/\.[^.]+$/,""),ref:path});
+      renderPmCvs();if(st)st.textContent="Uploaded ✓ — Save person to record it.";
+    }).catch(function(err){if(st)st.textContent="";toast("Upload failed: "+netMsg(err),true);});
+  }
+  function renderTmRfp(){
+    var el=$("tmRfp");if(!el||!editingT)return;
+    var files=(editingT.rfp&&editingT.rfp.files)||[];
+    var rows=files.length?files.map(function(f,i){return '<div class="listrow"><input type="text" value="'+esc(f.name||f.path||"")+'" disabled style="flex:1;font-family:var(--fm);font-size:.76rem"><button class="btn sm rm" type="button" data-rfprm="'+i+'">✕</button></div>';}).join(""):'<div class="hint">No RFP uploaded yet.</div>';
+    el.innerHTML=rows+'<label class="btn sm" style="margin-top:6px;display:inline-block">+ Upload RFP / addendum<input type="file" id="f_rfpfile" accept=".pdf,.doc,.docx,.zip" hidden></label><span class="hint" id="tmRfpState" style="margin-left:8px"></span>';
+  }
+  function uploadRfp(file){
+    var e=editingT;if(!e.id)e.id=uid();
+    if(!configured()){toast("Connect your repo first (Settings)",true);return;}
+    var path=rfpPath(e.id,file.name);var st=$("tmRfpState");if(st)st.textContent="Uploading…";
+    fileToB64(file).then(function(b64){return ghPutRaw(path,b64,null,"Upload RFP for "+(e.client||e.id));}).then(function(){
+      e.rfp=e.rfp||{files:[]};e.rfp.files.push({name:file.name,path:path,uploadedBy:me(),uploadedAt:new Date().toISOString()});
+      renderTmRfp();if(st)st.textContent="Uploaded ✓ — Save tender to record it.";
+    }).catch(function(err){if(st)st.textContent="";toast("Upload failed: "+netMsg(err),true);});
+  }
+  function renderTmTeam(){
+    var el=$("tmTeam");if(!el||!editingT)return;
+    var sel=editingT.teamProposed||[];
+    var people=(data.team||[]).filter(function(p){return p.active!==false;});
+    if(!people.length){el.innerHTML='<div class="hint">No team members yet — add people on the <b>Team</b> tab, then propose them here.</div>';return;}
+    el.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:8px">'+people.map(function(p){var on=sel.indexOf(p.id)>=0;
+      return '<label class="checkrow" style="margin:0;gap:6px;border:1px solid '+(on?'var(--glacier)':'var(--line)')+';border-radius:9px;padding:6px 10px;cursor:pointer"><input type="checkbox" data-team="'+esc(p.id)+'"'+(on?' checked':'')+' style="width:16px;height:16px">'+
+      '<span style="font-size:.85rem">'+esc(p.name)+(p.external?' <span class="tag" style="background:var(--warn-soft);color:var(--warn)">ext</span>':'')+'</span></label>';}).join("")+'</div>';
+  }
+  function renderTmAssess(){
+    var el=$("tmAssess");if(!el||!editingT)return;
+    var a=editingT.assessment;
+    if(!a){el.innerHTML='<div class="hint">No assessment yet. Propose a team, upload the RFP, commit &amp; push, then run <b>rfp-cv-tailor</b> (triage) for a bid / partner / leave recommendation per person.</div>';return;}
+    var recCol=a.recommendation==="bid"?"var(--good)":a.recommendation==="partner"?"var(--glacier)":a.recommendation==="leave"?"var(--accent)":"var(--warn)";
+    var ppl=(a.people||[]).map(function(x){var v=x.verdict||"";var vc=v==="strong"?"strong":v==="partial"?"partial":"gap";
+      return '<div class="reqrow"><span class="rr-w">'+(x.fit!=null?x.fit+"%":"—")+'</span><span class="rr-t"><b>'+esc(personName(x.personId))+'</b>'+((x.covers&&x.covers.length)?' <span class="hint">covers '+esc(x.covers.join(", "))+'</span>':'')+((x.gaps&&x.gaps.length)?'<br><span class="hint" style="color:var(--warn)">gaps: '+esc(x.gaps.join(", "))+'</span>':'')+'</span><span class="rr-r"><span class="rdot '+vc+'">'+esc(v||"—")+'</span></span></div>';}).join("");
+    var needs=(a.partnerNeeds&&a.partnerNeeds.length)?'<div class="hint" style="margin-top:8px"><b>Partner would supply:</b> '+esc(a.partnerNeeds.join(", "))+'</div>':'';
+    var dq=(a.disqualifiers&&a.disqualifiers.length&&a.disqualifiers.join("").toLowerCase().indexOf("none")<0)?'<div class="hint" style="margin-top:4px;color:var(--accent)"><b>Disqualifiers:</b> '+esc(a.disqualifiers.join(", "))+'</div>':'';
+    el.innerHTML='<div class="cov-head"><div><div style="font-family:var(--fm);font-size:.64rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)">Skill recommends</div><div class="cov-score" style="color:'+recCol+';font-size:1.5rem;text-transform:capitalize">'+esc(a.recommendation||"—")+'</div></div>'+(a.overallFit!=null?'<div><div class="hint">Team fit</div><div style="font-family:var(--fd);font-weight:800;font-size:1.3rem">'+a.overallFit+'%</div></div>':'')+'</div>'+(a.rationale?'<div class="hint" style="margin-bottom:8px">'+esc(a.rationale)+'</div>':'')+ppl+needs+dq+'<div class="hint" style="margin-top:8px">This is the skill’s proposal — the bid call is set in <b>Go / No-Go</b> above by an admin.</div>';
+  }
   /* ---------- events ---------- */
   $("tabs").addEventListener("click",function(ev){var b=ev.target.closest("button[data-tab]");if(!b)return;
     document.querySelectorAll("nav.tabs button").forEach(function(x){x.classList.toggle("active",x===b);});
@@ -1341,6 +1495,18 @@
     else if(t.dataset.comprm!=null){editingT.compliance.splice(t.dataset.comprm,1);renderComps();}
   });
   $("tmSave").onclick=saveTender;$("tmDelete").onclick=deleteTender;
+  $("newPersonBtn").onclick=function(){openPerson(null);};
+  $("teamList").addEventListener("click",function(ev){var b=ev.target.closest("[data-pedit]");if(b)openPerson(personById(b.dataset.pedit));});
+  $("searchTeam").addEventListener("input",renderTeam);
+  $("pmSave").onclick=savePerson;$("pmDelete").onclick=deletePerson;
+  $("pmCancel").onclick=$("pmClose").onclick=function(){$("personModal").classList.remove("open");};
+  $("pmBody").addEventListener("click",function(ev){var b=ev.target.closest("[data-pcvrm]");if(b){editingP.cvRefs.splice(+b.dataset.pcvrm,1);renderPmCvs();}});
+  $("pmBody").addEventListener("change",function(ev){var f=ev.target;if(f.id==="p_cvfile"&&f.files&&f.files[0]){uploadPersonCv(f.files[0]);f.value="";}});
+  $("tmBody").addEventListener("change",function(ev){var t=ev.target;
+    if(t.id==="f_rfpfile"&&t.files&&t.files[0]){uploadRfp(t.files[0]);t.value="";}
+    else if(t.dataset.team!=null){var id=t.dataset.team;editingT.teamProposed=editingT.teamProposed||[];var ix=editingT.teamProposed.indexOf(id);if(t.checked&&ix<0)editingT.teamProposed.push(id);else if(!t.checked&&ix>=0)editingT.teamProposed.splice(ix,1);}
+  });
+  $("tmBody").addEventListener("click",function(ev){var b=ev.target.closest("[data-rfprm]");if(b){editingT.rfp.files.splice(+b.dataset.rfprm,1);renderTmRfp();}});
   $("sfSave").onclick=function(){saveKey("sfiaProfile","Update SFIA profile").then(function(){profileDirty=false;renderSfMaster();toast("Profile saved to GitHub");});};
   $("sfmSave").onclick=saveSfiaSkill;
   $("sfmCancel").onclick=$("sfmClose").onclick=function(){$("sfiaModal").classList.remove("open");};
@@ -1369,7 +1535,7 @@
     if(!repo && /[\/\\]/.test(owner)){var parts=owner.split(/[\/\\]/).filter(Boolean);owner=parts[0]||"";repo=parts[1]||"";$("setOwner").value=owner;$("setRepo").value=repo;toast("Split owner/repo for you");}
     cfg.owner=owner;cfg.repo=repo;
     cfg.branch=$("setBranch").value.trim()||"main";cfg.path=($("setPath").value.trim()||"data").replace(/^\/+|\/+$/g,"");
-    cfg.token=$("setToken").value.trim();saveCfg();
+    cfg.token=$("setToken").value.trim();cfg.userName=$("setUserName").value.trim();cfg.role=$("setRole").value;saveCfg();
     if(!configured()){toast("Fill owner, repo and token",true);return;}
     setConn("","Testing…");
     testConn().then(function(repo){
@@ -1380,11 +1546,11 @@
   $("clearCacheBtn").onclick=function(){try{localStorage.removeItem(CACHE_KEY);}catch(e){}toast("Local cache cleared");location.reload();};
   $("syncBtn").onclick=function(){syncDirty();};
   $("themeBtn").onclick=function(){var cur=document.documentElement.getAttribute("data-theme");var dark=cur?cur==="dark":window.matchMedia("(prefers-color-scheme:dark)").matches;document.documentElement.setAttribute("data-theme",dark?"light":"dark");};
-  document.addEventListener("keydown",function(ev){if(ev.key==="Escape"){$("tenderModal").classList.remove("open");$("exModal").classList.remove("open");$("sfiaModal").classList.remove("open");}});
-  [ "tenderModal","exModal","sfiaModal"].forEach(function(id){$(id).addEventListener("click",function(ev){if(ev.target===$(id))$(id).classList.remove("open");});});
+  document.addEventListener("keydown",function(ev){if(ev.key==="Escape"){$("tenderModal").classList.remove("open");$("exModal").classList.remove("open");$("sfiaModal").classList.remove("open");$("personModal").classList.remove("open");}});
+  [ "tenderModal","exModal","sfiaModal","personModal"].forEach(function(id){$(id).addEventListener("click",function(ev){if(ev.target===$(id))$(id).classList.remove("open");});});
 
   /* ---------- boot ---------- */
-  function fillSettings(){$("setOwner").value=cfg.owner||"";$("setRepo").value=cfg.repo||"";$("setBranch").value=cfg.branch||"main";$("setPath").value=cfg.path||"data";$("setToken").value=cfg.token||"";}
+  function fillSettings(){$("setOwner").value=cfg.owner||"";$("setRepo").value=cfg.repo||"";$("setBranch").value=cfg.branch||"main";$("setPath").value=cfg.path||"data";$("setToken").value=cfg.token||"";$("setUserName").value=cfg.userName||"";$("setRole").value=cfg.role||"admin";}
   $("verTag").textContent="v"+APP_VERSION+" · "+APP_BUILD;
   $("verTag").setAttribute("title","Tender Console v"+APP_VERSION+" — built "+APP_BUILD);
   $("verLine").innerHTML="Tender Console <b>v"+APP_VERSION+"</b> · last updated "+APP_BUILD;

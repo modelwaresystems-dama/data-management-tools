@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="version" content="1.1.0">
+<meta name="version" content="1.2.0">
 <title>Today's CRM Update</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -109,6 +109,8 @@ select, input[type="text"], input[type="date"], input[type="password"], textarea
 .qtext { overflow-wrap: anywhere; }
 .qanswer { margin: 0; padding: 6px 10px; border-radius: 6px; background: var(--ok-soft); overflow-wrap: anywhere; white-space: pre-wrap; }
 .qbox { width: 100%; resize: vertical; }
+.qsuggest { margin: 0; padding: 6px 10px; border-radius: 6px; border: 1px dashed var(--accent); background: var(--accent-soft); overflow-wrap: anywhere; font-size: 0.92rem; }
+.qsuggest b { font-weight: 600; color: var(--accent); }
 .mbx { display: grid; grid-template-columns: max-content max-content 1fr; gap: 4px 14px; font-size: 0.85rem; overflow-x: auto; }
 .empty { text-align: center; padding: 40px 16px; color: var(--muted); }
 .err { color: var(--bad); }
@@ -164,7 +166,10 @@ select, input[type="text"], input[type="date"], input[type="password"], textarea
 
   <section id="questionsPanel" class="panel" hidden>
     <h2>Questions for Howard</h2>
-    <p id="questionsHint" class="muted" style="font-size:0.85rem">Answer in your own words. The next morning run reads each answer, acts on it, and stops asking.</p>
+    <p id="questionsHint" class="muted" style="font-size:0.85rem">Answer in your own words, ideally starting with
+    <b>Create deal:</b> (name, company or individual, owner, channel), <b>Log on:</b> (an existing deal) or
+    <b>Leave it out</b>. Each question carries the run's suggested answer: use it as it is, or change it first.
+    The next morning run reads each answer, acts on it, and stops asking.</p>
     <ul id="questions" class="qlist"></ul>
   </section>
 
@@ -613,10 +618,16 @@ document.getElementById("appVersion").textContent =
       li.appendChild(meta);
       return li;
     }
+    if (x.suggestion && !ans) {
+      const sg = el("p", "qsuggest");
+      sg.appendChild(el("b", "", "Suggested: "));
+      sg.appendChild(document.createTextNode(x.suggestion));
+      li.appendChild(sg);
+    }
     if (!editing) return li;
 
     const box = el("textarea", "qbox"); box.id = "qa_" + x.qid; box.rows = 2; box.maxLength = 600;
-    box.placeholder = "Your answer, e.g. Company, Debbie's deal, channel 2. Or: leave it out of the CRM.";
+    box.placeholder = "Create deal: … / Log on: … / Leave it out";
     box.value = x.qid in S.qDraft ? S.qDraft[x.qid] : (ans ? ans.text : "");
     /* A refresh rebuilds the list every minute; the draft and the edit lock keep what is typed. */
     box.oninput = () => { S.qDraft[x.qid] = box.value; S.editing = "q:" + x.qid; };
@@ -630,6 +641,13 @@ document.getElementById("appVersion").textContent =
       answerQuestion(x.qid, box.value);
     };
     acts.appendChild(saveB);
+    if (x.suggestion && !ans) {
+      const use = el("button", "btn good", "Use suggestion");
+      use.onclick = () => answerQuestion(x.qid, x.suggestion);
+      const tweak = el("button", "btn", "Edit suggestion");
+      tweak.onclick = () => { S.qDraft[x.qid] = x.suggestion; S.editing = "q:" + x.qid; render(); const b = $("qa_" + x.qid); if (b) b.focus(); };
+      acts.append(use, tweak);
+    }
     if (ans) {
       const cancel = el("button", "btn", "Cancel");
       cancel.onclick = () => { delete S.qOpen[x.qid]; delete S.qDraft[x.qid]; S.editing = null; render(); };

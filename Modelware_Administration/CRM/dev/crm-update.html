@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="version" content="1.0.3">
+<meta name="version" content="1.1.0">
 <title>Today's CRM Update</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -101,6 +101,14 @@ select, input[type="text"], input[type="date"], input[type="password"], textarea
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; display: grid; gap: 8px; }
 .panel ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 .panel p { margin: 0; }
+.qlist { list-style: none; padding-left: 0 !important; gap: 12px !important; }
+.q { display: grid; gap: 6px; padding-bottom: 12px; border-bottom: 1px dashed var(--line); }
+.q:last-child { border-bottom: 0; padding-bottom: 0; }
+.qhead { display: flex; align-items: baseline; gap: 8px; }
+.qhead .pill { margin-left: auto; }
+.qtext { overflow-wrap: anywhere; }
+.qanswer { margin: 0; padding: 6px 10px; border-radius: 6px; background: var(--ok-soft); overflow-wrap: anywhere; white-space: pre-wrap; }
+.qbox { width: 100%; resize: vertical; }
 .mbx { display: grid; grid-template-columns: max-content max-content 1fr; gap: 4px 14px; font-size: 0.85rem; overflow-x: auto; }
 .empty { text-align: center; padding: 40px 16px; color: var(--muted); }
 .err { color: var(--bad); }
@@ -156,7 +164,8 @@ select, input[type="text"], input[type="date"], input[type="password"], textarea
 
   <section id="questionsPanel" class="panel" hidden>
     <h2>Questions for Howard</h2>
-    <ul id="questions"></ul>
+    <p id="questionsHint" class="muted" style="font-size:0.85rem">Answer in your own words. The next morning run reads each answer, acts on it, and stops asking.</p>
+    <ul id="questions" class="qlist"></ul>
   </section>
 
   <section id="mailPanel" class="panel" hidden>
@@ -176,7 +185,8 @@ document.getElementById("appVersion").textContent =
 (function () {
   /* Data lives in the private repo, never in this page:
        <folder>/triage/batches/<date>.json         the morning run's batch (display fields only)
-       <folder>/triage/decisions/<date>.json       Howard's approve / edit / drop
+       <folder>/triage/decisions/<date>.json       Howard's approve / edit / drop, and his
+                                                   answers to the day's questions (answers.<qid>)
        <folder>/triage/confirm/<date>/<user>.json  each person's confirmations, one writer per file
        <folder>/triage/imported/<date>.json        written by the run once the import has landed
      The connection is the CRM's own (localStorage "crm.github"), so one setup covers both. */
@@ -186,7 +196,8 @@ document.getElementById("appVersion").textContent =
   const S = {
     gh: null, me: "", isOwner: false, dates: [], date: null,
     batch: null, decisions: {}, decSha: null, imported: null, confirms: {}, mySha: null,
-    view: "mine", editing: null, readOnly: false, loading: false
+    view: "mine", editing: null, readOnly: false, loading: false,
+    qDraft: {}, qOpen: {}
   };
 
   function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
@@ -311,6 +322,33 @@ document.getElementById("appVersion").textContent =
       toast("Everything not dropped will be imported at the next morning run.");
     }).catch(writeFailed);
   }
+  /* An answer is Howard's own words, saved beside his row decisions. An empty answer
+     removes it. Answers are not locked by the import: questions never import, and a
+     late answer is still read by the next morning run. */
+  function answerQuestion(qid, text) {
+    if (!S.isOwner) return Promise.resolve();
+    const t = String(text || "").trim();
+    return enqueue(async () => {
+      const res = await readModifyWrite("decisions/" + S.date + ".json",
+        () => ({ date: S.date, approveAll: false, rows: {} }),
+        (doc) => {
+          doc.answers = doc.answers || {};
+          if (t) doc.answers[qid] = { text: t, at: new Date().toISOString() };
+          else delete doc.answers[qid];
+          doc.updatedAt = new Date().toISOString();
+        }, "crm-update: Howard answers " + S.date + " " + qid);
+      S.decisions = res.doc;
+      delete S.qDraft[qid]; delete S.qOpen[qid];
+      if (S.editing === "q:" + qid) S.editing = null;
+      render();
+      toast(t ? "Saved. The next morning run will act on it." : "Answer removed.");
+    }).catch(writeFailed);
+  }
+  function answerOf(qid) {
+    const a = (S.decisions.answers || {})[qid];
+    return a && a.text ? a : null;
+  }
+
   function statusOf(rowId) {
     const d = (S.decisions.rows || {})[rowId] || {};
     if (d.status === "dropped") return "dropped";
@@ -530,12 +568,15 @@ document.getElementById("appVersion").textContent =
     } else {
       for (const r of rows) cards.appendChild(renderCard(r));
     }
-    if (keep && $(keep)) $(keep).focus();
-
     const q = S.batch.questions || [];
     $("questionsPanel").hidden = !q.length;
     const ql = $("questions"); ql.textContent = "";
-    for (const x of q) ql.appendChild(el("li", "", x.text));
+    const open = q.filter((x) => !answerOf(x.qid)).length;
+    $("questionsHint").hidden = !S.isOwner || S.readOnly;
+    $("questionsPanel").querySelector("h2").textContent =
+      "Questions for Howard" + (q.length ? " · " + open + " of " + q.length + " open" : "");
+    for (const x of q) ql.appendChild(renderQuestion(x));
+    if (keep && $(keep)) $(keep).focus();
 
     const mb = S.batch.mailboxes || [];
     $("mailPanel").hidden = !mb.length;
@@ -548,6 +589,56 @@ document.getElementById("appVersion").textContent =
     }
     const src = S.batch.source;
     $("sourceLine").textContent = src ? "CRM read from the " + src.kind + ", " + src.events + " events, newest " + fmtTime(src.newestEvent) + ". Drafted " + fmtTime(S.batch.generatedAt) + "." : "";
+  }
+
+  function renderQuestion(x) {
+    const li = el("li", "q");
+    const ans = answerOf(x.qid);
+    const head = el("div", "qhead");
+    head.appendChild(el("span", "qtext", x.text));
+    head.appendChild(el("span", "pill " + (ans ? "ok" : "draft"), ans ? "Answered" : "Open"));
+    li.appendChild(head);
+
+    const canAnswer = S.isOwner && !S.readOnly;
+    const editing = canAnswer && (!ans || S.qOpen[x.qid]);
+    if (ans && !editing) {
+      li.appendChild(el("p", "qanswer", ans.text));
+      const meta = el("div", "actions");
+      meta.appendChild(el("span", "label", "Answered " + fmtTime(ans.at)));
+      if (canAnswer) {
+        const ch = el("button", "btn", "Change");
+        ch.onclick = () => { S.qOpen[x.qid] = true; S.qDraft[x.qid] = ans.text; render(); };
+        meta.appendChild(ch);
+      }
+      li.appendChild(meta);
+      return li;
+    }
+    if (!editing) return li;
+
+    const box = el("textarea", "qbox"); box.id = "qa_" + x.qid; box.rows = 2; box.maxLength = 600;
+    box.placeholder = "Your answer, e.g. Company, Debbie's deal, channel 2. Or: leave it out of the CRM.";
+    box.value = x.qid in S.qDraft ? S.qDraft[x.qid] : (ans ? ans.text : "");
+    /* A refresh rebuilds the list every minute; the draft and the edit lock keep what is typed. */
+    box.oninput = () => { S.qDraft[x.qid] = box.value; S.editing = "q:" + x.qid; };
+    box.onfocus = () => { S.editing = "q:" + x.qid; };
+    box.onblur = () => { if (S.editing === "q:" + x.qid && !(x.qid in S.qDraft)) S.editing = null; };
+    li.appendChild(box);
+    const acts = el("div", "actions");
+    const saveB = el("button", "btn primary", "Save answer");
+    saveB.onclick = () => {
+      if (!box.value.trim() && !ans) { box.focus(); toast("Type an answer first."); return; }
+      answerQuestion(x.qid, box.value);
+    };
+    acts.appendChild(saveB);
+    if (ans) {
+      const cancel = el("button", "btn", "Cancel");
+      cancel.onclick = () => { delete S.qOpen[x.qid]; delete S.qDraft[x.qid]; S.editing = null; render(); };
+      const clear = el("button", "btn warn", "Remove answer");
+      clear.onclick = () => answerQuestion(x.qid, "");
+      acts.append(cancel, clear);
+    }
+    li.appendChild(acts);
+    return li;
   }
 
   function setView(v) {

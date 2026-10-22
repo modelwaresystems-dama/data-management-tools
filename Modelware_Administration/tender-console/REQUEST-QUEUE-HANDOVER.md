@@ -23,9 +23,10 @@ A salesperson should be able to click **Request assessment** in the Tender Conso
                                                                           push to requests.json fires│
                                                                                                      ▼
   GitHub Actions: "Assessment worker"  (.github/workflows/assessment-worker.yml)
-     1. checkout the data repo  (includes .claude/skills/rfp-cv-tailor/)
+     1. checkout the data repo  (for the data files + the commit step)
      2. anthropics/claude-code-action@v1  — auth: CLAUDE_CODE_OAUTH_TOKEN
-          runs  /rfp-cv-tailor  in WORKER MODE (headless, no approval gates):
+          installs the `tender` plugin from the modelware-skills marketplace,
+          then runs  /tender:rfp-cv-tailor  in WORKER MODE (headless, no gates):
             · find the oldest queued request → its tenderId
             · read the tender, team.json, each proposed person's CV, the RFP
             · run triage → per-person fit, partner needs, disqualifiers, bid/partner/leave
@@ -102,14 +103,14 @@ The *request* reaching `done` means the worker drafted the assessment. Whether t
 
 ## 5. The worker — runbook (GitHub Actions)
 
-The worker is a **GitHub Actions workflow** (`.github/workflows/assessment-worker.yml`) in the private data repo, running `anthropics/claude-code-action@v1`, which runs the real `rfp-cv-tailor` skill (committed to the repo at `.claude/skills/rfp-cv-tailor/`) in **Worker mode**. Full setup: `WORKER-SETUP.md`.
+The worker is a **GitHub Actions workflow** (`.github/workflows/assessment-worker.yml`) in the private data repo, running `anthropics/claude-code-action@v1`, which installs the **`tender` plugin from the `modelware-skills` marketplace** (the single skill source — not vendored in this repo, so it never drifts from Howard's Claude) and runs **`/tender:rfp-cv-tailor`** in **Worker mode**. Full setup: `WORKER-SETUP.md`.
 
 **Trigger (D):** `on: push` to `**/requests.json`, plus `workflow_dispatch` for manual test runs. A `concurrency` group serialises runs. One worker at a time; stateless between runs (the queue file is the entire shared state).
 
 **Each run:**
 
 1. **Checkout** the data repo (brings the skill onto the runner).
-2. **claude-code-action** authenticates the model with `CLAUDE_CODE_OAUTH_TOKEN` (C) and runs `/rfp-cv-tailor` in Worker mode, headless — **no Phase 0/1 approval gates** (there is no human in CI; the human gate is the app's Confirm). Allowed tools: `Read, Edit, Write, Glob, Grep`; `--max-turns` caps cost.
+2. **claude-code-action** authenticates the model with `CLAUDE_CODE_OAUTH_TOKEN` (C), installs the `tender` plugin from the `modelware-skills` marketplace, and runs `/tender:rfp-cv-tailor` in Worker mode, headless — **no Phase 0/1 approval gates** (there is no human in CI; the human gate is the app's Confirm). Allowed tools: `Read, Edit, Write, Glob, Grep`; `--max-turns` caps cost.
 3. The skill: pick the oldest `queued` request; gather inputs for its `tenderId` (tender record, `team.json`, each `teamProposed[]` person's CV, the RFP, `experience.json`, `sfia-profile.json`); run triage (per-person fit, team coverage, `partnerNeeds[]`, `disqualifiers[]`, recommendation); merge `assessment{}` onto the one tender record with **`status:"proposed"`**, `assessedBy:"worker:gha"`; close the request (`done`, `result`, `completedAt`). Integrity: every `assessment.people[].personId` ∈ `teamProposed[]` ∈ `team.json`.
 4. **The workflow commits** the edited `tenders.json` + `requests.json` with `GITHUB_TOKEN` and pushes (E). The skill does **not** run git.
 5. **On any failure** handling a request: the skill sets it `status:"error"`, `error`, `attempts++`, leaves `tenders.json` untouched, and stops — never a row stuck in `running`.
@@ -154,9 +155,9 @@ No worker PAT exists any more. Two mechanisms, both scoped to the data repo:
 |---|---|---|---|
 | 1 | `requests.json` in `FILES`/`parseFile`/`fileBody` | app `index.html` | **done (v1.10.0)** |
 | 2 | "Request assessment" button + status + Cancel/Retry | app tender modal | **done (v1.10.0)** |
-| 3 | `assessment.status` render + **Confirm** button (admin) | app `index.html` → **v1.11.0** | to build |
+| 3 | `assessment.status` render + **Confirm** button (admin) | app `index.html` → **v1.11.0** | **built — push app repo** |
 | 4 | Workflow `assessment-worker.yml` | data repo `.github/workflows/` | **delivered — Howard installs** |
-| 5 | Skill copied into data repo `.claude/skills/rfp-cv-tailor/` | data repo | **Howard** |
+| 5 | Skill published once in the `modelware-skills` plugin marketplace repo; plugin installed in Claude + old synced skill retired | separate repo | **Howard** |
 | 6 | `CLAUDE_CODE_OAUTH_TOKEN` secret (`claude setup-token`) | data repo Actions secrets | **Howard** |
 | 7 | Workflow permissions → Read and write | data repo settings | **Howard** |
 | 8 | `rfp-cv-tailor` Worker mode (GitHub Actions + `proposed`) saved | skill (review card) | **Howard — pending save** |

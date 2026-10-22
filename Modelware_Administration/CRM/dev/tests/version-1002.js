@@ -97,8 +97,18 @@ const describe = t => console.log('\n\x1b[1m' + t + '\x1b[0m');
   const appErrs = []; appPage.on('pageerror', e => appErrs.push(String(e)));
   await appPage.goto('file://' + app);
   await appPage.waitForTimeout(800);
-  const inApp = await appPage.evaluate(() => typeof buildInfo === 'function' ? buildInfo().version : null);
-  ok(inApp === appV, 'the app\'s own version badge reads the meta', String(inApp));
+  /* Read the BADGE, not the function behind it. crm-app is an IIFE, so
+     `buildInfo` is private and `typeof buildInfo === 'function'` was false in
+     page scope on every build — this assertion could never pass and had been
+     holding verify.sh red. The repo standard asks for the number to be shown on
+     screen so it can be verified; the badge is that, so the badge is what the
+     test should read. */
+  const inApp = await appPage.evaluate(() => {
+    const el = document.querySelector('.buildline');
+    return el ? el.textContent.replace(/\s+/g, ' ').trim() : null;
+  });
+  ok(!!inApp && inApp.indexOf('v' + appV) === 0,
+     'the app\'s own version badge shows the meta on screen', String(inApp));
   ok(!appErrs.length, 'and the app loaded without throwing', appErrs.join(' | '));
   await b.close();
 

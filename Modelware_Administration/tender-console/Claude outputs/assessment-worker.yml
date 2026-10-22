@@ -1,0 +1,154 @@
+# .github/workflows/assessment-worker.yml
+# Tender Console — assessment request-queue worker (GitHub Actions).
+#
+# WHAT IT DOES
+#   When the app enqueues an assessment (a salesperson clicks "Request
+#   assessment", which commits a new row to requests.json), this workflow
+#   runs the REAL rfp-cv-tailor skill in Worker mode on a GitHub runner,
+#   writes a DRAFT assessment{} (status:"proposed") onto the tender, closes
+#   the request, and commits the result back. A human then taps Confirm in
+#   the app to finalise it (draft-then-confirm — register card A).
+#
+# DECISIONS IT IMPLEMENTS (register EJwjtgC8WToykzEqK1vm3n, 2026-10-20)
+#   A draft  — worker drafts, a human confirms in the app  (status:"proposed")
+#   B cca    — official anthropics/claude-code-action runs the real skill
+#   C oauth  — Claude subscription token (CLAUDE_CODE_OAUTH_TOKEN)
+#   D push   — triggers on push to requests.json
+#   E ghtoken— commits with the built-in GITHUB_TOKEN, no PAT
+#
+# SETUP: see WORKER-SETUP.md. This file lives in the PRIVATE DATA REPO
+#   (modelware_app_storage), NOT the public app repo.
+
+name: Assessment worker
+
+on:
+  push:
+    paths:
+      - "tender-console-data/data/requests.json"   # the queue file
+  workflow_dispatch:            # manual "Run workflow" button, for testing
+
+# One run at a time — the worker is single-threaded by design.
+concurrency:
+  group: tender-assessment-worker
+  cancel-in-progress: false
+
+jobs:
+  assess:
+    runs-on: ubuntu-latest
+
+    # Belt-and-braces: the commit step below uses GITHUB_TOKEN, and GitHub
+    # does NOT trigger workflows on GITHUB_TOKEN pushes, so the worker's own
+    # commit cannot re-fire this workflow. This guard is a second line of
+    # defence in case the commit identity ever changes.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      ! startsWith(github.event.head_commit.message, 'worker:')
+
+    permissions:
+      contents: write          # GITHUB_TOKEN may commit the assessment back
+      id-token: write          # required by claude-code-action's default auth
+
+    steps:
+      - name: Check out the data repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          # persist-credentials defaults to true, so the commit step can push.
+
+      - name: Run rfp-cv-tailor (Worker mode)
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Give the action the built-in token for its GitHub ops so it does
+          # not require the Claude GitHub App to be installed on this repo.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # The skill comes from the single-source marketplace repo — NOT a
+          # copy in this repo. Edit it once there; this worker and your Claude
+          # both read that one source. If modelware-skills is PRIVATE, this
+          # clone needs read access: see WORKER-SETUP.md.
+          plugin_marketplaces: "https://github.com/modelwaresystems-dama/modelware-skills.git"
+          plugins: "tender@modelware-skills"
+          # --max-turns caps cost; the model only edits files (no git, no bash).
+          claude_args: '--allowedTools "Read,Edit,Write,Glob,Grep" --max-turns 60'
+          prompt: |
+            /tender:rfp-cv-tailor
+
+            You are the Tender Console ASSESSMENT WORKER running headless in
+            GitHub Actions. There is NO human in this session. Follow
+            rfp-cv-tailor **Worker mode** ONLY. Do NOT run the Phase 0 or
+            Phase 1 approval gates and do NOT ask any questions — the human
+            review gate is the app's Confirm step, which happens later. If an
+            input is missing, record it as a gap or fail the request with a
+            clear error; never pause for approval.
+
+            The repo is checked out at the current working directory. The
+            Tender Console data lives under tender-console-data/ :
+              - the queue:    tender-console-data/data/requests.json
+              - the tenders:  tender-console-data/data/tenders.json
+              - the team:     tender-console-data/data/team.json
+              - CVs:          tender-console-data/cvs/base/<personId>/...
+              - the RFP:      tender-console-data/rfp/<tenderId>/...
+              - plus tender-console-data/data/experience.json and
+                tender-console-data/data/sfia-profile.json if present.
+            Touch ONLY files under tender-console-data/ — nothing else in
+            this repo.
+
+            Do EXACTLY this, then STOP (the workflow commits your edits — do
+            NOT run git yourself):
+
+            1. Read requests.json. Pick the OLDEST request with
+               status "queued" (ignore done/error/cancelled; reclaim a
+               "running" row only if its claimedAt is >20 min old). If there
+               is no actionable request, make NO file changes and stop — say
+               "no queued requests".
+
+            2. For that request's tenderId, gather inputs: the tender record,
+               team.json, each teamProposed[] person's cvRefs (read the CV
+               files), the RFP under rfp/<tenderId>/, plus experience.json and
+               sfia-profile.json. Obey the skill's anti-fabrication rules —
+               a person's fit comes ONLY from their real CV; honest gaps are
+               marked, never papered over.
+
+            3. Run the triage: per-person fit (requirement codes covered,
+               gaps), team collective coverage, partnerNeeds[], hard
+               disqualifiers[] (from mandatory compliance[] only), and a
+               recommendation of bid | partner | leave | at-risk.
+
+            4. Merge assessment{} onto that ONE tender record in tenders.json
+               (read the whole file, change only this record, write it back).
+               Set:
+                 assessment.status      = "proposed"   ← draft, NOT final
+                 assessment.confirmedBy = null
+                 assessment.confirmedAt = null
+                 assessment.assessedBy  = "worker:gha"
+                 assessment.assessedAt  = <current ISO 8601 UTC>
+               plus recommendation, rationale, overallFit, people[],
+               partnerNeeds[], disqualifiers[] per DATA-CONTRACT.md.
+               INTEGRITY: every assessment.people[].personId must be in the
+               record's teamProposed[], and every teamProposed[] id must exist
+               in team.json. Do NOT touch goNoGo.decision, team.json or
+               sfia-profile.json.
+
+            5. Close the request in requests.json: set status "done",
+               completedAt (ISO), claimedBy "worker:gha", and result — a
+               one-line summary, e.g. "partner · team fit 71% (2 people) ·
+               proposed, awaiting confirm". Update the file's updatedAt.
+
+            6. On any failure handling THIS request: set its status "error",
+               error (the message), attempts++ in requests.json, leave
+               tenders.json untouched, and stop. Never leave a row stuck in
+               "running".
+
+      - name: Commit the assessment back
+        run: |
+          set -euo pipefail
+          git config user.name  "tender-console-worker"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          PATHS="tender-console-data/data/tenders.json tender-console-data/data/requests.json"
+          if git diff --quiet -- $PATHS; then
+            echo "No changes to commit (no queued request, or run failed before edits)."
+            exit 0
+          fi
+          git add -- $PATHS
+          git commit -m "worker: assessment draft (run ${{ github.run_id }})"
+          git push

@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="b4c90cf42a30" data-built="17 Oct 2026">
+<meta name="crm-build" content="7e86257ef635" data-built="22 Oct 2026">
 <!-- Repo versioning standard: the ONE place the version is written. Bump it here
      only; the badge, the build line and index.html (the Asset Navigator card)
      all read or copy it. dev/stamp-build.py never overwrites it. -->
-<meta name="version" content="1.55.2">
+<meta name="version" content="1.55.3">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -5625,17 +5625,38 @@ function triageCreate(rows, st, cfg, ctx){
     created_payments = fin.records.payments.length;
     money_records    = fin.records;
 
-    /* A deal with no first next step is born straight into band three, where it
-       is invisible until someone goes looking. So one is always created — and
-       shown in the preview, so a defaulted one is never a surprise.
+    /* NO INVENTED FIRST STEP ON A TRIAGE-CREATED DEAL.
 
-       EXCEPT on a deal that arrives already closed: winning releases the
-       next-step invariant (C7), and "Make first contact" on work delivered in
-       May would be nonsense. A closed deal gets a next step only if the batch
-       actually names one. */
+       "Why am I getting 'Make first contact' when contact has been made."
+       (Howard, 22 Oct 2026 — the Corleen Reynders deal, created by the 14 Oct
+       batch, carrying three logged emails from the 13th, 14th and 16th and a
+       "Make first contact" step due the 21st.)
+
+       This used to default to { "Make first contact", +7 days } on the
+       reasoning that a deal with no step is born into band three and is
+       invisible until someone goes looking. Both halves of that were wrong
+       here:
+
+       · A row that creates a deal is a row about an EMAIL. The press that makes
+         the deal is followed, in the same sitting, by the press that logs the
+         conversation — so the first contact has already happened, usually days
+         before the deal record existed. The step was false from birth, and on
+         20 Oct eleven of the thirteen open "Make first contact" steps were
+         exactly this.
+       · And band three is not invisible. Today has a band for it that says an
+         open deal with no next step is a defect, not a gap in the day. A
+         visible absence is worth more than an invented task: the absence asks
+         the owner what happens next, the invention answers for them, wrongly,
+         and then goes overdue.
+
+       So a created deal gets a step only when the batch NAMES one — which is
+       the same rule a closed deal has always had, and for the same reason:
+       winning releases the next-step invariant (C7) and "Make first contact" on
+       work delivered in May would be nonsense. The in-app new-deal form keeps
+       its own "Make first contact" default, because a deal somebody types by
+       hand really may have had no contact yet. */
     var closed = (outcome === "won" || outcome === "lost");
-    var ns = (r.nextStep && r.nextStep.what) ? r.nextStep
-           : (closed ? null : { what:"Make first contact", dueDate:deferBy(today, 7) });
+    var ns = (r.nextStep && r.nextStep.what) ? r.nextStep : null;
     var due = ns ? (parseDateInput(ns.dueDate, today) || deferBy(today, 7)) : null;
     if (ns)
       out.events.push({ id:"ev_dfu_" + triageHash(dealKey), type:"followup.created", actor:actor,
@@ -13581,8 +13602,11 @@ function viewSettings(el){
                            (c.partner ? "  (via " + c.partner + ")" : "") }),
             h("td", { text:c.stage }),
             h("td", { text:c.contact || "—" }),
-            h("td", { text:c.nextStep + " · " + C.fmtDay(c.dueDate) +
-                           (c.defaultedNextStep ? "  (default)" : "") }),
+            /* Nothing to say rather than "— · —": the batch named no step, and
+               that is the fact, not a missing value. */
+            h("td", c.dueDate ? null : { style:"color:var(--muted)" },
+              c.dueDate ? c.nextStep + " · " + C.fmtDay(c.dueDate)
+                        : "none named — it will show on Today as No next step"),
             /* Money moves on this row, so it is shown before the button and not
                after it. A batch that quietly raised an invoice and marked it
                paid would make somebody's commission earned without anybody
@@ -13604,9 +13628,11 @@ function viewSettings(el){
                              h("th", { text:"Stage" }), h("th", { text:"Contact" }),
                              h("th", { text:"First next step" }), h("th", { text:"Money" }))), ub));
         tReport.appendChild(h("div", { class:"note",
-          text:"Every new deal gets a first next step — one marked (default) was not in the " +
-               "file, and a deal without one is invisible until somebody goes looking for it. " +
-               "Untick anything that should not become a deal." }));
+          text:"A new deal gets a first next step only where the batch names one. The rest " +
+               "land on Today under No next step, which is the honest place for them \u2014 " +
+               "the email that created the deal has already been logged, so inventing " +
+               "\u201cMake first contact\u201d would put a task on the list that was done " +
+               "before the deal existed. Untick anything that should not become a deal." }));
         tReport.appendChild(h("div", { style:"margin-top:8px" },
           h("button", { class:"btn btn-sm", type:"button", onclick:function (){
             var keep = res.unmatched.filter(function (_, i){

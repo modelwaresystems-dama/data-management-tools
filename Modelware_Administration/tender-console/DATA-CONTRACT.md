@@ -2,7 +2,7 @@
 
 Contract between the Tender Console app and the `rfp-cv-tailor` skill. Both read/write the same files in the **private data repo**, so they must agree on this shape.
 
-**v1.6.0 (2026-10-20):** **Worker = GitHub Actions + draft-then-confirm.** The assessment worker is now a **GitHub Actions workflow** in the data repo (`.github/workflows/assessment-worker.yml`) that runs the real `rfp-cv-tailor` skill on a runner — triggered **on push to `requests.json`**, authenticating to the model with a **Claude subscription OAuth token** (`CLAUDE_CODE_OAUTH_TOKEN` secret) and committing the result with the built-in **`GITHUB_TOKEN`** (no bot PAT anywhere). The worker writes a **draft** assessment (**`assessment.status:"proposed"`**); an admin **Confirms** it in the app to finalise (**`"confirmed"`** + `confirmedBy`/`confirmedAt`). This **supersedes v1.5.0 decision RX2=a** (the worker no longer auto-pushes with its own PAT — there is no worker PAT). Register **`EJwjtgC8WToykzEqK1vm3n`** (A draft · B claude-code-action · C oauth · D push · E GITHUB_TOKEN). Setup + runbook: **`WORKER-SETUP.md`**. App support = **v1.11.0** (Confirm button, to build).
+**v1.6.0 (2026-10-20):** **Worker = GitHub Actions + draft-then-confirm.** The assessment worker is now a **GitHub Actions workflow** in the data repo (`.github/workflows/assessment-worker.yml`) that runs the real `rfp-cv-tailor` skill on a runner (installed from the `modelware-skills` plugin marketplace — one source, shared with Howard's Claude, no vendored copy) — triggered **on push to `requests.json`**, authenticating to the model with a **Claude subscription OAuth token** (`CLAUDE_CODE_OAUTH_TOKEN` secret) and committing the result with the built-in **`GITHUB_TOKEN`** (no bot PAT anywhere). The worker writes a **draft** assessment (**`assessment.status:"proposed"`**); an admin **Confirms** it in the app to finalise (**`"confirmed"`** + `confirmedBy`/`confirmedAt`). This **supersedes v1.5.0 decision RX2=a** (the worker no longer auto-pushes with its own PAT — there is no worker PAT). Register **`EJwjtgC8WToykzEqK1vm3n`** (A draft · B claude-code-action · C oauth · D push · E GITHUB_TOKEN). Setup + runbook: **`WORKER-SETUP.md`**. App support = **v1.11.0** (Confirm button, to build).
 **v1.5.0 (2026-10-20):** **Assessment Request Queue** — a new `data/requests.json` lets the app enqueue a triage request (staff click "Request assessment") that a **Claude worker** fulfils by running `rfp-cv-tailor` triage and writing `assessment{}` back onto the tender. No second copy of the assessment logic — the worker runs the real skill. Decisions **RX0=a** (request queue + Claude worker), **RX1=b** (separate `requests.json`), ~~**RX2=a** (worker auto-pushes with its own token)~~ **superseded by v1.6.0** (GitHub Actions + `GITHUB_TOKEN`). Full design: `REQUEST-QUEUE-HANDOVER.md` (app repo). App support = v1.10.0 (request button, built).
 **v1.4.1 (2026-10-20):** review of v1.4 against live data (decisions R1–R4). **R1** — `goNoGo.decision` enum gains **`at-risk`**; **`reason`** is the single free-text field (the `note` field used by some records is migrated to `reason` and retired). **R2** — external / JV people are now first-class in `team.json` via an **`external`** flag; the ad-hoc `cv.teamRefs[]` is **retired** in favour of `teamProposed[]` + each person's `cvRefs`. **R3** — every person's base CV lives under **`cvs/base/<personId>/`** (including Howard's); loose files at `cvs/base/` root are retired. **R4** — `createdBy` and `loadedBy` are both kept, with distinct meanings. (Migration applied 2026-10-20; app support landed in v1.9.0.)
 **v1.4 (2026-10-20):** opened the Console to **salespeople** — team registry (`team.json`), RFP uploads per tender (`rfp/<id>/`), proposed team (`teamProposed[]`), skill-written `assessment{}`, identity stamps. Access model (decision **SI0**): each person is a repo collaborator with their own fine-grained PAT. Salespeople **propose**, Howard **decides** (**SI4**).
@@ -15,7 +15,7 @@ The app is a **public GitHub Pages page with no backend**. The `role: sales|admi
 
 ## Repo layout (private data repo `modelware_app_storage`)
 
-> In the actual repo the `data/`, `cvs/`, `rfp/`, `esa/` folders sit under **`tender-console-data/`**, while **`.github/`** and **`.claude/`** sit at the **repo root** beside it. The Action checks out the whole repo and locates the data files by glob, so the exact nesting is transparent to the worker.
+> In the actual repo the `data/`, `cvs/`, `rfp/`, `esa/` folders sit under **`tender-console-data/`**, while **`.github/workflows/`** sits at the **repo root** beside it. The worker's skill is **not** stored in this repo — it is installed at run time from the **`modelware-skills` plugin marketplace** (a separate repo that both the worker and Howard's Claude read, so there is one source, no drift). The Action checks out this whole repo and locates the data files by glob.
 
 ```
 data/
@@ -35,8 +35,7 @@ esa/
   <tenderId>/                 # generated ESA docs per tender
 .github/
   workflows/assessment-worker.yml   # the GitHub Actions assessment worker        (NEW v1.6.0)
-.claude/
-  skills/rfp-cv-tailor/             # the skill, so the Action can run it          (NEW v1.6.0)
+# (the skill is NOT here — the worker installs it from the modelware-skills plugin marketplace, a separate repo)
 ```
 
 ## `tenders.json`  (v1.4 fields added — all optional, backwards-compatible)

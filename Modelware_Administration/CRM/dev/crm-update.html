@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="version" content="1.2.0">
+<meta name="version" content="1.2.1">
 <title>Today's CRM Update</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -79,6 +79,7 @@ select, input[type="text"], input[type="date"], input[type="password"], textarea
 .company { font-family: var(--font-display); font-weight: 650; font-size: 1.02rem; }
 .deal { color: var(--muted); }
 .cardhead .pill { margin-left: auto; }
+.cardhead .saving { font-size: 0.75rem; }
 .meta { font-size: 0.8rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .summary { margin: 0; overflow-wrap: anywhere; }
 .was { font-size: 0.8rem; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
@@ -202,7 +203,7 @@ document.getElementById("appVersion").textContent =
     gh: null, me: "", isOwner: false, dates: [], date: null,
     batch: null, decisions: {}, decSha: null, imported: null, confirms: {}, mySha: null,
     view: "mine", editing: null, readOnly: false, loading: false,
-    qDraft: {}, qOpen: {}
+    qDraft: {}, qOpen: {}, pending: {}
   };
 
   function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
@@ -301,21 +302,37 @@ document.getElementById("appVersion").textContent =
   }
 
   /* ---------- Howard's decisions ---------- */
+  function mergeDecision(base, patch) {
+    const row = Object.assign({}, base || {}, patch);
+    for (const k of Object.keys(row)) if (row[k] === null && k !== "nextStep") delete row[k];
+    if (!row.status) delete row.nextStep;
+    return row;
+  }
+  /* A card shows the saved decision plus any clicks still on their way to GitHub, so
+     a click shows at once instead of after the save's round trip (a second or more). */
+  function rowDecision(rowId) {
+    let d = (S.decisions.rows || {})[rowId] || {};
+    for (const p of S.pending[rowId] || []) d = mergeDecision(d, p);
+    return d;
+  }
   function decide(rowId, patch) {
     if (!S.isOwner) return Promise.resolve();
+    const list = S.pending[rowId] = S.pending[rowId] || [];
+    list.push(patch); render();
     return enqueue(async () => {
       const res = await readModifyWrite("decisions/" + S.date + ".json",
         () => ({ date: S.date, approveAll: false, rows: {} }),
         (doc) => {
           doc.rows = doc.rows || {};
-          const row = Object.assign({}, doc.rows[rowId] || {}, patch);
-          for (const k of Object.keys(row)) if (row[k] === null && k !== "nextStep") delete row[k];
-          if (!row.status) delete row.nextStep;
-          doc.rows[rowId] = row;
+          doc.rows[rowId] = mergeDecision(doc.rows[rowId], patch);
           doc.updatedAt = new Date().toISOString();
         }, "crm-update: Howard's decision on " + S.date + " " + rowId);
-      S.decisions = res.doc; render();
-    }).catch(writeFailed);
+      S.decisions = res.doc;
+    }).catch(writeFailed).finally(() => {
+      list.splice(list.indexOf(patch), 1);
+      if (!list.length) delete S.pending[rowId];
+      render();
+    });
   }
   function approveAll() {
     return enqueue(async () => {
@@ -355,7 +372,7 @@ document.getElementById("appVersion").textContent =
   }
 
   function statusOf(rowId) {
-    const d = (S.decisions.rows || {})[rowId] || {};
+    const d = rowDecision(rowId);
     if (d.status === "dropped") return "dropped";
     if (d.status === "edited") return "edited";
     if (d.status === "approved" || S.decisions.approveAll) return "approved";
@@ -389,12 +406,12 @@ document.getElementById("appVersion").textContent =
 
   /* ---------- rendering ---------- */
   function effectiveStep(row) {
-    const d = (S.decisions.rows || {})[row.rowId] || {};
+    const d = rowDecision(row.rowId);
     if ("nextStep" in d) return d.nextStep;   /* same rule as build_approved.js */
     return row.nextStep;
   }
   function effectiveSummary(row) {
-    const d = (S.decisions.rows || {})[row.rowId] || {};
+    const d = rowDecision(row.rowId);
     return d.summary ? d.summary : row.summary;
   }
   function locked() { return !!S.imported; }
@@ -438,6 +455,7 @@ document.getElementById("appVersion").textContent =
     if (row.deal) head.appendChild(el("span", "deal", row.deal));
     const badge = { draft: ["draft", "Draft"], approved: ["ok", "Approved"], edited: ["ok", "Edited"], dropped: ["bad", "Dropped"] }[status];
     head.appendChild(el("span", "pill " + badge[0], badge[1]));
+    if (S.pending[row.rowId]) head.appendChild(el("span", "muted saving", "Saving…"));
     card.appendChild(head);
 
     const meta = el("div", "meta");
@@ -501,7 +519,7 @@ document.getElementById("appVersion").textContent =
       else {
         const acts = el("div", "actions");
         acts.appendChild(el("span", "label", "Howard:"));
-        const a = el("button", "btn good", "Approve"); a.setAttribute("aria-pressed", String(status === "approved"));
+        const a = el("button", "btn good", status === "approved" ? "Approved" : "Approve"); a.setAttribute("aria-pressed", String(status === "approved"));
         a.onclick = () => decide(row.rowId, { status: "approved" });
         const e = el("button", "btn", "Edit"); e.onclick = () => { S.editing = row.rowId; render(); };
         const d = el("button", "btn warn", status === "dropped" ? "Undo drop" : "Drop"); d.setAttribute("aria-pressed", String(status === "dropped"));

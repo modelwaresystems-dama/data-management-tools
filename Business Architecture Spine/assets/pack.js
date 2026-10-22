@@ -356,7 +356,7 @@
   };
 
   PACK.footer = function(){
-    var vb = (CFG.version?('  ·  <strong>'+PACK.esc(CFG.version)+'</strong>'):'')+(CFG.built?('  ·  Built '+PACK.esc(CFG.built)):'');
+    var vb = ('  ·  <span id="appVersion" class="pf-ver" style="font-weight:700"></span>')+(CFG.built?('  ·  Built '+PACK.esc(CFG.built)):'');
     return '<footer class="pf">'+PACK.esc(CFG.identity)+'  ·  '+PACK.esc(CFG.engagement)+
       '  ·  Client: '+PACK.esc(CFG.client)+vb+'  ·  Self-contained, offline-capable.</footer>';
   };
@@ -1196,4 +1196,16 @@
     setTimeout(function(){ scan(document); }, 1400);
     PACK.rescanDiagrams=function(){ scan(document); };
   });
+})();
+
+/* ---- version badge: single source of truth is <meta name="version"> (project standard) ---- */
+(function(){
+  function setVer(){
+    var m=document.querySelector('meta[name="version"]');
+    var v=m?m.getAttribute('content'):null;
+    Array.prototype.forEach.call(document.querySelectorAll('#appVersion'),function(el){ el.textContent=v?('v'+v):''; });
+  }
+  if(document.readyState!=='loading') setVer();
+  document.addEventListener('DOMContentLoaded',setVer);
+  window.addEventListener('load',setVer);
 })();

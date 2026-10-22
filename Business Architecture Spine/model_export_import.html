@@ -102,6 +102,7 @@
 <script src="assets/pack.js"></script>
 <script src="assets/xlsx.full.min.js"></script>
 <script src="assets/model_io.js"></script>
+<script src="assets/import_newschema.js"></script>
 <script>
 PACK.setWorkbooks([]);
 PACK.renderNav("model_export_import.html");
@@ -170,6 +171,20 @@ function handleFile(f){
   rd.onload = function(){
     try{
       var wb = XLSX.read(new Uint8Array(rd.result), {type:"array"});
+      /* --- standardized 53-sheet template (Copilot) -> map up to canonical (D9) --- */
+      if(window.PACK && PACK.NEWSCHEMA && PACK.NEWSCHEMA.detect(wb.SheetNames)){
+        var nm = PACK.NEWSCHEMA.importNewSchema(wb, XLSX);
+        pending = nm;
+        var cnt = ["stakeholders","valuePropositions","businessOutcomes","valueStreams","valueStages","capabilities","processes","decisions","aiUseCases","dataProducts","journeys"].reduce(function(a,k){return a+((nm[k]||[]).length);},0);
+        res.innerHTML =
+          '<div class="notice" style="margin:0 0 12px"><strong>'+PACK.esc(f.name)+'</strong> parsed as the <strong>standardized 53-sheet template</strong> and mapped up to the canonical model. '+cnt+' spine elements \u00b7 <span style="color:#1a6b2e;font-weight:700">ready to load</span>.</div>'+
+          '<div class="chiprow" style="gap:8px"><button class="btn" id="btnLoad">Load into the pack (Navigator, Graph &amp; pages) \u203a</button>'+
+          '<button class="btn ghost" id="btnCancel">Cancel</button></div>'+
+          '<p class="muted" style="font-size:.8rem;margin-top:8px">Loading switches the active source to <strong>Imported (Excel)</strong>. Reset to Generic any time from the bar above.</p>';
+        document.getElementById("btnLoad").onclick = function(){ PACK.setImportedModel(pending); location.href = "architecture_navigator.html"; };
+        document.getElementById("btnCancel").onclick = function(){ pending=null; res.innerHTML=''; fileInput.value=''; };
+        return;
+      }
       var model = MIO.fromWorkbook(wb, XLSX, window.GENERIC);   // overlay on baked-in baseline
       pending = model;
       var issues = MIO.validate(model);

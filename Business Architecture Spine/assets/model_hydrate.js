@@ -11,7 +11,7 @@
    If NB_MODEL_SHEETS is absent the page just uses the baked data unchanged.
    ========================================================================== */
 (function(){
-  // ACTIVE_MODEL_SHEETS is set by org_switch.js (Nedbank or AGGPSA); fall back to NB.
+  // ACTIVE_MODEL_SHEETS is set by org_switch.js (Modelware or Modelware); fall back to NB.
   var W=window, G=W.GENERIC, S=W.ACTIVE_MODEL_SHEETS || W.NB_MODEL_SHEETS;
   if(!G || !S || !S.length) return;
 
@@ -59,7 +59,7 @@
   var crj=recs("8 ·");
   var journeys=[];
   crj.forEach(function(j){
-    var base=baseJById[j.CRJourneyID]||null;                        // base overlay (NB/AGGPSA); may be absent for a new tenant
+    var base=baseJById[j.CRJourneyID]||null;                        // base overlay (NB/Modelware); may be absent for a new tenant
     var srows=jsRows.filter(function(s){return s.JourneyID===j.CRJourneyID;}).sort(function(a,b){return (N(a.StageNo)||0)-(N(b.StageNo)||0);});
     // keep only journeys that have a base overlay OR sheet-defined stages (so a new tenant's journeys aren't dropped)
     if(!base && !srows.length) return;
@@ -301,7 +301,7 @@
   set("policyProcesses", recs("180 ·").map(function(r){ return {id:r.ProcessID,policy:r.PolicyID,name:r.ProcessName,desc:r.Description,cap:r.CapabilityID,capName:r.CapabilityName,responsible:r.ResponsibleRole,freq:r.Frequency,inputs:r.Inputs,outputs:r.Outputs,implements:L(r.ImplementsControls)}; }));
   set("principleControlMap", recs("181 ·").map(function(r){ return {principle:r.PrincipleID,policy:r.PolicyID,control:r.ControlID,constraint:r.ConstraintType,evidence:r.EvidenceOfAlignment}; }));
 
-  /* ---- DMMA / Governance Readiness (AGGPSA) — knowledge areas, deliverables, stewards, comments ---- */
+  /* ---- DMMA / Governance Readiness (Modelware) — knowledge areas, deliverables, stewards, comments ---- */
   set("dmmaAreas", recs("183 ·").map(function(r){ return {id:r.KnowledgeAreaID,area:r.KnowledgeArea,abbr:r.ABBR,domain:r.PolicyDomainID,level:r.DMBOKLevel,sub:r.SubLevel,attention:N(r.Attention),current:N(r.CurrentMaturity),currentLabel:r.CurrentLabel,target:N(r.TargetMaturity),targetLabel:r.TargetLabel,gap:N(r.Gap),rag:r.RAG,deliverables:N(r.Deliverables),responses:N(r.Responses),comments:N(r.Comments),inScope:N(r.InScopeDeliverables),outScope:N(r.OutOfScopeDeliverables),scopeStatus:r.ScopeStatus,reviewed:N(r.ReviewedDeliverables)}; }));
   set("dmmaDeliverables", recs("184 ·").map(function(r){ return {id:r.DeliverableID,area:r.KnowledgeAreaID,areaName:r.KnowledgeArea,domain:r.PolicyDomainID,phase:r.ActivityPhase,activity:r.Activity,deliverable:r.Deliverable,generic:r.Generic,done:r.Done,scope:r.Scope,current:N(r.CurrentMaturity),target:N(r.TargetMaturity),gap:N(r.Gap)}; }));
   set("businessStewards", recs("185 ·").map(function(r){ return {id:r.StewardID,name:r.Name,fn:r.Function,unit:r.BusinessUnit,email:r.Email,holdsRole:r.HoldsRoleID,team:r.TeamID,teamName:r.TeamName,dept:r.Department,current:N(r.CurrentMaturity),responses:N(r.Responses),comments:N(r.Comments)}; }));

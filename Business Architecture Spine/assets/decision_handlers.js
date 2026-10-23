@@ -15,12 +15,6 @@
    ========================================================================== */
 window.DECISION_HANDLERS = {
 
-  aggpsa: {
-    // Partnership & Relational Capital (P14) — the example from review
-    D9: { "Partner": { create:"partnership agreement", notify:"the partner" },
-          "decline": { notify:"the requesting partner", note:"declined" } }
-  },
-
   modelware: {
     // Capture Marketing Contact (P4)
     D004: { "Eligible": { create:"outreach task", notify:"Sales" },
@@ -32,11 +26,5 @@ window.DECISION_HANDLERS = {
             "online":     { create:"scheduled session", notify:"the learner" },
             "self-study": { create:"self-study enrolment", notify:"the learner" } }
   },
-
-  nedbank: {
-    // Strategic-fit / permanent filter (D1)
-    D1: { "Pursue":  { create:"qualified opportunity", notify:"the relationship manager" },
-          "decline": { notify:"the requesting channel", note:"declined" } }
-  }
 
 };

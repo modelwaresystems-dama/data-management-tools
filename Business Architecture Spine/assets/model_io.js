@@ -1,5 +1,5 @@
 /* ============================================================================
-   Nedbank Marketing Pack — Model I/O (Excel export / import)
+   Modelware Spine — Model I/O (Excel export / import)
    Single source of truth for the "one sheet per level" workbook that mirrors
    the CORRECTED traceability hierarchy (the same one the Navigation Graph uses):
 
@@ -393,7 +393,7 @@
   var OVERVIEW = "Hierarchy";
   function overviewAoa(m){
     var aoa=[];
-    aoa.push(["Nedbank Marketing Data & AI — Model Hierarchy (export)"]);
+    aoa.push(["Modelware Business Architecture Spine — Model Hierarchy (export)"]);
     aoa.push(["This workbook holds the complete architecture model, one sheet per level, in the corrected hierarchy."]);
     aoa.push([]);
     aoa.push(["#","Sheet","Element","Parent","Child","Rows"]);

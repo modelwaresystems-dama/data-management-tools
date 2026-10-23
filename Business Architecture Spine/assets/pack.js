@@ -1,5 +1,5 @@
 /* ============================================================================
-   Nedbank Marketing Pack — shared behaviour (nav, sources, sign-off, panels,
+   Modelware Spine — shared behaviour (nav, sources, sign-off, panels,
    deep-links, glossary resolver). Depends on data.js (window.GENERIC / PACK_CONFIG).
    No server, no build — pure client-side, works offline from a folder.
    ========================================================================== */
@@ -13,7 +13,7 @@
      "generic" ships inside the app. "imported" is a full model reconstructed
      from an Excel workbook (Model I/O page) and kept in localStorage, so the
      whole pack — Navigator, Graph and every page — renders from the imported
-     model until it is cleared. Nedbank Public/Private load from the GitHub
+     model until it is cleared. Modelware Public/Private load from the GitHub
      layer (wired later); until then they fall back to Generic. */
   var IMPORT_KEY = "nbpack.model";
   function importedModel(){ try{ var s=LS.getItem(IMPORT_KEY); return s?JSON.parse(s):null; }catch(e){ return null; } }
@@ -121,7 +121,7 @@
       }
       return "";
     }
-    // no dictionary (e.g. Nedbank): fall back to a configured {base}/{key} template
+    // no dictionary (e.g. Modelware): fall back to a configured {base}/{key} template
     if(g && g.enabled && g.baseUrl && g.linkTemplate){
       return g.linkTemplate.replace("{base}",g.baseUrl).replace("{key}",encodeURIComponent(String(term).replace(/\s+/g,"_")));
     }
@@ -319,29 +319,29 @@
   PACK.setWorkbooks = function(arr){ PACK._workbooks = arr; };
 
   /* ---- org-aware document <title> --------------------------------------
-     Static page titles read "… — Nedbank Marketing Pack". When another org
-     is active, swap the Nedbank suffix for CFG.packName. ------------------ */
+     Static page titles read "… — Modelware Spine". When another org
+     is active, swap the Modelware suffix for CFG.packName. ------------------ */
   PACK.applyOrgTitle = function(){
     if(!CFG.packName) return;
     try{
       document.title = document.title
-        .replace(/Nedbank Marketing Pack/g, CFG.packName)
-        .replace(/Nedbank Marketing Data & AI Engagement/g, CFG.engagement||CFG.packName);
+        .replace(/Modelware Spine/g, CFG.packName)
+        .replace(/Modelware Business Architecture Spine/g, CFG.engagement||CFG.packName);
     }catch(e){}
   };
 
   /* ---- org-aware static copy -------------------------------------------
      Elements carrying data-copy="key" get their text replaced when the
-     active org supplies CFG.copy[key]. Nedbank supplies no CFG.copy, so the
-     baked (Nedbank) text stands. Values containing markup are set as HTML. -- */
+     active org supplies CFG.copy[key]. Modelware supplies no CFG.copy, so the
+     baked (Modelware) text stands. Values containing markup are set as HTML. -- */
   PACK.applyOrgCopy = function(){
-    /* static pages hardcode "Client: Nedbank" in the eyebrow — retarget to the
-       active client for any org (Nedbank keeps its own name). */
-    if(CFG.client && CFG.client!=="Nedbank"){
+    /* static pages hardcode "Client: Modelware" in the eyebrow — retarget to the
+       active client for any org (Modelware keeps its own name). */
+    if(CFG.client && CFG.client!=="Modelware"){
       var ebs=document.querySelectorAll('.eyebrow');
       for(var j=0;j<ebs.length;j++){
-        if(/Client:\s*Nedbank/.test(ebs[j].innerHTML))
-          ebs[j].innerHTML = ebs[j].innerHTML.replace(/Client:\s*Nedbank/, 'Client: '+PACK.esc(CFG.client));
+        if(/Client:\s*Modelware/.test(ebs[j].innerHTML))
+          ebs[j].innerHTML = ebs[j].innerHTML.replace(/Client:\s*Modelware/, 'Client: '+PACK.esc(CFG.client));
       }
     }
     var C = CFG.copy; if(!C) return;
@@ -537,10 +537,10 @@
   /* ---- SIPOC renderer ------------------------------------------------------ */
   /* ---- Process landscape (DERIVED for Modelware) ------------------------------
      Modelware carries a ProcessCatalogue (phase per process); when present we build
-     the landscape from the org's OWN value chain instead of the baked Nedbank one:
+     the landscape from the org's OWN value chain instead of the baked Modelware one:
      a Steering band of the strategy / governance processes, a Core band of the seven
-     operational phases, and an Enabling band of the support processes. Nedbank and
-     AGGPSA keep their baked PACK_CONFIG.processLandscape. ------------------------- */
+     operational phases, and an Enabling band of the support processes. Modelware and
+     Modelware keep their baked PACK_CONFIG.processLandscape. ------------------------- */
   PACK.deriveProcessLandscape = function(){
     var D=PACK.data(); var cat=D.processCatalogue;
     if(!cat || !cat.length) return null;                 // only Modelware has it
@@ -558,7 +558,7 @@
     return {streams:["All"].concat(CORE), steering:steering, core:core, enabling:enabling, derived:true};
   };
   /* Process → lifecycle-stage map, derived from the journey model (a process's
-     stages = the StageNames of the journey stages it operationalises). Nedbank's
+     stages = the StageNames of the journey stages it operationalises). Modelware's
      landscape streams ARE those stage names, so its lifecycle tabs become live. */
   PACK.deriveProcStreams = function(){
     var S=window.ACTIVE_MODEL_SHEETS||window.NB_MODEL_SHEETS; if(!S) return null;
@@ -572,7 +572,7 @@
   };
   /* Landscape tab filter — two modes:
        • phase columns (Modelware): show only the chosen value-chain phase column;
-       • lifecycle stage (Nedbank / AGGPSA): highlight the process cells that serve
+       • lifecycle stage (Modelware / Modelware): highlight the process cells that serve
          the chosen stage and dim the rest.
      'All' resets both. A tab that maps to neither is a safe no-op. */
   PACK.plFilter = function(el){
@@ -592,7 +592,7 @@
       var vis=0; cols.forEach(function(c){ var show=(c.getAttribute("data-ph")===ph); c.style.display=show?"":"none"; if(show)vis++; });
       if(grid) grid.style.gridTemplateColumns="repeat("+Math.max(1,vis)+",1fr)";
       clearDim();
-    } else {                                        // Nedbank / AGGPSA — lifecycle stage
+    } else {                                        // Modelware / Modelware — lifecycle stage
       showAllCols();
       coreCells.forEach(function(c){ c.classList.toggle("pl-dim", (c.getAttribute("data-streams")||"").split("|").indexOf(ph)<0); });
     }
@@ -604,7 +604,7 @@
      band aligns with the Main Flow: suppliers/customers from the actor map (split by
      who feeds the process vs. who receives its outputs), inputs from the Required
      Information, outputs from the concept end-states + evidence the steps produce.
-     Processes with a curated baked SIPOC (Nedbank / AGGPSA) keep it. --------------- */
+     Processes with a curated baked SIPOC (Modelware / Modelware) keep it. --------------- */
   function _reEsc(t){ return (t||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }
   PACK.deriveSIPOC = function(procId, p){
     var pa=(D.processActors||{})[procId]; if(!pa||!pa.length) return null;

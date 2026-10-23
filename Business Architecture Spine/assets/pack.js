@@ -26,6 +26,15 @@
     return s;
   }
   PACK.source = currentSourceId();
+  /* an imported model carries its own identity (client/engagement) from the workbook's
+     00_ReadMe sheet, so the pack shows that tenant's name, not the baked-in client. */
+  (function(){ if(PACK.source!=="imported") return; try{
+    var im=importedModel(); if(!im||!im._meta) return; var M=im._meta, C=window.PACK_CONFIG; if(!C) return;
+    if(M.client) C.client=M.client;
+    if(M.engagement){ C.engagement=M.engagement; if(C.landing) C.landing.title=M.engagement; }
+    if(M.publishStatus) C.publishStatus=M.publishStatus;
+    C.version=""; C.built=""; C._importLabel=M.sourceLabel||M.client||"Imported";
+  }catch(e){} })();
   PACK.setSource = function(id){ LS.setItem("nbpack.source", id); location.reload(); };
   PACK.data = function(){
     if(PACK.source==="imported"){ var m=importedModel(); if(m) return m; }
@@ -280,7 +289,7 @@
         PACK.esc(s.label)+(s.available?"":" — pending")+'</option>';
     }).join("");
     if(PACK.hasImport && PACK.hasImport()){
-      srcOpts += '<option value="imported"'+(PACK.source==="imported"?" selected":"")+'>Imported (Excel)</option>';
+      srcOpts += '<option value="imported"'+(PACK.source==="imported"?" selected":"")+'>'+PACK.esc((CFG._importLabel?(CFG._importLabel+' (imported)'):'Imported (Excel)'))+'</option>';
     }
     /* only show the workbooks row once there are real downloads */
     var wb = (PACK._workbooks||[]).filter(function(w){return w.href;}).map(function(w){

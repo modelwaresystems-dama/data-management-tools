@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="version" content="1.3.0">
+<title>MDA Readiness Assessment</title>
+<meta name="description" content="Assessor console for the MDA Dataset and Metadata Readiness Assessment — Digital Zambia Acceleration Project (K-2 Data Governance). Captures D1–D13 and M1–M10 evidence and computes Ready / Ready-with-gaps / Not-ready / Restricted.">
+<style>
+:root{
+  --bg:#f4f6f8; --panel:#ffffff; --ink:#1b2733; --muted:#5b6b7b; --line:#dde4ea;
+  --brand:#0b5d8a; --brand2:#0a7ab0; --accent:#0f766e;
+  --ok:#157f4b; --okbg:#e5f4ec; --warn:#9a6700; --warnbg:#fdf3dc;
+  --bad:#b4232a; --badbg:#fbe7e7; --restr:#6b4fa0; --restrbg:#efe9f8; --na:#64748b; --nabg:#eef1f4;
+  --shadow:0 1px 2px rgba(16,34,51,.06),0 2px 8px rgba(16,34,51,.05);
+  --radius:10px;
+}
+:root:not([data-theme="light"]){}
+@media (prefers-color-scheme: dark){
+ :root:not([data-theme="light"]){
+  --bg:#0f1720; --panel:#16202b; --ink:#e7eef5; --muted:#9fb0c0; --line:#263341;
+  --brand:#4db3e6; --brand2:#6cc5f0; --accent:#39b0a3;
+  --ok:#5fd499;--okbg:#10352a;--warn:#e8c777;--warnbg:#3a2f12;--bad:#f09a9e;--badbg:#3a1f20;
+  --restr:#c0a9ec;--restrbg:#2a2140;--na:#9fb0c0;--nabg:#1d2733;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+ }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1720; --panel:#16202b; --ink:#e7eef5; --muted:#9fb0c0; --line:#263341;
+  --brand:#4db3e6; --brand2:#6cc5f0; --accent:#39b0a3;
+  --ok:#5fd499;--okbg:#10352a;--warn:#e8c777;--warnbg:#3a2f12;--bad:#f09a9e;--badbg:#3a1f20;
+  --restr:#c0a9ec;--restrbg:#2a2140;--na:#9fb0c0;--nabg:#1d2733;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+header.top{background:linear-gradient(90deg,var(--brand),var(--brand2));color:#fff;padding:12px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:50}
+header.top h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.2px}
+header.top .sub{font-size:12px;opacity:.9;margin-top:2px}
+.badge-v{font-size:11px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.35);padding:2px 7px;border-radius:20px;white-space:nowrap}
+.top-meta{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.top-meta input{font:inherit;font-size:13px;padding:5px 8px;border-radius:7px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.14);color:#fff}
+.top-meta input::placeholder{color:rgba(255,255,255,.75)}
+button,.btn{font:inherit;font-size:13px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 11px;border-radius:7px;transition:.12s}
+button:hover,.btn:hover{border-color:var(--brand)}
+.btn-primary{background:#fff;color:var(--brand);border-color:#fff;font-weight:600}
+header .btn{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.4)}
+header .btn:hover{background:rgba(255,255,255,.26)}
+.wrap{display:grid;grid-template-columns:260px 1fr;gap:0;min-height:calc(100vh - 56px)}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:14px 12px;overflow:auto}
+aside h2{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin:4px 2px 8px}
+.mda{margin-bottom:10px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.mda-h{display:flex;align-items:center;gap:6px;padding:8px 9px;background:var(--nabg);cursor:pointer}
+.mda-h .nm{font-weight:600;font-size:13px;flex:1;line-height:1.25}
+.mda-h .prov{font-size:9px;color:var(--warn);background:var(--warnbg);padding:1px 5px;border-radius:10px}
+.ds-list{padding:4px}
+.ds{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:13px}
+.ds:hover{background:var(--nabg)}
+.ds.active{background:var(--brand);color:#fff}
+.ds .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.ds-add,.mda-add{font-size:12px;color:var(--brand);background:none;border:1px dashed var(--line);width:100%;text-align:left;padding:6px 8px;margin-top:4px}
+main{padding:18px 22px;overflow:auto}
+.tabs{display:flex;gap:4px;border-bottom:2px solid var(--line);margin-bottom:16px;flex-wrap:wrap}
+.tab{padding:8px 14px;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted);font-weight:600;border-radius:0}
+.tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:14px}
+.ds-head{padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:3px}
+.field input,.field select,.field textarea{width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink)}
+.field textarea{resize:vertical;min-height:38px}
+.readout{display:flex;align-items:center;gap:16px;padding:12px 16px;border-top:1px solid var(--line);flex-wrap:wrap}
+.pill{font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;white-space:nowrap}
+.pill.Ready{background:var(--okbg);color:var(--ok)}
+.pill.Ready-with-gaps{background:var(--warnbg);color:var(--warn)}
+.pill.Not-ready{background:var(--badbg);color:var(--bad)}
+.pill.Restricted{background:var(--restrbg);color:var(--restr)}
+.pill.none{background:var(--nabg);color:var(--na)}
+.bar{flex:1;min-width:120px;height:9px;background:var(--nabg);border-radius:6px;overflow:hidden}
+.bar > i{display:block;height:100%;background:var(--accent);border-radius:6px}
+.reasons{font-size:12.5px;color:var(--muted);flex-basis:100%}
+.sec-title{font-size:13px;font-weight:700;color:var(--brand);margin:18px 2px 8px;letter-spacing:.3px}
+.req{border:1px solid var(--line);border-radius:9px;margin-bottom:8px;background:var(--panel);overflow:hidden}
+.req-top{display:grid;grid-template-columns:70px 1fr 150px;gap:10px;align-items:start;padding:10px 12px}
+.req-code{font-weight:700;font-size:13px}
+.req-code small{display:block;font-weight:600;font-size:10px;color:#fff;background:var(--muted);border-radius:4px;padding:1px 0;text-align:center;margin-top:4px}
+.req-code small.M{background:var(--bad)} .req-code small.MNA{background:var(--warn)} .req-code small.O{background:var(--na)}
+.req-code small.blk{background:var(--brand)}
+.req-title{font-weight:600;font-size:14px}
+.req-q{font-size:12px;color:var(--muted);margin-top:2px}
+.req-ctrl{display:flex;flex-direction:column;gap:6px}
+.req-ctrl select,.req-ctrl input{font:inherit;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
+.statussel.present{border-color:var(--ok)} .statussel.partial{border-color:var(--warn)} .statussel.absent{border-color:var(--bad)} .statussel.restricted{border-color:var(--restr)}
+.req-body{padding:0 12px}
+.req-ev{padding:0 12px 10px}
+.req-ev textarea{width:100%;font:inherit;font-size:13px;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);resize:vertical;min-height:34px}
+.expand{font-size:12px;color:var(--brand);background:none;border:none;padding:4px 12px 10px;cursor:pointer}
+.detail{display:none;padding:2px 14px 12px;font-size:13px;border-top:1px dashed var(--line);margin-top:2px}
+.detail.open{display:block}
+.detail dl{display:grid;grid-template-columns:140px 1fr;gap:4px 12px;margin:8px 0 0}
+.detail dt{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding-top:2px}
+.detail dd{margin:0}
+.detail .def{background:var(--nabg);border-left:3px solid var(--brand);padding:8px 10px;border-radius:0 6px 6px 0;margin:4px 0}
+.mmtag{display:inline-block;font-size:11px;background:var(--restrbg);color:var(--restr);padding:2px 8px;border-radius:10px;margin-top:6px}
+.plc{display:inline-block;font-size:10px;background:var(--warnbg);color:var(--warn);padding:1px 6px;border-radius:8px;margin-left:6px}
+table.grid{width:100%;border-collapse:collapse;font-size:13px}
+table.grid th,table.grid td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.grid th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);background:var(--nabg)}
+table.grid tr:hover td{background:var(--nabg)}
+.tally{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.tally .t{flex:1;min-width:130px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 12px;box-shadow:var(--shadow)}
+.tally .t b{font-size:22px;display:block}
+.tally .t span{font-size:12px;color:var(--muted)}
+.ref-block{padding:14px 16px}
+.ref-block h3{margin:0 0 8px;font-size:14px;color:var(--brand)}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.pack-row{display:grid;grid-template-columns:200px 150px 1fr;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:start}
+.pack-row .pf{font-weight:600;font-size:13px}
+.pack-row .pf small{display:block;font-weight:400;color:var(--muted);font-size:11px;margin-top:3px}
+.foot{padding:14px 20px;color:var(--muted);font-size:12px;text-align:center}
+.flag{font-size:11px;padding:2px 7px;border-radius:10px;background:var(--badbg);color:var(--bad);margin-left:6px}
+@media(max-width:820px){.wrap{grid-template-columns:1fr}aside{border-right:none;border-bottom:1px solid var(--line)}.req-top{grid-template-columns:1fr}}
+.gh-overlay{position:fixed;inset:0;background:rgba(10,20,30,.45);display:flex;align-items:flex-start;justify-content:center;z-index:100;padding:40px 16px;overflow:auto}
+.gh-overlay[hidden]{display:none}
+.gh-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.25);width:100%;max-width:620px;padding:18px 20px}
+.gh-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.gh-head b{font-size:15px}
+.gh-row{display:grid;grid-template-columns:130px 1fr;gap:12px;align-items:center;margin-bottom:9px}
+.gh-row label{font-size:12px;color:var(--muted);font-weight:600}
+.gh-row input{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);width:100%}
+.gh-btns{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 10px}
+.gh-btns .btn-primary{background:var(--ok);color:#fff;border-color:var(--ok)}
+.gh-status{font-size:12.5px;min-height:18px;color:var(--muted);font-weight:600}
+.gh-status.ok{color:var(--ok)} .gh-status.err{color:var(--bad)} .gh-status.busy{color:var(--brand)}
+.gh-note{font-size:11.5px;color:var(--muted);line-height:1.5;margin:8px 0 0}
+.gh-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--na);margin-left:6px;vertical-align:middle}
+.gh-dot.ok{background:var(--ok)} .gh-dot.err{background:var(--bad)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>MDA Dataset &amp; Metadata Readiness Assessment <span class="badge-v" id="appVersion"></span></h1>
+    <div class="sub">Digital Zambia Acceleration Project · ZM-SZ-466193-CS-QBS · K-2 Data Governance (assessor console)</div>
+  </div>
+  <div class="top-meta">
+    <input id="assessor" placeholder="Assessor">
+    <input id="adate" type="date">
+    <button class="btn" id="btnSave">Save JSON</button>
+    <button class="btn" id="btnLoad">Load JSON</button>
+    <button class="btn" id="btnCsv">Export CSV</button>
+    <button class="btn" id="btnReport">Report</button>
+    <button class="btn" id="btnGh" title="GitHub sync">☁ GitHub</button>
+    <button class="btn" id="btnTheme" title="Toggle theme">◐</button>
+    <input type="file" id="fileIn" accept="application/json" hidden>
+  </div>
+</header>
+<div class="wrap">
+  <aside id="side"></aside>
+  <main id="main"></main>
+</div>
+<div class="foot" id="foot"></div>
+
+<div id="ghOverlay" class="gh-overlay" hidden><div class="gh-card">
+  <div class="gh-head"><b>☁ GitHub — private data repo</b><button class="btn" id="ghClose">✕</button></div>
+  <div class="gh-row"><label>Owner / org</label><input id="gh_owner" autocomplete="off" spellcheck="false"></div>
+  <div class="gh-row"><label>Private repo</label><input id="gh_repo" autocomplete="off" spellcheck="false"></div>
+  <div class="gh-row"><label>Branch</label><input id="gh_branch" autocomplete="off" spellcheck="false"></div>
+  <div class="gh-row"><label>Database path</label><input id="gh_path" autocomplete="off" spellcheck="false"></div>
+  <div class="gh-row"><label>Fine-grained PAT</label><input id="gh_pat" type="password" autocomplete="off" spellcheck="false"></div>
+  <div class="gh-btns">
+    <button class="btn-primary" id="ghSaveConnect">Save &amp; connect</button>
+    <button class="btn" id="ghPull">Pull latest ↓</button>
+    <button class="btn" id="ghPublish">Publish content ↑</button>
+    <button class="btn" id="ghForget">Forget token</button>
+  </div>
+  <div id="ghStatus" class="gh-status"></div>
+  <p class="gh-note">Stored in this browser on this device only (your choice). Use a fine-grained PAT scoped to the private data repo with <b>Contents: Read &amp; Write</b> — it is never shared or committed. On <b>Save &amp; connect</b> the board fills empty local state from the committed registers; <b>Pull latest</b> overwrites your local state with the repo's. Layout: one folder per MDA, one JSON per dataset, plus an <code>index.json</code> manifest.</p>
+</div></div>
+<script id="app-data" type="application/json">{"reqs": [{"code": "D1", "group": "dataset", "title": "Dataset identity", "status": "M", "blocking": false, "evidence": "Dataset identifier, official title, aliases, concise description", "question": "Can this dataset be unambiguously distinguished?", "criterion": "Stable name/ID and understandable description supplied", "boundary": "Identifier may be local", "definition": "A stable name and identifier that let everyone refer to the same dataset without confusion. In DCAT terms this is the dataset's title and identifier; the metamodel captures it as the resource's Fully Qualified Name in the Data Catalog.", "example": "e.g. “TPIN Taxpayer Register (CIT)”, ID MOFNP-ZRA-TPIN-001, aliases “Taxpayer Master”.", "mmRef": "Data Catalog", "related": ["Metadata · Data Catalog", "Data Governance · Business Glossary"], "send": "The dataset's official name, any other names it's known by, a short plain description, and an identifier if it has one."}, {"code": "D2", "group": "dataset", "title": "Purpose and mandate use", "status": "M", "blocking": false, "evidence": "Business purpose, use case, service/process supported, principal consumers", "question": "Why is the dataset created and used?", "criterion": "Purpose and supported process are explicit", "boundary": "No legal opinion on mandate", "definition": "Why the dataset exists: the business purpose, the service or process it supports, and who relies on it. This is business metadata, not a legal statement of mandate.", "example": "e.g. “Supports VAT assessment and refund processing; principal consumers: ZRA Domestic Taxes, MoFNP revenue forecasting.”", "related": ["Data Governance · Business Glossary", "Business Architecture · Information Map", "Business Architecture · Value Stream", "Data Management · UseCase Portfolio"], "send": "A few sentences on what the dataset is for, which service or process uses it, and who the main users are."}, {"code": "D3", "group": "dataset", "title": "Nomination rationale", "status": "M", "blocking": false, "evidence": "Priority, criticality and representativeness rationale", "question": "Why is this an appropriate pilot asset?", "criterion": "MDA explains relevance to mandate and pilot diversity", "boundary": "Client approves final asset set", "definition": "The MDA's stated reason this dataset is a good pilot candidate — its priority, criticality to the mandate, and how it adds diversity to the pilot. The final asset set is approved by the Client.", "example": "e.g. “High-priority, core to revenue mandate, representative of large transactional administrative data.”", "related": ["Data Quality · Critical Data Element", "Business Architecture · Business Impact Analysis"], "send": "Why you chose this dataset for the pilot — how important it is to your mandate and what makes it a good example."}, {"code": "D4", "group": "dataset", "title": "Ownership and contacts", "status": "M", "blocking": true, "evidence": "Business/Data Owner, steward where assigned, custodian, technical contact", "question": "Who can explain, approve and validate it?", "criterion": "Named organisational roles and reachable contacts", "boundary": "Absence is recorded as a readiness gap, not a maturity score", "definition": "The named, reachable people accountable for the dataset — Data Owner, Steward, Custodian, technical contact. Without these, no one can explain, approve or validate the data, so assessment cannot be defended. Roles follow the metamodel's DG Role list.", "example": "e.g. Data Owner: Director Domestic Taxes; Business Data Steward: J. Mwale; Technical contact: DBA team.", "lookup": "DGRole", "related": ["Data Governance · Operating Model", "Business Architecture · Employee", "Business Architecture · Stakeholder"], "send": "Names and contact details for the Data Owner, the person who looks after it day-to-day (steward/custodian), and a technical contact."}, {"code": "D5", "group": "dataset", "title": "Source and authoritativeness", "status": "M", "blocking": true, "evidence": "Source system/application, system owner, authoritative-source statement, derived/source status", "question": "Is this the authoritative record, a copy or a derived product?", "criterion": "Source and authority status are stated and internally consistent", "boundary": "K-2 does not certify authoritative status", "definition": "Where the data comes from and whether this is the authoritative system of record, a copy, or a derived product. K-2 records what the MDA states; it does not certify authority.", "example": "e.g. “Authoritative system of record — TaxOnline (ZRA); not a derived extract.”", "related": ["Metadata · Data Catalog", "Data Architecture · Data Flow", "Data Architecture · Subject Area Model"], "send": "Where the data comes from (which system), who owns that system, and whether this is the original record or a copy/derived version."}, {"code": "D6", "group": "dataset", "title": "Subject/entity coverage", "status": "M", "blocking": false, "evidence": "Main subjects, entities, event types, populations, key fields and business keys", "question": "What real-world things and events does it represent?", "criterion": "Scope and key fields can be understood", "boundary": "Content varies by MDA", "definition": "The real-world subjects, entities and events the dataset represents, and the key fields/business keys that identify them.", "example": "e.g. Subjects: taxpayers (natural persons + legal entities); events: returns, assessments; business key: TPIN.", "related": ["Data Architecture · Subject Area Model", "Data Architecture · CBC Lifecycle", "Data Governance · Business Glossary", "Business Architecture · Information Map"], "send": "What the data is about — the main things, people or events it records — and the fields that identify each one."}, {"code": "D7", "group": "dataset", "title": "Structure and schema", "status": "M", "blocking": true, "evidence": "Table/file structure, relationships, schema, data dictionary or annotated field list", "question": "Can fields and relationships be interpreted?", "criterion": "At minimum: field name, meaning, datatype and key indicators", "boundary": "Detailed logical model is supporting evidence", "definition": "Enough structural metadata to interpret the data without reverse-engineering it: field names, meanings, datatypes, keys and relationships. Mirrors the metamodel's Data Dictionary artefact.", "example": "e.g. Annotated field list: TPIN (char10, PK), TaxpayerName (varchar), RegDate (date)…", "mmRef": "Data Dictionary", "related": ["Metadata · Data Dictionary", "Metadata · Data Catalog"], "send": "A list of the fields with, for each, its name, meaning, type, and whether it is a key (a data dictionary or annotated field list)."}, {"code": "D8", "group": "dataset", "title": "Representation and volume", "status": "M", "blocking": false, "evidence": "Format, encoding, compression, approximate rows/files/size and partitioning", "question": "In what representation and scale is it supplied?", "criterion": "Format and approximate scale documented", "boundary": "Values may be estimated and marked as such", "definition": "The physical representation and rough scale: format, encoding, approximate row/file counts and size. Estimates are acceptable if marked as such. (DCAT distribution: format, byteSize.)", "example": "e.g. CSV, UTF-8, ~4.2M rows, ~1.1 GB, partitioned by tax year.", "related": ["Metadata · Data Catalog", "Data Architecture · Data Flow"], "send": "The file format and roughly how big it is — number of rows/records and size."}, {"code": "D9", "group": "dataset", "title": "Coverage and history", "status": "MNA", "blocking": false, "evidence": "Earliest/latest period, historical depth, geographic/organisational coverage, granularity", "question": "What period/population/place does it cover?", "criterion": "Boundaries and material exclusions stated", "boundary": "Spatial fields may be N/A", "definition": "The temporal, geographic and organisational boundaries of the data and its granularity, plus any material exclusions. Spatial coverage may legitimately be N/A.", "example": "e.g. 2015–2025, national, individual-taxpayer grain; excludes pre-2015 archived records.", "related": ["Data Architecture · Data Flow", "Data Architecture · CBC Lifecycle"], "send": "The time period it covers, how far back it goes, the areas/organisations included, and anything deliberately left out."}, {"code": "D10", "group": "dataset", "title": "Origination", "status": "M", "blocking": false, "evidence": "Collection, transaction, survey, administrative capture, derivation or acquisition method", "question": "How does information enter the dataset?", "criterion": "Originating activity and major upstream input identified", "boundary": "Avoid unnecessary personal detail", "definition": "How information enters the dataset — administrative capture, transaction, survey, derivation or acquisition — and the major upstream input. (PROV-O: how it was generated.)", "example": "e.g. “Captured at e-filing submission; upstream input: taxpayer self-service portal.”", "related": ["Data Architecture · Data Flow", "Data Architecture · CBC Lifecycle", "Metadata · Data Catalog"], "send": "How the data is collected or produced — for example captured at application, from a survey, or derived from another system."}, {"code": "D11", "group": "dataset", "title": "Refresh and timeliness", "status": "M", "blocking": false, "evidence": "Refresh frequency, last refresh, expected latency, cut-off/calendar, version", "question": "How current is it and when should it change?", "criterion": "Frequency, currency date and known delays documented", "boundary": "Distinguish collection frequency from publication frequency", "definition": "How current the data is and when it changes: refresh frequency, last refresh date, expected latency and version. Distinguish how often data is collected from how often it is published. (DCAT accrualPeriodicity.)", "example": "e.g. “Refreshed nightly; last refresh 2026-10-23; published monthly.”", "related": ["Data Architecture · Data Flow", "Data Governance · SLA"], "send": "How often it is updated, when it was last updated, and any expected delay between an event and it appearing in the data."}, {"code": "D12", "group": "dataset", "title": "Representative sample", "status": "M", "blocking": true, "evidence": "Approved extract plus field list and README; or documented restriction with substitute", "question": "Can structure and candidate CIA implications be examined safely?", "criterion": "Usable extract/substitute, period, record count, masking and approval stated", "boundary": "Client/MDA determines secure transfer", "definition": "A safe-to-examine extract — or an approved redacted/masked/synthetic/structurally-equivalent substitute plus the reason for restriction — so structure and candidate CIA implications can be examined. Security-by-substitution: if a raw sample can't be supplied, a substitute must be.", "example": "e.g. “Masked 1,000-row extract, 2025 data, TPIN hashed, approved by Data Owner 2026-10-20; README attached.”", "related": ["Metadata · Faceted Classification", "Data Security · Register"], "send": "A safe sample extract with a short README — or, if raw data can't be shared, a masked/redacted/synthetic version plus the reason, approved by the owner."}, {"code": "D13", "group": "dataset", "title": "Sharing and dependency context", "status": "MNA", "blocking": false, "evidence": "Recipients/providers, interfaces, exports, APIs, exchange frequency and agreements/standards", "question": "Where does it come from and where does it go?", "criterion": "Material exchanges and dependency direction documented", "boundary": "No interface engineering assessment", "definition": "The material data exchanges around the dataset — who provides to it and who receives from it, via which interfaces/APIs, and under what agreements. Direction of dependency matters; no interface engineering is assessed.", "example": "e.g. “Receives NRC data from Dept of National Registration; exports monthly aggregates to ZamStats via SFTP.”", "related": ["Data Integration & Interoperability · Data Exchange Specification", "Data Integration & Interoperability · Data Services", "Data Architecture · Data Flow"], "send": "Who you receive this data from and who you send it to, by what method (file, API), how often, and any agreements involved."}, {"code": "M1", "group": "metadata", "title": "Business metadata", "status": "M", "blocking": false, "evidence": "Title, definition, purpose, supported process/service, subjects, keywords, consumers", "question": "Would a knowledgeable user understand the dataset?", "criterion": "Clear, non-circular description with business context", "boundary": "Common headings; institution-specific values", "definition": "The business-facing description: a clear, non-circular definition with purpose, subjects, keywords and consumers, such that a knowledgeable user understands the dataset. Headings are common across MDAs; values are institution-specific.", "related": ["Data Governance · Business Glossary", "Metadata · Data Catalog"], "send": "A clear, plain-language description of the dataset that a non-technical colleague would understand."}, {"code": "M2", "group": "metadata", "title": "Technical metadata", "status": "M", "blocking": true, "evidence": "Schema, fields, datatype, keys, relationships, format, encoding, constraints", "question": "Can the extract be interpreted without reverse engineering?", "criterion": "Schema and sample align materially", "boundary": "Models/DDL are optional artefacts", "definition": "The technical description needed to interpret the extract directly — schema, fields, datatypes, keys, relationships, format, encoding, constraints — and it must align materially with the sample. Mirrors the metamodel Data Dictionary.", "mmRef": "Data Dictionary", "related": ["Metadata · Data Dictionary", "Metadata · Data Catalog"], "send": "The technical details needed to read the data: schema, field types, keys, format, encoding and any constraints."}, {"code": "M3", "group": "metadata", "title": "Operational metadata", "status": "M", "blocking": false, "evidence": "Source, refresh schedule, last refresh, volume, availability window, version/status", "question": "Can currency and operational context be established?", "criterion": "Current-state values or documented unknowns supplied", "boundary": "Not technical infrastructure readiness", "definition": "The operational state of the data: source, refresh schedule, last refresh, volume, availability window and version. Documented unknowns are acceptable. This is not an infrastructure-readiness assessment.", "related": ["Data Architecture · Data Flow", "Data Governance · SLA", "Metadata · Data Catalog"], "send": "Its current operational state: source, update schedule, last update, size, and version/status."}, {"code": "M4", "group": "metadata", "title": "Governance / stewardship", "status": "M", "blocking": true, "evidence": "Owner, custodian, steward/contact, approver, issue contact", "question": "Is accountability for this dataset identifiable?", "criterion": "Roles and contact route present", "boundary": "No organisation-wide RACI assessment", "definition": "Identifiable accountability for the dataset: owner, custodian, steward, approver and issue contact. A contact route must exist. No enterprise-wide RACI is assessed. Roles follow the metamodel DG Role list.", "lookup": "DGRole", "related": ["Data Governance · Operating Model", "Data Governance · Issue Management", "Data Governance · SLA"], "send": "Who is accountable for the dataset — owner, steward, custodian, approver — and how to reach them with an issue."}, {"code": "M5", "group": "metadata", "title": "Classification / security", "status": "M", "blocking": false, "evidence": "Current label if any; confidentiality, integrity and availability considerations; access, handling and sharing restrictions", "question": "What harm or service impact could result from disclosure, alteration or unavailability?", "criterion": "Existing labels and evidence available for facilitated CIA review", "boundary": "Classification is validated through agreed pilot activity, not presumed", "definition": "Existing security labelling and the confidentiality/integrity/availability considerations, plus access/handling/sharing restrictions — enough to run a facilitated CIA review. FIPS 199 is a reasoning reference only; the pilot uses Zambia's own classification framework. The label list below is the metamodel default and should be swapped for the project's agreed scheme.", "lookup": "ClassificationSensitivity", "related": ["Data Security · Register", "Data Security · Risk Assessment", "Metadata · Faceted Classification", "Data Governance · Policy Catalogue"], "send": "Any existing sensitivity label, notes on the harm if it were disclosed/altered/unavailable, and access/handling/sharing rules."}, {"code": "M6", "group": "metadata", "title": "Data-quality metadata", "status": "M", "blocking": false, "evidence": "Known issues, affected fields, existing rules, measures, thresholds, reports and accepted exceptions", "question": "What is already known about fitness for stated use?", "criterion": "Issues/rules documented or explicitly stated as unavailable", "boundary": "Readiness does not assert that quality is satisfactory", "definition": "What is already known about fitness for use: known issues, affected fields, existing rules, measures, thresholds and accepted exceptions. 'Unavailable' is a valid documented answer. Readiness records what is known; it does not assert quality is satisfactory. Dimensions follow the metamodel DQ Dimension list.", "lookup": "DQDim", "related": ["Data Quality · Assessment", "Data Quality · Data Issues", "Data Quality · Expectations", "Data Quality · Critical Data Element"], "send": "Anything you already know about data quality — known issues, existing checks or rules, thresholds, and any quality reports."}, {"code": "M7", "group": "metadata", "title": "Lifecycle / retention", "status": "M", "blocking": false, "evidence": "Creation/status, retention instruction or schedule reference, archival/disposal status, review date", "question": "What lifecycle instruction is currently applied?", "criterion": "Existing requirement/reference—or “not determined”—is recorded", "boundary": "K-2 does not determine legal retention", "definition": "The lifecycle instruction currently applied: creation/status, retention instruction or schedule reference, archival/disposal status and review date. 'Not determined' is a valid recorded answer. K-2 does not determine legal retention.", "related": ["Data Architecture · CBC Lifecycle", "Data Governance · Policy Catalogue"], "send": "The retention or disposal rule that applies (or a reference to the schedule) and the next review date — or 'not determined'."}, {"code": "M8", "group": "metadata", "title": "Reference / master / identifier", "status": "MNA", "blocking": false, "evidence": "Code lists, classifications, identifier schemes, master-data sources and versions", "question": "Which controlled values make the data interpretable or joinable?", "criterion": "Applicable standards and owners/sources identified", "boundary": "“None” requires explanation", "definition": "The controlled values that make the data interpretable and joinable: code lists, classifications, identifier schemes and master-data sources with versions. 'None' is accepted only with an explanation.", "related": ["Reference & Master Data · Policy", "Data Governance · Business Glossary", "Metadata · Faceted Classification"], "send": "Any code lists, classifications or identifier schemes the data uses, and where those come from, with versions."}, {"code": "M9", "group": "metadata", "title": "Interoperability / exchange", "status": "MNA", "blocking": false, "evidence": "Interface name, provider/consumer, exchange format, mappings, standard/profile and frequency", "question": "Can exchanged data be interpreted consistently?", "criterion": "Material exchange metadata is present", "boundary": "No low-level integration design", "definition": "The metadata needed to interpret exchanged data consistently: interface name, provider/consumer, format, mappings, standard/profile and frequency. No low-level integration design is assessed. (DCAT DataService.)", "related": ["Data Integration & Interoperability · Data Exchange Specification", "Data Integration & Interoperability · Data Services"], "send": "Details of any data exchanges: interface name, who it is with, format, mapping, the standard used, and frequency."}, {"code": "M10", "group": "metadata", "title": "Provenance / lineage", "status": "M", "blocking": false, "evidence": "Originating activity, upstream datasets, major transformations, derived outputs; detailed lineage if available", "question": "Can the dataset's origin and major transformations be followed?", "criterion": "High-level source-to-dataset lineage is intelligible", "boundary": "Field-level automated lineage is supporting evidence", "definition": "High-level source-to-dataset lineage that is intelligible: originating activity, upstream datasets, major transformations and derived outputs. Mandatory at source level; field-level detail is optional supporting evidence. Mirrors the metamodel Data Lineage artefact. (PROV-O: wasDerivedFrom / wasGeneratedBy.)", "mmRef": "Data Lineage", "related": ["Metadata · Data Lineage", "Data Architecture · Data Flow", "Data Architecture · CBC Lifecycle"], "send": "A high-level picture of where the data originates and the main steps it goes through to reach its current form."}], "pack": [["00_Transmittal", "MDA, nominated representative, authorised contacts, submission date, restrictions and completeness declaration", "Signed letter or PDF"], ["01_Dataset_Nominations", "One row per nominated dataset: identity, mandate relevance, priority, rationale and proposed contact", "XLSX/CSV or completed schedule"], ["02_Dataset_Metadata", "One completed D1–D13 and M1–M10 schedule per dataset", "XLSX/CSV"], ["03_Schema_and_Dictionary", "Field definitions, datatypes, keys, relationships and code meanings", "XLSX/CSV, PDF, DDL, JSON Schema, XSD"], ["04_Representative_Extract", "Approved sample; README; extraction date; coverage; masking; version; checksum if used", "CSV, JSON, XML, Parquet or XLSX"], ["05_Classification_Evidence", "Existing labels, access/handling rules and preliminary CIA considerations", "Completed form, policy extract or register"], ["06_Evidence_Index", "File name, description, owner, date/version, linked requirement and restriction", "XLSX/CSV"]], "method": {"Ready": "Mandatory responses and essential evidence are present, consistent and safe to use.", "Ready with gaps": "Assessment can proceed, but defined actions/evidence are outstanding.", "Not ready": "Missing ownership, source/authority, interpretable structure, approved sample/substitute or stakeholder access prevents defensible assessment.", "Restricted": "Evidence exists but cannot yet be released under approved arrangements."}, "provisional": [["Ministry of Finance and National Planning", "Administrative and public-finance/planning environment — fiscal, financial, monetary and economic policy, resource mobilisation/allocation, national planning and public-investment appraisal."], ["Bank of Zambia", "Regulatory and financial-system environment — monetary policy, banking services, bank/financial-institution supervision, financial-system safety and payment-system operations."], ["Central Statistical Office / ZamStats", "Statistical production environment — coordinating the National Statistical System, approving national collection instruments, promoting common concepts/classifications and disseminating official statistics."]], "mm": {"version": "1.5.2", "roles": [["CDO", "Chief Data Officer"], ["CDS", "Chief Data Steward"], ["ExDS", "Executive Data Steward"], ["EDS", "Enterprise Data Steward"], ["CoDS", "Coordinating Data Steward"], ["DO", "Data Owner"], ["BDS", "Business Data Steward"], ["DGS", "DG Specialist"], ["DGM", "DG Office Manager"], ["TDS", "Technical Data Steward"], ["DA", "Data Architecture"], ["MdS", "MetaData Specialist"], ["RMdS", "Reference & Master Data Specialist"], ["OCM", "Organisational Change Manager"]], "lookups": {"DGRole": {"headings": ["DG Role", "Description"], "rows": [["CDO", "Chief Data Officer"], ["CDS", "Chief Data Steward"], ["ExDS", "Executive Data Steward"], ["EDS", "Enterprise Data Steward"], ["CoDS", "Coordinating Data Steward"], ["DO", "Data Owner"], ["BDS", "Business Data Steward"], ["DGS", "DG Specialist"], ["DGM", "DG Office Manager"], ["TDS", "Technical Data Steward"], ["DA", "Data Architecture"], ["MdS", "MetaData Specialist"], ["RMdS", "Reference & Master Data Specialist"], ["OCM", "Organisational Change Manager"]], "source": "Reference Data"}, "ClassificationSensitivity": {"headings": ["Sensitivity Label"], "rows": [["Public"], ["General"], ["Confidential – GDPR"], ["Confidential"], ["Highly Confidential"], ["Highly Confidential – GDPR"]], "source": "Reference Data - DC"}, "DQDim": {"headings": ["DQ Dimension", "Dimension Description", "In Scope"], "rows": [["Integrity", "Integrity measures the structural or relational quality of data sets.", "1"], ["Consistency", "Consistency measures whether or not data is equivalent across systems or location of storage.", "1"], ["Completeness", "Completeness measures the degree of population of data values in a data set.", "1"], ["Timeliness", "Timeliness is a measure of time between when data is expected versus made available.", "0"], ["Validity", "Validity measures whether a value conforms to a preset standard.\nIncludes Reasonableness", "1"], ["Accuracy", "Accuracy measures the degree to which data factually represents its associated real-world object, event, concept or alternatively matches the agreed upon source(s).", "1"]], "source": "Reference Data - DQ"}, "DMReview": {"headings": ["DM Review Comment", "Comment Explanation"], "rows": [["Not Reviewed", "Not yet reviewed"], ["Incomplete Author", "Field Author has not been defined"], ["Incomplete Reference Data", "Reference Data not set - Column should contain a list of reference values"], ["Incomplete Obligation", "Obligation not set - Column doesn’t have a Obligation setting: Primary Key, Business Key, Alternate Key, Yes, Maybe, No"], ["Incomplete Description", "Description not defined properly. Incomplete Column Definition"], ["Non-Compliant Header", "Table Header Name is not compliant to the ISO 11179 Standard"], ["Invalid Table Name", "Template Table Name doesn't adhere to Standards."], ["Invalid Table Meta Name", "Template Table Meta Name has not been defined properly"], ["Reviewed", "No problems"]], "source": "Reference Data - DM"}, "IssuePriority": {"headings": ["Priority Level", "Priority", "Priority Definition"], "rows": [["P1", "Critical", "A defect that renders a functionality inoperable or is causing a serious adverse impact to the business. The impact should be for a significant user population (more than 30% of the system users)"], ["P2", "High", "A defect that materially impairs the functionalities and/or performance of one or more of the systems with the consequence that business application operations can be performed but in a restricted or inefficient manner"], ["P3", "Medium", "A defect that does not affect current day-to-day business operations, but the performance or efficiency of the customer’s business operations might improve if such a defect were to be corrected"], ["P4", "Low", "An issue that do not have any functional impact on the systems."]], "source": "Reference Data"}, "RuleState": {"headings": ["DQ Rule State"], "rows": [["Definition"], ["Measuring"], ["Retired"]], "source": "Reference Data - DQ"}, "AssetType": {"headings": ["AssetTypeID", "Asset Type"], "rows": [["1", "Collection"], ["2", "Command"], ["3", "Container"], ["4", "KPI"], ["5", "Measure"], ["6", "Report"], ["7", "Table"], ["8", "TableValuedFunction"]], "source": "Reference Data"}, "SourceType": {"headings": ["SourceTypeID", "Source Type"], "rows": [["1", "Azure Cosmos DB"], ["2", "Azure Data Lake Store"], ["3", "Azure Storage"], ["4", "Azure Synapse Analytics"], ["5", "DB2"], ["6", "Datazen"], ["7", "FTP"], ["8", "File system"], ["9", "Generic ODBC"], ["10", "HTTP"], ["11", "Hadoop Distributed File System"], ["12", "Hive"], ["13", "MySQL"], ["14", "OData"], ["15", "Oracle Database"], ["16", "PostgreSQL"], ["17", "Power BI Desktop"], ["18", "Power Query"], ["19", "SAP HANA"], ["20", "SQL Server"], ["21", "SQL Server Analysis Services multidimensional"], ["22", "SQL Server Analysis Services tabular"], ["23", "SQL Server Master Data Services"], ["24", "SQL Server Reporting Services"], ["25", "Salesforce"], ["26", "SharePoint"], ["27", "Sybase"], ["28", "Teradata"]], "source": "Reference Data"}}, "metadataArtefacts": [{"name": "Data Catalog", "why": "A Metadata artefact. It gives the organisation a single, structured, reviewable record of “Data Catalog” so decisions can be made from agreed data rather than opinion.", "columns": [{"name": "DataCatalog ID", "description": "Unique Identifier for each Resource in the Data Catalog", "obligation": "Primary Key", "refdata": ""}, {"name": "Data Catalog Fully Qualified Name", "description": "Fully Qualified Resource Name", "obligation": "Business Key", "refdata": "DataCatalog"}, {"name": "DataSourceTypeID", "description": "Type of Data Source were the Data Resource is stored", "obligation": "", "refdata": "DataSourceTypeInformation"}, {"name": "DataSourceType", "description": "", "obligation": "", "refdata": "DataSourceTypeInformation"}, {"name": "FullyQualifiedAddress", "description": "", "obligation": "", "refdata": "DataSourceTypeInformation"}, {"name": "ObjectID", "description": "DBMS Instance Object Identifier\nUnique within each DataStore", "obligation": "", "refdata": ""}, {"name": "Server", "description": "", "obligation": "", "refdata": ""}, {"name": "Database", "description": "", "obligation": "", "refdata": ""}, {"name": "Schema", "description": "", "obligation": "", "refdata": ""}, {"name": "Table", "description": "", "obligation": "", "refdata": ""}, {"name": "File Path", "description": "", "obligation": "", "refdata": ""}, {"name": "Business Glossary ID", "description": "", "obligation": "", "refdata": ""}]}, {"name": "Data Dictionary", "why": "Data Dictionary of the FOI Data Product", "columns": [{"name": "Data Element Fully Qualified Name", "description": "Fully Qualified Database field (as defined by SQL)", "obligation": "Business Key", "refdata": ""}, {"name": "Data Dictionary ID", "description": "Unique Server Dictionary Object ID", "obligation": "Primary Key", "refdata": ""}, {"name": "Data Catalog ID", "description": "Associated Data Resource found in the Data Catalog", "obligation": "Yes", "refdata": "DataCatalog"}, {"name": "Server", "description": "", "obligation": "Yes", "refdata": "DataCatalog"}, {"name": "Database", "description": "", "obligation": "Yes", "refdata": "DataCatalog"}, {"name": "Schema", "description": "", "obligation": "Yes", "refdata": "DataCatalog"}, {"name": "Table", "description": "", "obligation": "Yes", "refdata": "DataCatalog"}, {"name": "Column Name", "description": "Data Element", "obligation": "Yes", "refdata": ""}, {"name": "Data Type", "description": "", "obligation": "Yes", "refdata": ""}, {"name": "Length", "description": "", "obligation": "Yes", "refdata": ""}, {"name": "Nullable", "description": "", "obligation": "Yes", "refdata": ""}, {"name": "Default", "description": "", "obligation": "Maybe", "refdata": ""}, {"name": "Business Term", "description": "Reference to the related Business Term", "obligation": "Yes", "refdata": "BusinessGlossary"}]}, {"name": "Data Dictionary - Score", "why": "A Metadata artefact. It gives the organisation a single, structured, reviewable record of “Data Dictionary - Score” so decisions can be made from agreed data rather than opinion.", "columns": [{"name": "Category Group", "description": "", "obligation": "", "refdata": ""}, {"name": "Category", "description": "", "obligation": "", "refdata": ""}, {"name": "Description", "description": "", "obligation": "", "refdata": ""}, {"name": "Ranking", "description": "", "obligation": "", "refdata": ""}]}, {"name": "Data Lineage", "why": "A Metadata artefact. It gives the organisation a single, structured, reviewable record of “Data Lineage” so decisions can be made from agreed data rather than opinion.", "columns": [{"name": "Data Lineage ID", "description": "Unique Data Lineage ID", "obligation": "", "refdata": ""}, {"name": "FullyQualifiedName", "description": "Fully Qualified Database field (as defined by SQL)", "obligation": "", "refdata": ""}, {"name": "Server", "description": "Server Name where the Data Element is located", "obligation": "", "refdata": ""}, {"name": "Database", "description": "", "obligation": "", "refdata": ""}, {"name": "Schema", "description": "", "obligation": "", "refdata": ""}, {"name": "Table", "description": "Data Element", "obligation": "", "refdata": ""}, {"name": "Column Name", "description": "", "obligation": "", "refdata": ""}, {"name": "Data Type", "description": "", "obligation": "", "refdata": ""}, {"name": "Length", "description": "", "obligation": "", "refdata": ""}, {"name": "Nullable", "description": "", "obligation": "", "refdata": ""}, {"name": "Default", "description": "", "obligation": "", "refdata": ""}, {"name": "Business Glossary ID", "description": "", "obligation": "", "refdata": ""}]}, {"name": "Faceted Classification", "why": "A Metadata artefact. It gives the organisation a single, structured, reviewable record of “Faceted Classification” so decisions can be made from agreed data rather than opinion.", "columns": [{"name": "Unified Metamodel", "description": "", "obligation": "", "refdata": ""}, {"name": "|", "description": "", "obligation": "", "refdata": ""}, {"name": "What | Asset | Digital Asset", "description": "", "obligation": "", "refdata": ""}]}, {"name": "Framework & Methods", "why": "A working research artefact: it captures the industry frameworks, methods and reference sources reviewed for Metadata, so that the approach your organisation adopts is a deliberate, defensible choice rather than an accident.", "columns": [{"name": "RMD Framework", "description": "Industry Framework that the RMD Framework is based on", "obligation": "Yes", "refdata": ""}, {"name": "Framework Motivation", "description": "Motivation for the choice of the Industry Framework for the Organisation", "obligation": "Yes", "refdata": ""}, {"name": "Phase Number", "description": "Framework Phase Number. In general, it also represents the order in which Phases should be executed", "obligation": "Yes", "refdata": ""}, {"name": "Phase Name", "description": "Name of the Phase", "obligation": "Yes", "refdata": ""}, {"name": "Phase Goal", "description": "What Goal must the Phase achieve", "obligation": "Yes", "refdata": ""}, {"name": "Input", "description": "Inputs required for each step in the process", "obligation": "Yes", "refdata": ""}, {"name": "Process Step Number", "description": "Process Step Number\nNumbering within the Phase", "obligation": "Yes", "refdata": ""}, {"name": "Process Step Name", "description": "Name of the Process Step", "obligation": "Yes", "refdata": ""}, {"name": "Output", "description": "Definition of the Outputs that the Process Step should to produce", "obligation": "Yes", "refdata": ""}, {"name": "DMBOK Deliverable", "description": "DMBOK Deliverable that is produced. It contains the corresponding Output", "obligation": "Yes", "refdata": "DMBOKDeliverable"}, {"name": "DM Project Template", "description": "DM Template used to record the DMBOK Deliverable", "obligation": "Yes", "refdata": "ReferenceDataList"}, {"name": "RMD Framework ID", "description": "Unique Identifier for each DM Artefact Instance.", "obligation": "Primary Key", "refdata": ""}]}]}}</script>
+<script>
+const M = JSON.parse(document.getElementById('app-data').textContent);
+const VERSION = document.querySelector('meta[name="version"]').content;
+document.getElementById('appVersion').textContent = 'v'+VERSION;
+const LS_KEY = 'mdaReadiness.v1';
+const uid = ()=> Math.random().toString(36).slice(2,9);
+
+const STATUS = {
+ '':{label:'Not assessed',cls:'none'},
+ present:{label:'Present',cls:'present'},
+ partial:{label:'Partial',cls:'partial'},
+ absent:{label:'Absent',cls:'absent'},
+ restricted:{label:'Restricted',cls:'restricted'},
+ na:{label:'N/A (justified)',cls:'na'},
+};
+
+// ---------- state ----------
+function seed(){
+  return {
+    meta:{title:'MDA Readiness Assessment', assessor:'', date:new Date().toISOString().slice(0,10), appVersion:VERSION},
+    mdas: M.provisional.map(p=>({id:uid(), name:p[0], area:p[1], provisional:true, pack:{}, packNotes:{}, datasets:[]})),
+    ui:{mda:null, ds:null, tab:'assessment'}
+  };
+}
+let state;
+try{ const raw=localStorage.getItem(LS_KEY); state = raw? JSON.parse(raw): seed(); }catch(e){ state=seed(); }
+if(!state.mdas){ state=seed(); }
+function save(){ try{ state.meta.appVersion=VERSION; localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+
+function curMda(){ return state.mdas.find(m=>m.id===state.ui.mda) || null; }
+function curDs(){ const m=curMda(); return m? (m.datasets.find(d=>d.id===state.ui.ds)||null):null; }
+
+// ---------- readiness ----------
+function computeReadiness(ds){
+  if(!ds) return {determination:'',completeness:0,reasons:['Select a dataset'],present:0,total:0,blockingMissing:[]};
+  const st = ds.reqs||{};
+  let total=0, present=0, blockingMissing=[], gaps=[], restricted=false;
+  M.reqs.forEach(r=>{
+    const mandatory = (r.status==='M' || r.status==='MNA');
+    const s = (st[r.code]||{}).status || '';
+    if(!mandatory){ if(s==='restricted') restricted=true; return; }
+    total++;
+    if(s==='present'){ present++; return; }
+    if(s==='na' && r.status==='MNA'){ present++; return; }   // justified N/A satisfies an M/N·A item
+    if(s==='restricted'){ restricted=true; gaps.push(r.code+' (restricted)'); return; }
+    // partial / absent / unassessed / invalid na-on-M
+    gaps.push(r.code + (s==='partial'?' (partial)': s==='absent'?' (absent)':' (unassessed)'));
+    if(r.blocking && (s===''||s==='absent')) blockingMissing.push(r.code);
+  });
+  const stakeholderNo = ds.stakeholderAccess==='no';
+  let determination='', reasons=[];
+  if(blockingMissing.length || stakeholderNo){
+    determination='Not ready';
+    if(blockingMissing.length) reasons.push('Blocking evidence missing: '+blockingMissing.map(c=>c+' '+code2title(c)).join('; '));
+    if(stakeholderNo) reasons.push('Stakeholder access not available for clarification/validation');
+  } else if(restricted){
+    determination='Restricted';
+    reasons.push('Evidence exists but cannot yet be released under approved arrangements');
+    if(gaps.length) reasons.push('Also outstanding: '+gaps.join(', '));
+  } else if(gaps.length){
+    determination='Ready with gaps';
+    reasons.push('Outstanding: '+gaps.join(', '));
+  } else if(total>0){
+    determination='Ready';
+    reasons.push('All mandatory requirements present, consistent and safe to use');
+  } else { reasons.push('Not yet assessed'); }
+  return {determination, completeness: total? Math.round(present/total*100):0, reasons, present, total, blockingMissing};
+}
+function code2title(c){ const r=M.reqs.find(x=>x.code===c); return r?('('+r.title+')'):''; }
+function detClass(d){ return d? d.replace(/ /g,'-'):'none'; }
+
+// ---------- render ----------
+const side=document.getElementById('side'), main=document.getElementById('main');
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function renderSide(){
+  let h = '<h2>Participating MDAs</h2>';
+  state.mdas.forEach(m=>{
+    const open = m.id===state.ui.mda;
+    h += `<div class="mda"><div class="mda-h" data-mda="${m.id}">
+      <span class="nm">${esc(m.name)}</span>${m.provisional?'<span class="prov">provisional</span>':''}</div>`;
+    if(open){
+      h+='<div class="ds-list">';
+      m.datasets.forEach(d=>{
+        const r=computeReadiness(d); const act=d.id===state.ui.ds?'active':'';
+        const col = {'Ready':'var(--ok)','Ready with gaps':'var(--warn)','Not ready':'var(--bad)','Restricted':'var(--restr)'}[r.determination]||'var(--na)';
+        h+=`<div class="ds ${act}" data-ds="${d.id}"><span class="dot" style="background:${col}"></span><span>${esc(d.name||'(unnamed dataset)')}</span></div>`;
+      });
+      h+=`<button class="ds-add" data-add-ds="${m.id}">+ Add dataset</button></div>`;
+    }
+    h+='</div>';
+  });
+  h += '<button class="mda-add" id="addMda">+ Add MDA</button>';
+  side.innerHTML=h;
+}
+
+function tabbar(active){
+  const tabs=[['assessment','Assessment'],['pack','Data Pack'],['summary','Summary'],['reference','Reference']];
+  return '<div class="tabs">'+tabs.map(t=>`<button class="tab ${t[0]===active?'active':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')+'</div>';
+}
+
+function renderMain(){
+  const tab=state.ui.tab;
+  let h=tabbar(tab);
+  if(tab==='assessment') h+=renderAssessment();
+  else if(tab==='pack') h+=renderPack();
+  else if(tab==='summary') h+=renderSummary();
+  else if(tab==='reference') h+=renderReference();
+  main.innerHTML=h;
+}
+
+function renderAssessment(){
+  const m=curMda(), d=curDs();
+  if(!m) return '<div class="empty">Add or select an MDA on the left to begin.</div>';
+  if(!d) return `<div class="empty">Select a dataset under <b>${esc(m.name)}</b>, or add one.</div>`;
+  const r=computeReadiness(d);
+  let h=`<div class="card"><div class="ds-head">
+    <div class="field"><label>Dataset name / title (D1)</label><input data-f="name" value="${esc(d.name)}"></div>
+    <div class="field"><label>Identifier (D1)</label><input data-f="identifier" value="${esc(d.identifier)}"></div>
+    <div class="field"><label>Priority (D3)</label><input list="prioList" data-f="priority" value="${esc(d.priority)}"><datalist id="prioList"><option>High</option><option>Medium</option><option>Low</option></datalist></div>
+    <div class="field"><label>Stakeholder access</label><select data-f="stakeholderAccess">
+       <option value="">— unknown —</option><option value="yes"${d.stakeholderAccess==='yes'?' selected':''}>Available</option><option value="no"${d.stakeholderAccess==='no'?' selected':''}>Not available</option></select></div>
+    <div class="field" style="grid-column:1/-1"><label>Nomination rationale (D3)</label><textarea data-f="nomination">${esc(d.nomination)}</textarea></div>
+    <div class="field" style="grid-column:1/-1"><label>Restriction / release note (if any)</label><textarea data-f="restriction">${esc(d.restriction)}</textarea></div>
+  </div>
+  <div class="readout">
+    <span class="pill ${detClass(r.determination)}">${r.determination||'Not assessed'}</span>
+    <div class="bar"><i style="width:${r.completeness}%"></i></div>
+    <span class="small muted">${r.present}/${r.total} mandatory present · ${r.completeness}%</span>
+    <div class="reasons">${r.reasons.map(esc).join(' · ')}</div>
+  </div></div>`;
+  h+='<div class="sec-title">Dataset Readiness — D1 to D13</div>';
+  M.reqs.filter(x=>x.group==='dataset').forEach(rq=> h+=reqCard(rq,d));
+  h+='<div class="sec-title">Metadata Readiness — M1 to M10</div>';
+  M.reqs.filter(x=>x.group==='metadata').forEach(rq=> h+=reqCard(rq,d));
+  return h;
+}
+
+function reqCard(rq,d){
+  const st=(d.reqs&&d.reqs[rq.code])||{};
+  const s=st.status||'';
+  const statusOpts=Object.keys(STATUS).filter(k=> !(k==='na' && rq.status==='M')).map(k=>`<option value="${k}"${k===s?' selected':''}>${STATUS[k].label}</option>`).join('');
+  const sb = rq.status==='MNA'?'MNA':rq.status;
+  let lookupCtrl='';
+  if(rq.lookup){
+    const lk=M.mm.lookups[rq.lookup];
+    const opts=(lk?lk.rows:[]).map(row=>`<option value="${esc(row[0])}">${esc(row[0])}${row[1]?' — '+esc(row[1]):''}</option>`).join('');
+    lookupCtrl=`<input list="lk_${rq.code}" data-req="${rq.code}" data-k="value" placeholder="${esc(rq.lookup)}" value="${esc(st.value||'')}"><datalist id="lk_${rq.code}">${opts}</datalist>`;
+  }
+  return `<div class="req">
+   <div class="req-top">
+     <div class="req-code">${rq.code}<small class="${rq.status} ${rq.blocking?'':''}">${rq.status==='MNA'?'M/N·A':rq.status}</small>${rq.blocking?'<small class="blk">blocking</small>':''}</div>
+     <div><div class="req-title">${esc(rq.title)}</div><div class="req-q">${esc(rq.question)}</div></div>
+     <div class="req-ctrl">
+        <select class="statussel ${STATUS[s].cls}" data-req="${rq.code}" data-k="status">${statusOpts}</select>
+        ${lookupCtrl}
+     </div>
+   </div>
+   <div class="req-ev"><textarea data-req="${rq.code}" data-k="evidence" placeholder="Evidence seen / notes / file reference…">${esc(st.evidence||'')}</textarea></div>
+   <button class="expand" data-exp="${rq.code}">ⓘ Definition &amp; acceptance criteria</button>
+   <div class="detail" id="det_${rq.code}">
+     <div class="def">${esc(rq.definition)}${rq.lookup?'<span class="plc">reference list is metamodel default — adapt to the project scheme</span>':''}</div>
+     <dl>
+       <dt>MDA evidence</dt><dd>${esc(rq.evidence)}</dd>
+       <dt>Acceptance</dt><dd>${esc(rq.criterion)}</dd>
+       ${rq.example?`<dt>Example</dt><dd>${esc(rq.example)}</dd>`:''}
+       <dt>Boundary</dt><dd>${esc(rq.boundary)}</dd>
+     </dl>
+     ${rq.mmRef?`<span class="mmtag">↳ metamodel: ${esc(rq.mmRef)}</span>`:''}
+     ${rq.related&&rq.related.length?`<div class="small muted" style="margin-top:8px"><b>Related metamodel artefacts:</b> ${rq.related.map(esc).join(' · ')}</div>`:''}
+   </div>
+  </div>`;
+}
+
+function renderPack(){
+  const m=curMda();
+  if(!m) return '<div class="empty">Select an MDA to record its data-pack schedule.</div>';
+  let provided=0;
+  let rows=M.pack.map(p=>{
+    const f=p[0]; const stv=(m.pack&&m.pack[f])||''; if(stv==='Provided') provided++;
+    const sel=['','Provided','Partial','Not provided','Restricted'].map(o=>`<option${o===stv?' selected':''}>${o||'— status —'}</option>`).join('');
+    return `<div class="pack-row">
+      <div class="pf">${esc(f)}<small>${esc(p[1])}</small></div>
+      <div><select data-pack="${esc(f)}">${sel}</select></div>
+      <div class="field"><input data-packnote="${esc(f)}" value="${esc((m.packNotes&&m.packNotes[f])||'')}" placeholder="Evidence type: ${esc(p[2])}"></div>
+    </div>`;
+  }).join('');
+  return `<div class="card"><div style="padding:12px 16px;font-weight:600">Standard MDA data-pack — ${esc(m.name)} <span class="small muted">(${provided}/${M.pack.length} mandatory components provided)</span></div>${rows}</div>
+   <div class="card ref-block"><h3>Optional supporting evidence</h3><p class="small muted">Conceptual/logical/physical models · Metadata-catalogue export or screenshots · Data-quality reports and rule registers · Data/information policies and classification schemes · Retention schedules · Interface/API/exchange documentation · Data-sharing agreements · Detailed lineage / mapping sheets.</p></div>`;
+}
+
+function renderSummary(){
+  let all=[]; state.mdas.forEach(m=> m.datasets.forEach(d=> all.push({m,d,r:computeReadiness(d)})));
+  const counts={'Ready':0,'Ready with gaps':0,'Not ready':0,'Restricted':0,'':0};
+  all.forEach(x=> counts[x.r.determination]=(counts[x.r.determination]||0)+1);
+  let h='<div class="tally">';
+  [['Ready','ok'],['Ready with gaps','warn'],['Not ready','bad'],['Restricted','restr']].forEach(c=>{
+    h+=`<div class="t"><b style="color:var(--${c[1]})">${counts[c[0]]||0}</b><span>${c[0]}</span></div>`;
+  });
+  h+=`<div class="t"><b>${all.length}</b><span>Datasets assessed</span></div></div>`;
+  if(!all.length) return h+'<div class="empty">No datasets yet. Add datasets under an MDA.</div>';
+  h+='<div class="card"><table class="grid"><thead><tr><th>MDA</th><th>Dataset</th><th>Determination</th><th>Complete</th><th>Blocking gaps</th></tr></thead><tbody>';
+  all.forEach(x=>{
+    h+=`<tr><td>${esc(x.m.name)}</td><td><b>${esc(x.d.name||'(unnamed)')}</b></td>
+      <td><span class="pill ${detClass(x.r.determination)}">${x.r.determination||'—'}</span></td>
+      <td>${x.r.completeness}%</td>
+      <td class="small">${x.r.blockingMissing.length? x.r.blockingMissing.join(', ')+(x.d.stakeholderAccess==='no'?' + stakeholder access':''): (x.d.stakeholderAccess==='no'?'stakeholder access':'—')}</td></tr>`;
+  });
+  h+='</tbody></table></div>';
+  return h;
+}
+
+function renderReference(){
+  let h='<div class="card ref-block"><h3>Readiness determination method</h3><table class="grid"><tbody>';
+  Object.entries(M.method).forEach(([k,v])=> h+=`<tr><td style="width:150px"><span class="pill ${detClass(k)}">${k}</span></td><td>${esc(v)}</td></tr>`);
+  h+='</tbody></table><p class="small muted" style="margin-top:8px">Precedence applied by this tool: Not ready → Restricted → Ready with gaps → Ready. Blocking requirements: '+M.reqs.filter(r=>r.blocking).map(r=>r.code).join(', ')+' (and stakeholder access).</p></div>';
+
+  h+=`<div class="card ref-block"><h3>Metamodel reference lists <span class="plc">from DM Artefact Metamodel v${esc(M.mm.version)}</span></h3>`;
+  Object.entries(M.mm.lookups).forEach(([k,lk])=>{
+    h+=`<details style="margin-bottom:6px"><summary style="cursor:pointer;font-weight:600">${esc(k)} <span class="small muted">(${lk.rows.length})</span></summary>
+      <table class="grid" style="margin-top:6px"><tbody>`+lk.rows.map(row=>`<tr>${row.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')+`</tbody></table></details>`;
+  });
+  h+='</div>';
+
+  h+='<div class="card ref-block"><h3>Metamodel metadata artefacts</h3>';
+  M.mm.metadataArtefacts.forEach(a=>{
+    h+=`<details style="margin-bottom:6px"><summary style="cursor:pointer;font-weight:600">${esc(a.name)}</summary>
+      <p class="small muted" style="margin:6px 0">${esc(a.why).slice(0,220)}</p>
+      <table class="grid"><thead><tr><th>Column</th><th>Description</th><th>Obligation</th></tr></thead><tbody>`+
+      a.columns.map(c=>`<tr><td>${esc(c.name)}</td><td class="small">${esc(c.description)}</td><td class="small">${esc(c.obligation)}</td></tr>`).join('')+
+      `</tbody></table></details>`;
+  });
+  h+='</div>';
+
+  h+=`<div class="card ref-block"><h3>Standards anchoring the requirements</h3><p class="small muted">W3C DCAT 3 (dataset vs distribution; title, identifier, contact, access rights, frequency, temporal coverage, format, size, standards, versions, data services, provenance) · ISO/IEC 11179-3 (metadata registry metamodel) · W3C PROV-O (entities, activities, agents; wasGeneratedBy / wasDerivedFrom) · FIPS 199 (CIA impact — reference only; the pilot uses Zambia's own classification framework) · W3C DQV / ISO 8000-61 (data quality) · ISO 15489 (records/retention concepts).</p></div>`;
+  return h;
+}
+
+// ---------- events ----------
+function setTab(t){ state.ui.tab=t; save(); renderMain(); }
+document.addEventListener('click',e=>{
+  const t=e.target;
+  if(t.dataset.tab){ setTab(t.dataset.tab); }
+  else if(t.closest('.mda-h')){ const id=t.closest('.mda-h').dataset.mda; state.ui.mda=(state.ui.mda===id?null:id);
+     const m=curMda(); state.ui.ds = m&&m.datasets[0]?m.datasets[0].id:null; save(); renderSide(); renderMain(); }
+  else if(t.closest('.ds')){ state.ui.ds=t.closest('.ds').dataset.ds; save(); renderSide(); renderMain(); }
+  else if(t.dataset.addDs){ addDs(t.dataset.addDs); }
+  else if(t.id==='addMda'){ addMda(); }
+  else if(t.dataset.exp){ document.getElementById('det_'+t.dataset.exp).classList.toggle('open'); }
+});
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.dataset.f){ const d=curDs(); if(d){ d[t.dataset.f]=t.value; save();
+      if(['name','identifier','stakeholderAccess'].includes(t.dataset.f)){ renderSide(); refreshReadout(); } } }
+  else if(t.dataset.req){ const d=curDs(); if(d){ d.reqs=d.reqs||{}; d.reqs[t.dataset.req]=d.reqs[t.dataset.req]||{};
+      d.reqs[t.dataset.req][t.dataset.k]=t.value; save();
+      if(t.dataset.k==='status'){ t.className='statussel '+STATUS[t.value||''].cls; renderSide(); refreshReadout(); } } }
+  else if(t.dataset.pack!==undefined){ const m=curMda(); if(m){ m.pack=m.pack||{}; m.pack[t.dataset.pack]=t.value; save(); } }
+  else if(t.dataset.packnote!==undefined){ const m=curMda(); if(m){ m.packNotes=m.packNotes||{}; m.packNotes[t.dataset.packnote]=t.value; save(); } }
+});
+function refreshReadout(){
+  const d=curDs(); if(!d||state.ui.tab!=='assessment') return;
+  const r=computeReadiness(d);
+  const ro=document.querySelector('.readout');
+  if(ro) ro.innerHTML=`<span class="pill ${detClass(r.determination)}">${r.determination||'Not assessed'}</span>
+    <div class="bar"><i style="width:${r.completeness}%"></i></div>
+    <span class="small muted">${r.present}/${r.total} mandatory present · ${r.completeness}%</span>
+    <div class="reasons">${r.reasons.map(esc).join(' · ')}</div>`;
+}
+function addMda(){ const name=prompt('MDA name:'); if(!name) return; const m={id:uid(),name,area:'',provisional:false,pack:{},packNotes:{},datasets:[]}; state.mdas.push(m); state.ui.mda=m.id; state.ui.ds=null; save(); renderSide(); renderMain(); }
+function addDs(mid){ const m=state.mdas.find(x=>x.id===mid); if(!m) return; const name=prompt('Dataset name / title:'); if(!name) return;
+  const d={id:uid(),name,identifier:'',priority:'',nomination:'',restriction:'',stakeholderAccess:'',reqs:{}}; m.datasets.push(d); state.ui.mda=mid; state.ui.ds=d.id; save(); renderSide(); renderMain(); }
+
+// top meta
+const assessorEl=document.getElementById('assessor'), adateEl=document.getElementById('adate');
+assessorEl.value=state.meta.assessor||''; adateEl.value=state.meta.date||'';
+assessorEl.addEventListener('input',()=>{state.meta.assessor=assessorEl.value;save();});
+adateEl.addEventListener('input',()=>{state.meta.date=adateEl.value;save();});
+
+// theme
+const themeEl=document.getElementById('btnTheme');
+try{ const tv=localStorage.getItem('mdaTheme'); if(tv) document.documentElement.setAttribute('data-theme',tv);}catch(e){}
+themeEl.addEventListener('click',()=>{ const cur=document.documentElement.getAttribute('data-theme'); const nx=cur==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',nx); try{localStorage.setItem('mdaTheme',nx);}catch(e){} });
+
+// exports
+function dl(name,text,type){ const b=new Blob([text],{type:type||'text/plain'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u;a.download=name;a.click(); setTimeout(()=>URL.revokeObjectURL(u),1500); }
+document.getElementById('btnSave').onclick=()=>{ dl('mda-readiness-'+(state.meta.date||'')+'.json', JSON.stringify(state,null,2),'application/json'); };
+document.getElementById('btnLoad').onclick=()=>document.getElementById('fileIn').click();
+document.getElementById('fileIn').onchange=e=>{ const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=()=>{ try{ const o=JSON.parse(rd.result); if(o&&o.mdas){ state=o; state.ui=state.ui||{tab:'assessment'}; save(); renderSide(); renderMain(); assessorEl.value=state.meta.assessor||''; adateEl.value=state.meta.date||''; } else alert('Not a valid assessment file.'); }catch(err){ alert('Could not read file: '+err.message); } }; rd.readAsText(f); e.target.value=''; };
+function csvCell(s){ s=(s==null?'':String(s)); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
+document.getElementById('btnCsv').onclick=()=>{ const d=curDs(); const m=curMda(); if(!d){alert('Select a dataset first.');return;}
+  let rows=[['MDA','Dataset','Code','Requirement','Obligation','Blocking','Assessor status','Controlled value','Evidence / notes','MDA evidence expected','Acceptance criterion']];
+  M.reqs.forEach(r=>{ const st=(d.reqs&&d.reqs[r.code])||{}; rows.push([m.name,d.name,r.code,r.title,r.status==='MNA'?'M/N·A':r.status,r.blocking?'Yes':'',STATUS[st.status||''].label,st.value||'',st.evidence||'',r.evidence,r.criterion]); });
+  dl('02_Dataset_Metadata_'+(d.name||'dataset').replace(/[^\w]+/g,'_')+'.csv', rows.map(r=>r.map(csvCell).join(',')).join('\n'),'text/csv'); };
+document.getElementById('btnReport').onclick=()=>{
+  let all=[]; state.mdas.forEach(m=> m.datasets.forEach(d=> all.push({m,d,r:computeReadiness(d)})));
+  let h=`<!doctype html><meta charset=utf-8><title>Readiness report</title><style>body{font:14px system-ui;margin:40px;color:#1b2733}h1{color:#0b5d8a}table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #cdd;padding:6px 8px;text-align:left;font-size:12px;vertical-align:top}th{background:#eef3f6}.p{font-weight:700;padding:2px 8px;border-radius:12px}</style>
+   <h1>MDA Dataset &amp; Metadata Readiness Report</h1><p>Digital Zambia Acceleration Project · ZM-SZ-466193-CS-QBS · Assessor: ${esc(state.meta.assessor||'—')} · Date: ${esc(state.meta.date||'—')} · Tool v${VERSION}</p>
+   <table><tr><th>MDA</th><th>Dataset</th><th>Determination</th><th>Complete</th><th>Reasons</th></tr>`;
+  all.forEach(x=> h+=`<tr><td>${esc(x.m.name)}</td><td>${esc(x.d.name)}</td><td>${esc(x.r.determination||'—')}</td><td>${x.r.completeness}%</td><td>${x.r.reasons.map(esc).join('<br>')}</td></tr>`);
+  h+='</table>';
+  all.forEach(x=>{ h+=`<h3>${esc(x.m.name)} — ${esc(x.d.name)}</h3><table><tr><th>Code</th><th>Requirement</th><th>Status</th><th>Evidence / notes</th></tr>`;
+    M.reqs.forEach(r=>{ const st=(x.d.reqs&&x.d.reqs[r.code])||{}; h+=`<tr><td>${r.code}</td><td>${esc(r.title)}</td><td>${esc(STATUS[st.status||''].label)}${st.value?' · '+esc(st.value):''}</td><td>${esc(st.evidence||'')}</td></tr>`; });
+    h+='</table>'; });
+  dl('MDA_Readiness_Report_'+(state.meta.date||'')+'.html', h,'text/html'); };
+
+// footer
+document.getElementById('foot').innerHTML='DM Artefact Metamodel v'+esc(M.mm.version)+' definitions · Requirements per MDA Dataset &amp; Metadata Readiness Assessment · Saved locally in this browser — use <b>Save JSON</b> for a portable copy.';
+
+function syncTopMeta(){ assessorEl.value=state.meta.assessor||''; adateEl.value=state.meta.date||''; }
+
+// ---------- GitHub sync (private data repo) ----------
+const GH_CFG='mdaReadiness.gh', GH_PAT='mdaReadiness.ghpat';
+const ghDefault={owner:'modelwaresystems-dama',repo:'modelware_app_storage',branch:'main',path:'MDA-Readiness/database'};
+let ghCfg; try{ ghCfg=Object.assign({},ghDefault,JSON.parse(localStorage.getItem(GH_CFG)||'{}')); }catch(e){ ghCfg=Object.assign({},ghDefault); }
+const GH_SYNC='mdaReadiness.ghsync';
+function ghGetMarker(){ try{return JSON.parse(localStorage.getItem(GH_SYNC)||'null');}catch(e){return null;} }
+function ghSetMarker(sha){ try{localStorage.setItem(GH_SYNC,JSON.stringify({indexSha:sha,at:new Date().toISOString()}));}catch(e){} }
+function ghGetPat(){ try{return localStorage.getItem(GH_PAT)||'';}catch(e){return '';} }
+function ghSaveCfg(){ try{localStorage.setItem(GH_CFG,JSON.stringify(ghCfg));}catch(e){} }
+function b64enc(s){ return btoa(unescape(encodeURIComponent(s))); }
+function b64dec(b){ return decodeURIComponent(escape(atob((b||'').replace(/\n/g,'')))); }
+function slug(s){ return (s==null?'':String(s)).toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,50)||'item'; }
+function setGhStatus(m,c){ const el=document.getElementById('ghStatus'); if(el){ el.textContent=m; el.className='gh-status '+(c||''); } const hb=document.getElementById('btnGh'); if(hb){ hb.title='GitHub: '+m; } }
+function ghBusy(b){ ['ghSaveConnect','ghPull','ghPublish'].forEach(id=>{ const e=document.getElementById(id); if(e) e.disabled=b; }); }
+
+async function ghApi(method,apipath,body){
+  const pat=ghGetPat(); if(!pat) throw new Error('No token set');
+  const res=await fetch('https://api.github.com'+apipath,{method,headers:{'Authorization':'Bearer '+pat,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},body:body?JSON.stringify(body):undefined});
+  if(res.status===401) throw new Error('Bad credentials');
+  if(res.status===403) throw new Error('Forbidden (token scope or rate limit)');
+  if(method==='GET'&&res.status===404) return null;
+  if(!res.ok){ let t=''; try{t=(await res.json()).message||'';}catch(e){} throw new Error('HTTP '+res.status+(t?': '+t:'')); }
+  if(res.status===204) return true;
+  return res.json();
+}
+function repoBase(){ return '/repos/'+encodeURIComponent(ghCfg.owner)+'/'+encodeURIComponent(ghCfg.repo); }
+function basePath(){ return (ghCfg.path||'').replace(/^\/+|\/+$/g,''); }
+function cpath(rel){ const b=basePath(); return (b?b+'/':'')+rel; }
+function contentsUrl(rel){ return repoBase()+'/contents/'+cpath(rel).split('/').map(encodeURIComponent).join('/'); }
+async function ghGetFile(rel){ const r=await ghApi('GET',contentsUrl(rel)+'?ref='+encodeURIComponent(ghCfg.branch)); if(!r||!r.content) return null; return {sha:r.sha,text:b64dec(r.content)}; }
+async function ghPutFile(rel,text,msg){ const cur=await ghGetFile(rel); if(cur&&cur.text===text) return 'unchanged'; const body={message:msg||('Update '+rel),content:b64enc(text),branch:ghCfg.branch}; if(cur) body.sha=cur.sha; await ghApi('PUT',contentsUrl(rel),body); return cur?'updated':'created'; }
+async function ghDeleteFile(rel,sha,msg){ await ghApi('DELETE',contentsUrl(rel),{message:msg||('Delete '+rel),sha,branch:ghCfg.branch}); }
+async function ghListJson(){ const info=await ghApi('GET',repoBase()+'/git/trees/'+encodeURIComponent(ghCfg.branch)+'?recursive=1'); if(!info||!info.tree) return []; const b=basePath(); if(!b) return []; const pre=b+'/'; return info.tree.filter(t=>t.type==='blob'&&t.path.startsWith(pre)&&t.path.endsWith('.json')).map(t=>({rel:t.path.slice(pre.length),sha:t.sha})); }
+
+function buildFileMap(){
+  const files={}; const index={meta:state.meta, generated:new Date().toISOString(), mdas:[]};
+  (state.mdas||[]).forEach(m=>{
+    const ms=slug(m.name)+'-'+m.id.slice(0,4);
+    const dss=(m.datasets||[]).map(d=>({id:d.id,slug:slug(d.name)+'-'+d.id.slice(0,4),name:d.name}));
+    index.mdas.push({id:m.id,slug:ms,name:m.name,area:m.area||'',provisional:!!m.provisional,datasets:dss});
+    files[ms+'/_mda.json']=JSON.stringify({id:m.id,name:m.name,area:m.area||'',provisional:!!m.provisional,pack:m.pack||{},packNotes:m.packNotes||{}},null,2);
+    (m.datasets||[]).forEach((d,i)=>{ files[ms+'/'+dss[i].slug+'.json']=JSON.stringify(d,null,2); });
+  });
+  files['index.json']=JSON.stringify(index,null,2);
+  return files;
+}
+
+async function ghPublish(){
+  if(!ghGetPat()){ setGhStatus('set a PAT first','err'); return; }
+  if(!basePath()){ setGhStatus('error: set a database path (publishing to repo root is blocked)','err'); return; }
+  ghBusy(true); setGhStatus('checking repo…','busy');
+  try{
+    // conflict guard: has the repo changed since our last pull/publish?
+    const marker=ghGetMarker();
+    const curIdx=await ghGetFile('index.json');
+    if(curIdx){
+      if(marker && marker.indexSha && curIdx.sha!==marker.indexSha){
+        if(!confirm('⚠ The repo has changed since your last pull/publish — another session may have published.\n\nPublishing now OVERWRITES those changes with your local version.\n\nRecommended: Cancel, then Pull latest to bring in their work, then publish.\n\nPublish anyway and overwrite?')){ setGhStatus('publish cancelled — Pull latest first to avoid overwriting newer work','err'); ghBusy(false); return; }
+      } else if(!marker){
+        if(!confirm('⚠ This repo path already contains an assessment that has not been pulled into this browser.\n\nPublishing will OVERWRITE it with your local version.\n\nRecommended: Cancel, then Pull latest first.\n\nPublish anyway and overwrite?')){ setGhStatus('publish cancelled — Pull latest first','err'); ghBusy(false); return; }
+      }
+    }
+    setGhStatus('publishing…','busy');
+    const files=buildFileMap(); const want=new Set(Object.keys(files));
+    let changed=0; for(const rel of Object.keys(files)){ const r=await ghPutFile(rel,files[rel],'MDA readiness: update '+rel); if(r!=='unchanged') changed++; }
+    let removed=0; const existing=await ghListJson(); for(const e of existing){ if(!want.has(e.rel)){ await ghDeleteFile(e.rel,e.sha,'MDA readiness: remove '+e.rel); removed++; } }
+    const after=await ghGetFile('index.json'); if(after) ghSetMarker(after.sha);
+    setGhStatus('published · '+changed+' file(s) changed'+(removed?', '+removed+' removed':'')+' · '+new Date().toLocaleTimeString(),'ok');
+  }catch(e){ setGhStatus('error: '+e.message,'err'); }
+  ghBusy(false);
+}
+async function ghPull(){
+  if(!ghGetPat()){ setGhStatus('set a PAT first','err'); return false; }
+  ghBusy(true); setGhStatus('pulling…','busy');
+  try{
+    const idxF=await ghGetFile('index.json'); if(!idxF){ setGhStatus('nothing to pull — no index.json at this path','err'); ghBusy(false); return false; }
+    ghSetMarker(idxF.sha);
+    const index=JSON.parse(idxF.text); const ns={meta:index.meta||state.meta, mdas:[], ui:state.ui||{tab:'assessment'}};
+    for(const mi of (index.mdas||[])){
+      const mf=await ghGetFile(mi.slug+'/_mda.json'); const md=mf?JSON.parse(mf.text):{};
+      const m={id:mi.id,name:mi.name,area:mi.area||md.area||'',provisional:!!mi.provisional,pack:md.pack||{},packNotes:md.packNotes||{},datasets:[]};
+      for(const di of (mi.datasets||[])){ const df=await ghGetFile(mi.slug+'/'+di.slug+'.json'); if(df) m.datasets.push(JSON.parse(df.text)); }
+      ns.mdas.push(m);
+    }
+    ns.ui.mda = ns.mdas[0]?ns.mdas[0].id:null; ns.ui.ds = (ns.mdas[0]&&ns.mdas[0].datasets[0])?ns.mdas[0].datasets[0].id:null;
+    state=ns; save(); syncTopMeta(); renderSide(); renderMain();
+    setGhStatus('pulled from repo · '+state.mdas.length+' MDA(s) · '+new Date().toLocaleTimeString(),'ok'); ghBusy(false); return true;
+  }catch(e){ setGhStatus('error: '+e.message,'err'); ghBusy(false); return false; }
+}
+async function ghConnect(){
+  if(!ghGetPat()){ setGhStatus('enter a PAT, then Save & connect','err'); return; }
+  ghBusy(true); setGhStatus('connecting…','busy');
+  try{
+    const repo=await ghApi('GET',repoBase()); if(!repo){ setGhStatus('error: repo not found or token has no access','err'); ghBusy(false); return; }
+    const idxF=await ghGetFile('index.json');
+    const localEmpty=!state.mdas||state.mdas.every(m=>!m.datasets||!m.datasets.length);
+    if(idxF && localEmpty){ ghBusy(false); await ghPull(); setGhStatus('connected · loaded from repo','ok'); return; }
+    setGhStatus('connected · '+(idxF?'repo has data — use Pull latest to load it':'repo path empty — use Publish to save'),'ok');
+  }catch(e){ setGhStatus('error: '+e.message,'err'); }
+  ghBusy(false);
+}
+
+// panel wiring
+function openGh(){
+  document.getElementById('gh_owner').value=ghCfg.owner||'';
+  document.getElementById('gh_repo').value=ghCfg.repo||'';
+  document.getElementById('gh_branch').value=ghCfg.branch||'main';
+  document.getElementById('gh_path').value=ghCfg.path||'';
+  document.getElementById('gh_pat').value=ghGetPat();
+  const mk=ghGetMarker();
+  setGhStatus(ghGetPat()?('token set'+(mk?' · last synced '+new Date(mk.at).toLocaleString():'')+' — Save & connect to verify'):'no token set','');
+  document.getElementById('ghOverlay').hidden=false;
+}
+document.getElementById('btnGh').onclick=openGh;
+document.getElementById('ghClose').onclick=()=>{ document.getElementById('ghOverlay').hidden=true; };
+document.getElementById('ghOverlay').addEventListener('click',e=>{ if(e.target.id==='ghOverlay') e.currentTarget.hidden=true; });
+function bindCfg(id,key){ const el=document.getElementById(id); el.addEventListener('input',()=>{ ghCfg[key]=el.value.trim(); ghSaveCfg(); }); }
+bindCfg('gh_owner','owner'); bindCfg('gh_repo','repo'); bindCfg('gh_branch','branch'); bindCfg('gh_path','path');
+document.getElementById('gh_pat').addEventListener('input',e=>{ try{ if(e.target.value) localStorage.setItem(GH_PAT,e.target.value); else localStorage.removeItem(GH_PAT); }catch(err){} });
+document.getElementById('ghSaveConnect').onclick=()=>{ ghSaveCfg(); ghConnect(); };
+document.getElementById('ghPull').onclick=ghPull;
+document.getElementById('ghPublish').onclick=ghPublish;
+document.getElementById('ghForget').onclick=()=>{ try{localStorage.removeItem(GH_PAT);}catch(e){} document.getElementById('gh_pat').value=''; setGhStatus('token forgotten','ok'); };
+
+renderSide(); renderMain(); save();
+</script>
+</body>
+</html>

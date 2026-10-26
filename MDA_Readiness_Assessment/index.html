@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.4.1">
+<meta name="version" content="1.5.0">
 <title>MDA Readiness Assessment</title>
 <meta name="description" content="Assessor console for the MDA Dataset and Metadata Readiness Assessment, Digital Zambia Acceleration Project. Captures D1-D13 and M1-M10 evidence and computes Ready / Ready-with-gaps / Not-ready / Restricted.">
 <style>
@@ -107,6 +107,7 @@ table.grid{width:100%;border-collapse:collapse;font-size:13px}
 table.grid th,table.grid td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
 table.grid th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);background:var(--nabg)}
 table.grid tr:hover td{background:var(--nabg)}
+table.grid select,table.grid input,table.grid textarea{font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%;resize:vertical}
 .tally{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .tally .t{flex:1;min-width:130px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 12px;box-shadow:var(--shadow)}
 .tally .t b{font-size:22px;display:block}
@@ -199,17 +200,40 @@ const STATUS = {
  na:{label:'N/A (justified)',cls:'na'},
 };
 
+// §9 inception dependencies, §6 lessons log
+const INCEPTION=[
+ ['i1','DPC Client Readiness Checklist and selection criteria'],
+ ['i2','Final number of pilot MDAs (amended TOR: at least four)'],
+ ['i3','Whether "three data packs for analysis" is a subset of, or separate from, the classification pilots'],
+ ['i4','Number of representative datasets/assets per MDA'],
+ ['i5','Approved work plan, engagement sequence, workshop count and validation arrangements'],
+ ['i6','Named MDA business, governance and technical contacts'],
+ ['i7','Secure transfer mechanism and document-classification instructions'],
+ ['i8','Rules for raw, redacted, masked, synthetic or structurally representative samples'],
+ ['i9','Whether personal/sensitive records must be excluded, transformed or reviewed on-site only'],
+ ['i10','Availability of schemas, dictionaries, catalogue exports and quality evidence'],
+ ['i11','Required stakeholder access for clarification and validation'],
+ ['i12','Applicability of the draft Government Enterprise Architecture'],
+ ['i13','Decision and approval turnaround times'],
+ ['i14','Change-control route for material changes in MDAs, assets, workshops, deliverables or effort'],
+];
+const INC_STATUS=['','Confirmed','Outstanding','Not applicable'];
+const LESSON_TYPES=['Decision','Open issue','Lesson','Framework refinement'];
+
 // ---------- state ----------
 function seed(){
   return {
     meta:{title:'MDA Readiness Assessment', assessor:'', date:new Date().toISOString().slice(0,10), appVersion:VERSION},
     mdas: M.provisional.map(p=>({id:uid(), name:p[0], area:p[1], provisional:true, pack:{}, packNotes:{}, datasets:[]})),
+    inception:{}, lessons:[],
     ui:{mda:null, ds:null, tab:'assessment'}
   };
 }
 let state;
 try{ const raw=localStorage.getItem(LS_KEY); state = raw? JSON.parse(raw): seed(); }catch(e){ state=seed(); }
 if(!state.mdas){ state=seed(); }
+if(!state.inception) state.inception={};
+if(!Array.isArray(state.lessons)) state.lessons=[];
 function save(){ try{ state.meta.appVersion=VERSION; localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
 
 function curMda(){ return state.mdas.find(m=>m.id===state.ui.mda) || null; }
@@ -280,7 +304,7 @@ function renderSide(){
 }
 
 function tabbar(active){
-  const tabs=[['assessment','Assessment'],['pack','Data Pack'],['summary','Summary'],['reference','Reference']];
+  const tabs=[['assessment','Assessment'],['pack','Data Pack'],['summary','Summary'],['inception','Inception'],['lessons','Lessons'],['reference','Reference']];
   return '<div class="tabs">'+tabs.map(t=>`<button class="tab ${t[0]===active?'active':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')+'</div>';
 }
 
@@ -290,6 +314,8 @@ function renderMain(){
   if(tab==='assessment') h+=renderAssessment();
   else if(tab==='pack') h+=renderPack();
   else if(tab==='summary') h+=renderSummary();
+  else if(tab==='inception') h+=renderInception();
+  else if(tab==='lessons') h+=renderLessons();
   else if(tab==='reference') h+=renderReference();
   main.innerHTML=h;
 }
@@ -395,6 +421,44 @@ function renderSummary(){
   return h;
 }
 
+function renderInception(){
+  const inc=state.inception||{};
+  const done=INCEPTION.filter(it=>(inc[it[0]]||{}).status==='Confirmed').length;
+  const out=INCEPTION.filter(it=>(inc[it[0]]||{}).status==='Outstanding').length;
+  let h=`<div class="card ref-block"><h3>Inception dependencies and assumptions</h3>
+    <p class="small muted">The requirements list these as conditions to confirm before issuing the final assessment schedule. <b id="incDone">${done}</b> confirmed, <b id="incOut">${out}</b> outstanding, of ${INCEPTION.length}. Saved with the assessment and synced to the repo.</p></div>`;
+  h+='<div class="card"><table class="grid"><thead><tr><th style="width:28px">#</th><th>Dependency / assumption</th><th style="width:160px">Status</th><th>Note (who confirms, date)</th></tr></thead><tbody>';
+  INCEPTION.forEach((it,i)=>{ const s=inc[it[0]]||{};
+    const sel=INC_STATUS.map(o=>`<option${o===(s.status||'')?' selected':''}>${o||'Not reviewed'}</option>`).join('');
+    const cls = s.status==='Confirmed'?'present':(s.status==='Outstanding'?'absent':(s.status==='Not applicable'?'na':''));
+    h+=`<tr><td>${i+1}</td><td>${esc(it[1])}</td>
+      <td><select class="statussel ${cls}" data-inc="${it[0]}" data-k="status">${sel}</select></td>
+      <td><input data-inc="${it[0]}" data-k="note" value="${esc(s.note||'')}" placeholder="Note"></td></tr>`;
+  });
+  h+='</tbody></table></div>';
+  return h;
+}
+
+function renderLessons(){
+  const L=state.lessons||[];
+  let h=`<div class="card ref-block"><h3>Decisions and lessons log</h3>
+    <p class="small muted">Record decisions, evidence, open issues and framework refinements across the pilot, the final step of the assessment method. <b>${L.length}</b> entr${L.length===1?'y':'ies'}. Saved with the assessment and synced to the repo.</p>
+    <button class="btn" id="addLesson" style="margin-top:4px">+ Add entry</button></div>`;
+  if(!L.length) return h+'<div class="empty">No entries yet. Use "Add entry" to log a decision, open issue, lesson or framework refinement.</div>';
+  h+='<div class="card"><table class="grid"><thead><tr><th style="width:130px">Date</th><th style="width:150px">Type</th><th style="width:22%">Subject</th><th>Detail / evidence</th><th style="width:34px"></th></tr></thead><tbody>';
+  L.forEach((e,i)=>{
+    const topt=LESSON_TYPES.map(o=>`<option${o===e.type?' selected':''}>${o}</option>`).join('');
+    h+=`<tr>
+      <td><input type="date" data-lesson="${i}" data-lk="date" value="${esc(e.date||'')}"></td>
+      <td><select data-lesson="${i}" data-lk="type">${topt}</select></td>
+      <td><input data-lesson="${i}" data-lk="subject" value="${esc(e.subject||'')}" placeholder="Subject"></td>
+      <td><textarea data-lesson="${i}" data-lk="detail" style="min-height:34px">${esc(e.detail||'')}</textarea></td>
+      <td><button class="btn" data-dellesson="${i}" title="Delete entry">✕</button></td></tr>`;
+  });
+  h+='</tbody></table></div>';
+  return h;
+}
+
 function renderReference(){
   let h='<div class="card ref-block"><h3>Readiness determination method</h3><table class="grid"><tbody>';
   Object.entries(M.method).forEach(([k,v])=> h+=`<tr><td style="width:150px"><span class="pill ${detClass(k)}">${k}</span></td><td>${esc(v)}</td></tr>`);
@@ -418,6 +482,35 @@ function renderReference(){
   h+='</div>';
 
   h+=`<div class="card ref-block"><h3>Standards anchoring the requirements</h3><p class="small muted">W3C DCAT 3 (dataset vs distribution; title, identifier, contact, access rights, frequency, temporal coverage, format, size, standards, versions, data services, provenance) · ISO/IEC 11179-3 (metadata registry metamodel) · W3C PROV-O (entities, activities, agents; wasGeneratedBy / wasDerivedFrom) · FIPS 199 (CIA impact, reference only; the pilot uses Zambia's own classification framework) · W3C DQV / ISO 8000-61 (data quality) · ISO 15489 (records/retention concepts).</p></div>`;
+
+  h+=`<div class="card ref-block"><h3>Traceability, requirement group to standard</h3><table class="grid"><thead><tr><th>Requirement group</th><th>Backed by</th><th>In the instrument</th></tr></thead><tbody>`;
+  [['Identity, purpose, nomination','DCAT (title, identifier, description, theme)','D1, D2, D3'],
+   ['Ownership and custodianship','DCAT (contact, creator, publisher, qualified role)','D4, M4'],
+   ['Source, origination and lineage','DCAT + PROV-O','D5, D10, M10'],
+   ['Schema, fields and representation','ISO/IEC 11179; DCAT distribution / format','D7, D8, M2'],
+   ['Refresh, coverage, volume and version','DCAT (frequency, temporal coverage, size, version)','D9, D11, M3'],
+   ['CIA, access and handling metadata','FIPS 199 (CIA reference)','M5'],
+   ['Data-quality issues, rules and measures','W3C DQV; ISO 8000-61','M6'],
+   ['Lifecycle and retention metadata','ISO 15489','M7'],
+   ['Sharing, interfaces and interoperability','DCAT DataService; standards conformance','D13, M8, M9'],
+   ['Representative extract','DCAT distribution; security / privacy guidance','D12'],
+   ['Pilot validation and lessons','Evidence register and decision log','Lessons tab'],
+   ['Scope and quantities','Project change control','Inception tab']
+  ].forEach(r=> h+=`<tr><td>${esc(r[0])}</td><td class="small">${esc(r[1])}</td><td class="small">${esc(r[2])}</td></tr>`);
+  h+='</tbody></table></div>';
+
+  h+=`<div class="card ref-block"><h3>Clear exclusions, what this assessment does not do</h3><ul class="small" style="margin:0;padding-left:18px;color:var(--muted);line-height:1.8">
+   <li>assess whole-of-MDA data-governance maturity;</li>
+   <li>inventory or classify every MDA asset;</li>
+   <li>determine legal compliance, lawful basis or statutory retention;</li>
+   <li>provide cloud architecture, migration, infrastructure or engineering readiness;</li>
+   <li>conduct platform selection or low-level interface design;</li>
+   <li>procure or implement metadata / classification tooling;</li>
+   <li>certify substantive data quality;</li>
+   <li>replace formal classification decisions by authorised MDA / Client stakeholders;</li>
+   <li>prescribe the same dataset to every institution; or</li>
+   <li>assume project-wide management or multidisciplinary-deliverable accountability.</li>
+  </ul></div>`;
   return h;
 }
 
@@ -432,6 +525,8 @@ document.addEventListener('click',e=>{
   else if(t.dataset.addDs){ addDs(t.dataset.addDs); }
   else if(t.id==='addMda'){ addMda(); }
   else if(t.dataset.exp){ document.getElementById('det_'+t.dataset.exp).classList.toggle('open'); }
+  else if(t.id==='addLesson'){ state.lessons=state.lessons||[]; state.lessons.unshift({date:new Date().toISOString().slice(0,10),type:'Decision',subject:'',detail:''}); save(); renderMain(); }
+  else if(t.dataset.dellesson!==undefined){ state.lessons.splice(+t.dataset.dellesson,1); save(); renderMain(); }
 });
 document.addEventListener('input',e=>{
   const t=e.target;
@@ -442,6 +537,8 @@ document.addEventListener('input',e=>{
       if(t.dataset.k==='status'){ t.className='statussel '+STATUS[t.value||''].cls; renderSide(); refreshReadout(); } } }
   else if(t.dataset.pack!==undefined){ const m=curMda(); if(m){ m.pack=m.pack||{}; m.pack[t.dataset.pack]=t.value; save(); } }
   else if(t.dataset.packnote!==undefined){ const m=curMda(); if(m){ m.packNotes=m.packNotes||{}; m.packNotes[t.dataset.packnote]=t.value; save(); } }
+  else if(t.dataset.inc!==undefined){ state.inception=state.inception||{}; state.inception[t.dataset.inc]=state.inception[t.dataset.inc]||{}; state.inception[t.dataset.inc][t.dataset.k]=t.value; save(); if(t.dataset.k==='status'){ t.className='statussel '+(t.value==='Confirmed'?'present':t.value==='Outstanding'?'absent':t.value==='Not applicable'?'na':''); const inc=state.inception; const de=document.getElementById('incDone'),oe=document.getElementById('incOut'); if(de)de.textContent=INCEPTION.filter(it=>(inc[it[0]]||{}).status==='Confirmed').length; if(oe)oe.textContent=INCEPTION.filter(it=>(inc[it[0]]||{}).status==='Outstanding').length; } }
+  else if(t.dataset.lesson!==undefined){ const e=state.lessons&&state.lessons[+t.dataset.lesson]; if(e){ e[t.dataset.lk]=t.value; save(); } }
 });
 function refreshReadout(){
   const d=curDs(); if(!d||state.ui.tab!=='assessment') return;
@@ -472,7 +569,7 @@ themeEl.addEventListener('click',()=>{ const cur=document.documentElement.getAtt
 function dl(name,text,type){ const b=new Blob([text],{type:type||'text/plain'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u;a.download=name;a.click(); setTimeout(()=>URL.revokeObjectURL(u),1500); }
 document.getElementById('btnSave').onclick=()=>{ dl('mda-readiness-'+(state.meta.date||'')+'.json', JSON.stringify(state,null,2),'application/json'); };
 document.getElementById('btnLoad').onclick=()=>document.getElementById('fileIn').click();
-document.getElementById('fileIn').onchange=e=>{ const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=()=>{ try{ const o=JSON.parse(rd.result); if(o&&o.mdas){ state=o; state.ui=state.ui||{tab:'assessment'}; save(); renderSide(); renderMain(); assessorEl.value=state.meta.assessor||''; adateEl.value=state.meta.date||''; } else alert('Not a valid assessment file.'); }catch(err){ alert('Could not read file: '+err.message); } }; rd.readAsText(f); e.target.value=''; };
+document.getElementById('fileIn').onchange=e=>{ const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=()=>{ try{ const o=JSON.parse(rd.result); if(o&&o.mdas){ state=o; state.ui=state.ui||{tab:'assessment'}; state.inception=state.inception||{}; if(!Array.isArray(state.lessons))state.lessons=[]; save(); renderSide(); renderMain(); assessorEl.value=state.meta.assessor||''; adateEl.value=state.meta.date||''; } else alert('Not a valid assessment file.'); }catch(err){ alert('Could not read file: '+err.message); } }; rd.readAsText(f); e.target.value=''; };
 function csvCell(s){ s=(s==null?'':String(s)); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
 document.getElementById('btnCsv').onclick=()=>{ const d=curDs(); const m=curMda(); if(!d){alert('Select a dataset first.');return;}
   let rows=[['MDA','Dataset','Code','Requirement','Obligation','Blocking','Assessor status','Controlled value','Evidence / notes','MDA evidence expected','Acceptance criterion']];
@@ -538,6 +635,7 @@ function buildFileMap(){
     files[ms+'/_mda.json']=JSON.stringify({id:m.id,name:m.name,area:m.area||'',provisional:!!m.provisional,pack:m.pack||{},packNotes:m.packNotes||{}},null,2);
     (m.datasets||[]).forEach((d,i)=>{ files[ms+'/'+dss[i].slug+'.json']=JSON.stringify(d,null,2); });
   });
+  index.inception=state.inception||{}; index.lessons=state.lessons||[];
   files['index.json']=JSON.stringify(index,null,2);
   return files;
 }
@@ -572,7 +670,7 @@ async function ghPull(){
   try{
     const idxF=await ghGetFile('index.json'); if(!idxF){ setGhStatus('nothing to pull, no index.json at this path','err'); ghBusy(false); return false; }
     ghSetMarker(idxF.sha);
-    const index=JSON.parse(idxF.text); const ns={meta:index.meta||state.meta, mdas:[], ui:state.ui||{tab:'assessment'}};
+    const index=JSON.parse(idxF.text); const ns={meta:index.meta||state.meta, mdas:[], inception:index.inception||{}, lessons:index.lessons||[], ui:state.ui||{tab:'assessment'}};
     for(const mi of (index.mdas||[])){
       const mf=await ghGetFile(mi.slug+'/_mda.json'); const md=mf?JSON.parse(mf.text):{};
       const m={id:mi.id,name:mi.name,area:mi.area||md.area||'',provisional:!!mi.provisional,pack:md.pack||{},packNotes:md.packNotes||{},datasets:[]};

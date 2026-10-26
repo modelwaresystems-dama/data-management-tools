@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.1.0">
+<meta name="version" content="2.2.0">
 <title>MDA Readiness Assessment</title>
 <meta name="description" content="Assessor console for the MDA Dataset and Metadata Readiness Assessment, Digital Zambia Acceleration Project. Captures D1-D13 and M1-M10 evidence, computes Ready / Ready-with-gaps / Not-ready / Restricted, and scores the Metadata Fitness-for-Purpose Index (MFPI) with seven dimensions, five non-compensable gates and four fitness bands.">
 <style>
@@ -364,6 +364,22 @@ function fitImplication(band){ return {
   notfit:'Normally supports Not ready',
   none:'Score the scorecard to produce a fitness result'}[band]||''; }
 function fitClass(band){ return {fit:'Ready',cond:'Ready-with-gaps',limited:'Not-ready',notfit:'Not-ready',none:'none'}[band]||'none'; }
+function mfpiNarrative(d){
+  const cq=computeMFPI(d); const cfg=getMfpiCfg();
+  if(cq.mfpi==null && cq.gateSet===0) return '<p><i>Not yet scored.</i></p>';
+  const P=[];
+  P.push('<b>Result.</b> MFPI '+(cq.mfpi==null?'not yet computed':cq.mfpi+' out of 100')+', '+esc(cq.bandLabel)+(cq.mfpi!=null?(', error rate '+cq.error+'%'):'')+'. '+(cq.gateSet? (cq.gatePass+' of '+GATES.length+' critical gates pass'+(cq.anyFail?', and at least one has failed':(cq.anyCond?', one is conditional':''))+'.') : 'Critical gates are not yet set.'));
+  const meets=[],below=[],floor=[]; let scored=0;
+  MQD.forEach(x=>{ const s=cq.dimScores[x.id]; if(s==null) return; scored++; if(s<cfg.dimFloor) floor.push(x); else if(s<cfg.targets[x.id]) below.push(x); else meets.push(x); });
+  if(scored){ let topName='',topVal=-1; MQD.forEach(x=>{const s=cq.dimScores[x.id]; if(s!=null&&s>topVal){topVal=Math.round(s);topName=x.name;}});
+    P.push('<b>Strengths.</b> '+meets.length+' of '+scored+' scored dimensions meet their target'+(topName?(', led by '+esc(topName)+' at '+topVal):'')+'.'); }
+  if(floor.length) P.push('<b>Below the floor.</b> '+floor.map(x=>esc(x.name)+' ('+Math.round(cq.dimScores[x.id])+', floor '+cfg.dimFloor+')').join('; ')+'. A dimension under the floor prevents a Fit-for-purpose result and must be remediated before the pack can be judged fit.');
+  if(below.length) P.push('<b>To improve.</b> '+below.map(x=>esc(x.name)+' ('+Math.round(cq.dimScores[x.id])+' against a target of '+cfg.targets[x.id]+')').join('; ')+'.'+(floor.length?'':' These sit just under target; they are improvements to track, not reasons to hold the dataset.'));
+  if(!floor.length && !below.length && scored) P.push('<b>To improve.</b> Every scored dimension meets its target.');
+  if(cq.anyFail||cq.anyCond){ const gl=GATES.filter(g=>{const s=((d.mfpi&&d.mfpi.gates&&d.mfpi.gates[g.id])||{}).status; return s==='Fail'||s==='Conditional';}).map(g=>{const s=(d.mfpi.gates[g.id]||{}).status; return esc(g.name)+' ('+s+')';}); P.push('<b>Gates needing attention.</b> '+gl.join('; ')+'. A failed gate makes the result Not fit-for-purpose whatever the score; a conditional gate caps it at Conditionally fit.'); }
+  P.push('<b>Readiness implication.</b> '+esc(fitImplication(cq.band))+'. MFPI advises the determination; the assessor sets it.');
+  return P.map(p=>'<p>'+p+'</p>').join('');
+}
 function mfpiChart(d){
   const cq=computeMFPI(d); const cfg=getMfpiCfg(); if(cq.mfpi==null) return '';
   const Wv=700, rowH=30, top=16, barX=118, barW=470, bot=top+MQD.length*rowH, H=bot+26;
@@ -847,7 +863,7 @@ document.getElementById('btnReport').onclick=()=>{
     M.reqs.forEach(r=>{ const st=(x.d.reqs&&x.d.reqs[r.code])||{}; h+=`<tr><td>${r.code}</td><td>${esc(r.title)}</td><td>${esc(STATUS[st.status||''].label)}${st.value?' · '+esc(st.value):''}</td><td>${esc(st.evidence||'')}</td></tr>`; });
     h+='</table>';
     const cq=computeMFPI(x.d);
-    if(cq.mfpi!=null || cq.gateSet){ h+=`<p><b>Metadata fitness (MFPI):</b> ${cq.mfpi==null?'-':cq.mfpi}/100, error rate ${cq.error==null?'-':cq.error+'%'}, result <b>${esc(cq.bandLabel)}</b>. Readiness implication: ${esc(fitImplication(cq.band))}.</p>`;
+    if(cq.mfpi!=null || cq.gateSet){ h+='<h4>Metadata fitness (MFPI)</h4>'+mfpiNarrative(x.d);
       h+='<table><tr><th>Dimension</th><th>Weight</th><th>Target</th><th>Score</th></tr>';
       MQD.forEach(z=>{ const sc=cq.dimScores[z.id]; h+=`<tr><td>${esc(z.code)} ${esc(z.name)}</td><td>${Math.round(getMfpiCfg().weights[z.id]*100)}%</td><td>${getMfpiCfg().targets[z.id]}</td><td>${sc==null?'-':Math.round(sc)}</td></tr>`; });
       h+='</table>';

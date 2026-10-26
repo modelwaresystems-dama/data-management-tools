@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta name="mw-asset" content="true">
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Lexicon · SPO Glossary Workbench</title>
@@ -144,8 +143,8 @@ const isUpperOntologyName = (name, areas) =>
   /foundational|upper ontology|core ontology/i.test(String(name || "") + " " + (Array.isArray(areas) ? areas.join(" ") : String(areas || "")));
 
 /* Build identity — shown in the sidebar so the latest build can be confirmed at a glance. */
-const APP_VERSION = "4.73";
-const APP_BUILD = "2026-08-14 13:59 UTC";
+const APP_VERSION = "4.75";
+const APP_BUILD = "2026-10-26 11:33 UTC";
 
 /* ============================================================
    In-app User Guide — content model + a small bridge so any
@@ -4788,9 +4787,22 @@ function TermHierarchy({ glossary, termName, onJump }) {
   const data = useMemo(() => buildIsaTree(glossary, termName, { focus, depth, hideRetired, hideExamples }), [glossary, termName, focus, depth, hideRetired, hideExamples]);
   if (!data.participates) return null;
 
-  const COL = 168 * scale, ROW = 92 * scale, BOXH = 44 * scale;
-  const bwBase = (name) => Math.max(96, Math.min(210, name.length * 7.6 + 26));
-  const clip = (s, bb) => { const max = Math.floor((bb - 14) / 6.8); return s.length > max ? s.slice(0, Math.max(1, max - 1)) + "\u2026" : s; };
+  const ROW = 92 * scale;
+  const BWMAX = 240, GAP = 30, FITCH = Math.floor((BWMAX - 20) / 6.8);   // a label up to ~32 chars sits on one line
+  const wrapLabel = (name) => {
+    const s = String(name || "");
+    if (s.length <= FITCH) return [s];
+    const words = s.split(/\s+/); let l1 = "", l2 = "";
+    for (const w of words) { if (!l1 || (l1 + " " + w).length <= FITCH) l1 = l1 ? l1 + " " + w : w; else l2 = l2 ? l2 + " " + w : w; }
+    if (l2.length > FITCH) l2 = l2.slice(0, FITCH - 1) + "\u2026";
+    return l2 ? [l1, l2] : [l1];
+  };
+  const bwBase = (name) => { const lines = wrapLabel(name); const longest = Math.max(...lines.map((l) => l.length)); return Math.max(96, Math.min(BWMAX, longest * 6.8 + 22)); };
+  // Column spacing tracks the widest box, so wide labels fit on one line and siblings never overlap.
+  const allNames = []; (function walk(n) { allNames.push(n.name); (n.children || []).forEach(walk); })(data.tree);
+  const maxBW = Math.max(96, ...allNames.map(bwBase));
+  const COL = Math.max(168, maxBW + GAP) * scale;
+  const BOXH = (allNames.some((n) => wrapLabel(n).length > 1) ? 50 : 40) * scale;
   let leaf = 0, maxDepth = 0; const nodes = [];
   const place = (node, d) => {
     maxDepth = Math.max(maxDepth, d);
@@ -4870,8 +4882,12 @@ function TermHierarchy({ glossary, termName, onJump }) {
                   <title>{n.name}{n.more ? " (has more below \u2014 raise Depth)" : ""}</title>
                   <rect x={n._x - bw / 2} y={n._y} width={bw} height={BOXH} rx={9 * scale}
                     fill={fillFor(n)} stroke={borderFor(n)} strokeWidth={isCur(n) ? 2 : 1.3} strokeDasharray={n.more ? "4 3" : "none"} />
-                  <text x={n._x} y={n._y + BOXH / 2 + 4 * scale} textAnchor="middle" fontFamily={FONT_UI}
-                    fontSize={12.5 * scale} fontWeight={isCur(n) ? 700 : 500} fill={isCur(n) ? "#fff" : C.ink}>{clip(n.name, bb)}</text>
+                  <text x={n._x} textAnchor="middle" fontFamily={FONT_UI}
+                    fontSize={12 * scale} fontWeight={isCur(n) ? 700 : 500} fill={isCur(n) ? "#fff" : C.ink}>
+                    {(() => { const lines = wrapLabel(n.name); return lines.map((ln, li) => (
+                      <tspan key={li} x={n._x} y={n._y + (lines.length === 1 ? BOXH / 2 + 4 * scale : BOXH / 2 - 5 * scale + li * 13 * scale)}>{ln}</tspan>
+                    )); })()}
+                  </text>
                 </g>
               );
             })}
@@ -6351,6 +6367,7 @@ const QUANT_EDGES = [
 // Quant Edge is now multi-valued: a "; "-joined subset of the 6 fixed edges.
 const QE_ORDER = QUANT_EDGES.map((e) => e[0]);
 const QE_SHORT = { "IS-HAS": "HAS", "IS-MEMBER-HAS": "MEMBER", "IS-PART-HAS": "PART", "IS-PRECEDENT-HAS": "PRECEDENT", "IS-PROPERTY-HAS": "PROPERTY", "IS-EQUIVALENT-HAS": "EQUIV" };
+const QE_FROM_SHORT = Object.fromEntries(Object.entries(QE_SHORT).map(([full, short]) => [short, full]));
 const QE_MEANING = Object.fromEntries(QUANT_EDGES);
 // Definitions for the interactive Atomic-Architecture help view. Property defs come from LEX_FIELD_HELP;
 // class/type/facet glosses are concise drafts a steward can refine here.
@@ -6425,7 +6442,16 @@ const ATOM_EXAMPLES = {
   "Process": "Assessment; Debridement; Application",
   "Task": "Add; Update; Delete; Move; Click; Insert; Arrange; Monitor",
 };
-function qeParse(v) { return String(v == null ? "" : v).split(/;\s*/).map((s) => s.trim()).filter(Boolean); }
+function qeParse(v) {
+  const full = new Set(QE_ORDER);
+  const seen = new Set(); const out = [];
+  String(v == null ? "" : v).split(/;\s*/).map((s) => s.trim()).filter(Boolean).forEach((t) => {
+    if (/^(none|n\/a|-|\u2014)$/i.test(t)) return;
+    const norm = full.has(t) ? t : (QE_FROM_SHORT[t.toUpperCase()] || t);
+    if (!seen.has(norm)) { seen.add(norm); out.push(norm); }
+  });
+  return out;
+}
 function qeJoin(set) { return QE_ORDER.filter((x) => set.has(x)).join("; "); }
 // Functional Group controlled vocabulary (DAMA lifecycle groups).
 const FUNCTIONAL_GROUPS = ["Oversight (Data Governance)", "Plan & Design", "Enable & Maintain", "Use & Enhance", "Foundational Activities"];

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.2.0">
+<meta name="version" content="2.3.0">
 <title>MDA Readiness Assessment</title>
 <meta name="description" content="Assessor console for the MDA Dataset and Metadata Readiness Assessment, Digital Zambia Acceleration Project. Captures D1-D13 and M1-M10 evidence, computes Ready / Ready-with-gaps / Not-ready / Restricted, and scores the Metadata Fitness-for-Purpose Index (MFPI) with seven dimensions, five non-compensable gates and four fitness bands.">
 <style>
@@ -325,6 +325,28 @@ function cellResult(d,code,dim){ const c=(d.mfpi&&d.mfpi.cells)||{}; const cell=
   const den=parseFloat(cell.den), num=parseFloat(cell.num); if(isNaN(den)||den<=0||isNaN(num)) return null;
   return Math.max(0,Math.min(100, 100*num/den)); }
 function reqApplicable(d,code){ const n=((d.mfpi&&d.mfpi.na)||{})[code]; return !(n && n.applicable===false); }
+// Starter text for why an element is below 100 and how to close it (assessor edits it)
+const REMEDY={
+ suf:'Some required elements are missing or thin. Supply the missing items in the 02 and 03 pack.',
+ ev:'Some claims are not backed by a referenced artefact. Attach or cite the supporting evidence.',
+ int:'Some fields cannot be read without guessing. Add plain definitions and meanings.',
+ con:'Some values disagree with the schema, sample, source statement or restrictions. Reconcile them.',
+ cur:'Some dates or versions do not match the submitted sample or the period covered. Refresh to current.',
+ tra:'Some values do not trace to owner, source, version or how they were produced. Record the lineage.',
+ cnf:'Some values do not conform to the expected format, vocabulary or precision. Correct them to standard.'
+};
+function remedySuggest(dim){ return REMEDY[dim]||'Record why this element is below 100 and what will close the gap.'; }
+function gapNoteFor(d,code,dim){ const c=((d.mfpi&&d.mfpi.cells)||{})[cellKey(code,dim)]||{}; const n=(c.note!=null&&c.note!=='')?c.note:remedySuggest(dim); return n; }
+// Status of a cell result against its target and floor, plus the shortfall to 100
+function cellStat(res,tgt,floor){ if(res==null) return {txt:'-',cls:'na',g100:null};
+  const g=Math.max(0,Math.round(100-res));
+  if(res<floor) return {txt:'Below floor',cls:'Not-ready',g100:g};
+  if(res<tgt)   return {txt:'Below target',cls:'partial',g100:g};
+  return {txt:'Meets target',cls:'Ready',g100:g}; }
+function statHtml(res,tgt,floor){ const s=cellStat(res,tgt,floor);
+  if(s.txt==='-') return '<span class="small muted">-</span>';
+  const tail=(s.g100&&s.g100>0)?(' <span class="small muted">'+s.g100+' to 100</span>'):' <span class="small muted">clean</span>';
+  return '<span class="pill '+s.cls+'" style="padding:1px 8px">'+s.txt+'</span>'+tail; }
 function computeMFPI(d){
   const cfg=getMfpiCfg();
   const reqScores={}; const dimAcc={}; MQD.forEach(x=>dimAcc[x.id]={sw:0,ssw:0});
@@ -616,7 +638,10 @@ function mfpiReadoutInner(d){
      <div class="reasons">${esc(gate)}. Readiness implication: ${esc(fitImplication(cq.band))}.</div>`;
 }
 function refreshMfpiReadout(){ if(state.ui.tab!=='quality') return; const d=curDs(); if(!d) return; const ro=document.getElementById('mfpiReadout'); if(ro) ro.innerHTML=mfpiReadoutInner(d); }
-function updateCellRes(inp){ const tr=inp.closest('tr'); if(!tr) return; const d=curDs(); if(!d) return; const parts=inp.dataset.cell.split('|'); const res=cellResult(d,parts[0],parts[1]); const cell=tr.querySelector('.cres'); if(cell) cell.innerHTML='<b>'+(res==null?'-':Math.round(res))+'</b>'; }
+function updateCellRes(inp){ const tr=inp.closest('tr'); if(!tr) return; const d=curDs(); if(!d) return; const parts=inp.dataset.cell.split('|'); const res=cellResult(d,parts[0],parts[1]); const cfg=getMfpiCfg(); const tgt=cfg.targets[parts[1]], floor=cfg.dimFloor;
+  const cell=tr.querySelector('.cres'); if(cell) cell.innerHTML='<b>'+(res==null?'-':Math.round(res))+'</b>';
+  const st=tr.querySelector('.cstat'); if(st) st.innerHTML=statHtml(res,tgt,floor);
+  const nr=tr.nextElementSibling; if(nr&&nr.classList.contains('noteRow')) nr.style.display=(res!=null&&res<100)?'':'none'; }
 
 function renderQuality(){
   const m=curMda(), d=curDs();
@@ -661,7 +686,8 @@ function renderQuality(){
   h+='</tbody></table></div><p class="small muted" style="padding:8px 12px">MFPI = weighted sum of dimension scores (inception weights). Dimension floor '+cfg.dimFloor+': a dataset cannot be Fit-for-purpose if any scored dimension is below it.</p></div>';
 
   // Scorecard by requirement
-  h+='<div class="sec-title">Scorecard, by requirement (tests passed / tests expected per applicable dimension)</div>';
+  h+='<div class="sec-title">Scorecard, by requirement (checks passed out of the checks expected, per applicable dimension)</div>';
+  h+='<p class="small muted" style="margin:0 2px 8px">Result is checks passed out of checks, as a percentage. The bar is the dimension <b>Target</b>, not 100. Any element under 100 is flagged with a line showing why it is below 100 and what will close it.</p>';
   ['dataset','metadata'].forEach(grp=>{
     h+=`<div class="small muted" style="margin:12px 2px 4px;font-weight:700;text-transform:uppercase;letter-spacing:.4px">${grp==='dataset'?'Dataset, D1 to D13':'Metadata, M1 to M10'}</div>`;
     M.reqs.filter(r=>r.group===grp).forEach(r=>{
@@ -675,13 +701,20 @@ function renderQuality(){
           ${!applic?`<input data-na="${r.code}" data-nk="rationale" value="${esc(na.rationale||'')}" placeholder="N/A rationale"><input data-na="${r.code}" data-nk="approver" value="${esc(na.approver||'')}" placeholder="Approver / date">`:''}</div>
       </div>`;
       if(applic){
-        h+='<div style="overflow-x:auto;padding:0 10px 8px"><table class="grid"><thead><tr><th style="min-width:160px">Dimension</th><th style="width:84px">Passed</th><th style="width:88px">Expected</th><th style="width:62px">Result</th><th style="min-width:130px">Evidence</th></tr></thead><tbody>';
-        dims.forEach(dim=>{ const k=cellKey(r.code,dim); const cell=d.mfpi.cells[k]||{}; const res=cellResult(d,r.code,dim);
+        h+='<div style="overflow-x:auto;padding:0 10px 8px"><table class="grid"><thead><tr><th style="min-width:150px">Dimension</th><th style="width:96px">Checks passed</th><th style="width:64px">Checks</th><th style="width:56px">Result</th><th style="width:56px">Target</th><th style="min-width:150px">Status</th><th style="min-width:120px">Evidence</th></tr></thead><tbody>';
+        dims.forEach(dim=>{ const k=cellKey(r.code,dim); const cell=d.mfpi.cells[k]||{}; const res=cellResult(d,r.code,dim); const tgt=cfg.targets[dim]; const floor=cfg.dimFloor;
+          const below=(res!=null&&res<100);
           h+=`<tr><td>${esc(MQDBYID[dim].code)} ${esc(MQDBYID[dim].name)}</td>
             <td><input type="number" min="0" data-cell="${k}" data-ck="num" value="${esc(cell.num)}"></td>
             <td><input type="number" min="0" data-cell="${k}" data-ck="den" value="${esc(cell.den)}"></td>
             <td class="cres"><b>${res==null?'-':Math.round(res)}</b></td>
-            <td><input data-cell="${k}" data-ck="ev" value="${esc(cell.ev||'')}" placeholder="artefact ref"></td></tr>`; });
+            <td class="small muted">${tgt}</td>
+            <td class="cstat">${statHtml(res,tgt,floor)}</td>
+            <td><input data-cell="${k}" data-ck="ev" value="${esc(cell.ev||'')}" placeholder="artefact ref"></td></tr>`;
+          const noteVal=(cell.note!=null&&cell.note!=='')?cell.note:remedySuggest(dim);
+          h+=`<tr class="noteRow" data-noterow="${k}" style="display:${below?'':'none'}"><td colspan="7" style="padding:4px 8px 10px">
+            <div style="display:flex;gap:8px;align-items:flex-start"><span class="flag" style="flex:none;background:var(--warnbg);color:var(--warn)">below 100</span>
+            <input data-cell="${k}" data-ck="note" value="${esc(noteVal)}" placeholder="Why it is below 100, and what will close the gap" style="flex:1"></div></td></tr>`; });
         h+='</tbody></table></div>';
       }
       h+='</div>';
@@ -715,7 +748,7 @@ function renderReference(){
   h+=`<div class="card ref-block"><h3>Metadata Fitness-for-Purpose (MFPI) method</h3>
     <p class="small muted">The MFPI measures how far the supplied metadata and evidence let an assessor answer every applicable D1 to D13 and M1 to M10 question defensibly. It measures metadata fitness, not the dataset's own data quality, and it advises the readiness determination rather than forcing it.</p>
     <ul class="small" style="margin:6px 0 10px;padding-left:18px;color:var(--muted);line-height:1.8">
-      <li><b>Measure.</b> Each applicable requirement and dimension is scored tests passed divided by tests expected, times 100.</li>
+      <li><b>Measure.</b> Each applicable requirement and dimension is scored checks passed divided by the checks expected, times 100. The pass bar is the dimension target, not 100; any element below 100 is flagged with the reason and the fix.</li>
       <li><b>Requirement score.</b> Weighted by the dimension weights over that requirement's applicable dimensions.</li>
       <li><b>Dimension score.</b> Weighted by requirement criticality (3 blocker, 2 mandatory, 1 M/N/A, 0 optional).</li>
       <li><b>MFPI.</b> Weighted sum of the seven dimension scores; the error rate is 100 minus the MFPI.</li>
@@ -867,6 +900,11 @@ document.getElementById('btnReport').onclick=()=>{
       h+='<table><tr><th>Dimension</th><th>Weight</th><th>Target</th><th>Score</th></tr>';
       MQD.forEach(z=>{ const sc=cq.dimScores[z.id]; h+=`<tr><td>${esc(z.code)} ${esc(z.name)}</td><td>${Math.round(getMfpiCfg().weights[z.id]*100)}%</td><td>${getMfpiCfg().targets[z.id]}</td><td>${sc==null?'-':Math.round(sc)}</td></tr>`; });
       h+='</table>';
+      let shorts=[];
+      M.reqs.forEach(r=>{ if(!reqApplicable(x.d,r.code))return; (REQDIMS[r.code]||[]).forEach(dim=>{ const res=cellResult(x.d,r.code,dim); if(res!=null&&res<100){ shorts.push({code:r.code,title:r.title,dim,res:Math.round(res),g:Math.round(100-res),note:gapNoteFor(x.d,r.code,dim)}); } }); });
+      if(shorts.length){ h+='<p><b>Shortfalls to close (elements below 100):</b></p><table><tr><th>Code</th><th>Requirement</th><th>Dimension</th><th>Result</th><th>To 100</th><th>Why it is below 100, and how to close it</th></tr>';
+        shorts.forEach(s=>{ h+=`<tr><td>${esc(s.code)}</td><td>${esc(s.title)}</td><td>${esc(MQDBYID[s.dim].code)} ${esc(MQDBYID[s.dim].name)}</td><td>${s.res}</td><td>${s.g}</td><td>${esc(s.note)}</td></tr>`; });
+        h+='</table>'; }
       const exc=(x.d.mfpi&&x.d.mfpi.exceptions)||[];
       if(exc.length){ h+='<p><b>Exceptions:</b></p><table><tr><th>Req</th><th>Dimension</th><th>Status</th><th>Authority</th><th>Action</th><th>Owner</th><th>Due</th></tr>';
         exc.forEach(e=>{ h+=`<tr><td>${esc(e.req)}</td><td>${esc(e.dim)}</td><td>${esc(e.status)}</td><td>${esc(e.authority)}</td><td>${esc(e.action)}</td><td>${esc(e.owner)}</td><td>${esc(e.due)}</td></tr>`; });
@@ -875,14 +913,14 @@ document.getElementById('btnReport').onclick=()=>{
   });
   dl('MDA_Readiness_Report_'+(state.meta.date||'')+'.html', h,'text/html'); };
 document.getElementById('btnScorecard').onclick=()=>{
-  const cols=['RecordType','MDA','Dataset','Requirement','RequirementName','RequirementStatus','CriticalityWeight','GateFlag','DimensionCode','DimensionName','MFPIWeightPct','TargetPct','Numerator','Denominator','ResultPct','Evidence','Applicable','NARationale','NAApprover','GateStatus','GateEvidence','RemediationOwner','ExceptionStatus','ExceptionAuthority','ExceptionExpiry','ExceptionAction','ExceptionOwner','ExceptionDue','RequirementScore','DimensionScore','MFPI','FitnessResult','Assessor','AssessmentDate'];
+  const cols=['RecordType','MDA','Dataset','Requirement','RequirementName','RequirementStatus','CriticalityWeight','GateFlag','DimensionCode','DimensionName','MFPIWeightPct','TargetPct','Numerator','Denominator','ResultPct','ShortfallTo100','GapNote','Evidence','Applicable','NARationale','NAApprover','GateStatus','GateEvidence','RemediationOwner','ExceptionStatus','ExceptionAuthority','ExceptionExpiry','ExceptionAction','ExceptionOwner','ExceptionDue','RequirementScore','DimensionScore','MFPI','FitnessResult','Assessor','AssessmentDate'];
   const rows=[cols]; const cfg=getMfpiCfg();
   state.mdas.forEach(m=> m.datasets.forEach(d=>{
     const cq=computeMFPI(d);
     const row0=()=>{ const o={}; cols.forEach(c=>o[c]=''); o.MDA=m.name; o.Dataset=d.name||''; o.MFPI=cq.mfpi==null?'':cq.mfpi; o.FitnessResult=cq.band==='none'?'':cq.bandLabel; o.Assessor=state.meta.assessor||''; o.AssessmentDate=state.meta.date||''; return o; };
     M.reqs.forEach(r=>{ const dims=REQDIMS[r.code]||[]; const applic=reqApplicable(d,r.code); const na=(d.mfpi&&d.mfpi.na&&d.mfpi.na[r.code])||{};
       dims.forEach(dim=>{ const o=row0(); o.RecordType='Measure'; o.Requirement=r.code; o.RequirementName=r.title; o.RequirementStatus=r.status==='MNA'?'M/N/A':r.status; o.CriticalityWeight=critWeight(r); o.GateFlag=r.blocking?'Yes':''; o.DimensionCode=MQDBYID[dim].code; o.DimensionName=MQDBYID[dim].name; o.MFPIWeightPct=Math.round(cfg.weights[dim]*100); o.TargetPct=cfg.targets[dim];
-        const cell=(d.mfpi&&d.mfpi.cells&&d.mfpi.cells[r.code+'|'+dim])||{}; o.Numerator=cell.num||''; o.Denominator=cell.den||''; const res=cellResult(d,r.code,dim); o.ResultPct=res==null?'':Math.round(res); o.Evidence=cell.ev||''; o.Applicable=applic?'Yes':'No'; o.NARationale=na.rationale||''; o.NAApprover=na.approver||''; o.RequirementScore=cq.reqScores[r.code]==null?'':Math.round(cq.reqScores[r.code]); o.DimensionScore=cq.dimScores[dim]==null?'':Math.round(cq.dimScores[dim]);
+        const cell=(d.mfpi&&d.mfpi.cells&&d.mfpi.cells[r.code+'|'+dim])||{}; o.Numerator=cell.num||''; o.Denominator=cell.den||''; const res=cellResult(d,r.code,dim); o.ResultPct=res==null?'':Math.round(res); const below=(res!=null&&res<100); o.ShortfallTo100=below?Math.round(100-res):''; o.GapNote=below?gapNoteFor(d,r.code,dim):''; o.Evidence=cell.ev||''; o.Applicable=applic?'Yes':'No'; o.NARationale=na.rationale||''; o.NAApprover=na.approver||''; o.RequirementScore=cq.reqScores[r.code]==null?'':Math.round(cq.reqScores[r.code]); o.DimensionScore=cq.dimScores[dim]==null?'':Math.round(cq.dimScores[dim]);
         rows.push(cols.map(c=>o[c])); }); });
     GATES.forEach(g=>{ const gs=(d.mfpi&&d.mfpi.gates&&d.mfpi.gates[g.id])||{}; const o=row0(); o.RecordType='Gate'; o.Requirement=g.id; o.RequirementName=g.name; o.GateStatus=gs.status||''; o.GateEvidence=gs.evidence||''; o.RemediationOwner=gs.owner||''; rows.push(cols.map(c=>o[c])); });
     ((d.mfpi&&d.mfpi.exceptions)||[]).forEach(e=>{ const o=row0(); o.RecordType='Exception'; o.Requirement=e.req||''; o.DimensionName=e.dim||''; o.ExceptionStatus=e.status||''; o.ExceptionAuthority=e.authority||''; o.ExceptionExpiry=e.expiry||''; o.ExceptionAction=e.action||''; o.ExceptionOwner=e.owner||''; o.ExceptionDue=e.due||''; rows.push(cols.map(c=>o[c])); });

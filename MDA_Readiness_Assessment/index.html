@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.6.0">
+<meta name="version" content="2.0.0">
 <title>MDA Readiness Assessment</title>
-<meta name="description" content="Assessor console for the MDA Dataset and Metadata Readiness Assessment, Digital Zambia Acceleration Project. Captures D1-D13 and M1-M10 evidence, computes Ready / Ready-with-gaps / Not-ready / Restricted, and runs a two-pass metadata quality assessment (CDDQ) with a weighted index and error rate.">
+<meta name="description" content="Assessor console for the MDA Dataset and Metadata Readiness Assessment, Digital Zambia Acceleration Project. Captures D1-D13 and M1-M10 evidence, computes Ready / Ready-with-gaps / Not-ready / Restricted, and scores the Metadata Fitness-for-Purpose Index (MFPI) with seven dimensions, five non-compensable gates and four fitness bands.">
 <style>
 :root{
   --bg:#f4f6f8; --panel:#ffffff; --ink:#1b2733; --muted:#5b6b7b; --line:#dde4ea;
@@ -152,6 +152,7 @@ table.grid select,table.grid input,table.grid textarea{font:inherit;font-size:12
     <button class="btn" id="btnSave">Save JSON</button>
     <button class="btn" id="btnLoad">Load JSON</button>
     <button class="btn" id="btnCsv">Export CSV</button>
+    <button class="btn" id="btnScorecard" title="Power BI / Excel scorecard grain">Scorecard CSV</button>
     <button class="btn" id="btnReport">Report</button>
     <a class="btn" id="btnGuide" href="guide.html" target="_blank" rel="noopener" title="Open the MDA-facing guide">📄 Guide</a>
     <a class="btn" id="btnMethod" href="methodology.html" target="_blank" rel="noopener" title="Open the preparation and readiness methodology">📘 Methodology</a>
@@ -220,26 +221,46 @@ const INCEPTION=[
 const INC_STATUS=['','Confirmed','Outstanding','Not applicable'];
 const LESSON_TYPES=['Decision','Open issue','Lesson','Framework refinement'];
 
-// ---------- metadata quality (CDDQ) ----------
-const QFLOOR_DEFAULT=70;
-// 5 in-scope data dimensions (metamodel DQ Dimension list) + 3 metadata traits
-const QDIMS=[
- {dim:'Completeness',grp:'data',concept:'Attribute population',metric:'% of required fields populated'},
- {dim:'Validity',grp:'data',concept:'Format and code conformance',metric:'% of values matching the defined format or code list'},
- {dim:'Consistency',grp:'data',concept:'Cross-copy agreement',metric:'% of records agreeing across systems or copies'},
- {dim:'Integrity',grp:'data',concept:'Referential integrity',metric:'% of keys with a valid parent reference'},
- {dim:'Accuracy',grp:'data',concept:'Agreement with source of record',metric:'% of sampled records matching the authoritative source'},
- {dim:'Clarity (metadata)',grp:'meta',concept:'Definition intelligibility',metric:'% of fields with a plain, unambiguous definition'},
- {dim:'Currency (metadata)',grp:'meta',concept:'Metadata freshness',metric:'reviewed within the required cycle (0-100)'},
- {dim:'Traceability (metadata)',grp:'meta',concept:'Lineage documented',metric:'% of fields with documented source and lineage'}
+// ---------- Metadata Fitness-for-Purpose Index (MFPI) ----------
+// 7 dimensions MQD-01..07, with default MFPI weights and targets (configurable at inception, then frozen)
+const MQD=[
+ {id:'suf',code:'MQD-01',name:'Sufficiency & Coverage',w:0.20,target:95},
+ {id:'ev', code:'MQD-03',name:'Evidential Support & Validation',w:0.20,target:85},
+ {id:'int',code:'MQD-02',name:'Interpretability & Semantic Clarity',w:0.15,target:85},
+ {id:'con',code:'MQD-04',name:'Internal & Cross-Artifact Consistency',w:0.15,target:90},
+ {id:'cur',code:'MQD-05',name:'Currency & Temporal Alignment',w:0.10,target:85},
+ {id:'tra',code:'MQD-06',name:'Traceability & Provenance',w:0.10,target:90},
+ {id:'cnf',code:'MQD-07',name:'Conformance & Appropriate Precision',w:0.10,target:90}
 ];
+const MQDBYID={}; MQD.forEach(d=>MQDBYID[d.id]=d);
+// per-requirement applicable dimensions (methodology table 2, principal measures)
+const REQDIMS={
+ D1:['suf','int','cnf'], D2:['suf','int','ev'], D3:['suf','ev','cnf'], D4:['suf','ev','tra'],
+ D5:['ev','con','tra'], D6:['int','suf','cnf'], D7:['suf','cnf','con'], D8:['suf','cnf','con'],
+ D9:['suf','cur','cnf'], D10:['int','ev','tra'], D11:['cur','con','cnf'], D12:['ev','con','tra'],
+ D13:['suf','con','tra'], M1:['int','suf','ev'], M2:['suf','cnf','con'], M3:['cur','con','suf'],
+ M4:['suf','ev','tra'], M5:['suf','ev','int'], M6:['suf','ev','cur'], M7:['suf','cur','tra'],
+ M8:['cnf','cur','tra'], M9:['suf','con','cnf'], M10:['tra','ev','int']
+};
+// five non-compensable critical gates
+const GATES=[
+ {id:'D4M4',name:'D4 / M4  Accountability',reqs:['D4','M4'],cond:'Named accountable role, operational and technical contacts, reachable route, validation authority'},
+ {id:'D5',name:'D5  Source & authority',reqs:['D5'],cond:'Source identified; authority / copy / derived status explicit; system owner and derivation evidenced'},
+ {id:'D7M2',name:'D7 / M2  Structure',reqs:['D7','M2'],cond:'Field names, meanings, datatypes and keys materially align with the sample and schema'},
+ {id:'D12',name:'D12  Representative extract',reqs:['D12'],cond:'Usable extract or safe substitute; README, scope, count, masking, version and release approval present'},
+ {id:'stake',name:'Stakeholder access',reqs:[],cond:'Owner, custodian or technical contact available for clarification and factual validation'}
+];
+const GATE_STATUS=['','Pass','Conditional','Fail'];
+function critWeight(r){ if(r.blocking) return 3; if(r.status==='M') return 2; if(r.status==='MNA') return 1; return 0; }
+function defaultMfpiCfg(){ const w={},t={}; MQD.forEach(d=>{w[d.id]=d.w;t[d.id]=d.target;});
+  return {weights:w, targets:t, bands:{fit:85,cond:70,limited:50}, dimFloor:70, gatePass:85, gateCond:70, frozen:false}; }
 
 // ---------- state ----------
 function seed(){
   return {
     meta:{title:'MDA Readiness Assessment', assessor:'', date:new Date().toISOString().slice(0,10), appVersion:VERSION},
     mdas: M.provisional.map(p=>({id:uid(), name:p[0], area:p[1], provisional:true, pack:{}, packNotes:{}, datasets:[]})),
-    inception:{}, lessons:[], qualityFloor:QFLOOR_DEFAULT,
+    inception:{}, lessons:[], mfpiCfg:defaultMfpiCfg(),
     ui:{mda:null, ds:null, tab:'assessment'}
   };
 }
@@ -248,7 +269,8 @@ try{ const raw=localStorage.getItem(LS_KEY); state = raw? JSON.parse(raw): seed(
 if(!state.mdas){ state=seed(); }
 if(!state.inception) state.inception={};
 if(!Array.isArray(state.lessons)) state.lessons=[];
-if(typeof state.qualityFloor!=='number') state.qualityFloor=QFLOOR_DEFAULT;
+if(!state.mfpiCfg||typeof state.mfpiCfg!=='object') state.mfpiCfg=defaultMfpiCfg();
+else { const dc=defaultMfpiCfg(); state.mfpiCfg.weights=Object.assign({},dc.weights,state.mfpiCfg.weights||{}); state.mfpiCfg.targets=Object.assign({},dc.targets,state.mfpiCfg.targets||{}); state.mfpiCfg.bands=Object.assign({},dc.bands,state.mfpiCfg.bands||{}); if(typeof state.mfpiCfg.dimFloor!=='number')state.mfpiCfg.dimFloor=dc.dimFloor; if(typeof state.mfpiCfg.gatePass!=='number')state.mfpiCfg.gatePass=dc.gatePass; if(typeof state.mfpiCfg.gateCond!=='number')state.mfpiCfg.gateCond=dc.gateCond; }
 function save(){ try{ state.meta.appVersion=VERSION; localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
 
 function curMda(){ return state.mdas.find(m=>m.id===state.ui.mda) || null; }
@@ -256,7 +278,7 @@ function curDs(){ const m=curMda(); return m? (m.datasets.find(d=>d.id===state.u
 
 // ---------- readiness ----------
 function computeReadiness(ds){
-  if(!ds) return {determination:'',completeness:0,reasons:['Select a dataset'],present:0,total:0,blockingMissing:[],qIndex:null,qError:null,qGated:false};
+  if(!ds) return {determination:'',completeness:0,reasons:['Select a dataset'],present:0,total:0,blockingMissing:[]};
   const st = ds.reqs||{};
   let total=0, present=0, blockingMissing=[], gaps=[], restricted=false;
   M.reqs.forEach(r=>{
@@ -288,32 +310,60 @@ function computeReadiness(ds){
     determination='Ready';
     reasons.push('All mandatory requirements present, consistent and safe to use');
   } else { reasons.push('Not yet assessed'); }
-  const _q=computeQuality(ds); const _floor=getFloor(); let qGated=false;
-  if(_q.index!=null && _q.index<_floor && (determination==='Ready'||determination==='Ready with gaps')){
-    determination='Not ready';
-    reasons.unshift('Quality index '+_q.index+' is below the floor of '+_floor+' (error rate '+_q.error+'%); remediate before proceeding');
-    qGated=true;
-  }
-  return {determination, completeness: total? Math.round(present/total*100):0, reasons, present, total, blockingMissing, qIndex:_q.index, qError:_q.error, qGated};
+  return {determination, completeness: total? Math.round(present/total*100):0, reasons, present, total, blockingMissing};
 }
 function code2title(c){ const r=M.reqs.find(x=>x.code===c); return r?('('+r.title+')'):''; }
 function detClass(d){ return d? d.replace(/ /g,'-'):'none'; }
 
-// ---------- quality computation ----------
-function getFloor(){ const f=state&&state.qualityFloor; return (typeof f==='number'&&f>=0&&f<=100)?f:QFLOOR_DEFAULT; }
-function qInit(d){ if(!d.quality) d.quality={l1:{},rows:null}; if(!d.quality.l1) d.quality.l1={};
-  if(!Array.isArray(d.quality.rows)) d.quality.rows=QDIMS.map(q=>({dim:q.dim,concept:q.concept,metric:q.metric,target:'',result:'',weight:1,note:''}));
-  return d.quality; }
-function computeQuality(d){
-  const q=(d&&d.quality)||{}; const rows=Array.isArray(q.rows)?q.rows:[];
-  let sw=0,ssw=0,scored=0; const byDim=[];
-  rows.forEach(r=>{ const res=parseFloat(r.result); const w=parseFloat(r.weight); const ww=(isNaN(w)?0:w);
-    if(!isNaN(res)&&ww>0){ sw+=ww; ssw+=res*ww; scored++; const tg=parseFloat(r.target); byDim.push({dim:r.dim,result:Math.round(res),pass:isNaN(tg)?null:res>=tg}); } });
-  const index=scored?Math.round(ssw/sw):null; const error=index==null?null:100-index;
-  const l1=q.l1||{}; const items=M.reqs.filter(r=>r.group==='metadata').map(r=>r.code);
-  let rated=0,weak=0; items.forEach(c=>{ const v=l1[c]; if(v){rated++; if(v==='Weak')weak++;} });
-  return {index,error,scored,total:rows.length,byDim,l1rated:rated,l1weak:weak,l1total:items.length};
+// ---------- MFPI computation ----------
+function getMfpiCfg(){ if(!state.mfpiCfg) state.mfpiCfg=defaultMfpiCfg(); return state.mfpiCfg; }
+function mfpiInit(d){ if(!d.mfpi) d.mfpi={cells:{},gates:{},na:{},exceptions:[],l1:{}};
+  if(!d.mfpi.cells) d.mfpi.cells={}; if(!d.mfpi.gates) d.mfpi.gates={}; if(!d.mfpi.na) d.mfpi.na={}; if(!Array.isArray(d.mfpi.exceptions)) d.mfpi.exceptions=[]; if(!d.mfpi.l1) d.mfpi.l1={};
+  return d.mfpi; }
+function cellKey(code,dim){ return code+'|'+dim; }
+function cellResult(d,code,dim){ const c=(d.mfpi&&d.mfpi.cells)||{}; const cell=c[cellKey(code,dim)]; if(!cell) return null;
+  const den=parseFloat(cell.den), num=parseFloat(cell.num); if(isNaN(den)||den<=0||isNaN(num)) return null;
+  return Math.max(0,Math.min(100, 100*num/den)); }
+function reqApplicable(d,code){ const n=((d.mfpi&&d.mfpi.na)||{})[code]; return !(n && n.applicable===false); }
+function computeMFPI(d){
+  const cfg=getMfpiCfg();
+  const reqScores={}; const dimAcc={}; MQD.forEach(x=>dimAcc[x.id]={sw:0,ssw:0});
+  let cellsScored=0, cellsTotal=0;
+  M.reqs.forEach(r=>{
+    const dims=REQDIMS[r.code]||[]; cellsTotal+=dims.length;
+    if(!reqApplicable(d,r.code)){ reqScores[r.code]=null; return; }
+    const cw=critWeight(r); let rw=0,rsw=0,scored=0;
+    dims.forEach(dim=>{ const res=cellResult(d,r.code,dim); if(res==null) return;
+      cellsScored++; const w=cfg.weights[dim]||0; rw+=w; rsw+=w*res;
+      dimAcc[dim].sw+=cw; dimAcc[dim].ssw+=cw*res; });
+    reqScores[r.code]= rw>0 ? rsw/rw : null;
+  });
+  const dimScores={}; MQD.forEach(x=>{ dimScores[x.id]= dimAcc[x.id].sw>0 ? dimAcc[x.id].ssw/dimAcc[x.id].sw : null; });
+  let mw=0,msw=0; MQD.forEach(x=>{ if(dimScores[x.id]!=null){ const w=cfg.weights[x.id]||0; mw+=w; msw+=w*dimScores[x.id]; } });
+  const mfpi= mw>0 ? Math.round(msw/mw) : null;
+  let minDim=null; MQD.forEach(x=>{ if(dimScores[x.id]!=null && (minDim==null||dimScores[x.id]<minDim)) minDim=dimScores[x.id]; });
+  const gates=(d.mfpi&&d.mfpi.gates)||{}; let anyFail=false,anyCond=false,gateSet=0,gatePass=0;
+  GATES.forEach(g=>{ const s=(gates[g.id]||{}).status||''; if(s){gateSet++; if(s==='Pass')gatePass++;} if(s==='Fail')anyFail=true; if(s==='Conditional')anyCond=true; });
+  let band='none';
+  if(anyFail) band='notfit';
+  else if(mfpi==null && gateSet===0) band='none';
+  else if(mfpi==null) band='none';
+  else if(mfpi>=cfg.bands.fit) band='fit';
+  else if(mfpi>=cfg.bands.cond) band='cond';
+  else if(mfpi>=cfg.bands.limited) band='limited';
+  else band='notfit';
+  if(band==='fit' && minDim!=null && minDim<cfg.dimFloor) band='cond';
+  if(band==='fit' && anyCond) band='cond';
+  const bandLabel={fit:'Fit-for-purpose',cond:'Conditionally fit',limited:'Limited fitness',notfit:'Not fit-for-purpose',none:'Not scored'}[band];
+  return {mfpi, error: mfpi==null?null:100-mfpi, dimScores, reqScores, minDim, band, bandLabel, anyFail, anyCond, gateSet, gatePass, cellsScored, cellsTotal};
 }
+function fitImplication(band){ return {
+  fit:'Supports Ready, if the evidence is accessible and safe to use',
+  cond:'May support Ready with gaps, subject to project judgment',
+  limited:'Assessment not defensible without substantial intervention',
+  notfit:'Normally supports Not ready',
+  none:'Score the scorecard to produce a fitness result'}[band]||''; }
+function fitClass(band){ return {fit:'Ready',cond:'Ready-with-gaps',limited:'Not-ready',notfit:'Not-ready',none:'none'}[band]||'none'; }
 
 // ---------- render ----------
 const side=document.getElementById('side'), main=document.getElementById('main');
@@ -439,25 +489,24 @@ function renderPack(){
 }
 
 function renderSummary(){
-  let all=[]; state.mdas.forEach(m=> m.datasets.forEach(d=> all.push({m,d,r:computeReadiness(d)})));
+  let all=[]; state.mdas.forEach(m=> m.datasets.forEach(d=> all.push({m,d,r:computeReadiness(d),mq:computeMFPI(d)})));
   const counts={'Ready':0,'Ready with gaps':0,'Not ready':0,'Restricted':0,'':0};
   all.forEach(x=> counts[x.r.determination]=(counts[x.r.determination]||0)+1);
   let h='<div class="tally">';
   [['Ready','ok'],['Ready with gaps','warn'],['Not ready','bad'],['Restricted','restr']].forEach(c=>{
     h+=`<div class="t"><b style="color:var(--${c[1]})">${counts[c[0]]||0}</b><span>${c[0]}</span></div>`;
   });
-  const belowFloor=all.filter(x=>x.r.qGated).length;
+  const notFit=all.filter(x=>x.mq.band==='notfit').length;
   h+=`<div class="t"><b>${all.length}</b><span>Datasets assessed</span></div>`;
-  h+=`<div class="t"><b style="color:var(--bad)">${belowFloor}</b><span>Held below quality floor</span></div></div>`;
+  h+=`<div class="t"><b style="color:var(--bad)">${notFit}</b><span>Not fit-for-purpose</span></div></div>`;
   if(!all.length) return h+'<div class="empty">No datasets yet. Add datasets under an MDA.</div>';
-  h+='<div class="card"><table class="grid"><thead><tr><th>MDA</th><th>Dataset</th><th>Determination</th><th>Complete</th><th>Quality</th><th>Error</th><th>Blocking gaps</th></tr></thead><tbody>';
+  h+='<div class="card"><table class="grid"><thead><tr><th>MDA</th><th>Dataset</th><th>Determination</th><th>Complete</th><th>MFPI</th><th>Fitness</th><th>Blocking gaps</th></tr></thead><tbody>';
   all.forEach(x=>{
-    const qcol = x.r.qGated?'--bad':(x.r.qIndex>=getFloor()?'--ok':'--warn');
     h+=`<tr><td>${esc(x.m.name)}</td><td><b>${esc(x.d.name||'(unnamed)')}</b></td>
       <td><span class="pill ${detClass(x.r.determination)}">${x.r.determination||'-'}</span></td>
       <td>${x.r.completeness}%</td>
-      <td>${x.r.qIndex==null?'<span class="small muted">-</span>':('<b style="color:var('+qcol+')">'+x.r.qIndex+'</b>')}</td>
-      <td class="small">${x.r.qError==null?'-':x.r.qError+'%'}</td>
+      <td>${x.mq.mfpi==null?'<span class="small muted">-</span>':('<b>'+x.mq.mfpi+'</b>')}</td>
+      <td>${x.mq.band==='none'?'<span class="small muted">-</span>':('<span class="pill '+fitClass(x.mq.band)+'" style="padding:2px 8px">'+esc(x.mq.bandLabel)+'</span>')}</td>
       <td class="small">${x.r.blockingMissing.length? x.r.blockingMissing.join(', ')+(x.d.stakeholderAccess==='no'?' + stakeholder access':''): (x.d.stakeholderAccess==='no'?'stakeholder access':'-')}</td></tr>`;
   });
   h+='</tbody></table></div>';
@@ -468,11 +517,24 @@ function renderInception(){
   const inc=state.inception||{};
   const done=INCEPTION.filter(it=>(inc[it[0]]||{}).status==='Confirmed').length;
   const out=INCEPTION.filter(it=>(inc[it[0]]||{}).status==='Outstanding').length;
-  let h=`<div class="card ref-block"><h3>Quality floor (Client sets at inception)</h3>
-    <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
-      <div class="field" style="max-width:180px"><label>Minimum quality index (0-100)</label><input type="number" min="0" max="100" data-qfloor="1" value="${getFloor()}"></div>
-      <span class="small muted" style="flex:1;min-width:220px">A dataset whose weighted metadata-quality index is below this floor (error rate above ${100-getFloor()}%) is held at Not ready on the Quality tab until it is remediated. Default 70.</span>
-    </div></div>`;
+  const cfg=getMfpiCfg(); const wsum=MQD.reduce((a,x)=>a+(cfg.weights[x.id]||0),0); const dis=cfg.frozen?' disabled':'';
+  let h=`<div class="card ref-block"><h3>MFPI configuration (Client approves at inception, then freeze)</h3>
+    <p class="small muted" style="margin:0 0 10px">These weights, targets and thresholds are the methodology defaults. Approve them at inception, then <b>freeze</b> so every MDA is scored identically for fair comparison. ${cfg.frozen?'<span class="flag" style="background:var(--okbg);color:var(--ok)">frozen</span>':'<span class="flag">not frozen</span>'}</p>
+    <label class="small" style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><input type="checkbox" data-mcfg="frozen" ${cfg.frozen?'checked':''}> Freeze configuration for the pilot (locks the fields below)</label>
+    <div style="overflow-x:auto"><table class="grid"><thead><tr><th>Dimension</th><th style="width:120px">MFPI weight %</th><th style="width:100px">Target %</th></tr></thead><tbody>`;
+  MQD.forEach(x=>{ h+=`<tr><td><b>${esc(x.code)}</b> ${esc(x.name)}</td>
+     <td><input type="number" min="0" max="100" step="1" data-mcfg="w.${x.id}" value="${Math.round(cfg.weights[x.id]*100)}"${dis}></td>
+     <td><input type="number" min="0" max="100" data-mcfg="t.${x.id}" value="${cfg.targets[x.id]}"${dis}></td></tr>`; });
+  h+=`</tbody></table></div>
+    <p class="small muted" style="margin:8px 0">Weights sum to <b style="color:${Math.abs(wsum-1)<0.001?'var(--ok)':'var(--bad)'}">${Math.round(wsum*100)}%</b> (should be 100%).</p>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+      <div class="field" style="max-width:130px"><label>Fit band from</label><input type="number" min="0" max="100" data-mcfg="bfit" value="${cfg.bands.fit}"${dis}></div>
+      <div class="field" style="max-width:130px"><label>Conditional from</label><input type="number" min="0" max="100" data-mcfg="bcond" value="${cfg.bands.cond}"${dis}></div>
+      <div class="field" style="max-width:130px"><label>Limited from</label><input type="number" min="0" max="100" data-mcfg="blimited" value="${cfg.bands.limited}"${dis}></div>
+      <div class="field" style="max-width:130px"><label>Dimension floor</label><input type="number" min="0" max="100" data-mcfg="dimFloor" value="${cfg.dimFloor}"${dis}></div>
+    </div>
+    <p class="small muted" style="margin-top:8px">Bands: Fit-for-purpose from ${cfg.bands.fit} (all gates pass, no dimension below the floor), Conditionally fit from ${cfg.bands.cond}, Limited from ${cfg.bands.limited}, Not fit below. MFPI advises the readiness determination; it does not force it.</p>
+  </div>`;
   h+=`<div class="card ref-block"><h3>Inception dependencies and assumptions</h3>
     <p class="small muted">The requirements list these as conditions to confirm before issuing the final assessment schedule. <b id="incDone">${done}</b> confirmed, <b id="incOut">${out}</b> outstanding, of ${INCEPTION.length}. Saved with the assessment and synced to the repo.</p></div>`;
   h+='<div class="card"><table class="grid"><thead><tr><th style="width:28px">#</th><th>Dependency / assumption</th><th style="width:160px">Status</th><th>Note (who confirms, date)</th></tr></thead><tbody>';
@@ -507,52 +569,104 @@ function renderLessons(){
   return h;
 }
 
-function qBand(idx,floor){ return idx==null?'none':(idx>=floor?'Ready':(idx>=floor-15?'Ready-with-gaps':'Not-ready')); }
-function qReadoutInner(d){
-  const cq=computeQuality(d); const floor=getFloor(); const idx=cq.index; const err=cq.error;
-  const col=idx==null?'var(--na)':(idx>=floor?'var(--ok)':'var(--bad)');
-  return `<span class="pill ${qBand(idx,floor)}">${idx==null?'Not scored':(idx>=floor?'Meets floor':'Below floor')}</span>
+function mfpiReadoutInner(d){
+  const cq=computeMFPI(d); const cls=fitClass(cq.band);
+  const col = cq.band==='fit'?'var(--ok)':cq.band==='cond'?'var(--warn)':cq.band==='none'?'var(--na)':'var(--bad)';
+  const unset=GATES.length-cq.gateSet;
+  const gate='Gates: '+cq.gatePass+' pass'+(cq.anyCond?', conditional present':'')+(cq.anyFail?', FAIL present':'')+(unset?', '+unset+' unset':'');
+  return `<span class="pill ${cls}">${esc(cq.bandLabel)}</span>
      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:baseline">
-       <div><b style="font-size:24px">${idx==null?'-':idx}</b><span class="small muted"> / 100 quality index</span></div>
-       <div><b style="font-size:24px;color:var(--bad)">${err==null?'-':err+'%'}</b><span class="small muted"> error rate (100 minus index)</span></div>
-       <div class="small muted">Floor ${floor} · ${cq.scored} of ${cq.total} dimensions scored · Level 1 ${cq.l1rated}/${cq.l1total} rated${cq.l1weak?(', '+cq.l1weak+' weak'):''}</div>
+       <div><b style="font-size:24px">${cq.mfpi==null?'-':cq.mfpi}</b><span class="small muted"> / 100 MFPI</span></div>
+       <div><b style="font-size:24px;color:var(--bad)">${cq.error==null?'-':cq.error+'%'}</b><span class="small muted"> error rate (100 minus MFPI)</span></div>
+       <div class="small muted">${cq.cellsScored} of ${cq.cellsTotal} measures scored${cq.minDim!=null?(' · lowest dimension '+Math.round(cq.minDim)):''}</div>
      </div>
-     <div class="bar" style="flex-basis:100%"><i style="width:${idx||0}%;background:${col}"></i></div>
-     ${idx!=null&&idx<floor?('<div class="reasons" style="color:var(--bad)">Held below the quality floor; readiness shows Not ready until the error rate is under '+(100-floor)+'%.</div>'):''}`;
+     <div class="bar" style="flex-basis:100%"><i style="width:${cq.mfpi||0}%;background:${col}"></i></div>
+     <div class="reasons">${esc(gate)}. Readiness implication: ${esc(fitImplication(cq.band))}.</div>`;
 }
-function refreshQReadout(){ if(state.ui.tab!=='quality') return; const d=curDs(); if(!d) return; const ro=document.querySelector('.readout'); if(ro) ro.innerHTML=qReadoutInner(d); }
-function updatePassCell(inp){ const tr=inp.closest('tr'); if(!tr) return; const d=curDs(); if(!d||!d.quality||!d.quality.rows) return; const row=d.quality.rows[+inp.dataset.qr]; if(!row) return;
-  const res=parseFloat(row.result),tgt=parseFloat(row.target); const cell=tr.children[6]; if(cell) cell.innerHTML=(!isNaN(res)&&!isNaN(tgt))?(res>=tgt?'<span class="pill Ready" style="padding:1px 8px">Pass</span>':'<span class="pill Not-ready" style="padding:1px 8px">Fail</span>'):'<span class="small muted">-</span>'; }
+function refreshMfpiReadout(){ if(state.ui.tab!=='quality') return; const d=curDs(); if(!d) return; const ro=document.getElementById('mfpiReadout'); if(ro) ro.innerHTML=mfpiReadoutInner(d); }
+function updateCellRes(inp){ const tr=inp.closest('tr'); if(!tr) return; const d=curDs(); if(!d) return; const parts=inp.dataset.cell.split('|'); const res=cellResult(d,parts[0],parts[1]); const cell=tr.querySelector('.cres'); if(cell) cell.innerHTML='<b>'+(res==null?'-':Math.round(res))+'</b>'; }
 
 function renderQuality(){
   const m=curMda(), d=curDs();
   if(!m) return '<div class="empty">Add or select an MDA on the left to begin.</div>';
   if(!d) return `<div class="empty">Select a dataset under <b>${esc(m.name)}</b>, or add one.</div>`;
-  qInit(d); save();
-  const q=d.quality;
-  let h=`<div class="card"><div class="readout" style="border-top:none">${qReadoutInner(d)}</div></div>`;
-  h+='<div class="sec-title">Level 1 quick pass, metadata records (M1 to M10)</div>';
-  h+='<div class="card"><table class="grid"><thead><tr><th style="width:70px">Item</th><th>Metadata requirement</th><th style="width:160px">Record quality</th></tr></thead><tbody>';
-  M.reqs.filter(r=>r.group==='metadata').forEach(r=>{ const v=(q.l1||{})[r.code]||''; const cls=v==='Clear'?'present':v==='Usable'?'partial':v==='Weak'?'absent':'';
+  mfpiInit(d); save();
+  const cfg=getMfpiCfg(); const cq=computeMFPI(d);
+  let h=`<div class="card"><div class="readout" id="mfpiReadout" style="border-top:none">${mfpiReadoutInner(d)}</div></div>`;
+
+  // Level 1 quick triage (optional, does not feed the index)
+  h+='<details style="margin:6px 0 2px"><summary style="cursor:pointer;font-weight:700;color:var(--brand);font-size:13px;padding:4px 2px">Level 1 quick triage (optional, M1 to M10)</summary>';
+  h+='<div class="card" style="margin-top:8px"><table class="grid"><thead><tr><th style="width:70px">Item</th><th>Metadata requirement</th><th style="width:150px">Record quality</th></tr></thead><tbody>';
+  M.reqs.filter(r=>r.group==='metadata').forEach(r=>{ const v=((d.mfpi.l1||{})[r.code])||''; const cls=v==='Clear'?'present':v==='Usable'?'partial':v==='Weak'?'absent':'';
      const sel=['','Clear','Usable','Weak'].map(o=>`<option value="${o}"${o===v?' selected':''}>${o||'(rate)'}</option>`).join('');
      h+=`<tr><td><b>${r.code}</b></td><td>${esc(r.title)}</td><td><select class="statussel ${cls}" data-ql="${r.code}">${sel}</select></td></tr>`; });
-  h+='</tbody></table><p class="small muted" style="padding:8px 12px">A quick read of how good each metadata description is. "Weak" flags where the detailed pass should focus.</p></div>';
-  h+='<div class="sec-title">Level 2 detailed pass, CDDQ (Dimension · Concept · Metric)</div>';
-  h+='<div class="card"><div style="overflow-x:auto"><table class="grid"><thead><tr><th style="min-width:140px">Dimension</th><th style="min-width:140px">Concept</th><th style="min-width:160px">Metric</th><th style="width:72px">Target %</th><th style="width:72px">Result %</th><th style="width:64px">Weight</th><th style="width:60px">Pass</th><th style="min-width:120px">Note</th><th style="width:34px"></th></tr></thead><tbody>';
-  (q.rows||[]).forEach((r,i)=>{ const res=parseFloat(r.result),tgt=parseFloat(r.target);
-     const pass=(!isNaN(res)&&!isNaN(tgt))?(res>=tgt?'<span class="pill Ready" style="padding:1px 8px">Pass</span>':'<span class="pill Not-ready" style="padding:1px 8px">Fail</span>'):'<span class="small muted">-</span>';
-     const dimOpts=QDIMS.map(x=>`<option${x.dim===r.dim?' selected':''}>${esc(x.dim)}</option>`).join('');
-     h+=`<tr>
-       <td><select data-qr="${i}" data-qk="dim">${dimOpts}</select></td>
-       <td><input data-qr="${i}" data-qk="concept" value="${esc(r.concept||'')}"></td>
-       <td><input data-qr="${i}" data-qk="metric" value="${esc(r.metric||'')}"></td>
-       <td><input type="number" min="0" max="100" data-qr="${i}" data-qk="target" value="${esc(r.target)}"></td>
-       <td><input type="number" min="0" max="100" data-qr="${i}" data-qk="result" value="${esc(r.result)}"></td>
-       <td><input type="number" min="0" step="0.5" data-qr="${i}" data-qk="weight" value="${esc(r.weight)}"></td>
-       <td class="qpass">${pass}</td>
-       <td><input data-qr="${i}" data-qk="note" value="${esc(r.note||'')}"></td>
-       <td><button class="btn" data-qdel="${i}" title="Delete measurement">✕</button></td></tr>`; });
-  h+='</tbody></table></div><div style="padding:8px 12px"><button class="btn" id="qAddRow">+ Add measurement</button> <span class="small muted">Data dimensions follow the metamodel DQ Dimension list; metadata traits (clarity, currency, traceability) extend it. Weighted index = sum(result x weight) / sum(weight) over scored rows; error rate = 100 minus the index.</span></div></div>';
+  h+='</tbody></table><p class="small muted" style="padding:8px 12px">A fast read to flag where to look closer. It does not feed the MFPI, which is the detailed scorecard below.</p></div></details>';
+
+  // Gates
+  h+='<div class="sec-title">Critical gates (non-compensable)</div>';
+  h+='<div class="card"><div style="overflow-x:auto"><table class="grid"><thead><tr><th style="min-width:150px">Gate</th><th>Minimum pass condition</th><th style="width:120px">Status</th><th style="min-width:130px">Evidence</th><th style="min-width:120px">Remediation owner</th></tr></thead><tbody>';
+  GATES.forEach(g=>{ const gs=(d.mfpi.gates[g.id]||{}); const s=gs.status||'';
+    const sel=GATE_STATUS.map(o=>`<option value="${o}"${o===s?' selected':''}>${o||'(set)'}</option>`).join('');
+    const cls=s==='Pass'?'present':s==='Conditional'?'partial':s==='Fail'?'absent':'';
+    h+=`<tr><td><b>${esc(g.name)}</b></td><td class="small muted">${esc(g.cond)}</td>
+      <td><select class="statussel ${cls}" data-gate="${g.id}" data-gk="status">${sel}</select></td>
+      <td><input data-gate="${g.id}" data-gk="evidence" value="${esc(gs.evidence||'')}"></td>
+      <td><input data-gate="${g.id}" data-gk="owner" value="${esc(gs.owner||'')}" placeholder="${s==='Conditional'?'required':''}"></td></tr>`; });
+  h+='</tbody></table></div><p class="small muted" style="padding:8px 12px">Any gate Fail makes the result Not fit-for-purpose. Any Conditional caps it at Conditionally fit. A weighted average never compensates for a failed gate.</p></div>';
+
+  // Dimension summary
+  h+='<div class="sec-title">Dimension scores</div>';
+  h+='<div class="card"><div style="overflow-x:auto"><table class="grid"><thead><tr><th>Dimension</th><th style="width:72px">Weight</th><th style="width:72px">Target</th><th style="width:66px">Score</th><th style="width:66px">Meets</th></tr></thead><tbody>';
+  MQD.forEach(x=>{ const sc=cq.dimScores[x.id]; const tgt=cfg.targets[x.id];
+    const meets=sc==null?'<span class="small muted">-</span>':(sc>=tgt?'<span class="pill Ready" style="padding:1px 8px">Yes</span>':'<span class="pill Not-ready" style="padding:1px 8px">No</span>');
+    const floorFlag=(sc!=null&&sc<cfg.dimFloor)?' <span class="flag">below floor</span>':'';
+    h+=`<tr><td><b>${esc(x.code)}</b> ${esc(x.name)}${floorFlag}</td><td>${Math.round(cfg.weights[x.id]*100)}%</td><td>${tgt}</td><td><b>${sc==null?'-':Math.round(sc)}</b></td><td>${meets}</td></tr>`; });
+  h+='</tbody></table></div><p class="small muted" style="padding:8px 12px">MFPI = weighted sum of dimension scores (inception weights). Dimension floor '+cfg.dimFloor+': a dataset cannot be Fit-for-purpose if any scored dimension is below it.</p></div>';
+
+  // Scorecard by requirement
+  h+='<div class="sec-title">Scorecard, by requirement (tests passed / tests expected per applicable dimension)</div>';
+  ['dataset','metadata'].forEach(grp=>{
+    h+=`<div class="small muted" style="margin:12px 2px 4px;font-weight:700;text-transform:uppercase;letter-spacing:.4px">${grp==='dataset'?'Dataset, D1 to D13':'Metadata, M1 to M10'}</div>`;
+    M.reqs.filter(r=>r.group===grp).forEach(r=>{
+      const dims=REQDIMS[r.code]||[]; const applic=reqApplicable(d,r.code); const na=d.mfpi.na[r.code]||{};
+      const rs=cq.reqScores[r.code]; const cw=critWeight(r);
+      const critCol=cw===3?'var(--brand)':cw===2?'var(--muted)':cw===1?'var(--warn)':'var(--na)';
+      h+=`<div class="req"><div class="req-top" style="grid-template-columns:72px 1fr 240px">
+        <div class="req-code">${r.code}<small class="blk" style="background:${critCol}">crit ${cw}</small></div>
+        <div><div class="req-title">${esc(r.title)}</div><div class="req-q">Dimensions: ${dims.map(x=>esc(MQDBYID[x].code)).join(', ')}${(applic&&rs!=null)?(' · requirement score '+Math.round(rs)):''}</div></div>
+        <div class="req-ctrl"><label class="small muted" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" data-na="${r.code}" data-nk="applicable" ${applic?'checked':''}> Applicable</label>
+          ${!applic?`<input data-na="${r.code}" data-nk="rationale" value="${esc(na.rationale||'')}" placeholder="N/A rationale"><input data-na="${r.code}" data-nk="approver" value="${esc(na.approver||'')}" placeholder="Approver / date">`:''}</div>
+      </div>`;
+      if(applic){
+        h+='<div style="overflow-x:auto;padding:0 10px 8px"><table class="grid"><thead><tr><th style="min-width:160px">Dimension</th><th style="width:84px">Passed</th><th style="width:88px">Expected</th><th style="width:62px">Result</th><th style="min-width:130px">Evidence</th></tr></thead><tbody>';
+        dims.forEach(dim=>{ const k=cellKey(r.code,dim); const cell=d.mfpi.cells[k]||{}; const res=cellResult(d,r.code,dim);
+          h+=`<tr><td>${esc(MQDBYID[dim].code)} ${esc(MQDBYID[dim].name)}</td>
+            <td><input type="number" min="0" data-cell="${k}" data-ck="num" value="${esc(cell.num)}"></td>
+            <td><input type="number" min="0" data-cell="${k}" data-ck="den" value="${esc(cell.den)}"></td>
+            <td class="cres"><b>${res==null?'-':Math.round(res)}</b></td>
+            <td><input data-cell="${k}" data-ck="ev" value="${esc(cell.ev||'')}" placeholder="artefact ref"></td></tr>`; });
+        h+='</tbody></table></div>';
+      }
+      h+='</div>';
+    });
+  });
+
+  // Exceptions & remediation
+  h+='<div class="sec-title">Exceptions &amp; remediation</div>';
+  h+='<div class="card"><div style="overflow-x:auto"><table class="grid"><thead><tr><th style="min-width:84px">Req.</th><th style="min-width:100px">Dimension</th><th style="min-width:120px">Status</th><th style="min-width:110px">Authority</th><th style="width:140px">Expiry</th><th style="min-width:140px">Action</th><th style="min-width:110px">Owner</th><th style="width:140px">Due</th><th style="width:34px"></th></tr></thead><tbody>';
+  (d.mfpi.exceptions||[]).forEach((x,i)=>{
+    h+=`<tr>
+      <td><input data-exc="${i}" data-xk="req" value="${esc(x.req||'')}" placeholder="D12"></td>
+      <td><input data-exc="${i}" data-xk="dim" value="${esc(x.dim||'')}"></td>
+      <td><input data-exc="${i}" data-xk="status" value="${esc(x.status||'')}" placeholder="waiver"></td>
+      <td><input data-exc="${i}" data-xk="authority" value="${esc(x.authority||'')}"></td>
+      <td><input type="date" data-exc="${i}" data-xk="expiry" value="${esc(x.expiry||'')}"></td>
+      <td><input data-exc="${i}" data-xk="action" value="${esc(x.action||'')}"></td>
+      <td><input data-exc="${i}" data-xk="owner" value="${esc(x.owner||'')}"></td>
+      <td><input type="date" data-exc="${i}" data-xk="due" value="${esc(x.due||'')}"></td>
+      <td><button class="btn" data-excdel="${i}" title="Delete">✕</button></td></tr>`;
+  });
+  h+='</tbody></table></div><div style="padding:8px 12px"><button class="btn" id="excAdd">+ Add exception</button> <span class="small muted">Waivers and exceptions are recorded separately and never rewrite the measured scores above.</span></div></div>';
   return h;
 }
 
@@ -561,16 +675,20 @@ function renderReference(){
   Object.entries(M.method).forEach(([k,v])=> h+=`<tr><td style="width:150px"><span class="pill ${detClass(k)}">${k}</span></td><td>${esc(v)}</td></tr>`);
   h+='</tbody></table><p class="small muted" style="margin-top:8px">Precedence applied by this tool: Not ready → Restricted → Ready with gaps → Ready. Blocking requirements: '+M.reqs.filter(r=>r.blocking).map(r=>r.code).join(', ')+' (and stakeholder access). A dataset below the quality floor is held at Not ready.</p></div>';
 
-  h+=`<div class="card ref-block"><h3>Metadata quality method, two passes</h3>
-    <p class="small muted">Readiness checks that evidence is present; the quality assessment checks how good it is, on a separate pass that can hold a dataset back.</p>
-    <ul class="small" style="margin:6px 0 0;padding-left:18px;color:var(--muted);line-height:1.8">
-      <li><b>Level 1, quick pass.</b> Each metadata item M1 to M10 is rated Clear, Usable or Weak, to flag where the detailed pass should focus.</li>
-      <li><b>Level 2, detailed pass.</b> The CDDQ technique: every measurement is stated as a Dimension, a Concept and a Metric, with a target and a measured result.</li>
-      <li><b>Dimensions.</b> Integrity, Consistency, Completeness, Validity and Accuracy from the metamodel DQ Dimension list, plus clarity, currency and traceability for the metadata records.</li>
-      <li><b>Score.</b> A weighted index out of 100 per dataset, sum(result x weight) / sum(weight); the error rate is 100 minus the index.</li>
-      <li><b>Floor.</b> A dataset below the Client-set quality floor (set on the Inception tab) is held at Not ready until the error rate is brought under the agreed level.</li>
+  h+=`<div class="card ref-block"><h3>Metadata Fitness-for-Purpose (MFPI) method</h3>
+    <p class="small muted">The MFPI measures how far the supplied metadata and evidence let an assessor answer every applicable D1 to D13 and M1 to M10 question defensibly. It measures metadata fitness, not the dataset's own data quality, and it advises the readiness determination rather than forcing it.</p>
+    <ul class="small" style="margin:6px 0 10px;padding-left:18px;color:var(--muted);line-height:1.8">
+      <li><b>Measure.</b> Each applicable requirement and dimension is scored tests passed divided by tests expected, times 100.</li>
+      <li><b>Requirement score.</b> Weighted by the dimension weights over that requirement's applicable dimensions.</li>
+      <li><b>Dimension score.</b> Weighted by requirement criticality (3 blocker, 2 mandatory, 1 M/N/A, 0 optional).</li>
+      <li><b>MFPI.</b> Weighted sum of the seven dimension scores; the error rate is 100 minus the MFPI.</li>
+      <li><b>Gates.</b> Five non-compensable gates (D4/M4, D5, D7/M2, D12, stakeholder access). Any Fail makes the result Not fit-for-purpose; any Conditional caps it at Conditionally fit.</li>
+      <li><b>Bands.</b> Fit-for-purpose, Conditionally fit, Limited fitness, Not fit-for-purpose, with a dimension floor so no single weak dimension passes unseen.</li>
     </ul>
-    <p class="small muted" style="margin-top:8px">CDDQ is the Conformed Dimensions of Data Quality (Dan Myers). The DQ Dimension list is from the DM Artefact Metamodel (5W1H), the property of Modelware Systems.</p></div>`;
+    <table class="grid"><thead><tr><th>Dimension</th><th style="width:90px">Weight</th><th style="width:90px">Target</th></tr></thead><tbody>`+
+    MQD.map(x=>`<tr><td><b>${esc(x.code)}</b> ${esc(x.name)}</td><td>${Math.round(getMfpiCfg().weights[x.id]*100)}%</td><td>${getMfpiCfg().targets[x.id]}</td></tr>`).join('')+
+    `</tbody></table>
+    <p class="small muted" style="margin-top:8px">Based on the Metadata Fitness-for-Purpose methodology. The seven dimensions follow the Conformed Dimensions of Data Quality (Dan Myers); the DQ concepts and the DM Artefact Metamodel (5W1H) are the property of Modelware Systems.</p></div>`;
 
   h+=`<div class="card ref-block"><h3>Metamodel reference lists <span class="plc">from DM Artefact Metamodel v${esc(M.mm.version)}</span></h3><p class="small muted" style="margin:0 0 8px">The DM Artefact Metamodel (5W1H) is the property of Modelware Systems.</p>`;
   Object.entries(M.mm.lookups).forEach(([k,lk])=>{
@@ -599,7 +717,7 @@ function renderReference(){
    ['Refresh, coverage, volume and version','DCAT (frequency, temporal coverage, size, version)','D9, D11, M3'],
    ['CIA, access and handling metadata','FIPS 199 (CIA reference)','M5'],
    ['Data-quality issues, rules and measures','W3C DQV; ISO 8000-61','M6'],
-   ['Metadata quality scoring','CDDQ (Dimension · Concept · Metric); W3C DQV / ISO 8000-61','Quality tab'],
+   ['Metadata fitness-for-purpose (MFPI)','CDDQ dimensions (Dan Myers); W3C DQV / ISO 8000-61','Quality tab'],
    ['Lifecycle and retention metadata','ISO 15489','M7'],
    ['Sharing, interfaces and interoperability','DCAT DataService; standards conformance','D13, M8, M9'],
    ['Representative extract','DCAT distribution; security / privacy guidance','D12'],
@@ -636,8 +754,8 @@ document.addEventListener('click',e=>{
   else if(t.dataset.exp){ document.getElementById('det_'+t.dataset.exp).classList.toggle('open'); }
   else if(t.id==='addLesson'){ state.lessons=state.lessons||[]; state.lessons.unshift({date:new Date().toISOString().slice(0,10),type:'Decision',subject:'',detail:''}); save(); renderMain(); }
   else if(t.dataset.dellesson!==undefined){ state.lessons.splice(+t.dataset.dellesson,1); save(); renderMain(); }
-  else if(t.id==='qAddRow'){ const d=curDs(); if(d){ qInit(d); d.quality.rows.push({dim:QDIMS[0].dim,concept:'',metric:'',target:'',result:'',weight:1,note:''}); save(); renderMain(); } }
-  else if(t.dataset.qdel!==undefined){ const d=curDs(); if(d&&d.quality&&Array.isArray(d.quality.rows)){ d.quality.rows.splice(+t.dataset.qdel,1); save(); renderSide(); renderMain(); } }
+  else if(t.id==='excAdd'){ const d=curDs(); if(d){ mfpiInit(d); d.mfpi.exceptions.push({req:'',dim:'',status:'',authority:'',expiry:'',action:'',owner:'',due:''}); save(); renderMain(); } }
+  else if(t.dataset.excdel!==undefined){ const d=curDs(); if(d&&d.mfpi&&Array.isArray(d.mfpi.exceptions)){ d.mfpi.exceptions.splice(+t.dataset.excdel,1); save(); renderMain(); } }
 });
 document.addEventListener('input',e=>{
   const t=e.target;
@@ -650,12 +768,17 @@ document.addEventListener('input',e=>{
   else if(t.dataset.packnote!==undefined){ const m=curMda(); if(m){ m.packNotes=m.packNotes||{}; m.packNotes[t.dataset.packnote]=t.value; save(); } }
   else if(t.dataset.inc!==undefined){ state.inception=state.inception||{}; state.inception[t.dataset.inc]=state.inception[t.dataset.inc]||{}; state.inception[t.dataset.inc][t.dataset.k]=t.value; save(); if(t.dataset.k==='status'){ t.className='statussel '+(t.value==='Confirmed'?'present':t.value==='Outstanding'?'absent':t.value==='Not applicable'?'na':''); const inc=state.inception; const de=document.getElementById('incDone'),oe=document.getElementById('incOut'); if(de)de.textContent=INCEPTION.filter(it=>(inc[it[0]]||{}).status==='Confirmed').length; if(oe)oe.textContent=INCEPTION.filter(it=>(inc[it[0]]||{}).status==='Outstanding').length; } }
   else if(t.dataset.lesson!==undefined){ const e=state.lessons&&state.lessons[+t.dataset.lesson]; if(e){ e[t.dataset.lk]=t.value; save(); } }
-  else if(t.dataset.ql!==undefined){ const d=curDs(); if(d){ d.quality=d.quality||{l1:{},rows:null}; d.quality.l1=d.quality.l1||{}; d.quality.l1[t.dataset.ql]=t.value; save();
-      t.className='statussel '+(t.value==='Clear'?'present':t.value==='Usable'?'partial':t.value==='Weak'?'absent':''); refreshQReadout(); } }
-  else if(t.dataset.qr!==undefined){ const d=curDs(); if(d&&d.quality&&Array.isArray(d.quality.rows)){ const row=d.quality.rows[+t.dataset.qr];
-      if(row){ row[t.dataset.qk]=t.value; save();
-        if(['result','weight','target'].includes(t.dataset.qk)){ updatePassCell(t); refreshQReadout(); renderSide(); } } } }
-  else if(t.dataset.qfloor!==undefined){ let v=parseInt(t.value,10); state.qualityFloor=(isNaN(v)?QFLOOR_DEFAULT:Math.max(0,Math.min(100,v))); save(); renderSide(); }
+  else if(t.dataset.cell!==undefined){ const d=curDs(); if(d){ mfpiInit(d); const k=t.dataset.cell; d.mfpi.cells[k]=d.mfpi.cells[k]||{}; d.mfpi.cells[k][t.dataset.ck]=t.value; save();
+      if(t.dataset.ck==='num'||t.dataset.ck==='den'){ updateCellRes(t); refreshMfpiReadout(); } } }
+  else if(t.dataset.gate!==undefined){ const d=curDs(); if(d){ mfpiInit(d); d.mfpi.gates[t.dataset.gate]=d.mfpi.gates[t.dataset.gate]||{}; d.mfpi.gates[t.dataset.gate][t.dataset.gk]=t.value; save();
+      if(t.dataset.gk==='status'){ t.className='statussel '+(t.value==='Pass'?'present':t.value==='Conditional'?'partial':t.value==='Fail'?'absent':''); refreshMfpiReadout(); } } }
+  else if(t.dataset.na!==undefined){ const d=curDs(); if(d){ mfpiInit(d); d.mfpi.na[t.dataset.na]=d.mfpi.na[t.dataset.na]||{}; const v=(t.dataset.nk==='applicable')?t.checked:t.value; d.mfpi.na[t.dataset.na][t.dataset.nk]=v; save();
+      if(t.dataset.nk==='applicable'){ renderMain(); } else { refreshMfpiReadout(); } } }
+  else if(t.dataset.exc!==undefined){ const d=curDs(); if(d&&d.mfpi&&Array.isArray(d.mfpi.exceptions)){ const x=d.mfpi.exceptions[+t.dataset.exc]; if(x){ x[t.dataset.xk]=t.value; save(); } } }
+  else if(t.dataset.ql!==undefined){ const d=curDs(); if(d){ mfpiInit(d); d.mfpi.l1[t.dataset.ql]=t.value; save(); t.className='statussel '+(t.value==='Clear'?'present':t.value==='Usable'?'partial':t.value==='Weak'?'absent':''); } }
+  else if(t.dataset.mcfg!==undefined){ const cfg=getMfpiCfg(); const path=t.dataset.mcfg;
+      if(path==='frozen'){ cfg.frozen=t.checked; save(); renderMain(); }
+      else { let v=parseFloat(t.value); if(!isNaN(v)){ if(path.indexOf('w.')===0) cfg.weights[path.slice(2)]=v/100; else if(path.indexOf('t.')===0) cfg.targets[path.slice(2)]=v; else if(path==='dimFloor') cfg.dimFloor=v; else if(path==='bfit') cfg.bands.fit=v; else if(path==='bcond') cfg.bands.cond=v; else if(path==='blimited') cfg.bands.limited=v; save(); } } }
 });
 function refreshReadout(){
   const d=curDs(); if(!d||state.ui.tab!=='assessment') return;
@@ -693,22 +816,42 @@ document.getElementById('btnCsv').onclick=()=>{ const d=curDs(); const m=curMda(
   M.reqs.forEach(r=>{ const st=(d.reqs&&d.reqs[r.code])||{}; rows.push([m.name,d.name,r.code,r.title,r.status==='MNA'?'M/N·A':r.status,r.blocking?'Yes':'',STATUS[st.status||''].label,st.value||'',st.evidence||'',r.evidence,r.criterion]); });
   dl('02_Dataset_Metadata_'+(d.name||'dataset').replace(/[^\w]+/g,'_')+'.csv', rows.map(r=>r.map(csvCell).join(',')).join('\n'),'text/csv'); };
 document.getElementById('btnReport').onclick=()=>{
-  let all=[]; state.mdas.forEach(m=> m.datasets.forEach(d=> all.push({m,d,r:computeReadiness(d)})));
+  let all=[]; state.mdas.forEach(m=> m.datasets.forEach(d=> all.push({m,d,r:computeReadiness(d),mq:computeMFPI(d)})));
   let h=`<!doctype html><meta charset=utf-8><title>Readiness report</title><style>body{font:14px system-ui;margin:40px;color:#1b2733}h1{color:#0b5d8a}table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #cdd;padding:6px 8px;text-align:left;font-size:12px;vertical-align:top}th{background:#eef3f6}.p{font-weight:700;padding:2px 8px;border-radius:12px}</style>
    <h1>MDA Dataset &amp; Metadata Readiness Report</h1><p>Digital Zambia Acceleration Project · ZM-SZ-466193-CS-QBS · Assessor: ${esc(state.meta.assessor||'-')} · Date: ${esc(state.meta.date||'-')} · Tool v${VERSION}</p>
-   <table><tr><th>MDA</th><th>Dataset</th><th>Determination</th><th>Complete</th><th>Quality</th><th>Error</th><th>Reasons</th></tr>`;
-  all.forEach(x=> h+=`<tr><td>${esc(x.m.name)}</td><td>${esc(x.d.name)}</td><td>${esc(x.r.determination||'-')}</td><td>${x.r.completeness}%</td><td>${x.r.qIndex==null?'-':x.r.qIndex}</td><td>${x.r.qError==null?'-':x.r.qError+'%'}</td><td>${x.r.reasons.map(esc).join('<br>')}</td></tr>`);
+   <table><tr><th>MDA</th><th>Dataset</th><th>Determination</th><th>Complete</th><th>MFPI</th><th>Fitness</th><th>Reasons</th></tr>`;
+  all.forEach(x=> h+=`<tr><td>${esc(x.m.name)}</td><td>${esc(x.d.name)}</td><td>${esc(x.r.determination||'-')}</td><td>${x.r.completeness}%</td><td>${x.mq.mfpi==null?'-':x.mq.mfpi}</td><td>${x.mq.band==='none'?'-':esc(x.mq.bandLabel)}</td><td>${x.r.reasons.map(esc).join('<br>')}</td></tr>`);
   h+='</table>';
   all.forEach(x=>{ h+=`<h3>${esc(x.m.name)}, ${esc(x.d.name)}</h3><table><tr><th>Code</th><th>Requirement</th><th>Status</th><th>Evidence / notes</th></tr>`;
     M.reqs.forEach(r=>{ const st=(x.d.reqs&&x.d.reqs[r.code])||{}; h+=`<tr><td>${r.code}</td><td>${esc(r.title)}</td><td>${esc(STATUS[st.status||''].label)}${st.value?' · '+esc(st.value):''}</td><td>${esc(st.evidence||'')}</td></tr>`; });
     h+='</table>';
-    const cq=computeQuality(x.d); const qr=(x.d.quality&&x.d.quality.rows)||[];
-    if(cq.index!=null || qr.length){ h+=`<p><b>Metadata quality:</b> index ${cq.index==null?'-':cq.index}/100, error rate ${cq.error==null?'-':cq.error+'%'} (floor ${getFloor()}${x.r.qGated?', held below floor':''})</p>`;
-      if(qr.length){ h+='<table><tr><th>Dimension</th><th>Concept</th><th>Metric</th><th>Target</th><th>Result</th><th>Weight</th><th>Note</th></tr>';
-        qr.forEach(r=>{ h+=`<tr><td>${esc(r.dim)}</td><td>${esc(r.concept)}</td><td>${esc(r.metric)}</td><td>${esc(r.target)}</td><td>${esc(r.result)}</td><td>${esc(r.weight)}</td><td>${esc(r.note)}</td></tr>`; });
-        h+='</table>'; } }
+    const cq=computeMFPI(x.d);
+    if(cq.mfpi!=null || cq.gateSet){ h+=`<p><b>Metadata fitness (MFPI):</b> ${cq.mfpi==null?'-':cq.mfpi}/100, error rate ${cq.error==null?'-':cq.error+'%'}, result <b>${esc(cq.bandLabel)}</b>. Readiness implication: ${esc(fitImplication(cq.band))}.</p>`;
+      h+='<table><tr><th>Dimension</th><th>Weight</th><th>Target</th><th>Score</th></tr>';
+      MQD.forEach(z=>{ const sc=cq.dimScores[z.id]; h+=`<tr><td>${esc(z.code)} ${esc(z.name)}</td><td>${Math.round(getMfpiCfg().weights[z.id]*100)}%</td><td>${getMfpiCfg().targets[z.id]}</td><td>${sc==null?'-':Math.round(sc)}</td></tr>`; });
+      h+='</table>';
+      const exc=(x.d.mfpi&&x.d.mfpi.exceptions)||[];
+      if(exc.length){ h+='<p><b>Exceptions:</b></p><table><tr><th>Req</th><th>Dimension</th><th>Status</th><th>Authority</th><th>Action</th><th>Owner</th><th>Due</th></tr>';
+        exc.forEach(e=>{ h+=`<tr><td>${esc(e.req)}</td><td>${esc(e.dim)}</td><td>${esc(e.status)}</td><td>${esc(e.authority)}</td><td>${esc(e.action)}</td><td>${esc(e.owner)}</td><td>${esc(e.due)}</td></tr>`; });
+        h+='</table>'; }
+    }
   });
   dl('MDA_Readiness_Report_'+(state.meta.date||'')+'.html', h,'text/html'); };
+document.getElementById('btnScorecard').onclick=()=>{
+  const cols=['RecordType','MDA','Dataset','Requirement','RequirementName','RequirementStatus','CriticalityWeight','GateFlag','DimensionCode','DimensionName','MFPIWeightPct','TargetPct','Numerator','Denominator','ResultPct','Evidence','Applicable','NARationale','NAApprover','GateStatus','GateEvidence','RemediationOwner','ExceptionStatus','ExceptionAuthority','ExceptionExpiry','ExceptionAction','ExceptionOwner','ExceptionDue','RequirementScore','DimensionScore','MFPI','FitnessResult','Assessor','AssessmentDate'];
+  const rows=[cols]; const cfg=getMfpiCfg();
+  state.mdas.forEach(m=> m.datasets.forEach(d=>{
+    const cq=computeMFPI(d);
+    const row0=()=>{ const o={}; cols.forEach(c=>o[c]=''); o.MDA=m.name; o.Dataset=d.name||''; o.MFPI=cq.mfpi==null?'':cq.mfpi; o.FitnessResult=cq.band==='none'?'':cq.bandLabel; o.Assessor=state.meta.assessor||''; o.AssessmentDate=state.meta.date||''; return o; };
+    M.reqs.forEach(r=>{ const dims=REQDIMS[r.code]||[]; const applic=reqApplicable(d,r.code); const na=(d.mfpi&&d.mfpi.na&&d.mfpi.na[r.code])||{};
+      dims.forEach(dim=>{ const o=row0(); o.RecordType='Measure'; o.Requirement=r.code; o.RequirementName=r.title; o.RequirementStatus=r.status==='MNA'?'M/N/A':r.status; o.CriticalityWeight=critWeight(r); o.GateFlag=r.blocking?'Yes':''; o.DimensionCode=MQDBYID[dim].code; o.DimensionName=MQDBYID[dim].name; o.MFPIWeightPct=Math.round(cfg.weights[dim]*100); o.TargetPct=cfg.targets[dim];
+        const cell=(d.mfpi&&d.mfpi.cells&&d.mfpi.cells[r.code+'|'+dim])||{}; o.Numerator=cell.num||''; o.Denominator=cell.den||''; const res=cellResult(d,r.code,dim); o.ResultPct=res==null?'':Math.round(res); o.Evidence=cell.ev||''; o.Applicable=applic?'Yes':'No'; o.NARationale=na.rationale||''; o.NAApprover=na.approver||''; o.RequirementScore=cq.reqScores[r.code]==null?'':Math.round(cq.reqScores[r.code]); o.DimensionScore=cq.dimScores[dim]==null?'':Math.round(cq.dimScores[dim]);
+        rows.push(cols.map(c=>o[c])); }); });
+    GATES.forEach(g=>{ const gs=(d.mfpi&&d.mfpi.gates&&d.mfpi.gates[g.id])||{}; const o=row0(); o.RecordType='Gate'; o.Requirement=g.id; o.RequirementName=g.name; o.GateStatus=gs.status||''; o.GateEvidence=gs.evidence||''; o.RemediationOwner=gs.owner||''; rows.push(cols.map(c=>o[c])); });
+    ((d.mfpi&&d.mfpi.exceptions)||[]).forEach(e=>{ const o=row0(); o.RecordType='Exception'; o.Requirement=e.req||''; o.DimensionName=e.dim||''; o.ExceptionStatus=e.status||''; o.ExceptionAuthority=e.authority||''; o.ExceptionExpiry=e.expiry||''; o.ExceptionAction=e.action||''; o.ExceptionOwner=e.owner||''; o.ExceptionDue=e.due||''; rows.push(cols.map(c=>o[c])); });
+  }));
+  if(rows.length<=1){ alert('No datasets to export.'); return; }
+  dl('MFPI_Scorecard_'+(state.meta.date||'')+'.csv', rows.map(r=>r.map(csvCell).join(',')).join('\n'),'text/csv'); };
 
 // footer
 document.getElementById('foot').innerHTML='DM Artefact Metamodel v'+esc(M.mm.version)+' definitions, the property of Modelware Systems · Saved locally in this browser, use <b>Save JSON</b> for a portable copy.';
@@ -758,7 +901,7 @@ function buildFileMap(){
     files[ms+'/_mda.json']=JSON.stringify({id:m.id,name:m.name,area:m.area||'',provisional:!!m.provisional,pack:m.pack||{},packNotes:m.packNotes||{}},null,2);
     (m.datasets||[]).forEach((d,i)=>{ files[ms+'/'+dss[i].slug+'.json']=JSON.stringify(d,null,2); });
   });
-  index.inception=state.inception||{}; index.lessons=state.lessons||[]; index.qualityFloor=getFloor();
+  index.inception=state.inception||{}; index.lessons=state.lessons||[]; index.mfpiCfg=getMfpiCfg();
   files['index.json']=JSON.stringify(index,null,2);
   return files;
 }
@@ -793,7 +936,7 @@ async function ghPull(){
   try{
     const idxF=await ghGetFile('index.json'); if(!idxF){ setGhStatus('nothing to pull, no index.json at this path','err'); ghBusy(false); return false; }
     ghSetMarker(idxF.sha);
-    const index=JSON.parse(idxF.text); const ns={meta:index.meta||state.meta, mdas:[], inception:index.inception||{}, lessons:index.lessons||[], qualityFloor:(typeof index.qualityFloor==='number'?index.qualityFloor:QFLOOR_DEFAULT), ui:state.ui||{tab:'assessment'}};
+    const index=JSON.parse(idxF.text); const ns={meta:index.meta||state.meta, mdas:[], inception:index.inception||{}, lessons:index.lessons||[], mfpiCfg:(index.mfpiCfg&&typeof index.mfpiCfg==='object')?index.mfpiCfg:defaultMfpiCfg(), ui:state.ui||{tab:'assessment'}};
     for(const mi of (index.mdas||[])){
       const mf=await ghGetFile(mi.slug+'/_mda.json'); const md=mf?JSON.parse(mf.text):{};
       const m={id:mi.id,name:mi.name,area:mi.area||md.area||'',provisional:!!mi.provisional,pack:md.pack||{},packNotes:md.packNotes||{},datasets:[]};
@@ -866,25 +1009,16 @@ const EXAMPLE = {
  M9:{status:'present',evidence:'Exchange with ZamStats: monthly CSV, agreed field mapping, SFTP.'},
  M10:{status:'present',evidence:'Origin e-registration to validation to register; high-level lineage diagram attached.'},
 };
-const EXAMPLE_QUALITY={
-  l1:{M1:'Clear',M2:'Clear',M3:'Clear',M4:'Clear',M5:'Clear',M6:'Usable',M7:'Clear',M8:'Clear',M9:'Usable',M10:'Clear'},
-  rows:[
-   {dim:'Completeness',concept:'Attribute population',metric:'% of required fields populated',target:98,result:98,weight:1.5,note:'~2% missing addresses before 2018'},
-   {dim:'Validity',concept:'Format and code conformance',metric:'% of TPINs matching the valid format',target:98,result:99,weight:1.5,note:'TPIN check-digit rule applied'},
-   {dim:'Consistency',concept:'Cross-copy agreement',metric:'% of records agreeing with the portal copy',target:95,result:96,weight:1,note:''},
-   {dim:'Integrity',concept:'Referential integrity',metric:'% of returns linked to a valid TPIN',target:99,result:99,weight:1,note:''},
-   {dim:'Accuracy',concept:'Agreement with source of record',metric:'% of sampled records matching TaxOnline',target:97,result:95,weight:1.5,note:'500-row manual sample'},
-   {dim:'Clarity (metadata)',concept:'Definition intelligibility',metric:'% of fields with a plain definition',target:90,result:92,weight:1,note:''},
-   {dim:'Currency (metadata)',concept:'Metadata freshness',metric:'reviewed within the 12-month cycle',target:80,result:85,weight:1,note:'last review 2026-06'},
-   {dim:'Traceability (metadata)',concept:'Lineage documented',metric:'% of fields with documented source',target:85,result:80,weight:1,note:'lineage diagram attached'}
-  ]
-};
+const EXAMPLE_MFPI_BASE={suf:96,ev:90,int:92,con:94,cur:88,tra:86,cnf:93};
 function loadExample(){
   const d={id:uid(),name:'Taxpayer Register (TPIN)',identifier:'ZRA-TPIN-001',priority:'High',
     nomination:'High priority; core to the revenue mandate; representative large administrative transactional dataset.',
     restriction:'Masked extract approved by the Data Owner on 2026-10-20.',stakeholderAccess:'yes',reqs:{}};
   for(const k in EXAMPLE) d.reqs[k]=Object.assign({},EXAMPLE[k]);
-  d.quality=JSON.parse(JSON.stringify(EXAMPLE_QUALITY));
+  d.mfpi={cells:{},gates:{},na:{},exceptions:[],l1:{M1:'Clear',M2:'Clear',M3:'Clear',M4:'Clear',M5:'Clear',M6:'Usable',M7:'Clear',M8:'Clear',M9:'Usable',M10:'Clear'}};
+  M.reqs.forEach(r=>{ (REQDIMS[r.code]||[]).forEach(dim=>{ d.mfpi.cells[r.code+'|'+dim]={num:String(EXAMPLE_MFPI_BASE[dim]),den:'100',ev:'see 02 / 03 / 05 pack'}; }); });
+  GATES.forEach(g=>{ d.mfpi.gates[g.id]={status:'Pass',evidence:'evidenced in the pack',owner:''}; });
+  d.mfpi.exceptions=[{req:'M6',dim:'MQD-05 Currency',status:'documented known issue',authority:'Data Owner',expiry:'',action:'Backfill pre-2018 addresses',owner:'DQ team',due:'2027-03-31'}];
   const m={id:uid(),name:'Example MDA (demo)',area:'Worked example for reference',provisional:false,demo:true,
     pack:{'00_Transmittal':'Provided','01_Dataset_Nominations':'Provided','02_Dataset_Metadata':'Provided','03_Schema_and_Dictionary':'Provided','04_Representative_Extract':'Provided','05_Classification_Evidence':'Provided','06_Evidence_Index':'Provided'},packNotes:{},datasets:[d]};
   state.mdas.push(m); state.ui.mda=m.id; state.ui.ds=d.id; state.ui.tab='assessment'; save(); renderSide(); renderMain();

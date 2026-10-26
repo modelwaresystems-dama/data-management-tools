@@ -143,8 +143,8 @@ const isUpperOntologyName = (name, areas) =>
   /foundational|upper ontology|core ontology/i.test(String(name || "") + " " + (Array.isArray(areas) ? areas.join(" ") : String(areas || "")));
 
 /* Build identity — shown in the sidebar so the latest build can be confirmed at a glance. */
-const APP_VERSION = "4.75";
-const APP_BUILD = "2026-10-26 11:33 UTC";
+const APP_VERSION = "4.76";
+const APP_BUILD = "2026-10-26 13:04 UTC";
 
 /* ============================================================
    In-app User Guide — content model + a small bridge so any
@@ -374,6 +374,13 @@ const DECISION_TO_SIGNOFF = { Accept: "Accepted", Reject: "Rejected", Amend: "Re
 const today = () => new Date().toISOString().slice(0, 10);
 const uid = () => "g" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+/* Shared glossary name key — strips extension, trailing dates and common suffixes
+   (clean / reconciled / final / v2 / copy) so that Reload-Reconcile matching and the
+   sidebar's duplicate highlight agree on what counts as "the same glossary". */
+const glossaryBaseKey = (n) => norm(String(n || "").replace(/\.xlsx?$/i, "")
+  .replace(/[_\- ]+\d{4}-\d{2}-\d{2}([_\- ]+\d{3,4})?$/i, "")
+  .replace(/[_\- ]+(clean|reconciled|final|v\d+|copy)$/i, "")
+  .trim());
 
 /* ---------- design tokens ---------- */
 const C = {
@@ -2053,6 +2060,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);   // settings modal (canonical workbench URL)
   const [reconPlan, setReconPlan] = useState(null);    // {incoming, candidates} for the reload-reconciled mapping dialog
   const [renaming, setRenaming] = useState(null);      // { id, value } when inline-renaming a glossary in the sidebar
+  const [delTarget, setDelTarget] = useState(null);    // { id, name } when confirming a glossary delete in the sidebar
   const [snapshot, setSnapshot] = useState(null);      // {ts, count} of last pre-apply backup, if any
   const [workspaces, setWorkspaces] = useState([]);    // [{id,name,created}] — the customer roster
   const [wsId, setWsId] = useState(ACTIVE_WS);         // mirrors the module-level ACTIVE_WS for rendering
@@ -2071,6 +2079,15 @@ function App() {
 
   /* ---- Level-0 lexical inventory: index, persistence, and gate-store bridge ---- */
   const lexIndex = useMemo(() => lexBuildIndex(lexObjects || []), [lexObjects]);
+
+  /* Base-name keys shared by more than one glossary in this customer — drives the
+     sidebar's "likely duplicate" badge. Name-only grouping (Howard's ruling): advisory
+     only; the actual delete is per-row and manual, so a loose match just flags suspects. */
+  const dupBaseKeys = useMemo(() => {
+    const counts = {};
+    (index || []).forEach((e) => { const k = glossaryBaseKey(e.name); if (k) counts[k] = (counts[k] || 0) + 1; });
+    return new Set(Object.keys(counts).filter((k) => counts[k] > 1));
+  }, [index]);
   useEffect(() => { lexSetStore(lexObjects.length ? lexIndex : null); }, [lexIndex, lexObjects.length]);
   const lexLoaded = useRef(false);
   // Load the current customer's Level-0 inventory (empty for a brand-new customer).
@@ -2591,7 +2608,16 @@ function App() {
     const next = (index || []).filter((e) => e.id !== id);
     setIndex(next); await sSet(wsIndexKey(), next);
     if (current && current.id === id) { setCurrent(null); setView("home"); }
+    await buildCorpus();   // rebuild corpus/graph/audit now, matching renameGlossary (the index effect also fires, but this keeps delete symmetric and the rebuild done before the flash)
     flash("Glossary deleted");
+  };
+
+  // Export one glossary (by id) to Excel — used as the "Export first" backup before a sidebar delete.
+  const exportGlossaryById = async (id) => {
+    const g = await loadGlossaryBlob(id);
+    if (!g) { flash("Couldn’t load that glossary to export", "err"); return; }
+    const fn = exportGlossary(g);
+    flash("Saved " + fn + " — backup taken, now you can delete");
   };
 
   // Rename a glossary — updates both the stored glossary and its index entry.
@@ -2634,10 +2660,7 @@ function App() {
     const list = Array.from(files || []);
     if (!list.length) return;
     // strip extension, trailing timestamps (_2026-06-02_1811 / _2026-06-02), and common suffixes
-    const baseKey = (n) => norm(String(n).replace(/\.xlsx?$/i, "")
-      .replace(/[_\- ]+\d{4}-\d{2}-\d{2}([_\- ]+\d{3,4})?$/i, "")
-      .replace(/[_\- ]+(clean|reconciled|final|v\d+|copy)$/i, "")
-      .trim());
+    const baseKey = glossaryBaseKey;   // shared with the sidebar duplicate highlight, so both agree
     const incoming = [];
     for (const file of list) {
       try {
@@ -2965,12 +2988,14 @@ function App() {
           {index.slice().sort((a, b) => b.updated - a.updated).map((e) => {
             const on = current && current.id === e.id;
             const isRen = renaming && renaming.id === e.id;
+            const isDel = delTarget && delTarget.id === e.id;
+            const isDup = dupBaseKeys.has(glossaryBaseKey(e.name));
             const commit = () => { const v = (renaming?.value || "").trim(); if (v && v !== e.name) renameGlossary(e.id, v); setRenaming(null); };
             return (
-              <div key={e.id} onClick={() => { if (!isRen) openGlossary(e.id); }} style={{
+              <div key={e.id} onClick={() => { if (!isRen && !isDel) openGlossary(e.id); }} style={{
                 width: "100%", textAlign: "left", marginBottom: 7, padding: "10px 11px", borderRadius: 9,
-                background: on ? C.teal : "#23292f", border: "1px solid " + (on ? C.tealDeep : "#2c333a"),
-                color: on ? "#fff" : C.paper, cursor: isRen ? "default" : "pointer", fontFamily: FONT_UI,
+                background: on ? C.teal : "#23292f", border: "1px solid " + (on ? C.tealDeep : isDup ? "#6f5e2c" : "#2c333a"),
+                color: on ? "#fff" : C.paper, cursor: (isRen || isDel) ? "default" : "pointer", fontFamily: FONT_UI,
               }}>
                 {isRen ? (
                   <input autoFocus value={renaming.value}
@@ -2979,18 +3004,43 @@ function App() {
                     onKeyDown={(ev) => { if (ev.key === "Enter") commit(); if (ev.key === "Escape") setRenaming(null); }}
                     onBlur={commit}
                     style={{ width: "100%", boxSizing: "border-box", padding: "6px 8px", borderRadius: 7, border: "1px solid " + C.teal, background: "#1b2025", color: "#fff", fontFamily: FONT_UI, fontSize: 13.5, fontWeight: 600, outline: "none" }} />
+                ) : isDel ? (
+                  <div onClick={(ev) => ev.stopPropagation()}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: on ? "#fff" : C.paper, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {"Delete \u201C" + (e.name || "Untitled Glossary") + "\u201D?"}
+                    </div>
+                    <div style={{ fontSize: 11, color: on ? "rgba(255,255,255,.85)" : "#c98b8b", lineHeight: 1.45, marginBottom: 8 }}>
+                      Permanently removes {e.termCount} term{e.termCount !== 1 ? "s" : ""}. Export first if you want a backup.
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <button onClick={(ev) => { ev.stopPropagation(); exportGlossaryById(e.id); }} title="Save this glossary to Excel before deleting"
+                        style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 9px", borderRadius: 7, background: "#23292f", color: "#c7ccd1", border: "1px solid #343b42", cursor: "pointer", fontFamily: FONT_UI, fontWeight: 600, fontSize: 11 }}>
+                        <Download size={12} strokeWidth={2.4} /> Export first
+                      </button>
+                      <button onClick={(ev) => { ev.stopPropagation(); const id = e.id; setDelTarget(null); deleteGlossary(id); }}
+                        style={{ flex: 1, minWidth: 54, padding: "6px", borderRadius: 7, background: C.red, color: "#fff", border: "none", cursor: "pointer", fontFamily: FONT_UI, fontWeight: 700, fontSize: 11.5 }}>Delete</button>
+                      <button onClick={(ev) => { ev.stopPropagation(); setDelTarget(null); }}
+                        style={{ padding: "6px 10px", borderRadius: 7, background: "transparent", color: "#9aa0a6", border: "1px solid #343b42", cursor: "pointer", fontFamily: FONT_UI, fontWeight: 600, fontSize: 11.5 }}>Keep</button>
+                    </div>
+                  </div>
                 ) : (
                   <>
                     <div style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 600, fontSize: 13.5 }}>
                       <BookMarked size={14} strokeWidth={2.2} style={{ flexShrink: 0 }} />
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{e.name || "Untitled Glossary"}</span>
                       <span role="button" title="Rename glossary"
-                        onClick={(ev) => { ev.stopPropagation(); setRenaming({ id: e.id, value: e.name }); }}
+                        onClick={(ev) => { ev.stopPropagation(); setDelTarget(null); setRenaming({ id: e.id, value: e.name }); }}
                         style={{ flexShrink: 0, opacity: 0.7, cursor: "pointer", display: "grid", placeItems: "center", padding: 1 }}>
                         <PencilLine size={13} strokeWidth={2.2} />
                       </span>
+                      <span role="button" title="Delete glossary"
+                        onClick={(ev) => { ev.stopPropagation(); setRenaming(null); setDelTarget({ id: e.id, name: e.name }); }}
+                        style={{ flexShrink: 0, opacity: 0.7, cursor: "pointer", display: "grid", placeItems: "center", padding: 1 }}>
+                        <Trash2 size={13} strokeWidth={2.2} />
+                      </span>
                     </div>
                     <div style={{ fontSize: 11, color: on ? "rgba(255,255,255,.8)" : "#8b9197", marginTop: 3, marginLeft: 21, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {isDup && <span title="Another glossary shares this base name \u2014 check whether it is a duplicate" style={{ display: "inline-block", marginRight: 6, fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#1b2025", background: "#e8b53e", borderRadius: 999, padding: "1px 6px", verticalAlign: "middle" }}>likely dup</span>}
                       {e.termCount} term{e.termCount !== 1 ? "s" : ""}{(e.areas && e.areas.length) ? " \u00B7 " + (e.areas.length <= 2 ? e.areas.join(" \u00B7 ") : e.areas.slice(0, 2).join(" \u00B7 ") + " +" + (e.areas.length - 2)) : ""}
                     </div>
                   </>

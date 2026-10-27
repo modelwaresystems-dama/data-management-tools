@@ -37,9 +37,10 @@ echo "· quant-edge normalize";  node wb_edge_test.js   || RED "edge test failed
 echo "· hierarchy (Hypernym)";  node wb_hier_test.js   || RED "hierarchy test failed"
 echo "· reference graph (SPO)"; node wb_refgraph_test.js || RED "reference-graph test failed"
 echo "· github storage adapter";node wb_gh_test.js     || RED "gh storage test failed"
+echo "· storage sync UI";       node wb_storageui_test.js || RED "storage UI test failed"
 echo "· mount smoke";           node wb_mount_smoke.js || RED "mount smoke failed"
 
 VER="$(grep -oE '^const APP_VERSION = "[^"]+"' "$APP" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 echo ""
-echo "✅ GREEN — v${VER} @ ${STAMP} · compile + lint + 5 suites pass"
+echo "✅ GREEN — v${VER} @ ${STAMP} · compile + lint + 6 suites pass"
 exit 0

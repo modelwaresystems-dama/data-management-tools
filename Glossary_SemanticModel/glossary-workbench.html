@@ -143,8 +143,8 @@ const isUpperOntologyName = (name, areas) =>
   /foundational|upper ontology|core ontology/i.test(String(name || "") + " " + (Array.isArray(areas) ? areas.join(" ") : String(areas || "")));
 
 /* Build identity — shown in the sidebar so the latest build can be confirmed at a glance. */
-const APP_VERSION = "4.81";
-const APP_BUILD = "2026-10-27 06:17 UTC";
+const APP_VERSION = "4.82";
+const APP_BUILD = "2026-10-27 06:58 UTC";
 
 /* ============================================================
    In-app User Guide — content model + a small bridge so any
@@ -7612,6 +7612,38 @@ function StorageSettings({ onClose }) {
     setBusy(false);
   };
   const disable = () => { GH.enabled = false; GH.saveCfg(); setEnabled(false); setStatus("Reverted to browser storage \u2014 reloading\u2026"); setTimeout(() => { try { location.reload(); } catch (e) {} }, 900); };
+  const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+  // Connect (test + enable) and pull the repo's data down into the app, then reload so the
+  // customer list and glossaries re-hydrate from what was just pulled.
+  const connectPull = async () => {
+    apply(); if (!GH.token) { setStatus("Enter a token first."); return; }
+    setBusy(true); setStatus("Connecting \u2014 testing the repo\u2026");
+    try { await GH.testConnection(); } catch (e) { setStatus("\u2717 " + (e.message || e)); setBusy(false); return; }
+    try {
+      setStatus("Pulling from " + GH.owner + "/" + GH.repo + "\u2026");
+      const n = await GH.load();
+      GH.enabled = true; GH.loaded = true; GH.saveCfg(); setEnabled(true);
+      setStatus("\u2713 Connected \u00b7 pulled " + n + " object" + (n !== 1 ? "s" : "") + " \u00b7 " + nowHM() + " \u2014 reloading\u2026");
+      setTimeout(() => { try { location.reload(); } catch (e) {} }, 1200);
+    } catch (e) { setStatus("\u2717 Pull failed: " + (e.message || e)); setBusy(false); }
+  };
+  // Force a fresh pull of the whole folder from GitHub, then reload to show it.
+  const pullNow = async () => {
+    if (!GH.enabled) { setStatus("Not connected yet \u2014 use Connect & pull first."); return; }
+    apply(); setBusy(true); setStatus("Pulling latest from " + GH.owner + "/" + GH.repo + "\u2026");
+    try { const n = await GH.load(); setStatus("\u2713 Pulled " + n + " object" + (n !== 1 ? "s" : "") + " \u00b7 " + nowHM() + " \u2014 reloading to show them\u2026"); setTimeout(() => { try { location.reload(); } catch (e) {} }, 1000); }
+    catch (e) { setStatus("\u2717 Pull failed: " + (e.message || e)); setBusy(false); }
+  };
+  // Flush any pending local changes up to GitHub now (writes are normally pushed automatically
+  // a moment after each edit; this forces them immediately).
+  const pushNow = async () => {
+    if (!GH.enabled) { setStatus("Not connected yet \u2014 use Connect & pull first."); return; }
+    setBusy(true); const pending = GH.pending.size;
+    setStatus(pending ? ("Pushing " + pending + " change" + (pending !== 1 ? "s" : "") + "\u2026") : "Checking for unsaved changes\u2026");
+    try { await GH.flushAll(); setStatus(pending ? ("\u2713 Pushed " + pending + " change" + (pending !== 1 ? "s" : "") + " to " + GH.owner + "/" + GH.repo + " \u00b7 " + nowHM()) : ("\u2713 Already in sync \u2014 nothing pending \u00b7 " + nowHM())); }
+    catch (e) { setStatus("\u2717 Push failed: " + (e.message || e)); }
+    setBusy(false);
+  };
   const clearBrowser = async () => {
     if (typeof confirm === "function" && !confirm("Clear all app data from THIS browser? Only do this once the data is safely in GitHub. The storage config is kept.")) return;
     try { Object.keys(localStorage).filter((k) => k.startsWith("ig_") && k !== GH_CFG_KEY).forEach((k) => localStorage.removeItem(k)); const ks = await idbKeys(); for (const k of ks.filter((x) => x.startsWith("ig_"))) await idbDelRaw(k); setStatus("\u2713 Browser app data cleared \u2014 GitHub is now the only copy."); } catch (e) { setStatus("\u2717 " + (e.message || e)); }
@@ -7623,7 +7655,7 @@ function StorageSettings({ onClose }) {
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 22, width: 560, maxWidth: "94vw", maxHeight: "90vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontFamily: FONT_DISP, fontSize: 19, color: C.ink }}>Storage backend</div>
+          <div style={{ fontFamily: FONT_DISP, fontSize: 19, color: C.ink }}>GitHub sync</div>
           <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: C.muted }}>{"\u00d7"}</button>
         </div>
         <div style={{ fontSize: 12.5, color: C.sub, marginTop: 4, lineHeight: 1.5 }}>Persist the app's data to a private GitHub repo instead of this browser. Frees browser storage and lets the model travel with the repo. On load, the folder is read into memory; changes are written back to GitHub.</div>
@@ -7636,13 +7668,28 @@ function StorageSettings({ onClose }) {
         <div style={{ marginTop: 8, padding: "8px 11px", borderRadius: 8, background: C.amberSoft, color: C.amber, fontSize: 11.5, lineHeight: 1.5 }}>
           {"\u26a0"} The token is stored in this browser's localStorage on this machine. Use a <b>fine-grained PAT</b> scoped to only <b>{repo || "modelware_app_storage"}</b> with <b>Contents: Read and write</b>. Anyone with access to this machine can read it; revoke it in GitHub if the machine is shared.
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
           <button disabled={busy} onClick={test} style={btn("#fff", C.ink, C.line)}>Test connection</button>
-          {!enabled ? <button disabled={busy} onClick={migrateEnable} style={btn(C.ink, "#fff", C.ink)}>Move all data to GitHub {"\u2192"} enable</button> : null}
-          {enabled ? <button disabled={busy} onClick={disable} style={btn("#fff", C.ink, C.line)}>Disable (revert to browser)</button> : null}
-          {enabled ? <button disabled={busy} onClick={clearBrowser} style={btn("#fff", C.red, C.red)}>Clear browser copy</button> : null}
+          <button disabled={busy} onClick={connectPull} style={btn(C.ink, "#fff", C.ink)}>Connect &amp; pull</button>
+          <button disabled={busy || !enabled} onClick={pullNow} style={btn("#fff", C.ink, C.line)} title={enabled ? "Re-read the whole folder from GitHub" : "Connect first"}>Pull now</button>
+          <button disabled={busy || !enabled} onClick={pushNow} style={btn("#fff", C.ink, C.line)} title={enabled ? "Flush unsaved changes up to GitHub now" : "Connect first"}>Push now</button>
+          {busy ? <span style={{ fontSize: 12.5, color: C.muted, fontFamily: FONT_UI }}>Syncing\u2026</span> : null}
         </div>
-        {status ? <div style={{ marginTop: 12, fontSize: 12.5, color: C.ink, fontFamily: "ui-monospace, Menlo, monospace", wordBreak: "break-word" }}>{status}</div> : null}
+        {enabled ? (
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <button disabled={busy} onClick={disable} style={btn("#fff", C.muted, C.line)}>Disable (revert to browser)</button>
+            <button disabled={busy} onClick={clearBrowser} style={btn("#fff", C.red, C.red)}>Clear browser copy</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <button disabled={busy} onClick={migrateEnable} style={btn("#fff", C.ink, C.line)} title="Push this browser's data up to the repo, then switch to GitHub storage">Move local data up &amp; enable</button>
+          </div>
+        )}
+        <div style={{ marginTop: 12, fontSize: 12, color: C.sub, lineHeight: 1.6 }}>
+          Look at it on GitHub: <a href={"https://github.com/" + (owner || GH.owner) + "/" + (repo || GH.repo) + "/tree/" + (branch || "main") + "/" + String(folder || GH.folder).split("/").filter(Boolean).map(encodeURIComponent).join("/")} target="_blank" rel="noreferrer" style={{ color: C.tealDeep, fontWeight: 700 }}>the {folder || GH.folder} folder</a>.
+          <br />Your computer's clone of the repo does <b>not</b> update on its own \u2014 run <code style={{ fontFamily: "ui-monospace, Menlo, monospace" }}>git pull</code> to see these files locally.
+        </div>
+        {status ? <div style={{ marginTop: 10, fontSize: 12.5, color: C.ink, fontFamily: "ui-monospace, Menlo, monospace", wordBreak: "break-word" }}>{status}</div> : null}
       </div>
     </div>
   );

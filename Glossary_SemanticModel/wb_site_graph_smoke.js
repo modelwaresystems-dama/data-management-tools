@@ -70,6 +70,12 @@ function buildCorpus() {
     ok(await page.$('#' + id) !== null, 'control present: #' + id);
   }
 
+  // edge predicate labels must be hidden until a term is focused
+  const labelsAtRest = await page.evaluate(() => [...document.querySelectorAll('#graph text.elab')].filter(t => t.getAttribute('display') !== 'none').length);
+  ok(labelsAtRest === 0, 'edge predicate labels hidden until a term is focused (' + labelsAtRest + ' shown)');
+  const labelCount = await page.evaluate(() => document.querySelectorAll('#graph text.elab').length);
+  ok(labelCount > 0, 'edge label elements exist for the links (' + labelCount + ')');
+
   const transform = () => page.evaluate(() => {
     const g = document.querySelector('#graph g'); return g ? (g.getAttribute('transform') || '') : null;
   });
@@ -105,6 +111,14 @@ function buildCorpus() {
   ok(afterClick && afterClick !== beforeClick, 'clicking a node re-frames the view to the term + its neighbours');
   const dimmed = await page.evaluate(() => document.querySelectorAll('#graph g.node.dim').length);
   ok(dimmed > 0, 'non-neighbour terms are dimmed on focus (' + dimmed + ' dimmed)');
+
+  // drawer now shows narrative + the term's SPO statements (not just reference chips)
+  const drawerTxt = await page.evaluate(() => document.getElementById('drawer').textContent || '');
+  ok(/SPO statements/.test(drawerTxt), 'drawer shows an "SPO statements" section');
+  ok(/delimits|organises|governs|applies/.test(drawerTxt), "drawer lists the term's predicates (SPO detail, not just target names)");
+  // edge predicate labels appear on the focused term's edges
+  const labelsOnFocus = await page.evaluate(() => [...document.querySelectorAll('#graph text.elab')].filter(t => t.getAttribute('display') !== 'none').length);
+  ok(labelsOnFocus > 0, 'edge predicate labels appear on focus (' + labelsOnFocus + ' shown)');
 
   // full-screen button is wired (requestFullscreen is blocked without a user gesture in headless,
   // so we assert the handler exists and does not throw rather than that the mode engages)

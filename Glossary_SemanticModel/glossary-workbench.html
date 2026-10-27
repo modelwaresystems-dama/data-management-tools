@@ -126,6 +126,18 @@ let ACTIVE_WS = "default";
 let ACTIVE_LEX_SCOPE = "own";           // "own" (this customer's inventory) | "shared" (the common inventory)
 const WS_LIST_KEY = "ig_workspaces";    // [{id,name,created}] — the customer roster (global, not namespaced)
 const ACTIVE_WS_KEY = "ig_active_ws";   // id of the customer currently in view (global)
+/* Rebuild the customer roster from the customers that actually have data, so a transient empty
+   roster can NEVER wipe customers whose glossaries are still in the store (the bug that reset
+   everyone to the default). `dataIds` are the workspace ids that have an *_index; `nameFor(id)`
+   supplies a display name for any id missing from the current roster. Pure — unit-tested. */
+function repairWorkspaceRoster(roster, dataIds, nameFor) {
+  const list = Array.isArray(roster) ? roster.slice() : [];
+  const have = new Set(list.map((w) => w && w.id));
+  let changed = false;
+  (dataIds || []).forEach((id) => { if (id && !have.has(id)) { list.push({ id, name: nameFor(id), created: Date.now() }); have.add(id); changed = true; } });
+  if (!have.has("default")) { list.unshift({ id: "default", name: "My Glossaries", created: Date.now() }); changed = true; }
+  return { list, changed };
+}
 const wsIndexKey = () => "ig_" + ACTIVE_WS + "_index";
 const wsGKey = (id) => "ig_" + ACTIVE_WS + "_g_" + id;
 // The Level-0 lexical inventory is per-customer by default, but a customer may instead SHARE a common
@@ -143,8 +155,8 @@ const isUpperOntologyName = (name, areas) =>
   /foundational|upper ontology|core ontology/i.test(String(name || "") + " " + (Array.isArray(areas) ? areas.join(" ") : String(areas || "")));
 
 /* Build identity — shown in the sidebar so the latest build can be confirmed at a glance. */
-const APP_VERSION = "4.82";
-const APP_BUILD = "2026-10-27 06:58 UTC";
+const APP_VERSION = "4.83";
+const APP_BUILD = "2026-10-27 07:45 UTC";
 
 /* ============================================================
    In-app User Guide — content model + a small bridge so any
@@ -2137,31 +2149,44 @@ function App() {
     // ---- GitHub storage backend: hydrate the in-memory cache from the repo before any reads ----
     if (GH.enabled && !GH.loaded) { try { const n = await GH.load(); if (typeof flash === "function") flash("GitHub storage \u00b7 loaded " + n + " objects from " + GH.owner + "/" + GH.repo, "ok"); } catch (e) { if (typeof flash === "function") flash("GitHub storage load failed: " + (e.message || e) + " \u2014 open Storage settings", "err"); } }
     // ---- Multi-customer bootstrap + one-time migration of pre-multi-customer data ----
+    // One-time recovery names for customers that pre-date this self-repair (used only when a
+    // customer with data is missing from the roster; harmless once the roster is correct).
+    const rosterNameRecovery = {
+      "gzeb2d0by7ha": "DAMA Dictionary", "g9hgda0vli4f": "Governing Business Meaning",
+      "gc6juxfaqvkn": "Party Lexicon", "gf0zamzs0fjw": "AGGPSA", "gmpnn2n490ho": "Modelware",
+      "gwq3tn8aamv1": "DMBOK v3 01. Data Management",
+    };
     let wsList = await sGet(WS_LIST_KEY);
-    if (!wsList || !Array.isArray(wsList) || wsList.length === 0) {
-      // First run under the multi-customer model. Fold any existing (un-namespaced)
-      // glossaries into a default customer so nothing already built is lost.
-      const def = { id: "default", name: "My Glossaries", created: Date.now() };
+    const hadRoster = Array.isArray(wsList) && wsList.length > 0;
+    const haveIds0 = new Set((Array.isArray(wsList) ? wsList : []).map((w) => w.id));
+    // Legacy one-time migration: fold any un-namespaced ig_index into the default customer.
+    if (!haveIds0.has("default")) {
       const legacyIdx = await sGet("ig_index");
       if (legacyIdx && Array.isArray(legacyIdx) && legacyIdx.length) {
-        for (const e of legacyIdx) {
-          const g = await sGet("ig_g_" + e.id);            // legacy blob (reference data lives inside it)
-          if (g) await sSet("ig_default_g_" + e.id, g);    // copy verbatim into the default namespace
-        }
+        for (const e of legacyIdx) { const g = await sGet("ig_g_" + e.id); if (g) await sSet("ig_default_g_" + e.id, g); }
         await sSet("ig_default_index", legacyIdx);
-        const legacySnap = await sGet("ig_model_snapshot");
-        if (legacySnap) await sSet("ig_default_model_snapshot", legacySnap);
-        // legacy keys are left in place as an untouched backup; they are no longer read.
+        const legacySnap = await sGet("ig_model_snapshot"); if (legacySnap) await sSet("ig_default_model_snapshot", legacySnap);
       }
-      wsList = [def];
-      ACTIVE_WS = "default";
-      await sSet(WS_LIST_KEY, wsList);
-      await sSet(ACTIVE_WS_KEY, "default");
-    } else {
-      const savedActive = await sGet(ACTIVE_WS_KEY);
-      ACTIVE_WS = (savedActive && wsList.some((w) => w.id === savedActive)) ? savedActive : wsList[0].id;
-      await sSet(ACTIVE_WS_KEY, ACTIVE_WS);
     }
+    // Discover every customer that has an *_index in the store (GH cache + browser).
+    const wsDataIds = [];
+    const addId = (k) => { const m = /^ig_(.+)_index$/.exec(String(k)); if (m && m[1] && !wsDataIds.includes(m[1])) wsDataIds.push(m[1]); };
+    try { if (typeof GH !== "undefined" && GH_ON()) { for (const k of GH.cache.keys()) addId(k); } } catch (e) {}
+    try { Object.keys(localStorage).forEach(addId); } catch (e) {}
+    try { (await idbKeys()).forEach(addId); } catch (e) {}
+    // Name hints for recovered-but-unknown customers: use their first glossary's name.
+    const nameHints = {};
+    for (const id of wsDataIds) {
+      if (haveIds0.has(id) || rosterNameRecovery[id]) continue;
+      try { const ix = await sGet("ig_" + id + "_index"); if (ix && ix[0] && ix[0].name) nameHints[id] = "Recovered — " + ix[0].name; } catch (e) {}
+    }
+    const nameFor = (id) => rosterNameRecovery[id] || nameHints[id] || ("Recovered customer " + String(id).slice(0, 6));
+    const repaired = repairWorkspaceRoster(wsList, wsDataIds, nameFor);
+    wsList = repaired.list;
+    if (repaired.changed || !hadRoster) await sSet(WS_LIST_KEY, wsList);
+    const savedActive = await sGet(ACTIVE_WS_KEY);
+    ACTIVE_WS = (savedActive && wsList.some((w) => w.id === savedActive)) ? savedActive : wsList[0].id;
+    await sSet(ACTIVE_WS_KEY, ACTIVE_WS);
     setWorkspaces(wsList);
     setWsId(ACTIVE_WS);
     ACTIVE_LEX_SCOPE = ((wsList.find((w) => w.id === ACTIVE_WS) || {}).lexScope === "shared") ? "shared" : "own";

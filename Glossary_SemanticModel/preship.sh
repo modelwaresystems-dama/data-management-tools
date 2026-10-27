@@ -41,8 +41,9 @@ echo "· storage sync UI";       node wb_storageui_test.js || RED "storage UI te
 echo "· roster self-repair";    node wb_roster_test.js || RED "roster repair test failed"
 echo "· mount smoke";           node wb_mount_smoke.js || RED "mount smoke failed"
 echo "· exported-site graph";    node wb_site_graph_smoke.js || RED "site graph smoke failed"
+echo "· embedded site (in-app)";  node wb_embed_test.js || RED "embedded site test failed"
 
 VER="$(grep -oE '^const APP_VERSION = "[^"]+"' "$APP" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 echo ""
-echo "✅ GREEN — v${VER} @ ${STAMP} · compile + lint + 8 suites pass"
+echo "✅ GREEN — v${VER} @ ${STAMP} · compile + lint + 9 suites pass"
 exit 0

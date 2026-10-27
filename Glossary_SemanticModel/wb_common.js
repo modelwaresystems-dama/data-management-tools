@@ -35,7 +35,7 @@ const EXPOSE = [
   'idbGet', 'idbSet', 'idbDel', 'idbGetRaw', 'idbSetRaw', 'idbDelRaw', 'idbKeys',
   'QUANT_EDGES', 'QE_SHORT', 'QE_FROM_SHORT', 'QE_ORDER', 'qeParse', 'qeJoin',
   'INDEX_KEY', 'gKey', 'GH_CFG_KEY',
-  'isaEdgesFor', 'buildIsaTree', 'analyzeCorpus', 'termSpos', 'buildSiteHtml', 'StorageSettings', 'repairWorkspaceRoster',
+  'isaEdgesFor', 'buildIsaTree', 'analyzeCorpus', 'termSpos', 'buildSiteHtml', 'StorageSettings', 'repairWorkspaceRoster', 'EmbeddedModelSite',
 ];
 
 /*

@@ -49,11 +49,10 @@ function buildCorpus() {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
 
-  // The exported site loads D3 from cdnjs; the headless container has no route to it.
-  // Serve the local copy so the graph can run exactly as it would in Howard's browser.
-  const D3_LOCAL = '/opt/npm-tools/node_modules/d3/dist/d3.min.js';
-  const d3src = fs.readFileSync(D3_LOCAL, 'utf8');
-  await page.route(/d3(\.min)?\.js/, (route) => route.fulfill({ contentType: 'application/javascript', body: d3src }));
+  // v4.85: D3 is inlined into the site template (offline, single-source). Prove it by
+  // BLOCKING any external D3 request — the graph must still build from the inlined copy.
+  let cdnD3Hits = 0;
+  await page.route(/d3(\.min)?\.js|cdnjs\.cloudflare\.com/, (route) => { cdnD3Hits++; return route.abort(); });
 
   let pass = 0, fail = 0;
   const ok = (c, label) => { if (c) { pass++; console.log('  ✓ ' + label); } else { fail++; console.log('  ✗ ' + label); } };
@@ -61,7 +60,8 @@ function buildCorpus() {
   await page.goto('file://' + out, { waitUntil: 'load' });
   // d3 comes from cdnjs; wait for it, then for the graph to build + settle.
   await page.waitForFunction(() => !!window.d3, null, { timeout: 15000 }).catch(() => {});
-  ok(await page.evaluate(() => !!window.d3), 'd3 loaded');
+  ok(await page.evaluate(() => !!window.d3), 'd3 available from INLINED copy (external D3 blocked)');
+  ok(cdnD3Hits === 0, 'site made no external D3 request (offline-safe) — blocked hits: ' + cdnD3Hits);
   await page.waitForFunction(() => document.querySelectorAll('#graph g.node circle').length > 0, null, { timeout: 15000 });
   await page.waitForTimeout(1500); // let the force simulation settle so nodes have x/y
 

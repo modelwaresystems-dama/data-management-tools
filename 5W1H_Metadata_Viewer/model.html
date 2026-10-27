@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Model Viewer</title>
+<meta name="version" content="1.0.0">
+<meta name="updated" content="2026-10-27 12:55 SAST">
+<style>
+  :root{
+    --bg:#f6f4ef;--surface:#fffdf9;--surface-2:#efece4;--line:#ddd7cb;
+    --fg:#211f1b;--fg-soft:#5a564d;--fg-faint:#8a847a;
+    --accent:#1f6f6b;--accent-soft:#dff0ec;
+    --attr:#4a5a7a;--attr-soft:#dde2ec;--assoc:#1f6f6b;--assoc-soft:#dff0ec;
+    --nary:#9a4f1b;--nary-soft:#f0e0d1;--warn:#9a3030;--warn-soft:#f3dada;
+    --add:#2f6b32;--add-soft:#dcefdd;--rem:#9a3030;--rem-soft:#f3dada;--mod:#8a6d1b;--mod-soft:#f2e8cf;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+    --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --disp:"Fraunces",Georgia,serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#16151a;--surface:#1f1e24;--surface-2:#27262d;--line:#36343d;
+    --fg:#eceaf2;--fg-soft:#b4b0bd;--fg-faint:#827e8c;
+    --accent:#58b8b0;--accent-soft:#15302e;
+    --attr:#9fb2d8;--attr-soft:#20273a;--assoc:#58b8b0;--assoc-soft:#15302e;
+    --nary:#d79156;--nary-soft:#3a2a1b;--warn:#e88;--warn-soft:#3a1f1f;
+    --add:#86d88a;--add-soft:#18301a;--rem:#e88;--rem-soft:#3a1f1f;--mod:#e0c06a;--mod-soft:#332b14;
+    color-scheme:dark;
+  }}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.5;font-size:15px}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 18px}
+  h1,h2,h3{font-family:var(--disp);font-weight:560;line-height:1.15;margin:0}
+  code,.id{font-family:var(--mono);font-size:.84em;background:var(--surface-2);padding:.08em .4em;border-radius:4px}
+  header{padding:28px 0 16px;border-bottom:1px solid var(--line);margin-bottom:0}
+  header .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  header h1{font-size:clamp(1.5rem,4vw,2.1rem)}
+  header .files{font-family:var(--mono);font-size:.78rem;color:var(--fg-faint);margin-top:6px}
+  .tiles{display:flex;flex-wrap:wrap;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:18px 0}
+  .tiles .t{background:var(--surface);padding:11px 16px;flex:1;min-width:90px}
+  .tiles .t .n{font-family:var(--disp);font-size:1.5rem;font-variant-numeric:tabular-nums;line-height:1}
+  .tiles .t .l{font-size:.72rem;color:var(--fg-soft);margin-top:2px}
+  nav{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;gap:4px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
+  nav button{font:inherit;font-size:.86rem;background:transparent;border:1px solid transparent;color:var(--fg-soft);padding:7px 13px;border-radius:8px;cursor:pointer}
+  nav button:hover{background:var(--surface-2)}
+  nav button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,transparent);font-weight:600}
+  main{padding:22px 0 80px}
+  .panel{display:none}
+  .panel.on{display:block}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:0 0 14px}
+  .card h3{font-size:1.1rem}
+  .muted{color:var(--fg-soft)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:.64rem;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px}
+  .pill.attr{background:var(--attr-soft);color:var(--attr)}
+  .pill.assoc{background:var(--assoc-soft);color:var(--assoc)}
+  .pill.nary{background:var(--nary-soft);color:var(--nary)}
+  .pill.warn{background:var(--warn-soft);color:var(--warn)}
+  table{border-collapse:collapse;width:100%;font-size:.86rem}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--fg-faint);font-weight:600}
+  td.n,th.n{font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+  details{border:1px solid var(--line);border-radius:10px;margin:0 0 10px;background:var(--surface)}
+  details>summary{cursor:pointer;padding:12px 16px;font-weight:600;list-style:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  details>summary::-webkit-details-marker{display:none}
+  details>summary::before{content:"▸";color:var(--fg-faint);transition:transform .15s}
+  details[open]>summary::before{transform:rotate(90deg)}
+  details .inner{padding:0 16px 14px}
+  pre{font-family:var(--mono);font-size:.8rem;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;max-height:70vh}
+  .filters{position:sticky;top:48px;z-index:4;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .filters label{font-size:.78rem;color:var(--fg-soft);display:flex;align-items:center;gap:6px}
+  .filters select,.filters input[type=search],.filters input[type=number]{font:inherit;font-size:.84rem;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:6px 9px}
+  .filters input[type=search]{min-width:160px}
+  .filters .count{margin-left:auto;font-family:var(--mono);font-size:.76rem;color:var(--fg-faint)}
+  /* IGD fact box */
+  .fact{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:0 0 12px}
+  .fact .head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .fact .reading{font-family:var(--mono);font-size:.84rem;color:var(--fg)}
+  .fact .reading .ph{color:var(--accent)}
+  .roles{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+  .role{display:flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:.8rem}
+  .role .sq{width:16px;height:16px;border:1.5px solid var(--fg-faint);border-radius:3px;display:grid;place-items:center;font-family:var(--mono);font-size:.6rem;color:var(--fg-faint)}
+  .role.unresolved{border-color:var(--warn);background:var(--warn-soft)}
+  .role.unresolved .sq{border-color:var(--warn);color:var(--warn)}
+  .popwrap{margin:10px 0 0}
+  .popwrap summary{font-size:.78rem;color:var(--accent);cursor:pointer;padding:4px 0}
+  .ent-attrs{display:grid;grid-template-columns:1fr auto auto;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px}
+  .ent-attrs>div{background:var(--surface);padding:5px 10px;font-size:.82rem}
+  .ent-attrs .h{background:var(--surface-2);font-size:.68rem;text-transform:uppercase;color:var(--fg-faint)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.76rem;color:var(--fg-soft);margin:0 0 14px}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .banner{border-radius:10px;padding:12px 15px;margin:0 0 14px;font-size:.88rem}
+  .banner.warn{background:var(--warn-soft);color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 40%,transparent)}
+  .banner.ok{background:var(--add-soft);color:var(--add);border:1px solid color-mix(in srgb,var(--add) 40%,transparent)}
+  .deltarow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+  .dchip{font-family:var(--mono);font-size:.72rem;padding:2px 8px;border-radius:6px}
+  .dchip.add{background:var(--add-soft);color:var(--add)}
+  .dchip.rem{background:var(--rem-soft);color:var(--rem)}
+  .dchip.mod{background:var(--mod-soft);color:var(--mod)}
+  .empty{color:var(--fg-faint);font-style:italic;padding:20px;text-align:center}
+  /* diagram */
+  .modeswitch{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 12px}
+  .modeswitch button{font:inherit;font-size:.82rem;background:var(--surface-2);border:1px solid var(--line);color:var(--fg-soft);padding:6px 13px;border-radius:999px;cursor:pointer}
+  .modeswitch button[aria-pressed="true"]{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+  :root[data-theme] .modeswitch button[aria-pressed="true"]{color:var(--bg)}
+  @media (prefers-color-scheme:dark){.modeswitch button[aria-pressed="true"]{color:var(--bg)}}
+  .gctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 10px}
+  .gctrls label{font-size:.78rem;color:var(--fg-soft);display:flex;align-items:center;gap:6px}
+  .gctrls select,.gctrls input{font:inherit;font-size:.82rem;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:5px 8px}
+  .gctrls input[type=search]{min-width:140px}
+  .gctrls .count{margin-left:auto;font-family:var(--mono);font-size:.74rem;color:var(--fg-faint)}
+  .gctrls button.mini{background:var(--surface-2);border:1px solid var(--line);color:var(--fg-soft);border-radius:7px;padding:5px 10px;cursor:pointer;font-size:.8rem}
+  .stage{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);height:min(74vh,660px)}
+  .stage svg{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+  .stage svg.grabbing{cursor:grabbing}
+  .stage .hint{position:absolute;bottom:8px;right:12px;font-family:var(--mono);font-size:.68rem;color:var(--fg-faint);background:color-mix(in srgb,var(--surface) 80%,transparent);padding:3px 8px;border-radius:6px;pointer-events:none}
+  .glegend{display:flex;gap:14px;flex-wrap:wrap;font-size:.76rem;color:var(--fg-soft);margin:10px 0 0}
+  .glegend span{display:inline-flex;align-items:center;gap:6px}
+  .swatch{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid var(--line)}
+  .swatch.round{border-radius:50%}
+  .gnode text{font-family:var(--body);font-size:11px;fill:var(--fg);pointer-events:none;paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round}
+  .gnode.faded{opacity:.12}
+  .gedge{stroke:var(--line);stroke-width:1.2}
+  .gedge.attr{stroke:var(--attr)}.gedge.assoc{stroke:var(--assoc)}.gedge.nary{stroke:var(--nary)}
+  .gedge.faded{opacity:.06}
+  .gelabel{font-family:var(--mono);font-size:9px;fill:var(--fg-faint);pointer-events:none}
+  .gtip{position:absolute;z-index:7;max-width:290px;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:10px 12px;box-shadow:0 10px 28px -12px rgba(0,0,0,.55);pointer-events:none}
+  .gtip h5{margin:0 0 3px;font-size:.88rem;font-family:var(--disp);font-weight:560}
+  .gtip .sub{font-size:.72rem;color:var(--fg-faint);margin:0 0 7px}
+  .gtip .reading{font-family:var(--mono);font-size:.74rem;color:var(--fg);margin:0 0 6px}
+  .gtip .reading .ph{color:var(--accent)}
+  .gtip table{width:100%;font-size:.72rem;border-collapse:collapse}
+  .gtip td{padding:2px 7px 2px 0;border:none;vertical-align:top;white-space:nowrap}
+  .gtip td.k{font-family:var(--mono);color:var(--fg)}
+  .gtip td.ty{color:var(--accent);font-family:var(--mono)}
+  .gtip td.rq{color:var(--fg-faint)}
+  .gtip td.sm{color:var(--fg-soft);white-space:normal;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+  .gtip .more{font-size:.68rem;color:var(--fg-faint);margin-top:4px}
+  .focuschip{display:inline-flex;align-items:center;gap:7px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:4px 11px;font-size:.78rem;cursor:pointer;font-weight:600}
+  .focuschip b{font-family:var(--mono);font-weight:600}
+  .focuschip .x{opacity:.7}
+  .gnode{cursor:grab}.gnode.pinned .gshape{stroke-width:2.6}
+  .gnode.sel .gshape{stroke-width:3}
+  .gshape{stroke-width:1.5}
+  .n-entity .gshape{fill:var(--attr-soft);stroke:var(--attr)}
+  .n-nary .gshape{fill:var(--nary-soft);stroke:var(--nary)}
+  .n-unres .gshape{fill:var(--warn-soft);stroke:var(--warn);stroke-dasharray:4 3}
+  .n-object .gshape{fill:var(--accent-soft);stroke:var(--accent)}
+  .n-fact-attribute .gshape{fill:var(--attr-soft);stroke:var(--attr)}
+  .n-fact-association .gshape{fill:var(--assoc-soft);stroke:var(--assoc)}
+  .n-fact-nary .gshape{fill:var(--nary-soft);stroke:var(--nary)}
+  @media (max-width:560px){.filters{top:44px}.filters .count{margin-left:0;flex-basis:100%}.gctrls .count{margin-left:0;flex-basis:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">JSON → Data Model · FCO-IM</div>
+    <h1 id="title">Data Model Viewer</h1>
+    <div class="files" id="files"></div>
+    <div class="files" id="ver"></div>
+    <div class="tiles" id="tiles"></div>
+  </header>
+  <nav id="nav"></nav>
+  <main>
+    <div class="panel" data-p="overview" id="p-overview"></div>
+    <div class="panel" data-p="diagram" id="p-diagram"></div>
+    <div class="panel" data-p="model" id="p-model"></div>
+    <div class="panel" data-p="dict" id="p-dict"></div>
+    <div class="panel" data-p="schema" id="p-schema"></div>
+    <div class="panel" data-p="fcoim" id="p-fcoim"></div>
+    <div class="panel" data-p="delta" id="p-delta"></div>
+  </main>
+</div>
+<script>
+const DATA = /*__DATA__*/null;
+function __run__(DATA){
+const $ = (s,r=document)=>r.querySelector(s);
+const el = (t,a={},...kids)=>{const e=document.createElement(t);for(const k in a){if(k==="class")e.className=a[k];else if(k==="html")e.innerHTML=a[k];else e.setAttribute(k,a[k]);}for(const kd of kids){if(kd!=null)e.append(kd.nodeType?kd:document.createTextNode(kd));}return e;};
+const esc = s => String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+function boot(){
+  if(!DATA){ document.body.innerHTML="<div class='wrap'><p class='empty'>No data was embedded in this viewer.</p></div>"; return; }
+  $("#title").textContent = DATA.title || "Data Model Viewer";
+  document.title = (DATA.title||"Data Model")+" · viewer";
+  $("#files").textContent = "from " + (DATA.inputs||[]).join("  ·  ");
+  const s = DATA.summary||{};
+  const tiles = [["entities",s.entities],["relationships",s.relationships],["fields",s.fields],
+    ...(DATA.fcoim?[["object types",s.object_types],["fact types",s.fact_types],["GLR tables",s.relational_tables]]:[])];
+  $("#tiles").append(...tiles.map(([l,n])=>el("div",{class:"t"},el("div",{class:"n"},String(n??0)),el("div",{class:"l"},l))));
+
+  const tabs=[["overview","Overview"]];
+  if(DATA.graphs) tabs.push(["diagram","Diagram"]);
+  tabs.push(["model","Data Model"],["dict","Dictionary"],["schema","JSON Schema"]);
+  if(DATA.fcoim) tabs.push(["fcoim","FCO-IM"]);
+  if(DATA.delta) tabs.push(["delta","Version Delta"]);
+  const nav=$("#nav");
+  tabs.forEach(([k,lab],i)=>{
+    const b=el("button",{role:"tab","aria-selected":i===0?"true":"false","data-t":k},lab);
+    b.onclick=()=>select(k); nav.append(b);
+  });
+  renderOverview(); renderModel(); renderDict(); renderSchema();
+  if(DATA.graphs) renderDiagram();
+  if(DATA.fcoim) renderFcoim();
+  if(DATA.delta) renderDelta();
+  select(tabs[0][0]);
+}
+function select(k){
+  document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected", b.dataset.t===k?"true":"false"));
+  document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("on", p.dataset.p===k));
+  window.scrollTo({top:0,behavior:"instant"});
+}
+
+function renderOverview(){
+  const p=$("#p-overview"), f=DATA.fcoim;
+  p.append(el("div",{class:"card"},
+    el("h3",{},"What this is"),
+    el("p",{class:"muted",html:`A merge-inferred view of <b>${esc(DATA.title)}</b> across ${DATA.inputs.length} input${DATA.inputs.length>1?"s":""}. Use the tabs for the JSON Schema, the DMBOK-style data model, the flat data dictionary${f?", and the FCO-IM fact model":""}${DATA.delta?", plus the version delta between your two files":""}.`})
+  ));
+  if(f){
+    const res=f.alias_resolutions||[], un=f.unresolved_roles||[];
+    if(un.length){
+      p.append(el("div",{class:"banner warn",html:`<b>⚠ ${un.length} foreign-key role${un.length>1?"s":""} could not be resolved to an entity.</b> They are modelled as standalone object types — see FCO-IM tab. ${esc(un.map(u=>u.token).join(", "))}`}));
+    }
+    if(res.length){
+      const box=el("div",{class:"card"});
+      box.append(el("h3",{},`Alias resolutions (${res.length})`),
+        el("p",{class:"muted"},"Foreign keys whose role name did not match an entity name, resolved automatically. Review these — if any is wrong, tell me and I'll pin an override."));
+      const t=el("table",{}); t.append(el("tr",{},el("th",{},"Association"),el("th",{},"FK field"),el("th",{},"Role token"),el("th",{},"Resolved to"),el("th",{},"How")));
+      res.forEach(r=>t.append(el("tr",{},el("td",{html:`<code>${esc(r.assoc)}</code>`}),el("td",{html:`<code>${esc(r.field)}</code>`}),el("td",{},r.token),el("td",{html:`<code>${esc(r.resolved_to)}</code>`}),el("td",{},r.how))));
+      box.append(el("div",{class:"scroll"},t)); p.append(box);
+    }
+    if(!un.length) p.append(el("div",{class:"banner ok",html:"✓ Every foreign-key role resolved to an entity."}));
+  }
+}
+
+function renderModel(){
+  const p=$("#p-model"), m=DATA.data_model;
+  p.append(el("h3",{style:"margin:0 0 10px"},`Entities (${m.entities.length})`));
+  m.entities.forEach(e=>{
+    const d=el("details",{});
+    d.append(el("summary",{},el("span",{},e.name),el("span",{class:"muted",style:"font-weight:400;font-size:.8rem"},`${e.attributes.length} attributes · ${e.row_count} rows${e.id_field?" · id "+e.id_field:""}`)));
+    const inner=el("div",{class:"inner"});
+    if(e.attributes.length){
+      const g=el("div",{class:"ent-attrs"});
+      g.append(el("div",{class:"h"},"attribute"),el("div",{class:"h"},"type"),el("div",{class:"h"},"required"));
+      e.attributes.forEach(a=>g.append(el("div",{},a.name),el("div",{html:`<code>${esc(a.type)}</code>`}),el("div",{},a.required?"yes":"no")));
+      inner.append(g);
+    } else inner.append(el("p",{class:"muted"},"No descriptive attributes."));
+    d.append(inner); p.append(d);
+  });
+  p.append(el("h3",{style:"margin:22px 0 10px"},`Relationships (${m.relationships.length})`));
+  const t=el("table",{}); t.append(el("tr",{},el("th",{},"Name"),el("th",{},"Connects"),el("th",{},"Cardinality"),el("th",{class:"n"},"Rows")));
+  m.relationships.forEach(r=>{
+    const ends=r.ends.map(e=>e.resolved?e.entity:`<span style="color:var(--warn)">${esc(e.entity)}?</span>`).join(" ↔ ");
+    t.append(el("tr",{},el("td",{html:`<code>${esc(r.name)}</code>`}),el("td",{html:ends}),el("td",{},r.cardinality),el("td",{class:"n"},String(r.row_count))));
+  });
+  p.append(el("div",{class:"scroll"},t));
+}
+
+function renderDict(){
+  const p=$("#p-dict"), rows=DATA.dictionary||[];
+  const bar=el("div",{class:"filters"});
+  const search=el("input",{type:"search",placeholder:"filter paths…"});
+  const cnt=el("span",{class:"count"});
+  bar.append(el("label",{},"Search",search),cnt);
+  const wrap=el("div",{class:"scroll"}); const tbl=el("table",{});
+  p.append(bar,wrap); wrap.append(tbl);
+  function draw(){
+    const q=search.value.toLowerCase();
+    const fr=rows.filter(r=>!q||r.path.toLowerCase().includes(q)||r.type.toLowerCase().includes(q));
+    tbl.innerHTML="";
+    tbl.append(el("tr",{},el("th",{},"Path"),el("th",{},"Type"),el("th",{},"Required"),el("th",{},"Occurs"),el("th",{},"Sample")));
+    fr.slice(0,2000).forEach(r=>tbl.append(el("tr",{},el("td",{html:`<code>${esc(r.path)}</code>`}),el("td",{html:`<code>${esc(r.type)}</code>`}),el("td",{},r.required),el("td",{},r.occurrences),el("td",{class:"muted"},r.sample))));
+    cnt.textContent=`${fr.length} of ${rows.length} fields`;
+  }
+  search.oninput=draw; draw();
+}
+
+function renderSchema(){
+  const p=$("#p-schema");
+  p.append(el("div",{class:"card"},el("p",{class:"muted"},"JSON Schema (2020-12), inferred by merging every input: a field is required only if it appears in all of them.")));
+  p.append(el("pre",{},JSON.stringify(DATA.schema,null,2)));
+}
+
+function renderFcoim(){
+  const p=$("#p-fcoim"), f=DATA.fcoim;
+  // object types + GLR as collapsibles
+  const ot=el("details",{}); ot.append(el("summary",{},`Object types (${f.object_types.length})`));
+  const otg=el("div",{class:"inner"});
+  const ott=el("table",{}); ott.append(el("tr",{},el("th",{},"Object type"),el("th",{},"Id field"),el("th",{class:"n"},"Instances")));
+  f.object_types.forEach(o=>ott.append(el("tr",{},el("td",{html:`<code>${esc(o.name)}</code>`}),el("td",{html:o.id_field?`<code>${esc(o.id_field)}</code>`:"<span class='muted'>—</span>"}),el("td",{class:"n"},String(o.row_count)))));
+  otg.append(el("div",{class:"scroll"},ott)); ot.append(otg); p.append(ot);
+
+  const gl=el("details",{}); gl.append(el("summary",{},`GLR relational tables (${f.relational_tables.length})`));
+  const glg=el("div",{class:"inner"});
+  f.relational_tables.forEach(tb=>{
+    const d=el("details",{}); d.append(el("summary",{},el("span",{},tb.name),el("span",{class:"pill "+(tb.kind==="entity"?"attr":tb.kind==="junction"?"nary":"assoc")},tb.kind),el("span",{class:"muted",style:"font-weight:400;font-size:.78rem"},`${tb.rows} rows`)));
+    const tt=el("table",{}); tt.append(el("tr",{},el("th",{},"Column"),el("th",{},"Type"),el("th",{},"Key")));
+    tb.columns.forEach(c=>tt.append(el("tr",{},el("td",{html:`<code>${esc(c.name)}</code>`}),el("td",{},c.type),el("td",{html:c.pk?(c.fk?`PK, FK→<code>${esc(c.fk)}</code>`:"PK"):(c.fk?`FK→<code>${esc(c.fk)}</code>`:"")}))));
+    d.append(el("div",{class:"inner"},el("div",{class:"scroll"},tt))); glg.append(d);
+  });
+  gl.append(glg); p.append(gl);
+
+  // --- fact types with filters (the D3 requirement) ---
+  p.append(el("h3",{style:"margin:18px 0 8px"},`Fact types (${f.fact_types.length})`));
+  p.append(el("div",{class:"legend"},
+    el("span",{},el("span",{class:"pill attr"},"attribute")," entity has value"),
+    el("span",{},el("span",{class:"pill assoc"},"association")," binary link"),
+    el("span",{},el("span",{class:"pill nary"},"n-ary")," 3+ roles")));
+  const bar=el("div",{class:"filters"});
+  const objs=["(all)",...new Set(f.fact_types.map(x=>x.object_type).filter(Boolean))];
+  const objSel=el("select",{}); objs.forEach(o=>objSel.append(el("option",{},o)));
+  const kinds={attribute:el("input",{type:"checkbox",checked:"checked"}),association:el("input",{type:"checkbox",checked:"checked"}),nary:el("input",{type:"checkbox",checked:"checked"})};
+  const search=el("input",{type:"search",placeholder:"search readings / names…"});
+  const limit=el("input",{type:"number",value:"40",min:"1",style:"width:64px"});
+  const pops=el("input",{type:"checkbox"});
+  const cnt=el("span",{class:"count"});
+  bar.append(
+    el("label",{},"Object type",objSel),
+    el("label",{},kinds.attribute," attr"),
+    el("label",{},kinds.association," assoc"),
+    el("label",{},kinds.nary," n-ary"),
+    el("label",{},"Search",search),
+    el("label",{},"Show",limit),
+    el("label",{},pops," populations"),
+    cnt);
+  const list=el("div",{});
+  p.append(bar,list);
+
+  function drawFacts(){
+    const q=search.value.toLowerCase(), ob=objSel.value, lim=Math.max(1,parseInt(limit.value)||40), showPop=pops.checked;
+    const kk={attribute:kinds.attribute.checked,association:kinds.association.checked,nary:kinds.nary.checked};
+    let fr=f.fact_types.filter(x=>kk[x.kind]
+      && (ob==="(all)"||x.object_type===ob)
+      && (!q || (x.reading||"").toLowerCase().includes(q) || (x.name||"").toLowerCase().includes(q)));
+    cnt.textContent=`${Math.min(fr.length,lim)} shown · ${fr.length} match · ${f.fact_types.length} total`;
+    list.innerHTML="";
+    if(!fr.length){ list.append(el("p",{class:"empty"},"No fact types match these filters.")); return; }
+    fr.slice(0,lim).forEach(x=>list.append(factBox(x,showPop)));
+    if(fr.length>lim) list.append(el("p",{class:"muted",style:"text-align:center;padding:10px"},`…and ${fr.length-lim} more. Raise “Show” or tighten the filters.`));
+  }
+  objSel.onchange=drawFacts; search.oninput=drawFacts; limit.oninput=drawFacts; pops.onchange=drawFacts;
+  Object.values(kinds).forEach(c=>c.onchange=drawFacts);
+  drawFacts();
+}
+
+function factBox(x,showPop){
+  const box=el("div",{class:"fact"});
+  const reading=esc(x.reading||x.name).replace(/&lt;([^&]*?)&gt;/g,'<span class="ph">&lt;$1&gt;</span>').replace(/\{([^}]*)\}/g,'<span class="ph">$1</span>');
+  box.append(el("div",{class:"head"},el("span",{class:"pill "+x.kind},x.kind==="nary"?"n-ary":x.kind),el("code",{},x.id),el("span",{class:"reading",html:reading})));
+  if(x.roles&&x.roles.length){
+    const r=el("div",{class:"roles"});
+    x.roles.forEach((rl,i)=>{
+      const unres = rl.resolved===false;
+      const name = rl.object_type || rl.label || "—";
+      r.append(el("div",{class:"role"+(unres?" unresolved":"")},el("span",{class:"sq"},"r"+(i+1)),el("span",{},esc(name)+(unres?" ?":""))));
+    });
+    box.append(r);
+  }
+  const pop=x.population||[], total=x.population_total||pop.length;
+  if(pop.length){
+    const det=el("details",{}); if(showPop) det.setAttribute("open","");
+    det.append(el("summary",{},`population — ${total} fact${total>1?"s":""}${total>pop.length?" (showing "+pop.length+")":""}`));
+    const keys=Object.keys(pop[0]);
+    const t=el("table",{}); t.append(el("tr",{},...keys.map(k=>el("th",{},k.replace(/^_verb$/,"(verb)")))));
+    pop.slice(0,50).forEach(row=>t.append(el("tr",{},...keys.map(k=>el("td",{},String(row[k]==null?"":row[k]))))));
+    det.append(el("div",{class:"popwrap"},el("div",{class:"scroll"},t)));
+    box.append(det);
+  }
+  return box;
+}
+
+function renderDelta(){
+  const p=$("#p-delta"), d=DATA.delta;
+  p.append(el("div",{class:"card"},el("h3",{},"Version delta"),
+    el("p",{class:"muted",html:`Comparing <code>${esc(DATA.inputs[0])}</code> → <code>${esc(DATA.inputs[DATA.inputs.length-1])}</code>.`})));
+  if(d.added_collections.length||d.removed_collections.length){
+    const b=el("div",{class:"card"});
+    if(d.added_collections.length) b.append(el("p",{},el("span",{class:"dchip add"},"+ collections")," ",d.added_collections.join(", ")));
+    if(d.removed_collections.length) b.append(el("p",{},el("span",{class:"dchip rem"},"− collections")," ",d.removed_collections.join(", ")));
+    p.append(b);
+  }
+  if(!d.collection_changes.length){ p.append(el("p",{class:"empty"},"No row-level changes between the versions.")); return; }
+  d.collection_changes.forEach(c=>{
+    const det=el("details",{});
+    det.append(el("summary",{},el("span",{},c.collection),
+      c.added?el("span",{class:"dchip add"},"+"+c.added):null,
+      c.removed?el("span",{class:"dchip rem"},"−"+c.removed):null,
+      c.modified?el("span",{class:"dchip mod"},"~"+c.modified):null));
+    const inner=el("div",{class:"inner"});
+    if(c.added_ids.length) inner.append(el("p",{html:`<span class="dchip add">added</span> <code>${c.added_ids.map(esc).join("</code> <code>")}</code>`}));
+    if(c.removed_ids.length) inner.append(el("p",{html:`<span class="dchip rem">removed</span> <code>${c.removed_ids.map(esc).join("</code> <code>")}</code>`}));
+    (c.modified_detail||[]).forEach(m=>{
+      const changes=Object.entries(m.changes).map(([fld,ch])=>`<code>${esc(fld)}</code>: ${esc(JSON.stringify(ch.from))} → ${esc(JSON.stringify(ch.to))}`).join("<br>");
+      inner.append(el("div",{style:"padding:6px 0;border-bottom:1px solid var(--line)",html:`<span class="dchip mod">~</span> <code>${esc(m.id)}</code><br><span class="muted" style="font-size:.82rem">${changes}</span>`}));
+    });
+    det.append(inner); p.append(det);
+  });
+}
+// ======================= DIAGRAM TAB =======================
+const NS="http://www.w3.org/2000/svg";
+const svgEl=(t,a={})=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+function renderDiagram(){
+  const p=$("#p-diagram"), g=DATA.graphs;
+  const modes=[["er","Entity–Relationship"]];
+  if(g.igd) modes.push(["igd","FCO-IM IGD"]);
+  if(g.trace) modes.push(["trace","Trace chain"]);
+  const sw=el("div",{class:"modeswitch"});
+  modes.forEach(([k,lab])=>{const b=el("button",{"aria-pressed":"false","data-m":k},lab);b.onclick=()=>show(k);sw.append(b);});
+  const ctrls=el("div",{class:"gctrls"});
+  const stage=el("div",{class:"stage"});
+  const legend=el("div",{class:"glegend"});
+  p.append(sw,ctrls,stage,legend);
+  let active=null;
+  function show(k){
+    sw.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===k?"true":"false"));
+    if(active&&active.destroy)active.destroy();
+    ctrls.innerHTML=""; legend.innerHTML=""; stage.innerHTML="";
+    if(k==="er")   active=diagramER(stage,ctrls,legend,g.er);
+    if(k==="igd")  active=diagramIGD(stage,ctrls,legend,g.igd);
+    if(k==="trace")active=diagramTrace(stage,ctrls,legend,g.trace);
+    p._mode=k;
+  }
+  // render when the tab becomes visible (so the stage has a measured size)
+  const obs=new MutationObserver(()=>{ if(p.classList.contains("on") && !p._mode) show(modes[0][0]); });
+  obs.observe(p,{attributes:true,attributeFilter:["class"]});
+  if(p.classList.contains("on")) show(modes[0][0]);
+}
+
+// ---- shared force-directed canvas ----
+function forceCanvas(stage, getNodes, getEdges, styleFn, labelFn, detailFn, onFocus){
+  const svg=svgEl("svg");
+  const view=svgEl("g"); svg.append(view);
+  const eLayer=svgEl("g"), nLayer=svgEl("g"); view.append(eLayer,nLayer);
+  stage.append(svg);
+  const tip=el("div",{class:"gtip"}); tip.hidden=true; stage.append(tip);
+  let W=stage.clientWidth||800, H=stage.clientHeight||620;
+  let tx=W/2, ty=H/2, k=0.9, focusId=null;
+  function apply(){ view.setAttribute("transform",`translate(${tx},${ty}) scale(${k})`); }
+  apply();
+  let nodes=[], edges=[], nmap={}, nodeEls={}, edgeEls=[], raf=null, alpha=1;
+  function build(){
+    let rawN=getNodes(), rawE=getEdges();
+    const rmap={}; rawN.forEach(n=>rmap[n.id]=n);
+    rawE=rawE.filter(e=>rmap[e.source]&&rmap[e.target]);
+    if(focusId && rmap[focusId]){                 // focus = selected node + its neighbours
+      const keep=new Set([focusId]);
+      rawE.forEach(e=>{ if(e.source===focusId)keep.add(e.target); if(e.target===focusId)keep.add(e.source); });
+      rawN=rawN.filter(n=>keep.has(n.id));
+      rawE=rawE.filter(e=>keep.has(e.source)&&keep.has(e.target));
+    }
+    nodes=rawN; edges=rawE;
+    nmap={}; nodes.forEach((n,i)=>{ if(n.x==null){const a=i/nodes.length*Math.PI*2,r=Math.min(W,H)*0.38; n.x=Math.cos(a)*r+(Math.random()*40-20); n.y=Math.sin(a)*r+(Math.random()*40-20);} n.vx=0;n.vy=0; nmap[n.id]=n; });
+    eLayer.innerHTML=""; nLayer.innerHTML=""; edgeEls=[]; nodeEls={};
+    edges.forEach(e=>{ const ln=svgEl("line",{class:"gedge "+(e.kind||"")}); eLayer.append(ln); edgeEls.push([ln,e]); });
+    nodes.forEach(n=>{
+      const st=styleFn(n);
+      const gg=svgEl("g",{class:"gnode "+st.cls+(n.id===focusId?" sel":"")});
+      let shape;
+      if(st.shape==="ellipse") shape=svgEl("ellipse",{class:"gshape",rx:st.w/2,ry:st.h/2});
+      else if(st.shape==="diamond"){shape=svgEl("rect",{class:"gshape",x:-st.w/2,y:-st.h/2,width:st.w,height:st.h,rx:3,transform:"rotate(45)"});}
+      else shape=svgEl("rect",{class:"gshape",x:-st.w/2,y:-st.h/2,width:st.w,height:st.h,rx:st.r||5});
+      const tx2=svgEl("text",{"text-anchor":"middle","dy":st.shape==="diamond"?-st.h/2-4:4}); tx2.textContent=labelFn(n);
+      gg.append(shape,tx2); n._w=st.w; n._h=st.h; nLayer.append(gg); nodeEls[n.id]=gg;
+      drag(gg,n); hover(gg,n);
+    });
+    alpha=1; tick();
+  }
+  function setFocus(id){ focusId=(focusId===id)?null:id; nodes.forEach(n=>n.x=null); build(); onFocus&&onFocus(focusId); setTimeout(fit,420); }
+  function hover(gg,n){
+    gg.addEventListener("mouseenter",e=>{ if(!detailFn)return; tip.innerHTML=detailFn(n); tip.hidden=false; posTip(e); });
+    gg.addEventListener("mousemove",posTip);
+    gg.addEventListener("mouseleave",()=>{ tip.hidden=true; });
+  }
+  function posTip(e){
+    const r=stage.getBoundingClientRect(); let x=e.clientX-r.left+14, y=e.clientY-r.top+14;
+    const tw=tip.offsetWidth||260, th=tip.offsetHeight||120;
+    if(x+tw>r.width) x=e.clientX-r.left-tw-14; if(y+th>r.height) y=Math.max(6,r.height-th-6);
+    tip.style.left=x+"px"; tip.style.top=y+"px";
+  }
+  function tick(){
+    const rep=4200, spring=0.02, len=70, grav=0.015, damp=0.9;
+    for(let i=0;i<nodes.length;i++){const a=nodes[i];
+      for(let j=i+1;j<nodes.length;j++){const b=nodes[j];
+        let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy+0.01,d=Math.sqrt(d2);
+        const f=rep/d2; const fx=dx/d*f,fy=dy/d*f;
+        a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;}
+      a.vx-=a.x*grav; a.vy-=a.y*grav;
+    }
+    edges.forEach(e=>{const a=nmap[e.source],b=nmap[e.target];let dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||1;const f=(d-len)*spring;const fx=dx/d*f,fy=dy/d*f;a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;});
+    nodes.forEach(n=>{ if(n.fixed){return;} n.vx*=damp;n.vy*=damp; n.x+=Math.max(-30,Math.min(30,n.vx*alpha)); n.y+=Math.max(-30,Math.min(30,n.vy*alpha)); });
+    edgeEls.forEach(([ln,e])=>{const a=nmap[e.source],b=nmap[e.target];ln.setAttribute("x1",a.x);ln.setAttribute("y1",a.y);ln.setAttribute("x2",b.x);ln.setAttribute("y2",b.y);});
+    nodes.forEach(n=>nodeEls[n.id]&&nodeEls[n.id].setAttribute("transform",`translate(${n.x},${n.y})`));
+    alpha*=0.985;
+    if(alpha>0.03) raf=requestAnimationFrame(tick); else raf=null;
+  }
+  function reheat(){alpha=0.6; if(!raf)raf=requestAnimationFrame(tick);}
+  // pan/zoom  (background click clears focus)
+  let panning=false,px,py,panMoved=false;
+  svg.addEventListener("pointerdown",e=>{if(e.target.closest(".gnode"))return;panning=true;panMoved=false;px=e.clientX;py=e.clientY;svg.classList.add("grabbing");svg.setPointerCapture(e.pointerId);});
+  svg.addEventListener("pointermove",e=>{if(!panning)return;if(Math.abs(e.clientX-px)+Math.abs(e.clientY-py)>3)panMoved=true;tx+=e.clientX-px;ty+=e.clientY-py;px=e.clientX;py=e.clientY;apply();});
+  svg.addEventListener("pointerup",e=>{const wasBg=panning;panning=false;svg.classList.remove("grabbing");if(wasBg&&!panMoved&&focusId)setFocus(null);});
+  svg.addEventListener("wheel",e=>{e.preventDefault();const r=svg.getBoundingClientRect();const mx=e.clientX-r.left,my=e.clientY-r.top;const f=e.deltaY<0?1.12:0.89;const nk=Math.max(0.15,Math.min(4,k*f));tx=mx-(mx-tx)*(nk/k);ty=my-(my-ty)*(nk/k);k=nk;apply();},{passive:false});
+  function drag(gg,n){
+    gg.addEventListener("pointerdown",e=>{e.stopPropagation();const sx=e.clientX,sy=e.clientY;let moved=false;n.fixed=true;gg.classList.add("pinned");gg.setPointerCapture(e.pointerId);
+      const move=ev=>{if(Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>4)moved=true;const r=svg.getBoundingClientRect();n.x=(ev.clientX-r.left-tx)/k;n.y=(ev.clientY-r.top-ty)/k;reheat();};
+      const up=ev=>{ev.stopPropagation();gg.removeEventListener("pointermove",move);gg.removeEventListener("pointerup",up);if(!moved){tip.hidden=true;setFocus(n.id);}};
+      gg.addEventListener("pointermove",move);gg.addEventListener("pointerup",up);});
+  }
+  function fit(){const xs=nodes.map(n=>n.x),ys=nodes.map(n=>n.y);if(!xs.length)return;const minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);const gw=maxx-minx||1,gh=maxy-miny||1;k=Math.min(3,0.86*Math.min(W/gw,H/gh));tx=W/2-((minx+maxx)/2)*k;ty=H/2-((miny+maxy)/2)*k;apply();}
+  build();
+  return {rebuild:()=>{nodes.forEach(n=>{n.x=null;});build();}, refit:()=>setTimeout(fit,400), reheat,
+          setFocus, clearFocus:()=>{if(focusId)setFocus(focusId);}, getFocus:()=>focusId,
+          destroy:()=>{if(raf)cancelAnimationFrame(raf);stage.innerHTML="";}};
+}
+
+let DMENT={}, DMREL={};
+function attrTable(e){
+  if(!e||!e.attributes||!e.attributes.length) return "<div class='sub'>no descriptive attributes</div>";
+  const rows=e.attributes.slice(0,12).map(a=>`<tr><td class="k">${esc(a.name)}</td><td class="ty">${esc(a.type)}</td><td class="rq">${a.required?'req':(a.fill||'')}</td><td class="sm">${esc(a.sample||'')}</td></tr>`).join("");
+  const more=e.attributes.length>12?`<div class="more">+${e.attributes.length-12} more</div>`:"";
+  return `<table>${rows}</table>${more}`;
+}
+function erDetail(n){
+  if(n.kind==="entity"){const e=DMENT[n.name]||DMENT[n.label];return `<h5>${esc(n.label)}</h5><div class="sub">entity · ${e?e.row_count:'?'} rows · ${e?e.attributes.length:0} attributes</div>${attrTable(e)}`;}
+  if(n.kind==="nary"){const r=DMREL[n.label];const ends=r?r.ends.map(x=>esc(x.entity)).join(" · "):"";return `<h5>${esc(n.label)}</h5><div class="sub">n-ary association · ${r?r.row_count:'?'} rows · ${r?r.cardinality:''}</div><div class="reading">${ends}</div>`;}
+  return `<h5>${esc(n.label)}</h5><div class="sub">${n.kind}</div>`;
+}
+function igdDetail(n){
+  if(n.type==="object"){const e=DMENT[n.label];return `<h5>${esc(n.label)}</h5><div class="sub">object type · ${e?e.row_count:'?'} instances · ${e?e.attributes.length:0} attributes</div>${attrTable(e)}`;}
+  const reading=esc(n.reading||n.label).replace(/&lt;([^&]*?)&gt;/g,'<span class="ph">&lt;$1&gt;</span>').replace(/\{([^}]*)\}/g,'<span class="ph">$1</span>');
+  return `<h5>${esc(n.id)} · ${n.kind} fact</h5><div class="reading">${reading}</div><div class="sub">${n.pop} fact${n.pop==1?'':'s'} in population</div>`;
+}
+function labelOfNode(list,id){const n=list.find(x=>x.id===id);return n?(n.label||id):id;}
+
+function diagramER(stage,ctrls,legend,er){
+  DMENT={};(DATA.data_model.entities||[]).forEach(e=>DMENT[e.name]=e);
+  DMREL={};(DATA.data_model.relationships||[]).forEach(r=>DMREL[r.name]=r);
+  const search=el("input",{type:"search",placeholder:"highlight entity…"});
+  const hideN=el("input",{type:"checkbox"});
+  const relayout=el("button",{class:"mini"},"Re-layout"); const fit=el("button",{class:"mini"},"Fit");
+  const chip=el("span",{class:"focuschip"}); chip.hidden=true;
+  const cnt=el("span",{class:"count"});
+  ctrls.append(el("label",{},"Find",search),el("label",{},hideN," hide n-ary hubs"),relayout,fit,chip,cnt);
+  legend.append(leg("attr","square","Entity"),leg("nary","diamond","N-ary association"),leg("warn","square","Unresolved"));
+  stage.append(el("div",{class:"hint"},"click a node = focus · hover = details · scroll = zoom · drag = pan"));
+  let api;
+  function onFocus(fid){ if(fid){chip.hidden=false;chip.innerHTML=`focused: <b>${esc(labelOfNode(er.nodes,fid))}</b> <span class="x">✕ clear</span>`;chip.onclick=()=>api.setFocus(fid);cnt.textContent=`${stage.querySelectorAll(".gnode").length} nodes (focused) · click background to clear`;} else {chip.hidden=true;cnt.textContent=`${er.nodes.length} nodes · ${er.edges.length} edges`;} }
+  api=forceCanvas(stage,
+    ()=>er.nodes.filter(n=>!(hideN.checked&&n.kind==="nary")),
+    ()=>er.edges.filter(e=>!(hideN.checked&&(er.nodes.find(n=>n.id===e.source)?.kind==="nary"||er.nodes.find(n=>n.id===e.target)?.kind==="nary"))),
+    n=>({cls:n.kind==="nary"?"n-nary":n.kind==="unresolved"?"n-unres":"n-entity",
+         shape:n.kind==="nary"?"diamond":"rect", w:Math.max(58,(n.label||"").length*6.3+14), h:24, r:6}),
+    n=>n.label, erDetail, onFocus);
+  cnt.textContent=`${er.nodes.length} nodes · ${er.edges.length} edges`;
+  hideN.onchange=()=>api.rebuild();
+  relayout.onclick=()=>api.rebuild(); fit.onclick=()=>api.refit();
+  search.oninput=()=>{const q=search.value.toLowerCase();stage.querySelectorAll(".gnode").forEach(g=>{const t=g.querySelector("text").textContent.toLowerCase();g.classList.toggle("faded",q&&!t.includes(q));});};
+  api.refit();
+  return api;
+}
+
+function diagramIGD(stage,ctrls,legend,igd){
+  DMENT={};(DATA.data_model.entities||[]).forEach(e=>DMENT[e.name]=e);
+  const objs=["(all)",...igd.nodes.filter(n=>n.type==="object").map(n=>n.label).sort()];
+  const objSel=el("select",{}); objs.forEach(o=>objSel.append(el("option",{},o)));
+  const kinds={attribute:el("input",{type:"checkbox",checked:"checked"}),association:el("input",{type:"checkbox",checked:"checked"}),nary:el("input",{type:"checkbox",checked:"checked"})};
+  const relayout=el("button",{class:"mini"},"Re-layout"); const fit=el("button",{class:"mini"},"Fit");
+  const chip=el("span",{class:"focuschip"}); chip.hidden=true;
+  const cnt=el("span",{class:"count"});
+  ctrls.append(el("label",{},"Object type",objSel),el("label",{},kinds.attribute," attr"),el("label",{},kinds.association," assoc"),el("label",{},kinds.nary," n-ary"),relayout,fit,chip,cnt);
+  legend.append(leg("accent","round","Object type"),leg("attr","square","attribute fact"),leg("assoc","square","association fact"),leg("nary","square","n-ary fact"));
+  stage.append(el("div",{class:"hint"},"click a node = focus · hover = details · scroll = zoom · drag = pan"));
+  function visNodes(){
+    const ob=objSel.value, kk={attribute:kinds.attribute.checked,association:kinds.association.checked,nary:kinds.nary.checked};
+    const facts=igd.nodes.filter(n=>n.type==="fact"&&kk[n.kind]);
+    const factSet=new Set();
+    const keepObj=new Set();
+    facts.forEach(f=>{
+      const touches = ob==="(all)" || connectsToObj(f,ob,igd);
+      if(touches){factSet.add(f.id); edgesOf(f,igd).forEach(e=>keepObj.add(e.target));}
+    });
+    const objNodes=igd.nodes.filter(n=>n.type==="object"&&(ob==="(all)"?true:("O:"+ob===n.id)||keepObj.has(n.id)));
+    const factNodes=igd.nodes.filter(n=>factSet.has(n.id));
+    return objNodes.concat(factNodes);
+  }
+  function visEdges(){const ids=new Set(visNodes().map(n=>n.id));return igd.edges.filter(e=>ids.has(e.source)&&ids.has(e.target));}
+  let api;
+  function onFocus(fid){ if(fid){chip.hidden=false;chip.innerHTML=`focused: <b>${esc(labelOfNode(igd.nodes,fid))}</b> <span class="x">✕ clear</span>`;chip.onclick=()=>api.setFocus(fid);} else chip.hidden=true; upd(); }
+  api=forceCanvas(stage, visNodes, visEdges,
+    n=>n.type==="object"
+      ?({cls:"n-object",shape:"ellipse",w:Math.max(56,(n.label||"").length*6.4+16),h:26})
+      :({cls:"n-fact-"+n.kind,shape:"rect",w:Math.max(26,(n.label||"").length*5.4+10),h:18,r:4}),
+    n=>n.type==="object"?n.label:(n.label.length>22?n.label.slice(0,20)+"…":n.label),
+    igdDetail, onFocus);
+  function upd(){const vn=visNodes();cnt.textContent=`${vn.filter(n=>n.type==="object").length} objects · ${vn.filter(n=>n.type==="fact").length} facts shown`;}
+  objSel.onchange=()=>{api.rebuild();upd();api.refit();};
+  Object.values(kinds).forEach(c=>c.onchange=()=>{api.rebuild();upd();});
+  relayout.onclick=()=>api.rebuild(); fit.onclick=()=>api.refit();
+  upd(); api.refit();
+  return api;
+}
+function edgesOf(f,igd){return igd.edges.filter(e=>e.source===f.id);}
+function connectsToObj(f,objLabel,igd){return edgesOf(f,igd).some(e=>e.target==="O:"+objLabel);}
+
+function diagramTrace(stage,ctrls,legend,trace){
+  const sel=el("select",{}); sel.append(el("option",{value:"-1"},"(role types only)"));
+  trace.instances.forEach((row,i)=>{const id=row.TraceID||row[Object.keys(row)[0]]||("trace "+(i+1));sel.append(el("option",{value:String(i)},String(id)));});
+  const cnt=el("span",{class:"count"});
+  ctrls.append(el("label",{},"Show instance",sel),cnt);
+  legend.append(leg("accent","round","object type in the chain"),leg("warn","square","unresolved role"));
+  const svg=svgEl("svg"); const view=svgEl("g"); svg.append(view); stage.append(svg);
+  const seq=trace.sequence;
+  cnt.textContent=`${seq.length} roles · ${trace.instances.length} trace rows`;
+  function draw(){
+    view.innerHTML="";
+    const inst = sel.value!=="-1" ? trace.instances[+sel.value] : null;
+    const W=stage.clientWidth||800, H=stage.clientHeight||620;
+    const colW=190, rowsPer=Math.max(1,Math.floor((H-40)/90));
+    seq.forEach((r,i)=>{
+      const col=Math.floor(i/rowsPer), rr=i%rowsPer;
+      const x=30+col*colW, y=40+rr*90;
+      // node
+      const g=svgEl("g",{transform:`translate(${x},${y})`});
+      const w=Math.max(120,(r.object_type||"").length*7+24);
+      const rect=svgEl("ellipse",{class:"gshape",cx:w/2,cy:0,rx:w/2,ry:20});
+      rect.setAttribute("fill",r.resolved?"var(--accent-soft)":"var(--warn-soft)");
+      rect.setAttribute("stroke",r.resolved?"var(--accent)":"var(--warn)");
+      if(!r.resolved)rect.setAttribute("stroke-dasharray","4 3");
+      const t=svgEl("text",{x:w/2,y:4,"text-anchor":"middle"});t.setAttribute("font-size","12");t.setAttribute("fill","var(--fg)");t.textContent=r.object_type+(r.resolved?"":" ?");
+      const rl=svgEl("text",{x:w/2,y:-28,"text-anchor":"middle"});rl.setAttribute("font-size","9");rl.setAttribute("fill","var(--fg-faint)");rl.setAttribute("font-family","var(--mono)");rl.textContent=r.field;
+      g.append(rect,t,rl);
+      if(inst){const v=inst[r.field];const vt=svgEl("text",{x:w/2,y:38,"text-anchor":"middle"});vt.setAttribute("font-size","11");vt.setAttribute("fill","var(--accent)");vt.setAttribute("font-family","var(--mono)");vt.textContent=v==null?"—":String(v);g.append(vt);}
+      view.append(g);
+      // connector to next
+      if(i<seq.length-1){
+        const nCol=Math.floor((i+1)/rowsPer),nRr=(i+1)%rowsPer;
+        const nx=30+nCol*colW, ny=40+nRr*90;
+        const x1=x+w, y1=y, x2=nx, y2=ny;
+        let d;
+        if(nCol===col) d=`M ${x1} ${y1} C ${x1+30} ${y1}, ${x2-30} ${y2}, ${x2} ${y2}`;
+        else d=`M ${x+w/2} ${y+20} C ${x+w/2} ${y+70}, ${nx+ (Math.max(120,(seq[i+1].object_type||'').length*7+24))/2} ${ny-70}, ${nx+(Math.max(120,(seq[i+1].object_type||'').length*7+24))/2} ${ny-20}`;
+        const path=svgEl("path",{d,fill:"none",stroke:"var(--assoc)","stroke-width":"1.6","marker-end":""});
+        view.insertBefore(path,view.firstChild);
+      }
+    });
+  }
+  sel.onchange=draw; draw();
+  const ro=new ResizeObserver(draw); ro.observe(stage);
+  return {destroy:()=>{ro.disconnect();stage.innerHTML="";}};
+}
+function leg(tok,shape,label){
+  const sw=el("span",{class:"swatch"+(shape==="round"?" round":"")});
+  const map={attr:"--attr",assoc:"--assoc",nary:"--nary",warn:"--warn",accent:"--accent"};
+  sw.style.background=`var(${map[tok]}-soft, var(${map[tok]}))`; sw.style.borderColor=`var(${map[tok]})`;
+  if(shape==="diamond")sw.style.transform="rotate(45deg)";
+  return el("span",{},sw,label);
+}
+
+boot();
+} /* __run__ */
+(function(){var vm=document.querySelector('meta[name="version"]'),um=document.querySelector('meta[name="updated"]'),vb=document.getElementById('ver');if(vb)vb.textContent=(vm?'v'+vm.content:'')+(um?((vm?'  ·  ':'')+'built '+um.content):'');})();
+(function(){function ld(s){if(s.indexOf('gh:')===0){var r=s.slice(3),ref='main',at=r.lastIndexOf('@');if(at>0){ref=r.slice(at+1);r=r.slice(0,at);}var a=r.split('/'),ow=a.shift(),rp=a.shift(),pa=a.join('/'),tk='';try{tk=localStorage.getItem((new URLSearchParams(location.search).get('tokenKey'))||'mdaReadiness.ghpat')||'';}catch(e){}var h={'Accept':'application/vnd.github.raw','X-GitHub-Api-Version':'2022-11-28'};if(tk)h['Authorization']='Bearer '+tk;return fetch('https://api.github.com/repos/'+ow+'/'+rp+'/contents/'+pa+'?ref='+encodeURIComponent(ref),{headers:h,cache:'no-store'});}return fetch(s,{cache:'no-store'});}var p=new URLSearchParams(location.search),src=p.get('data')||((document.querySelector('meta[name="data-src"]')||{}).content||'');if(src){ld(src).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.json();}).then(function(j){__run__(j);}).catch(function(e){__run__(DATA);var b=document.getElementById('ver');if(b)b.textContent+='  ·  embedded ('+String((e&&e.message)||e)+')';});}else{__run__(DATA);}})();
+</script>
+</body>
+</html>

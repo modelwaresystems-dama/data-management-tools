@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="version" content="1.0.0">
+<meta name="updated" content="2026-10-27 11:50 SAST">
+<title>Provenance Viewer</title>
+<style>
+  :root{
+    --bg:#f6f4ef;--surface:#fffdf9;--surface-2:#efece4;--line:#ddd7cb;
+    --fg:#211f1b;--fg-soft:#5a564d;--fg-faint:#8a847a;
+    --accent:#1f6f6b;--accent-soft:#dff0ec;
+    --ent:#1f6f6b;--ent-soft:#dff0ec;--act:#9a4f1b;--act-soft:#f0e0d1;--agent:#4a5a7a;--agent-soft:#dde2ec;
+    --warn:#9a3030;--warn-soft:#f3dada;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+    --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--disp:"Fraunces",Georgia,serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#16151a;--surface:#1f1e24;--surface-2:#27262d;--line:#36343d;
+    --fg:#eceaf2;--fg-soft:#b4b0bd;--fg-faint:#827e8c;
+    --accent:#58b8b0;--accent-soft:#15302e;
+    --ent:#58b8b0;--ent-soft:#15302e;--act:#d79156;--act-soft:#3a2a1b;--agent:#9fb2d8;--agent-soft:#20273a;
+    --warn:#e88;--warn-soft:#3a1f1f;color-scheme:dark;
+  }}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.5;font-size:15px}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 18px}
+  h1,h2,h3{font-family:var(--disp);font-weight:560;line-height:1.15;margin:0}
+  code,.id{font-family:var(--mono);font-size:.84em;background:var(--surface-2);padding:.08em .4em;border-radius:4px}
+  a{color:var(--accent)}
+  header{padding:28px 0 16px;border-bottom:1px solid var(--line)}
+  header .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  header h1{font-size:clamp(1.5rem,4vw,2.1rem)}
+  header .files{font-family:var(--mono);font-size:.78rem;color:var(--fg-faint);margin-top:6px}
+  header .ver{font-family:var(--mono);font-size:.72rem;color:var(--fg-faint);margin-top:4px}
+  .tiles{display:flex;flex-wrap:wrap;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:18px 0}
+  .tiles .t{background:var(--surface);padding:11px 16px;flex:1;min-width:92px}
+  .tiles .t .n{font-family:var(--disp);font-size:1.5rem;font-variant-numeric:tabular-nums;line-height:1}
+  .tiles .t .l{font-size:.72rem;color:var(--fg-soft);margin-top:2px}
+  nav{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;gap:4px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
+  nav button{font:inherit;font-size:.86rem;background:transparent;border:1px solid transparent;color:var(--fg-soft);padding:7px 13px;border-radius:8px;cursor:pointer}
+  nav button:hover{background:var(--surface-2)}
+  nav button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,transparent);font-weight:600}
+  main{padding:22px 0 80px}
+  .panel{display:none}.panel.on{display:block}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:0 0 14px}
+  .card h3{font-size:1.05rem}
+  .muted{color:var(--fg-soft)}.small{font-size:.84rem}
+  table{border-collapse:collapse;width:100%;font-size:.86rem}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--fg-faint);font-weight:600}
+  td.n,th.n{font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+  pre{font-family:var(--mono);font-size:.8rem;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;max-height:70vh}
+  .banner{border-radius:10px;padding:12px 15px;margin:0 0 14px;font-size:.88rem;background:var(--warn-soft);color:var(--warn)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px}
+  .pill.entity{background:var(--ent-soft);color:var(--ent)}.pill.activity{background:var(--act-soft);color:var(--act)}.pill.agent{background:var(--agent-soft);color:var(--agent)}
+  .rel{font-family:var(--mono);font-size:.72rem;color:var(--fg-faint)}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+  .toolbar input[type=search],.toolbar select{font:inherit;font-size:.84rem;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:6px 9px}
+  .toolbar input[type=search]{min-width:200px}
+  .toolbar .sp{margin-left:auto;font-family:var(--mono);font-size:.76rem;color:var(--fg-faint)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.76rem;color:var(--fg-soft);margin:0 0 10px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend .sw{width:14px;height:14px;border-radius:4px;border:1px solid var(--line)}
+  a.nlink{color:var(--accent);text-decoration:none;font-weight:600;border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,transparent);cursor:pointer}
+  a.nlink:hover{border-bottom-color:var(--accent)}
+  .xlink{font-family:var(--mono);font-size:.72rem;color:var(--accent);text-decoration:none;border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;padding:1px 8px;margin-left:6px}
+  .xlink:hover{background:var(--accent-soft)}
+  .tree{list-style:none;margin:0;padding:0}
+  .tree ul{list-style:none;margin:2px 0 2px 0;padding:0 0 0 18px;border-left:1px solid var(--line)}
+  .tree li{margin:4px 0}
+  .tree .node{display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .tl{position:relative;margin:0;padding:0 0 0 14px;list-style:none;border-left:2px solid var(--line)}
+  .tl li{position:relative;margin:0 0 12px;padding:0 0 0 14px}
+  .tl li::before{content:"";position:absolute;left:-7px;top:5px;width:9px;height:9px;border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+  .tl .time{font-family:var(--mono);font-size:.76rem;color:var(--fg-faint)}
+  .empty{color:var(--fg-faint);font-style:italic;padding:8px 0}
+  .flash{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="eyebrow" id="kind">provenance</div>
+  <h1 id="title">Provenance Viewer</h1>
+  <div class="files" id="files"></div>
+  <div class="ver" id="ver"></div>
+</div></header>
+<div class="wrap">
+  <div class="tiles" id="tiles"></div>
+  <nav id="nav"></nav>
+  <main id="main"></main>
+</div>
+<script>
+const DATA = /*__DATA__*/null;
+function __run__(DATA){
+const $=(s,r=document)=>r.querySelector(s);
+function el(t,a,...kids){const n=document.createElement(t);for(const k in (a||{})){if(k==="class")n.className=a[k];else if(k==="html")n.innerHTML=a[k];else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]);else if(a[k]!=null)n.setAttribute(k,a[k]);}for(const c of kids){if(c==null)continue;n.append(c.nodeType?c:document.createTextNode(c));}return n;}
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const D=DATA||{counts:{},entities:[],activities:[],agents:[],relations:[],timeline:[],warnings:[]};
+const E=D.entities||[],A=D.activities||[],G=D.agents||[],REL=D.relations||[];
+const byId={}; E.forEach(n=>byId[n.id]={...n,_k:"entity"}); A.forEach(n=>byId[n.id]={...n,_k:"activity"}); G.forEach(n=>byId[n.id]={...n,_k:"agent"});
+const LINKS=D.links||{};
+const slug=s=>String(s==null?"":s).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+const lab=id=>(byId[id]||{}).label||id;
+const kindOf=id=>(byId[id]||{})._k||"entity";
+
+$("#title").textContent=D.title||"Provenance Viewer";
+$("#kind").textContent="provenance · "+(D.sourceKind||"generic");
+$("#files").textContent=(D.inputs||[]).length?("from "+(D.inputs||[]).join("  ·  ")):"";
+const VER=((document.querySelector('meta[name="version"]')||{}).content)||"";
+const UPD=((document.querySelector('meta[name="updated"]')||{}).content)||"";
+$("#ver").textContent=(VER?("v"+VER):"")+(UPD?((VER?"  ·  ":"")+"built "+UPD):"");
+
+const C=D.counts||{};
+[["entities","Entities"],["activities","Activities"],["agents","Agents"],["relations","Relations"],["timeline","Timed events"]]
+ .filter(([k])=>(C[k]||0)>0||k==="entities").forEach(([k,l])=>$("#tiles").append(el("div",{class:"t"},el("div",{class:"n"},String(C[k]||0)),el("div",{class:"l"},l))));
+
+function extLink(id){const k=kindOf(id);const out=[];
+  if(LINKS.catalog&&k==="entity") out.push(el("a",{class:"xlink",href:LINKS.catalog+"#dataset="+slug(lab(id))},"catalog ↗"));
+  if(LINKS.lineage&&k==="entity") out.push(el("a",{class:"xlink",href:LINKS.lineage+"#node="+slug(lab(id))},"lineage ↗"));
+  return out;}
+function nodeLink(id,toTrace){const k=kindOf(id);
+  const a=el("a",{class:"nlink"},lab(id));
+  a.addEventListener("click",ev=>{ev.preventDefault();gotoTrace(id);});
+  return el("span",{},a," ",el("span",{class:"pill "+k},k));}
+
+const panels=[];
+function addPanel(id,label,build){panels.push({id,label,build});}
+
+// ---------- Record (overview)
+addPanel("record","Record",p=>{
+  if((D.warnings||[]).length) p.append(el("div",{class:"banner"},el("b",{},"Check: "),D.warnings.join("  ")));
+  p.append(el("div",{class:"legend"},
+    el("span",{},el("span",{class:"sw",style:"background:var(--ent-soft);border-color:var(--ent)"}),"entity"),
+    el("span",{},el("span",{class:"sw",style:"background:var(--act-soft);border-color:var(--act)"}),"activity"),
+    el("span",{},el("span",{class:"sw",style:"background:var(--agent-soft);border-color:var(--agent)"}),"agent"),
+    el("span",{class:"muted"},"click any name to see its full provenance")));
+  // responsibility summary: agents by things they are responsible for
+  const resp=G.slice().sort((a,b)=>(b.responsibleFor||0)-(a.responsibleFor||0)).filter(a=>a.responsibleFor);
+  if(resp.length){const c=el("div",{class:"card"},el("h3",{},"Who is responsible"));
+    const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Agent"),el("th",{},"Type"),el("th",{class:"n"},"Attributed / associated"))));
+    const b=el("tbody",{}); resp.slice(0,12).forEach(a=>b.append(el("tr",{},el("td",{},nodeLink(a.id)),el("td",{},a.type||""),el("td",{class:"n"},String(a.responsibleFor)))));
+    tb.append(b); c.append(tb); p.append(c);}
+  // entities needing origin
+  const noOrigin=E.filter(e=>!e.generatedBy&&!(e.derivedFrom||[]).length&&!(e.attributedTo||[]).length);
+  const c2=el("div",{class:"card"},el("h3",{},"Entities & their origin"));
+  const tb2=el("table",{},el("thead",{},el("tr",{},el("th",{},"Entity"),el("th",{},"Generated by"),el("th",{},"Derived from"),el("th",{},"Attributed to"),el("th",{},"Generated at"))));
+  const b2=el("tbody",{});
+  E.forEach(e=>b2.append(el("tr",{},
+     el("td",{},nodeLink(e.id)),
+     el("td",{},e.generatedBy?nodeLink(e.generatedBy):el("span",{class:"empty"},"—")),
+     el("td",{},(e.derivedFrom||[]).length?joinNodes(e.derivedFrom):el("span",{class:"empty"},"—")),
+     el("td",{},(e.attributedTo||[]).length?joinNodes(e.attributedTo):el("span",{class:"empty"},"—")),
+     el("td",{class:"small muted"},e.generatedAtTime||""))));
+  tb2.append(b2); c2.append(el("div",{class:"scroll"},tb2)); p.append(c2);
+  if(noOrigin.length) p.append(el("div",{class:"small muted"},noOrigin.length+" entity(ies) have no recorded origin."));
+});
+function joinNodes(ids){const s=el("span",{});ids.forEach((id,i)=>{if(i)s.append(", ");s.append(nodeLink(id));});return s;}
+
+// ---------- Entities
+addPanel("entities","Entities",p=>{
+  const search=el("input",{type:"search",placeholder:"find an entity…"});const info=el("div",{class:"sp"});
+  p.append(el("div",{class:"toolbar"},search,info));
+  const list=el("div",{});
+  function render(){const q=search.value.toLowerCase();
+    const fr=E.filter(e=>!q||(e.label+" "+e.id+" "+(e.type||"")).toLowerCase().includes(q));
+    list.innerHTML=""; const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Entity"),el("th",{},"Type"),el("th",{},"Generated by"),el("th",{},"Derived from"),el("th",{},"Generated at"),el("th",{},""))));
+    const b=el("tbody",{});
+    fr.forEach(e=>b.append(el("tr",{id:"ent-"+slug(e.label),class:"entrow"},
+      el("td",{},nodeLink(e.id)),el("td",{class:"small"},e.type||""),
+      el("td",{},e.generatedBy?nodeLink(e.generatedBy):el("span",{class:"empty"},"—")),
+      el("td",{},(e.derivedFrom||[]).length?joinNodes(e.derivedFrom):el("span",{class:"empty"},"—")),
+      el("td",{class:"small muted"},e.generatedAtTime||""),
+      el("td",{},...extLink(e.id)))));
+    tb.append(b); list.append(el("div",{class:"scroll"},tb));
+    if(!fr.length) list.append(el("div",{class:"empty"},"No entities match."));
+    info.textContent=fr.length+" of "+E.length+" entities";}
+  search.addEventListener("input",render); p.append(list); render();
+});
+
+// ---------- Activities
+addPanel("activities","Activities",p=>{
+  if(!A.length){p.append(el("div",{class:"empty"},"No activities recorded."));return;}
+  const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Activity"),el("th",{},"Started"),el("th",{},"Ended"),el("th",{},"Used"),el("th",{},"Associated with"))));
+  const b=el("tbody",{});
+  A.forEach(a=>b.append(el("tr",{},nodeCell(a.id),el("td",{class:"small muted"},a.startedAtTime||""),el("td",{class:"small muted"},a.endedAtTime||""),
+     el("td",{},(a.used||[]).length?joinNodes(a.used):el("span",{class:"empty"},"—")),
+     el("td",{},(a.associatedWith||[]).length?joinNodes(a.associatedWith):el("span",{class:"empty"},"—")))));
+  tb.append(b); p.append(el("div",{class:"scroll"},tb));
+});
+function nodeCell(id){return el("td",{},nodeLink(id));}
+
+// ---------- Agents
+addPanel("agents","Agents",p=>{
+  if(!G.length){p.append(el("div",{class:"empty"},"No agents recorded."));return;}
+  const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Agent"),el("th",{},"Type"),el("th",{},"On behalf of"),el("th",{class:"n"},"Responsible for"))));
+  const b=el("tbody",{});
+  G.forEach(a=>b.append(el("tr",{},nodeCell(a.id),el("td",{class:"small"},a.type||""),
+     el("td",{},(a.actedOnBehalfOf||[]).length?joinNodes(a.actedOnBehalfOf):el("span",{class:"empty"},"—")),
+     el("td",{class:"n"},String(a.responsibleFor||0)))));
+  tb.append(b); p.append(el("div",{class:"scroll"},tb));
+});
+
+// ---------- Timeline
+if((D.timeline||[]).length) addPanel("timeline","Timeline",p=>{
+  const ul=el("ul",{class:"tl"});
+  D.timeline.forEach(t=>ul.append(el("li",{},el("div",{class:"time"},t.time),el("div",{},el("span",{class:"pill "+t.kind},t.event)," ",nodeLink(t.node)))));
+  p.append(el("div",{class:"card"},ul));
+});
+
+// ---------- Trace (provenance of a selected entity)
+let traceSel=null;
+addPanel("trace","Trace",p=>{
+  const opts=[el("option",{value:""},"choose an entity…")].concat(E.map(e=>el("option",{value:e.id},e.label)));
+  const sel=el("select",{},...opts);
+  const out=el("div",{});
+  sel.addEventListener("change",()=>{renderTrace(sel.value,out);});
+  p.append(el("div",{class:"toolbar"},el("span",{class:"muted small"},"Provenance of:"),sel));
+  p.append(out);
+  p._apply=id=>{sel.value=id;renderTrace(id,out);};
+  if(traceSel){sel.value=traceSel;renderTrace(traceSel,out);}
+});
+function provTree(id,seen){
+  seen=seen||new Set(); const node=byId[id]; if(!node) return null;
+  const li=el("li",{});
+  const row=el("span",{class:"node"},el("span",{class:"pill "+kindOf(id)},kindOf(id)),el("b",{},lab(id)),...extLink(id));
+  const t=(node.generatedAtTime||node.startedAtTime); if(t) row.append(el("span",{class:"rel"}," · "+t));
+  li.append(row);
+  if(seen.has(id)){li.append(el("span",{class:"rel"}," (seen above)"));return li;}
+  seen.add(id);
+  const kids=el("ul",{});
+  if(node.generatedBy){const sub=wrapRel("generated by",node.generatedBy,seen);if(sub)kids.append(sub);}
+  (node.used||[]).forEach(u=>{const sub=wrapRel("used",u,seen);if(sub)kids.append(sub);});
+  (node.associatedWith||[]).forEach(u=>{const sub=wrapRel("associated with",u,seen);if(sub)kids.append(sub);});
+  (node.derivedFrom||[]).forEach(u=>{const sub=wrapRel("derived from",u,seen);if(sub)kids.append(sub);});
+  (node.attributedTo||[]).forEach(u=>{const sub=wrapRel("attributed to",u,seen);if(sub)kids.append(sub);});
+  (node.wasInformedBy||[]).forEach(u=>{const sub=wrapRel("informed by",u,seen);if(sub)kids.append(sub);});
+  (node.actedOnBehalfOf||[]).forEach(u=>{const sub=wrapRel("on behalf of",u,seen);if(sub)kids.append(sub);});
+  if(kids.childNodes.length) li.append(kids);
+  return li;
+}
+function wrapRel(relName,id,seen){const inner=provTree(id,seen);if(!inner)return null;
+  const li=el("li",{}); li.append(el("span",{class:"rel"},relName+" ")); while(inner.childNodes.length) li.append(inner.firstChild); return li;}
+function renderTrace(id,out){out.innerHTML="";traceSel=id;if(!id){out.append(el("div",{class:"empty"},"Pick an entity to trace its provenance."));return;}
+  const node=byId[id]; const card=el("div",{class:"card"});
+  card.append(el("h3",{},lab(id)));
+  const meta=[]; if(node.type)meta.push("type "+node.type); if(node.generatedAtTime)meta.push("generated "+node.generatedAtTime);
+  if(meta.length)card.append(el("div",{class:"small muted"},meta.join(" · ")));
+  const ul=el("ul",{class:"tree"}); const root=provTree(id,new Set()); if(root)ul.append(root); card.append(ul);
+  // attrs
+  const at=node.attrs||{}; const keys=Object.keys(at);
+  if(keys.length){const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Attribute"),el("th",{},"Value"))));const b=el("tbody",{});
+    keys.forEach(k=>b.append(el("tr",{},el("td",{class:"small"},k),el("td",{class:"small"},String(at[k])))));tb.append(b);
+    card.append(el("h3",{class:"small",style:"margin:12px 0 4px"},"Attributes"),tb);}
+  out.append(card);
+}
+function gotoTrace(id){const i=panels.findIndex(p=>p.id==="trace");if(i<0)return;select(i);const pn=panels[i];setTimeout(()=>pn._div._apply&&pn._div._apply(id),30);}
+
+// ---------- Relations (flat)
+addPanel("relations","Relations",p=>{
+  if(!REL.length){p.append(el("div",{class:"empty"},"No relations."));return;}
+  const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"From"),el("th",{},"Relation"),el("th",{},"To"),el("th",{},"Time"))));
+  const b=el("tbody",{});
+  REL.forEach(r=>b.append(el("tr",{},el("td",{},nodeLink(r.from)),el("td",{},el("code",{},r.kind)),el("td",{},nodeLink(r.to)),el("td",{class:"small muted"},r.time||""))));
+  tb.append(b); p.append(el("div",{class:"scroll"},tb));
+});
+
+// ---------- Raw
+addPanel("raw","Provenance JSON",p=>{p.append(el("pre",{},JSON.stringify(D,null,2)));});
+
+const nav=$("#nav"),main=$("#main");
+panels.forEach((pn,i)=>{const b=el("button",{role:"tab","aria-selected":i===0?"true":"false",onclick:()=>select(i)},pn.label);pn._btn=b;nav.append(b);const d=el("div",{class:"panel"+(i===0?" on":""),id:"panel-"+pn.id});pn._div=d;main.append(d);pn._built=false;});
+function select(i){panels.forEach((pn,j)=>{pn._btn.setAttribute("aria-selected",j===i?"true":"false");pn._div.classList.toggle("on",j===i);});const pn=panels[i];if(!pn._built){pn.build(pn._div);pn._built=true;}}
+select(0);
+// inbound deep-link: #entity=<slug> opens that entity's trace
+function fromHash(){const m=/(?:^|&)entity=([^&]+)/.exec((location.hash||"").replace(/^#/,""));if(!m)return;const sl=decodeURIComponent(m[1]);const hit=E.find(e=>slug(e.label)===sl)||byId[sl];if(hit)gotoTrace(hit.id);}
+window.addEventListener("hashchange",fromHash); fromHash();
+} /* __run__ */
+(function(){function ld(s){if(s.indexOf('gh:')===0){var r=s.slice(3),ref='main',at=r.lastIndexOf('@');if(at>0){ref=r.slice(at+1);r=r.slice(0,at);}var a=r.split('/'),ow=a.shift(),rp=a.shift(),pa=a.join('/'),tk='';try{tk=localStorage.getItem((new URLSearchParams(location.search).get('tokenKey'))||'mdaReadiness.ghpat')||'';}catch(e){}var h={'Accept':'application/vnd.github.raw','X-GitHub-Api-Version':'2022-11-28'};if(tk)h['Authorization']='Bearer '+tk;return fetch('https://api.github.com/repos/'+ow+'/'+rp+'/contents/'+pa+'?ref='+encodeURIComponent(ref),{headers:h,cache:'no-store'});}return fetch(s,{cache:'no-store'});}var p=new URLSearchParams(location.search),src=p.get('data')||((document.querySelector('meta[name="data-src"]')||{}).content||'');if(src){ld(src).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.json();}).then(function(j){__run__(j);}).catch(function(e){__run__(DATA);var b=document.getElementById('ver');if(b)b.textContent+='  ·  embedded ('+String((e&&e.message)||e)+')';});}else{__run__(DATA);}})();
+</script>
+</body>
+</html>

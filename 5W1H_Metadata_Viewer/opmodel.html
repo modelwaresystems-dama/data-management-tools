@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="version" content="1.0.0">
+<meta name="updated" content="2026-10-27 12:50 SAST">
+<title>Operating Model Viewer</title>
+<style>
+  :root{
+    --bg:#f6f4ef;--surface:#fffdf9;--surface-2:#efece4;--line:#ddd7cb;
+    --fg:#211f1b;--fg-soft:#5a564d;--fg-faint:#8a847a;--accent:#1f6f6b;--accent-soft:#dff0ec;
+    --A:#1f6f6b;--A-soft:#cfe8e4;--R:#1f6f4a;--R-soft:#dcefe2;--Cc:#9a6a1b;--C-soft:#f0e5cf;--I:#5a564d;--I-soft:#e7e3da;
+    --fn:#9a4f1b;--fn-soft:#f0e0d1;--body-c:#4a5a7a;--body-soft:#dde2ec;--warn:#9a6a1b;--warn-soft:#f0e5cf;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;--body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--disp:"Fraunces",Georgia,serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#16151a;--surface:#1f1e24;--surface-2:#27262d;--line:#36343d;--fg:#eceaf2;--fg-soft:#b4b0bd;--fg-faint:#827e8c;--accent:#58b8b0;--accent-soft:#15302e;
+    --A:#58b8b0;--A-soft:#1a3a37;--R:#5cc189;--R-soft:#17311f;--Cc:#d6a24e;--C-soft:#352b17;--I:#b4b0bd;--I-soft:#2b2a31;
+    --fn:#d79156;--fn-soft:#3a2a1b;--body-c:#9fb2d8;--body-soft:#20273a;--warn:#d6a24e;--warn-soft:#352b17;color-scheme:dark;
+  }}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.5;font-size:15px}
+  .wrap{max-width:1160px;margin:0 auto;padding:0 18px}
+  h1,h2,h3{font-family:var(--disp);font-weight:560;line-height:1.15;margin:0}
+  code{font-family:var(--mono);font-size:.84em;background:var(--surface-2);padding:.08em .4em;border-radius:4px}
+  a{color:var(--accent)}
+  header{padding:28px 0 16px;border-bottom:1px solid var(--line)}
+  header .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+  header h1{font-size:clamp(1.5rem,4vw,2.1rem)}
+  header .files{font-family:var(--mono);font-size:.78rem;color:var(--fg-faint);margin-top:6px}
+  header .ver{font-family:var(--mono);font-size:.72rem;color:var(--fg-faint);margin-top:4px}
+  .tiles{display:flex;flex-wrap:wrap;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:18px 0}
+  .tiles .t{background:var(--surface);padding:11px 16px;flex:1;min-width:92px}
+  .tiles .t .n{font-family:var(--disp);font-size:1.5rem;font-variant-numeric:tabular-nums;line-height:1}
+  .tiles .t .l{font-size:.72rem;color:var(--fg-soft);margin-top:2px}
+  nav{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;gap:4px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
+  nav button{font:inherit;font-size:.86rem;background:transparent;border:1px solid transparent;color:var(--fg-soft);padding:7px 13px;border-radius:8px;cursor:pointer}
+  nav button:hover{background:var(--surface-2)}
+  nav button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,transparent);font-weight:600}
+  main{padding:22px 0 80px}
+  .panel{display:none}.panel.on{display:block}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:0 0 14px}
+  .card h3{font-size:1.05rem}
+  .muted{color:var(--fg-soft)}.small{font-size:.84rem}
+  table{border-collapse:collapse;width:100%;font-size:.86rem}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--fg-faint);font-weight:600}
+  .scroll{overflow:auto;border:1px solid var(--line);border-radius:10px;max-height:72vh}
+  pre{font-family:var(--mono);font-size:.8rem;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;max-height:70vh}
+  .banner{border-radius:10px;padding:12px 15px;margin:0 0 14px;font-size:.88rem;background:var(--warn-soft);color:var(--warn)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:.62rem;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:999px}
+  .pill.fn{background:var(--fn-soft);color:var(--fn)}.pill.body{background:var(--body-soft);color:var(--body-c)}.pill.mat{background:var(--accent-soft);color:var(--accent)}
+  .bar{display:flex;align-items:center;gap:9px;margin:2px 0}
+  .bar .lab{min-width:170px;font-size:.82rem}
+  .bar .track{flex:1;height:10px;background:var(--surface-2);border-radius:6px;overflow:hidden}
+  .bar .fill{height:100%;background:var(--accent)}
+  .bar .v{font-family:var(--mono);font-size:.76rem;color:var(--fg-faint);min-width:28px;text-align:right}
+  /* RACI matrix */
+  .raci{border-collapse:separate;border-spacing:0;font-size:.84rem}
+  .raci th,.raci td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:8px 10px;white-space:nowrap}
+  .raci thead th{position:sticky;top:0;background:var(--surface-2);z-index:2;text-align:center;font-size:.7rem}
+  .raci tbody th{position:sticky;left:0;background:var(--surface);z-index:1;text-align:left;font-weight:600;max-width:260px;white-space:normal;font-size:.82rem;text-transform:none;letter-spacing:0;color:var(--fg)}
+  .raci td{text-align:center;font-family:var(--mono);font-weight:700;font-size:.78rem}
+  .raci thead th:first-child{left:0;z-index:3}
+  .cell-A{background:var(--A-soft);color:var(--A)}.cell-R{background:var(--R-soft);color:var(--R)}
+  .cell-C{background:var(--C-soft);color:var(--Cc)}.cell-I{background:var(--I-soft);color:var(--I)}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.78rem;color:var(--fg-soft);margin:0 0 10px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend b{font-family:var(--mono);padding:1px 6px;border-radius:5px}
+  .caps{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+  .cap{font-size:.74rem;background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:1px 7px}
+  .empty{color:var(--fg-faint);font-style:italic;padding:8px 0}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="eyebrow" id="kind">operating model</div>
+  <h1 id="title">Operating Model Viewer</h1>
+  <div class="files" id="files"></div>
+  <div class="ver" id="ver"></div>
+</div></header>
+<div class="wrap">
+  <div class="tiles" id="tiles"></div>
+  <nav id="nav"></nav>
+  <main id="main"></main>
+</div>
+<script>
+const DATA = /*__DATA__*/null;
+function __run__(DATA){
+const $=(s,r=document)=>r.querySelector(s);
+function el(t,a,...kids){const n=document.createElement(t);for(const k in (a||{})){if(k==="class")n.className=a[k];else if(k==="html")n.innerHTML=a[k];else if(k.startsWith("on"))n.addEventListener(k.slice(2),a[k]);else if(a[k]!=null)n.setAttribute(k,a[k]);}for(const c of kids){if(c==null)continue;n.append(c.nodeType?c:document.createTextNode(c));}return n;}
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const D=DATA||{counts:{},functions:[],roles:[],bodies:[],raci:[],byArea:[],warnings:[]};
+const FN=D.functions||[],RL=D.roles||[],BD=D.bodies||[],RC=D.raci||[];
+const fnBy={}; FN.forEach(f=>fnBy[f.id]=f); const rlBy={}; RL.forEach(r=>rlBy[r.id]=r);
+const fnLab=id=>(fnBy[id]||{}).name||id, rlLab=id=>(rlBy[id]||{}).name||id;
+
+$("#title").textContent=D.title||"Operating Model Viewer";
+$("#kind").textContent="operating model · data management";
+$("#files").textContent=(D.inputs||[]).length?("from "+(D.inputs||[]).join("  ·  ")):"";
+const VER=((document.querySelector('meta[name="version"]')||{}).content)||"";
+const UPD=((document.querySelector('meta[name="updated"]')||{}).content)||"";
+$("#ver").textContent=(VER?("v"+VER):"")+(UPD?((VER?"  ·  ":"")+"built "+UPD):"");
+
+const C=D.counts||{};
+[["functions","Functions"],["roles","Roles"],["bodies","Governance bodies"],["raci","RACI cells"]]
+ .filter(([k])=>k==="functions"||(C[k]||0)>0).forEach(([k,l])=>$("#tiles").append(el("div",{class:"t"},el("div",{class:"n"},String(C[k]||0)),el("div",{class:"l"},l))));
+
+const cellOf={}; RC.forEach(c=>{cellOf[c.function+"|"+c.role]=c.assignment;});
+const panels=[];
+function addPanel(id,label,build){panels.push({id,label,build});}
+
+// ---------- RACI matrix
+if(RC.length) addPanel("raci","RACI",p=>{
+  p.append(el("div",{class:"legend"},
+    el("span",{},el("b",{class:"cell-A"},"A"),"Accountable"),el("span",{},el("b",{class:"cell-R"},"R"),"Responsible"),
+    el("span",{},el("b",{class:"cell-C"},"C"),"Consulted"),el("span",{},el("b",{class:"cell-I"},"I"),"Informed")));
+  // roles that actually appear
+  const roleIds=RL.map(r=>r.id).filter(rid=>RC.some(c=>c.role===rid));
+  const fnIds=FN.map(f=>f.id).filter(fid=>RC.some(c=>c.function===fid));
+  const tb=el("table",{class:"raci"});
+  const head=el("tr",{},el("th",{},"Function \\ Role"));
+  roleIds.forEach(rid=>head.append(el("th",{title:rlLab(rid)},rlLab(rid))));
+  tb.append(el("thead",{},head));
+  const body=el("tbody",{});
+  fnIds.forEach(fid=>{const tr=el("tr",{},el("th",{},fnLab(fid)));
+    roleIds.forEach(rid=>{const a=cellOf[fid+"|"+rid]||"";const cls=a?("cell-"+a.charAt(0)):"";tr.append(el("td",{class:cls},a));});
+    body.append(tr);});
+  tb.append(body);
+  p.append(el("div",{class:"scroll"},tb));
+});
+
+// ---------- Overview
+addPanel("overview","Overview",p=>{
+  if((D.warnings||[]).length) p.append(el("div",{class:"banner"},el("b",{},"Check: "),D.warnings.join("  ")));
+  if((D.byArea||[]).length){const c=el("div",{class:"card"},el("h3",{},"Functions by area"));
+    const max=Math.max(...D.byArea.map(a=>a.count),1);
+    D.byArea.forEach(a=>c.append(el("div",{class:"bar"},el("div",{class:"lab"},a.name),el("div",{class:"track"},el("div",{class:"fill",style:`width:${Math.round(100*a.count/max)}%`})),el("div",{class:"v"},String(a.count)))));
+    p.append(c);}
+  p.append(el("div",{class:"card"},el("h3",{},"At a glance"),el("div",{class:"small muted",style:"margin-top:6px"},
+    (C.functions||0)+" functions, "+(C.roles||0)+" roles, "+(C.bodies||0)+" governance bodies, "+(C.raci||0)+" RACI assignments. "+
+    "This operating model brings the data-management functions, the roles accountable and responsible for them, and the governance bodies that steer them into one view.")));
+});
+
+// ---------- Functions
+addPanel("functions","Functions",p=>{
+  if(!FN.length){p.append(el("div",{class:"empty"},"No functions."));return;}
+  FN.forEach(f=>{const c=el("div",{class:"card"});
+    const h=el("h3",{},f.name); if(f.area)h.append(" ",el("span",{class:"pill fn"},f.area)); if(f.maturity)h.append(" ",el("span",{class:"pill mat"},f.maturity)); c.append(h);
+    if(f.description)c.append(el("div",{class:"small muted",style:"margin:4px 0"},f.description));
+    const who=RC.filter(x=>x.function===f.id);
+    const acc=who.filter(x=>x.assignment.charAt(0)==="A").map(x=>rlLab(x.role));
+    const resp=who.filter(x=>x.assignment.charAt(0)==="R"||x.assignment.indexOf("R")>=0).map(x=>rlLab(x.role));
+    const meta=[]; if(f.owner)meta.push("accountable: "+rlLab(f.owner)); else if(acc.length)meta.push("accountable: "+acc.join(", "));
+    if(resp.length)meta.push("responsible: "+[...new Set(resp)].join(", "));
+    if(meta.length)c.append(el("div",{class:"small"},meta.join("  ·  ")));
+    if((f.capabilities||[]).length){const caps=el("div",{class:"caps"});f.capabilities.forEach(x=>caps.append(el("span",{class:"cap"},x)));c.append(caps);}
+    p.append(c);});
+});
+
+// ---------- Roles
+addPanel("roles","Roles",p=>{
+  if(!RL.length){p.append(el("div",{class:"empty"},"No roles."));return;}
+  const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Role"),el("th",{},"Accountable for"),el("th",{},"Responsible for"),el("th",{},"Description"))));
+  const b=el("tbody",{});
+  RL.forEach(r=>{const mine=RC.filter(x=>x.role===r.id);
+    const acc=mine.filter(x=>x.assignment.charAt(0)==="A").map(x=>fnLab(x.function));
+    const resp=mine.filter(x=>x.assignment.indexOf("R")>=0).map(x=>fnLab(x.function));
+    b.append(el("tr",{},el("td",{},el("b",{},r.name),r.type&&r.type!=="role"?el("div",{class:"small muted"},r.type):null),
+      el("td",{class:"small"},acc.join(", ")),el("td",{class:"small"},[...new Set(resp)].join(", ")),el("td",{class:"small muted"},r.description||"")));});
+  tb.append(b); p.append(el("div",{class:"scroll"},tb));
+});
+
+// ---------- Governance bodies
+if(BD.length) addPanel("bodies","Governance",p=>{
+  BD.forEach(bd=>{const c=el("div",{class:"card"});
+    const h=el("h3",{},bd.name); if(bd.type)h.append(" ",el("span",{class:"pill body"},bd.type)); c.append(h);
+    if(bd.purpose)c.append(el("div",{class:"small muted",style:"margin:4px 0"},bd.purpose));
+    const meta=[]; if(bd.cadence)meta.push("meets: "+bd.cadence); if(bd.chair)meta.push("chair: "+rlLab(bd.chair));
+    if((bd.members||[]).length)meta.push("members: "+bd.members.map(rlLab).join(", "));
+    if(meta.length)c.append(el("div",{class:"small"},meta.join("  ·  ")));
+    if((bd.decisions||[]).length){c.append(el("div",{class:"small",style:"margin-top:6px"},el("b",{},"Decision rights: ")));const ul=el("ul",{class:"small muted",style:"margin:2px 0 0;padding-left:18px"});bd.decisions.forEach(d=>ul.append(el("li",{},d)));c.append(ul);}
+    p.append(c);});
+});
+
+// ---------- Raw
+addPanel("raw","Operating Model JSON",p=>{p.append(el("pre",{},JSON.stringify(D,null,2)));});
+
+const nav=$("#nav"),main=$("#main");
+panels.forEach((pn,i)=>{const b=el("button",{role:"tab","aria-selected":i===0?"true":"false",onclick:()=>select(i)},pn.label);pn._btn=b;nav.append(b);const d=el("div",{class:"panel"+(i===0?" on":""),id:"panel-"+pn.id});pn._div=d;main.append(d);pn._built=false;});
+function select(i){panels.forEach((pn,j)=>{pn._btn.setAttribute("aria-selected",j===i?"true":"false");pn._div.classList.toggle("on",j===i);});const pn=panels[i];if(!pn._built){pn.build(pn._div);pn._built=true;}}
+select(0);
+} /* __run__ */
+(function(){function ld(s){if(s.indexOf('gh:')===0){var r=s.slice(3),ref='main',at=r.lastIndexOf('@');if(at>0){ref=r.slice(at+1);r=r.slice(0,at);}var a=r.split('/'),ow=a.shift(),rp=a.shift(),pa=a.join('/'),tk='';try{tk=localStorage.getItem((new URLSearchParams(location.search).get('tokenKey'))||'mdaReadiness.ghpat')||'';}catch(e){}var h={'Accept':'application/vnd.github.raw','X-GitHub-Api-Version':'2022-11-28'};if(tk)h['Authorization']='Bearer '+tk;return fetch('https://api.github.com/repos/'+ow+'/'+rp+'/contents/'+pa+'?ref='+encodeURIComponent(ref),{headers:h,cache:'no-store'});}return fetch(s,{cache:'no-store'});}var p=new URLSearchParams(location.search),src=p.get('data')||((document.querySelector('meta[name="data-src"]')||{}).content||'');if(src){ld(src).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.json();}).then(function(j){__run__(j);}).catch(function(e){__run__(DATA);var b=document.getElementById('ver');if(b)b.textContent+='  ·  embedded ('+String((e&&e.message)||e)+')';});}else{__run__(DATA);}})();
+</script>
+</body>
+</html>

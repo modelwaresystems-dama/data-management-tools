@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.6.1">
+<meta name="version" content="2.7.0">
 <title>MDA Readiness Assessment</title>
 <meta name="description" content="Assessor console for the MDA Dataset and Metadata Readiness Assessment, Digital Zambia Acceleration Project. Captures D1-D13 and M1-M10 evidence, computes Ready / Ready-with-gaps / Not-ready / Restricted, and scores the Metadata Fitness-for-Purpose Index (MFPI) with seven dimensions, five non-compensable gates and four fitness bands.">
 <style>
@@ -439,6 +439,20 @@ function missLabel(c){ if(c.kind==='P') return c.text.replace(/ is supplied$/,' 
 function datasetMisses(d){ const out=[]; M.reqs.forEach(r=>{ if(!reqApplicable(d,r.code)) return;
   (CHECKS[r.code]||[]).forEach(chk=>{ if(effState(d,r.code,chk)==='fail') out.push({code:r.code,title:r.title,dim:chk.dim,kind:chk.kind,text:chk.text,note:checkNote(d,chk.id)}); }); });
   return out; }
+// Full computed quality results + reviews, written into each dataset's JSON on Publish (so the repo is a complete record).
+function datasetResults(d){ const cq=computeMFPI(d); const r=computeReadiness(d); const cfg=getMfpiCfg();
+  return {
+    generated:new Date().toISOString(),
+    readiness:{determination:r.determination||'', completeness:r.completeness, mandatoryPresent:r.present, mandatoryTotal:r.total, reasons:r.reasons, blockingMissing:r.blockingMissing},
+    mfpi:cq.mfpi, errorRate:cq.error, band:cq.band, bandLabel:cq.bandLabel, fitnessImplication:fitImplication(cq.band),
+    completion:{applicableChecks:cq.applicable, handled:cq.handled, assessed:cq.assessed, passed:cq.passed},
+    dimensions:MQD.map(x=>{ const s=cq.dimScores[x.id]; return {code:x.code,name:x.name,weightPct:Math.round(cfg.weights[x.id]*100),target:cfg.targets[x.id],score:s==null?null:Math.round(s),meets:s==null?null:(s>=cfg.targets[x.id]),belowFloor:s!=null&&s<cfg.dimFloor}; }),
+    requirementScores:(function(){ const o={}; M.reqs.forEach(rq=>{ o[rq.code]=cq.reqScores[rq.code]==null?null:Math.round(cq.reqScores[rq.code]); }); return o; })(),
+    gates:GATES.map(g=>{ const gs=(d.mfpi&&d.mfpi.gates&&d.mfpi.gates[g.id])||{}; return {id:g.id,name:g.name,status:gs.status||'',evidence:gs.evidence||'',owner:gs.owner||''}; }),
+    gateSummary:{anyFail:cq.anyFail,anyConditional:cq.anyCond,set:cq.gateSet,pass:cq.gatePass},
+    review:datasetMisses(d).map(m=>({requirement:m.code,requirementName:m.title,dimension:MQDBYID[m.dim].code+' '+MQDBYID[m.dim].name,kind:m.kind==='P'?'Presence':'Quality',failingCheck:m.text,actionToClose:m.note})),
+    exceptions:(d.mfpi&&d.mfpi.exceptions)||[]
+  }; }
 function fitImplication(band){ return {
   fit:'Supports Ready, if the evidence is accessible and safe to use',
   cond:'May support Ready with gaps, subject to project judgment',
@@ -1063,7 +1077,7 @@ function buildFileMap(){
     const dss=(m.datasets||[]).map(d=>({id:d.id,slug:slug(d.name)+'-'+d.id.slice(0,4),name:d.name}));
     index.mdas.push({id:m.id,slug:ms,name:m.name,area:m.area||'',provisional:!!m.provisional,datasets:dss});
     files[ms+'/_mda.json']=JSON.stringify({id:m.id,name:m.name,area:m.area||'',provisional:!!m.provisional,pack:m.pack||{},packNotes:m.packNotes||{}},null,2);
-    (m.datasets||[]).forEach((d,i)=>{ files[ms+'/'+dss[i].slug+'.json']=JSON.stringify(d,null,2); });
+    (m.datasets||[]).forEach((d,i)=>{ files[ms+'/'+dss[i].slug+'.json']=JSON.stringify(Object.assign({},d,{results:datasetResults(d)}),null,2); });
   });
   index.inception=state.inception||{}; index.lessons=state.lessons||[]; index.mfpiCfg=getMfpiCfg();
   files['index.json']=JSON.stringify(index,null,2);

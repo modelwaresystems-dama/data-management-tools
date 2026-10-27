@@ -40,8 +40,9 @@ echo "· github storage adapter";node wb_gh_test.js     || RED "gh storage test 
 echo "· storage sync UI";       node wb_storageui_test.js || RED "storage UI test failed"
 echo "· roster self-repair";    node wb_roster_test.js || RED "roster repair test failed"
 echo "· mount smoke";           node wb_mount_smoke.js || RED "mount smoke failed"
+echo "· exported-site graph";    node wb_site_graph_smoke.js || RED "site graph smoke failed"
 
 VER="$(grep -oE '^const APP_VERSION = "[^"]+"' "$APP" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 echo ""
-echo "✅ GREEN — v${VER} @ ${STAMP} · compile + lint + 7 suites pass"
+echo "✅ GREEN — v${VER} @ ${STAMP} · compile + lint + 8 suites pass"
 exit 0

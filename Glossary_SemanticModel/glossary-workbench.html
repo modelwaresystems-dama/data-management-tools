@@ -143,8 +143,8 @@ const isUpperOntologyName = (name, areas) =>
   /foundational|upper ontology|core ontology/i.test(String(name || "") + " " + (Array.isArray(areas) ? areas.join(" ") : String(areas || "")));
 
 /* Build identity — shown in the sidebar so the latest build can be confirmed at a glance. */
-const APP_VERSION = "4.79";
-const APP_BUILD = "2026-10-26 15:23 UTC";
+const APP_VERSION = "4.80";
+const APP_BUILD = "2026-10-27 04:26 UTC";
 
 /* ============================================================
    In-app User Guide — content model + a small bridge so any
@@ -1191,36 +1191,37 @@ function analyzeCorpus(corpus){
     names.forEach(nm=>smKeyforms(smNorm(nm)).forEach(f=>{ if(!(f in kindex)) kindex[f]=c; }));
   });
   const resolve=(p)=>{ for(const f of smKeyforms(smNorm(p))) if(f in kindex) return kindex[f]; return null; };
-  // reference edges + missing terms
-  const edges=new Map(); const missing=new Map(); const missCtx={};
+  // reference edges + missing terms — built from the governed SPO sheet (Subject→Predicate→
+  // Object), NOT by parsing the Definition prose (per the 27 Oct handover). Each SPO Object
+  // resolves to a defined term (a reference edge, carrying its predicate) or is a genuinely
+  // missing referenced term. Rejected SPO rows are skipped.
+  const edges=new Map(); const predEdges=new Map(); const missing=new Map(); const missCtx={};
   rows.forEach(r=>{
-    const src=r.term.Term, d=String(r.term.Definition||""); const seen=new Set();
-    let m; SM_PHRASE.lastIndex=0;
-    while((m=SM_PHRASE.exec(d))){
-      const raw=m[1], surf=smNorm(raw).replace(SM_ART,"");
-      const tgt=resolve(surf)||resolve(raw);
-      if(tgt){ if(tgt!==src&&!seen.has(tgt)){ edges.set(src+"\u0000"+tgt,(edges.get(src+"\u0000"+tgt)||0)+1); seen.add(tgt); } }
-      else {
-        const nm=smNorm(raw.replace(SM_ART,"")); const ws=nm.split(" ");
-        if(!nm) continue;
-        if(ws.length===1&&(nm.length<4||SM_STOP.has(nm))) continue;
-        const disp=raw.replace(SM_ART,"").trim();
-        missing.set(disp,(missing.get(disp)||0)+1); (missCtx[disp]=missCtx[disp]||new Set()).add(src);
+    const src=r.term.Term;
+    (r.spo||[]).forEach(s=>{
+      if(String(s["Sign-off"])==="Rejected") return;
+      const rawObj=String(s.Object||"").trim(); if(!rawObj) return;
+      const tgt=resolve(rawObj)||resolve(smNorm(rawObj).replace(SM_ART,""));
+      if(tgt){
+        if(tgt!==src){ const key=src+"\u0000"+tgt; edges.set(key,(edges.get(key)||0)+1); if(!predEdges.has(key)) predEdges.set(key,String(s.Predicate||"").trim()); }
+      } else {
+        missing.set(rawObj,(missing.get(rawObj)||0)+1); (missCtx[rawObj]=missCtx[rawObj]||new Set()).add(src);
       }
-    }
+    });
   });
   const indeg={}, outdeg={};
   for(const k of edges.keys()){ const [s,t]=k.split("\u0000"); outdeg[s]=(outdeg[s]||0)+1; indeg[t]=(indeg[t]||0)+1; }
   // duplicates (canonical name in >1 glossary)
   const dups=[]; Object.keys(canonGloss).forEach(nm=>{ if(canonGloss[nm].size>1){ const any=rows.find(r=>smNorm(r.term.Term)===nm); dups.push({term:any?any.term.Term:nm,glossaries:[...canonGloss[nm]]}); } });
-  // orphans
-  const orphans=Object.keys(byTerm).filter(t=>!indeg[t]&&!outdeg[t]).sort().map(t=>({term:t,...byTerm[t]}));
-  // missing fold
-  const folded=new Map(), foldedCtx={}, rep={};
-  missing.forEach((cnt,mm)=>{ const ws=mm.split(" "); const key=ws.length?smNorm(ws.slice(0,-1).concat(smSingular(ws[ws.length-1])).join(" ")):smNorm(mm); folded.set(key,(folded.get(key)||0)+cnt); (foldedCtx[key]=foldedCtx[key]||new Set()); missCtx[mm].forEach(x=>foldedCtx[key].add(x)); if(!(key in rep)||mm.length<rep[key].length) rep[key]=mm; });
-  let missingList=[...folded.keys()].map(k=>({term:rep[k].replace(SM_ART,"").trim(),count:folded.get(k),referenced_by:[...foldedCtx[k]].sort()})).filter(m=>m.term&&!(m.term.split(" ").length===1&&SM_STOP.has(m.term.toLowerCase())));
-  const canonLc=Object.keys(byTerm).map(c=>c.toLowerCase());
-  missingList=missingList.filter(m=>{ const ml=m.term.toLowerCase(); return !canonLc.some(c=>c!==ml&&(" "+c+" ").includes(" "+ml+" ")); });
+  // orphans — a defined term with no governed SPO edge in or out, excluding terms that are
+  // intentionally incomplete or out of the model (Draft / Deprecated / Retired). Retired is
+  // already filtered from rows/byTerm; Draft and Deprecated are skipped here (per handover).
+  const connected=new Set();
+  for(const k of edges.keys()){ const [s,t]=k.split("\u0000"); connected.add(smNorm(s)); connected.add(smNorm(t)); }
+  const orphans=Object.keys(byTerm).filter(t=>{ const l=smNorm(byTerm[t].lifecycle); return l!=="retired"&&l!=="deprecated"&&l!=="draft"&&!connected.has(smNorm(t)); }).sort().map(t=>({term:t,...byTerm[t]}));
+  // missing referenced terms — unresolved SPO objects, listed as-is (governed names, so no
+  // prose-noise folding is needed). These are genuinely-undefined terms the SPO refers to.
+  let missingList=[...missing.keys()].map(k=>({term:k,count:missing.get(k),referenced_by:[...missCtx[k]].sort()}));
   missingList.sort((a,b)=>b.count-a.count||a.term.localeCompare(b.term));
   // isa — each term's taxonomic parent is its curated Hypernym, and ONLY that. No SPO or
   // definition-text fallback: a blank Hypernym means the term is a root (or an orphan to be
@@ -1236,20 +1237,9 @@ function analyzeCorpus(corpus){
   });
   // graph
   const nodes=Object.keys(byTerm).map(t=>({id:t,glossary:byTerm[t].glossary,type:byTerm[t].type,area:byTerm[t].area,indeg:indeg[t]||0,outdeg:outdeg[t]||0,deg:(indeg[t]||0)+(outdeg[t]||0)}));
-  // SPO-derived relationships carry an explicit predicate. Enrich the definition-reference
-  // edges with it where they coincide, and add SPO-only relationships so every asserted
-  // Subject–Predicate–Object link can be shown (and labelled) on the graph.
-  const predEdges=new Map();   // "S\u0000O" -> predicate
-  rows.forEach(r=>{ (r.spo||[]).forEach(s=>{
-    if(String(s["Sign-off"])==="Rejected") return;
-    const S=resolve(s.Subject)||resolve(smNorm(String(s.Subject||"")).replace(SM_ART,""));
-    const O=resolve(s.Object)||resolve(smNorm(String(s.Object||"")).replace(SM_ART,""));
-    if(!S||!O||S===O) return;
-    const key=S+"\u0000"+O; if(!predEdges.has(key)) predEdges.set(key,String(s.Predicate||"").trim());
-  }); });
+  // graph links — one per reference edge, carrying its SPO predicate (both built above from SPO).
   const linkMap=new Map();
   for(const k of edges.keys()){ const [s,t]=k.split("\u0000"); linkMap.set(k,{source:s,target:t,w:edges.get(k),pred:predEdges.get(k)||""}); }
-  predEdges.forEach((pred,k)=>{ if(linkMap.has(k)){ if(!linkMap.get(k).pred) linkMap.get(k).pred=pred; } else { const [s,t]=k.split("\u0000"); linkMap.set(k,{source:s,target:t,w:1,pred,spoOnly:true}); } });
   const links=[...linkMap.values()];
   // subject areas
   const subjectAreas={}; rows.forEach(r=>{ const g=r.gName,a=r.term["Subject Area"]||"(none)"; (subjectAreas[g]=subjectAreas[g]||{}); subjectAreas[g][a]=(subjectAreas[g][a]||0)+1; });

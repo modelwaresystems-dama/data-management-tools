@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.4.0">
+<meta name="version" content="2.5.0">
 <title>MDA Readiness Assessment</title>
 <meta name="description" content="Assessor console for the MDA Dataset and Metadata Readiness Assessment, Digital Zambia Acceleration Project. Captures D1-D13 and M1-M10 evidence, computes Ready / Ready-with-gaps / Not-ready / Restricted, and scores the Metadata Fitness-for-Purpose Index (MFPI) with seven dimensions, five non-compensable gates and four fitness bands.">
 <style>
@@ -149,6 +149,10 @@ table.grid select,table.grid input,table.grid textarea{font:inherit;font-size:12
 .chknote{margin:2px 0 6px 84px}
 .chknote input{width:100%;padding:5px 8px;border:1px solid var(--warn);border-radius:6px;background:var(--warnbg);color:var(--ink);font:inherit;font-size:.85rem}
 .chkmiss{margin:10px 0 2px;padding:8px 10px;background:var(--badbg);border-radius:8px;font-size:.86rem;color:var(--ink)}
+.chkfilter{display:flex;gap:8px;align-items:center;margin:0 2px 10px;flex-wrap:wrap}
+.fchip{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:20px;padding:4px 12px;font:inherit;font-size:.82rem;cursor:pointer}
+.fchip:hover{border-color:var(--brand)}
+.fchip.on{background:var(--brand);color:#fff;border-color:var(--brand);font-weight:600}
 </style>
 </head>
 <body>
@@ -719,46 +723,59 @@ function renderQuality(){
     h+=`<tr><td><b>${esc(x.code)}</b> ${esc(x.name)}${floorFlag}</td><td>${Math.round(cfg.weights[x.id]*100)}%</td><td>${tgt}</td><td><b>${sc==null?'-':Math.round(sc)}</b></td><td>${meets}</td></tr>`; });
   h+='</tbody></table></div><p class="small muted" style="padding:8px 12px">MFPI = weighted sum of dimension scores (inception weights). Dimension floor '+cfg.dimFloor+': a dataset cannot be Fit-for-purpose if any scored dimension is below it.</p></div>';
 
-  // Checklist by requirement
+  // Checklist by requirement (with status filter)
+  const flt=(state.ui.chkFilter)||'all';
+  const chkMatch=st=> flt==='all' || (flt==='fail'&&st==='fail') || (flt==='todo'&&st==='');
+  let totFail=0,totTodo=0; M.reqs.forEach(r=>{ if(!reqApplicable(d,r.code))return; (CHECKS[r.code]||[]).forEach(c=>{const st=effState(d,r.code,c); if(st==='fail')totFail++; else if(st==='')totTodo++;}); });
   h+='<div class="sec-title">Checklist, by requirement</div>';
-  h+='<p class="small muted" style="margin:0 2px 8px">Tick each check Pass, Fail or N/A. Each check belongs to one dimension; the dimension scores and the MFPI come from these ticks. A failing presence check makes its dependent quality checks Not applicable automatically, so a missing element counts once. "What is missing" lists every failing check for the requirement.</p>';
+  h+='<p class="small muted" style="margin:0 2px 8px">Tick each check Pass, Fail or N/A. Each check belongs to one dimension; the dimension scores and the MFPI come from these ticks. A failing presence check makes its dependent quality checks Not applicable automatically, so a missing element counts once.</p>';
+  h+=`<div class="chkfilter"><span class="small muted">Show</span>
+    <button class="fchip${flt==='all'?' on':''}" data-chkfilter="all">All</button>
+    <button class="fchip${flt==='fail'?' on':''}" data-chkfilter="fail">Fails${totFail?' ('+totFail+')':''}</button>
+    <button class="fchip${flt==='todo'?' on':''}" data-chkfilter="todo">Not assessed${totTodo?' ('+totTodo+')':''}</button></div>`;
+  let shownAny=false;
   ['dataset','metadata'].forEach(grp=>{
-    h+=`<div class="small muted" style="margin:12px 2px 4px;font-weight:700;text-transform:uppercase;letter-spacing:.4px">${grp==='dataset'?'Dataset, D1 to D13':'Metadata, M1 to M10'}</div>`;
+    let gh=''; let gShown=false;
     M.reqs.filter(r=>r.group===grp).forEach(r=>{
       const dims=REQDIMS[r.code]||[]; const applic=reqApplicable(d,r.code); const na=d.mfpi.na[r.code]||{};
       const rs=cq.reqScores[r.code]; const cw=critWeight(r); const list=CHECKS[r.code]||[];
+      if(flt!=='all'){ if(!applic) return; if(!list.some(c=>chkMatch(effState(d,r.code,c)))) return; }
+      gShown=true; shownAny=true;
       const critCol=cw===3?'var(--brand)':cw===2?'var(--muted)':cw===1?'var(--warn)':'var(--na)';
-      h+=`<div class="req"><div class="req-top" style="grid-template-columns:72px 1fr 240px">
+      gh+=`<div class="req"><div class="req-top" style="grid-template-columns:72px 1fr 240px">
         <div class="req-code">${r.code}<small class="blk" style="background:${critCol}">crit ${cw}</small></div>
         <div><div class="req-title">${esc(r.title)}</div><div class="req-q">Dimensions: ${dims.map(x=>esc(MQDBYID[x].code)).join(', ')}${(applic&&rs!=null)?(' · requirement score '+Math.round(rs)):''}</div></div>
         <div class="req-ctrl"><label class="small muted" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" data-na="${r.code}" data-nk="applicable" ${applic?'checked':''}> Applicable</label>
           ${!applic?`<input data-na="${r.code}" data-nk="rationale" value="${esc(na.rationale||'')}" placeholder="N/A rationale"><input data-na="${r.code}" data-nk="approver" value="${esc(na.approver||'')}" placeholder="Approver / date">`:''}</div>
       </div>`;
       if(applic){
-        h+='<div style="padding:4px 12px 10px">';
-        dims.forEach(dim=>{ const cs=list.filter(c=>c.dim===dim); if(!cs.length) return;
-          let dp=0,da=0; cs.forEach(c=>{const st=effState(d,r.code,c); if(st==='pass'){dp++;da++;} else if(st==='fail'){da++;}});
+        gh+='<div style="padding:4px 12px 10px">';
+        dims.forEach(dim=>{ const all=list.filter(c=>c.dim===dim); if(!all.length) return;
+          const cs=all.filter(c=>chkMatch(effState(d,r.code,c))); if(!cs.length) return;
+          let dp=0,da=0; all.forEach(c=>{const st=effState(d,r.code,c); if(st==='pass'){dp++;da++;} else if(st==='fail'){da++;}});
           const tgt=cfg.targets[dim];
-          h+=`<div class="chkdim"><span class="chkdimname">${esc(MQDBYID[dim].code)} ${esc(MQDBYID[dim].name)}</span> <span class="small muted">${da?(dp+' of '+da+' passed'):'not assessed'} · target ${tgt}</span></div>`;
+          gh+=`<div class="chkdim"><span class="chkdimname">${esc(MQDBYID[dim].code)} ${esc(MQDBYID[dim].name)}</span> <span class="small muted">${da?(dp+' of '+da+' passed'):'not assessed'} · target ${tgt}</span></div>`;
           cs.forEach(c=>{ const auto=depAbsent(d,c); const raw=rawCheck(d,c.id); const st=effState(d,r.code,c);
-            h+=`<div class="chkrow"><div class="chkctrl">`;
-            if(auto){ h+=`<span class="pill na" style="padding:1px 8px;font-size:.72rem">N/A</span>`; }
-            else { h+=`<select data-chk="${c.id}" class="chksel ${raw==='pass'?'present':raw==='fail'?'absent':raw==='na'?'na':''}">
+            gh+=`<div class="chkrow"><div class="chkctrl">`;
+            if(auto){ gh+=`<span class="pill na" style="padding:1px 8px;font-size:.72rem">N/A</span>`; }
+            else { gh+=`<select data-chk="${c.id}" class="chksel ${raw==='pass'?'present':raw==='fail'?'absent':raw==='na'?'na':''}">
                  <option value=""${raw===''?' selected':''}>-</option>
                  <option value="pass"${raw==='pass'?' selected':''}>Pass</option>
                  <option value="fail"${raw==='fail'?' selected':''}>Fail</option>
                  <option value="na"${raw==='na'?' selected':''}>N/A</option></select>`; }
-            h+=`</div><div class="chktext">${esc(c.text)}${c.kind==='Q'?(auto?' <span class="small muted">(auto N/A, element absent)</span>':' <span class="small muted">(quality)</span>'):''}</div></div>`;
-            if(st==='fail'){ h+=`<div class="chknote"><input data-chknote="${c.id}" value="${esc(checkNote(d,c.id))}" placeholder="Optional: what will close this gap"></div>`; }
+            gh+=`</div><div class="chktext">${esc(c.text)}${c.kind==='Q'?(auto?' <span class="small muted">(auto N/A, element absent)</span>':' <span class="small muted">(quality)</span>'):''}</div></div>`;
+            if(st==='fail'){ gh+=`<div class="chknote"><input data-chknote="${c.id}" value="${esc(checkNote(d,c.id))}" placeholder="Optional: what will close this gap"></div>`; }
           });
         });
-        const miss=list.filter(c=>effState(d,r.code,c)==='fail');
-        if(miss.length){ h+=`<div class="chkmiss"><b>What is missing:</b> ${miss.map(c=>esc(missLabel(c))+' <span class="small muted">('+esc(MQDBYID[c.dim].code)+')</span>').join('; ')}</div>`; }
-        h+='</div>';
+        if(flt==='all'){ const miss=list.filter(c=>effState(d,r.code,c)==='fail');
+          if(miss.length){ gh+=`<div class="chkmiss"><b>What is missing:</b> ${miss.map(c=>esc(missLabel(c))+' <span class="small muted">('+esc(MQDBYID[c.dim].code)+')</span>').join('; ')}</div>`; } }
+        gh+='</div>';
       }
-      h+='</div>';
+      gh+='</div>';
     });
+    if(gShown){ h+=`<div class="small muted" style="margin:12px 2px 4px;font-weight:700;text-transform:uppercase;letter-spacing:.4px">${grp==='dataset'?'Dataset, D1 to D13':'Metadata, M1 to M10'}</div>`+gh; }
   });
+  if(!shownAny){ h+=`<div class="card" style="text-align:center;color:var(--muted);padding:18px">No ${flt==='fail'?'failing':'unassessed'} checks${flt==='fail'?'. Every assessed check passes or is N/A.':'. Everything applicable has been assessed.'}</div>`; }
 
   // Exceptions & remediation
   h+='<div class="sec-title">Exceptions &amp; remediation</div>';
@@ -862,6 +879,7 @@ document.addEventListener('click',e=>{
   else if(t.dataset.exp){ document.getElementById('det_'+t.dataset.exp).classList.toggle('open'); }
   else if(t.id==='addLesson'){ state.lessons=state.lessons||[]; state.lessons.unshift({date:new Date().toISOString().slice(0,10),type:'Decision',subject:'',detail:''}); save(); renderMain(); }
   else if(t.dataset.dellesson!==undefined){ state.lessons.splice(+t.dataset.dellesson,1); save(); renderMain(); }
+  else if(t.dataset.chkfilter){ state.ui.chkFilter=t.dataset.chkfilter; save(); renderMain(); }
   else if(t.id==='excAdd'){ const d=curDs(); if(d){ mfpiInit(d); d.mfpi.exceptions.push({req:'',dim:'',status:'',authority:'',expiry:'',action:'',owner:'',due:''}); save(); renderMain(); } }
   else if(t.dataset.excdel!==undefined){ const d=curDs(); if(d&&d.mfpi&&Array.isArray(d.mfpi.exceptions)){ d.mfpi.exceptions.splice(+t.dataset.excdel,1); save(); renderMain(); } }
 });

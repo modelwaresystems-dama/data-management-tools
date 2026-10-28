@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="version" content="1.0.0">
-<meta name="updated" content="2026-10-28 08:36">
-<meta name="description" content="Meta-metamodel relationship map: the typed links between the artefact models (glossary, data models, dictionary, rules, transformations, quality, provenance, operating model).">
+<meta name="version" content="1.2.0">
+<meta name="updated" content="2026-10-28 10:26">
+<meta name="description" content="Meta-metamodel relationship map: the typed links between the artefact models (glossary, data models, dictionary, business rules, transformations, data quality, provenance, operating model). Wide-screen, zoomable, full-screen.">
 <title>Meta-Metamodel Viewer</title>
 <style>
   :root{
@@ -34,13 +34,13 @@
     --shadow:0 1px 2px rgba(0,0,0,.4);
   }
   *{box-sizing:border-box}
-  html,body{margin:0;padding:0}
+  html,body{margin:0;padding:0;overflow-x:hidden}
   body{background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.5}
-  .wrap{max-width:1280px;margin:0 auto;padding:20px 16px 60px}
+  .wrap{max-width:1440px;margin:0 auto;padding:20px 16px 60px}
   header.top{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px}
   h1{font-size:1.4rem;margin:0 0 3px;letter-spacing:-.01em}
-  .sub{color:var(--muted);font-size:.9rem;max-width:760px}
+  .sub{color:var(--muted);font-size:.9rem;max-width:860px}
   .meta-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
   .badge{display:inline-flex;align-items:center;gap:6px;font-size:.76rem;font-weight:600;
     background:var(--brand-soft);color:var(--brand);padding:4px 10px;border-radius:999px}
@@ -59,26 +59,42 @@
   .chip{border:1px solid var(--line);background:var(--chip);color:var(--chip-ink);
     border-radius:999px;padding:5px 11px;font-size:.8rem;cursor:pointer;user-select:none}
   .chip[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:#fff}
-  .maparea{position:relative;display:grid;grid-template-columns:1fr 290px;gap:14px}
-  @media (max-width:820px){ .maparea{grid-template-columns:1fr} }
-  .canvas{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
-    box-shadow:var(--shadow);overflow:auto;padding:6px}
+
+  /* full-bleed wide canvas */
+  .canvas-wrap{position:relative;width:100vw;margin-left:calc(50% - 50vw);
+    height:clamp(360px,52vh,580px);background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .canvas-wrap:fullscreen{width:100%;height:100%;border:0}
+  .canvas-wrap:-webkit-full-screen{width:100%;height:100%;border:0}
+  .canvas{position:absolute;inset:0;overflow:auto;cursor:grab}
+  .canvas.grabbing{cursor:grabbing}
   svg{display:block}
-  .node rect{rx:9;ry:9;stroke-width:1.5}
   .node text{font-size:12px;font-weight:600;pointer-events:none}
   .node .sub{font-size:10px;font-weight:500;opacity:.8}
   .node{cursor:pointer}
-  .node.dim{opacity:.22}
+  .node.dim{opacity:.2}
   .edge{fill:none;stroke:var(--edge);stroke-width:1.6;marker-end:url(#arrow)}
-  .edge.dim{opacity:.1}
+  .edge.dim{opacity:.08}
   .edge.hi{stroke:var(--edge-hi);stroke-width:2.4;marker-end:url(#arrowHi)}
   .elabel{font-size:10px;fill:var(--muted);pointer-events:none;opacity:0}
   .elabel.show{opacity:1}
   .collabel{font-size:11px;font-weight:700;fill:var(--muted);text-transform:uppercase;letter-spacing:.03em}
 
-  .side{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
-    box-shadow:var(--shadow);padding:14px;align-self:start;position:sticky;top:10px}
-  .side h3{margin:0 0 2px;font-size:1.02rem}
+  /* floating controls */
+  .mapctrls{position:absolute;bottom:14px;left:14px;display:flex;gap:4px;align-items:center;z-index:4;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px;box-shadow:var(--shadow)}
+  .mapctrls button{border:0;background:transparent;color:var(--ink);cursor:pointer;font-size:.86rem;
+    padding:6px 9px;border-radius:7px;line-height:1}
+  .mapctrls button:hover{background:var(--chip)}
+  .mapctrls .pct{font-size:.78rem;color:var(--muted);min-width:42px;text-align:center;font-variant-numeric:tabular-nums}
+  .mapctrls .sep{width:1px;height:20px;background:var(--line);margin:0 2px}
+
+  /* floating detail panel */
+  .side{position:absolute;top:14px;right:14px;width:290px;max-height:calc(100% - 28px);overflow:auto;z-index:4;
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 6px 20px rgba(16,24,40,.14);padding:14px}
+  .side.hidden{display:none}
+  .sidehide{position:absolute;top:8px;right:10px;border:0;background:transparent;color:var(--muted);
+    font-size:1.1rem;line-height:1;cursor:pointer}
+  .side h3{margin:0 20px 2px 0;font-size:1.02rem}
   .side .layerlab{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px}
   .side .desc{font-size:.86rem;color:var(--muted);margin:8px 0}
   .side .seclab{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin:12px 0 5px}
@@ -87,10 +103,11 @@
   .launch{display:inline-block;margin-top:12px;background:var(--brand);color:#fff;border:0;
     border-radius:9px;padding:8px 12px;font-size:.85rem;cursor:pointer;text-decoration:none}
   .launch.off{background:var(--chip);color:var(--muted);cursor:default}
-  .hint{color:var(--muted);font-size:.86rem}
-  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 0}
-  .legend span{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;color:var(--muted)}
-  .legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .hint{color:var(--muted);font-size:.85rem}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0}
+  .legend span{display:inline-flex;align-items:center;gap:6px;font-size:.76rem;color:var(--muted)}
+  .legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .showdetails{position:absolute;top:14px;right:14px;z-index:4;display:none}
 
   table{border-collapse:collapse;width:100%;font-size:.88rem;background:var(--panel);
     border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
@@ -118,7 +135,7 @@
   <header class="top">
     <div>
       <h1 id="docTitle">Meta-Metamodel Viewer</h1>
-      <div class="sub" id="docSub">The typed links between the artefact models: how a glossary term flows through the data models to the dictionary, business rules and transformations, and how data quality ties to critical data elements.</div>
+      <div class="sub" id="docSub">The typed links between the artefact models: how a glossary term flows through the data models to the dictionary, business rules and transformations, and how a critical data element has data quality expectations that group its dimensions and metrics.</div>
       <div class="meta-line">
         <span class="badge">&#9679; <span id="appVersion"></span></span>
         <span class="stamp" id="builtStamp"></span>
@@ -134,24 +151,39 @@
     <button class="tab" role="tab" aria-selected="false" data-pane="layers">Layers</button>
     <button class="tab" role="tab" aria-selected="false" data-pane="data">Data JSON</button>
   </div>
+</div>
 
-  <!-- MAP -->
-  <section class="pane on" id="pane-map">
+<!-- MAP (full-bleed, lives outside the max-width wrap) -->
+<section class="pane on" id="pane-map">
+  <div class="wrap" style="padding-top:0;padding-bottom:0">
     <div class="maptools">
       <span class="lbl">Highlight chain</span>
       <span class="chip" data-chain="semantic-to-transform" aria-pressed="false">Glossary &rarr; transformations</span>
-      <span class="chip" data-chain="quality-to-cde" aria-pressed="false">Quality &rarr; critical data elements</span>
+      <span class="chip" data-chain="quality-to-cde" aria-pressed="false">Quality &rarr; dimensions &amp; metrics</span>
       <span class="chip" data-chain="clear" aria-pressed="false">Clear</span>
     </div>
-    <div class="maparea">
-      <div class="canvas" id="canvas"></div>
-      <aside class="side" id="side">
-        <div class="hint">Hover a box to trace its links. Click a box to see its relationships and open its viewer.</div>
-        <div class="legend" id="legend"></div>
-      </aside>
+  </div>
+  <div class="canvas-wrap" id="canvasWrap">
+    <div class="canvas" id="canvas"></div>
+    <aside class="side" id="side">
+      <button class="sidehide" id="sideHide" title="Hide panel">&times;</button>
+      <div id="sideBody"></div>
+    </aside>
+    <button class="btn showdetails" id="showDetails">Details</button>
+    <div class="mapctrls">
+      <button id="zoomOut" title="Zoom out">&minus;</button>
+      <span class="pct" id="zoomPct">100%</span>
+      <button id="zoomIn" title="Zoom in">+</button>
+      <span class="sep"></span>
+      <button id="zoomFit" title="Fit to width">Fit</button>
+      <button id="zoomReset" title="Reset to 100%">Reset</button>
+      <span class="sep"></span>
+      <button id="fsBtn" title="Toggle full screen">&#x26F6; Full screen</button>
     </div>
-  </section>
+  </div>
+</section>
 
+<div class="wrap">
   <!-- LINKS -->
   <section class="pane" id="pane-links">
     <label class="search">
@@ -171,13 +203,11 @@
 </div>
 
 <script>
-const DATA = {"meta": {"title": "DM Artefact Meta-Metamodel", "subtitle": "The typed links between the artefact models: how a business glossary term flows through the conceptual and logical data models to the dictionary, business rules and transformations, and how data quality ties to the critical data elements it measures.", "source": "DM Artefact Metamodel (5W1H), Modelware Systems"}, "layers": [{"id": "semantic", "name": "Business / semantic", "desc": "Shared meaning: glossary terms, business domains and the reference values data is drawn from."}, {"id": "conceptual", "name": "Conceptual model", "desc": "The business things and how they relate, independent of technology."}, {"id": "logical", "name": "Logical model", "desc": "Entities and their attributes, structured but not yet physical."}, {"id": "element", "name": "Data element / physical", "desc": "The dictionary fields, the datasets they sit in, and the critical ones."}, {"id": "rules", "name": "Rules and transformation", "desc": "Business rules, the transformations that implement them, and the quality rules that test them."}, {"id": "governance", "name": "Governance", "desc": "Classification, stewardship roles and provenance that sit across every artefact."}], "artefacts": [{"id": "glossary_term", "name": "Business glossary term", "layer": "semantic", "viewer": "glossary.html", "viewerName": "business-glossary-viewer", "desc": "An agreed business term with a definition, synonyms and relationships.", "ka": ""}, {"id": "domain", "name": "Business domain", "layer": "semantic", "viewer": "index.html", "viewerName": "data-catalog-viewer", "desc": "A business area that groups datasets and terms.", "ka": ""}, {"id": "code_list", "name": "Reference / code list", "layer": "semantic", "viewer": "glossary.html", "viewerName": "business-glossary-viewer", "desc": "Controlled values and code lists that make data interpretable and joinable. Ties to M8.", "ka": ""}, {"id": "conceptual_entity", "name": "Conceptual entity", "layer": "conceptual", "viewer": "model.html", "viewerName": "json-data-model", "desc": "A business thing in the conceptual data model.", "ka": ""}, {"id": "logical_attr", "name": "Logical entity / attribute", "layer": "logical", "viewer": "model.html", "viewerName": "json-data-model", "desc": "An entity and its attributes in the logical data model.", "ka": ""}, {"id": "data_element", "name": "Data element", "layer": "element", "viewer": "dictionary.html", "viewerName": "data-dictionary-viewer", "desc": "A field in the data dictionary: datatype, format, allowed values, classification, PII.", "ka": ""}, {"id": "critical_data_element", "name": "Critical data element", "layer": "element", "viewer": "dictionary.html", "viewerName": "data-dictionary-viewer", "desc": "A data element the business depends on, so quality is measured against it.", "ka": ""}, {"id": "dataset", "name": "Dataset", "layer": "element", "viewer": "index.html", "viewerName": "data-catalog-viewer", "desc": "A nominated dataset, catalogued with its metadata.", "ka": ""}, {"id": "business_rule", "name": "Business rule", "layer": "rules", "viewer": "", "viewerName": "", "desc": "A rule that governs allowed values, derivations or constraints on a data element. No dedicated viewer yet.", "ka": ""}, {"id": "transformation", "name": "Transformation", "layer": "rules", "viewer": "lineage.html", "viewerName": "data-lineage-viewer", "desc": "A step that derives or moves data, implementing a business rule.", "ka": ""}, {"id": "dq_rule", "name": "Data quality rule", "layer": "rules", "viewer": "quality.html", "viewerName": "data-quality-viewer", "desc": "A test and threshold that measures fitness of a critical data element.", "ka": ""}, {"id": "classification", "name": "Classification / sensitivity", "layer": "governance", "viewer": "dictionary.html", "viewerName": "data-dictionary-viewer", "desc": "The sensitivity label and CIA handling of a data element. Ties to M5.", "ka": ""}, {"id": "role", "name": "Role (RACI)", "layer": "governance", "viewer": "opmodel.html", "viewerName": "operating-model-viewer", "desc": "The accountable and responsible roles that steward each artefact.", "ka": ""}, {"id": "provenance", "name": "Provenance / lineage", "layer": "governance", "viewer": "provenance.html", "viewerName": "provenance-viewer", "desc": "Who produced the data, from what and when, and the flow between datasets.", "ka": ""}], "links": [{"from": "glossary_term", "rel": "defines", "to": "conceptual_entity"}, {"from": "glossary_term", "rel": "grouped under", "to": "domain"}, {"from": "conceptual_entity", "rel": "refined as", "to": "logical_attr"}, {"from": "logical_attr", "rel": "realised as", "to": "data_element"}, {"from": "data_element", "rel": "flagged as", "to": "critical_data_element"}, {"from": "dq_rule", "rel": "measures", "to": "critical_data_element"}, {"from": "data_element", "rel": "governed by", "to": "business_rule"}, {"from": "business_rule", "rel": "implemented as", "to": "transformation"}, {"from": "transformation", "rel": "produces", "to": "dataset"}, {"from": "data_element", "rel": "belongs to", "to": "dataset"}, {"from": "data_element", "rel": "classified by", "to": "classification"}, {"from": "data_element", "rel": "takes values from", "to": "code_list"}, {"from": "dataset", "rel": "traced by", "to": "provenance"}, {"from": "dataset", "rel": "stewarded by", "to": "role"}, {"from": "data_element", "rel": "stewarded by", "to": "role"}]};
+const DATA = {"meta": {"title": "DM Artefact Meta-Metamodel", "subtitle": "The typed links between the artefact models: a business glossary term flows through the conceptual and logical data models to the dictionary, business rules and transformations; and a critical data element has data quality expectations that group its quality dimensions and metrics.", "source": "DM Artefact Metamodel (5W1H), Modelware Systems"}, "layers": [{"id": "semantic", "name": "Business / semantic", "desc": "Shared meaning: glossary terms, business domains and the reference values data is drawn from."}, {"id": "conceptual", "name": "Conceptual model", "desc": "The business things and how they relate, independent of technology."}, {"id": "logical", "name": "Logical model", "desc": "Entities and their attributes, structured but not yet physical."}, {"id": "element", "name": "Data element / physical", "desc": "The dictionary fields, the datasets they sit in, and the critical ones."}, {"id": "dq", "name": "Data quality", "desc": "The quality expected of a critical data element: expectations grouping the dimensions and metrics it is held to."}, {"id": "rules", "name": "Rules and transformation", "desc": "Business rules and the transformations that implement them."}, {"id": "governance", "name": "Governance", "desc": "Classification, stewardship roles and provenance that sit across every artefact."}], "artefacts": [{"id": "glossary_term", "name": "Business glossary term", "layer": "semantic", "viewer": "glossary.html", "viewerName": "business-glossary-viewer", "desc": "An agreed business term with a definition, synonyms and relationships.", "ka": ""}, {"id": "domain", "name": "Business domain", "layer": "semantic", "viewer": "index.html", "viewerName": "data-catalog-viewer", "desc": "A business area that groups datasets and terms.", "ka": ""}, {"id": "code_list", "name": "Reference / code list", "layer": "semantic", "viewer": "glossary.html", "viewerName": "business-glossary-viewer", "desc": "Controlled values and code lists that make data interpretable and joinable. Ties to M8.", "ka": ""}, {"id": "conceptual_entity", "name": "Conceptual entity", "layer": "conceptual", "viewer": "model.html", "viewerName": "json-data-model", "desc": "A business thing in the conceptual data model.", "ka": ""}, {"id": "logical_attr", "name": "Logical entity / attribute", "layer": "logical", "viewer": "model.html", "viewerName": "json-data-model", "desc": "An entity and its attributes in the logical data model.", "ka": ""}, {"id": "data_element", "name": "Data element", "layer": "element", "viewer": "dictionary.html", "viewerName": "data-dictionary-viewer", "desc": "A field in the data dictionary: datatype, format, allowed values, classification, PII.", "ka": ""}, {"id": "critical_data_element", "name": "Critical data element", "layer": "element", "viewer": "dictionary.html", "viewerName": "data-dictionary-viewer", "desc": "A data element the business depends on, so quality expectations are set and measured against it.", "ka": ""}, {"id": "dataset", "name": "Dataset", "layer": "element", "viewer": "index.html", "viewerName": "data-catalog-viewer", "desc": "A nominated dataset, catalogued with its metadata.", "ka": ""}, {"id": "dq_expectation", "name": "Data quality expectation", "layer": "dq", "viewer": "quality.html", "viewerName": "data-quality-viewer", "desc": "The quality expected of a critical data element: a grouping of the dimensions and metrics it is held to. In MFPI, the dimension targets and gates set for the dataset.", "ka": ""}, {"id": "dq_dimension", "name": "Data quality dimension", "layer": "dq", "viewer": "quality.html", "viewerName": "data-quality-viewer", "desc": "A dimension of quality. In MFPI, MQD-01 to MQD-07: sufficiency, interpretability, evidential support, consistency, currency, traceability, conformance.", "ka": ""}, {"id": "dq_metric", "name": "Data quality metric", "layer": "dq", "viewer": "quality.html", "viewerName": "data-quality-viewer", "desc": "A measure and threshold that scores a dimension: numerator over denominator (tests passed over tests expected) against a target.", "ka": ""}, {"id": "business_rule", "name": "Business rule", "layer": "rules", "viewer": "", "viewerName": "", "desc": "A rule that governs allowed values, derivations or constraints on a data element. No dedicated viewer yet.", "ka": ""}, {"id": "transformation", "name": "Transformation", "layer": "rules", "viewer": "lineage.html", "viewerName": "data-lineage-viewer", "desc": "A step that derives or moves data, implementing a business rule.", "ka": ""}, {"id": "classification", "name": "Classification / sensitivity", "layer": "governance", "viewer": "dictionary.html", "viewerName": "data-dictionary-viewer", "desc": "The sensitivity label and CIA handling of a data element. Ties to M5.", "ka": ""}, {"id": "role", "name": "Role (RACI)", "layer": "governance", "viewer": "opmodel.html", "viewerName": "operating-model-viewer", "desc": "The accountable and responsible roles that steward each artefact.", "ka": ""}, {"id": "provenance", "name": "Provenance / lineage", "layer": "governance", "viewer": "provenance.html", "viewerName": "provenance-viewer", "desc": "Who produced the data, from what and when, and the flow between datasets.", "ka": ""}], "links": [{"from": "glossary_term", "rel": "defines", "to": "conceptual_entity"}, {"from": "glossary_term", "rel": "grouped under", "to": "domain"}, {"from": "conceptual_entity", "rel": "refined as", "to": "logical_attr"}, {"from": "logical_attr", "rel": "realised as", "to": "data_element"}, {"from": "data_element", "rel": "classified as", "to": "critical_data_element"}, {"from": "critical_data_element", "rel": "has", "to": "dq_expectation"}, {"from": "dq_expectation", "rel": "groups", "to": "dq_dimension"}, {"from": "dq_expectation", "rel": "groups", "to": "dq_metric"}, {"from": "dq_dimension", "rel": "measured by", "to": "dq_metric"}, {"from": "data_element", "rel": "governed by", "to": "business_rule"}, {"from": "business_rule", "rel": "implemented as", "to": "transformation"}, {"from": "transformation", "rel": "produces", "to": "dataset"}, {"from": "data_element", "rel": "belongs to", "to": "dataset"}, {"from": "data_element", "rel": "classified by", "to": "classification"}, {"from": "data_element", "rel": "takes values from", "to": "code_list"}, {"from": "dataset", "rel": "traced by", "to": "provenance"}, {"from": "dataset", "rel": "stewarded by", "to": "role"}, {"from": "data_element", "rel": "stewarded by", "to": "role"}]};
 
-/* version + built stamp from meta tags */
 document.getElementById('appVersion').textContent='v'+document.querySelector('meta[name="version"]').content;
 (function(){var u=document.querySelector('meta[name="updated"]');document.getElementById('builtStamp').textContent=u&&u.content&&u.content.indexOf('__UP')<0?'built '+u.content+' SAST':'';})();
 
-/* theme toggle */
 (function(){var b=document.getElementById('themeBtn');
   try{var s=localStorage.getItem('mmm-theme');if(s)document.documentElement.setAttribute('data-theme',s);}catch(e){}
   b.addEventListener('click',function(){
@@ -185,92 +215,86 @@ document.getElementById('appVersion').textContent='v'+document.querySelector('me
     var now=document.documentElement.getAttribute('data-theme')||(sysDark?'dark':'light');
     var nx=now==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',nx);
     try{localStorage.setItem('mmm-theme',nx);}catch(e){}
-    if(window.__drawn){drawMap();}
+    if(window.__drawn){var z=window.__zoom;drawMap();window.__zoom=z;applyZoom();}
   });
 })();
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function layerVar(i){return 'var(--L'+(i%6)+')';}
 
-/* ---------- main render ---------- */
 function __run__(DATA){
   if(!DATA){document.getElementById('canvas').innerHTML='<p class="hint" style="padding:30px">No meta-metamodel data loaded.</p>';return;}
   if(DATA.meta){
     if(DATA.meta.title){document.getElementById('docTitle').textContent=DATA.meta.title;document.title=DATA.meta.title;}
     if(DATA.meta.subtitle){document.getElementById('docSub').textContent=DATA.meta.subtitle;}
   }
-  var layers=DATA.layers||[];
-  var arts=DATA.artefacts||[];
-  var links=DATA.links||[];
+  var layers=DATA.layers||[], arts=DATA.artefacts||[], links=DATA.links||[];
   var byId={}; arts.forEach(function(a){byId[a.id]=a;});
   var layerIdx={}; layers.forEach(function(l,i){layerIdx[l.id]=i;});
   window.__model={layers:layers,arts:arts,links:links,byId:byId,layerIdx:layerIdx};
-
-  renderLegend(layers);
-  renderLinks();
-  renderLayers();
+  renderSideDefault();
+  renderLinks(); renderLayers();
   document.getElementById('dataDump').textContent=JSON.stringify(DATA,null,2);
   drawMap();
   window.__drawn=true;
+  // fit the whole graph into view on first load
+  fitWidth();
 }
 
-function renderLegend(layers){
-  document.getElementById('legend').innerHTML=layers.map(function(l,i){
-    return '<span><i style="background:'+layerVar(i)+'"></i>'+esc(l.name)+'</span>';
-  }).join('');
-}
-
-/* ---------- MAP (SVG layered graph) ---------- */
+/* ---------- MAP ---------- */
 var NODE_W=168, NODE_H=46, COL_GAP=92, ROW_GAP=20, PAD=28;
 function drawMap(){
   var m=window.__model; if(!m) return;
   var layers=m.layers, arts=m.arts, links=m.links, byId=m.byId, layerIdx=m.layerIdx;
-  // group artefacts by layer
   var cols=layers.map(function(){return [];});
   arts.forEach(function(a){ var li=layerIdx[a.layer]; if(li==null)li=0; cols[li].push(a); });
   var maxRows=Math.max(1,Math.max.apply(null,cols.map(function(c){return c.length;})));
   var colW=NODE_W+COL_GAP;
   var W=PAD*2+layers.length*NODE_W+(layers.length-1)*COL_GAP;
   var H=PAD*2+28+maxRows*(NODE_H+ROW_GAP);
-  // position
+  window.__mapBase={W:W,H:H};
   var pos={};
   cols.forEach(function(col,ci){
     var x=PAD+ci*colW;
     var colH=col.length*(NODE_H+ROW_GAP)-ROW_GAP;
-    var y0=PAD+28+(( (maxRows*(NODE_H+ROW_GAP)-ROW_GAP) - colH)/2);
-    col.forEach(function(a,ri){
-      pos[a.id]={x:x,y:y0+ri*(NODE_H+ROW_GAP),ci:ci};
-    });
+    var y0=PAD+28+(((maxRows*(NODE_H+ROW_GAP)-ROW_GAP)-colH)/2);
+    col.forEach(function(a,ri){ pos[a.id]={x:x,y:y0+ri*(NODE_H+ROW_GAP),ci:ci}; });
   });
-  // edges svg
   var parts=[];
   parts.push('<svg id="mapsvg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">');
   parts.push('<defs>'+
     '<marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,3 L0,6 z" fill="var(--edge)"/></marker>'+
     '<marker id="arrowHi" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,3 L0,6 z" fill="var(--edge-hi)"/></marker>'+
     '</defs>');
-  // column labels
   layers.forEach(function(l,ci){
     var x=PAD+ci*colW+NODE_W/2;
     parts.push('<text class="collabel" x="'+x+'" y="'+(PAD+6)+'" text-anchor="middle">'+esc(l.name)+'</text>');
   });
-  // edges
   links.forEach(function(e,idx){
     var s=pos[e.from], t=pos[e.to]; if(!s||!t) return;
-    var sx,tx,sy=s.y+NODE_H/2, ty=t.y+NODE_H/2;
-    var forward = t.ci>=s.ci;
-    if(forward){ sx=s.x+NODE_W; tx=t.x; }
-    else { sx=s.x; tx=t.x+NODE_W; }
-    var dx=tx-sx;
-    var c1x=sx+dx*0.45, c2x=tx-dx*0.45;
-    var off=(idx%2?1:-1)*Math.min(26,Math.abs(dx)*0.12);
-    var mx=(sx+tx)/2, my=(sy+ty)/2+off;
-    var d='M'+sx+','+sy+' C'+c1x+','+(sy+off)+' '+c2x+','+(ty+off)+' '+tx+','+ty;
-    var lbl=esc(e.rel||'');
+    var d, mx, my, lbl=esc(e.rel||'');
+    if(s.ci===t.ci){
+      var cx=s.x+NODE_W/2;
+      var up=t.y<s.y;
+      var sy2=up?s.y:s.y+NODE_H;
+      var ty2=up?t.y+NODE_H:t.y;
+      var skip=Math.abs(t.y-s.y)>(NODE_H+ROW_GAP)+2;
+      var bx=s.x+NODE_W+(skip?36:16);
+      d='M'+cx+','+sy2+' C'+bx+','+sy2+' '+bx+','+ty2+' '+cx+','+ty2;
+      mx=bx+8; my=(sy2+ty2)/2;
+    } else {
+      var sx,tx,sy=s.y+NODE_H/2, ty=t.y+NODE_H/2;
+      var forward = t.ci>=s.ci;
+      if(forward){ sx=s.x+NODE_W; tx=t.x; } else { sx=s.x; tx=t.x+NODE_W; }
+      var dx=tx-sx;
+      var c1x=sx+dx*0.45, c2x=tx-dx*0.45;
+      var off=(idx%2?1:-1)*Math.min(26,Math.abs(dx)*0.12);
+      mx=(sx+tx)/2; my=(sy+ty)/2+off;
+      d='M'+sx+','+sy+' C'+c1x+','+(sy+off)+' '+c2x+','+(ty+off)+' '+tx+','+ty;
+    }
     parts.push('<path class="edge" data-edge="'+idx+'" data-from="'+esc(e.from)+'" data-to="'+esc(e.to)+'" d="'+d+'"><title>'+esc(byId[e.from]?byId[e.from].name:e.from)+' '+lbl+' '+esc(byId[e.to]?byId[e.to].name:e.to)+'</title></path>');
     parts.push('<text class="elabel" data-elabel="'+idx+'" x="'+mx+'" y="'+(my-4)+'" text-anchor="middle">'+lbl+'</text>');
   });
-  // nodes
   arts.forEach(function(a){
     var p=pos[a.id]; if(!p) return;
     var col=layerVar(p.ci);
@@ -286,19 +310,19 @@ function drawMap(){
   parts.push('</svg>');
   document.getElementById('canvas').innerHTML=parts.join('');
   wireMap();
+  applyZoom();
 }
 
 function wireMap(){
-  var m=window.__model;
   var svg=document.getElementById('mapsvg');
   svg.querySelectorAll('.node').forEach(function(g){
-    g.addEventListener('mouseenter',function(){ highlightNode(g.getAttribute('data-node'),false); });
+    g.addEventListener('mouseenter',function(){ if(!window.__sel&&!window.__chain) highlightNode(g.getAttribute('data-node'),false); });
     g.addEventListener('mouseleave',function(){ if(!window.__sel&&!window.__chain) clearHi(); });
-    g.addEventListener('click',function(){ window.__sel=g.getAttribute('data-node'); window.__chain=null; clearChainChips(); highlightNode(window.__sel,true); showSide(window.__sel); });
+    g.addEventListener('click',function(ev){ ev.stopPropagation(); window.__sel=g.getAttribute('data-node'); window.__chain=null; clearChainChips(); highlightNode(window.__sel,true); showSide(window.__sel); });
   });
   svg.querySelectorAll('.edge').forEach(function(p){
     p.addEventListener('mouseenter',function(){ var i=p.getAttribute('data-edge'); var l=svg.querySelector('.elabel[data-elabel="'+i+'"]'); if(l)l.classList.add('show'); });
-    p.addEventListener('mouseleave',function(){ if(window.__chain)return; var i=p.getAttribute('data-edge'); var l=svg.querySelector('.elabel[data-elabel="'+i+'"]'); if(l&&!window.__sel)l.classList.remove('show'); });
+    p.addEventListener('mouseleave',function(){ if(window.__chain||window.__sel)return; var i=p.getAttribute('data-edge'); var l=svg.querySelector('.elabel[data-elabel="'+i+'"]'); if(l)l.classList.remove('show'); });
   });
 }
 function clearHi(){
@@ -308,18 +332,24 @@ function clearHi(){
   svg.querySelectorAll('.elabel').forEach(function(l){l.classList.remove('show');});
 }
 function highlightNode(id,keep){
-  var svg=document.getElementById('mapsvg'); var m=window.__model;
-  clearHi();
+  var svg=document.getElementById('mapsvg'); clearHi();
   var connected={}; connected[id]=1;
   svg.querySelectorAll('.edge').forEach(function(e){
     var f=e.getAttribute('data-from'), t=e.getAttribute('data-to'), i=e.getAttribute('data-edge');
     if(f===id||t===id){ e.classList.add('hi'); connected[f]=1; connected[t]=1;
-      var l=svg.querySelector('.elabel[data-elabel="'+i+'"]'); if(l)l.classList.add('show');
-    } else { e.classList.add('dim'); }
+      var l=svg.querySelector('.elabel[data-elabel="'+i+'"]'); if(l)l.classList.add('show'); }
+    else { e.classList.add('dim'); }
   });
   svg.querySelectorAll('.node').forEach(function(n){ if(!connected[n.getAttribute('data-node')]) n.classList.add('dim'); });
 }
+function openSide(){ var s=document.getElementById('side'); var was=s.classList.contains('hidden'); s.classList.remove('hidden'); document.getElementById('showDetails').style.display='none'; if(was) fitWidth(); }
+function renderSideDefault(){
+  var m=window.__model;
+  var leg=m?m.layers.map(function(l,i){return '<span><i style="background:'+layerVar(i)+'"></i>'+esc(l.name)+'</span>';}).join(''):'';
+  document.getElementById('sideBody').innerHTML='<div class="hint">Hover a box to trace its links. Click a box to see its relationships and open its viewer. Drag to pan; use the controls to zoom or go full screen.</div><div class="legend">'+leg+'</div>';
+}
 function showSide(id){
+  openSide();
   var m=window.__model, a=m.byId[id]; if(!a)return;
   var li=m.layerIdx[a.layer]; var lname=(m.layers[li]||{}).name||a.layer;
   var out=[];
@@ -334,20 +364,25 @@ function showSide(id){
     inL.forEach(function(e){ out.push('<div class="lk">'+esc(m.byId[e.from]?m.byId[e.from].name:e.from)+' <b>'+esc(e.rel)+'</b></div>'); }); }
   if(a.viewer){ out.push('<a class="launch" href="'+esc(a.viewer)+'" target="_blank" rel="noopener">Open '+esc(a.viewerName||'viewer')+'</a>'); }
   else { out.push('<span class="launch off">No viewer yet</span>'); }
-  document.getElementById('side').innerHTML=out.join('');
+  document.getElementById('sideBody').innerHTML=out.join('');
 }
+document.getElementById('sideHide').addEventListener('click',function(){
+  document.getElementById('side').classList.add('hidden');
+  document.getElementById('showDetails').style.display='inline-block';
+  fitWidth();
+});
+document.getElementById('showDetails').addEventListener('click',function(){ openSide(); });
 
 /* chain highlight */
 var CHAINS={
   'semantic-to-transform':['defines','refined as','realised as','governed by','implemented as'],
-  'quality-to-cde':['measures','flagged as']
+  'quality-to-cde':['classified as','has','groups','measured by']
 };
 function clearChainChips(){ document.querySelectorAll('.chip[data-chain]').forEach(function(c){c.setAttribute('aria-pressed','false');}); }
 document.querySelectorAll('.chip[data-chain]').forEach(function(c){
   c.addEventListener('click',function(){
-    var k=c.getAttribute('data-chain');
-    clearChainChips();
-    if(k==='clear'){ window.__chain=null; window.__sel=null; clearHi(); document.getElementById('side').innerHTML='<div class="hint">Hover a box to trace its links. Click a box to see its relationships and open its viewer.</div><div class="legend" id="legend"></div>'; renderLegend(window.__model.layers); return; }
+    var k=c.getAttribute('data-chain'); clearChainChips();
+    if(k==='clear'){ window.__chain=null; window.__sel=null; clearHi(); renderSideDefault(); return; }
     c.setAttribute('aria-pressed','true'); window.__chain=k; window.__sel=null;
     var rels=CHAINS[k]||[]; var svg=document.getElementById('mapsvg'); clearHi();
     var keep={};
@@ -361,7 +396,51 @@ document.querySelectorAll('.chip[data-chain]').forEach(function(c){
   });
 });
 
-/* ---------- LINKS table ---------- */
+/* ---------- zoom / pan / fullscreen ---------- */
+window.__zoom=1;
+function applyZoom(){
+  var svg=document.getElementById('mapsvg'); var b=window.__mapBase; if(!svg||!b)return;
+  svg.setAttribute('width', Math.round(b.W*window.__zoom));
+  svg.setAttribute('height', Math.round(b.H*window.__zoom));
+  document.getElementById('zoomPct').textContent=Math.round(window.__zoom*100)+'%';
+}
+function setZoom(z){ window.__zoom=Math.max(0.3,Math.min(3,z)); applyZoom(); }
+function fitWidth(){
+  var b=window.__mapBase, c=document.getElementById('canvas'); if(!b||!c)return;
+  var side=document.getElementById('side');
+  var reserve=(side && !side.classList.contains('hidden') && c.clientWidth>720)?325:20;
+  var avail=c.clientWidth-reserve; if(avail<40)return;
+  setZoom(avail/b.W);
+}
+document.getElementById('zoomIn').addEventListener('click',function(){ setZoom(window.__zoom*1.2); });
+document.getElementById('zoomOut').addEventListener('click',function(){ setZoom(window.__zoom/1.2); });
+document.getElementById('zoomFit').addEventListener('click',fitWidth);
+document.getElementById('zoomReset').addEventListener('click',function(){ setZoom(1); });
+document.getElementById('fsBtn').addEventListener('click',function(){
+  var el=document.getElementById('canvasWrap');
+  var fs=document.fullscreenElement||document.webkitFullscreenElement;
+  if(!fs){ (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); }
+  else { (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }
+});
+document.addEventListener('fullscreenchange',function(){ setTimeout(fitWidth,60); });
+document.addEventListener('webkitfullscreenchange',function(){ setTimeout(fitWidth,60); });
+window.addEventListener('resize',function(){ clearTimeout(window.__rz); window.__rz=setTimeout(function(){ /* keep zoom, no auto-refit */ },120); });
+
+/* drag to pan + ctrl/meta wheel zoom (wired once; #canvas persists) */
+(function(){
+  var cv=document.getElementById('canvas');
+  var pan={a:false,x:0,y:0,sl:0,st:0};
+  cv.addEventListener('mousedown',function(e){
+    if(e.target.closest('.node')||e.target.closest('.side')||e.target.closest('.mapctrls'))return;
+    pan.a=true;pan.x=e.clientX;pan.y=e.clientY;pan.sl=cv.scrollLeft;pan.st=cv.scrollTop;cv.classList.add('grabbing');
+  });
+  window.addEventListener('mousemove',function(e){ if(!pan.a)return; cv.scrollLeft=pan.sl-(e.clientX-pan.x); cv.scrollTop=pan.st-(e.clientY-pan.y); });
+  window.addEventListener('mouseup',function(){ pan.a=false;cv.classList.remove('grabbing'); });
+  cv.addEventListener('click',function(e){ if(!e.target.closest('.node')&&!e.target.closest('.edge')){ window.__sel=null; window.__chain=null; clearChainChips(); clearHi(); renderSideDefault(); } });
+  cv.addEventListener('wheel',function(e){ if(e.ctrlKey||e.metaKey){ e.preventDefault(); setZoom(window.__zoom*(e.deltaY<0?1.1:0.9)); } },{passive:false});
+})();
+
+/* ---------- LINKS ---------- */
 function renderLinks(){
   var m=window.__model;
   function rows(q){
@@ -399,17 +478,17 @@ document.querySelectorAll('.tab').forEach(function(t){
     document.querySelectorAll('.tab').forEach(function(x){x.setAttribute('aria-selected',x===t);});
     document.querySelectorAll('.pane').forEach(function(p){p.classList.remove('on');});
     document.getElementById('pane-'+t.getAttribute('data-pane')).classList.add('on');
+    if(t.getAttribute('data-pane')==='map'){ setTimeout(fitWidth,40); }
   });
 });
 
-/* ---------- ?data= loader (served only; file:// falls back to embedded) ---------- */
+/* ?data= loader */
 (function(){
   var badge=document.getElementById('modeBadge');
   var qs=new URLSearchParams(location.search), src=qs.get('data');
   if(src){
-    fetch(src).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(j){
-      badge.textContent='data: '+src; __run__(j);
-    }).catch(function(){ badge.textContent='embedded (could not load '+src+')'; __run__(DATA); });
+    fetch(src).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(j){ badge.textContent='data: '+src; __run__(j); })
+      .catch(function(){ badge.textContent='embedded (could not load '+src+')'; __run__(DATA); });
   } else { badge.textContent=DATA?'embedded':''; __run__(DATA); }
 })();
 </script>

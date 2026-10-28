@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.0.2">
-<meta name="updated" content="2026-10-28 06:18 SAST">
+<meta name="version" content="1.0.0">
+<meta name="updated" content="2026-10-27 11:58 SAST">
 <title>Metadata Requirements Viewer</title>
 <style>
   :root{
@@ -150,8 +150,22 @@ function reqCard(x){
 }
 function emptyNote(label){return el("div",{class:"empty"},"The "+label+" schedule is not in this dataset's pack yet.");}
 
+const F=D.facts||{};
+function someVal(o){return o&&Object.values(o).some(v=>v&&(typeof v!=="object"?String(v).trim():someVal(v)));}
+const hasFacts=someVal(F.ownership)||someVal(F.authoritativeness)||someVal(F.sample);
 const panels=[];
 function addPanel(id,label,build){panels.push({id,label,build});}
+addPanel("facts","Dataset facts",p=>{
+  const o=F.ownership||{},a=F.authoritativeness||{},s=F.sample||{};
+  if(!hasFacts){p.append(el("div",{class:"empty"},"No structured facts captured yet. Fill D4 ownership, D5 authoritativeness and D12 sample in the console, then re-publish."));return;}
+  const ownRoles=[["dataOwner","Data owner"],["steward","Steward"],["custodian","Custodian"],["technicalContact","Technical contact"],["approver","Approver"],["issueContact","Issue contact"]];
+  const ot=el("table",{},el("thead",{},el("tr",{},el("th",{},"Role"),el("th",{},"Name"),el("th",{},"Contact")))),otb=el("tbody",{});
+  ownRoles.forEach(([k,lbl])=>{const r=o[k]||{};otb.append(el("tr",{},el("td",{},lbl),el("td",{},r.name||"—"),el("td",{class:"small muted"},r.contact||"—")));});
+  ot.append(otb); p.append(el("div",{class:"card"},el("h3",{},"Ownership (D4 / M4)"),el("div",{class:"scroll"},ot)));
+  const kv=rows=>{const t=el("table",{}),b=el("tbody",{});rows.forEach(([k,v])=>{if(v&&String(v).trim())b.append(el("tr",{},el("td",{class:"small muted",style:"width:210px"},k),el("td",{},String(v))));});t.append(b);return t;};
+  p.append(el("div",{class:"card"},el("h3",{},"Authoritativeness (D5)"),kv([["Authoritative status",a.status],["System of record",a.systemOfRecord],["Source system",a.sourceSystem],["System owner",a.systemOwner]])));
+  p.append(el("div",{class:"card"},el("h3",{},"Representative sample (D12)"),kv([["Approved",s.approved],["Record count",s.recordCount],["Period",s.period],["Masking method",s.maskingMethod],["Approved by",s.approvedBy],["Approved date",s.approvedDate],["README",s.readme],["Restriction",s.restriction],["Substitute",s.substitute]])));
+});
 addPanel("dataset","Dataset (D1–D13)",p=>{if(!A.length){p.append(emptyNote("D1–D13 dataset"));return;}A.forEach(x=>p.append(reqCard(x)));});
 addPanel("metadata","Metadata (M1–M10)",p=>{if(!B.length){p.append(emptyNote("M1–M10 metadata"));return;}B.forEach(x=>p.append(reqCard(x)));});
 addPanel("raw","Requirements JSON",p=>p.append(el("pre",{},JSON.stringify(D,null,2))));

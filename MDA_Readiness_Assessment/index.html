@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.9.0">
+<meta name="version" content="2.10.0">
 <title>MDA Readiness Assessment</title>
 <meta name="description" content="Assessor console for the MDA Dataset and Metadata Readiness Assessment, Digital Zambia Acceleration Project. Captures D1-D13 and M1-M10 evidence, computes Ready / Ready-with-gaps / Not-ready / Restricted, and scores the Metadata Fitness-for-Purpose Index (MFPI) with seven dimensions, five non-compensable gates and four fitness bands.">
 <style>
@@ -167,6 +167,16 @@ table.grid select,table.grid input,table.grid textarea{font:inherit;font-size:12
 .file-body th,.file-body td{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top;white-space:nowrap}
 .file-body thead th{background:var(--chip);position:sticky;top:0}
 .file-body pre{white-space:pre-wrap;word-break:break-word;font-size:.84rem;margin:0}
+.facts .facts-head{padding:11px 14px;font-weight:600;border-bottom:1px solid var(--line)}
+.facts-grp{padding:12px 14px;border-bottom:1px solid var(--line)}
+.facts-grp:last-child{border-bottom:none}
+.facts-grp h4{margin:0 0 9px;font-size:.92rem;color:var(--accent)}
+.facts-grid{display:grid;gap:8px}
+.fact-row{display:grid;grid-template-columns:150px 1fr 1fr;gap:8px;align-items:center}
+.fact-row label{font-size:12px;color:var(--muted)}
+.facts-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.facts input,.facts select{width:100%;font:inherit;font-size:.9rem;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg)}
+@media(max-width:620px){.fact-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -558,6 +568,7 @@ function renderAssessment(){
     <div class="reasons">${r.reasons.map(esc).join(' · ')}</div>
   </div></div>`;
   h+=viewerRow(d);
+  h+=factsPanel(d);
   h+='<div class="sec-title">Dataset Readiness, D1 to D13</div>';
   M.reqs.filter(x=>x.group==='dataset').forEach(rq=> h+=reqCard(rq,d));
   h+='<div class="sec-title">Metadata Readiness, M1 to M10</div>';
@@ -931,6 +942,7 @@ document.addEventListener('input',e=>{
   const t=e.target;
   if(t.dataset.f){ const d=curDs(); if(d){ d[t.dataset.f]=t.value; save();
       if(['name','identifier','stakeholderAccess'].includes(t.dataset.f)){ renderSide(); refreshReadout(); } } }
+  else if(t.dataset.fact){ const d=curDs(); if(d){ factsInit(d); const p=t.dataset.fact.split('.'); let o=d; for(let i=0;i<p.length-1;i++){ o[p[i]]=o[p[i]]||{}; o=o[p[i]]; } o[p[p.length-1]]=t.value; save(); } }
   else if(t.dataset.req){ const d=curDs(); if(d){ d.reqs=d.reqs||{}; d.reqs[t.dataset.req]=d.reqs[t.dataset.req]||{};
       d.reqs[t.dataset.req][t.dataset.k]=t.value; save();
       if(t.dataset.k==='status'){ t.className='statussel '+STATUS[t.value||''].cls; renderSide(); refreshReadout(); } } }
@@ -1076,6 +1088,47 @@ function viewerRow(d){
     chip('Catalog', VW_BASE+'/index.html')+
     '</div>';
 }
+// ---------- Part A: structured dataset facts (D4/M4 ownership, D5 authoritativeness, D12 sample) ----------
+const OWN_ROLES=[['dataOwner','Data owner'],['steward','Steward'],['custodian','Custodian'],['technicalContact','Technical contact'],['approver','Approver'],['issueContact','Issue contact']];
+function factsInit(d){ d.ownership=d.ownership||{}; OWN_ROLES.forEach(([k])=>{ d.ownership[k]=d.ownership[k]||{name:'',contact:''}; });
+  d.authoritativeness=d.authoritativeness||{status:'',systemOfRecord:'',sourceSystem:'',systemOwner:''};
+  d.sample=d.sample||{approved:'',recordCount:'',period:'',maskingMethod:'',approvedBy:'',approvedDate:'',readme:'',restriction:'',substitute:''};
+  return d; }
+function fIn(path,val,attrs){ return '<input data-fact="'+path+'" value="'+esc(val||'')+'"'+(attrs||'')+'>'; }
+function factsPanel(d){ factsInit(d); const o=d.ownership,a=d.authoritativeness,s=d.sample;
+  const own=OWN_ROLES.map(([k,lbl])=>'<div class="fact-row"><label>'+lbl+'</label>'+fIn('ownership.'+k+'.name',o[k].name,' placeholder="name / role title"')+fIn('ownership.'+k+'.contact',o[k].contact,' placeholder="email / phone"')+'</div>').join('');
+  const stO=['','authoritative','copy','derived'].map(v=>'<option value="'+v+'"'+(a.status===v?' selected':'')+'>'+(v||'(status)')+'</option>').join('');
+  const apO=['','yes','no'].map(v=>'<option value="'+v+'"'+(s.approved===v?' selected':'')+'>'+(v||'(approved?)')+'</option>').join('');
+  const fld=(lbl,inner,span)=>'<div class="field"'+(span?' style="grid-column:1/-1"':'')+'><label>'+lbl+'</label>'+inner+'</div>';
+  return '<div class="card facts"><div class="facts-head">Dataset facts (structured) <span class="small muted">captured here and in the pack, stored in the dataset JSON, feeds the viewers</span></div>'+
+    '<div class="facts-grp"><h4>Ownership (D4 / M4)</h4><div class="facts-grid">'+own+'</div></div>'+
+    '<div class="facts-grp"><h4>Authoritativeness (D5)</h4><div class="facts-grid2">'+
+      fld('Authoritative status','<select data-fact="authoritativeness.status">'+stO+'</select>')+
+      fld('System-of-record statement',fIn('authoritativeness.systemOfRecord',a.systemOfRecord))+
+      fld('Source system',fIn('authoritativeness.sourceSystem',a.sourceSystem))+
+      fld('System owner',fIn('authoritativeness.systemOwner',a.systemOwner))+'</div></div>'+
+    '<div class="facts-grp"><h4>Representative sample (D12)</h4><div class="facts-grid2">'+
+      fld('Sample approved','<select data-fact="sample.approved">'+apO+'</select>')+
+      fld('Record count',fIn('sample.recordCount',s.recordCount))+
+      fld('Period',fIn('sample.period',s.period))+
+      fld('Masking method',fIn('sample.maskingMethod',s.maskingMethod))+
+      fld('Approved by',fIn('sample.approvedBy',s.approvedBy))+
+      fld('Approved date',fIn('sample.approvedDate',s.approvedDate,' type="date"'))+
+      fld('README reference',fIn('sample.readme',s.readme))+
+      fld('Or documented restriction',fIn('sample.restriction',s.restriction),true)+
+      fld('Substitute (if restricted)',fIn('sample.substitute',s.substitute),true)+'</div></div></div>';
+}
+const FACT_LABELS={'data owner name':'ownership.dataOwner.name','data owner contact':'ownership.dataOwner.contact',
+  'steward name':'ownership.steward.name','steward contact':'ownership.steward.contact',
+  'custodian name':'ownership.custodian.name','custodian contact':'ownership.custodian.contact',
+  'technical contact name':'ownership.technicalContact.name','technical contact email':'ownership.technicalContact.contact','technical contact contact':'ownership.technicalContact.contact',
+  'approver name':'ownership.approver.name','approver contact':'ownership.approver.contact',
+  'issue contact name':'ownership.issueContact.name','issue contact contact':'ownership.issueContact.contact',
+  'authoritative status':'authoritativeness.status','system of record':'authoritativeness.systemOfRecord','system-of-record statement':'authoritativeness.systemOfRecord','source system':'authoritativeness.sourceSystem','system owner':'authoritativeness.systemOwner',
+  'sample approved':'sample.approved','sample record count':'sample.recordCount','record count':'sample.recordCount','sample period':'sample.period','sample masking method':'sample.maskingMethod','masking method':'sample.maskingMethod','sample approved by':'sample.approvedBy','sample approved date':'sample.approvedDate','sample readme reference':'sample.readme','sample readme':'sample.readme','sample restriction':'sample.restriction','sample substitute':'sample.substitute'};
+function factSetPath(d,path,val){ const p=path.split('.'); let o=d; for(let i=0;i<p.length-1;i++){ o[p[i]]=o[p[i]]||{}; o=o[p[i]]; } const last=p[p.length-1]; if(!o[last] || String(o[last]).trim()==='') o[last]=String(val).trim(); }
+function extractFactsFromPack(d){ factsInit(d); const xl=(d.files||[]).find(f=>f.kind==='xlsx'); if(!xl) return; const sh=(xl.sheets||[]).find(s=>/^02 |dataset metadata/i.test(String(s.name||''))); if(!sh) return;
+  (sh.rows||[]).forEach(r=>{ if(!r||r.length<2) return; const label=String(r[0]==null?'':r[0]).trim().toLowerCase(); const val=r[1]; if(FACT_LABELS[label] && String(val==null?'':val).trim()!=='') factSetPath(d,FACT_LABELS[label],val); }); }
 function setGhStatus(m,c){ const el=document.getElementById('ghStatus'); if(el){ el.textContent=m; el.className='gh-status '+(c||''); } const hb=document.getElementById('btnGh'); if(hb){ hb.title='GitHub: '+m; } }
 function ghBusy(b){ ['ghSaveConnect','ghPull','ghPublish'].forEach(id=>{ const e=document.getElementById(id); if(e) e.disabled=b; }); }
 
@@ -1254,6 +1307,7 @@ async function processUpload(file){ const d=curDs(); if(!d){ alert('Select a dat
   }catch(err){ alert(err.message||'Could not read the file.'); return; }
   const sz=JSON.stringify(entry).length; if(sz>FILE_CAP){ alert('That file is too large to store in the repo (about '+Math.round(sz/1024)+' KB after extraction; the limit is '+Math.round(FILE_CAP/1024)+' KB). Attach a smaller extract, or split the workbook.'); return; }
   d.files=d.files||[]; const ix=d.files.findIndex(f=>f.name===file.name); if(ix>=0) d.files[ix]=entry; else d.files.push(entry);
+  if(entry.kind==='xlsx') extractFactsFromPack(d);
   save(); renderMain(); openFileViewer(entry.id);
 }
 function metadataFilesBar(d){ const files=d.files||[];

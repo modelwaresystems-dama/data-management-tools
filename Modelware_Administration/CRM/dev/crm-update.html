@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="version" content="1.2.1">
+<meta name="version" content="1.3.0">
 <title>Today's CRM Update</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -191,8 +191,9 @@ document.getElementById("appVersion").textContent =
 (function () {
   /* Data lives in the private repo, never in this page:
        <folder>/triage/batches/<date>.json         the morning run's batch (display fields only)
-       <folder>/triage/decisions/<date>.json       Howard's approve / edit / drop, and his
-                                                   answers to the day's questions (answers.<qid>)
+       <folder>/triage/decisions/<date>.json       Howard's approve / edit / drop, and the
+                                                   answers to the day's questions (answers.<qid>),
+                                                   which anyone on the roster may give or correct
        <folder>/triage/confirm/<date>/<user>.json  each person's confirmations, one writer per file
        <folder>/triage/imported/<date>.json        written by the run once the import has landed
      The connection is the CRM's own (localStorage "crm.github"), so one setup covers both. */
@@ -344,21 +345,22 @@ document.getElementById("appVersion").textContent =
       toast("Everything not dropped will be imported at the next morning run.");
     }).catch(writeFailed);
   }
-  /* An answer is Howard's own words, saved beside his row decisions. An empty answer
-     removes it. Answers are not locked by the import: questions never import, and a
-     late answer is still read by the next morning run. */
+  /* An answer is saved beside Howard's row decisions. Anyone connected from the roster
+     may give or correct one, and "by" records who saved it. An empty answer removes it.
+     Answers are not locked by the import: questions never import, and a late or
+     corrected answer is still read by the next morning run. */
   function answerQuestion(qid, text) {
-    if (!S.isOwner) return Promise.resolve();
+    if (!S.me) { toast("Connect with your CRM user id first."); return Promise.resolve(); }
     const t = String(text || "").trim();
     return enqueue(async () => {
       const res = await readModifyWrite("decisions/" + S.date + ".json",
         () => ({ date: S.date, approveAll: false, rows: {} }),
         (doc) => {
           doc.answers = doc.answers || {};
-          if (t) doc.answers[qid] = { text: t, at: new Date().toISOString() };
+          if (t) doc.answers[qid] = { text: t, at: new Date().toISOString(), by: S.me };
           else delete doc.answers[qid];
           doc.updatedAt = new Date().toISOString();
-        }, "crm-update: Howard answers " + S.date + " " + qid);
+        }, "crm-update: " + S.me + " answers " + S.date + " " + qid);
       S.decisions = res.doc;
       delete S.qDraft[qid]; delete S.qOpen[qid];
       if (S.editing === "q:" + qid) S.editing = null;
@@ -595,7 +597,7 @@ document.getElementById("appVersion").textContent =
     $("questionsPanel").hidden = !q.length;
     const ql = $("questions"); ql.textContent = "";
     const open = q.filter((x) => !answerOf(x.qid)).length;
-    $("questionsHint").hidden = !S.isOwner || S.readOnly;
+    $("questionsHint").hidden = !S.me || S.readOnly;
     $("questionsPanel").querySelector("h2").textContent =
       "Questions for Howard" + (q.length ? " · " + open + " of " + q.length + " open" : "");
     for (const x of q) ql.appendChild(renderQuestion(x));
@@ -622,12 +624,12 @@ document.getElementById("appVersion").textContent =
     head.appendChild(el("span", "pill " + (ans ? "ok" : "draft"), ans ? "Answered" : "Open"));
     li.appendChild(head);
 
-    const canAnswer = S.isOwner && !S.readOnly;
+    const canAnswer = !!S.me && !S.readOnly;
     const editing = canAnswer && (!ans || S.qOpen[x.qid]);
     if (ans && !editing) {
       li.appendChild(el("p", "qanswer", ans.text));
       const meta = el("div", "actions");
-      meta.appendChild(el("span", "label", "Answered " + fmtTime(ans.at)));
+      meta.appendChild(el("span", "label", "Answered" + (ans.by ? " by " + rosterName(ans.by) : "") + " " + fmtTime(ans.at)));
       if (canAnswer) {
         const ch = el("button", "btn", "Change");
         ch.onclick = () => { S.qOpen[x.qid] = true; S.qDraft[x.qid] = ans.text; render(); };

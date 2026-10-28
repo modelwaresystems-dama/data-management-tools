@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.0.1">
-<meta name="updated" content="2026-10-27 14:36 SAST">
+<meta name="version" content="1.0.2">
+<meta name="updated" content="2026-10-28 05:31 SAST">
 <title>Data Quality Viewer</title>
 <style>
   :root{
@@ -256,21 +256,56 @@ function fromHash(){const m=/(?:^|&)dataset=([^&]+)/.exec((location.hash||"").re
 window.addEventListener("hashchange",fromHash); fromHash();
 } /* __run__ */
 (function(){
+var TRACE=[],t0=Date.now();
+function log(){var a=[].slice.call(arguments).map(String);TRACE.push('['+(Date.now()-t0)+'ms] '+a.join(' '));try{console.log.apply(console,['[5W1H loader]'].concat(a));}catch(e){}refresh();}
 function tkey(){try{return (new URLSearchParams(location.search).get('tokenKey'))||'mdaReadiness.ghpat';}catch(e){return 'mdaReadiness.ghpat';}}
 function tok(){try{return localStorage.getItem(tkey())||'';}catch(e){return '';}}
-function banner(html){var d=document.getElementById('__loaderr');if(!d){d=document.createElement('div');d.id='__loaderr';d.style.cssText='margin:14px 20px;padding:12px 15px;border:1px solid #c0573c;border-radius:10px;background:#fbeee7;color:#7c2e18;font:14px/1.55 system-ui,-apple-system,sans-serif;max-width:920px';var h=document.querySelector('header');if(h&&h.parentNode){h.parentNode.insertBefore(d,h.nextSibling);}else{document.body.insertBefore(d,document.body.firstChild);}}d.innerHTML=html;}
-function ld(s){if(s.indexOf('gh:')===0){var r=s.slice(3),ref='main',at=r.lastIndexOf('@');if(at>0){ref=r.slice(at+1);r=r.slice(0,at);}var a=r.split('/'),ow=a.shift(),rp=a.shift(),pa=a.join('/'),tk=tok();var h={'Accept':'application/vnd.github.raw','X-GitHub-Api-Version':'2022-11-28'};if(tk)h['Authorization']='Bearer '+tk;return fetch('https://api.github.com/repos/'+ow+'/'+rp+'/contents/'+pa+'?ref='+encodeURIComponent(ref),{headers:h,cache:'no-store'}).then(function(resp){try{resp.__gh={owner:ow,repo:rp,path:pa,ref:ref,hadTok:!!tk};}catch(e){}return resp;});}return fetch(s,{cache:'no-store'});}
+function tokInfo(tk){if(!tk)return 'ABSENT (no token in this browser at '+location.origin+')';var kind=tk.indexOf('github_pat_')===0?'fine-grained (github_pat_)':(tk.indexOf('ghp_')===0?'classic (ghp_)':'unknown prefix');return 'present · '+kind+' · length '+tk.length;}
+function panel(){var d=document.getElementById('__diag');if(!d){d=document.createElement('details');d.id='__diag';d.style.cssText='margin:10px 20px;max-width:980px;border:1px solid #d8d3c8;border-radius:8px;background:#f3f1ec;padding:6px 10px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#4a4a44';var s=document.createElement('summary');s.textContent='Loader diagnostics';s.style.cssText='cursor:pointer;font-weight:700;color:#1f6f6b';d.appendChild(s);var pre=document.createElement('pre');pre.id='__diagpre';pre.style.cssText='white-space:pre-wrap;word-break:break-all;margin:8px 0 2px';d.appendChild(pre);var h=document.querySelector('header');if(h&&h.parentNode)h.parentNode.insertBefore(d,h.nextSibling);else document.body.insertBefore(d,document.body.firstChild);}return d;}
+function refresh(){var pre=document.getElementById('__diagpre');if(pre)pre.textContent=TRACE.join('\n');}
+function banner(html){var b=document.getElementById('__loaderr');if(!b){b=document.createElement('div');b.id='__loaderr';b.style.cssText='margin:14px 20px;padding:12px 15px;border:1px solid #c0573c;border-radius:10px;background:#fbeee7;color:#7c2e18;font:14px/1.55 system-ui,-apple-system,sans-serif;max-width:980px';var h=document.querySelector('header');if(h&&h.parentNode)h.parentNode.insertBefore(b,h.nextSibling);else document.body.insertBefore(b,document.body.firstChild);}b.innerHTML=html+' <a href="#" style="color:#1f6f6b" onclick="var d=document.getElementById(\'__diag\');if(d)d.open=true;return false;">Show loader diagnostics</a>';panel().open=true;refresh();}
+function ld(src){
+  var meta=null,url;
+  if(src.indexOf('gh:')===0){
+    var r=src.slice(3),ref='main',at=r.lastIndexOf('@');if(at>0){ref=r.slice(at+1);r=r.slice(0,at);}
+    var a=r.split('/'),ow=a.shift(),rp=a.shift(),pa=a.join('/'),tk=tok();
+    meta={owner:ow,repo:rp,path:pa,ref:ref};
+    log('scheme = gh:');log('owner =',ow);log('repo =',rp);log('ref =',ref);log('path =',pa);
+    log('tokenKey =',tkey());log('token =',tokInfo(tk));
+    url='https://api.github.com/repos/'+ow+'/'+rp+'/contents/'+pa+'?ref='+encodeURIComponent(ref);
+    var h={'Accept':'application/vnd.github.raw','X-GitHub-Api-Version':'2022-11-28'};if(tk)h['Authorization']='Bearer '+tk;
+    log('GET',url);log('Accept = application/vnd.github.raw');log('Authorization =',tk?'Bearer <token present>':'(none sent)');
+    return fetch(url,{headers:h,cache:'no-store'}).then(function(resp){resp.__meta=meta;resp.__url=url;return resp;});
+  }
+  url=src;log('scheme = plain http');log('GET',url);
+  return fetch(url,{cache:'no-store'}).then(function(resp){resp.__url=url;return resp;});
+}
 var p=new URLSearchParams(location.search),src=p.get('data')||((document.querySelector('meta[name="data-src"]')||{}).content||'');
-if(src){ld(src).then(function(r){if(!r.ok){var e=new Error('http '+r.status);e.resp=r;throw e;}return r.json();}).then(function(j){__run__(j);}).catch(function(e){
-  __run__(DATA);
-  var b=document.getElementById('ver');if(b)b.textContent+='  ·  sample data ('+String((e&&e.message)||e)+')';
-  var gh=(e&&e.resp&&e.resp.__gh)||null,st=(e&&e.resp&&e.resp.status)||0;
-  if(gh&&!gh.hadTok){banner('<b>No GitHub token in this browser.</b> These viewers read the private metadata store, so they need your token. Open the <b>MDA console</b> in this same browser, click <b>&#9729; GitHub</b>, and save a token that can read the <code>'+gh.repo+'</code> repo. Then reload this page.<br><span style="opacity:.8">The console and these viewers must be served from the <b>same site</b> (both on GitHub Pages), or the browser will not share the saved token.</span>');}
-  else if(gh&&st===404){banner('<b>GitHub returned 404 for the metadata.</b> Either your token cannot read <code>'+gh.owner+'/'+gh.repo+'</code>, or <code>'+gh.path+'</code> is not on branch <code>'+gh.ref+'</code> yet. Check the token has <b>repo</b> scope (classic) or <b>Contents: read</b> for that repo (fine-grained), and that the private repo is pushed. Then reload.');}
-  else if(gh&&(st===401||st===403)){banner('<b>GitHub rejected the token</b> (HTTP '+st+'). It may be expired or missing repo access. Re-create it in the MDA console (&#9729; GitHub) with read access to <code>'+gh.repo+'</code>, then reload.');}
-  else if(gh){banner('<b>Could not reach the metadata store</b> ('+String((e&&e.message)||e)+'). Showing built-in sample data. Reload once the connection is restored.');}
-  else{banner('<b>Could not load the data file</b> ('+String((e&&e.message)||e)+'). If you opened this as a local file, serve the folder over http instead of double-clicking it.');}
-});}else{__run__(DATA);}
+panel();
+log('page =',location.href);
+log('data source from',p.get('data')?'?data= parameter':'meta[data-src] tag');
+log('data source =',src||'(none)');
+if(!src){log('no data source set; rendering embedded sample DATA');__run__(DATA);}
+else{
+  ld(src).then(function(r){
+    log('HTTP',r.status,r.statusText||'');
+    try{['x-ratelimit-remaining','x-ratelimit-limit','x-ratelimit-reset','x-accepted-github-permissions','content-type'].forEach(function(k){var v=r.headers.get(k);if(v!=null)log(k,'=',k==='x-ratelimit-reset'?(v+' ('+new Date(v*1000).toISOString()+')'):v);});}catch(e){}
+    if(!r.ok){return r.text().then(function(body){var e=new Error('HTTP '+r.status+' '+(r.statusText||''));e.resp=r;e.body=body;throw e;});}
+    return r.text().then(function(txt){log('body bytes =',txt.length);var j;try{j=JSON.parse(txt);}catch(pe){var e=new Error('JSON parse failed: '+pe.message);e.parseBody=txt;throw e;}return j;});
+  }).then(function(j){log('JSON parsed OK; rendering');__run__(j);}).catch(function(e){
+    __run__(DATA);
+    log('FAILED:',String((e&&e.message)||e));
+    var gm='';if(e&&e.body){log('GitHub response body:',String(e.body).slice(0,700));try{gm=(JSON.parse(e.body).message)||'';}catch(_){}}
+    if(e&&e.parseBody)log('raw body (first 300):',String(e.parseBody).slice(0,300));
+    var vb=document.getElementById('ver');if(vb)vb.textContent+='  ·  sample data ('+String((e&&e.message)||e)+')';
+    var m=(e&&e.resp&&e.resp.__meta)||null,st=(e&&e.resp&&e.resp.status)||0,tk=tok();
+    if(m&&!tk){banner('<b>No GitHub token in this browser.</b> Open the <b>MDA console</b> here (same site), click <b>&#9729; GitHub</b>, Save &amp; connect a token that can read <code>'+m.repo+'</code>, then reload.');}
+    else if(m&&st===404){banner('<b>GitHub 404 for <code>'+m.path+'</code></b> on <code>'+m.owner+'/'+m.repo+'@'+m.ref+'</code>'+(gm?(' &mdash; GitHub says: <i>'+gm+'</i>'):'')+'. A token IS present, so this means the token cannot read this file (its permissions, or the path/branch/repo).');}
+    else if(m&&(st===401||st===403)){banner('<b>GitHub '+st+'</b>'+(gm?(' &mdash; <i>'+gm+'</i>'):'')+'. Token rejected or rate-limited.');}
+    else if(m){banner('<b>Could not reach GitHub</b> ('+String((e&&e.message)||e)+').');}
+    else{banner('<b>Could not load the data file</b> ('+String((e&&e.message)||e)+'). If opened as a local file, serve over http instead.');}
+  });
+}
 })();
 </script>
 </body>

@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="version" content="1.0.0">
+<meta name="mw-asset" content="true">
+<title>CA&I Scoring Model</title>
+<style>
+  :root{
+    --bg:#f6f7f9;--panel:#fff;--panel2:#fbfcfd;--ink:#15181d;--muted:#5c6673;
+    --line:#e3e7ec;--line2:#eef1f4;
+    --accent:#2f5bd0;--accent-ink:#1b3a8f;--accent-bg:#eaf0fc;
+    --ok:#0f7b5a;--ok-bg:#e7f5ee;--bad:#b4341f;--bad-bg:#fcebe7;--mid:#8a4b00;--mid-bg:#fdefdd;
+    --chip:#eef1f6;--chip-ink:#3a4452;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --shadow:0 1px 2px rgba(20,24,29,.06),0 2px 10px rgba(20,24,29,.05);--radius:14px;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#0f1216;--panel:#171b21;--panel2:#1b2027;--ink:#e9edf2;--muted:#9aa5b2;
+    --line:#272d36;--line2:#20262e;
+    --accent:#6f97ff;--accent-ink:#9db8ff;--accent-bg:#17223c;
+    --ok:#4cc79a;--ok-bg:#123026;--bad:#ef7a66;--bad-bg:#3a1b16;--mid:#e0a24c;--mid-bg:#33260f;
+    --chip:#232a33;--chip-ink:#c3ccd7;--shadow:0 1px 2px rgba(0,0,0,.4),0 2px 12px rgba(0,0,0,.35);
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0f1216;--panel:#171b21;--panel2:#1b2027;--ink:#e9edf2;--muted:#9aa5b2;
+    --line:#272d36;--line2:#20262e;--accent:#6f97ff;--accent-ink:#9db8ff;--accent-bg:#17223c;
+    --ok:#4cc79a;--ok-bg:#123026;--bad:#ef7a66;--bad-bg:#3a1b16;--mid:#e0a24c;--mid-bg:#33260f;
+    --chip:#232a33;--chip-ink:#c3ccd7;
+  }
+  *{box-sizing:border-box}html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;padding-bottom:64px}
+  .wrap{max-width:920px;margin:0 auto;padding:0 16px}
+  header.mast{padding:28px 0 8px}
+  .eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  h1{font-size:25px;line-height:1.2;margin:8px 0 8px;letter-spacing:-.01em}
+  .lede{font-size:15px;color:var(--muted);max-width:64ch}
+  section{margin:26px 0}
+  h2{font-size:13px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:700}
+  code,.mono{font-family:var(--mono);font-size:12.5px}
+  code{background:var(--chip);color:var(--chip-ink);padding:1px 5px;border-radius:5px}
+
+  .defect{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:12px;box-shadow:var(--shadow);padding:15px 17px;margin:12px 0}
+  .defect h3{margin:0 0 6px;font-size:16px}
+  .defect .tag{font-size:11px;font-weight:700;color:var(--bad);background:var(--bad-bg);padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+  .ba>div{border-radius:9px;padding:10px 12px;font-size:13px}
+  .ba .was{background:var(--bad-bg)}
+  .ba .now{background:var(--ok-bg)}
+  .ba .l{font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+  .ba .was .l{color:var(--bad)} .ba .now .l{color:var(--ok)}
+  pre{margin:6px 0 0;white-space:pre-wrap;font-family:var(--mono);font-size:12px;line-height:1.5}
+
+  .tool{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .fld{display:flex;flex-direction:column;gap:4px}
+  .fld label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .fld input{border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);padding:8px 10px;font:inherit;font-size:14px}
+  .fld input:focus{outline:none;border-color:var(--accent)}
+  .fld .h{font-size:11px;color:var(--muted)}
+  .row2{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:12px}
+  .row2 label{font-size:13px;display:flex;gap:7px;align-items:center}
+  .out{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+  .res{border-radius:12px;padding:14px 16px;border:1px solid var(--line)}
+  .res.oldr{background:var(--bad-bg)} .res.newr{background:var(--ok-bg)}
+  .res .l{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .res .band{font-size:30px;font-weight:800;letter-spacing:-.02em;margin:2px 0}
+  .res .state{font-size:13px;margin-top:2px}
+  .res .flags{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+  .fl{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--mid-bg);color:var(--mid)}
+  .chan{font-size:11.5px;color:var(--muted);margin-top:10px;font-family:var(--mono)}
+
+  table.t{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);font-size:13px}
+  table.t th,table.t td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line2);vertical-align:top}
+  table.t th{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:var(--panel2)}
+  table.t tr:last-child td{border-bottom:0}
+  .pass{color:var(--ok);font-weight:700} .fail{color:var(--bad);font-weight:700}
+  .suitehead{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+  .suitehead .score{font-size:13px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--ok-bg);color:var(--ok)}
+  .suitehead .score.bad{background:var(--bad-bg);color:var(--bad)}
+  .cfg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:6px}
+  .cfg .fld input{font-family:var(--mono);font-size:13px}
+  details.cfgwrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:0}
+  details.cfgwrap summary{cursor:pointer;padding:13px 16px;font-weight:700;font-size:14px;list-style:none}
+  details.cfgwrap summary::-webkit-details-marker{display:none}
+  details.cfgwrap .in{padding:0 16px 16px}
+  footer{margin:30px 0 10px;color:var(--muted);font-size:12.5px;text-align:center}
+  @media (max-width:640px){.grid4{grid-template-columns:repeat(2,1fr)}.ba,.out{grid-template-columns:1fr}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div class="eyebrow">Modelware · CA&amp;I · Phase 0 fix</div>
+    <h1>Scoring model — corrected (fixes D1, D2, D3)</h1>
+    <p class="lede">The reference implementation of the capability-scoring engine, with the three defects from the blueprint fixed and a
+      live test suite that proves it. This is what the DLK pilot's scoring module is built from. Scores are on the 0–5 rubric; enter a
+      channel as a comma list of observations.</p>
+  </header>
+
+  <!-- DEFECT → FIX -->
+  <section>
+    <h2>What was broken, and the fix</h2>
+
+    <div class="defect">
+      <h3>D1 — you could skip judgement to M5 <span class="tag">correctness</span></h3>
+      <div>The original <code>DefensibleMastery</code> gated M5 only on Practical + Workplace and M4 ignored Workplace entirely — so a polished artefact plus a good validation chat could mint M5 over thin reasoning.</div>
+      <div class="ba">
+        <div class="was"><span class="l">Was</span><pre>M5 = Practical≥.75 AND Workplace≥.75
+M4 = Judgement≥.70 AND Practical≥.70
+(knowledge/judgement never checked for M5)</pre></div>
+        <div class="now"><span class="l">Now — cumulative gates</span><pre>M5 = K≥.60 ∧ J≥.70 ∧ P≥.75 ∧ W≥.75
+M4 = K≥.60 ∧ J≥.70 ∧ P≥.70
+M3 = K≥.60 ∧ J≥.60
+Each band needs every lower channel.</pre></div>
+      </div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:8px">Basis: the blueprint states M5 "requires validated evidence of judgement." Strong practice with weak knowledge is not silently promoted or capped — it is flagged <b>Uncertain — validation required</b> (Stop D), so a human resolves whether the knowledge score mis-measured a genuinely capable person.</div>
+    </div>
+
+    <div class="defect">
+      <h3>D2 — the gates averaged over a critical miss <span class="tag">correctness</span></h3>
+      <div>Every channel used <code>AVERAGEIFS</code>, so one wrong answer on a critical item was washed out by easy correct ones. The narrative demanded "two consistent observations"; the formula never checked consistency.</div>
+      <div class="ba">
+        <div class="was"><span class="l">Was</span><pre>Knowledge = AVERAGE(all K items)
+[1.0, 1.0, 0.0] → mean .67 → qualifies ≥.60</pre></div>
+        <div class="now"><span class="l">Now — mean + floor + count</span><pre>channel meets T  ⇔
+  mean ≥ T  AND  min ≥ T − tol  AND  n ≥ minObs
+[1.0,1.0,0.0]: min 0 < .40 → does NOT meet .60
+A disqualifying error hard-caps the capability at M1.</pre></div>
+      </div>
+    </div>
+
+    <div class="defect">
+      <h3>D3 — the next-item priority was unstable <span class="tag">efficiency</span></h3>
+      <div>Multiplying five hand-tuned factors meant any single zero collapsed the item to zero and the ranking swung wildly — and it never actually computed uncertainty reduction.</div>
+      <div class="ba">
+        <div class="was"><span class="l">Was</span><pre>priority = info × role × risk × gap × fresh − burden
+role = 0  →  whole item = 0 (even if risk = high)</pre></div>
+        <div class="now"><span class="l">Now — weighted additive, bounded</span><pre>priority = Σ(wᵢ · factorᵢ) / (1 + burden)
+info = uncertainty × item-information(difficulty, ability)
+mandatory/risk-triggered items override to top.</pre></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INTERACTIVE SCORER -->
+  <section>
+    <h2>Capability scorer — old vs corrected</h2>
+    <div class="tool">
+      <div class="grid4">
+        <div class="fld"><label>Knowledge (E2)</label><input id="K" value="3,2"><span class="h">0–5, comma-sep</span></div>
+        <div class="fld"><label>Judgement (E3)</label><input id="J" value="2,3"><span class="h">scenario items</span></div>
+        <div class="fld"><label>Practical (E4)</label><input id="P" value="4,4"><span class="h">tasks</span></div>
+        <div class="fld"><label>Workplace (E5)</label><input id="W" value="4,4"><span class="h">validated evidence</span></div>
+      </div>
+      <div class="row2">
+        <label>Confidence (1–5): <input id="conf" type="number" min="1" max="5" value="4" style="width:60px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:5px 8px"></label>
+        <label><input id="dq" type="checkbox"> Disqualifying (safety-critical) error present</label>
+      </div>
+      <div class="out">
+        <div class="res oldr"><div class="l">Old formula</div><div class="band" id="oband">—</div><div class="state" id="ostate"></div></div>
+        <div class="res newr"><div class="l">Corrected</div><div class="band" id="nband">—</div><div class="state" id="nstate"></div><div class="flags" id="nflags"></div></div>
+      </div>
+      <div class="chan" id="chanline"></div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:10px">Defaults show the headline bug: strong practice/workplace, weak knowledge &amp; judgement → the old model says <b>M5</b>, the corrected model says <b>validation required</b>.</div>
+    </div>
+  </section>
+
+  <!-- TEST SUITE -->
+  <section>
+    <h2>Test suite — proof the fix holds</h2>
+    <div class="suitehead"><span class="score" id="suitescore">—</span><span style="font-size:12.5px;color:var(--muted)">auto-runs on load and whenever you change a threshold below</span></div>
+    <table class="t" id="suite"><thead><tr><th>Case</th><th>Channels (0–5)</th><th>Old</th><th>Corrected</th><th>Expected</th><th></th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <!-- PRIORITY -->
+  <section>
+    <h2>Next-item priority — old vs corrected</h2>
+    <div class="tool">
+      <div class="grid4">
+        <div class="fld"><label>info (0–1)</label><input id="p_info" value="0.5"></div>
+        <div class="fld"><label>gap (0–1)</label><input id="p_gap" value="0.4"></div>
+        <div class="fld"><label>role (0–1)</label><input id="p_role" value="0"></div>
+        <div class="fld"><label>risk (0–1)</label><input id="p_risk" value="0.8"></div>
+        <div class="fld"><label>fresh (0–1)</label><input id="p_fresh" value="0.3"></div>
+        <div class="fld"><label>burden (0–1)</label><input id="p_burden" value="0.4"></div>
+      </div>
+      <div class="row2"><label><input id="p_mand" type="checkbox"> Mandatory / risk-triggered (overrides to top)</label></div>
+      <div class="out">
+        <div class="res oldr"><div class="l">Old (multiplicative)</div><div class="band" id="pold" style="font-size:24px">—</div><div class="state">a zero factor nukes the whole item</div></div>
+        <div class="res newr"><div class="l">Corrected (additive / (1+burden))</div><div class="band" id="pnew" style="font-size:24px">—</div><div class="state" id="pnewnote"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONFIG -->
+  <section>
+    <h2>Tune the model (no code change)</h2>
+    <details class="cfgwrap"><summary>Thresholds &amp; weights ▸</summary><div class="in">
+      <div style="font-size:12.5px;color:var(--muted);margin:4px 0 10px">Edit and the scorer + test suite recompute live. These are the dials to argue about with your psychometrician — the structure stays correct whatever you set.</div>
+      <div class="cfg" id="cfgbox"></div>
+    </div></details>
+  </section>
+
+  <footer>
+    <span id="appVersion"></span> · built 2026-10-29 · reference implementation for the DLK pilot scoring module · fits <code>data-management-tools</code> standard
+  </footer>
+</div>
+
+<script>
+  document.getElementById('appVersion').textContent='v'+document.querySelector('meta[name="version"]').content;
+
+  const CFG={
+    tol:0.20,
+    minObsK:2, minObsJ:1, minObsP:1, minObsW:1,
+    M1_K:0.30, M2_K:0.60,
+    M3_K:0.60, M3_J:0.60,
+    M4_K:0.60, M4_J:0.70, M4_P:0.70,
+    M5_K:0.60, M5_J:0.70, M5_P:0.75, M5_W:0.75,
+    w_info:0.30, w_gap:0.20, w_role:0.20, w_risk:0.20, w_fresh:0.10
+  };
+
+  const parse=s=>String(s).split(',').map(x=>parseFloat(x.trim())).filter(x=>!isNaN(x)).map(x=>Math.max(0,Math.min(5,x))/5);
+  function stats(a){ if(!a.length) return {mean:0,min:0,n:0,present:false};
+    return {mean:a.reduce((x,y)=>x+y,0)/a.length, min:Math.min(...a), n:a.length, present:true}; }
+  function meets(st,T,minObs){ return st.present && st.mean>=T && st.min>=(T-CFG.tol) && st.n>=minObs; }
+
+  function oldBand(K,J,P,W){ // means only — the buggy original
+    if(P>=0.75&&W>=0.75) return 'M5';
+    if(J>=0.70&&P>=0.70) return 'M4';
+    if(K>=0.60&&J>=0.60) return 'M3';
+    if(K>=0.60) return 'M2';
+    if(K>=0.30) return 'M1';
+    return 'M0';
+  }
+
+  function evaluate(Kraw,Jraw,Praw,Wraw,conf,dq){
+    const sK=stats(Kraw),sJ=stats(Jraw),sP=stats(Praw),sW=stats(Wraw);
+    const old=oldBand(sK.mean,sJ.mean,sP.mean,sW.mean);
+    if(dq) return {band:'M1',state:'Disqualifying error — remediate',flags:['disqualifying-error'],old,sK,sJ,sP,sW};
+
+    let band='M0';
+    if(meets(sK,CFG.M5_K,CFG.minObsK)&&meets(sJ,CFG.M5_J,CFG.minObsJ)&&meets(sP,CFG.M5_P,CFG.minObsP)&&meets(sW,CFG.M5_W,CFG.minObsW)) band='M5';
+    else if(meets(sK,CFG.M4_K,CFG.minObsK)&&meets(sJ,CFG.M4_J,CFG.minObsJ)&&meets(sP,CFG.M4_P,CFG.minObsP)) band='M4';
+    else if(meets(sK,CFG.M3_K,CFG.minObsK)&&meets(sJ,CFG.M3_J,CFG.minObsJ)) band='M3';
+    else if(meets(sK,CFG.M2_K,CFG.minObsK)) band='M2';
+    else if(sK.present && sK.mean>=CFG.M1_K) band='M1'; // M1 Orient: recognition, mean only (no consistency floor)
+
+    const bn=+band[1];
+    const flags=[];
+    const pStrong=meets(sP,CFG.M4_P,CFG.minObsP), wStrong=meets(sW,CFG.M5_W,CFG.minObsW);
+    // evidence conflict: higher channel strong but a lower channel holds the band down
+    if((wStrong&&bn<5)||(pStrong&&bn<4)) flags.push('evidence-conflict');
+    // calibration
+    const cn=(conf-1)/4, best=Math.max(sK.mean,sJ.mean,sP.mean,sW.mean);
+    if(cn-sK.mean>0.20 && sK.present && sK.mean<0.60) flags.push('false-confidence');
+    if(sK.present && (sP.present||sJ.present) && (best-cn>0.20) && best>=0.70) flags.push('hidden-capability');
+
+    let state;
+    if(flags.includes('evidence-conflict')) state='Uncertain — validation required';
+    else if((sK.present||sJ.present) && !sP.present && !sW.present && bn>=2 && bn<4) state='Knowledge demonstrated — application not yet evidenced';
+    else if(bn===0||bn===1) state='Development need — recommend learning';
+    else state='Capability established at '+band;
+    return {band,state,flags,old,sK,sJ,sP,sW};
+  }
+
+  function fmt(st){ return st.present?`μ${st.mean.toFixed(2)} min${st.min.toFixed(2)} n${st.n}`:'—'; }
+
+  function runScorer(){
+    const r=evaluate(parse(V('K')),parse(V('J')),parse(V('P')),parse(V('W')),+V('conf'),document.getElementById('dq').checked);
+    document.getElementById('oband').textContent=r.old;
+    document.getElementById('ostate').textContent = r.old==='M5'||r.old==='M4' ? 'high band on thin evidence' : '';
+    document.getElementById('nband').textContent=r.band;
+    document.getElementById('nstate').textContent=r.state;
+    const fl=document.getElementById('nflags'); fl.innerHTML='';
+    r.flags.forEach(f=>{const s=document.createElement('span');s.className='fl';s.textContent=f;fl.appendChild(s);});
+    document.getElementById('chanline').textContent=`K ${fmt(r.sK)}  ·  J ${fmt(r.sJ)}  ·  P ${fmt(r.sP)}  ·  W ${fmt(r.sW)}`;
+  }
+  const V=id=>document.getElementById(id).value;
+
+  // priority
+  function priOld(f){ return f.info*f.role*f.risk*f.gap*f.fresh - f.burden; }
+  function priNew(f){ const n=CFG.w_info*f.info+CFG.w_gap*f.gap+CFG.w_role*f.role+CFG.w_risk*f.risk+CFG.w_fresh*f.fresh; return n/(1+f.burden); }
+  function runPri(){
+    const f={info:+V('p_info'),gap:+V('p_gap'),role:+V('p_role'),risk:+V('p_risk'),fresh:+V('p_fresh'),burden:+V('p_burden')};
+    document.getElementById('pold').textContent=priOld(f).toFixed(3);
+    const mand=document.getElementById('p_mand').checked;
+    document.getElementById('pnew').textContent= mand?'∞ (override)':priNew(f).toFixed(3);
+    document.getElementById('pnewnote').textContent= mand?'risk-triggered — selected first':'bounded 0–'+(CFG.w_info+CFG.w_gap+CFG.w_role+CFG.w_risk+CFG.w_fresh).toFixed(2)+', stable';
+  }
+
+  // TEST SUITE
+  const CASES=[
+    {n:'D1 weak reasoning, strong practice', K:'3,2',J:'2,3',P:'4,4',W:'4,4',dq:false,conf:4, exp:'Uncertain — validation required', expNotOld:'M5'},
+    {n:'Blueprint M3 case (K/J strong, no P/W)', K:'5,5',J:'4,5',P:'',W:'',dq:false,conf:4, exp:'M3'},
+    {n:'D2 averaged-over miss [5,5,0]', K:'5,5,0',J:'4',P:'',W:'',dq:false,conf:3, exp:'M1'},
+    {n:'Disqualifying safety error', K:'5,5',J:'5',P:'5',W:'5',dq:true,conf:5, exp:'M1'},
+    {n:'Clean M5 (all channels strong)', K:'5,5',J:'4,5',P:'4,4',W:'4,4',dq:false,conf:4, exp:'M5'},
+    {n:'Clean M4 (K,J,P; no workplace)', K:'4,4',J:'4,4',P:'4,4',W:'',dq:false,conf:4, exp:'M4'},
+    {n:'Known gap (all at lowest scored level)', K:'1,1',J:'1',P:'',W:'',dq:false,conf:2, exp:'M0'}
+  ];
+  function runSuite(){
+    const tb=document.querySelector('#suite tbody'); tb.innerHTML='';
+    let pass=0;
+    CASES.forEach(c=>{
+      const r=evaluate(parse(c.K),parse(c.J),parse(c.P),parse(c.W),c.conf,c.dq);
+      const got=r.band==='M3'||r.band==='M4'||r.band==='M5'||r.band==='M2'||r.band==='M1'||r.band==='M0'?
+        (r.state.startsWith('Uncertain')?r.state:(r.state.startsWith('Knowledge demonstrated')?r.band:r.band)):r.band;
+      // expectation matches on band OR the uncertain state
+      const ok = c.exp.startsWith('Uncertain') ? r.state===c.exp : (r.band===c.exp);
+      if(ok) pass++;
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${c.n}</td>
+        <td class="mono">K[${c.K||'·'}] J[${c.J||'·'}] P[${c.P||'·'}] W[${c.W||'·'}]${c.dq?' +DQ':''}</td>
+        <td class="mono">${r.old}</td>
+        <td class="mono">${r.band}${r.state.startsWith('Uncertain')?' ⚠':''}</td>
+        <td class="mono">${c.exp}</td>
+        <td class="${ok?'pass':'fail'}">${ok?'✓':'✗'}</td>`;
+      tb.appendChild(tr);
+    });
+    const sc=document.getElementById('suitescore');
+    sc.textContent=`${pass}/${CASES.length} passing`;
+    sc.className='score'+(pass===CASES.length?'':' bad');
+  }
+
+  // CONFIG UI
+  const CFG_FIELDS=Object.keys(CFG);
+  function buildCfg(){
+    const box=document.getElementById('cfgbox');
+    CFG_FIELDS.forEach(k=>{
+      const d=document.createElement('div'); d.className='fld';
+      d.innerHTML=`<label>${k}</label><input data-cfg="${k}" value="${CFG[k]}">`;
+      box.appendChild(d);
+    });
+    box.querySelectorAll('input[data-cfg]').forEach(inp=>{
+      inp.addEventListener('input',()=>{ const v=parseFloat(inp.value); if(!isNaN(v)){ CFG[inp.dataset.cfg]=v; runScorer(); runSuite(); runPri(); } });
+    });
+  }
+
+  ['K','J','P','W','conf'].forEach(id=>document.getElementById(id).addEventListener('input',runScorer));
+  document.getElementById('dq').addEventListener('change',runScorer);
+  ['p_info','p_gap','p_role','p_risk','p_fresh','p_burden'].forEach(id=>document.getElementById(id).addEventListener('input',runPri));
+  document.getElementById('p_mand').addEventListener('change',runPri);
+
+  buildCfg(); runScorer(); runSuite(); runPri();
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.2.0">
+<meta name="version" content="1.3.0">
 <meta name="data-src" content="gh:modelwaresystems-dama/modelware_app_storage/5W1H_Metadata_Viewer/_global/catalog.json@main">
 <meta name="updated" content="2026-10-27 11:36 SAST">
 <title>Data Catalog Viewer</title>
@@ -113,7 +113,18 @@ const VIEWLABELS={metadata:"Metadata",data:"Data",model:"Model",quality:"Quality
 const VIEWANCHOR={lineage:"node",quality:"dataset",provenance:"entity",dictionary:"dataset",catalog:"dataset",glossary:"term"};
 const slug=s=>String(s==null?"":s).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
 function launchUrl(tpl,sl,view){if(tpl.indexOf("{slug}")>=0)return tpl.replace(/\{slug\}/g,sl);if(tpl.indexOf("?")<0&&tpl.indexOf("#")<0&&VIEWANCHOR[view])return tpl+"#"+VIEWANCHOR[view]+"="+sl;return tpl;}
-function launchChips(d){const sl=slug(d.title);const wrap=el("span",{class:"launch",style:"margin-left:auto"});
+function launchChips(d){
+  const dists=d.distributions||d.distribution||[];
+  const hasData=dists.some(x=>["CSV","JSON"].includes(String(x.format||"").toUpperCase()));
+  if(!hasData){
+    const link=dists.find(x=>x.accessURL)||{};
+    if(!link.accessURL)return null;
+    const w=el("span",{class:"launch",style:"margin-left:auto"});
+    const lbl=(d.kind==="Public body"||d.kind==="External partner")?"Operating Model":"Open";
+    w.append(el("a",{class:"xlaunch",target:"_blank",rel:"noopener",href:link.accessURL,title:"open "+(d.title||""),onclick:e=>e.stopPropagation()},lbl));
+    return w;
+  }
+  const sl=slug(d.title);const wrap=el("span",{class:"launch",style:"margin-left:auto"});
   Object.keys(VIEWLABELS).forEach(k=>{if(LAUNCH[k])wrap.append(el("a",{class:"xlaunch",target:"_blank",rel:"noopener",href:launchUrl(LAUNCH[k],sl,k),title:"open the "+VIEWLABELS[k]+" view for this dataset",onclick:e=>e.stopPropagation()},VIEWLABELS[k]));});
   return wrap.childNodes.length?wrap:null;}
 
@@ -194,6 +205,7 @@ addPanel("datasets","Datasets",p=>{
   }
   [selP,selT,selF].forEach(s=>s.addEventListener("change",render)); search.addEventListener("input",render);
   p.append(bar,list); render();
+  p._focusTheme=sa=>{selP.value="";selF.value="";search.value="";selT.value=sa;render();};
   p._focusDataset=sl=>{selP.value="";selT.value="";selF.value="";search.value="";render();
     const card=[...list.querySelectorAll("details")].find(x=>x.id==="ds-"+sl);
     if(card){card.open=true;card.scrollIntoView({behavior:"smooth",block:"center"});card.classList.add("flash");setTimeout(()=>card.classList.remove("flash"),1600);}
@@ -239,6 +251,20 @@ if((D.services||[]).length) addPanel("services","Services",p=>{
 });
 
 // ---------- Raw
+if((D.taxonomy||{}).domains) addPanel("subjectareas","Subject Areas",p=>{
+  const tx=D.taxonomy;
+  p.append(el("div",{class:"filters",style:"display:block;margin-bottom:10px"},
+    el("span",{class:"small muted"},"Governed vocabulary: "+(tx.source||"")+". Click a subject area to filter the datasets.")));
+  (tx.domains||[]).forEach(dm=>{
+    const head=[el("span",{},"D"+dm.num+"  "+dm.name)];
+    if(dm.in_assessment_scope) head.push(el("span",{class:"pill theme",style:"margin-left:8px"},"in scope"));
+    const det=el("details",{},el("summary",{},...head));
+    const wrap=el("div",{style:"display:flex;flex-wrap:wrap;gap:6px;padding:8px 2px 4px"});
+    (dm.subject_areas||[]).forEach(sa=>wrap.append(
+      el("a",{class:"xlaunch",href:"#",onclick:e=>{e.preventDefault();gotoThemeFilter(sa);}},sa)));
+    det.append(wrap); p.append(el("div",{class:"card",style:"margin-bottom:8px"},det));
+  });
+});
 addPanel("raw","Catalog JSON",p=>{p.append(el("pre",{},JSON.stringify(D,null,2)));});
 
 // build nav + panels
@@ -253,6 +279,7 @@ function select(i){panels.forEach((pn,j)=>{pn._btn.setAttribute("aria-selected",
 select(0);
 // inbound deep-link: lineage#... opens this with #dataset=<slug>, open that dataset
 function gotoDataset(sl){const i=panels.findIndex(p=>p.id==="datasets");if(i<0)return;select(i);const pn=panels[i];setTimeout(()=>{pn._div._focusDataset&&pn._div._focusDataset(sl);},60);}
+function gotoThemeFilter(sa){const i=panels.findIndex(p=>p.id==="datasets");if(i<0)return;select(i);const pn=panels[i];setTimeout(()=>{pn._div._focusTheme&&pn._div._focusTheme(sa);},60);}
 function fromHash(){const m=/(?:^|&)dataset=([^&]+)/.exec((location.hash||"").replace(/^#/,""));if(m)gotoDataset(decodeURIComponent(m[1]));}
 window.addEventListener("hashchange",fromHash); fromHash();
 } /* __run__ */

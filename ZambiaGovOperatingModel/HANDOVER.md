@@ -1,7 +1,7 @@
 # Handover: linking the Zambia Government Operating Model into the MDA Assessment tools
 
 **App:** Zambia Government Operating Model (navigator)
-**Version at handover:** v1.2.0 (built 2026-10-29 SAST)
+**Version at handover:** v1.2.1 (built 2026-10-29 SAST)
 **Repo target:** `data-management-tools`
 **Prepared:** 2026-10-29, Modelware Systems
 **Project:** Digital Zambia Acceleration (ZM-SZ-466193-CS-QBS)
@@ -71,7 +71,7 @@ validation_backlog[]
 
 The entity registry carries the certification state: `grade` is the evidence grade and `source` is where it was confirmed. Eight of the 14 public entities are grade A with the Act and name confirmed against primary sources; five are grade C (corroborated, primary instrument not opened); the externals (CIDRZ, Liquid, ZCAS University) are recorded with `external: true`.
 
-**Deep links (shipped in v1.2.0).** The app now reads the URL fragment and focuses accordingly: `#entity=<id>` opens the Entity Registry, filters to that body and highlights its row (external bodies flip the Show filter to "all" automatically); `#domain=<n>` opens that domain in the Domains tab; a bare tab id (`#mapping`, `#registry`, `#types`, `#rules`, `#decisions`) opens that tab. `<id>` is the model entity id from `zambia_opmodel.json` (`unza`, `zra`, `odpc`, and so on); `public-body-<id>` and a name slug are also accepted. So the catalog and console can link straight to a body with `../ZambiaGovOperatingModel/index.html#entity=<id>`.
+**Deep links (shipped in v1.2.0, persistence added v1.2.1).** The app reads the URL fragment and focuses accordingly: `#entity=<id>` opens the Entity Registry, filters to that body and highlights its row (external bodies flip the Show filter to "all" automatically); `#domain=<n>` opens that domain in the Domains tab; a bare tab id (`#mapping`, `#registry`, `#types`, `#rules`, `#decisions`) opens that tab. `<id>` is the model entity id from `zambia_opmodel.json` (`unza`, `zra`, `odpc`, and so on); `public-body-<id>` and a name slug are also accepted. So the catalog and console link straight to a body with `../ZambiaGovOperatingModel/index.html#entity=<id>`. The focus is a persistent state, not a one-shot: it is kept while the viewer switches tabs (the filtered Registry row, the opened/highlighted Domain, and the highlighted body in the Mapping tab all stay in sync), and a "Clear focus" banner at the top of the content removes it and clears the fragment.
 
 **Still embedded-only for data.** The app embeds its model data; it has no `?data=<file>` loader. If you later want the catalog to launch it against a separate model file, add the viewer-family `?data=` bootstrap (a MINOR bump). Not needed for the Navigator card, the console button, or the deep links above.
 

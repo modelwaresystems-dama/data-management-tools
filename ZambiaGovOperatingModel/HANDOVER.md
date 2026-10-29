@@ -1,7 +1,7 @@
 # Handover: linking the Zambia Government Operating Model into the MDA Assessment tools
 
 **App:** Zambia Government Operating Model (navigator)
-**Version at handover:** v1.1.1 (built 2026-10-29 SAST)
+**Version at handover:** v1.2.0 (built 2026-10-29 SAST)
 **Repo target:** `data-management-tools`
 **Prepared:** 2026-10-29, Modelware Systems
 **Project:** Digital Zambia Acceleration (ZM-SZ-466193-CS-QBS)
@@ -71,7 +71,9 @@ validation_backlog[]
 
 The entity registry carries the certification state: `grade` is the evidence grade and `source` is where it was confirmed. Eight of the 14 public entities are grade A with the Act and name confirmed against primary sources; five are grade C (corroborated, primary instrument not opened); the externals (CIDRZ, Liquid, ZCAS University) are recorded with `external: true`.
 
-**Matching the viewer family (optional enhancement).** The existing viewers take a `?data=<file>` runtime parameter and fall back to embedded data offline, and the Data Catalog launches each viewer per dataset using a name-slug key. This app currently embeds its data only; it has no `?data=` loader and no hash routing. If you want the console or catalog to launch it against a specific model file (or deep-link to a domain or entity), add the same `?data=` bootstrap used by the viewer family and a small `#domain=<n>` / `#entity=<id>` focus handler. That is a small, backwards-compatible change (MINOR version bump); it is not needed for the Navigator card or the console button.
+**Deep links (shipped in v1.2.0).** The app now reads the URL fragment and focuses accordingly: `#entity=<id>` opens the Entity Registry, filters to that body and highlights its row (external bodies flip the Show filter to "all" automatically); `#domain=<n>` opens that domain in the Domains tab; a bare tab id (`#mapping`, `#registry`, `#types`, `#rules`, `#decisions`) opens that tab. `<id>` is the model entity id from `zambia_opmodel.json` (`unza`, `zra`, `odpc`, and so on); `public-body-<id>` and a name slug are also accepted. So the catalog and console can link straight to a body with `../ZambiaGovOperatingModel/index.html#entity=<id>`.
+
+**Still embedded-only for data.** The app embeds its model data; it has no `?data=<file>` loader. If you later want the catalog to launch it against a separate model file, add the viewer-family `?data=` bootstrap (a MINOR bump). Not needed for the Navigator card, the console button, or the deep links above.
 
 ## 5. Integration point 4: catalog and Subject Area theme tie-in (optional)
 

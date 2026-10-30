@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="version" content="1.0.0">
+<meta name="mw-asset" content="true">
+<title>Capability Spine Map</title>
+<style>
+  :root{
+    --bg:#f6f7f9;--panel:#fff;--panel2:#fbfcfd;--ink:#15181d;--muted:#5c6673;
+    --line:#e3e7ec;--line2:#eef1f4;--accent:#2f5bd0;--accent-ink:#1b3a8f;--accent-bg:#eaf0fc;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --shadow:0 1px 2px rgba(20,24,29,.06),0 2px 10px rgba(20,24,29,.05);--radius:14px;
+    --edge:#9aa5b2;--edgeink:#5c6673;
+    --chain:#2f5bd0;--core:#1f6f8b;--cap:#b23b2e;--realize:#0f7b5a;--facet:#6a4ea8;--scale:#8a5a1a;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#0f1216;--panel:#171b21;--panel2:#1b2027;--ink:#e9edf2;--muted:#9aa5b2;
+    --line:#272d36;--line2:#20262e;--accent:#6f97ff;--accent-ink:#9db8ff;--accent-bg:#17223c;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 2px 12px rgba(0,0,0,.35);--edge:#4a5460;--edgeink:#9aa5b2;
+    --chain:#6f97ff;--core:#5aa0cf;--cap:#f08a7c;--realize:#5cc49a;--facet:#b49bf0;--scale:#d9a56a;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0f1216;--panel:#171b21;--panel2:#1b2027;--ink:#e9edf2;--muted:#9aa5b2;
+    --line:#272d36;--line2:#20262e;--accent:#6f97ff;--accent-ink:#9db8ff;--accent-bg:#17223c;
+    --edge:#4a5460;--edgeink:#9aa5b2;
+    --chain:#6f97ff;--core:#5aa0cf;--cap:#f08a7c;--realize:#5cc49a;--facet:#b49bf0;--scale:#d9a56a;
+  }
+  *{box-sizing:border-box}html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;padding-bottom:50px}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 16px}
+  header.mast{padding:24px 0 6px}
+  .eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  h1{font-size:25px;line-height:1.18;margin:8px 0 6px;letter-spacing:-.01em}
+  .lede{font-size:14.5px;color:var(--muted);max-width:76ch}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}
+  .lg{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .lg i{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .hint{font-size:12px;color:var(--muted);margin:2px 0 8px}
+
+  .stage{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start}
+  .mapbox{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  svg{display:block;width:100%;height:auto;background:var(--panel)}
+  .node rect{rx:9;stroke-width:1.5}
+  .node text{font-size:12.5px;font-weight:700;fill:#fff;pointer-events:none}
+  .node.dim{opacity:.18}
+  .node{cursor:pointer}
+  .edge{fill:none;stroke:var(--edge);stroke-width:1.6}
+  .edge.dim{opacity:.08}
+  .edge.hot{stroke:var(--accent);stroke-width:2.4}
+  .elabel{font-size:10px;fill:var(--edgeink);font-weight:600;opacity:0;transition:opacity .12s}
+  svg.showlabels .elabel{opacity:1}
+  .elabel.hot{fill:var(--accent-ink);font-weight:700;opacity:1}
+  .elabel.dim{opacity:0 !important}
+  .ebg{fill:var(--panel);opacity:0}
+  svg.showlabels .ebg{opacity:1}
+  .ebg.hot{opacity:1}
+  .ebg.dim{opacity:0 !important}
+  .tbtn{font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:5px 13px;box-shadow:var(--shadow)}
+  .tbtn:hover{border-color:var(--accent)}
+  .tbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  .side{position:sticky;top:12px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:15px 16px;min-height:160px}
+  .side .k{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .side .nm{font-weight:800;font-size:17px;margin:4px 0 2px}
+  .side .ty{display:inline-block;font-size:10.5px;font-weight:700;color:#fff;border-radius:999px;padding:2px 9px;margin-bottom:8px}
+  .side .def{font-size:13.5px;margin:4px 0 10px}
+  .side .rel{font-size:12.5px;margin:3px 0;padding-left:15px;position:relative}
+  .side .rel .v{color:var(--accent-ink);font-weight:700}
+  .side .rel.out:before{content:"→";position:absolute;left:0;color:var(--muted)}
+  .side .rel.in:before{content:"←";position:absolute;left:0;color:var(--muted)}
+  .side .rel b{font-weight:700}
+  .side .empty{color:var(--muted);font-size:13px}
+  footer{margin:22px 0 10px;color:var(--muted);font-size:12.5px;text-align:center}
+  @media (max-width:820px){.stage{grid-template-columns:1fr}.side{position:static}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div class="eyebrow">Modelware · CA&amp;I · Capability Spine</div>
+    <h1>Capability Spine — the element map</h1>
+    <p class="lede">Every element of the CA&amp;I model and how it links to the others — the demand chain, the ontology core, the realization chain, and the fit facets &amp; scales. Click any element to see its definition and its relationships. This is the spine as a graph, not tables.</p>
+    <div class="legend" id="legend"></div>
+    <div class="hint" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button id="toggleLabels" class="tbtn">Show all relationship labels</button><span>Click an element to focus it and read its links · click empty space to reset.</span></div>
+  </header>
+
+  <div class="stage">
+    <div class="mapbox"><svg id="svg" viewBox="0 0 1080 600" role="img" aria-label="Capability spine element map"></svg></div>
+    <div class="side" id="side"><div class="empty">Click any element in the map to see what it is and how it connects.</div></div>
+  </div>
+
+  <footer><span id="appVersion"></span> · built 2026-10-30 · CA&amp;I Capability Spine map · fits <code>data-management-tools</code> standard</footer>
+</div>
+
+<script>
+  document.getElementById('appVersion').textContent='v'+document.querySelector('meta[name="version"]').content;
+
+  const TYPE={
+    chain:{c:'--chain',label:'Demand chain'},
+    cap:{c:'--cap',label:'Business Capability'},
+    core:{c:'--core',label:'Ontology core'},
+    realize:{c:'--realize',label:'Realization'},
+    facet:{c:'--facet',label:'Fit facet'},
+    scale:{c:'--scale',label:'Scale'}
+  };
+  // x,y = top-left; w; h fixed 46
+  const H=46;
+  const N=[
+    // demand chain (top)
+    {id:'strat',t:'chain',x:24,y:26,w:168,label:'Business & Data Strategy',def:'Sets direction. Highlights the Business Capabilities the organisation must have.'},
+    {id:'bcap',t:'cap',x:232,y:26,w:150,label:'Business Capability',def:'An Organizational Ability — what the organisation can do. Enables a Business Outcome; realization-independent; realized by people in roles.'},
+    {id:'dts',t:'chain',x:430,y:26,w:168,label:'Data Talent Strategy',def:'Know Your Value. Maps the strategic capability requirements to the data talent the organisation needs.'},
+    {id:'treq',t:'chain',x:646,y:26,w:158,label:'Talent Requirement',def:'The specific capability / mastery the organisation needs from its people — the demand L&D must fulfil.'},
+    {id:'cai',t:'chain',x:852,y:26,w:168,label:'CA&I · L&D',def:'Continuous Assessment & Improvement. Closes the gap from a Learner’s current mastery to the required mastery.'},
+    // persona / role band
+    {id:'persona',t:'core',x:24,y:150,w:150,label:'Persona',def:'A talent archetype (the Five-Persona set). Carries a fit signature and a chosen 10-year direction. Performs Roles.'},
+    {id:'opmodel',t:'core',x:214,y:90,w:150,label:'Operating Model',def:'Structures the organisation and allocates work to Roles.'},
+    {id:'role',t:'core',x:404,y:150,w:120,label:'Role',def:'A unit of work in the operating model. Requires a target Mastery of specified Knowledge Areas.'},
+    {id:'sfia',t:'scale',x:600,y:150,w:130,label:'SFIA 1–7',def:'Responsibility levels (Follow · Assist · Apply · Enable · Ensure & Advise · Initiate & Influence · Set Strategy). Each maps to an expected Mastery.'},
+    {id:'think',t:'facet',x:770,y:132,w:250,label:'Thinking Styles (Gregorc)',def:'CS / AS / CR / AR. Activity affinity — how a person naturally works. Informs fit, never Mastery.'},
+    {id:'strengths',t:'facet',x:770,y:192,w:250,label:'CliftonStrengths (4 / 34)',def:'Four domains, 34 themes. Activity affinity. Informs fit and team composition, never Mastery.'},
+    // learner / mastery band
+    {id:'learner',t:'core',x:24,y:286,w:150,label:'Learner',def:'The individual CA&I navigates. Fits a Persona; holds Mastery of Knowledge Areas, justified by Evidence.'},
+    {id:'mastery',t:'core',x:300,y:286,w:160,label:'Mastery (M0–M5)',def:'Learning depth in a Knowledge Area, on the named scale. Three readings: Acquired (held), Required (by the Role), Desired.'},
+    {id:'ka',t:'core',x:560,y:208,w:150,label:'Knowledge Area',def:'A DMBOK subdiscipline. Provides the knowledge & practices for realizing Business Capabilities. Grouped by DMBOK Level.'},
+    {id:'mscale',t:'scale',x:770,y:286,w:250,label:'Mastery scale: Unaware→Influencer',def:'Unaware · Aware · Knowledgeable · Resource · Translator · Influencer = M0–M5 (Incomplete = not assessed).'},
+    {id:'evidence',t:'core',x:300,y:372,w:160,label:'Evidence (E2–E5)',def:'The proof that justifies a Mastery claim.'},
+    {id:'dmboklvl',t:'scale',x:770,y:372,w:250,label:'DMBOK Level: Oversight…Overall',def:'Upper-ontology grouping over the 18 Knowledge Areas: Oversight · Outcome · Lifecycle · Foundation · Overall.'},
+    // realization band
+    {id:'pir',t:'realize',x:24,y:486,w:160,label:'People in Roles',def:'Individuals performing roles — where mastery meets work.'},
+    {id:'caprealize',t:'realize',x:224,y:486,w:180,label:'Capability Realization',def:'People in roles, combined, realize the organisation’s Business Capabilities.'},
+    {id:'outcome',t:'realize',x:444,y:486,w:160,label:'Business Outcome',def:'The business result that a Business Capability enables.'}
+  ];
+  const E=[
+    ['strat','bcap','needs'],
+    ['bcap','dts','drives'],
+    ['dts','treq','maps to'],
+    ['treq','cai','met by'],
+    ['cai','learner','develops'],
+    ['learner','persona','fits a'],
+    ['persona','role','performs'],
+    ['opmodel','role','allocates'],
+    ['role','mastery','requires target'],
+    ['learner','mastery','holds'],
+    ['mastery','ka','of'],
+    ['mastery','evidence','justified by'],
+    ['mastery','mscale','measured on'],
+    ['ka','bcap','knowledge for realization of'],
+    ['ka','dmboklvl','grouped by'],
+    ['persona','think','exhibits (fit)'],
+    ['persona','strengths','exhibits (fit)'],
+    ['persona','sfia','banded on'],
+    ['sfia','mastery','maps to expected'],
+    ['pir','caprealize','form'],
+    ['caprealize','bcap','realizes'],
+    ['bcap','outcome','enables']
+  ];
+  const byId={}; N.forEach(n=>{n.h=H;byId[n.id]=n;});
+  const svg=document.getElementById('svg');
+  const NS='http://www.w3.org/2000/svg';
+  function el(tag,attrs){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;}
+  function cx(n){return n.x+n.w/2;} function cy(n){return n.y+n.h/2;}
+  // border intersection point from center toward target
+  function anchor(n,tx,ty){
+    const x0=cx(n),y0=cy(n),dx=tx-x0,dy=ty-y0;
+    const hw=n.w/2,hh=n.h/2;
+    const sx=dx===0?Infinity:hw/Math.abs(dx), sy=dy===0?Infinity:hh/Math.abs(dy);
+    const s=Math.min(sx,sy);
+    return [x0+dx*s, y0+dy*s];
+  }
+  // defs: arrow marker
+  const defs=el('defs');
+  defs.innerHTML='<marker id="ah" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--edge)"/></marker>'+
+    '<marker id="ahh" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--accent)"/></marker>';
+  svg.appendChild(defs);
+
+  const edgeG=el('g'); svg.appendChild(edgeG);
+  const nodeG=el('g'); svg.appendChild(nodeG);
+  const labelG=el('g'); // appended AFTER nodeG so labels sit above boxes
+  const edgeObjs=[];
+  E.forEach(([a,b,lbl],i)=>{
+    const na=byId[a],nb=byId[b];
+    const [x1,y1]=anchor(na,cx(nb),cy(nb));
+    const [x2,y2]=anchor(nb,cx(na),cy(na));
+    const mx=(x1+x2)/2,my=(y1+y2)/2;
+    const path=el('path',{class:'edge','marker-end':'url(#ah)',d:`M${x1},${y1} L${x2},${y2}`});
+    edgeG.appendChild(path);
+    const bg=el('rect',{class:'ebg'});
+    const tx=el('text',{class:'elabel',x:mx,y:my-2,'text-anchor':'middle'});tx.textContent=lbl;
+    labelG.appendChild(bg);labelG.appendChild(tx);
+    edgeObjs.push({a,b,path,bg,tx,mx,my});
+  });
+  // size edge-label backgrounds
+  requestAnimationFrame(()=>{edgeObjs.forEach(o=>{const bb=o.tx.getBBox();o.bg.setAttribute('x',bb.x-3);o.bg.setAttribute('y',bb.y-1);o.bg.setAttribute('width',bb.width+6);o.bg.setAttribute('height',bb.height+2);o.bg.setAttribute('rx',3);});});
+
+  const nodeObjs={};
+  N.forEach(n=>{
+    const g=el('g',{class:'node','data-id':n.id});
+    const r=el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:9,fill:`var(${TYPE[n.t].c})`,stroke:`var(${TYPE[n.t].c})`});
+    // wrap label into up to 2 lines
+    const words=n.label.split(' ');let lines=[n.label];
+    if(n.label.length>18){let mid=Math.ceil(words.length/2);lines=[words.slice(0,mid).join(' '),words.slice(mid).join(' ')];}
+    const t=el('text',{x:cx(n),y:cy(n)-(lines.length>1?6:-0.5),'text-anchor':'middle','dominant-baseline':'middle'});
+    lines.forEach((ln,i)=>{const ts=el('tspan',{x:cx(n),dy:i===0?0:14});ts.textContent=ln;t.appendChild(ts);});
+    g.appendChild(r);g.appendChild(t);
+    g.addEventListener('click',(ev)=>{ev.stopPropagation();focus(n.id);});
+    nodeG.appendChild(g);nodeObjs[n.id]=g;
+  });
+  svg.appendChild(labelG); // edge labels on top of boxes
+
+  function neighbours(id){const set=new Set([id]);const rels=[];
+    E.forEach(([a,b,l])=>{if(a===id){set.add(b);rels.push({dir:'out',other:b,label:l});}else if(b===id){set.add(a);rels.push({dir:'in',other:a,label:l});}});
+    return {set,rels};}
+
+  function focus(id){
+    const {set,rels}=neighbours(id);
+    N.forEach(n=>nodeObjs[n.id].classList.toggle('dim',!set.has(n.id)));
+    edgeObjs.forEach(o=>{const hot=(o.a===id||o.b===id);
+      o.path.classList.toggle('hot',hot);o.path.classList.toggle('dim',!hot);o.path.setAttribute('marker-end',hot?'url(#ahh)':'url(#ah)');
+      o.tx.classList.toggle('hot',hot);o.tx.classList.toggle('dim',!hot);o.bg.classList.toggle('hot',hot);o.bg.classList.toggle('dim',!hot);});
+    const n=byId[id];
+    const relHtml=rels.map(r=>`<div class="rel ${r.dir}">${r.dir==='out'?'':'<b>'+byId[r.other].label+'</b> '}<span class="v">${r.label}</span>${r.dir==='out'?' <b>'+byId[r.other].label+'</b>':''}</div>`).join('');
+    document.getElementById('side').innerHTML=
+      `<div class="k">Element</div><div class="nm">${n.label}</div>`+
+      `<span class="ty" style="background:var(${TYPE[n.t].c})">${TYPE[n.t].label}</span>`+
+      `<div class="def">${n.def}</div>`+
+      `<div class="k">Links (${rels.length})</div>${relHtml}`;
+  }
+  function reset(){
+    N.forEach(n=>nodeObjs[n.id].classList.remove('dim'));
+    edgeObjs.forEach(o=>{o.path.classList.remove('hot','dim');o.path.setAttribute('marker-end','url(#ah)');o.tx.classList.remove('hot','dim');o.bg.classList.remove('hot','dim');});
+    document.getElementById('side').innerHTML='<div class="empty">Click any element in the map to see what it is and how it connects.</div>';
+  }
+  svg.addEventListener('click',reset);
+
+  // toggle all labels
+  const tbtn=document.getElementById('toggleLabels');
+  tbtn.addEventListener('click',(e)=>{e.stopPropagation();const on=svg.classList.toggle('showlabels');tbtn.classList.toggle('on',on);tbtn.textContent=on?'Hide relationship labels':'Show all relationship labels';});
+
+  // legend
+  document.getElementById('legend').innerHTML=Object.values(TYPE).map(t=>`<span class="lg"><i style="background:var(${t.c})"></i>${t.label}</span>`).join('');
+</script>
+</body>
+</html>

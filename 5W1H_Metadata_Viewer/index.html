@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.5.0">
+<meta name="version" content="1.6.1">
 <meta name="data-src" content="gh:modelwaresystems-dama/modelware_app_storage/5W1H_Metadata_Viewer/_global/catalog.json@main">
 <meta name="updated" content="2026-10-27 11:36 SAST">
 <title>Data Catalog Viewer</title>
@@ -92,7 +92,8 @@
     .pill.ev-EB{background:#3a8f63;color:#fff}
     .pill.ev-EC{background:#6aa989;color:#fff}
     .pill.ev-P{background:#b06a1f;color:#fff}
-    table.matrix th.rot{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;font-weight:600;font-size:11px;max-height:120px}
+    table.matrix th.num{width:34px;text-align:center;font-weight:600}
+    table.matrix td.n,table.matrix th.n{text-align:center}
     ul.spec{margin:6px 0 0 18px;padding:0}
     ul.spec li{font-size:13px;margin:2px 0}
 </style>
@@ -333,17 +334,17 @@ if(D.governance) addPanel("governance","Governance",p=>{
   const ds=(D.datasets||[]);
   p.append(el("h3",{},"Governance artifact chain"));
   p.append(el("div",{class:"small muted",style:"margin:2px 0 8px"},"Each master / reference set needs all "+chain.length+" artifacts before it is production-authoritative."));
-  const th=[el("th",{},"Dataset")].concat(chain.map(a=>el("th",{class:"rot",title:a.evidence},a.name)));
+  const th=[el("th",{},"Dataset")].concat(chain.map((a,i)=>el("th",{class:"n num",title:a.name},String(i+1)))).concat([el("th",{class:"n"},"Done")]);
   const mt=el("table",{class:"matrix"},el("thead",{},el("tr",{},...th)));
   const mb=el("tbody",{});
-  ds.forEach(d=>{const pr=(d.artifactProfile||{}).present||{};
-    const cells=[el("td",{},el("b",{},d.title))].concat(chain.map(a=>el("td",{class:"n"},pr[a.id]?el("span",{class:"chk"},"\u2713"):el("span",{class:"cross"},"\u2014"))));
+  ds.forEach(d=>{const ap=d.artifactProfile||{};const pr=ap.present||{};
+    const cells=[el("td",{},el("b",{},d.title))].concat(chain.map(a=>el("td",{class:"n"},pr[a.id]?el("span",{class:"chk"},"\u2713"):el("span",{class:"muted"},"\u00b7")))).concat([el("td",{class:"n"},el("b",{},String(ap.have||0)+"/"+String(ap.total||chain.length)))]);
     mb.append(el("tr",{},...cells));});
   mt.append(mb); p.append(el("div",{class:"scroll"},mt));
-  // artifact definitions
+  // artifact definitions (the legend for the numbered columns)
   p.append(el("h3",{style:"margin-top:16px"},"Artifact definitions"));
-  const dt=el("table",{},el("thead",{},el("tr",{},el("th",{},"Artifact"),el("th",{},"Minimum evidence"))));
-  const db=el("tbody",{}); chain.forEach(a=>db.append(el("tr",{},el("td",{},el("b",{},a.name)),el("td",{class:"small"},a.evidence)))); dt.append(db);
+  const dt=el("table",{},el("thead",{},el("tr",{},el("th",{class:"n"},"#"),el("th",{},"Artifact"),el("th",{},"Minimum evidence"))));
+  const db=el("tbody",{}); chain.forEach((a,i)=>db.append(el("tr",{},el("td",{class:"n"},String(i+1)),el("td",{},el("b",{},a.name)),el("td",{class:"small"},a.evidence)))); dt.append(db);
   p.append(el("div",{class:"scroll"},dt));
   // roles + evidence legends
   if(G.roles){p.append(el("h3",{style:"margin-top:16px"},"Ownership roles"));
@@ -366,17 +367,40 @@ if(D.governance) addPanel("governance","Governance",p=>{
 
 // ---------- Registers (five national registers)
 if((D.registers||[]).length) addPanel("registers","Registers",p=>{
-  p.append(el("div",{class:"small muted",style:"margin:4px 0 10px"},"The five national registers. Members are seeded from the current catalogue; Data Contract and API Product registers fill as contracts and products are published."));
+  p.append(el("div",{class:"small muted",style:"margin:4px 0 10px"},"The five national registers. Members are seeded from the current catalogue and its data dependencies; status Proposed until legally confirmed."));
+  function tbl(headers,rows){const tb=el("table",{},el("thead",{},el("tr",{},...headers.map(h=>el("th",{},h)))));const b=el("tbody",{});rows.forEach(tr=>b.append(el("tr",{},...tr.map(c=>c&&c.nodeType?el("td",{},c):el("td",{class:"small"},String(c==null?"":c))))));tb.append(b);return el("div",{class:"scroll"},tb);}
+  const chk=v=>v?el("span",{class:"chk"},"\u2713 yes"):el("span",{class:"muted"},"no");
   (D.registers||[]).forEach(r=>{
     const c=el("div",{class:"card"},el("h3",{},r.name+"  "),el("span",{class:"pill"},String(r.count)));
     c.append(el("div",{class:"small muted",style:"margin:2px 0 8px"},r.purpose));
-    if((r.memberList||[]).length){
-      const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Member"),el("th",{},"Owner (DO)"),el("th",{},"System of Record"),el("th",{},"Evidence"))));
-      const b=el("tbody",{});
-      r.memberList.forEach(m=>b.append(el("tr",{},el("td",{},m.name),el("td",{class:"small"},m.DO||""),el("td",{class:"small"},m.SoR||""),el("td",{},m.evidence?el("span",{class:"pill ev ev-"+m.evidence.replace(/[^A-Za-z]/g,"")},m.evidence):""))));
-      tb.append(b); c.append(el("div",{class:"scroll"},tb));
-    } else c.append(el("div",{class:"empty"},"No members yet (register scaffolded)."));
+    const M=r.memberList||[];
+    if(!M.length){c.append(el("div",{class:"empty"},"No members yet (register scaffolded)."));p.append(c);return;}
+    if(r.name==="Data Contract Register"){
+      c.append(tbl(["Contract","Producer owner","Consumer owner","Cross-body","Sharing agmt","Status"],
+        M.map(m=>[m.name,m.producerOwner,m.consumerOwner,chk(m.crossBody),m.sharingAgreement||"\u2014",m.status])));
+    } else if(r.name==="API Product Catalogue"){
+      c.append(tbl(["API product","Dataset owner","Operations","Classification","Status"],
+        M.map(m=>[m.name,m.owner,(m.operations||[]).join(", "),m.classification,m.status])));
+    } else {
+      c.append(tbl(["Member","Owner (DO)","System of Record","Evidence"],
+        M.map(m=>[m.name,m.DO||"",m.SoR||"",m.evidence?el("span",{class:"pill ev ev-"+m.evidence.replace(/[^A-Za-z]/g,"")},m.evidence):el("span",{class:"muted"},"\u2014")])));
+    }
     p.append(c);
+  });
+});
+
+if((D.sharingAgreements||[]).length) addPanel("sharing","Sharing Agreements",p=>{
+  p.append(el("div",{class:"small muted",style:"margin:4px 0 10px"},"Cross-body data-sharing agreements — the legal basis that lets one public body use another's authoritative data. Status Proposed until the lawful-sharing instrument is confirmed."));
+  (D.sharingAgreements||[]).forEach(a=>{
+    const c=el("div",{class:"card"},el("h3",{},(a.parties||[]).join("  \u2194  ")+"  "),el("span",{class:"pill"},a.id));
+    const meta=el("div",{class:"ds-meta"});
+    const row=(k,v)=>{if(v==null||v==="")return;meta.append(el("div",{class:"k"},k),el("div",{},v.nodeType?v:document.createTextNode(String(v))));};
+    row("Datasets covered",(a.datasets||[]).join(", "));
+    row("Lawful basis",a.lawfulBasis);
+    row("Permitted purposes",a.permittedPurposes);
+    row("Restrictions",a.restrictions);
+    row("Status",a.status);
+    c.append(meta); p.append(c);
   });
 });
 

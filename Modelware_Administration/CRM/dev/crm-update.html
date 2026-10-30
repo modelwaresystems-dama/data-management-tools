@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="version" content="1.3.0">
+<meta name="version" content="1.4.0">
 <title>Today's CRM Update</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -112,6 +112,13 @@ select, input[type="text"], input[type="date"], input[type="password"], textarea
 .qbox { width: 100%; resize: vertical; }
 .qsuggest { margin: 0; padding: 6px 10px; border-radius: 6px; border: 1px dashed var(--accent); background: var(--accent-soft); overflow-wrap: anywhere; font-size: 0.92rem; }
 .qsuggest b { font-weight: 600; color: var(--accent); }
+.olist { list-style: none; margin: 0; padding: 0 !important; display: grid; gap: 4px !important; }
+.opt { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.opt.picked { border-color: var(--ok); background: var(--ok-soft); }
+.opt .otext { flex: 1; min-width: 0; display: grid; }
+.opt .oline { font-weight: 500; overflow-wrap: anywhere; }
+.opt .osub { font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
+.opt .btn, .opt .pill { flex: none; }
 .mbx { display: grid; grid-template-columns: max-content max-content 1fr; gap: 4px 14px; font-size: 0.85rem; overflow-x: auto; }
 .empty { text-align: center; padding: 40px 16px; color: var(--muted); }
 .err { color: var(--bad); }
@@ -167,10 +174,9 @@ select, input[type="text"], input[type="date"], input[type="password"], textarea
 
   <section id="questionsPanel" class="panel" hidden>
     <h2>Questions for Howard</h2>
-    <p id="questionsHint" class="muted" style="font-size:0.85rem">Answer in your own words, ideally starting with
-    <b>Create deal:</b> (name, company or individual, owner, channel), <b>Log on:</b> (an existing deal) or
-    <b>Leave it out</b>. Each question carries the run's suggested answer: use it as it is, or change it first.
-    The next morning run reads each answer, acts on it, and stops asking.</p>
+    <p id="questionsHint" class="muted" style="font-size:0.85rem">Each question is about one deal. Pick one of
+    its options: every option is complete, so choosing it is the whole answer. If none fits, use
+    <b>Other answer</b>. The next morning run acts on each answer and stops asking.</p>
     <ul id="questions" class="qlist"></ul>
   </section>
 
@@ -349,7 +355,9 @@ document.getElementById("appVersion").textContent =
      may give or correct one, and "by" records who saved it. An empty answer removes it.
      Answers are not locked by the import: questions never import, and a late or
      corrected answer is still read by the next morning run. */
-  function answerQuestion(qid, text) {
+  /* oid: the option Howard picked, if he picked one. The run reads that option's
+     fields from the batch; text is the line he saw, kept for people to read. */
+  function answerQuestion(qid, text, oid) {
     if (!S.me) { toast("Connect with your CRM user id first."); return Promise.resolve(); }
     const t = String(text || "").trim();
     return enqueue(async () => {
@@ -357,7 +365,10 @@ document.getElementById("appVersion").textContent =
         () => ({ date: S.date, approveAll: false, rows: {} }),
         (doc) => {
           doc.answers = doc.answers || {};
-          if (t) doc.answers[qid] = { text: t, at: new Date().toISOString(), by: S.me };
+          if (t) {
+            doc.answers[qid] = { text: t, at: new Date().toISOString(), by: S.me };
+            if (oid) doc.answers[qid].oid = oid;
+          }
           else delete doc.answers[qid];
           doc.updatedAt = new Date().toISOString();
         }, "crm-update: " + S.me + " answers " + S.date + " " + qid);
@@ -626,6 +637,8 @@ document.getElementById("appVersion").textContent =
 
     const canAnswer = !!S.me && !S.readOnly;
     const editing = canAnswer && (!ans || S.qOpen[x.qid]);
+    const opts = Array.isArray(x.options) ? x.options : null;
+    if (opts && !(ans && !editing)) return renderOptions(li, x, ans, canAnswer);
     if (ans && !editing) {
       li.appendChild(el("p", "qanswer", ans.text));
       const meta = el("div", "actions");
@@ -676,6 +689,85 @@ document.getElementById("appVersion").textContent =
       acts.append(cancel, clear);
     }
     li.appendChild(acts);
+    return li;
+  }
+
+  /* One line per option, the critical data on the line, so Howard reads down the
+     list and picks one. Each option is complete (the run refuses gaps), so picking
+     it is the whole answer. "Other answer" is there for anything the run missed. */
+  const STAGE_LABEL = { lead: "Lead", qualified: "Qualified", proposal: "Proposal", negotiation: "Negotiation" };
+  function fmtDate(iso) {
+    return iso ? new Date(iso + "T12:00:00").toLocaleDateString("en-ZA", { day: "numeric", month: "short" }) : "";
+  }
+  function optionLine(o) {
+    const parts = [];
+    if (o.action === "leave") return ["Leave it out", o.reason].join(" · ");
+    if (o.action === "log") {
+      parts.push("Log on", o.company, o.deal);
+      const s = o.set || {};
+      if (s.stage) parts.push("stage → " + (STAGE_LABEL[s.stage] || s.stage));
+      if (s.outcome) parts.push(s.outcome === "won" ? "mark Won" : "mark Lost");
+      if (s.channel) parts.push("Ch " + s.channel);
+      if (s.owner) parts.push("owner → " + rosterName(s.owner));
+    } else {
+      parts.push("Create", o.individual ? "Individual: " + o.contactName : o.company, o.deal,
+        rosterName(o.owner), "Ch " + o.channel,
+        o.outcome ? (o.outcome === "won" ? "Won" : "Lost") : (STAGE_LABEL[o.stage] || o.stage));
+      if (o.partner || o.partnerPerson) parts.push("partner " + (o.partner || o.partnerPerson));
+      if (o.commission === false) parts.push("no commission");
+      if (o.closes) parts.push("closes " + fmtDate(o.closes));
+      if (typeof o.value === "number") parts.push(o.currency + " " + o.value.toLocaleString("en-ZA"));
+    }
+    return parts.filter(Boolean).join(" · ");
+  }
+  function renderOptions(li, x, ans, canAnswer) {
+    const list = el("ul", "olist");
+    for (const o of x.options) {
+      const picked = !!(ans && ans.oid === o.oid);
+      const row = el("li", "opt" + (picked ? " picked" : ""));
+      const txt = el("div", "otext");
+      txt.appendChild(el("span", "oline", optionLine(o)));
+      const sub = o.line || o.note;
+      if (sub) txt.appendChild(el("span", "osub", (o.line ? "Line: " : "") + sub));
+      row.appendChild(txt);
+      if (picked) row.appendChild(el("span", "pill ok", "Chosen"));
+      else if (canAnswer) {
+        const b = el("button", "btn good", ans ? "Choose instead" : "Choose");
+        b.onclick = () => answerQuestion(x.qid, optionLine(o), o.oid);
+        row.appendChild(b);
+      }
+      list.appendChild(row);
+    }
+    li.appendChild(list);
+    if (ans && !ans.oid) li.appendChild(el("p", "qanswer", ans.text));
+    const meta = el("div", "actions");
+    if (ans) meta.appendChild(el("span", "label", "Answered" + (ans.by ? " by " + rosterName(ans.by) : "") + " " + fmtTime(ans.at)));
+    if (canAnswer) {
+      const typing = S.qOpen[x.qid];
+      if (typing) {
+        const box = el("textarea", "qbox"); box.id = "qa_" + x.qid; box.rows = 2; box.maxLength = 600;
+        box.placeholder = "Your own answer, if none of the options fits";
+        box.value = x.qid in S.qDraft ? S.qDraft[x.qid] : (ans && !ans.oid ? ans.text : "");
+        box.oninput = () => { S.qDraft[x.qid] = box.value; S.editing = "q:" + x.qid; };
+        box.onfocus = () => { S.editing = "q:" + x.qid; };
+        li.appendChild(box);
+        const saveB = el("button", "btn primary", "Save answer");
+        saveB.onclick = () => { if (!box.value.trim()) { box.focus(); toast("Type an answer first."); return; } answerQuestion(x.qid, box.value); };
+        const cancel = el("button", "btn", "Cancel");
+        cancel.onclick = () => { delete S.qOpen[x.qid]; delete S.qDraft[x.qid]; S.editing = null; render(); };
+        meta.append(saveB, cancel);
+      } else {
+        const other = el("button", "btn", "Other answer…");
+        other.onclick = () => { S.qOpen[x.qid] = true; render(); const b = $("qa_" + x.qid); if (b) b.focus(); };
+        meta.appendChild(other);
+      }
+      if (ans) {
+        const clear = el("button", "btn warn", "Remove answer");
+        clear.onclick = () => answerQuestion(x.qid, "");
+        meta.appendChild(clear);
+      }
+    }
+    li.appendChild(meta);
     return li;
   }
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.4.0">
+<meta name="version" content="1.5.0">
 <meta name="data-src" content="gh:modelwaresystems-dama/modelware_app_storage/5W1H_Metadata_Viewer/_global/catalog.json@main">
 <meta name="updated" content="2026-10-27 11:36 SAST">
 <title>Data Catalog Viewer</title>
@@ -86,6 +86,15 @@
   a.xlaunch{font-family:var(--mono);font-size:.68rem;color:var(--accent);text-decoration:none;border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:999px;padding:2px 9px;white-space:nowrap}
   a.xlaunch:hover{background:var(--accent-soft)}
   details.flash{outline:2px solid var(--accent);outline-offset:1px;transition:outline-color .3s}
+
+    .pill.ev{font-weight:700}
+    .pill.ev-EA{background:#1f7a4d;color:#fff}
+    .pill.ev-EB{background:#3a8f63;color:#fff}
+    .pill.ev-EC{background:#6aa989;color:#fff}
+    .pill.ev-P{background:#b06a1f;color:#fff}
+    table.matrix th.rot{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;font-weight:600;font-size:11px;max-height:120px}
+    ul.spec{margin:6px 0 0 18px;padding:0}
+    ul.spec li{font-size:13px;margin:2px 0}
 </style>
 </head>
 <body>
@@ -188,7 +197,21 @@ addPanel("datasets","Datasets",p=>{
     const meta=el("div",{class:"ds-meta"});
     const row=(k,v)=>{if(v==null||v==="")return;meta.append(el("div",{class:"k"},k),el("div",{},v.nodeType?v:document.createTextNode(String(v))));};
     row("Identifier",d.identifier); row("Publisher",d.publisher); row("Catalog",d.catalog);
-    if(d.owner) row("Owner",d.owner+(d.ownerTheme?(" \u2014 via theme \u2018"+d.ownerTheme+"\u2019"):""));
+    if(d.owner){
+      const R=d.roles||{};
+      const ev=d.evidence?el("span",{class:"pill ev ev-"+d.evidence.replace(/[^A-Za-z]/g,"")},d.evidence):"";
+      row("Owner (DO)",el("span",{},d.owner," ",ev,(d.ownerTheme?el("span",{class:"muted small"}," \u00b7 via theme \u2018"+d.ownerTheme+"\u2019"):"")));
+      if(R.CR) row("Creator (CR)",R.CR);
+      if(R.ST) row("Steward (ST)",R.ST);
+      if(R.SoR) row("System of Record",R.SoR);
+      if(R.TP) row("Technical Publisher (TP)",R.TP);
+      if(R.note) row("Allocation note",el("span",{class:"small muted"},R.note));
+    }
+    if(d.artifactProfile){const ap=d.artifactProfile;
+      row("Governance artifacts",el("span",{},String(ap.have)+" / "+String(ap.total)+" registered ",
+        el("span",{class:"track",style:"display:inline-block;width:90px;vertical-align:middle"},
+          el("span",{class:"fill",style:"width:"+Math.round(100*ap.have/ap.total)+"%"}))));
+    }
     row("Keywords",(d.keywords||[]).join(", ")); row("License",d.license); row("Classification",d.classification);
     row("Modified",d.modified); row("Frequency",d.frequency); row("Coverage",[d.spatial,d.temporal].filter(Boolean).join(" · "));
     row("Contact",d.contact); row("Landing page",link(d.landingPage));
@@ -273,9 +296,9 @@ addPanel("publishers","Publishers",p=>{
 addPanel("themes","Themes",p=>{
   const t=D.themes||[];
   if(!t.length){p.append(el("div",{class:"empty"},"No themes recorded."));return;}
-  const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Theme"),el("th",{},"Owner (entity)"),el("th",{class:"n"},"Datasets"))));
+  const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Theme"),el("th",{},"Owner (DO)"),el("th",{},"Evidence"),el("th",{class:"n"},"Datasets"))));
   const body=el("tbody",{});
-  t.forEach(x=>body.append(el("tr",{},el("td",{},el("span",{class:"pill theme"},x.name)),el("td",{class:"small"},x.owner||el("span",{class:"muted"},"unassigned")),el("td",{class:"n"},String(x.datasetCount)))));
+  t.forEach(x=>body.append(el("tr",{},el("td",{},el("span",{class:"pill theme"},x.name)),el("td",{class:"small"},x.owner||el("span",{class:"muted"},"unassigned")),el("td",{},x.evidence?el("span",{class:"pill ev ev-"+x.evidence.replace(/[^A-Za-z]/g,"")},x.evidence):el("span",{class:"muted small"},"\u2014")),el("td",{class:"n"},String(x.datasetCount)))));
   tb.append(body); p.append(el("div",{class:"card"},tb));
 });
 
@@ -302,6 +325,61 @@ if((D.taxonomy||{}).domains) addPanel("subjectareas","Subject Areas",p=>{
     det.append(wrap); p.append(el("div",{class:"card",style:"margin-bottom:8px"},det));
   });
 });
+// ---------- Governance (artifact chain, RACI, reference classes, contract/API specs)
+if(D.governance) addPanel("governance","Governance",p=>{
+  const G=D.governance;
+  // artifact-chain completeness matrix
+  const chain=G.artifactChain||[];
+  const ds=(D.datasets||[]);
+  p.append(el("h3",{},"Governance artifact chain"));
+  p.append(el("div",{class:"small muted",style:"margin:2px 0 8px"},"Each master / reference set needs all "+chain.length+" artifacts before it is production-authoritative."));
+  const th=[el("th",{},"Dataset")].concat(chain.map(a=>el("th",{class:"rot",title:a.evidence},a.name)));
+  const mt=el("table",{class:"matrix"},el("thead",{},el("tr",{},...th)));
+  const mb=el("tbody",{});
+  ds.forEach(d=>{const pr=(d.artifactProfile||{}).present||{};
+    const cells=[el("td",{},el("b",{},d.title))].concat(chain.map(a=>el("td",{class:"n"},pr[a.id]?el("span",{class:"chk"},"\u2713"):el("span",{class:"cross"},"\u2014"))));
+    mb.append(el("tr",{},...cells));});
+  mt.append(mb); p.append(el("div",{class:"scroll"},mt));
+  // artifact definitions
+  p.append(el("h3",{style:"margin-top:16px"},"Artifact definitions"));
+  const dt=el("table",{},el("thead",{},el("tr",{},el("th",{},"Artifact"),el("th",{},"Minimum evidence"))));
+  const db=el("tbody",{}); chain.forEach(a=>db.append(el("tr",{},el("td",{},el("b",{},a.name)),el("td",{class:"small"},a.evidence)))); dt.append(db);
+  p.append(el("div",{class:"scroll"},dt));
+  // roles + evidence legends
+  if(G.roles){p.append(el("h3",{style:"margin-top:16px"},"Ownership roles"));
+    const rt=el("table",{},el("tbody",{})); Object.entries(G.roles).forEach(([k,v])=>rt.firstChild.append(el("tr",{},el("td",{},el("b",{},k)),el("td",{class:"small"},v)))); p.append(el("div",{class:"scroll"},rt));}
+  if(G.referenceClasses){p.append(el("h3",{style:"margin-top:16px"},"Reference-data classes"));
+    const ct=el("table",{},el("tbody",{})); Object.entries(G.referenceClasses).forEach(([k,v])=>ct.firstChild.append(el("tr",{},el("td",{},el("b",{},"Class "+k)),el("td",{class:"small"},v)))); p.append(el("div",{class:"scroll"},ct));}
+  // RACI
+  if((G.raci||[]).length){p.append(el("h3",{style:"margin-top:16px"},"RACI / decision rights"));
+    const qt=el("table",{},el("thead",{},el("tr",{},el("th",{},"Decision"),el("th",{},"Accountable (A)"),el("th",{},"Responsible (R)"),el("th",{},"Consulted / Informed"))));
+    const qb=el("tbody",{}); G.raci.forEach(r=>qb.append(el("tr",{},el("td",{class:"small"},r.decision),el("td",{class:"small"},r.A),el("td",{class:"small"},r.R),el("td",{class:"small"},r.CI)))); qt.append(qb);
+    p.append(el("div",{class:"scroll"},qt));}
+  // Data Contract spec + API product pattern
+  if((G.dataContractSpec||[]).length){p.append(el("h3",{style:"margin-top:16px"},"Minimum Data Contract specification"));
+    const ul=el("ul",{class:"spec"}); G.dataContractSpec.forEach(x=>ul.append(el("li",{},x))); p.append(ul);}
+  if(G.apiProductPattern){const A=G.apiProductPattern;
+    p.append(el("h3",{style:"margin-top:16px"},"API Product pattern"));
+    const ul=el("ul",{class:"spec"}); (A.operations||[]).forEach(x=>ul.append(el("li",{},x))); p.append(ul);
+    p.append(el("div",{class:"small muted",style:"margin-top:6px"},"Controls: "+(A.controls||[]).join(", ")));}
+});
+
+// ---------- Registers (five national registers)
+if((D.registers||[]).length) addPanel("registers","Registers",p=>{
+  p.append(el("div",{class:"small muted",style:"margin:4px 0 10px"},"The five national registers. Members are seeded from the current catalogue; Data Contract and API Product registers fill as contracts and products are published."));
+  (D.registers||[]).forEach(r=>{
+    const c=el("div",{class:"card"},el("h3",{},r.name+"  "),el("span",{class:"pill"},String(r.count)));
+    c.append(el("div",{class:"small muted",style:"margin:2px 0 8px"},r.purpose));
+    if((r.memberList||[]).length){
+      const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Member"),el("th",{},"Owner (DO)"),el("th",{},"System of Record"),el("th",{},"Evidence"))));
+      const b=el("tbody",{});
+      r.memberList.forEach(m=>b.append(el("tr",{},el("td",{},m.name),el("td",{class:"small"},m.DO||""),el("td",{class:"small"},m.SoR||""),el("td",{},m.evidence?el("span",{class:"pill ev ev-"+m.evidence.replace(/[^A-Za-z]/g,"")},m.evidence):""))));
+      tb.append(b); c.append(el("div",{class:"scroll"},tb));
+    } else c.append(el("div",{class:"empty"},"No members yet (register scaffolded)."));
+    p.append(c);
+  });
+});
+
 addPanel("raw","Catalog JSON",p=>{p.append(el("pre",{},JSON.stringify(D,null,2)));});
 
 // build nav + panels

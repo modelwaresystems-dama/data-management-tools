@@ -1,7 +1,7 @@
 # Handover: linking the Zambia Government Operating Model into the MDA Assessment tools
 
 **App:** Zambia Government Operating Model (navigator)
-**Version at handover:** v1.2.1 (built 2026-10-29 SAST)
+**Version at handover:** v1.3.0 (built 2026-10-30 SAST)
 **Repo target:** `data-management-tools`
 **Prepared:** 2026-10-29, Modelware Systems
 **Project:** Digital Zambia Acceleration (ZM-SZ-466193-CS-QBS)
@@ -18,11 +18,12 @@ ZambiaGovOperatingModel/
   zambia_opmodel.json                      the source-of-truth model the app is built from
   figure-international-generic-model.png   Figure 1 from the baseline doc (shown in the app)
   figure-zambia-implementation-view.png    the Zambia implementation figure (shown in the Mapping tab)
+  figure-master-reference-metamodel.png    the master/reference governance metamodel (Ownership tab)
 ```
 
 `index.html` is fully self-contained: the model data and both figures are embedded (the figures as inline WebP data URIs since v1.1.1), so it renders anywhere with no external files (double-click, file://, served, or a Pages deploy). The two PNGs are optional standalone assets; the app does not depend on them. `zambia_opmodel.json` is the same model as a standalone data file, for the catalog and the viewer family to read. No build step, no bundler.
 
-What it shows: the four-level hierarchy (Government Scope to Domain to Subject Area to Information Concept) with the generic-model figure, 14 domains (7 flagged in the current assessment scope), 95 subject areas, 529 concepts, a **Mapping to Zambia** tab (the Zambia implementation figure, the 15 institutional groupings mapped to generic interpretation and treatment, the 14 certified bodies placed by Domain and Subject Area, and the cross-reference side rails plus digital overlay), a certified entity registry with evidence grades, the 17-type taxonomy, the 7 placement rules, and the answered decisions plus a validation backlog.
+What it shows: the four-level hierarchy (Government Scope to Domain to Subject Area to Information Concept) with the generic-model figure, 14 domains (7 flagged in the current assessment scope), 95 subject areas, 535 concepts, a **Mapping to Zambia** tab (the Zambia implementation figure, the 15 institutional groupings mapped, the 14 certified bodies placed by Domain and Subject Area, and the cross-reference side rails plus digital overlay), a certified entity registry with evidence grades, an **Ownership & Stewardship** tab (v1.3.0: the governance metamodel figure, the national registers, the 8 accountability roles, an 18-row ownership-allocation matrix with E-A/B/C/P evidence badges and links into the Entity Registry, 9 foundational + 14 sector master-data domains, reference-data classes, the governance-artifact chain, RACI decision rights, the minimum data-contract spec, the metamodel terminology, and the gaps/roadmap), the 17-type taxonomy, the 7 placement rules, and the answered decisions plus a validation backlog.
 
 ## 2. Integration point 1: Navigator card (no code)
 

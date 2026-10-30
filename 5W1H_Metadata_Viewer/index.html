@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.3.1">
+<meta name="version" content="1.4.0">
 <meta name="data-src" content="gh:modelwaresystems-dama/modelware_app_storage/5W1H_Metadata_Viewer/_global/catalog.json@main">
 <meta name="updated" content="2026-10-27 11:36 SAST">
 <title>Data Catalog Viewer</title>
@@ -136,7 +136,7 @@ const UPD=((document.querySelector('meta[name="updated"]')||{}).content)||"";
 $("#ver").textContent=(VER?("v"+VER):"")+(UPD?((VER?"  ·  ":"")+"built "+UPD):"");
 
 const C=D.counts||{};
-const tileDefs=[["datasets","Datasets"],["distributions","Distributions"],["publishers","Publishers"],["themes","Themes"],["services","Services"],["catalogs","Catalogs"]];
+const tileDefs=[["datasets","Datasets"],["entities","Entities"],["distributions","Distributions"],["publishers","Publishers"],["themes","Themes"],["services","Services"],["catalogs","Catalogs"]];
 $("#tiles").append(...tileDefs.filter(([k])=>(C[k]||0)>0||k==="datasets").map(([k,l])=>el("div",{class:"t"},el("div",{class:"n"},String(C[k]||0)),el("div",{class:"l"},l))));
 
 const panels=[];
@@ -188,6 +188,7 @@ addPanel("datasets","Datasets",p=>{
     const meta=el("div",{class:"ds-meta"});
     const row=(k,v)=>{if(v==null||v==="")return;meta.append(el("div",{class:"k"},k),el("div",{},v.nodeType?v:document.createTextNode(String(v))));};
     row("Identifier",d.identifier); row("Publisher",d.publisher); row("Catalog",d.catalog);
+    if(d.owner) row("Owner",d.owner+(d.ownerTheme?(" \u2014 via theme \u2018"+d.ownerTheme+"\u2019"):""));
     row("Keywords",(d.keywords||[]).join(", ")); row("License",d.license); row("Classification",d.classification);
     row("Modified",d.modified); row("Frequency",d.frequency); row("Coverage",[d.spatial,d.temporal].filter(Boolean).join(" · "));
     row("Contact",d.contact); row("Landing page",link(d.landingPage));
@@ -228,6 +229,36 @@ addPanel("distributions","Distributions",p=>{
   tb.append(body); p.append(el("div",{class:"scroll"},tb));
 });
 
+// ---------- Entities (public bodies / organisations, operating-model only, not datasets)
+if((D.entities||[]).length) addPanel("entities","Entities",p=>{
+  const es=D.entities||[];
+  p.append(el("div",{class:"small muted",style:"margin:4px 0 10px"},
+    "Public bodies and external partners from the operating model. These are organisations that own themes and publish data, not datasets in their own right. "+es.length+" entities."));
+  const search=el("input",{type:"search",placeholder:"search entity / type / theme\u2026"});
+  const cnt=el("div",{class:"count"});
+  p.append(el("div",{class:"filters"},search,cnt));
+  const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Entity"),el("th",{},"Type"),el("th",{},"Theme / subject area"),el("th",{},"Owns themes"),el("th",{},"Operating Model"))));
+  const body=el("tbody",{}); tb.append(body);
+  p.append(el("div",{class:"scroll"},tb));
+  function render(){
+    const q=search.value.toLowerCase();
+    const fr=es.filter(d=>!q||((d.title||"")+" "+(d.kind||"")+" "+(d.themes||[]).join(" ")).toLowerCase().includes(q));
+    body.innerHTML="";
+    fr.forEach(d=>{
+      const lc=launchChips(d);
+      body.append(el("tr",{},
+        el("td",{},el("b",{},d.title)),
+        el("td",{class:"small"},d.kind||""),
+        el("td",{class:"small"},(d.themes||[]).join(", ")),
+        el("td",{class:"small"},(d.ownsThemes||[]).join(", ")),
+        el("td",{},lc||document.createTextNode(""))));
+    });
+    if(!fr.length) body.append(el("tr",{},el("td",{colspan:"5"},el("div",{class:"empty"},"No entities match."))));
+    cnt.textContent=fr.length+" of "+es.length+" entities";
+  }
+  search.addEventListener("input",render); render();
+});
+
 // ---------- Publishers
 addPanel("publishers","Publishers",p=>{
   const a=D.agents||[];
@@ -242,9 +273,9 @@ addPanel("publishers","Publishers",p=>{
 addPanel("themes","Themes",p=>{
   const t=D.themes||[];
   if(!t.length){p.append(el("div",{class:"empty"},"No themes recorded."));return;}
-  const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Theme"),el("th",{class:"n"},"Datasets"))));
+  const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Theme"),el("th",{},"Owner (entity)"),el("th",{class:"n"},"Datasets"))));
   const body=el("tbody",{});
-  t.forEach(x=>body.append(el("tr",{},el("td",{},el("span",{class:"pill theme"},x.name)),el("td",{class:"n"},String(x.datasetCount)))));
+  t.forEach(x=>body.append(el("tr",{},el("td",{},el("span",{class:"pill theme"},x.name)),el("td",{class:"small"},x.owner||el("span",{class:"muted"},"unassigned")),el("td",{class:"n"},String(x.datasetCount)))));
   tb.append(body); p.append(el("div",{class:"card"},tb));
 });
 

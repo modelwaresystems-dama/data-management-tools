@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.5.0">
+<meta name="version" content="1.6.0">
 <meta name="data-src" content="gh:modelwaresystems-dama/modelware_app_storage/5W1H_Metadata_Viewer/quality/taxpayer-register-conformed-keys-tpin.quality.json@main">
 <meta name="updated" content="2026-10-27 11:58 SAST">
 <title>Data Quality Viewer</title>
@@ -312,35 +312,66 @@ if(D.consistency&&(D.consistency.links||[]).length) addPanel("consistency","Cons
       el("td",{class:"small muted"},diffs)));});
   tb.append(b); p.append(el("div",{class:"scroll"},tb));
 });
+const DQCOLOR={Critical:"var(--bad)",Warning:"#b06a1f",Normal:"var(--muted)",Any:"var(--muted)",Stop:"var(--bad)","Use with Caution":"#b06a1f",Continue:"var(--ok)"};
+function dqchip(t,strong){return el("span",{style:"color:"+(DQCOLOR[t]||"inherit")+(strong?";font-weight:700":"")},t||"");}
+
+if(D.cde&&(D.cde.elements||[]).length) addPanel("cde","CDE & Factor Rating",p=>{
+  const C=D.cde;
+  p.append(el("div",{class:"small muted",style:"margin:4px 0 10px"},"Critical Data Elements selected via the Factor Rating Matrix. Factor score = sum(weight \u00d7 impact rate); an element is a CDE when its factor score > the critical level ("+C.criticalLevel+")."));
+  p.append(el("h3",{},"Critical Data Elements"));
+  const et=el("table",{},el("thead",{},el("tr",{},el("th",{},"Data element"),el("th",{class:"n"},"Factors"),el("th",{class:"n"},"Factor score"),el("th",{class:"n"},"CDE"))));
+  const eb=el("tbody",{}); (C.elements||[]).forEach(e=>eb.append(el("tr",{},el("td",{},el("b",{},e.element)),el("td",{class:"n"},String(e.factorCount)),el("td",{class:"n"},String(e.factorScore)),el("td",{class:"n"},e.isCDE?el("span",{class:"chk"},"\u2713"):el("span",{class:"muted"},"\u2014"))))); et.append(eb);
+  p.append(el("div",{class:"scroll"},et));
+  p.append(el("h3",{style:"margin-top:16px"},"Factor Rating Matrix"));
+  const ft=el("table",{},el("thead",{},el("tr",{},el("th",{},"Data element"),el("th",{},"Critical factor"),el("th",{class:"n"},"Weight"),el("th",{},"Impact"),el("th",{class:"n"},"Rate"),el("th",{class:"n"},"Score"))));
+  const fb=el("tbody",{}); (C.factors||[]).forEach(f=>fb.append(el("tr",{},el("td",{class:"small"},f.element),el("td",{class:"small"},f.factor),el("td",{class:"n"},String(f.weight)),el("td",{class:"small"},f.impactRating),el("td",{class:"n"},String(f.impactRate)),el("td",{class:"n"},String(f.score))))); ft.append(fb);
+  p.append(el("div",{class:"scroll"},ft));
+});
+
+if((D.expectations||[]).length) addPanel("expectations","DQ Expectations",p=>{
+  const X=D.expectations||[];
+  p.append(el("div",{class:"small muted",style:"margin:4px 0 10px"},"Data-quality business rules: one expectation per data element \u00d7 dimension \u00d7 underlying concept, with measurement state and minimum pass rate. Accuracy rules are defined but measured against the source of record, not the extract."));
+  const search=el("input",{type:"search",placeholder:"filter element / dimension / concept\u2026"}); const cnt=el("div",{class:"count"});
+  p.append(el("div",{class:"filters"},search,cnt));
+  const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Rule"),el("th",{},"Element"),el("th",{},"CDE"),el("th",{},"Dimension"),el("th",{},"Underlying concept"),el("th",{},"State"),el("th",{class:"n"},"Min"),el("th",{},"Status"),el("th",{},"Description"))));
+  const body=el("tbody",{}); tb.append(body); p.append(el("div",{class:"scroll"},tb));
+  function render(){const q=search.value.toLowerCase(); const fr=X.filter(e=>!q||((e.element||"")+" "+(e.dimension||"")+" "+(e.concept||"")).toLowerCase().includes(q));
+    body.innerHTML=""; fr.forEach(e=>body.append(el("tr",{},
+      el("td",{class:"small"},e.ruleId),el("td",{class:"small"},el("b",{},e.element)),
+      el("td",{class:"n"},e.isCDE?el("span",{class:"chk"},"\u2713"):el("span",{class:"muted"},"\u2014")),
+      el("td",{class:"small"},e.dimension),el("td",{class:"small"},e.concept),
+      el("td",{},dqchip(e.measurementState)),el("td",{class:"n"},e.min!=null?Math.round(e.min*100)+"%":""),
+      el("td",{class:"small"},e.ruleStatus),el("td",{class:"small muted"},e.description))));
+    cnt.textContent=fr.length+" of "+X.length+" expectations";}
+  search.addEventListener("input",render); render();
+});
+
 if((D.drilldown||[]).length) addPanel("drilldown","Drill-down",p=>{
-  const exp=D.expectations||[];
-  if(exp.length){
-    p.append(el("h3",{},"Data-quality expectations"));
-    const et=el("table",{},el("thead",{},el("tr",{},el("th",{},"Dimension"),el("th",{class:"n"},"Target"),el("th",{},"Expectation"))));
-    const eb=el("tbody",{}); exp.forEach(e=>eb.append(el("tr",{},el("td",{},el("b",{},e.dimension)),el("td",{class:"n"},String(e.target)),el("td",{class:"small"},e.expectation)))); et.append(eb);
-    p.append(el("div",{class:"scroll"},et));
-  }
-  p.append(el("h3",{style:"margin-top:16px"},"Dimension \u2192 Concept \u2192 Metric \u2192 failing records"));
-  p.append(el("div",{class:"small muted",style:"margin:2px 0 10px"},"Expand a dimension to the data element (concept) measured, the business DQ rule (metric), and the records that failed it."));
+  p.append(el("h3",{},"Dimension \u2192 Underlying Concept \u2192 Metric \u2192 failing records"));
+  p.append(el("div",{class:"small muted",style:"margin:2px 0 10px"},"Expand a dimension to its underlying concepts, the business DQ rule per data element, its pass rate against the minimum, the report action, and the records that failed."));
   (D.drilldown||[]).forEach(dim=>{
-    let ck=0,ps=0; (dim.concepts||[]).forEach(c=>(c.metrics||[]).forEach(m=>{ck+=m.checked;ps+=m.passed;}));
-    const pct=ck?Math.round(100*ps/ck):null, dok=(pct!=null&&pct>=100);
+    let ck=0,ps=0; (dim.concepts||[]).forEach(c=>(c.metrics||[]).forEach(m=>{ck+=m.totalRows;ps+=(m.totalRows-m.failures);}));
+    const pct=ck?Math.round(100*ps/ck):null;
     const dd=el("details",{style:"margin:6px 0"});
-    dd.append(el("summary",{},el("b",{},dim.dimension),"  ",el("span",{class:(dok?"chk":"cross")},(pct==null?"\u2014":pct+"%")),"  ",el("span",{class:"small muted"},ps+"/"+ck+" checks pass")));
+    dd.append(el("summary",{},el("b",{},dim.dimension),"  ",el("span",{style:"color:"+(pct>=100?"var(--ok)":"var(--bad)")},(pct==null?"\u2014":pct+"%")),"  ",el("span",{class:"small muted"},ps+"/"+ck+" rows pass")));
     const inner=el("div",{style:"padding:4px 0 8px 14px"});
-    (dim.concepts||[]).forEach(c=>(c.metrics||[]).forEach(m=>{
-      const ok=(m.pct!=null&&m.pct>=100);
-      const md=el("details",{style:"margin:5px 0"});
-      md.append(el("summary",{},el("b",{},c.concept)," \u00b7 ",el("span",{class:"small"},m.rule),"  ",el("span",{class:(ok?"chk":"cross")},(m.pct==null?"\u2014":m.pct+"%")),"  ",el("span",{class:"small muted"},m.passed+"/"+m.checked)));
-      const mi=el("div",{style:"padding:4px 0 6px 14px"});
-      if((m.failing||[]).length){
-        const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Key"),el("th",{},"Value"),el("th",{},"Reason"))));
-        const b=el("tbody",{}); m.failing.forEach(f=>b.append(el("tr",{},el("td",{class:"small"},f.key),el("td",{class:"small"},f.value),el("td",{class:"small muted"},f.reason)))); tb.append(b);
-        mi.append(el("div",{class:"scroll"},tb));
-        if(m.failingTotal>m.failing.length) mi.append(el("div",{class:"small muted",style:"margin-top:4px"},"Showing "+m.failing.length+" of "+m.failingTotal+" failing records."));
-      } else mi.append(el("div",{class:"small muted"},"No failing records \u2014 all "+m.checked+" pass."));
-      md.append(mi); inner.append(md);
-    }));
+    (dim.concepts||[]).forEach(c=>{
+      inner.append(el("div",{class:"small",style:"margin:8px 0 2px;font-weight:600"},c.concept));
+      (c.metrics||[]).forEach(m=>{
+        const pr=m.totalRows?Math.round(100*(m.totalRows-m.failures)/m.totalRows):null, mn=Math.round((m.min||0)*100);
+        const md=el("details",{style:"margin:3px 0 3px 12px"});
+        md.append(el("summary",{},el("b",{},m.element),(m.isCDE?el("span",{class:"small",style:"color:#1f7a4d;font-weight:700"},"  CDE"):""),"  \u00b7  ",el("span",{class:"small"},m.rule),"  ",el("span",{style:"color:"+(pr>=mn?"var(--ok)":"var(--bad)")},(pr==null?"\u2014":pr+"%")),el("span",{class:"small muted"}," / min "+mn+"%  "),dqchip(m.reportAction,true)));
+        const mi=el("div",{style:"padding:4px 0 6px 14px"});
+        mi.append(el("div",{class:"small muted"},"State "+m.measurementState+" \u00b7 "+(m.totalRows-m.failures)+"/"+m.totalRows+" pass \u00b7 error rate "+Math.round((m.errorRate||0)*100)+"%"));
+        if((m.failing||[]).length){
+          const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Key"),el("th",{},"Value"),el("th",{},"Reason"))));
+          const b=el("tbody",{}); m.failing.forEach(f=>b.append(el("tr",{},el("td",{class:"small"},f.key),el("td",{class:"small"},f.value),el("td",{class:"small muted"},f.reason)))); tb.append(b);
+          mi.append(el("div",{class:"scroll"},tb));
+          if(m.failingTotal>m.failing.length) mi.append(el("div",{class:"small muted",style:"margin-top:4px"},"Showing "+m.failing.length+" of "+m.failingTotal+" failing records."));
+        } else mi.append(el("div",{class:"small muted"},"No failing records \u2014 all "+m.totalRows+" pass."));
+        md.append(mi); inner.append(md);
+      });
+    });
     dd.append(inner); p.append(dd);
   });
 });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.4.0">
+<meta name="version" content="1.5.0">
 <meta name="data-src" content="gh:modelwaresystems-dama/modelware_app_storage/5W1H_Metadata_Viewer/quality/taxpayer-register-conformed-keys-tpin.quality.json@main">
 <meta name="updated" content="2026-10-27 11:58 SAST">
 <title>Data Quality Viewer</title>
@@ -312,6 +312,39 @@ if(D.consistency&&(D.consistency.links||[]).length) addPanel("consistency","Cons
       el("td",{class:"small muted"},diffs)));});
   tb.append(b); p.append(el("div",{class:"scroll"},tb));
 });
+if((D.drilldown||[]).length) addPanel("drilldown","Drill-down",p=>{
+  const exp=D.expectations||[];
+  if(exp.length){
+    p.append(el("h3",{},"Data-quality expectations"));
+    const et=el("table",{},el("thead",{},el("tr",{},el("th",{},"Dimension"),el("th",{class:"n"},"Target"),el("th",{},"Expectation"))));
+    const eb=el("tbody",{}); exp.forEach(e=>eb.append(el("tr",{},el("td",{},el("b",{},e.dimension)),el("td",{class:"n"},String(e.target)),el("td",{class:"small"},e.expectation)))); et.append(eb);
+    p.append(el("div",{class:"scroll"},et));
+  }
+  p.append(el("h3",{style:"margin-top:16px"},"Dimension \u2192 Concept \u2192 Metric \u2192 failing records"));
+  p.append(el("div",{class:"small muted",style:"margin:2px 0 10px"},"Expand a dimension to the data element (concept) measured, the business DQ rule (metric), and the records that failed it."));
+  (D.drilldown||[]).forEach(dim=>{
+    let ck=0,ps=0; (dim.concepts||[]).forEach(c=>(c.metrics||[]).forEach(m=>{ck+=m.checked;ps+=m.passed;}));
+    const pct=ck?Math.round(100*ps/ck):null, dok=(pct!=null&&pct>=100);
+    const dd=el("details",{style:"margin:6px 0"});
+    dd.append(el("summary",{},el("b",{},dim.dimension),"  ",el("span",{class:(dok?"chk":"cross")},(pct==null?"\u2014":pct+"%")),"  ",el("span",{class:"small muted"},ps+"/"+ck+" checks pass")));
+    const inner=el("div",{style:"padding:4px 0 8px 14px"});
+    (dim.concepts||[]).forEach(c=>(c.metrics||[]).forEach(m=>{
+      const ok=(m.pct!=null&&m.pct>=100);
+      const md=el("details",{style:"margin:5px 0"});
+      md.append(el("summary",{},el("b",{},c.concept)," \u00b7 ",el("span",{class:"small"},m.rule),"  ",el("span",{class:(ok?"chk":"cross")},(m.pct==null?"\u2014":m.pct+"%")),"  ",el("span",{class:"small muted"},m.passed+"/"+m.checked)));
+      const mi=el("div",{style:"padding:4px 0 6px 14px"});
+      if((m.failing||[]).length){
+        const tb=el("table",{},el("thead",{},el("tr",{},el("th",{},"Key"),el("th",{},"Value"),el("th",{},"Reason"))));
+        const b=el("tbody",{}); m.failing.forEach(f=>b.append(el("tr",{},el("td",{class:"small"},f.key),el("td",{class:"small"},f.value),el("td",{class:"small muted"},f.reason)))); tb.append(b);
+        mi.append(el("div",{class:"scroll"},tb));
+        if(m.failingTotal>m.failing.length) mi.append(el("div",{class:"small muted",style:"margin-top:4px"},"Showing "+m.failing.length+" of "+m.failingTotal+" failing records."));
+      } else mi.append(el("div",{class:"small muted"},"No failing records \u2014 all "+m.checked+" pass."));
+      md.append(mi); inner.append(md);
+    }));
+    dd.append(inner); p.append(dd);
+  });
+});
+
 addPanel("raw","Quality JSON",p=>{p.append(el("pre",{},JSON.stringify(D,null,2)));});
 
 const nav=$("#nav"),main=$("#main");

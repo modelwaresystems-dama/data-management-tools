@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.11.2">
+<meta name="version" content="1.12.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -339,6 +339,8 @@
     <div class="row">
       <div><h2 class="sh">Live tenders</h2><p class="sub">Prospects and bids in flight. Closed ones move to Archive.</p></div>
       <div class="spacer"></div>
+      <button class="btn" id="exXlsx" title="Export all tenders to Excel (.xlsx)">⬇ Excel</button>
+      <button class="btn" id="exPdf" title="Export all tenders to a printable PDF">⬇ PDF</button>
       <button class="btn primary" id="newTenderBtn">+ Load tender</button>
     </div>
     <div class="searchbar"><input type="text" id="searchConsole" placeholder="Filter by client, title or sector…"></div>
@@ -535,7 +537,7 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-10-30 modal defaults + scroll fix";  // date/time of this build
+  var APP_BUILD="2026-10-31 export";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -1518,12 +1520,92 @@
     saveKey("tenders","Confirm assessment: "+(e.client||e.id));
     toast("Assessment confirmed");
   }
+  /* ---------- export all tenders (v1.12) ---------- */
+  function _d10(s){return s?String(s).slice(0,10):"";}
+  function _today(){return new Date().toISOString().slice(0,10);}
+  function _teamNames(t){return (t.teamProposed||[]).map(personName).join(", ");}
+  function _esaStatus(t){return (t.esa&&t.esa.status&&t.esa.status!=="none")?t.esa.status:"";}
+  function _sfiaStr(a){return Array.isArray(a)?a.map(function(x){return x&&x.code?(x.code+(x.requiredLevel?(" L"+x.requiredLevel):"")):String(x);}).join(", "):"";}
+  function _respStr(a){return Array.isArray(a)?a.map(function(x){return x&&x.attr?(x.attr+(x.requiredLevel?(" L"+x.requiredLevel):"")):String(x);}).join(", "):"";}
+  function _exTenders(){return (data.tenders||[]).slice().sort(function(a,b){return String(a.client||"").localeCompare(String(b.client||""));});}
+  function loadXLSX(cb){
+    if(window.XLSX)return cb();
+    var sc=document.createElement("script");
+    sc.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    sc.onload=function(){cb();};
+    sc.onerror=function(){toast("Couldn't load the Excel library (offline?)",true);};
+    document.head.appendChild(sc);
+  }
+  function exportExcel(){
+    var ts=_exTenders();
+    if(!ts.length){toast("No tenders to export",true);return;}
+    loadXLSX(function(){
+      try{
+        var wb=XLSX.utils.book_new();
+        var sum=[["Client","Title","Sector","Source","Status","Go/No-Go","Reason","Deadline","Owner","Proposed team","Assessment","Team fit %","SFIA fit","ESA","Updated"]];
+        ts.forEach(function(t){var a=t.assessment||{},g=t.goNoGo||{};
+          sum.push([t.client||"",t.title||"",t.sector||"",t.source||"",t.status||"",g.decision||"",g.reason||"",_d10(t.deadline),t.owner||"",_teamNames(t),a.recommendation||"",(a.overallFit!=null?a.overallFit:""),(t.sfiaFit!=null?t.sfiaFit:""),_esaStatus(t),_d10(t.updatedAt)]);});
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),"Summary");
+        var req=[["Client","Criterion","Weight","Rating","Evidence","SFIA","Responsibility"]];
+        ts.forEach(function(t){(t.requirements||[]).forEach(function(r){req.push([t.client||"",r.text||"",r.weight||"",r.rating||"",r.evidence||"",_sfiaStr(r.sfia),_respStr(r.responsibility)]);});});
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(req),"Requirements");
+        var comp=[["Client","Compliance item","Done"]];
+        ts.forEach(function(t){(t.compliance||[]).forEach(function(c){comp.push([t.client||"",c.label||"",c.done?"Yes":"No"]);});});
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(comp),"Compliance");
+        var asg=[["Client","Person","Fit %","Verdict","Covers","Gaps","Note"]];
+        ts.forEach(function(t){var a=t.assessment;if(a&&a.people)a.people.forEach(function(pp){asg.push([t.client||"",personName(pp.personId),(pp.fit!=null?pp.fit:""),pp.verdict||"",(pp.covers||[]).join(", "),(pp.gaps||[]).join(", "),pp.note||""]);});});
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(asg),"Assessment");
+        XLSX.writeFile(wb,"tender-console_"+_today()+".xlsx");
+        toast("Excel exported ("+ts.length+" tenders)");
+      }catch(e){toast("Excel export failed: "+e.message,true);}
+    });
+  }
+  function _pRow(cells,tag){tag=tag||"td";return "<tr>"+cells.map(function(c){return "<"+tag+">"+esc(c)+"</"+tag+">";}).join("")+"</tr>";}
+  function buildPrintHTML(ts){
+    var css="body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:24px;font-size:12px}"
+      +"h1{font-size:18px;margin:0 0 2px}h2{font-size:14px;margin:0 0 6px;border-bottom:2px solid #b4461f;padding-bottom:3px;color:#b4461f}"
+      +".meta{color:#555;font-size:11px;margin:0 0 14px}table{border-collapse:collapse;width:100%;margin:6px 0 10px}"
+      +"th,td{border:1px solid #ccc;padding:4px 7px;text-align:left;vertical-align:top;font-size:11px}th{background:#f3efe9}"
+      +".sub{color:#555;font-size:11px;margin:2px 0 8px}b{font-size:12px}"
+      +"section.det{page-break-before:always}section{page-break-inside:auto}";
+    var sum="<h1>Tender Console — all tenders</h1><p class=\"meta\">Generated "+esc(_today())+" · "+ts.length+" tenders</p>";
+    sum+="<table><thead>"+_pRow(["Client","Title","Status","Go/No-Go","Deadline","Team","Rec.","Fit"],"th")+"</thead><tbody>";
+    ts.forEach(function(t){var a=t.assessment||{},g=t.goNoGo||{};
+      sum+=_pRow([t.client||"",t.title||"",t.status||"",g.decision||"",_d10(t.deadline),_teamNames(t),a.recommendation||"",(a.overallFit!=null?a.overallFit+"%":"")]);});
+    sum+="</tbody></table>";
+    var det="";
+    ts.forEach(function(t){var g=t.goNoGo||{},a=t.assessment;
+      det+="<section class=\"det\"><h2>"+esc(t.client||"")+" — "+esc(t.title||"")+"</h2>";
+      det+="<p class=\"sub\">"+esc(t.sector||"")+" · status: "+esc(t.status||"")+" · go/no-go: "+esc(g.decision||"")+(g.reason?(" ("+esc(g.reason)+")"):"")+" · deadline: "+esc(_d10(t.deadline))+" · owner: "+esc(t.owner||"")+"</p>";
+      if(_teamNames(t))det+="<p class=\"sub\">Proposed team: "+esc(_teamNames(t))+"</p>";
+      if((t.requirements||[]).length){det+="<b>Requirements &amp; weights</b><table><thead>"+_pRow(["Criterion","Weight","Rating","Evidence"],"th")+"</thead><tbody>";
+        t.requirements.forEach(function(r){det+=_pRow([r.text||"",r.weight||"",r.rating||"",r.evidence||""]);});det+="</tbody></table>";}
+      if((t.compliance||[]).length){det+="<b>Compliance checklist</b><table><thead>"+_pRow(["Item","Done"],"th")+"</thead><tbody>";
+        t.compliance.forEach(function(c){det+=_pRow([c.label||"",c.done?"Yes":"No"]);});det+="</tbody></table>";}
+      if(a&&a.people&&a.people.length){det+="<b>Assessment — "+esc(a.recommendation||"")+(a.overallFit!=null?(" · team fit "+a.overallFit+"%"):"")+"</b><table><thead>"+_pRow(["Person","Fit","Verdict","Covers","Gaps"],"th")+"</thead><tbody>";
+        a.people.forEach(function(pp){det+=_pRow([personName(pp.personId),(pp.fit!=null?pp.fit+"%":""),pp.verdict||"",(pp.covers||[]).join(", "),(pp.gaps||[]).join(", ")]);});det+="</tbody></table>";}
+      if(_esaStatus(t))det+="<p class=\"sub\">ESA: "+esc(_esaStatus(t))+"</p>";
+      if(t.notes)det+="<p class=\"sub\">Notes: "+esc(t.notes)+"</p>";
+      det+="</section>";});
+    return "<!doctype html><html><head><meta charset=\"utf-8\"><title>Tender Console export "+esc(_today())+"</title><style>"+css+"</style></head><body>"+sum+det+"</body></html>";
+  }
+  function exportPDF(){
+    var ts=_exTenders();
+    if(!ts.length){toast("No tenders to export",true);return;}
+    var w=window.open("","_blank");
+    if(!w){toast("Allow pop-ups for this site, then click PDF again",true);return;}
+    w.document.open();w.document.write(buildPrintHTML(ts));w.document.close();w.focus();
+    setTimeout(function(){try{w.print();}catch(e){}},500);
+    toast("PDF view opened — use Save as PDF in the print dialog");
+  }
   /* ---------- events ---------- */
   $("tabs").addEventListener("click",function(ev){var b=ev.target.closest("button[data-tab]");if(!b)return;
     document.querySelectorAll("nav.tabs button").forEach(function(x){x.classList.toggle("active",x===b);});
     document.querySelectorAll(".section").forEach(function(s){s.classList.toggle("active",s.id==="sec-"+b.dataset.tab);});
   });
   $("newTenderBtn").onclick=function(){openTender(null);};
+  var _exX=$("exXlsx"); if(_exX)_exX.onclick=exportExcel;
+  var _exP=$("exPdf"); if(_exP)_exP.onclick=exportPDF;
   $("consoleList").addEventListener("click",function(ev){var c=ev.target.closest(".tcard");if(c)openTender(find(c.dataset.id));});
   $("archiveList").addEventListener("click",function(ev){var c=ev.target.closest(".tcard");if(c)openTender(find(c.dataset.id));});
   function find(id){for(var i=0;i<data.tenders.length;i++)if(data.tenders[i].id===id)return data.tenders[i];return null;}

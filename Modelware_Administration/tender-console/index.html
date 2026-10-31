@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.12.0">
+<meta name="version" content="1.13.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -339,8 +339,6 @@
     <div class="row">
       <div><h2 class="sh">Live tenders</h2><p class="sub">Prospects and bids in flight. Closed ones move to Archive.</p></div>
       <div class="spacer"></div>
-      <button class="btn" id="exXlsx" title="Export all tenders to Excel (.xlsx)">⬇ Excel</button>
-      <button class="btn" id="exPdf" title="Export all tenders to a printable PDF">⬇ PDF</button>
       <button class="btn primary" id="newTenderBtn">+ Load tender</button>
     </div>
     <div class="searchbar"><input type="text" id="searchConsole" placeholder="Filter by client, title or sector…"></div>
@@ -491,6 +489,8 @@
     <div class="sheet-b" id="tmBody"></div>
     <div class="sheet-f">
       <button class="btn danger" id="tmDelete">Delete</button>
+      <button class="btn" id="tmXlsx" title="Export this tender to Excel (.xlsx)">⬇ Excel</button>
+      <button class="btn" id="tmPdf" title="Export this tender to a printable PDF">⬇ PDF</button>
       <div class="spacer"></div>
       <button class="btn" id="tmCancel">Cancel</button>
       <button class="btn primary" id="tmSave">Save tender</button>
@@ -537,12 +537,12 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-10-31 export";  // date/time of this build
+  var APP_BUILD="2026-10-31 per-tender export";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
   var GO=["undecided","bid","partner","at-risk","leave"];
-  var TEAM=["Howard Diesel","Debbie","Monica","Veronica"];  // Phase 2 team roster
+  var TEAM=["Howard Diesel","Debbie","Monica","Veronica","Paul Bolton"];  // Phase 2 team roster
   var FILES={tenders:"tenders.json",team:"team.json",requests:"requests.json",experience:"experience.json",harvest:"harvest.json",sfiaProfile:"sfia-profile.json"};
   var AI_FILE="sfia-ai-concepts.json";
   var AIW={DIRECT:1,CONTRIBUTING:0.6,SUPPORTING:0.3,"CONTEXT-DEPENDENT":0.3};
@@ -1523,6 +1523,7 @@
   /* ---------- export all tenders (v1.12) ---------- */
   function _d10(s){return s?String(s).slice(0,10):"";}
   function _today(){return new Date().toISOString().slice(0,10);}
+  function _slug(x){return String(x==null?"tender":x).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40)||"tender";}
   function _teamNames(t){return (t.teamProposed||[]).map(personName).join(", ");}
   function _esaStatus(t){return (t.esa&&t.esa.status&&t.esa.status!=="none")?t.esa.status:"";}
   function _sfiaStr(a){return Array.isArray(a)?a.map(function(x){return x&&x.code?(x.code+(x.requiredLevel?(" L"+x.requiredLevel):"")):String(x);}).join(", "):"";}
@@ -1536,8 +1537,8 @@
     sc.onerror=function(){toast("Couldn't load the Excel library (offline?)",true);};
     document.head.appendChild(sc);
   }
-  function exportExcel(){
-    var ts=_exTenders();
+  function exportExcel(ts){
+    ts=ts||[];
     if(!ts.length){toast("No tenders to export",true);return;}
     loadXLSX(function(){
       try{
@@ -1555,8 +1556,9 @@
         var asg=[["Client","Person","Fit %","Verdict","Covers","Gaps","Note"]];
         ts.forEach(function(t){var a=t.assessment;if(a&&a.people)a.people.forEach(function(pp){asg.push([t.client||"",personName(pp.personId),(pp.fit!=null?pp.fit:""),pp.verdict||"",(pp.covers||[]).join(", "),(pp.gaps||[]).join(", "),pp.note||""]);});});
         XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(asg),"Assessment");
-        XLSX.writeFile(wb,"tender-console_"+_today()+".xlsx");
-        toast("Excel exported ("+ts.length+" tenders)");
+        var _base=(ts.length===1)?("tender_"+_slug(ts[0].client||ts[0].id||"tender")):"tender-console";
+        XLSX.writeFile(wb,_base+"_"+_today()+".xlsx");
+        toast("Excel exported ("+ts.length+" tender"+(ts.length===1?"":"s")+")");
       }catch(e){toast("Excel export failed: "+e.message,true);}
     });
   }
@@ -1568,14 +1570,18 @@
       +"th,td{border:1px solid #ccc;padding:4px 7px;text-align:left;vertical-align:top;font-size:11px}th{background:#f3efe9}"
       +".sub{color:#555;font-size:11px;margin:2px 0 8px}b{font-size:12px}"
       +"section.det{page-break-before:always}section{page-break-inside:auto}";
-    var sum="<h1>Tender Console — all tenders</h1><p class=\"meta\">Generated "+esc(_today())+" · "+ts.length+" tenders</p>";
+    var _one=ts.length===1;
+    var _ttl=_one?("Tender — "+(ts[0].client||ts[0].id||"")):"Tender Console — all tenders";
+    var sum="<h1>"+esc(_ttl)+"</h1><p class=\"meta\">Generated "+esc(_today())+" · "+ts.length+" tender"+(_one?"":"s")+"</p>";
+    if(!_one){
     sum+="<table><thead>"+_pRow(["Client","Title","Status","Go/No-Go","Deadline","Team","Rec.","Fit"],"th")+"</thead><tbody>";
     ts.forEach(function(t){var a=t.assessment||{},g=t.goNoGo||{};
       sum+=_pRow([t.client||"",t.title||"",t.status||"",g.decision||"",_d10(t.deadline),_teamNames(t),a.recommendation||"",(a.overallFit!=null?a.overallFit+"%":"")]);});
     sum+="</tbody></table>";
+    }
     var det="";
     ts.forEach(function(t){var g=t.goNoGo||{},a=t.assessment;
-      det+="<section class=\"det\"><h2>"+esc(t.client||"")+" — "+esc(t.title||"")+"</h2>";
+      det+="<section"+(_one?"":" class=\"det\"")+"><h2>"+esc(t.client||"")+" — "+esc(t.title||"")+"</h2>";
       det+="<p class=\"sub\">"+esc(t.sector||"")+" · status: "+esc(t.status||"")+" · go/no-go: "+esc(g.decision||"")+(g.reason?(" ("+esc(g.reason)+")"):"")+" · deadline: "+esc(_d10(t.deadline))+" · owner: "+esc(t.owner||"")+"</p>";
       if(_teamNames(t))det+="<p class=\"sub\">Proposed team: "+esc(_teamNames(t))+"</p>";
       if((t.requirements||[]).length){det+="<b>Requirements &amp; weights</b><table><thead>"+_pRow(["Criterion","Weight","Rating","Evidence"],"th")+"</thead><tbody>";
@@ -1587,10 +1593,10 @@
       if(_esaStatus(t))det+="<p class=\"sub\">ESA: "+esc(_esaStatus(t))+"</p>";
       if(t.notes)det+="<p class=\"sub\">Notes: "+esc(t.notes)+"</p>";
       det+="</section>";});
-    return "<!doctype html><html><head><meta charset=\"utf-8\"><title>Tender Console export "+esc(_today())+"</title><style>"+css+"</style></head><body>"+sum+det+"</body></html>";
+    return "<!doctype html><html><head><meta charset=\"utf-8\"><title>"+esc(_ttl)+" — export "+esc(_today())+"</title><style>"+css+"</style></head><body>"+sum+det+"</body></html>";
   }
-  function exportPDF(){
-    var ts=_exTenders();
+  function exportPDF(ts){
+    ts=ts||[];
     if(!ts.length){toast("No tenders to export",true);return;}
     var w=window.open("","_blank");
     if(!w){toast("Allow pop-ups for this site, then click PDF again",true);return;}
@@ -1604,8 +1610,8 @@
     document.querySelectorAll(".section").forEach(function(s){s.classList.toggle("active",s.id==="sec-"+b.dataset.tab);});
   });
   $("newTenderBtn").onclick=function(){openTender(null);};
-  var _exX=$("exXlsx"); if(_exX)_exX.onclick=exportExcel;
-  var _exP=$("exPdf"); if(_exP)_exP.onclick=exportPDF;
+  var _tmX=$("tmXlsx"); if(_tmX)_tmX.onclick=function(){if(editingT)exportExcel([editingT]);else toast("Open a tender first",true);};
+  var _tmP=$("tmPdf"); if(_tmP)_tmP.onclick=function(){if(editingT)exportPDF([editingT]);else toast("Open a tender first",true);};
   $("consoleList").addEventListener("click",function(ev){var c=ev.target.closest(".tcard");if(c)openTender(find(c.dataset.id));});
   $("archiveList").addEventListener("click",function(ev){var c=ev.target.closest(".tcard");if(c)openTender(find(c.dataset.id));});
   function find(id){for(var i=0;i<data.tenders.length;i++)if(data.tenders[i].id===id)return data.tenders[i];return null;}

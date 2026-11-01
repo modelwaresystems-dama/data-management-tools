@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.14.0">
+<meta name="version" content="1.15.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -537,7 +537,7 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-11-01 submission panel";  // date/time of this build
+  var APP_BUILD="2026-11-01 submission in exports + doc links";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -609,6 +609,7 @@
   function me(){return (cfg.userName||"").trim()||"unknown";}
   function isAdmin(){return (cfg.role||"admin")!=="sales";}
   function repoParent(){var d=(cfg.path||"data").replace(/^\/+|\/+$/g,"");return d.indexOf("/")>=0?d.slice(0,d.lastIndexOf("/")):"";}
+  function subFileUrl(rel){ if(!rel) return ""; if(!cfg.owner||!cfg.repo) return ""; var pp=repoParent(); var full=(pp?pp+"/":"")+String(rel).replace(/^\/+/,""); var enc=full.split("/").map(encodeURIComponent).join("/"); return "https://github.com/"+cfg.owner+"/"+cfg.repo+"/blob/"+(cfg.branch||"main")+"/"+enc; }
   function cvBasePath(id,name){var pp=repoParent();return (pp?pp+"/":"")+"cvs/base/"+id+"/"+safeName(name);}
   function rfpPath(tid,name){var pp=repoParent();return (pp?pp+"/":"")+"rfp/"+tid+"/"+safeName(name);}
   function testConn(){
@@ -1322,7 +1323,7 @@
       '<span class="hint">mandatory ready '+manHave+'/'+man.length+' · in hand '+have+'/'+cl.length+'</span></div>'+
       '<div style="height:8px;border-radius:5px;background:var(--line-soft);overflow:hidden;margin-bottom:8px"><i style="display:block;height:100%;width:'+pct+'%;background:linear-gradient(90deg,#156082,#0F9ED5)"></i></div>';
     var gaps=(s.gaps&&s.gaps.length)?'<div style="background:#fbe6e7;border:1px solid #f0b7ba;border-left:4px solid #b4232a;border-radius:8px;padding:8px 11px;margin-bottom:8px"><div style="font-weight:650;color:#b4232a;font-size:.82rem;margin-bottom:3px">Disqualifier &amp; gap watch</div>'+s.gaps.map(function(g){return '<div class="hint" style="margin:2px 0">• '+esc(g)+'</div>';}).join("")+'</div>':'';
-    var rows=cl.map(function(c){return '<tr><td style="color:var(--ink-faint);font-family:monospace;font-size:.78rem;vertical-align:top">'+esc(c.id||"")+'</td><td style="vertical-align:top">'+esc(c.item||"")+' '+(c.mandatory?'<span style="color:#b4232a">●</span>':'<span style="color:var(--ink-faint)">○</span>')+(c.note?'<div class="hint">'+esc(c.note)+'</div>':'')+'</td><td style="vertical-align:top">'+pill(c.status)+'</td><td class="hint" style="vertical-align:top">'+esc(c.source||"")+'</td><td class="hint" style="vertical-align:top">'+esc(c.owner||"")+'</td></tr>';}).join("");
+    var rows=cl.map(function(c){return '<tr><td style="color:var(--ink-faint);font-family:monospace;font-size:.78rem;vertical-align:top">'+esc(c.id||"")+'</td><td style="vertical-align:top">'+esc(c.item||"")+' '+(c.mandatory?'<span style="color:#b4232a">●</span>':'<span style="color:var(--ink-faint)">○</span>')+((c.file&&subFileUrl(c.file))?' <a href="'+esc(subFileUrl(c.file))+'" target="_blank" rel="noopener" style="font-size:.76rem">open ↗</a>':'')+(c.note?'<div class="hint">'+esc(c.note)+'</div>':'')+'</td><td style="vertical-align:top">'+pill(c.status)+'</td><td class="hint" style="vertical-align:top">'+esc(c.source||"")+'</td><td class="hint" style="vertical-align:top">'+esc(c.owner||"")+'</td></tr>';}).join("");
     var tbl='<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr><th style="text-align:left;color:var(--ink-faint);font-weight:600">#</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Returnable</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Status</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Source</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Owner</th></tr></thead><tbody>'+rows+'</tbody></table>';
     var cov=(s.coverage&&s.coverage.length)?'<div style="margin-top:10px"><div class="hint">Responsiveness coverage map (tender requirement → document)</div><table style="width:100%;border-collapse:collapse;font-size:.85rem"><tbody>'+s.coverage.map(function(c){return '<tr><td style="color:var(--ink-faint);font-family:monospace;font-size:.78rem">'+esc(c.reqRef||"")+'</td><td>'+esc(c.requirement||"")+'</td><td>'+pill(c.status)+'</td></tr>';}).join("")+'</tbody></table></div>':'';
     var meta=s.assembledBy?'<div class="hint" style="margin-top:8px">'+esc(s.assembledBy)+(s.assembledAt?' · '+esc(new Date(s.assembledAt).toLocaleDateString("en-ZA")):'')+'</div>':'';
@@ -1579,6 +1580,11 @@
         var asg=[["Client","Person","Fit %","Verdict","Covers","Gaps","Note"]];
         ts.forEach(function(t){var a=t.assessment;if(a&&a.people)a.people.forEach(function(pp){asg.push([t.client||"",personName(pp.personId),(pp.fit!=null?pp.fit:""),pp.verdict||"",(pp.covers||[]).join(", "),(pp.gaps||[]).join(", "),pp.note||""]);});});
         if(asg.length>1)XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(asg),"Assessment");
+        var subR=[["Client","#","Returnable","Category","Mandatory","Status","Source","Owner","Document","Note"]],subL=[];
+        ts.forEach(function(t){var sb=t.submission;if(!sb||!sb.checklist)return;sb.checklist.forEach(function(c){var u=c.file?subFileUrl(c.file):"";subR.push([t.client||"",c.id||"",c.item||"",c.category||"",c.mandatory?"Yes":"",c.status||"",c.source||"",c.owner||"",(c.file||""),c.note||""]);if(u)subL.push({r:subR.length-1,u:u});});});
+        if(subR.length>1){var wsS=XLSX.utils.aoa_to_sheet(subR);subL.forEach(function(k){var ad=XLSX.utils.encode_cell({r:k.r,c:8});if(wsS[ad])wsS[ad].l={Target:k.u,Tooltip:"Open document"};});XLSX.utils.book_append_sheet(wb,wsS,"Submission");}
+        var subI=[["Client","Status","Deadline","Portal","Packaging"]];ts.forEach(function(t){var sb=t.submission;if(!sb||!sb.checklist)return;subI.push([t.client||"",sb.status||"",_d10(sb.deadline),sb.portal||"",sb.packaging||""]);});
+        if(subI.length>1){var gp=[["Gap / disqualifier watch"]];ts.forEach(function(t){var sb=t.submission;if(sb&&sb.gaps)sb.gaps.forEach(function(g){gp.push([g]);});});var cv=[["Ref","Requirement","Satisfied by","Status"]];ts.forEach(function(t){var sb=t.submission;if(sb&&sb.coverage)sb.coverage.forEach(function(c){cv.push([c.reqRef||"",c.requirement||"",(c.satisfiedBy||[]).join(", "),c.status||""]);});});var info=subI.concat([[]]);if(gp.length>1)info=info.concat(gp,[[]]);if(cv.length>1)info=info.concat(cv);XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(info),"Submission Info");}
         var _base=(ts.length===1)?("tender_"+_slug(ts[0].client||ts[0].id||"tender")):"tender-console";
         XLSX.writeFile(wb,_base+"_"+_today()+".xlsx");
         toast("Excel exported ("+ts.length+" tender"+(ts.length===1?"":"s")+")");
@@ -1613,6 +1619,16 @@
         t.compliance.forEach(function(c){det+=_pRow([c.label||"",c.done?"Yes":"No"]);});det+="</tbody></table>";}
       if(a&&a.people&&a.people.length){det+="<b>Assessment — "+esc(a.recommendation||"")+(a.overallFit!=null?(" · team fit "+a.overallFit+"%"):"")+"</b><table><thead>"+_pRow(["Person","Fit","Verdict","Covers","Gaps"],"th")+"</thead><tbody>";
         a.people.forEach(function(pp){det+=_pRow([personName(pp.personId),(pp.fit!=null?pp.fit+"%":""),pp.verdict||"",(pp.covers||[]).join(", "),(pp.gaps||[]).join(", ")]);});det+="</tbody></table>";}
+      var _sub=t.submission;
+      if(_sub&&_sub.checklist&&_sub.checklist.length){
+        det+='<b>Submission pack</b>';
+        det+='<p class="sub">status: '+esc(_sub.status||"")+' · closes '+esc(_d10(_sub.deadline))+(_sub.portal?' · '+esc(_sub.portal):'')+'</p>';
+        if(_sub.gaps&&_sub.gaps.length){det+='<p class="sub"><b>Gap / disqualifier watch:</b></p><ul>'+_sub.gaps.map(function(g){return '<li>'+esc(g)+'</li>';}).join("")+'</ul>';}
+        det+='<table><thead><tr><th>#</th><th>Returnable</th><th>Mand.</th><th>Status</th><th>Source</th><th>Owner</th><th>Document</th></tr></thead><tbody>';
+        _sub.checklist.forEach(function(c){var u=c.file?subFileUrl(c.file):"";var doc=u?('<a href="'+esc(u)+'">'+esc(c.file)+'</a>'):esc(c.file||"");det+='<tr><td>'+esc(c.id||"")+'</td><td>'+esc(c.item||"")+'</td><td>'+(c.mandatory?"Yes":"")+'</td><td>'+esc(c.status||"")+'</td><td>'+esc(c.source||"")+'</td><td>'+esc(c.owner||"")+'</td><td>'+doc+'</td></tr>';});
+        det+='</tbody></table>';
+        if(_sub.coverage&&_sub.coverage.length){det+='<b>Responsiveness coverage</b><table><thead>'+_pRow(["Ref","Requirement","Satisfied by","Status"],"th")+'</thead><tbody>';_sub.coverage.forEach(function(c){det+=_pRow([c.reqRef||"",c.requirement||"",(c.satisfiedBy||[]).join(", "),c.status||""]);});det+='</tbody></table>';}
+      }
       if(_esaStatus(t))det+="<p class=\"sub\">ESA: "+esc(_esaStatus(t))+"</p>";
       if(t.notes)det+="<p class=\"sub\">Notes: "+esc(t.notes)+"</p>";
       det+="</section>";});

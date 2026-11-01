@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.18.0">
+<meta name="version" content="1.19.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -451,8 +451,9 @@
   </section>
   <section class="section" id="sec-company">
     <h2 class="sh">Company profile</h2>
-    <p class="sub">Your Modelware particulars — entered once here and used to <b>pre-fill the returnable forms of every tender</b> (VAT, CIPC, CSD, tax PIN, B-BBEE, banking, directors). Saved to the private <code>company-profile.json</code>; commit &amp; push to publish.</p>
+    <p class="sub">Your bidding entities — pick one to edit below. Each tender's <b>Bidding entity</b> selects which company pre-fills its returnable forms (VAT, CIPC, CSD, tax PIN, B-BBEE, banking, directors). Saved to the private <code>company-profile.json</code>; commit &amp; push to publish.</p>
     <div class="settings-card" style="margin-top:16px">
+      <div class="two"><div class="field"><label>Editing entity</label><select id="cpSelect"></select></div><div class="field"><label>Default for new tenders</label><select id="cpDefaultSel"></select></div></div>
       <div class="two"><div class="field"><label>Registered company name</label><input type="text" id="cp_legalName"></div><div class="field"><label>Trading name</label><input type="text" id="cp_tradingName"></div></div>
       <div class="two"><div class="field"><label>Authorised representative</label><input type="text" id="cp_representative"></div><div class="field"><label>Representative role</label><input type="text" id="cp_representativeRole"></div></div>
       <div class="two"><div class="field"><label>E-mail</label><input type="text" id="cp_email"></div><div class="field"><label>Telephone</label><input type="text" id="cp_phone"></div></div>
@@ -579,7 +580,7 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-11-01 company profile editor";  // date/time of this build
+  var APP_BUILD="2026-11-01 multi-entity profiles";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -653,6 +654,11 @@
   function repoParent(){var d=(cfg.path||"data").replace(/^\/+|\/+$/g,"");return d.indexOf("/")>=0?d.slice(0,d.lastIndexOf("/")):"";}
   function subFileUrl(rel){ if(!rel) return ""; if(!cfg.owner||!cfg.repo) return ""; var pp=repoParent(); var full=(pp?pp+"/":"")+String(rel).replace(/^\/+/,""); var enc=full.split("/").map(encodeURIComponent).join("/"); return "https://github.com/"+cfg.owner+"/"+cfg.repo+"/blob/"+(cfg.branch||"main")+"/"+enc; }
   function repoPath(rel){var pp=repoParent();return (pp?pp+"/":"")+String(rel).replace(/^\/+/,"");}
+  function cpList(){return (data.companyProfile&&data.companyProfile.companies)||[];}
+  function cpDefault(){return (data.companyProfile&&data.companyProfile.default)||((cpList()[0]||{}).id)||"pty";}
+  function cpGet(id){var l=cpList();for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i];return null;}
+  function companyForTender(t){return cpGet((t&&t.company))||cpGet(cpDefault())||cpList()[0]||{};}
+  function cpOpts(sel){return cpList().map(function(c){return '<option value="'+esc(c.id)+'"'+(c.id===sel?' selected':'')+'>'+esc(c.legalName||c.label||c.id)+'</option>';}).join("");}
   function cvBasePath(id,name){var pp=repoParent();return (pp?pp+"/":"")+"cvs/base/"+id+"/"+safeName(name);}
   function rfpPath(tid,name){var pp=repoParent();return (pp?pp+"/":"")+"rfp/"+tid+"/"+safeName(name);}
   function testConn(){
@@ -678,7 +684,10 @@
       else if(key==="requests"){data.requests=obj.requests||[];n=data.requests.length;}
       else if(key==="experience"){data.experience=obj.items||[];n=data.experience.length;}
       else if(key==="harvest"){data.harvest=obj.queue||[];n=data.harvest.length;}
-      else if(key==="companyProfile"){data.companyProfile=obj||{};n=Object.keys(data.companyProfile).length;}
+      else if(key==="companyProfile"){var o=obj||{};
+        if(o.companies){data.companyProfile={schemaVersion:2,_type:"company-profile",default:o.default||((o.companies[0]||{}).id)||"pty",companies:o.companies,note:o.note};}
+        else {var one=JSON.parse(JSON.stringify(o));delete one.schemaVersion;delete one._type;delete one.updatedAt;if(!one.id)one.id="pty";if(!one.label)one.label=one.legalName||"Company";data.companyProfile={schemaVersion:2,_type:"company-profile",default:one.id,companies:[one]};}
+        n=data.companyProfile.companies.length;}
       else if(key==="formMaps"){data.formMaps=(obj&&obj.forms)||{};n=Object.keys(data.formMaps).length;}
       else if(key==="sfiaProfile"){
         sfiaProf={loaded:true,subject:obj.subject||"",generated:obj.generated||"",framework:obj.framework||"SFIA 9",
@@ -704,7 +713,7 @@
     if(key==="tenders")return JSON.stringify({schemaVersion:1,tenders:data.tenders},null,2);
     if(key==="experience")return JSON.stringify({schemaVersion:1,items:data.experience},null,2);
     if(key==="harvest")return JSON.stringify({schemaVersion:1,queue:data.harvest},null,2);
-    if(key==="companyProfile")return JSON.stringify(Object.assign({schemaVersion:1,_type:"company-profile"},data.companyProfile||{},{updatedAt:new Date().toISOString().slice(0,10)}),null,2);
+    if(key==="companyProfile"){var cpf=data.companyProfile||{};return JSON.stringify({schemaVersion:2,_type:"company-profile",updatedAt:new Date().toISOString().slice(0,10),default:cpf.default||"pty",companies:cpf.companies||[],note:cpf.note||""},null,2);}
     if(key==="team")return JSON.stringify({schemaVersion:2,_type:"team-registry",updatedAt:new Date().toISOString().slice(0,10),people:data.team},null,2);
     if(key==="requests")return JSON.stringify({schemaVersion:1,_type:"assessment-request-queue",updatedAt:new Date().toISOString().slice(0,10),requests:data.requests},null,2);
     if(key==="sfiaProfile")return JSON.stringify({schemaVersion:sfiaProf.schemaVersion||2,_type:"sfia-profile",subject:sfiaProf.subject,framework:sfiaProf.framework||"SFIA 9",generated:sfiaProf.generated,source:sfiaProf.source,levelNames:sfiaProf.levelNames,evidence:sfiaProf.evidence,skills:sfiaProf.skills,attributes:sfiaProf.attributes,behaviours:sfiaProf.behaviours,strengths:sfiaProf.strengths},null,2);
@@ -878,17 +887,26 @@
       '<div class="acts"><button class="btn sm" data-exedit="'+x.id+'">Edit</button></div></div>';}).join("");
   }
   var CP_KEYS=["legalName","tradingName","representative","representativeRole","email","phone","website","physicalAddress","postalAddress","city","province","country","companyRegNo","vatNo","csdSupplierNo","csdMaaaNo","taxComplianceStatusPin","coidRegNo","bbbeeLevel","bbbeeStatus","bbbeeType","bankName","bankAccountName","bankAccountNo","bankBranchCode"];
+  var cpEditId=null;
+  function cpCurrentId(){var l=cpList();if(!l.length)return null;if(!cpEditId||!cpGet(cpEditId))cpEditId=cpDefault();return cpEditId;}
   function renderCompany(){
-    var cp=data.companyProfile||{};
+    var sel=$("cpSelect");if(!sel)return;var list=cpList(),dsel=$("cpDefaultSel");
+    if(!list.length){sel.innerHTML="";if(dsel)dsel.innerHTML="";CP_KEYS.forEach(function(k){var el=$("cp_"+k);if(el)el.value="";});var dd=$("cp_directors");if(dd)dd.value="";return;}
+    var cur=cpCurrentId();
+    sel.innerHTML=list.map(function(c){return '<option value="'+esc(c.id)+'"'+(c.id===cur?' selected':'')+'>'+esc(c.legalName||c.label||c.id)+'</option>';}).join("");
+    if(dsel)dsel.innerHTML=list.map(function(c){return '<option value="'+esc(c.id)+'"'+(c.id===cpDefault()?' selected':'')+'>'+esc(c.legalName||c.label||c.id)+'</option>';}).join("");
+    var cp=cpGet(cur)||{};
     CP_KEYS.forEach(function(k){var el=$("cp_"+k);if(el)el.value=(cp[k]!=null?cp[k]:"");});
-    var d=$("cp_directors");
-    if(d){var arr=cp.directors||[];d.value=arr.map(function(x){return typeof x==="string"?x:(x&&x.name?(x.name+(x.role?" | "+x.role:"")):"");}).join("\n");}
+    var d=$("cp_directors");if(d){var arr=cp.directors||[];d.value=arr.map(function(x){return typeof x==="string"?x:(x&&x.name?(x.name+(x.role?" | "+x.role:"")):"");}).join("\n");}
   }
   function saveCompany(){
-    data.companyProfile=data.companyProfile||{};
-    CP_KEYS.forEach(function(k){var el=$("cp_"+k);if(el)data.companyProfile[k]=el.value.trim();});
-    var d=$("cp_directors");if(d)data.companyProfile.directors=d.value.split(/\n/).map(function(s){return s.trim();}).filter(Boolean);
-    saveKey("companyProfile","Update company profile");
+    var list=cpList();if(!list.length){toast("No entity to save",true);return;}
+    var cur=cpCurrentId(),cp=cpGet(cur);if(!cp){toast("Pick an entity",true);return;}
+    CP_KEYS.forEach(function(k){var el=$("cp_"+k);if(el)cp[k]=el.value.trim();});
+    cp.label=cp.legalName||cp.label||cp.id;
+    var d=$("cp_directors");if(d)cp.directors=d.value.split(/\n/).map(function(s){return s.trim();}).filter(Boolean);
+    var dsel=$("cpDefaultSel");if(dsel&&dsel.value)data.companyProfile.default=dsel.value;
+    saveKey("companyProfile","Update company profile: "+(cp.legalName||cp.id));
     toast("Company profile saved — commit & push to publish");
   }
   function renderAll(){renderCounts();populateFilters();renderList("console");renderList("archive");renderBank();renderTeam();renderAnalytics();renderSfiaAnalytics();renderSfia();renderAiExplorer();renderCompany();}
@@ -1313,6 +1331,7 @@
       '<div class="field"><label>Go / No-Go'+(isAdmin()?'':' <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(admin sets this)</span>')+'</label><select id="f_go"'+(isAdmin()?'':' disabled')+'>'+goOpts+'</select></div></div>'+
       '<div class="two"><div class="field"><label>Owner / lead</label><select id="f_owner">'+ownerOpts+'</select></div>'+
       '<div class="field"><label>Go / No-Go reason</label><textarea id="f_goreason" placeholder="Why bid / partner / leave?" style="min-height:0">'+esc(e.goNoGo.reason)+'</textarea></div></div>'+
+      '<div class="field"><label>Bidding entity <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(which company bids — pre-fills its forms)</span></label><select id="f_company">'+cpOpts(e.company||cpDefault())+'</select></div>'+
       '<fieldset><legend>Fit &amp; coverage <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(evidence coverage)</span></legend><div id="tmFit"></div></fieldset>'+
       '<fieldset><legend>SFIA fit <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(framework level vs your profile)</span></legend><div id="tmSfia"></div></fieldset>'+
       '<fieldset><legend>Requirements &amp; weights <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(ratings set by the CV skill)</span></legend><div id="reqList"></div><button class="btn sm" id="addReq" type="button">+ Requirement</button></fieldset>'+
@@ -1422,7 +1441,7 @@
     var def=(formsForTender(tid)||{})[fkey]; if(!def){toast("No form definition",true);return;}
     formCtx={tid:tid,fkey:fkey,def:def};
     $("fmTitle").textContent=def.title||fkey;
-    var cp=data.companyProfile||{};
+    var cp=companyForTender(find(tid))||{};
     var rows=(def.fields||[]).map(function(f){
       if(f.type==="mark"){return '<div class="field"><label>'+esc(f.label)+'</label><label class="checkrow" style="gap:6px;margin:0"><input type="checkbox" data-fm="'+esc(f.id)+'" data-mark="1" checked style="width:16px;height:16px"> place an X</label></div>';}
       var fixed=(f.const!=null && !f.profileKey);
@@ -1459,8 +1478,8 @@
         var t=find(tid);
         if(t&&t.submission&&t.submission.checklist){var it=t.submission.checklist.filter(function(c){return c.id===def.checklistId;})[0];if(it){it.file=def.output;it.status=(def.signRequired===false?"have":"to-sign");}}
         saveKey("tenders","Form generated: "+(def.title||formCtx.fkey));
-        var changed=false; data.companyProfile=data.companyProfile||{};
-        Object.keys(profileWrites).forEach(function(k){if(data.companyProfile[k]!==profileWrites[k]){data.companyProfile[k]=profileWrites[k];changed=true;}});
+        var changed=false; var ent=companyForTender(find(tid))||{};
+        Object.keys(profileWrites).forEach(function(k){if(ent[k]!==profileWrites[k]){ent[k]=profileWrites[k];changed=true;}});
         if(changed)saveKey("companyProfile","Update company profile from "+(def.title||formCtx.fkey));
         $("fmGen").disabled=false; $("formModal").classList.remove("open");
         if($("subModal").classList.contains("open"))openSubPack(tid);
@@ -1474,6 +1493,7 @@
     e.source=$("f_source").value.trim();e.deadline=$("f_deadline").value;e.status=$("f_status").value;
     e.goNoGo={decision:isAdmin()?$("f_go").value:((editingT.goNoGo&&editingT.goNoGo.decision)||"undecided"),reason:$("f_goreason").value.trim()};
     e.owner=$("f_owner")?$("f_owner").value:(e.owner||"");
+    e.company=$("f_company")?$("f_company").value:(e.company||cpDefault());
     e.cv={baseRef:$("f_base").value.trim(),tailoredRef:$("f_tailored").value.trim(),coverageRef:$("f_coverage").value.trim()};
     if($("f_esastatus")){e.esa=e.esa||{status:"none"};e.esa.status=$("f_esastatus").value;e.esa.updatedAt=new Date().toISOString();}
     e.outcome={result:$("f_outcome").value,notes:$("f_outnotes").value.trim()};
@@ -1853,6 +1873,8 @@
   $("fltClear").onclick=function(){["fltStatus","fltSector","fltOwner","fltFit"].forEach(function(id){$(id).value="";});$("searchConsole").value="";renderList("console");};
 
   var _savec=$("saveCompanyBtn"); if(_savec)_savec.onclick=saveCompany;
+  var _cpsel=$("cpSelect"); if(_cpsel)_cpsel.onchange=function(){cpEditId=this.value;renderCompany();};
+  var _cpdef=$("cpDefaultSel"); if(_cpdef)_cpdef.onchange=function(){if(data.companyProfile)data.companyProfile.default=this.value;};
   $("saveSettingsBtn").onclick=function(){
     var owner=$("setOwner").value.trim(), repo=$("setRepo").value.trim();
     // accept an "owner/repo" (or owner\repo) paste in the owner field and split it

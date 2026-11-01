@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.7.0">
-<meta name="updated" content="2026-10-31 12:48 SAST">
+<meta name="version" content="1.8.0">
+<meta name="updated" content="2026-11-01 13:03 SAST">
 <meta name="description" content="Zambia Government Operating Model: Government Scope to Domain to Subject Area to Information Concept, with a certified public-body registry. Modelware Systems.">
 <title>Zambia Government Operating Model</title>
 <style>
@@ -262,23 +262,109 @@ function renderDmoPolicies(v){
   }).join('');
 }
 // ---------- Policy Lineage (L2/L3 + traceback) ----------
+function ensurePLChainStyle(){ if(document.getElementById("pl-chain-style"))return;
+ var st=document.createElement("style"); st.id="pl-chain-style";
+ st.textContent=".plbar{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 4px}"
+ +".pllab{display:flex;flex-direction:column;font-size:11px;font-weight:700;opacity:.7;gap:3px}"
+ +".pllab select{font-size:13px;font-weight:500;padding:6px 8px;border-radius:8px;border:1px solid rgba(128,128,128,.4);background:rgba(128,128,128,.06);color:inherit;min-width:230px}"
+ +".plchain{margin-top:10px}"
+ +".plband{display:flex;gap:12px;margin:0}"
+ +".plstep{flex:0 0 42px;text-align:center;font-size:10px;font-weight:800;letter-spacing:.04em;opacity:.65;padding-top:13px}"
+ +".plbody{flex:1;border-left:3px solid rgba(128,128,128,.35);padding:8px 0 20px 14px;position:relative}"
+ +".plband:last-child .plbody{padding-bottom:4px}"
+ +".plbody:before{content:'';position:absolute;left:-8px;top:13px;width:13px;height:13px;border-radius:50%;background:rgba(128,128,128,.55)}"
+ +".pltitle{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;opacity:.6;margin-bottom:4px}"
+ +".plrow{font-size:13px;margin:3px 0;line-height:1.5}"
+ +".plmuted{opacity:.6;font-size:12px}"
+ +".plchip{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:rgba(128,128,128,.18);margin:1px 2px}"
+ +".plchip i{font-style:normal;opacity:.6}"
+ +".pltag{font-size:10px;font-weight:800;padding:1px 6px;border-radius:999px;background:rgba(80,140,255,.22);margin-left:4px}"
+ +".plstat{font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;text-transform:uppercase}"
+ +".plstat-tailored{background:rgba(230,160,30,.25)}.plstat-adopted{background:rgba(60,170,90,.22)}.plstat-waived{background:rgba(220,70,70,.22)}"
+ +".plasset{border:1px solid rgba(128,128,128,.22);border-radius:9px;padding:7px 11px;margin:7px 0;background:rgba(128,128,128,.04)}"
+ +".pllist{margin:4px 0 2px;padding-left:18px}.pllist li{font-size:12.5px;margin:2px 0}";
+ document.head.appendChild(st); }
 function renderPolicyLineage(v){
-  ensurePolicyStyle();
-  const ap=(DATA.asset_policies||{}).items||[];
-  const dp=(DATA.domain_policies||{}).items||[];
-  const edges=(DATA.policy_lineage||{}).edges||[];
-  if(!ap.length){ v.appendChild(ce("p","hint","No asset policies in this model.")); return; }
-  v.appendChild(ce("p","hint","Policy Lineage: "+ap.length+" data assets, "+dp.length+" domains, "+edges.length+" edges. Each asset requirement traces, edge by edge, to a global control and statutory clause (resolved L0 to L3)."));
-  const wrap=ce("div","ctrlwrap"); v.appendChild(wrap);
-  wrap.innerHTML=ap.map(function(a){
-    var flags=(a.flags||[]).map(function(f){return '<span class="ctrlclause">'+esc(f)+'</span>';}).join(' ');
-    var reqs=(a.metadata_requirements||[]).map(function(r){
-      var df=r.derives_from||{}; var trace=df.control_id?(esc(df.control_id)+(df.clause?(' · '+esc(df.clause)):'')):'-';
-      return '<li><b>'+esc(r.code)+'</b> '+esc(r.check||r.requirement||'')+' <span style="opacity:.6">['+esc(r.mfpi_dimension||'')+(r.gate?' · gate':'')+' · traces to '+trace+']</span></li>';
-    }).join('');
-    return '<div class="ctrlcard"><div class="ctrltop"><span class="ctrlname">'+esc(a.name)+'</span><span class="ctrlid">'+esc(a.entity_id)+' / '+esc(a.domain_ref)+'</span>'+flags+'</div>'
-      +'<div class="cgrp"><div class="cglabel">Resolved metadata requirements ('+((a.metadata_requirements||[]).length)+')</div><ul class="clist">'+reqs+'</ul></div></div>';
-  }).join('');
+  ensurePolicyStyle(); ensurePLChainStyle();
+  var cat=(DATA.dmo_policy_catalogue||{}).items||[];
+  var ents=(DATA.entity_dmo_policies||{}).entities||[];
+  var dps=(DATA.domain_policies||{}).items||[];
+  var aps=(DATA.asset_policies||{}).items||[];
+  var edges=(DATA.policy_lineage||{}).edges||[];
+  if(!aps.length){ v.appendChild(ce("p","hint","No asset policies in this model.")); return; }
+  function polOf(cid){ var m=/^(.*?)-C\d+/.exec(cid||""); return m?m[1]:(cid||""); }
+  var dmoPrimary={};
+  edges.forEach(function(e){ if(e.from&&e.from.indexOf("dmo:")===0&&e.to&&e.to.indexOf("global:")===0&&e.derives_from){ var id=e.from.slice(4); if(!dmoPrimary[id]) dmoPrimary[id]=e.derives_from; }});
+  var S=renderPolicyLineage._sel||(renderPolicyLineage._sel={});
+  if(focus&&focus.type==="entity") S.entity=focus.id;
+  if(!S.entity||!ents.some(function(e){return e.entity_id===S.entity;})) S.entity=ents[0].entity_id;
+  if(!S.policy) S.policy="dmo:"+(cat[0]?cat[0].id:"");
+  v.appendChild(ce("p","hint","Pick one entity and one policy to trace a single lineage — from the global control and statutory clause, down through the DMO policy, the entity’s adoption, its domain, to the data assets and their metadata requirements."));
+  var bar=ce("div","plbar");
+  var esel='<label class="pllab">Entity<select id="plEntity">'+ents.map(function(e){return '<option value="'+esc(e.entity_id)+'"'+(e.entity_id===S.entity?' selected':'')+'>'+esc(e.dmo_office||e.entity_id)+'</option>';}).join('')+'</select></label>';
+  var gp={}; cat.forEach(function(c){(c.applies_controls||[]).forEach(function(cid){gp[polOf(cid)]=1;});});
+  var gopts=Object.keys(gp).sort().map(function(p){return '<option value="global:'+esc(p)+'"'+(S.policy==="global:"+p?' selected':'')+'>'+esc(p)+'</option>';}).join('');
+  var dopts=cat.map(function(c){return '<option value="dmo:'+esc(c.id)+'"'+(S.policy==="dmo:"+c.id?' selected':'')+'>'+esc(c.id)+' · '+esc(c.name)+'</option>';}).join('');
+  var psel='<label class="pllab">Policy<select id="plPolicy"><optgroup label="DMO policies (L1)">'+dopts+'</optgroup><optgroup label="Global policies (L0)">'+gopts+'</optgroup></select></label>';
+  bar.innerHTML=esel+psel; v.appendChild(bar);
+  var chain=ce("div","plchain"); v.appendChild(chain);
+  function band(step,title,body){ return '<div class="plband"><div class="plstep">'+esc(step)+'</div><div class="plbody"><div class="pltitle">'+title+'</div>'+body+'</div></div>'; }
+  function draw(){
+    var entId=S.entity, polKey=S.policy;
+    var ent=ents.filter(function(e){return e.entity_id===entId;})[0]||{};
+    var isDmo=polKey.indexOf("dmo:")===0;
+    var selId=isDmo?polKey.slice(4):null, pid=isDmo?null:polKey.slice(7);
+    var selDmo=isDmo?(cat.filter(function(c){return c.id===selId;})[0]||null):null;
+    function matchReq(r){ var df=r.derives_from||{};
+      if(isDmo){ return (selDmo&&(selDmo.metadata||[]).indexOf(r.code)>=0); }
+      return (df.policy_id===pid)||(polOf(df.control_id)===pid); }
+    // matched requirements across this entity's assets
+    var matched=[]; aps.forEach(function(a){ if(a.entity_id!==entId)return; (a.metadata_requirements||[]).forEach(function(r){ if(matchReq(r)) matched.push({a:a,r:r}); }); });
+    var codesUsed={}; matched.forEach(function(m){ if(m.r.code) codesUsed[m.r.code]=1; });
+    // DMO layer
+    var dmos = isDmo ? (selDmo?[selDmo]:[]) : cat.filter(function(c){ return (c.metadata||[]).some(function(m){return codesUsed[m];}); });
+    var dmoIds=dmos.map(function(c){return c.id;});
+    var html="";
+    // L0 GLOBAL
+    var g="";
+    if(isDmo&&selDmo&&dmoPrimary[selDmo.id]){ var dp0=dmoPrimary[selDmo.id];
+      g+='<div class="plrow">DMO baseline: <b>'+esc(dp0.policy_id)+'</b> control <b>'+esc(dp0.control_id)+'</b> · clause '+esc(dp0.clause||'–')+' <span class="pltag">primary</span></div>'; }
+    var origins={}; matched.forEach(function(m){ var df=m.r.derives_from||{}; if(df.control_id){ var k=df.policy_id+'|'+df.control_id+'|'+(df.clause||''); origins[k]={p:df.policy_id,c:df.control_id,cl:df.clause}; }});
+    var ok=Object.keys(origins);
+    if(ok.length){ g+='<div class="plrow plmuted">Statutory origins the matched requirements trace to:</div>';
+      g+=ok.sort().map(function(k){var o=origins[k];return '<div class="plrow"><span class="plchip">'+esc(o.p)+'</span> <b>'+esc(o.c)+'</b>'+(o.cl?' · clause '+esc(o.cl):'')+'</div>';}).join(''); }
+    if(!g) g='<div class="plrow plmuted">No statutory origin resolved for this selection at this entity.</div>';
+    html+=band("L0","Global policy &amp; statutory control",g);
+    // L1 DMO
+    var dh=dmos.map(function(c){ var md=(c.metadata||[]).map(function(m){return '<span class="plchip">'+esc(m)+'</span>';}).join(' ');
+      return '<div class="plrow"><b>'+esc(c.id)+'</b> '+esc(c.name)+' '+md+'<div class="plmuted">'+esc(c.intent||'')+'</div></div>'; }).join('')
+      || '<div class="plrow plmuted">No DMO policy governs the metadata of this selection.</div>';
+    html+=band("L1","DMO policy",dh);
+    // Adoption
+    var ad=(ent.adoptions||[]).filter(function(a){return dmoIds.indexOf(a.catalogue_id)>=0;});
+    var ah=ad.map(function(a){ var st=a.status||"adopted"; var note=a.tailoring_note||a.local_statement||"";
+      return '<div class="plrow"><span class="plstat plstat-'+esc(st)+'">'+esc(st)+'</span> <b>'+esc(a.catalogue_id)+'</b>'+(note?' — '+esc(note):'')+'</div>'; }).join('')
+      || '<div class="plrow plmuted">No adoption record for this policy at this entity.</div>';
+    html+=band("ADOPT","Adopted by "+esc(ent.dmo_office||entId),ah);
+    // L2 domain
+    var doms=dps.filter(function(d){ return d.entity_id===entId && (d.parent||[]).some(function(p){ return dmoIds.some(function(id){return p==="entity:"+entId+"/"+id;}); }); });
+    var domIds={}; doms.forEach(function(d){domIds[d.id]=1;});
+    var dmh=doms.map(function(d){ return '<div class="plrow"><b>'+esc(d.id)+'</b> '+esc(d.name||d.domain_ref||'')+' <span class="plmuted">('+((d.specialised_requirements||[]).length)+' specialised reqs)</span></div>'; }).join('')
+      || '<div class="plrow plmuted">No domain at this entity specialises this policy (assets shown directly below).</div>';
+    html+=band("L2","Domain",dmh);
+    // L3 assets + matched reqs
+    var byAsset={}; matched.forEach(function(m){ if(doms.length && !domIds[m.a.domain_ref]) return; (byAsset[m.a.id]=byAsset[m.a.id]||{a:m.a,reqs:[]}).reqs.push(m.r); });
+    var keys=Object.keys(byAsset);
+    var lh=keys.map(function(k){ var o=byAsset[k];
+      var rl=o.reqs.map(function(r){var df=r.derives_from||{}; return '<li><b>'+esc(r.code)+'</b> '+esc(r.requirement||r.check||'')+' <span class="plmuted">← '+esc(df.control_id||'–')+(df.clause?(' '+esc(df.clause)):'')+(r.gate?' · gate':'')+'</span></li>';}).join('');
+      return '<div class="plasset"><div class="plrow"><b>'+esc(o.a.name)+'</b> <span class="plmuted">'+esc(o.a.domain_ref||'')+'</span></div><ul class="pllist">'+rl+'</ul></div>'; }).join('')
+      || '<div class="plrow plmuted">No data asset at this entity carries a requirement tracing to this policy.</div>';
+    html+=band("L3","Data assets &amp; requirements ("+keys.length+")",lh);
+    chain.innerHTML=html;
+  }
+  $("#plEntity").onchange=function(){ S.entity=this.value; var fb=$(".focusbar"); if(fb) fb.remove(); focus=null; draw(); };
+  $("#plPolicy").onchange=function(){ S.policy=this.value; draw(); };
+  draw();
 }
 const TABS=[["domains","Domains & Subject Areas"],["mapping","Mapping to Zambia"],["registry","Entity Registry"],["ownership","Ownership & Stewardship"],["register","Document Register"],["controls","Controls & Evidence"],["types","Entity Types"],["rules","Resolution Rules"],["decisions","Decisions & Backlog"],["dmopolicies","DMO Policies"],["lineage","Policy Lineage"]];
 let active="domains";
@@ -744,7 +830,7 @@ function applyHash(){
   } else if(k==="domain"){ const n=parseInt(val,10); if(!n) return;
     focus={type:"domain",num:n}; selectTab("domains");
     setTimeout(()=>{ const det=$("#view").querySelector('details[data-dnum="'+n+'"]'); if(det) det.scrollIntoView({behavior:"smooth",block:"start"}); },90);
-  } else if(TABIDS.indexOf(k)>=0){ selectTab(k); }
+  } else if(TABIDS.indexOf(k)>=0){ if(k==="lineage"&&val){ var _e=findEntity(val); if(_e){ renderPolicyLineage._sel=renderPolicyLineage._sel||{}; renderPolicyLineage._sel.entity=_e.id; focus={type:"entity",id:_e.id,name:_e.name,domain:_e.domain,external:!!_e.external}; } } selectTab(k); }
 }
 window.addEventListener("hashchange",applyHash);
 applyHash();

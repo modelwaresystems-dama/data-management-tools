@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.15.0">
+<meta name="version" content="1.16.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -499,6 +499,13 @@
 </div>
 
 <!-- EXPERIENCE MODAL -->
+<div class="modal" id="subModal" role="dialog" aria-modal="true" aria-label="Submission Pack">
+  <div class="sheet" style="max-width:920px">
+    <div class="sheet-h"><h3 id="subTitle">Submission Pack</h3><div class="spacer"></div><button class="iconbtn" id="subClose" aria-label="Close">&#10005;</button></div>
+    <div class="sheet-b" id="subBody"></div>
+    <div class="sheet-f"><button class="btn" id="subPrint" title="Open a printable PDF of this tender incl. the pack">⬇ Printable PDF</button><div class="spacer"></div><button class="btn primary" id="subCloseB">Close</button></div>
+  </div>
+</div>
 <div class="modal" id="exModal" role="dialog" aria-modal="true" aria-label="Experience item">
   <div class="sheet" style="max-width:560px">
     <div class="sheet-h"><h3 id="exTitle">Experience</h3><div class="spacer"></div><button class="iconbtn" id="exClose" aria-label="Close">&#10005;</button></div>
@@ -537,7 +544,7 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-11-01 submission in exports + doc links";  // date/time of this build
+  var APP_BUILD="2026-11-01 full submission pack view";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -772,6 +779,7 @@
       (dl?'<span class="'+dlcls+'">'+esc(dl)+(dt!=null&&dt>=0&&OPEN.indexOf(t.status)>=0?' ('+dt+'d)':'')+'</span>':'')+
       '<span class="go '+(go==="pass"?"leave":go)+'">'+(go==="bid"?"● Bid":go==="partner"?"◐ Partner":go==="at-risk"?"◑ At risk":(go==="leave"||go==="pass")?"● Leave":"○ Undecided")+'</span>'+
       ownerHtml+
+      ((t.submission&&t.submission.checklist)?'<button class="btn sm" data-subpack="'+esc(t.id)+'" type="button" title="Open submission pack" style="margin-left:auto">Pack ↗</button>':'')+
       '</div></div>';
   }
   function renderList(which){
@@ -1327,8 +1335,29 @@
     var tbl='<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr><th style="text-align:left;color:var(--ink-faint);font-weight:600">#</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Returnable</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Status</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Source</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Owner</th></tr></thead><tbody>'+rows+'</tbody></table>';
     var cov=(s.coverage&&s.coverage.length)?'<div style="margin-top:10px"><div class="hint">Responsiveness coverage map (tender requirement → document)</div><table style="width:100%;border-collapse:collapse;font-size:.85rem"><tbody>'+s.coverage.map(function(c){return '<tr><td style="color:var(--ink-faint);font-family:monospace;font-size:.78rem">'+esc(c.reqRef||"")+'</td><td>'+esc(c.requirement||"")+'</td><td>'+pill(c.status)+'</td></tr>';}).join("")+'</tbody></table></div>':'';
     var meta=s.assembledBy?'<div class="hint" style="margin-top:8px">'+esc(s.assembledBy)+(s.assembledAt?' · '+esc(new Date(s.assembledAt).toLocaleDateString("en-ZA")):'')+'</div>':'';
-    el.innerHTML=head+gaps+tbl+cov+meta;
+    el.innerHTML='<div style="margin-bottom:8px"><button class="btn sm" id="btnSubFull" type="button">⤢ Full Submission Pack view</button></div>'+head+gaps+tbl+cov+meta;var _bf=el.querySelector("#btnSubFull");if(_bf)_bf.onclick=function(){openSubPack(editingT.id);};
   }
+  var subT=null;
+  function subPackHTML(t){
+    var s=t&&t.submission;
+    if(!s||!s.checklist)return '<div class="hint">No submission pack assembled yet for this tender. Run the <b>tender-submission</b> skill, then commit &amp; push.</div>';
+    var SC={have:["#e4f4ea","#1a7f45"],addressed:["#e4f4ea","#1a7f45"],partial:["#fcf3dc","#b8860b"],expiring:["#fcf3dc","#b8860b"],need:["#fbe6e7","#b4232a"],expired:["#fbe6e7","#b4232a"],gap:["#fbe6e7","#b4232a"]};
+    function pill(v){var c=SC[v]||["#ece9fb","#5a4bc4"];return '<span class="pill" style="background:'+c[0]+';color:'+c[1]+'">'+esc(v||"")+'</span>';}
+    var cl=s.checklist,man=cl.filter(function(c){return c.mandatory;}),manHave=man.filter(function(c){return c.status==="have";}).length,have=cl.filter(function(c){return c.status==="have";}).length;
+    var pct=man.length?Math.round(100*manHave/man.length):0;
+    var dl=s.deadline?new Date(s.deadline):null,days=dl?Math.ceil((dl-new Date())/864e5):null;
+    function tile(b,l){return '<div style="flex:1;min-width:110px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:9px 13px"><div style="font-size:1.4rem;font-weight:700;color:var(--ink)">'+b+'</div><div class="hint" style="text-transform:uppercase;letter-spacing:.4px">'+l+'</div></div>';}
+    var kpis='<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:9px">'+tile(manHave+"/"+man.length,"Mandatory ready")+tile(have,"In hand")+tile(cl.length-have,"Outstanding")+tile(esc(s.status||"preparing"),"Status")+'</div>';
+    var meter='<div style="height:9px;border-radius:5px;background:var(--line-soft);overflow:hidden;margin-bottom:9px"><i style="display:block;height:100%;width:'+pct+'%;background:linear-gradient(90deg,#156082,#0F9ED5)"></i></div>';
+    var subhead='<div class="hint" style="margin-bottom:9px">'+(dl?'closes '+esc(dl.toLocaleDateString("en-ZA",{day:"2-digit",month:"short",year:"numeric"}))+(days!=null?' · '+(days>=0?days+" days to close":"CLOSED"):''):'')+(s.portal?' · '+esc(s.portal):'')+'</div>';
+    var gaps=(s.gaps&&s.gaps.length)?'<div style="background:#fbe6e7;border:1px solid #f0b7ba;border-left:4px solid #b4232a;border-radius:8px;padding:9px 12px;margin-bottom:10px"><div style="font-weight:650;color:#b4232a;font-size:.85rem;margin-bottom:3px">Disqualifier &amp; gap watch</div>'+s.gaps.map(function(g){return '<div class="hint" style="margin:2px 0">• '+esc(g)+'</div>';}).join("")+'</div>':'';
+    var rows=cl.map(function(c){var u=(c.file&&subFileUrl(c.file))?subFileUrl(c.file):"";return '<tr><td style="color:var(--ink-faint);font-family:var(--fm);font-size:.78rem;vertical-align:top">'+esc(c.id||"")+'</td><td style="vertical-align:top">'+esc(c.item||"")+' '+(c.mandatory?'<span style="color:#b4232a" title="mandatory">●</span>':'<span style="color:var(--ink-faint)">○</span>')+(u?' <a href="'+esc(u)+'" target="_blank" rel="noopener" style="font-size:.76rem;color:var(--glacier)">open ↗</a>':'')+(c.note?'<div class="hint">'+esc(c.note)+'</div>':'')+'</td><td style="vertical-align:top">'+pill(c.status)+'</td><td class="hint" style="vertical-align:top">'+esc(c.source||"")+'</td><td class="hint" style="vertical-align:top">'+esc(c.owner||"")+'</td></tr>';}).join("");
+    var tbl='<table style="width:100%;border-collapse:collapse;font-size:.86rem"><thead><tr><th style="text-align:left;color:var(--ink-faint);font-weight:600">#</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Returnable</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Status</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Source</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Owner</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    var cov=(s.coverage&&s.coverage.length)?'<div style="margin-top:12px"><div class="hint" style="margin-bottom:4px">Responsiveness coverage map (tender requirement → document)</div><table style="width:100%;border-collapse:collapse;font-size:.86rem"><tbody>'+s.coverage.map(function(c){return '<tr><td style="color:var(--ink-faint);font-family:var(--fm);font-size:.78rem">'+esc(c.reqRef||"")+'</td><td>'+esc(c.requirement||"")+'</td><td>'+pill(c.status)+'</td></tr>';}).join("")+'</tbody></table></div>':'';
+    var foot=(s.packaging?'<div class="hint" style="margin-top:12px"><b>Packaging:</b> '+esc(s.packaging)+'</div>':'')+(s.assembledBy?'<div class="hint" style="margin-top:4px">'+esc(s.assembledBy)+(s.assembledAt?' · '+esc(new Date(s.assembledAt).toLocaleDateString("en-ZA")):'')+'</div>':'');
+    return kpis+subhead+meter+gaps+tbl+cov+foot;
+  }
+  function openSubPack(id){var t=find(id);if(!t){toast("Tender not found",true);return;}if(!t.submission||!t.submission.checklist){toast("No submission pack for this tender yet",true);return;}subT=t;$("subTitle").textContent="Submission Pack — "+(t.client||t.title||t.id);$("subBody").innerHTML=subPackHTML(t);$("subModal").classList.add("open");}
   function collectTender(){
     var e=editingT;
     e.client=$("f_client").value.trim();e.sector=$("f_sector").value.trim();e.title=$("f_title").value.trim();
@@ -1651,8 +1680,11 @@
   $("newTenderBtn").onclick=function(){openTender(null);};
   var _tmX=$("tmXlsx"); if(_tmX)_tmX.onclick=function(){if(editingT)exportExcel([editingT]);else toast("Open a tender first",true);};
   var _tmP=$("tmPdf"); if(_tmP)_tmP.onclick=function(){if(editingT)exportPDF([editingT]);else toast("Open a tender first",true);};
-  $("consoleList").addEventListener("click",function(ev){var c=ev.target.closest(".tcard");if(c)openTender(find(c.dataset.id));});
-  $("archiveList").addEventListener("click",function(ev){var c=ev.target.closest(".tcard");if(c)openTender(find(c.dataset.id));});
+  var _sc=$("subClose"); if(_sc)_sc.onclick=function(){$("subModal").classList.remove("open");};
+  var _scb=$("subCloseB"); if(_scb)_scb.onclick=function(){$("subModal").classList.remove("open");};
+  var _spr=$("subPrint"); if(_spr)_spr.onclick=function(){if(subT)exportPDF([subT]);};
+  $("consoleList").addEventListener("click",function(ev){var sp=ev.target.closest("[data-subpack]");if(sp){ev.stopPropagation();openSubPack(sp.getAttribute("data-subpack"));return;}var c=ev.target.closest(".tcard");if(c)openTender(find(c.dataset.id));});
+  $("archiveList").addEventListener("click",function(ev){var sp=ev.target.closest("[data-subpack]");if(sp){ev.stopPropagation();openSubPack(sp.getAttribute("data-subpack"));return;}var c=ev.target.closest(".tcard");if(c)openTender(find(c.dataset.id));});
   function find(id){for(var i=0;i<data.tenders.length;i++)if(data.tenders[i].id===id)return data.tenders[i];return null;}
   $("tmBody").addEventListener("input",function(ev){
     var t=ev.target;
@@ -1723,8 +1755,8 @@
   $("clearCacheBtn").onclick=function(){try{localStorage.removeItem(CACHE_KEY);}catch(e){}toast("Local cache cleared");location.reload();};
   $("syncBtn").onclick=function(){syncDirty();};
   $("themeBtn").onclick=function(){var cur=document.documentElement.getAttribute("data-theme");var dark=cur?cur==="dark":window.matchMedia("(prefers-color-scheme:dark)").matches;document.documentElement.setAttribute("data-theme",dark?"light":"dark");};
-  document.addEventListener("keydown",function(ev){if(ev.key==="Escape"){$("tenderModal").classList.remove("open");$("exModal").classList.remove("open");$("sfiaModal").classList.remove("open");$("personModal").classList.remove("open");}});
-  [ "tenderModal","exModal","sfiaModal","personModal"].forEach(function(id){$(id).addEventListener("click",function(ev){if(ev.target===$(id))$(id).classList.remove("open");});});
+  document.addEventListener("keydown",function(ev){if(ev.key==="Escape"){$("tenderModal").classList.remove("open");$("exModal").classList.remove("open");$("sfiaModal").classList.remove("open");$("personModal").classList.remove("open");$("subModal").classList.remove("open");}});
+  [ "tenderModal","exModal","sfiaModal","personModal","subModal"].forEach(function(id){$(id).addEventListener("click",function(ev){if(ev.target===$(id))$(id).classList.remove("open");});});
 
   /* ---------- boot ---------- */
   function fillSettings(){$("setOwner").value=cfg.owner||"";$("setRepo").value=cfg.repo||"";$("setBranch").value=cfg.branch||"main";$("setPath").value=cfg.path||"data";$("setToken").value=cfg.token||"";$("setUserName").value=cfg.userName||"";$("setRole").value=cfg.role||"admin";}

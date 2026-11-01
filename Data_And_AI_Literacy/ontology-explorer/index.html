@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.3.1">
+<meta name="version" content="1.3.2">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Ontology Explorer</title>
@@ -78,13 +78,15 @@
   .sedge.hot{stroke:var(--accent);stroke-width:2.4}.sedge.faded{opacity:.1}
   .sedge.prop{stroke-dasharray:5 4;stroke:var(--muted)}
   .bandlab{font:800 10px var(--mono);fill:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-  .elab{font:600 9.5px var(--mono);fill:var(--muted);opacity:0;pointer-events:none;transition:opacity .15s}
-  svg.spine.showlabels .elab{opacity:.85}
-  .elab.hot{opacity:1;fill:var(--accent-ink);font-weight:700}.elab.faded{opacity:0}
+  .elab{font:700 9.5px var(--mono);fill:var(--accent-ink);opacity:0;pointer-events:none;transition:opacity .15s;paint-order:stroke;stroke:var(--bg);stroke-width:3px;stroke-linejoin:round}
+  svg.spine.showlabels .elab{opacity:1}
+  .elab.hot{opacity:1;fill:var(--accent);font-weight:800}.elab.faded{opacity:0}
   /* context diagram svg */
   svg.ctxsvg{display:block;width:100%;height:auto;min-width:720px}
   .cedge{fill:none;stroke:var(--muted);stroke-width:1.6;opacity:.75}
+  .cedge.hot{stroke:var(--accent);stroke-width:2.6;opacity:1}.cedge.faded{opacity:.12}
   .clab{font:700 10px var(--mono);fill:var(--accent-ink);paint-order:stroke;stroke:var(--bg);stroke-width:3.5px;stroke-linejoin:round;pointer-events:none}
+  .clab.faded{opacity:.15}.clab.hot{fill:var(--accent);font-weight:800}
   /* view toolbar + caption */
   .spinebar{display:flex;align-items:center;gap:12px;padding:10px 14px 4px;flex-wrap:wrap}
   .tgl{border:1.5px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:8px;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
@@ -263,13 +265,13 @@ const colorOf=id=>getComputedStyle(document.documentElement).getPropertyValue(TY
 const typeLabel=id=>{const e=M.ent.get(id);const t=e&&M.type.get(e.entityTypeId);return t?t.label:'';};
 
 // ---------- state ----------
-const S={view:'spine',focus:null,facet:null,kaRoot:'e:ka:dg',kaInstance:null,spineLabels:false,spineExt:true,filters:new Set(),hist:[],hi:-1};
+const S={view:'spine',focus:null,facet:null,kaRoot:'e:ka:dg',kaInstance:null,spineLabels:true,spineExt:true,filters:new Set(),hist:[],hi:-1};
 function snapshot(){return{view:S.view,focus:S.focus,facet:S.facet,kaRoot:S.kaRoot,kaInstance:S.kaInstance,filters:[...S.filters]};}
 function pushHist(){ S.hist=S.hist.slice(0,S.hi+1); S.hist.push(snapshot()); S.hi=S.hist.length-1; syncNav(); }
 function restore(s){S.view=s.view;S.focus=s.focus;S.facet=s.facet;S.kaRoot=s.kaRoot||'e:ka:dg';S.kaInstance=s.kaInstance||null;S.filters=new Set(s.filters);renderAll();}
 function syncNav(){document.getElementById('back').disabled=S.hi<=0;document.getElementById('fwd').disabled=S.hi>=S.hist.length-1;}
 
-function select(id,record){ S.focus=id; if(record!==false)pushHist(); renderDetail(); highlightSpine(); if(window.innerWidth<=860)document.getElementById('wrap').classList.add('showdetail'); renderCrumbs(); }
+function select(id,record){ S.focus=id; if(record!==false)pushHist(); renderDetail(); highlightSpine(); if(S.view==='context')renderContext(); else if(S.view==='affinity')renderAffinity(); if(window.innerWidth<=860)document.getElementById('wrap').classList.add('showdetail'); renderCrumbs(); }
 // v: 'spine' | 'ka' (arg = KA entity id) | 'facet' (arg = facet id)
 function setView(v,arg){ S.view=v; if(v==='ka'&&arg)S.kaRoot=arg; if(v==='facet'&&arg)S.facet=arg; pushHist(); renderAll(); }
 
@@ -467,17 +469,21 @@ function renderContext(){
     if(Math.abs(dy)>=Math.abs(dx)){x1=ac.x;x2=bc.x;y1=dy>0?A[1]+nodeH:A[1];y2=dy>0?B[1]:B[1]+nodeH;}
     else{y1=ac.y;y2=bc.y;x1=dx>0?A[0]+nodeW:A[0];x2=dx>0?B[0]:B[0]+nodeW;}
     return [x1,y1,x2,y2];}
+  // focus: when a node is selected, highlight its incident edges and dim the rest
+  const foc=(S.focus&&N[S.focus])?S.focus:null;
+  const nbr=new Set();if(foc){nbr.add(foc);EDGES.forEach(([a,b])=>{if(a===foc)nbr.add(b);if(b===foc)nbr.add(a);});}
   // edges
   EDGES.forEach(([a,b,lab])=>{if(!N[a]||!N[b])return;const [x1,y1,x2,y2]=edgePts(a,b);
-    const p=document.createElementNS(NS,'path');p.setAttribute('class','cedge');p.setAttribute('marker-end','url(#arh)');
+    const on=foc&&(a===foc||b===foc);
+    const p=document.createElementNS(NS,'path');p.setAttribute('class','cedge'+(on?' hot':'')+(foc&&!on?' faded':''));p.setAttribute('marker-end','url(#arh)');
     const mx=(x1+x2)/2,my=(y1+y2)/2;const vert=Math.abs(y2-y1)>=Math.abs(x2-x1);
     p.setAttribute('d','M'+x1+','+y1+' C'+(vert?x1:mx)+','+(vert?my:y1)+' '+(vert?x2:mx)+','+(vert?my:y2)+' '+x2+','+y2);
     svg.appendChild(p);
-    if(lab){const t=document.createElementNS(NS,'text');t.setAttribute('class','clab');t.setAttribute('x',mx);t.setAttribute('y',my-4);t.setAttribute('text-anchor','middle');t.textContent=lab;svg.appendChild(t);}
+    if(lab){const t=document.createElementNS(NS,'text');t.setAttribute('class','clab'+(on?' hot':'')+(foc&&!on?' faded':''));t.setAttribute('x',mx);t.setAttribute('y',my-4);t.setAttribute('text-anchor','middle');t.textContent=lab;svg.appendChild(t);}
   });
   // nodes
   Object.entries(N).forEach(([id,[x,y]])=>{const e=M.ent.get(id);if(!e)return;
-    const g=document.createElementNS(NS,'g');g.setAttribute('class','snode');g.dataset.id=id;
+    const g=document.createElementNS(NS,'g');g.setAttribute('class','snode'+(foc&&!nbr.has(id)?' faded':'')+(foc===id?' sel':''));g.dataset.id=id;
     const rect=document.createElementNS(NS,'rect');rect.setAttribute('x',x);rect.setAttribute('y',y);rect.setAttribute('width',nodeW);rect.setAttribute('height',nodeH);rect.setAttribute('rx',9);rect.setAttribute('fill','var('+ctxColorVar(id)+')');if(S.focus===id){rect.setAttribute('stroke','var(--ink)');rect.setAttribute('stroke-width','2.5');}g.appendChild(rect);
     const t=document.createElementNS(NS,'text');t.setAttribute('class','l');t.setAttribute('x',x+nodeW/2);t.setAttribute('y',y+nodeH/2+4);t.setAttribute('text-anchor','middle');let lab=e.preferredLabel;if(lab.length>24)lab=lab.slice(0,22)+'…';t.textContent=lab;g.appendChild(t);
     g.addEventListener('click',ev=>{ev.stopPropagation();select(id);});svg.appendChild(g);
@@ -504,16 +510,19 @@ function renderAffinity(){
   const svg=document.createElementNS(NS,'svg');svg.setAttribute('class','spine');svg.setAttribute('viewBox','0 0 '+W+' '+H);
   // column headers
   [['THINKING STYLE',colX.style],['DMBOK PHASE',colX.phase],['STRENGTHS',colX.strength]].forEach(([t,x])=>{const h=document.createElementNS(NS,'text');h.setAttribute('class','bandlab');h.setAttribute('x',x);h.setAttribute('y',30);h.textContent=t;svg.appendChild(h);});
-  // edges: suits (proposed) from styles->phases and strengths->phases
-  const drawEdge=(a,b,leftToRight)=>{const pa=pos[a],pb=pos[b];if(!pa||!pb)return;
-    const x1=pa.x+(leftToRight?nodeW:0),y1=pa.y+nodeH/2,x2=pb.x+(leftToRight?0:nodeW),y2=pb.y+nodeH/2;
-    const p=document.createElementNS(NS,'path');p.setAttribute('class','sedge prop');const mx=(x1+x2)/2;
-    p.setAttribute('d','M'+x1+','+y1+' C'+mx+','+y1+' '+mx+','+y2+' '+x2+','+y2);svg.appendChild(p);};
-  styles.forEach(s=>outTo(s.id,'rel:suits').forEach(ph=>{if(pos[ph])drawEdge(s.id,ph,true);}));
-  strengths.forEach(s=>outTo(s.id,'rel:suits').forEach(ph=>{if(pos[ph])drawEdge(ph,s.id,true);}));
+  // edges: suits (proposed) between styles/strengths and phases
+  const edges=[];
+  styles.forEach(s=>outTo(s.id,'rel:suits').forEach(ph=>{if(pos[ph])edges.push([s.id,ph]);}));
+  strengths.forEach(s=>outTo(s.id,'rel:suits').forEach(ph=>{if(pos[ph])edges.push([s.id,ph]);}));
+  const foc=(S.focus&&pos[S.focus])?S.focus:null;
+  const nbr=new Set();if(foc){nbr.add(foc);edges.forEach(([a,b])=>{if(a===foc)nbr.add(b);if(b===foc)nbr.add(a);});}
+  edges.forEach(([a,b])=>{const A=pos[a],B=pos[b];const left=A.x<=B.x?a:b,right=A.x<=B.x?b:a,pl=pos[left],pr=pos[right];
+    const x1=pl.x+nodeW,y1=pl.y+nodeH/2,x2=pr.x,y2=pr.y+nodeH/2;const on=foc&&(a===foc||b===foc);
+    const p=document.createElementNS(NS,'path');p.setAttribute('class','sedge prop'+(on?' hot':'')+(foc&&!on?' faded':''));const mx=(x1+x2)/2;
+    p.setAttribute('d','M'+x1+','+y1+' C'+mx+','+y1+' '+mx+','+y2+' '+x2+','+y2);svg.appendChild(p);});
   // nodes
-  Object.entries(pos).forEach(([id,p])=>{const e=M.ent.get(id);const g=document.createElementNS(NS,'g');g.setAttribute('class','snode');g.dataset.id=id;
-    const rect=document.createElementNS(NS,'rect');rect.setAttribute('x',p.x);rect.setAttribute('y',p.y);rect.setAttribute('width',nodeW);rect.setAttribute('height',nodeH);rect.setAttribute('rx',9);rect.setAttribute('fill',colorOf(id));g.appendChild(rect);
+  Object.entries(pos).forEach(([id,p])=>{const e=M.ent.get(id);const g=document.createElementNS(NS,'g');g.setAttribute('class','snode'+(foc&&!nbr.has(id)?' faded':'')+(foc===id?' sel':''));g.dataset.id=id;
+    const rect=document.createElementNS(NS,'rect');rect.setAttribute('x',p.x);rect.setAttribute('y',p.y);rect.setAttribute('width',nodeW);rect.setAttribute('height',nodeH);rect.setAttribute('rx',9);rect.setAttribute('fill',colorOf(id));if(foc===id){rect.setAttribute('stroke','var(--ink)');rect.setAttribute('stroke-width','2.5');}g.appendChild(rect);
     const t=document.createElementNS(NS,'text');t.setAttribute('class','l');t.setAttribute('x',p.x+nodeW/2);t.setAttribute('y',p.y+nodeH/2+4);t.setAttribute('text-anchor','middle');let lab=e.preferredLabel;if(lab.length>20)lab=lab.slice(0,18)+'…';t.textContent=lab;g.appendChild(t);
     g.addEventListener('click',ev=>{ev.stopPropagation();select(id);});svg.appendChild(g);});
   c.innerHTML='';const cap=document.createElement('div');cap.className='vcap warn';cap.innerHTML='<b>Activity affinity — fit, not mastery.</b> Which thinking styles &amp; strengths suit each phase of work. <b>Proposed</b> mapping (dashed), grounded in the Gregorc &amp; CliftonStrengths definitions — tell me to adjust any link before it becomes canonical.';

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.1.0">
+<meta name="version" content="1.2.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Ontology Explorer</title>
@@ -88,6 +88,15 @@
   .tlabel{font-size:13.5px}.tmeta{font-size:11px;color:var(--muted);font-family:var(--mono)}
   .tchild{margin-left:16px;border-left:1px solid var(--line2);padding-left:6px}
   .tpill{font:700 9px var(--mono);border-radius:999px;padding:1px 7px;color:#fff;margin-left:4px}
+  /* facet view */
+  .fgroup{display:flex;align-items:center;gap:8px;margin:16px 0 7px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  .fgcount{font:700 10px var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:1px 7px;color:var(--muted)}
+  .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:7px}
+  .fcard{display:flex;align-items:center;gap:8px;text-align:left;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:8px 10px;font:inherit;font-size:13px;cursor:pointer}
+  .fcard:hover{border-color:var(--accent);background:var(--panel2)}
+  .fcard.sel{border-color:var(--accent);background:var(--accent-bg)}
+  .fdot{width:9px;height:9px;border-radius:999px;flex:none}
+  .fcl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* detail panel */
   .dh{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:800}
   .dt{font-size:19px;font-weight:800;line-height:1.2;margin:4px 0 4px}
@@ -220,14 +229,15 @@ const colorOf=id=>getComputedStyle(document.documentElement).getPropertyValue(TY
 const typeLabel=id=>{const e=M.ent.get(id);const t=e&&M.type.get(e.entityTypeId);return t?t.label:'';};
 
 // ---------- state ----------
-const S={view:'spine',focus:null,facet:null,filters:new Set(),hist:[],hi:-1};
-function snapshot(){return{view:S.view,focus:S.focus,facet:S.facet,filters:[...S.filters]};}
+const S={view:'spine',focus:null,facet:null,kaRoot:'e:ka:dg',filters:new Set(),hist:[],hi:-1};
+function snapshot(){return{view:S.view,focus:S.focus,facet:S.facet,kaRoot:S.kaRoot,filters:[...S.filters]};}
 function pushHist(){ S.hist=S.hist.slice(0,S.hi+1); S.hist.push(snapshot()); S.hi=S.hist.length-1; syncNav(); }
-function restore(s){S.view=s.view;S.focus=s.focus;S.facet=s.facet;S.filters=new Set(s.filters);renderAll();}
+function restore(s){S.view=s.view;S.focus=s.focus;S.facet=s.facet;S.kaRoot=s.kaRoot||'e:ka:dg';S.filters=new Set(s.filters);renderAll();}
 function syncNav(){document.getElementById('back').disabled=S.hi<=0;document.getElementById('fwd').disabled=S.hi>=S.hist.length-1;}
 
 function select(id,record){ S.focus=id; if(record!==false)pushHist(); renderDetail(); highlightSpine(); if(window.innerWidth<=860)document.getElementById('wrap').classList.add('showdetail'); renderCrumbs(); }
-function setView(v,rootId){ S.view=v; if(v==='ka'&&rootId)S.facet=rootId; pushHist(); renderAll(); }
+// v: 'spine' | 'ka' (arg = KA entity id) | 'facet' (arg = facet id)
+function setView(v,arg){ S.view=v; if(v==='ka'&&arg)S.kaRoot=arg; if(v==='facet'&&arg)S.facet=arg; pushHist(); renderAll(); }
 
 // ---------- SPINE view ----------
 const BANDS=[
@@ -283,7 +293,7 @@ function highlightSpine(){
 // ---------- KA facet view (hierarchy) ----------
 function childrenByRel(id,relId){return (M.out.get(id)||[]).filter(r=>r.relationshipTypeId===relId).map(r=>r.targetEntityId);}
 function renderKA(){
-  const kaId=S.facet||'e:ka:dg';const ka=M.ent.get(kaId);const c=document.getElementById('canvas');
+  const kaId=S.kaRoot||'e:ka:dg';const ka=M.ent.get(kaId);const c=document.getElementById('canvas');
   if(!ka){c.innerHTML='<div class="empty">Knowledge Area not found.</div>';return;}
   const wrap=document.createElement('div');wrap.className='katree';
   wrap.innerHTML='<div class="kahdr">'+ka.preferredLabel+'</div><div class="kasub">'+(ka.definition||'')+'</div>';
@@ -312,6 +322,37 @@ function renderKA(){
   if(phases.length){ phases.forEach(p=>wrap.appendChild(row(p,0,'phase'))); }
   else { bps.forEach(b=>wrap.appendChild(row(b,0,'bp'))); }
   c.innerHTML='';c.appendChild(wrap);
+}
+
+// ---------- Facet view (members of a facet, grouped) ----------
+const CTXROLE_LABEL={participant:'Participants & Roles',tool:'Tools & Technology',technique:'Techniques & Methods',metric:'Metrics',input:'Inputs',supplier:'Suppliers',consumer:'Consumers','serves-consumer':'Consumers',goal:'Goals & Guiding Principles','guided-by':'Goals & Guiding Principles'};
+function renderFacetView(){
+  const fid=S.facet; const facet=M.facet.get(fid); const c=document.getElementById('canvas');
+  if(!facet){ c.innerHTML='<div class="empty">Facet not found.</div>'; return; }
+  const members=[...M.ent.values()].filter(e=>Array.isArray(e.facetIds)&&e.facetIds.indexOf(fid)>=0);
+  const wrap=document.createElement('div'); wrap.className='katree';
+  wrap.innerHTML='<div class="kahdr">'+facet.label+'</div><div class="kasub">'+members.length+' entit'+(members.length===1?'y':'ies')+' in this facet. Click any to open its detail.</div>';
+  if(!members.length){ wrap.innerHTML+='<div class="empty">No entities carry this facet yet.</div>'; c.innerHTML=''; c.appendChild(wrap); return; }
+  // group: Context Diagram by ctxRole; everything else by entity type
+  const groups=new Map();
+  members.forEach(e=>{
+    let key;
+    if(fid==='facet:context'){ key=CTXROLE_LABEL[(e.attributes&&e.attributes.ctxRole)||'']||'Other context'; }
+    else { key=typeLabel(e.id)||'Other'; }
+    if(!groups.has(key))groups.set(key,[]); groups.get(key).push(e);
+  });
+  [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([gname,list])=>{
+    const gh=document.createElement('div'); gh.className='fgroup'; gh.innerHTML='<span>'+gname+'</span><span class="fgcount">'+list.length+'</span>';
+    wrap.appendChild(gh);
+    const grid=document.createElement('div'); grid.className='fgrid';
+    list.sort((a,b)=>a.preferredLabel.localeCompare(b.preferredLabel)).forEach(e=>{
+      const card=document.createElement('button'); card.className='fcard'+(S.focus===e.id?' sel':''); card.dataset.go=e.id;
+      card.innerHTML='<span class="fdot" style="background:'+colorOf(e.id)+'"></span><span class="fcl">'+e.preferredLabel+'</span>';
+      grid.appendChild(card);
+    });
+    wrap.appendChild(grid);
+  });
+  c.innerHTML=''; c.appendChild(wrap);
 }
 
 // ---------- Entity detail (always-on) ----------
@@ -352,20 +393,21 @@ function renderCrumbs(){
   const c=document.getElementById('crumbs');
   const parts=[];
   parts.push('<a data-home="1">Overview</a>');
-  if(S.view==='ka'&&S.facet)parts.push('<span>›</span><a class="jump" data-go="'+S.facet+'">'+M.ent.get(S.facet).preferredLabel+'</a>');
-  if(S.focus&&S.focus!==S.facet){const e=M.ent.get(S.focus);if(e)parts.push('<span>›</span><span class="cur">'+e.preferredLabel+'</span>');}
+  if(S.view==='ka'&&S.kaRoot&&M.ent.get(S.kaRoot))parts.push('<span>›</span><a class="jump" data-go="'+S.kaRoot+'">'+M.ent.get(S.kaRoot).preferredLabel+'</a>');
+  else if(S.view==='facet'&&S.facet&&M.facet.get(S.facet))parts.push('<span>›</span><span class="cur">'+M.facet.get(S.facet).label+'</span>');
+  if(S.focus&&S.focus!==S.kaRoot){const e=M.ent.get(S.focus);if(e)parts.push('<span>›</span><span class="cur">'+e.preferredLabel+'</span>');}
   c.innerHTML=parts.join(' ');
 }
 
 // ---------- render orchestration ----------
 function renderAll(){
   document.querySelectorAll('.vbtn').forEach(b=>b.classList.toggle('on',b.dataset.view===S.view));
-  if(S.view==='spine')renderSpine(); else renderKA();
+  if(S.view==='spine')renderSpine(); else if(S.view==='ka')renderKA(); else renderFacetView();
   renderDetail();renderCrumbs();renderFacets();renderChips();syncNav();
 }
 function renderFacets(){
   const fl=document.getElementById('facetList');
-  fl.innerHTML=[...M.facet.values()].map(f=>'<button class="fct'+(S.facet===f.id?' on':'')+'" data-facet="'+f.id+'"><span class="dot" style="background:var(--accent)"></span>'+f.label+'</button>').join('');
+  fl.innerHTML=[...M.facet.values()].map(f=>{const on=(S.view==='facet'&&S.facet===f.id)||(S.view==='ka'&&f.id==='facet:knowledge-area');return '<button class="fct'+(on?' on':'')+'" data-facet="'+f.id+'"><span class="dot" style="background:var(--accent)"></span>'+f.label+'</button>';}).join('');
 }
 function renderChips(){
   const types=[...M.type.values()].filter(t=>[...M.ent.values()].some(e=>e.entityTypeId===t.id));
@@ -378,9 +420,9 @@ document.addEventListener('click',ev=>{
   const go=ev.target.closest('[data-go]');if(go){const id=go.dataset.go;if(M.ent.get(id)){if(S.view==='ka'&&typeLabel(id)==='Knowledge Area')setView('ka',id);else select(id);}return;}
   const op=ev.target.closest('[data-open]');if(op){setView('ka',op.dataset.open);return;}
   const mr=ev.target.closest('[data-more]');if(mr){expandState[mr.dataset.more]=true;renderDetail();return;}
-  const vb=ev.target.closest('.vbtn');if(vb){setView(vb.dataset.view, vb.dataset.view==='ka'?(S.facet||'e:ka:dg'):null);return;}
-  const fc=ev.target.closest('[data-facet]');if(fc){const fid=fc.dataset.facet;S.facet=fid; if(typeLabel) {} // facet click: if KA facet, open KA view; else filter spine to facet members
-    if(fid==='facet:knowledge-area'){setView('ka','e:ka:dg');}else{S.view='spine';renderAll();}return;}
+  const vb=ev.target.closest('.vbtn');if(vb){setView(vb.dataset.view, vb.dataset.view==='ka'?(S.kaRoot||'e:ka:dg'):null);return;}
+  const fc=ev.target.closest('[data-facet]');if(fc){const fid=fc.dataset.facet;
+    if(fid==='facet:knowledge-area'){setView('ka','e:ka:dg');}else{setView('facet',fid);}return;}
   const tc=ev.target.closest('[data-type]');if(tc){const t=tc.dataset.type;if(S.filters.has(t))S.filters.delete(t);else S.filters.add(t);renderChips();applyTypeFilter();return;}
   const hm=ev.target.closest('[data-home]');if(hm){setView('spine');S.facet=null;S.focus=null;renderAll();return;}
 });

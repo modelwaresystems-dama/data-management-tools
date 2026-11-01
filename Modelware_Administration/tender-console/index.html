@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.13.2">
+<meta name="version" content="1.14.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -537,7 +537,7 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-10-31 export (fonts)";  // date/time of this build
+  var APP_BUILD="2026-11-01 submission panel";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -1263,10 +1263,11 @@
       '<fieldset><legend>RFP document(s)</legend><div id="tmRfp"></div></fieldset>'+
       '<fieldset><legend>Proposed team <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(whose CVs the skill reviews)</span></legend><div id="tmTeam"></div></fieldset>'+
       '<fieldset><legend>Assessment <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(bid / partner / leave — proposed by the skill)</span></legend><div id="tmAssess"></div></fieldset>'+
+      '<fieldset><legend>Submission pack <span style="text-transform:none;letter-spacing:0;color:var(--ink-faint)">(returnables checklist — assembled by the tender-submission skill)</span></legend><div id="tmSubmission"></div></fieldset>'+
       '<fieldset><legend>Outcome</legend><div class="two"><div class="field"><label>Result</label><select id="f_outcome">'+outOpts+'</select></div>'+
       '<div class="field"><label>&nbsp;</label><input id="f_outnotes" type="text" value="'+esc(e.outcome.notes)+'" placeholder="What went wrong / right (for trend analysis)"></div></div></fieldset>'+
       '<div class="field"><label>Notes</label><textarea id="f_notes">'+esc(e.notes)+'</textarea></div>';
-    renderReqs();renderComps();renderTmFit();renderTmSfia();renderTmEsa();renderTmRfp();renderTmTeam();renderTmAssess();
+    renderReqs();renderComps();renderTmFit();renderTmSfia();renderTmEsa();renderTmRfp();renderTmTeam();renderTmAssess();renderTmSubmission();
     $("addReq").onclick=function(){editingT.requirements.push({text:"",weight:""});renderReqs();};
     $("addComp").onclick=function(){editingT.compliance.push({label:"",done:false});renderComps();};
     $("tmDelete").style.display=t?"":"none";
@@ -1304,6 +1305,28 @@
     var docs=esa.docs||{};
     var docLinks=[["ESA",docs.esaRef],["Annex A",docs.annexRef],["Redline",docs.redlineRef]].filter(function(d){return d[1];}).map(function(d){return '<div class="hint">'+esc(d[0])+': <code>'+esc(d[1])+'</code></div>';}).join("");
     el.innerHTML=head+(partyRows?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 4px">'+partyRows+'</div>':'')+comm+clauseLine+msWrap+(docLinks?'<div style="margin-top:8px">'+docLinks+'</div>':'');
+  }
+  function renderTmSubmission(){
+    var el=$("tmSubmission");if(!el)return;
+    var s=(editingT&&editingT.submission)||null;
+    if(!s||!s.checklist){el.innerHTML='<div class="hint">No submission pack assembled yet. The <b>tender-submission</b> skill parses this tender’s returnables, checks your standard documents and their expiry against the close date, reuses the CV coverage map, pre-fills the returnable forms it can, and fills this panel. Commit &amp; push to publish.</div>';return;}
+    var SC={have:["#e4f4ea","#1a7f45"],addressed:["#e4f4ea","#1a7f45"],partial:["#fcf3dc","#b8860b"],expiring:["#fcf3dc","#b8860b"],need:["#fbe6e7","#b4232a"],expired:["#fbe6e7","#b4232a"],gap:["#fbe6e7","#b4232a"]};
+    function pill(v){var c=SC[v]||["#ece9fb","#5a4bc4"];return '<span class="pill" style="background:'+c[0]+';color:'+c[1]+'">'+esc(v||"")+'</span>';}
+    var cl=s.checklist||[],man=cl.filter(function(c){return c.mandatory;}),manHave=man.filter(function(c){return c.status==="have";}).length;
+    var have=cl.filter(function(c){return c.status==="have";}).length;
+    var pct=man.length?Math.round(100*manHave/man.length):0;
+    var dl=s.deadline?new Date(s.deadline):null,days=dl?Math.ceil((dl-new Date())/864e5):null;
+    var head='<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px">'+
+      '<span class="pill" style="background:var(--surface-2);color:var(--ink-soft)">status: '+esc(s.status||"preparing")+'</span>'+
+      (dl?'<span class="hint">closes '+esc(dl.toLocaleDateString("en-ZA",{day:"2-digit",month:"short",year:"numeric"}))+(days!=null?' · '+(days>=0?days+" days":"CLOSED"):'')+'</span>':'')+
+      '<span class="hint">mandatory ready '+manHave+'/'+man.length+' · in hand '+have+'/'+cl.length+'</span></div>'+
+      '<div style="height:8px;border-radius:5px;background:var(--line-soft);overflow:hidden;margin-bottom:8px"><i style="display:block;height:100%;width:'+pct+'%;background:linear-gradient(90deg,#156082,#0F9ED5)"></i></div>';
+    var gaps=(s.gaps&&s.gaps.length)?'<div style="background:#fbe6e7;border:1px solid #f0b7ba;border-left:4px solid #b4232a;border-radius:8px;padding:8px 11px;margin-bottom:8px"><div style="font-weight:650;color:#b4232a;font-size:.82rem;margin-bottom:3px">Disqualifier &amp; gap watch</div>'+s.gaps.map(function(g){return '<div class="hint" style="margin:2px 0">• '+esc(g)+'</div>';}).join("")+'</div>':'';
+    var rows=cl.map(function(c){return '<tr><td style="color:var(--ink-faint);font-family:monospace;font-size:.78rem;vertical-align:top">'+esc(c.id||"")+'</td><td style="vertical-align:top">'+esc(c.item||"")+' '+(c.mandatory?'<span style="color:#b4232a">●</span>':'<span style="color:var(--ink-faint)">○</span>')+(c.note?'<div class="hint">'+esc(c.note)+'</div>':'')+'</td><td style="vertical-align:top">'+pill(c.status)+'</td><td class="hint" style="vertical-align:top">'+esc(c.source||"")+'</td><td class="hint" style="vertical-align:top">'+esc(c.owner||"")+'</td></tr>';}).join("");
+    var tbl='<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr><th style="text-align:left;color:var(--ink-faint);font-weight:600">#</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Returnable</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Status</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Source</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Owner</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    var cov=(s.coverage&&s.coverage.length)?'<div style="margin-top:10px"><div class="hint">Responsiveness coverage map (tender requirement → document)</div><table style="width:100%;border-collapse:collapse;font-size:.85rem"><tbody>'+s.coverage.map(function(c){return '<tr><td style="color:var(--ink-faint);font-family:monospace;font-size:.78rem">'+esc(c.reqRef||"")+'</td><td>'+esc(c.requirement||"")+'</td><td>'+pill(c.status)+'</td></tr>';}).join("")+'</tbody></table></div>':'';
+    var meta=s.assembledBy?'<div class="hint" style="margin-top:8px">'+esc(s.assembledBy)+(s.assembledAt?' · '+esc(new Date(s.assembledAt).toLocaleDateString("en-ZA")):'')+'</div>':'';
+    el.innerHTML=head+gaps+tbl+cov+meta;
   }
   function collectTender(){
     var e=editingT;

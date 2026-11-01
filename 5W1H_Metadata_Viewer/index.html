@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.9.0">
+<meta name="version" content="1.10.0">
 <meta name="data-src" content="gh:modelwaresystems-dama/modelware_app_storage/5W1H_Metadata_Viewer/_global/catalog.json@main">
 <meta name="updated" content="2026-10-27 11:36 SAST">
 <title>Data Catalog Viewer</title>
@@ -259,12 +259,34 @@ addPanel("datasets","Datasets",p=>{
         const on=c.artifactStatus==="on-file";
         const st=el("span",{class:"pill "+(on?"ev ev-EA":"cls")}, on?"on file":"to capture");
         const art=el("span",{class:"small muted",style:"margin-left:6px"},(c.artifacts||[]).join(", "));
-        const chain="via "+(c.dmoId||"?")+" "+(c.dmoName||"")+(pc.domain?(" \u00b7 "+pc.domain+" domain"):"")+(c.control?(" \u00b7 from "+c.control+(c.clause?(" "+c.clause):"")):"");
-        const reqCell=el("td",{},c.requirement,el("div",{class:"small muted",style:"margin-top:2px"},chain));
-        pbody.append(el("tr",{},el("td",{},c.control||c.code),reqCell,el("td",{},c.clause||""),el("td",{},st,art)));
+        pbody.append(el("tr",{},el("td",{},c.control||c.code),el("td",{},c.requirement),el("td",{},c.clause||""),el("td",{},st,art)));
       });
       ptb.append(pbody); inner.append(el("div",{class:"scroll"},ptb));
-      inner.append(el("p",{class:"small muted",style:"margin:6px 0 0"},"Each requirement shows its lineage: the DMO policy (L1) that applies it, the data domain (L2), and the global control and statutory clause (L0) it derives from. Artifact on file is a proxy for whether a governance artifact of the relevant type is registered, not verified adherence."));
+      (function(){
+        var byCtl={};
+        (pc.controls||[]).forEach(function(c){var k=c.control||c.code;(byCtl[k]=byCtl[k]||{clause:c.clause,items:[]}).items.push(c);});
+        function tag(n){return '<span style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:rgba(128,128,128,.18);margin-right:6px">'+n+'</span>';}
+        var lh='';
+        Object.keys(byCtl).forEach(function(k){
+          var g=byCtl[k];
+          lh+='<div style="margin:12px 0 2px">'+tag('L0')+'<b>Global control '+esc(k)+'</b>'+(g.clause?' <span style="opacity:.6">'+esc(g.clause)+'</span>':'')+'</div>';
+          var byDmo={};
+          g.items.forEach(function(c){var d=c.dmoId||'-';(byDmo[d]=byDmo[d]||{name:c.dmoName,items:[]}).items.push(c);});
+          Object.keys(byDmo).forEach(function(d){
+            var dg=byDmo[d];
+            lh+='<div style="margin:2px 0 2px 14px;border-left:2px solid rgba(128,128,128,.25);padding-left:10px">'+tag('L1')+esc(d)+' '+esc(dg.name||'')+(pc.domain?' '+tag('L2')+esc(pc.domain)+' domain':'')+'</div>';
+            dg.items.forEach(function(c){
+              var on=c.artifactStatus==='on-file';
+              var pill='<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;margin-left:6px;'+(on?'background:rgba(26,127,90,.16);color:#1a7f5a':'background:rgba(128,128,128,.14);color:#888')+'">'+(on?'on file':'to capture')+'</span>';
+              lh+='<div style="margin:1px 0 1px 30px;border-left:2px solid rgba(128,128,128,.25);padding-left:10px">'+tag('L3')+esc(c.requirement)+pill+'</div>';
+            });
+          });
+        });
+        var det=el("details",{open:"open",style:"margin:12px 0 0"});
+        det.innerHTML='<summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:#1f6feb">Policy lineage - from the global policy down to this dataset</summary><div style="margin-top:6px">'+lh+'</div>';
+        inner.append(det);
+      })();
+      inner.append(el("p",{class:"small muted",style:"margin:6px 0 0"},"Artifact on file shows whether a governance artifact of the relevant type is registered for this dataset. It is a proxy, not verified adherence. The Policy lineage above traces each requirement from the global policy (L0) down to this dataset (L3)."));
     }
     det.append(inner); return det;
   }

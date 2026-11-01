@@ -1,7 +1,8 @@
-# Tender Console — data contract (v1.6.0)
+# Tender Console — data contract (v1.7.0)
 
 Contract between the Tender Console app and the `rfp-cv-tailor` skill. Both read/write the same files in the **private data repo**, so they must agree on this shape.
 
+**v1.7.0 (2026-11-01):** **Submission pack layer** — the new `tender-submission` skill assembles a tender's pre-award returnable pack and writes a **`submission{}`** block onto the tender record (schema below), plus a staged **`submission/<tenderId>/`** folder. Two new shared data files: **`standard-docs.json`** (registry of Modelware's standard/company documents, with per-doc expiry checked against the tender close date) and **`company-profile.json`** (known-true particulars used to pre-fill returnable forms; the skill never invents values). Decisions (AskUserQuestion 2026-11-01): standard-docs = folder + manifest with expiry; CVs/coverage are **reused** from `rfp-cv-tailor` (never re-tailored); returnables = checklist + pre-fill known fields; output = a **Submission panel** in the Console. App support = **v1.14.0** (read-only Submission panel, `renderTmSubmission`). The skill writes only `submission{}` + `submission/<id>/` (and may draft `compliance[]` disqualifier entries); it never sets `goNoGo.decision` and never edits `team.json`/`sfia-profile.json`/`standard-docs.json`/`company-profile.json` beyond Howard-confirmed manifest updates.
 **v1.6.0 (2026-10-20):** **Worker = GitHub Actions + draft-then-confirm.** The assessment worker is now a **GitHub Actions workflow** in the data repo (`.github/workflows/assessment-worker.yml`) that runs the real `rfp-cv-tailor` skill on a runner (installed from the `modelware-skills` plugin marketplace — one source, shared with Howard's Claude, no vendored copy) — triggered **on push to `requests.json`**, authenticating to the model with a **Claude subscription OAuth token** (`CLAUDE_CODE_OAUTH_TOKEN` secret) and committing the result with the built-in **`GITHUB_TOKEN`** (no bot PAT anywhere). The worker writes a **draft** assessment (**`assessment.status:"proposed"`**); an admin **Confirms** it in the app to finalise (**`"confirmed"`** + `confirmedBy`/`confirmedAt`). This **supersedes v1.5.0 decision RX2=a** (the worker no longer auto-pushes with its own PAT — there is no worker PAT). Register **`EJwjtgC8WToykzEqK1vm3n`** (A draft · B claude-code-action · C oauth · D push · E GITHUB_TOKEN). Setup + runbook: **`WORKER-SETUP.md`**. App support = **v1.11.0** (Confirm button, to build).
 **v1.5.0 (2026-10-20):** **Assessment Request Queue** — a new `data/requests.json` lets the app enqueue a triage request (staff click "Request assessment") that a **Claude worker** fulfils by running `rfp-cv-tailor` triage and writing `assessment{}` back onto the tender. No second copy of the assessment logic — the worker runs the real skill. Decisions **RX0=a** (request queue + Claude worker), **RX1=b** (separate `requests.json`), ~~**RX2=a** (worker auto-pushes with its own token)~~ **superseded by v1.6.0** (GitHub Actions + `GITHUB_TOKEN`). Full design: `REQUEST-QUEUE-HANDOVER.md` (app repo). App support = v1.10.0 (request button, built).
 **v1.4.1 (2026-10-20):** review of v1.4 against live data (decisions R1–R4). **R1** — `goNoGo.decision` enum gains **`at-risk`**; **`reason`** is the single free-text field (the `note` field used by some records is migrated to `reason` and retired). **R2** — external / JV people are now first-class in `team.json` via an **`external`** flag; the ad-hoc `cv.teamRefs[]` is **retired** in favour of `teamProposed[]` + each person's `cvRefs`. **R3** — every person's base CV lives under **`cvs/base/<personId>/`** (including Howard's); loose files at `cvs/base/` root are retired. **R4** — `createdBy` and `loadedBy` are both kept, with distinct meanings. (Migration applied 2026-10-20; app support landed in v1.9.0.)
@@ -26,6 +27,8 @@ data/
   harvest.json                # proposed reusable bullets awaiting approval
   sfia-profile.json           # governed SFIA 9 profile (app is master)
   esa-standard-clauses.json   # Modelware ESA Standard Clauses (versioned)
+  standard-docs.json          # Modelware standard/company documents registry — presence + expiry   (v1.7.0)
+  company-profile.json        # known-true company particulars for returnable-form pre-fill           (v1.7.0)
 cvs/
   base/<personId>/            # each person's base CV(s) — Howard included        (v1.4.1: no loose files at cvs/base/ root)
   tailored/<tenderId>/        # tailored CV + coverage map per tender
@@ -33,6 +36,10 @@ rfp/
   <tenderId>/                 # the uploaded RFP document(s) + addenda per tender  (v1.4)
 esa/
   <tenderId>/                 # generated ESA docs per tender
+standard/
+  <files>                     # the standard/company documents themselves (profile, CSD, tax, B-BBEE, COID, insurance, bank)  (v1.7.0)
+submission/
+  <tenderId>/                 # assembled submission pack + index per tender      (v1.7.0)
 .github/
   workflows/assessment-worker.yml   # the GitHub Actions assessment worker        (NEW v1.6.0)
 # (the skill is NOT here — the worker installs it from the modelware-skills plugin marketplace, a separate repo)
@@ -157,3 +164,53 @@ Unchanged from v1.3 — see that section above.
 
 ## `sfia-profile.json` / `experience.json` / `harvest.json`
 Unchanged — see v1.2/v1.1.
+
+
+## Submission pack — `submission{}` on the tender record (v1.7.0)
+
+Written by the **`tender-submission`** skill; rendered read-only by the app's Submission panel (`renderTmSubmission`, v1.14.0). The skill owns this block — the app does not edit it, so it survives a tender save untouched.
+
+```
+submission: {
+  schemaVersion: 1,
+  status: "preparing" | "ready" | "submitted" | "na",   // "ready" only when every mandatory item is "have"
+  deadline: "<ISO close date/time>",
+  portal:   "<e-Tendering / National Treasury eTender / email / physical / ...>",
+  packaging:"<copies, electronic format, sealing, envelope markings, size limits>",
+  checklist: [ {
+    id, item,
+    category,                 // standard | sbd | bid-response | cv-coverage | pricing | contract | hse
+    mandatory: true|false,
+    source,                   // a standard-docs id | "rfp-cv-tailor" | "form-to-fill" | "author" | "howard"
+    status,                   // have | need | expired | expiring | to-fill | to-sign | to-review
+    file,                     // path under submission/<id>/ once staged, else null
+    owner, note
+  } ],
+  coverage: [ {               // responsiveness map: tender requirement/returnable -> satisfying doc
+    reqRef,                   // requirements[] code where scored, or the returnable id
+    requirement, satisfiedBy, // satisfiedBy = checklist item id(s)
+    status                    // addressed | partial | gap
+  } ],
+  gaps: [ "<mandatory item missing/expired — disqualifier risk>" ],
+  assembledAt, assembledBy
+}
+```
+
+The submission `coverage` (document-vs-returnable) is distinct from the CV coverage map (requirement-vs-evidence, `requirements[]`) and from `compliance[]` (mandatory disqualifier gate). Three separate things — do not conflate.
+
+## `standard-docs.json` (v1.7.0)
+
+```
+{ schemaVersion:1, _type:"standard-docs-manifest", subject, updatedAt, expiryWarnDays,
+  docs: [ { id, title,
+            category,          // corporate | compliance | sbd | people | credentials | references | hse
+            source,            // "modelware" (we keep it) | "tender" (supplied per tender; master = reusable particulars)
+            file,              // repo-relative path, or null = not yet gathered (reported "need", never "have")
+            mandatoryDefault, expires, issuedOn, expiresOn, notes } ] }
+```
+
+The skill resolves each `file` on disk and computes status against the tender's **close date**: missing (`file:null` or unresolved) → need; past `expiresOn` → expired; within `expiryWarnDays` of close → expiring; else have.
+
+## `company-profile.json` (v1.7.0)
+
+Known-true Modelware particulars for pre-filling returnable forms (SBD 1/4/8, declarations, cover sheets): `legalName, tradingName, representative, representativeRole, physicalAddress, postalAddress, city, province, country, phone, email, website, companyRegNo, vatNo, csdSupplierNo, csdMaaaNo, taxComplianceStatusPin, bbbeeLevel, bbbeeStatus, bbbeeType, bankName, bankAccountName, bankAccountNo, bankBranchCode, coidRegNo, directors[]`. Empty string = unknown → the skill leaves the form field blank and flags it; it never invents a value.

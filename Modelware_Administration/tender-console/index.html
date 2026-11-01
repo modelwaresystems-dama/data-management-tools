@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.16.0">
+<meta name="version" content="1.17.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -506,6 +506,13 @@
     <div class="sheet-f"><button class="btn" id="subPrint" title="Open a printable PDF of this tender incl. the pack">⬇ Printable PDF</button><div class="spacer"></div><button class="btn primary" id="subCloseB">Close</button></div>
   </div>
 </div>
+<div class="modal" id="formModal" role="dialog" aria-modal="true" aria-label="Complete form">
+  <div class="sheet" style="max-width:640px">
+    <div class="sheet-h"><h3 id="fmTitle">Complete form</h3><div class="spacer"></div><button class="iconbtn" id="fmClose" aria-label="Close">&#10005;</button></div>
+    <div class="sheet-b" id="fmBody"></div>
+    <div class="sheet-f"><span class="hint" id="fmState"></span><div class="spacer"></div><button class="btn" id="fmCancel">Cancel</button><button class="btn primary" id="fmGen">Generate &amp; save PDF</button></div>
+  </div>
+</div>
 <div class="modal" id="exModal" role="dialog" aria-modal="true" aria-label="Experience item">
   <div class="sheet" style="max-width:560px">
     <div class="sheet-h"><h3 id="exTitle">Experience</h3><div class="spacer"></div><button class="iconbtn" id="exClose" aria-label="Close">&#10005;</button></div>
@@ -544,13 +551,13 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-11-01 full submission pack view";  // date/time of this build
+  var APP_BUILD="2026-11-01 in-app form fill (overlay)";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
   var GO=["undecided","bid","partner","at-risk","leave"];
   var TEAM=["Howard Diesel","Debbie","Monica","Veronica","Paul Bolton"];  // Phase 2 team roster
-  var FILES={tenders:"tenders.json",team:"team.json",requests:"requests.json",experience:"experience.json",harvest:"harvest.json",sfiaProfile:"sfia-profile.json"};
+  var FILES={tenders:"tenders.json",team:"team.json",requests:"requests.json",experience:"experience.json",harvest:"harvest.json",sfiaProfile:"sfia-profile.json",companyProfile:"company-profile.json",formMaps:"form-maps.json"};
   var AI_FILE="sfia-ai-concepts.json";
   var AIW={DIRECT:1,CONTRIBUTING:0.6,SUPPORTING:0.3,"CONTEXT-DEPENDENT":0.3};
   var AICAT={"DATA FOUNDATIONS":"Data","CORE AI & MACHINE LEARNING TECHNIQUES":"Core AI/ML","BUILDING & INTEGRATING AI SYSTEMS":"Build & Integrate","ASSURING AI QUALITY, PERFORMANCE & SECURITY":"Assure","GOVERNING, PROTECTING & REGULATING AI":"Govern","WORKING WITH AI":"Work with AI","STRATEGY, VALUE & DELIVERY":"Strategy"};
@@ -559,7 +566,7 @@
 
   /* ---------- state ---------- */
   var cfg=loadCfg();
-  var data={tenders:[],team:[],requests:[],experience:[],harvest:[]};
+  var data={tenders:[],team:[],requests:[],experience:[],harvest:[],companyProfile:{},formMaps:{}};
   var sha={}, dirty={}, editingT=null, editingEx=null, editingP=null, diag={};
   var sfiaProf={loaded:false,byCode:{},count:0};
   var aiConcepts={loaded:false,concepts:[],counts:null,src:""};
@@ -617,6 +624,7 @@
   function isAdmin(){return (cfg.role||"admin")!=="sales";}
   function repoParent(){var d=(cfg.path||"data").replace(/^\/+|\/+$/g,"");return d.indexOf("/")>=0?d.slice(0,d.lastIndexOf("/")):"";}
   function subFileUrl(rel){ if(!rel) return ""; if(!cfg.owner||!cfg.repo) return ""; var pp=repoParent(); var full=(pp?pp+"/":"")+String(rel).replace(/^\/+/,""); var enc=full.split("/").map(encodeURIComponent).join("/"); return "https://github.com/"+cfg.owner+"/"+cfg.repo+"/blob/"+(cfg.branch||"main")+"/"+enc; }
+  function repoPath(rel){var pp=repoParent();return (pp?pp+"/":"")+String(rel).replace(/^\/+/,"");}
   function cvBasePath(id,name){var pp=repoParent();return (pp?pp+"/":"")+"cvs/base/"+id+"/"+safeName(name);}
   function rfpPath(tid,name){var pp=repoParent();return (pp?pp+"/":"")+"rfp/"+tid+"/"+safeName(name);}
   function testConn(){
@@ -642,6 +650,8 @@
       else if(key==="requests"){data.requests=obj.requests||[];n=data.requests.length;}
       else if(key==="experience"){data.experience=obj.items||[];n=data.experience.length;}
       else if(key==="harvest"){data.harvest=obj.queue||[];n=data.harvest.length;}
+      else if(key==="companyProfile"){data.companyProfile=obj||{};n=Object.keys(data.companyProfile).length;}
+      else if(key==="formMaps"){data.formMaps=(obj&&obj.forms)||{};n=Object.keys(data.formMaps).length;}
       else if(key==="sfiaProfile"){
         sfiaProf={loaded:true,subject:obj.subject||"",generated:obj.generated||"",framework:obj.framework||"SFIA 9",
           schemaVersion:obj.schemaVersion||2,source:obj.source||"",levelNames:obj.levelNames||{},evidence:obj.evidence||{},
@@ -666,6 +676,7 @@
     if(key==="tenders")return JSON.stringify({schemaVersion:1,tenders:data.tenders},null,2);
     if(key==="experience")return JSON.stringify({schemaVersion:1,items:data.experience},null,2);
     if(key==="harvest")return JSON.stringify({schemaVersion:1,queue:data.harvest},null,2);
+    if(key==="companyProfile")return JSON.stringify(Object.assign({schemaVersion:1,_type:"company-profile"},data.companyProfile||{},{updatedAt:new Date().toISOString().slice(0,10)}),null,2);
     if(key==="team")return JSON.stringify({schemaVersion:2,_type:"team-registry",updatedAt:new Date().toISOString().slice(0,10),people:data.team},null,2);
     if(key==="requests")return JSON.stringify({schemaVersion:1,_type:"assessment-request-queue",updatedAt:new Date().toISOString().slice(0,10),requests:data.requests},null,2);
     if(key==="sfiaProfile")return JSON.stringify({schemaVersion:sfiaProf.schemaVersion||2,_type:"sfia-profile",subject:sfiaProf.subject,framework:sfiaProf.framework||"SFIA 9",generated:sfiaProf.generated,source:sfiaProf.source,levelNames:sfiaProf.levelNames,evidence:sfiaProf.evidence,skills:sfiaProf.skills,attributes:sfiaProf.attributes,behaviours:sfiaProf.behaviours,strengths:sfiaProf.strengths},null,2);
@@ -1351,13 +1362,70 @@
     var meter='<div style="height:9px;border-radius:5px;background:var(--line-soft);overflow:hidden;margin-bottom:9px"><i style="display:block;height:100%;width:'+pct+'%;background:linear-gradient(90deg,#156082,#0F9ED5)"></i></div>';
     var subhead='<div class="hint" style="margin-bottom:9px">'+(dl?'closes '+esc(dl.toLocaleDateString("en-ZA",{day:"2-digit",month:"short",year:"numeric"}))+(days!=null?' · '+(days>=0?days+" days to close":"CLOSED"):''):'')+(s.portal?' · '+esc(s.portal):'')+'</div>';
     var gaps=(s.gaps&&s.gaps.length)?'<div style="background:#fbe6e7;border:1px solid #f0b7ba;border-left:4px solid #b4232a;border-radius:8px;padding:9px 12px;margin-bottom:10px"><div style="font-weight:650;color:#b4232a;font-size:.85rem;margin-bottom:3px">Disqualifier &amp; gap watch</div>'+s.gaps.map(function(g){return '<div class="hint" style="margin:2px 0">• '+esc(g)+'</div>';}).join("")+'</div>':'';
-    var rows=cl.map(function(c){var u=(c.file&&subFileUrl(c.file))?subFileUrl(c.file):"";return '<tr><td style="color:var(--ink-faint);font-family:var(--fm);font-size:.78rem;vertical-align:top">'+esc(c.id||"")+'</td><td style="vertical-align:top">'+esc(c.item||"")+' '+(c.mandatory?'<span style="color:#b4232a" title="mandatory">●</span>':'<span style="color:var(--ink-faint)">○</span>')+(u?' <a href="'+esc(u)+'" target="_blank" rel="noopener" style="font-size:.76rem;color:var(--glacier)">open ↗</a>':'')+(c.note?'<div class="hint">'+esc(c.note)+'</div>':'')+'</td><td style="vertical-align:top">'+pill(c.status)+'</td><td class="hint" style="vertical-align:top">'+esc(c.source||"")+'</td><td class="hint" style="vertical-align:top">'+esc(c.owner||"")+'</td></tr>';}).join("");
+    var fbc=formByChecklist(t.id);
+    var rows=cl.map(function(c){var u=(c.file&&subFileUrl(c.file))?subFileUrl(c.file):"";return '<tr><td style="color:var(--ink-faint);font-family:var(--fm);font-size:.78rem;vertical-align:top">'+esc(c.id||"")+'</td><td style="vertical-align:top">'+esc(c.item||"")+' '+(c.mandatory?'<span style="color:#b4232a" title="mandatory">●</span>':'<span style="color:var(--ink-faint)">○</span>')+(u?' <a href="'+esc(u)+'" target="_blank" rel="noopener" style="font-size:.76rem;color:var(--glacier)">open ↗</a>':'')+(fbc[c.id]?' <button class="btn sm" type="button" data-formfill="'+esc(fbc[c.id])+'" data-tid="'+esc(t.id)+'" style="font-size:.72rem;padding:1px 7px">Complete ✎</button>':'')+(c.note?'<div class="hint">'+esc(c.note)+'</div>':'')+'</td><td style="vertical-align:top">'+pill(c.status)+'</td><td class="hint" style="vertical-align:top">'+esc(c.source||"")+'</td><td class="hint" style="vertical-align:top">'+esc(c.owner||"")+'</td></tr>';}).join("");
     var tbl='<table style="width:100%;border-collapse:collapse;font-size:.86rem"><thead><tr><th style="text-align:left;color:var(--ink-faint);font-weight:600">#</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Returnable</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Status</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Source</th><th style="text-align:left;color:var(--ink-faint);font-weight:600">Owner</th></tr></thead><tbody>'+rows+'</tbody></table>';
     var cov=(s.coverage&&s.coverage.length)?'<div style="margin-top:12px"><div class="hint" style="margin-bottom:4px">Responsiveness coverage map (tender requirement → document)</div><table style="width:100%;border-collapse:collapse;font-size:.86rem"><tbody>'+s.coverage.map(function(c){return '<tr><td style="color:var(--ink-faint);font-family:var(--fm);font-size:.78rem">'+esc(c.reqRef||"")+'</td><td>'+esc(c.requirement||"")+'</td><td>'+pill(c.status)+'</td></tr>';}).join("")+'</tbody></table></div>':'';
     var foot=(s.packaging?'<div class="hint" style="margin-top:12px"><b>Packaging:</b> '+esc(s.packaging)+'</div>':'')+(s.assembledBy?'<div class="hint" style="margin-top:4px">'+esc(s.assembledBy)+(s.assembledAt?' · '+esc(new Date(s.assembledAt).toLocaleDateString("en-ZA")):'')+'</div>':'');
     return kpis+subhead+meter+gaps+tbl+cov+foot;
   }
   function openSubPack(id){var t=find(id);if(!t){toast("Tender not found",true);return;}if(!t.submission||!t.submission.checklist){toast("No submission pack for this tender yet",true);return;}subT=t;$("subTitle").textContent="Submission Pack — "+(t.client||t.title||t.id);$("subBody").innerHTML=subPackHTML(t);$("subModal").classList.add("open");}
+  var formCtx=null;
+  function pdflibReady(cb){ if(window.PDFLib)return cb(); var sc=document.createElement("script"); sc.src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"; sc.onload=function(){cb();}; sc.onerror=function(){toast("Could not load the PDF engine (offline?)",true);}; document.head.appendChild(sc); }
+  function b64ToU8(b64){var bin=atob(String(b64).replace(/\s/g,""));var n=bin.length,u=new Uint8Array(n);for(var i=0;i<n;i++)u[i]=bin.charCodeAt(i);return u;}
+  function u8ToB64(u8){var s="",CH=0x8000;for(var i=0;i<u8.length;i+=CH){s+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));}return btoa(s);}
+  function formsForTender(tid){return (data.formMaps&&data.formMaps[tid])||{};}
+  function formByChecklist(tid){var m=formsForTender(tid),o={};Object.keys(m).forEach(function(k){if(m[k].checklistId)o[m[k].checklistId]=k;});return o;}
+  function openFormFill(tid,fkey){
+    var def=(formsForTender(tid)||{})[fkey]; if(!def){toast("No form definition",true);return;}
+    formCtx={tid:tid,fkey:fkey,def:def};
+    $("fmTitle").textContent=def.title||fkey;
+    var cp=data.companyProfile||{};
+    var rows=(def.fields||[]).map(function(f){
+      if(f.type==="mark"){return '<div class="field"><label>'+esc(f.label)+'</label><label class="checkrow" style="gap:6px;margin:0"><input type="checkbox" data-fm="'+esc(f.id)+'" data-mark="1" checked style="width:16px;height:16px"> place an X</label></div>';}
+      var fixed=(f.const!=null && !f.profileKey);
+      var v=fixed?f.const:(f.profileKey&&cp[f.profileKey]!=null?cp[f.profileKey]:(f.const||""));
+      return '<div class="field"><label>'+esc(f.label)+(f.profileKey?' <span class="hint" style="text-transform:none;letter-spacing:0">→ profile.'+esc(f.profileKey)+'</span>':'')+'</label><input type="text" data-fm="'+esc(f.id)+'"'+(f.profileKey?' data-pk="'+esc(f.profileKey)+'"':'')+' value="'+esc(v)+'"></div>';
+    }).join("");
+    $("fmBody").innerHTML='<div class="hint" style="margin-bottom:10px">Prefilled from your company profile where known. Edit as needed — new values are saved back to <b>company-profile.json</b>, and your answers are overlaid onto the official <b>'+esc(def.title||"form")+'</b> PDF and saved to the private repo. Sign where required after download.</div>'+rows;
+    $("fmState").textContent=""; $("formModal").classList.add("open");
+  }
+  function generateForm(){
+    if(!formCtx)return; if(!configured()){toast("Connect your repo first (Settings)",true);return;}
+    var def=formCtx.def, tid=formCtx.tid;
+    var inputs=$("fmBody").querySelectorAll("[data-fm]");
+    var vals={},profileWrites={};
+    for(var i=0;i<inputs.length;i++){var el=inputs[i];var id=el.getAttribute("data-fm");
+      if(el.getAttribute("data-mark"))vals[id]=el.checked?"X":""; else vals[id]=el.value;
+      var pk=el.getAttribute("data-pk"); if(pk&&el.value.trim())profileWrites[pk]=el.value.trim();
+    }
+    $("fmState").textContent="Generating…"; $("fmGen").disabled=true;
+    pdflibReady(function(){
+      ghGet(repoPath(def.template)).then(function(tr){
+        if(tr.missing)throw new Error("Template not found: "+def.template);
+        return PDFLib.PDFDocument.load(b64ToU8(tr.content)).then(function(doc){
+          return doc.embedFont(PDFLib.StandardFonts.Helvetica).then(function(font){
+            var pg=doc.getPages()[def.page||0],H=pg.getHeight(),col=def.color||[0.05,0.1,0.45];
+            (def.fields||[]).forEach(function(f){var t=vals[f.id];if(t==null||t==="")return;pg.drawText(String(t),{x:f.x,y:H-f.y,size:f.size||9,font:font,color:PDFLib.rgb(col[0],col[1],col[2])});});
+            return doc.save();
+          });
+        });
+      }).then(function(u8){
+        var b64=u8ToB64(u8);
+        return ghGet(repoPath(def.output)).then(function(o){return ghPutRaw(repoPath(def.output),b64,(o&&!o.missing)?o.sha:null,"Fill "+(def.title||formCtx.fkey)+" for "+tid);});
+      }).then(function(){
+        var t=find(tid);
+        if(t&&t.submission&&t.submission.checklist){var it=t.submission.checklist.filter(function(c){return c.id===def.checklistId;})[0];if(it){it.file=def.output;it.status=(def.signRequired===false?"have":"to-sign");}}
+        saveKey("tenders","Form generated: "+(def.title||formCtx.fkey));
+        var changed=false; data.companyProfile=data.companyProfile||{};
+        Object.keys(profileWrites).forEach(function(k){if(data.companyProfile[k]!==profileWrites[k]){data.companyProfile[k]=profileWrites[k];changed=true;}});
+        if(changed)saveKey("companyProfile","Update company profile from "+(def.title||formCtx.fkey));
+        $("fmGen").disabled=false; $("formModal").classList.remove("open");
+        if($("subModal").classList.contains("open"))openSubPack(tid);
+        toast("Form saved to the private repo ✓ — commit & push to publish");
+      }).catch(function(e){$("fmState").textContent="";$("fmGen").disabled=false;toast("Form generation failed: "+netMsg(e),true);});
+    });
+  }
   function collectTender(){
     var e=editingT;
     e.client=$("f_client").value.trim();e.sector=$("f_sector").value.trim();e.title=$("f_title").value.trim();
@@ -1683,6 +1751,10 @@
   var _sc=$("subClose"); if(_sc)_sc.onclick=function(){$("subModal").classList.remove("open");};
   var _scb=$("subCloseB"); if(_scb)_scb.onclick=function(){$("subModal").classList.remove("open");};
   var _spr=$("subPrint"); if(_spr)_spr.onclick=function(){if(subT)exportPDF([subT]);};
+  var _fc2=$("fmClose"); if(_fc2)_fc2.onclick=function(){$("formModal").classList.remove("open");};
+  var _fcn=$("fmCancel"); if(_fcn)_fcn.onclick=function(){$("formModal").classList.remove("open");};
+  var _fg=$("fmGen"); if(_fg)_fg.onclick=generateForm;
+  if($("subBody"))$("subBody").addEventListener("click",function(ev){var b=ev.target.closest("[data-formfill]");if(b)openFormFill(b.getAttribute("data-tid"),b.getAttribute("data-formfill"));});
   $("consoleList").addEventListener("click",function(ev){var sp=ev.target.closest("[data-subpack]");if(sp){ev.stopPropagation();openSubPack(sp.getAttribute("data-subpack"));return;}var c=ev.target.closest(".tcard");if(c)openTender(find(c.dataset.id));});
   $("archiveList").addEventListener("click",function(ev){var sp=ev.target.closest("[data-subpack]");if(sp){ev.stopPropagation();openSubPack(sp.getAttribute("data-subpack"));return;}var c=ev.target.closest(".tcard");if(c)openTender(find(c.dataset.id));});
   function find(id){for(var i=0;i<data.tenders.length;i++)if(data.tenders[i].id===id)return data.tenders[i];return null;}
@@ -1755,8 +1827,8 @@
   $("clearCacheBtn").onclick=function(){try{localStorage.removeItem(CACHE_KEY);}catch(e){}toast("Local cache cleared");location.reload();};
   $("syncBtn").onclick=function(){syncDirty();};
   $("themeBtn").onclick=function(){var cur=document.documentElement.getAttribute("data-theme");var dark=cur?cur==="dark":window.matchMedia("(prefers-color-scheme:dark)").matches;document.documentElement.setAttribute("data-theme",dark?"light":"dark");};
-  document.addEventListener("keydown",function(ev){if(ev.key==="Escape"){$("tenderModal").classList.remove("open");$("exModal").classList.remove("open");$("sfiaModal").classList.remove("open");$("personModal").classList.remove("open");$("subModal").classList.remove("open");}});
-  [ "tenderModal","exModal","sfiaModal","personModal","subModal"].forEach(function(id){$(id).addEventListener("click",function(ev){if(ev.target===$(id))$(id).classList.remove("open");});});
+  document.addEventListener("keydown",function(ev){if(ev.key==="Escape"){$("tenderModal").classList.remove("open");$("exModal").classList.remove("open");$("sfiaModal").classList.remove("open");$("personModal").classList.remove("open");$("subModal").classList.remove("open");$("formModal").classList.remove("open");}});
+  [ "tenderModal","exModal","sfiaModal","personModal","subModal","formModal"].forEach(function(id){$(id).addEventListener("click",function(ev){if(ev.target===$(id))$(id).classList.remove("open");});});
 
   /* ---------- boot ---------- */
   function fillSettings(){$("setOwner").value=cfg.owner||"";$("setRepo").value=cfg.repo||"";$("setBranch").value=cfg.branch||"main";$("setPath").value=cfg.path||"data";$("setToken").value=cfg.token||"";$("setUserName").value=cfg.userName||"";$("setRole").value=cfg.role||"admin";}

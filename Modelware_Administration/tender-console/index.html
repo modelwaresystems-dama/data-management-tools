@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tender Console</title>
-<meta name="version" content="1.20.0">
+<meta name="version" content="1.21.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -580,7 +580,7 @@
 (function(){
   /* ---------- constants ---------- */
   var APP_VERSION=(document.querySelector('meta[name="version"]')||{}).content||"1.8.0";  // single source of truth: <meta name=version>
-  var APP_BUILD="2026-11-01 multi-page form overlay";  // date/time of this build
+  var APP_BUILD="2026-11-01 auto signature + date";  // date/time of this build
   var OPEN=["prospect","reviewing","bidding","submitted"];
   var CLOSED=["won","lost","withdrawn","passed"];
   var STATUSES=OPEN.concat(CLOSED);
@@ -1443,12 +1443,13 @@
     $("fmTitle").textContent=def.title||fkey;
     var cp=companyForTender(find(tid))||{};
     var rows=(def.fields||[]).map(function(f){
+      if(f.type==="signature"||f.type==="signdate")return "";
       if(f.type==="mark"){return '<div class="field"><label>'+esc(f.label)+'</label><label class="checkrow" style="gap:6px;margin:0"><input type="checkbox" data-fm="'+esc(f.id)+'" data-mark="1" checked style="width:16px;height:16px"> place an X</label></div>';}
       var fixed=(f.const!=null && !f.profileKey);
       var v=fixed?f.const:(f.profileKey&&cp[f.profileKey]!=null?cp[f.profileKey]:(f.const||""));
       return '<div class="field"><label>'+esc(f.label)+(f.profileKey?' <span class="hint" style="text-transform:none;letter-spacing:0">→ profile.'+esc(f.profileKey)+'</span>':'')+'</label><input type="text" data-fm="'+esc(f.id)+'"'+(f.profileKey?' data-pk="'+esc(f.profileKey)+'"':'')+' value="'+esc(v)+'"></div>';
     }).join("");
-    $("fmBody").innerHTML='<div class="hint" style="margin-bottom:10px">Prefilled from your company profile where known. Edit as needed — new values are saved back to <b>company-profile.json</b>, and your answers are overlaid onto the official <b>'+esc(def.title||"form")+'</b> PDF and saved to the private repo. Sign where required after download.</div>'+rows;
+    $("fmBody").innerHTML='<div class="hint" style="margin-bottom:10px">Prefilled from your company profile where known. Edit as needed — new values are saved back to <b>company-profile.json</b>, and your answers are overlaid onto the official <b>'+esc(def.title||"form")+'</b> PDF and saved to the private repo. The <b>signature</b> and <b>date</b> (one day before close) are added automatically for the bidding entity where available.</div>'+rows;
     $("fmState").textContent=""; $("formModal").classList.add("open");
   }
   function generateForm(){
@@ -1462,13 +1463,25 @@
     }
     $("fmState").textContent="Generating…"; $("fmGen").disabled=true;
     pdflibReady(function(){
-      ghGet(repoPath(def.template)).then(function(tr){
-        if(tr.missing)throw new Error("Template not found: "+def.template);
-        return PDFLib.PDFDocument.load(b64ToU8(tr.content)).then(function(doc){
-          return doc.embedFont(PDFLib.StandardFonts.Helvetica).then(function(font){
-            var pages=doc.getPages(),col=def.color||[0.05,0.1,0.45];
-            (def.fields||[]).forEach(function(f){var t=vals[f.id];if(t==null||t==="")return;var pg=pages[(f.page!=null?f.page:(def.page||0))]||pages[0];var H=pg.getHeight();pg.drawText(String(t),{x:f.x,y:H-f.y,size:f.size||9,font:font,color:PDFLib.rgb(col[0],col[1],col[2])});});
-            return doc.save();
+      var t0=find(tid), ent=companyForTender(t0)||{};
+      var needSig=(def.fields||[]).some(function(f){return f.type==="signature";}) && ent.signatureImage;
+      var dl=t0&&t0.deadline?new Date(t0.deadline):null;
+      function _z(n){return (n<10?"0":"")+n;}
+      var signDateStr=dl?(function(x){return _z(x.getDate())+"/"+_z(x.getMonth()+1)+"/"+x.getFullYear();})(new Date(dl.getTime()-86400000)):"";
+      (needSig?ghGet(repoPath(ent.signatureImage)).then(function(sr){return (sr&&!sr.missing)?sr.content:null;}).catch(function(){return null;}):Promise.resolve(null)).then(function(sigB64){
+        return ghGet(repoPath(def.template)).then(function(tr){
+          if(tr.missing)throw new Error("Template not found: "+def.template);
+          return PDFLib.PDFDocument.load(b64ToU8(tr.content)).then(function(doc){
+            return doc.embedFont(PDFLib.StandardFonts.Helvetica).then(function(font){
+              var pages=doc.getPages(),col=def.color||[0.05,0.1,0.45];
+              return Promise.resolve(sigB64?doc.embedPng(b64ToU8(sigB64)):null).then(function(png){
+                (def.fields||[]).forEach(function(f){var pg=pages[(f.page!=null?f.page:(def.page||0))]||pages[0];var H=pg.getHeight();
+                  if(f.type==="signature"){if(png){var w=f.w||50;pg.drawImage(png,{x:f.x,y:H-f.y,width:w,height:w*png.height/png.width});}return;}
+                  if(f.type==="signdate"){if(signDateStr)pg.drawText(signDateStr,{x:f.x,y:H-f.y,size:f.size||9,font:font,color:PDFLib.rgb(col[0],col[1],col[2])});return;}
+                  var t=vals[f.id];if(t==null||t==="")return;pg.drawText(String(t),{x:f.x,y:H-f.y,size:f.size||9,font:font,color:PDFLib.rgb(col[0],col[1],col[2])});});
+                return doc.save();
+              });
+            });
           });
         });
       }).then(function(u8){

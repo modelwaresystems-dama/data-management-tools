@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.3.4">
+<meta name="version" content="1.4.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Ontology Explorer</title>
@@ -136,12 +136,25 @@
   /* facet view */
   .fgroup{display:flex;align-items:center;gap:8px;margin:16px 0 7px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
   .fgcount{font:700 10px var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:1px 7px;color:var(--muted)}
-  .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:7px}
-  .fcard{display:flex;align-items:center;gap:8px;text-align:left;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:8px 10px;font:inherit;font-size:13px;cursor:pointer}
+  .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:9px}
+  .fgrid.indent{margin-left:16px;padding-left:12px;border-left:2px solid var(--line2)}
+  .fnode{display:flex;flex-direction:column;gap:5px}
+  .fcard{display:flex;align-items:center;gap:8px;text-align:left;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:8px 10px;font:inherit;font-size:13px;cursor:pointer;width:100%}
   .fcard:hover{border-color:var(--accent);background:var(--panel2)}
   .fcard.sel{border-color:var(--accent);background:var(--accent-bg)}
   .fdot{width:9px;height:9px;border-radius:999px;flex:none}
   .fcl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* parent (taxonomy) header */
+  .fparent{margin:16px 0 4px}
+  .fpbtn{display:flex;align-items:center;gap:9px;text-align:left;border:none;border-bottom:2px solid var(--line);background:transparent;color:var(--ink);padding:4px 2px 7px;font:inherit;font-size:15px;font-weight:800;cursor:pointer;width:100%}
+  .fpbtn:hover .fpl{color:var(--accent-ink)}
+  .fpbtn.sel .fpl{color:var(--accent-ink)}
+  .fpl{flex:1}
+  /* relationship chips (cross-spine links) */
+  .rchips{display:flex;flex-wrap:wrap;gap:4px;padding-left:4px}
+  .rchip{font:600 10.5px var(--mono);color:var(--muted);background:var(--panel2);border:1px solid var(--line2);border-radius:999px;padding:1px 8px;white-space:nowrap}
+  .rchip.lnk{cursor:pointer;color:var(--accent-ink);border-color:var(--accent-bg)}
+  .rchip.lnk:hover{background:var(--accent-bg);border-color:var(--accent)}
   /* detail panel */
   .dh{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:800}
   .dt{font-size:19px;font-weight:800;line-height:1.2;margin:4px 0 4px}
@@ -550,34 +563,66 @@ function renderAffinity(){
   const mdiv=document.createElement('div');mdiv.innerHTML=mh;c.appendChild(mdiv);
 }
 
-// ---------- Facet view (members of a facet, grouped) ----------
+// ---------- Facet view (taxonomy hierarchy + cross-spine links) ----------
 const CTXROLE_LABEL={participant:'Participants & Roles',tool:'Tools & Technology',technique:'Techniques & Methods',metric:'Metrics',input:'Inputs',supplier:'Suppliers',consumer:'Consumers','serves-consumer':'Consumers',goal:'Goals & Guiding Principles','guided-by':'Goals & Guiding Principles'};
+// per-facet taxonomy: children roll up to a parent entity type via a relationship
+const FACET_HIER={
+  'facet:strength':{parentType:'type:strength-domain',upRel:'rel:rolls-up-to'},   // theme → domain
+  'facet:activity':{parentType:'type:phase',upRel:'rel:contains'},                // best practice → phase
+  'facet:knowledge-area':{parentType:'type:dmbok-level',upRel:'rel:grouped-by'},  // KA → DMBOK level
+  'facet:thinking-style':{parentType:'type:team-role',upRel:'rel:plays'}          // style → team role
+};
+function shortLabel(id){const e=M.ent.get(id);let l=(e&&e.preferredLabel)||id;return l.length>22?l.slice(0,20)+'…':l;}
+// relationship chips for a node — prioritise links that leave this facet (other areas of the spine)
+function relChips(id,seen){
+  const out=M.out.get(id)||[], inc=M.inc.get(id)||[], items=[];
+  const go=new Map(); out.forEach(r=>{if(!go.has(r.relationshipTypeId))go.set(r.relationshipTypeId,[]);go.get(r.relationshipTypeId).push(r.targetEntityId);});
+  const gi=new Map(); inc.forEach(r=>{if(!gi.has(r.relationshipTypeId))gi.set(r.relationshipTypeId,[]);gi.get(r.relationshipTypeId).push(r.sourceEntityId);});
+  go.forEach((t,rt)=>{const lbl=relLabel(rt),u=[...new Set(t)];
+    if(u.length===1)items.push({label:lbl+' '+shortLabel(u[0]),go:u[0],cross:!seen.has(u[0])});
+    else items.push({label:lbl+' · '+u.length,cross:u.some(x=>!seen.has(x))});});
+  gi.forEach((s,rt)=>{const rtp=M.rtype.get(rt),lbl=(rtp&&rtp.inverseLabel)||relLabel(rt),u=[...new Set(s)];
+    if(u.length===1)items.push({label:lbl+' '+shortLabel(u[0]),go:u[0],cross:!seen.has(u[0])});
+    else items.push({label:lbl+' · '+u.length,cross:u.some(x=>!seen.has(x))});});
+  items.sort((a,b)=>(b.cross?1:0)-(a.cross?1:0));
+  return items.slice(0,6);
+}
+function chipHtml(items){ return items.length?'<div class="rchips">'+items.map(c=>'<span class="rchip'+(c.go?' lnk':'')+'"'+(c.go?' data-go="'+c.go+'"':'')+'>'+c.label+'</span>').join('')+'</div>':''; }
 function renderFacetView(){
   const fid=S.facet; const facet=M.facet.get(fid); const c=document.getElementById('canvas');
   if(!facet){ c.innerHTML='<div class="empty">Facet not found.</div>'; return; }
   const members=[...M.ent.values()].filter(e=>Array.isArray(e.facetIds)&&e.facetIds.indexOf(fid)>=0);
+  const seen=new Set(members.map(e=>e.id));
   const wrap=document.createElement('div'); wrap.className='katree';
-  wrap.innerHTML='<div class="kahdr">'+facet.label+'</div><div class="kasub">'+members.length+' entit'+(members.length===1?'y':'ies')+' in this facet. Click any to open its detail.</div>';
+  wrap.innerHTML='<div class="kahdr">'+facet.label+'</div><div class="kasub">'+members.length+' entities, in their taxonomy. The pale <b>chips</b> under each node are its links to other parts of the spine — click a node or a chip to follow it.</div>';
   if(!members.length){ wrap.innerHTML+='<div class="empty">No entities carry this facet yet.</div>'; c.innerHTML=''; c.appendChild(wrap); return; }
-  // group: Context Diagram by ctxRole; everything else by entity type
-  const groups=new Map();
-  members.forEach(e=>{
-    let key;
-    if(fid==='facet:context'){ key=CTXROLE_LABEL[(e.attributes&&e.attributes.ctxRole)||'']||'Other context'; }
-    else { key=typeLabel(e.id)||'Other'; }
-    if(!groups.has(key))groups.set(key,[]); groups.get(key).push(e);
-  });
-  [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([gname,list])=>{
-    const gh=document.createElement('div'); gh.className='fgroup'; gh.innerHTML='<span>'+gname+'</span><span class="fgcount">'+list.length+'</span>';
-    wrap.appendChild(gh);
-    const grid=document.createElement('div'); grid.className='fgrid';
-    list.sort((a,b)=>a.preferredLabel.localeCompare(b.preferredLabel)).forEach(e=>{
-      const card=document.createElement('button'); card.className='fcard'+(S.focus===e.id?' sel':''); card.dataset.go=e.id;
-      card.innerHTML='<span class="fdot" style="background:'+colorOf(e.id)+'"></span><span class="fcl">'+e.preferredLabel+'</span>';
-      grid.appendChild(card);
+  const node=(e)=>{const d=document.createElement('div');d.className='fnode';
+    d.innerHTML='<button class="fcard'+(S.focus===e.id?' sel':'')+'" data-go="'+e.id+'"><span class="fdot" style="background:'+colorOf(e.id)+'"></span><span class="fcl">'+e.preferredLabel+'</span></button>'+chipHtml(relChips(e.id,seen));return d;};
+  const groupHdr=(name,n)=>{const gh=document.createElement('div');gh.className='fgroup';gh.innerHTML='<span>'+name+'</span><span class="fgcount">'+n+'</span>';return gh;};
+  const gridOf=(list,indent)=>{const g=document.createElement('div');g.className='fgrid'+(indent?' indent':'');list.sort((a,b)=>a.preferredLabel.localeCompare(b.preferredLabel)).forEach(e=>g.appendChild(node(e)));return g;};
+
+  const hier=FACET_HIER[fid];
+  if(fid==='facet:context'){
+    const groups=new Map();
+    members.forEach(e=>{const key=CTXROLE_LABEL[(e.attributes&&e.attributes.ctxRole)||'']||'Other context';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);});
+    [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([g,l])=>{wrap.appendChild(groupHdr(g,l.length));wrap.appendChild(gridOf(l));});
+  } else if(hier){
+    const parents=members.filter(e=>e.entityTypeId===hier.parentType);
+    const pset=new Set(parents.map(p=>p.id));
+    const childrenOf=new Map(parents.map(p=>[p.id,[]])); const orphans=[];
+    members.forEach(e=>{ if(pset.has(e.id))return; const up=outTo(e.id,hier.upRel).find(t=>pset.has(t)); if(up)childrenOf.get(up).push(e); else orphans.push(e); });
+    parents.sort((a,b)=>a.preferredLabel.localeCompare(b.preferredLabel)).forEach(p=>{
+      const ph=document.createElement('div');ph.className='fparent';
+      ph.innerHTML='<button class="fpbtn'+(S.focus===p.id?' sel':'')+'" data-go="'+p.id+'"><span class="fdot" style="background:'+colorOf(p.id)+'"></span><span class="fpl">'+p.preferredLabel+'</span><span class="fgcount">'+childrenOf.get(p.id).length+'</span></button>'+chipHtml(relChips(p.id,seen));
+      wrap.appendChild(ph);
+      wrap.appendChild(gridOf(childrenOf.get(p.id),true));
     });
-    wrap.appendChild(grid);
-  });
+    if(orphans.length){ wrap.appendChild(groupHdr('Other',orphans.length)); wrap.appendChild(gridOf(orphans)); }
+  } else {
+    const groups=new Map();
+    members.forEach(e=>{const k=typeLabel(e.id)||'Other';if(!groups.has(k))groups.set(k,[]);groups.get(k).push(e);});
+    [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([g,l])=>{wrap.appendChild(groupHdr(g,l.length));wrap.appendChild(gridOf(l));});
+  }
   c.innerHTML=''; c.appendChild(wrap);
 }
 

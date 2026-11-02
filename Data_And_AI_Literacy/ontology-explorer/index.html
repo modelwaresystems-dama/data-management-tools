@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.7.0">
+<meta name="version" content="1.8.2">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Ontology Explorer</title>
@@ -72,6 +72,8 @@
   .snode{cursor:pointer}
   .snode rect{stroke:rgba(255,255,255,.22);stroke-width:1}
   .snode .l{font:700 11.5px -apple-system,sans-serif;fill:#fff;pointer-events:none}
+  .snode.sband rect{stroke:var(--line2)}
+  .snode .bandl{font:700 10px var(--mono);letter-spacing:.14em;fill:var(--muted);pointer-events:none}
   .snode.sel rect{stroke:var(--ink);stroke-width:2.5}
   .snode.faded{opacity:.2}
   .sedge{fill:none;stroke:var(--line);stroke-width:1.4}
@@ -135,6 +137,11 @@
   .tpill{font:700 9px var(--mono);border-radius:999px;padding:1px 7px;color:#fff;margin-left:4px}
   /* facet view */
   .fgroup{display:flex;align-items:center;gap:8px;margin:16px 0 7px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  .fgphase{display:block}
+  .fgline{display:flex;align-items:center;gap:8px}
+  .phaff{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;text-transform:none;letter-spacing:0;font-weight:600}
+  .phaff .affsfia{font:600 10px var(--mono);color:#fff;background:var(--chain);border-radius:5px;padding:2px 7px}
+  .phaff .afffit{font:600 10px var(--mono);color:var(--accent-ink);background:var(--panel2);border:1px solid var(--line2);border-radius:5px;padding:2px 7px}
   .fgcount{font:700 10px var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:1px 7px;color:var(--muted)}
   .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:9px}
   .fgrid.indent{margin-left:16px;padding-left:12px;border-left:2px solid var(--line2)}
@@ -173,6 +180,10 @@
   .ttype2{font:600 11px var(--mono);color:var(--muted);margin-left:auto;white-space:nowrap}
   .tkids{margin-left:2px;border-left:1px solid var(--line2)}
   .trelhdr{display:flex;align-items:center;gap:7px;padding:7px 6px 2px;font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.04em}
+  .fgrphdr{display:flex;align-items:center;gap:7px;padding:9px 8px;margin-top:3px;font:700 11px var(--mono);text-transform:uppercase;letter-spacing:.04em;cursor:pointer;border-radius:7px;background:var(--panel2);border:1px solid var(--line2)}
+  .fgrphdr:hover{border-color:var(--accent)}
+  .fgrpcar{color:var(--accent);width:10px;display:inline-block}
+  .fgrpkids{padding-left:2px}
   .trelname{color:var(--accent-ink)}
   .trelcount{color:var(--muted);background:var(--panel2);border:1px solid var(--line2);border-radius:999px;padding:0 6px;font-size:9.5px}
   .tchipsrow{display:flex;flex-wrap:wrap;gap:4px;padding:1px 6px 5px}
@@ -430,9 +441,23 @@ function renderKA(){
     const phaseOf=bp=>(M.out.get(bp)||[]).filter(r=>r.relationshipTypeId==='rel:contains'&&typeLabel(r.targetEntityId)==='Phase').map(r=>r.targetEntityId)[0];
     if(bps.length){
       const byPhase={};bps.forEach(b=>{const p=phaseOf(b)||'e:phase:other';(byPhase[p]=byPhase[p]||[]).push(b);});
-      Object.keys(byPhase).forEach(p=>{
+      const phOrder=['e:phase:planning','e:phase:development','e:phase:operations','e:phase:control','e:phase:other'];
+      const phKeys=Object.keys(byPhase).sort((a,b)=>phOrder.indexOf(a)-phOrder.indexOf(b));
+      phKeys.forEach(p=>{
         const pe=M.ent.get(p);
-        const ph=document.createElement('div');ph.className='fgroup';ph.innerHTML='<span>'+((pe&&pe.preferredLabel)||'Phase')+'</span><span class="fgcount">'+byPhase[p].length+'</span>';body.appendChild(ph);
+        // Activity Affinity for this phase (fit, not mastery): the thinking styles / strengths that suit it,
+        // and its SFIA band → expected mastery. Mirrors the Spine Map affinity model.
+        const suitedBy=(M.inc.get(p)||[]).filter(r=>r.relationshipTypeId==='rel:suits').map(r=>M.ent.get(r.sourceEntityId)).filter(Boolean);
+        const ts=suitedBy.filter(e=>e.entityTypeId==='type:thinking-style').map(e=>(e.preferredLabel.match(/\(([^)]+)\)/)||[])[1]||e.preferredLabel);
+        const sd=suitedBy.filter(e=>e.entityTypeId==='type:strength-domain').map(e=>e.preferredLabel);
+        const pa=(pe&&pe.attributes)||{};let sfiaTxt='';
+        if(pa.sfiaMin){sfiaTxt='SFIA L'+pa.sfiaMin+(pa.sfiaMax>pa.sfiaMin?'–'+pa.sfiaMax:'');
+          const top=M.ent.get('e:sfialvl:'+pa.sfiaMax);const mrel=top&&(M.out.get(top.id)||[]).find(r=>r.relationshipTypeId==='rel:maps-to');const ml=mrel&&M.ent.get(mrel.targetEntityId);if(ml)sfiaTxt+=' → '+ml.preferredLabel.replace(/^M\d+\s*/,'')+' expected';}
+        const aff=[];if(sfiaTxt)aff.push('<span class="affsfia">'+sfiaTxt+'</span>');
+        if(ts.length||sd.length)aff.push('<span class="afffit">fits '+[...ts,...sd].join(' · ')+'</span>');
+        const ph=document.createElement('div');ph.className='fgroup fgphase';
+        ph.innerHTML='<div class="fgline"><span>'+((pe&&pe.preferredLabel)||'Phase')+'</span><span class="fgcount">'+byPhase[p].length+'</span></div>'+(aff.length?'<div class="phaff">'+aff.join('')+'</div>':'');
+        body.appendChild(ph);
         byPhase[p].forEach(b=>{
           const be=M.ent.get(b);
           const row=document.createElement('div');row.className='trow'+(S.focus===b?' sel':'');row.dataset.go=b;
@@ -481,14 +506,16 @@ function renderContext(){
   // fixed pixel layout mirroring Howard's hand-drawn DMBOK context diagram
   const N={
     'e:karole:definition':[95,28],'e:kaclass':[505,28],'e:karole:goals':[915,28],
-    'e:phase:planning':[60,132],'e:phase:development':[320,132],'e:phase:operations':[590,132],'e:phase:control':[860,132],
+    'e:karole:business-drivers':[20,92,1057,'band'],
+    'e:phase:planning':[60,146],'e:phase:development':[320,146],'e:phase:operations':[590,146],'e:phase:control':[860,146],
     'e:karole:supplier':[20,246],'e:karole:input':[20,314],'e:karole:tool':[20,382],
     'e:karole:bestpractice':[505,314],
     'e:karole:participant':[915,258],'e:karole:technique':[915,360],
     'e:karole:deliverable':[505,436],'e:karole:consumer':[915,436],
-    'e:score:quality':[150,540],'e:score:value':[505,540],'e:score:stakeholder':[830,540],
-    'e:karole:evidence':[505,632],
-    'e:karole:mastery':[505,712],'e:karole:metric':[885,712]
+    'e:karole:technical-drivers':[20,498,1057,'band'],
+    'e:score:quality':[150,552],'e:score:value':[505,552],'e:score:stakeholder':[830,552],
+    'e:karole:evidence':[505,644],
+    'e:karole:mastery':[505,724],'e:karole:metric':[885,724]
   };
   const EDGES=[
     ['e:kaclass','e:karole:definition','defined by'],['e:kaclass','e:karole:goals','guided by'],
@@ -502,7 +529,7 @@ function renderContext(){
     ['e:score:quality','e:karole:evidence','form the evidence'],['e:score:value','e:karole:evidence',''],['e:score:stakeholder','e:karole:evidence',''],
     ['e:karole:evidence','e:karole:mastery','evidences'],['e:karole:mastery','e:karole:metric','measured by']
   ];
-  let W=0,H=0;Object.values(N).forEach(([x,y])=>{W=Math.max(W,x+nodeW);H=Math.max(H,y+nodeH);});W+=40;H+=40;
+  let W=0,H=0;Object.values(N).forEach(([x,y,w])=>{W=Math.max(W,x+(w||nodeW));H=Math.max(H,y+nodeH);});W+=40;H+=40;
   const svg=document.createElementNS(NS,'svg');svg.setAttribute('class','ctxsvg');svg.setAttribute('viewBox','0 0 '+W+' '+H);
   // arrowhead marker
   const defs=document.createElementNS(NS,'defs');
@@ -526,11 +553,14 @@ function renderContext(){
     svg.appendChild(p);
     if(lab){const t=document.createElementNS(NS,'text');t.setAttribute('class','clab'+(on?' hot':'')+(foc&&!on?' faded':''));t.setAttribute('x',mx);t.setAttribute('y',my-4);t.setAttribute('text-anchor','middle');t.textContent=lab;svg.appendChild(t);}
   });
-  // nodes
-  Object.entries(N).forEach(([id,[x,y]])=>{const e=M.ent.get(id);if(!e)return;
-    const g=document.createElementNS(NS,'g');g.setAttribute('class','snode'+(foc&&!nbr.has(id)?' faded':'')+(foc===id?' sel':''));g.dataset.id=id;
-    const rect=document.createElementNS(NS,'rect');rect.setAttribute('x',x);rect.setAttribute('y',y);rect.setAttribute('width',nodeW);rect.setAttribute('height',nodeH);rect.setAttribute('rx',9);rect.setAttribute('fill','var('+ctxColorVar(id)+')');if(S.focus===id){rect.setAttribute('stroke','var(--ink)');rect.setAttribute('stroke-width','2.5');}g.appendChild(rect);
-    const t=document.createElementNS(NS,'text');t.setAttribute('class','l');t.setAttribute('x',x+nodeW/2);t.setAttribute('y',y+nodeH/2+4);t.setAttribute('text-anchor','middle');let lab=e.preferredLabel;if(lab.length>24)lab=lab.slice(0,22)+'…';t.textContent=lab;g.appendChild(t);
+  // nodes (band kind = the DMBOK Business/Technical Drivers divider bands)
+  Object.entries(N).forEach(([id,[x,y,w,kind]])=>{const e=M.ent.get(id);if(!e)return;
+    const ww=w||nodeW,band=kind==='band',hh=band?26:nodeH;
+    const g=document.createElementNS(NS,'g');g.setAttribute('class','snode'+(band?' sband':'')+(foc&&!nbr.has(id)?' faded':'')+(foc===id?' sel':''));g.dataset.id=id;
+    const rect=document.createElementNS(NS,'rect');rect.setAttribute('x',x);rect.setAttribute('y',band?y+8:y);rect.setAttribute('width',ww);rect.setAttribute('height',hh);rect.setAttribute('rx',band?6:9);
+    rect.setAttribute('fill',band?'var(--panel2)':'var('+ctxColorVar(id)+')');rect.setAttribute('stroke',band?'var(--line2)':'none');if(band)rect.setAttribute('stroke-dasharray','5 4');
+    if(S.focus===id){rect.setAttribute('stroke','var(--ink)');rect.setAttribute('stroke-width','2.5');rect.removeAttribute('stroke-dasharray');}g.appendChild(rect);
+    const t=document.createElementNS(NS,'text');t.setAttribute('class',band?'bandl':'l');t.setAttribute('x',x+ww/2);t.setAttribute('y',(band?y+8:y)+hh/2+4);t.setAttribute('text-anchor','middle');let lab=e.preferredLabel;if(!band&&lab.length>24)lab=lab.slice(0,22)+'…';t.textContent=band?lab.toUpperCase():lab;g.appendChild(t);
     g.addEventListener('click',ev=>{ev.stopPropagation();select(id);});svg.appendChild(g);
   });
   c.innerHTML='';const cap=document.createElement('div');cap.className='vcap';cap.innerHTML='<b>Knowledge Area — context diagram.</b> The concept-level template, data-driven: four phases (Planning·Development·Operations·Control), three scorecards (Quality·Value-KYV·Stakeholder), and every context role. Data Governance and 16 other KAs are instances of this shape.';
@@ -596,6 +626,63 @@ const FACET_HIER={
   'facet:knowledge-area':{parentType:'type:dmbok-level',upRel:'rel:grouped-by'},  // KA → DMBOK level
   'facet:thinking-style':{parentType:'type:team-role',upRel:'rel:plays'}          // style → team role
 };
+// Collapsible groupings for facets that are a flat set, not a parent→child hierarchy.
+// Returns ordered [{label, items:[entity]}] or null (fall back to hierarchy / default roots).
+const MASTERY_KIND=[['required','Required — the Role needs it'],['desired','Desired — target to reach'],['acquired','Acquired — held by the learner']];
+function facetGroups(fid,members){
+  const mk=(arr,fn)=>{const g=new Map();arr.forEach(e=>{const k=fn(e);if(k==null)return;if(!g.has(k))g.set(k,[]);g.get(k).push(e);});return g;};
+  if(fid==='facet:context'){
+    const g=mk(members,e=>(e.attributes&&e.attributes.ctxClass)||'other');
+    const order=[...CTXCLASS_ORDER,...[...g.keys()].filter(c=>!CTXCLASS_ORDER.includes(c))];
+    return order.filter(c=>g.has(c)).map(c=>({label:CTXCLASS_LABEL[c]||c,items:g.get(c)}));
+  }
+  if(fid==='facet:mastery'){
+    const g=mk(members,e=>(e.attributes&&e.attributes.kind)||'other');
+    const out=MASTERY_KIND.filter(([k])=>g.has(k)).map(([k,l])=>({label:l,items:g.get(k)}));
+    if(g.has('other'))out.push({label:'Other',items:g.get('other')});
+    return out;
+  }
+  if(fid==='facet:sfia'){
+    const cats=new Map(),levels=[],other=[];
+    members.forEach(e=>{
+      if(e.entityTypeId==='type:sfia-category')return; // becomes a header, not an item
+      if(e.entityTypeId==='type:sfia-level'){levels.push(e);return;}
+      if(e.entityTypeId==='type:sfia-skill'){const c=outTo(e.id,'rel:in-category')[0];const lbl=(c&&M.ent.get(c)&&M.ent.get(c).preferredLabel)||'Uncategorised';if(!cats.has(lbl))cats.set(lbl,[]);cats.get(lbl).push(e);return;}
+      other.push(e);
+    });
+    const out=[...cats.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([l,items])=>({label:l,items}));
+    if(levels.length)out.unshift({label:'Responsibility levels (SFIA 1–7)',items:levels});
+    if(other.length)out.push({label:'Other',items:other});
+    return out;
+  }
+  if(fid==='facet:capability-spine'){
+    // Group DCAM capabilities under their Component; concept/realization-chain nodes together.
+    const compLabel={}; members.forEach(e=>{if(e.entityTypeId==='type:capability-component')compLabel[(e.attributes||{}).dcamComponent]=e.preferredLabel;});
+    const comps=new Map(),chain=[];
+    members.forEach(e=>{
+      if(e.entityTypeId==='type:capability-component')return;
+      const dcamId=(e.attributes&&e.attributes.dcamId);
+      if(e.entityTypeId==='type:business-capability'&&dcamId){const c=String(dcamId).split('.')[0];const lbl=compLabel[c]||('Component '+c);if(!comps.has(lbl))comps.set(lbl,[]);comps.get(lbl).push(e);return;}
+      chain.push(e);
+    });
+    const out=[...comps.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([l,items])=>({label:l,items}));
+    if(chain.length)out.push({label:'Realization chain & concept',items:chain});
+    return out;
+  }
+  if(fid==='facet:evidence'){
+    const kaG=new Map(),score=[],concept=[];
+    members.forEach(e=>{
+      if(e.entityTypeId==='type:scorecard'){score.push(e);return;}
+      if(e.entityTypeId==='type:deliverable'){const abbr=(e.attributes&&e.attributes.ka)||'';const ke=abbr&&M.ent.get('e:ka:'+String(abbr).toLowerCase());const lbl=(ke&&ke.preferredLabel)||'Other deliverables';if(!kaG.has(lbl))kaG.set(lbl,[]);kaG.get(lbl).push(e);return;}
+      concept.push(e);
+    });
+    const out=[...kaG.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([l,items])=>({label:l+' — deliverables',items}));
+    if(score.length)out.unshift({label:'Scorecards (Quality · Value · Stakeholder)',items:score});
+    if(concept.length)out.push({label:'Evidence concept',items:concept});
+    return out;
+  }
+  return null;
+}
 function shortLabel(id){const e=M.ent.get(id);let l=(e&&e.preferredLabel)||id;return l.length>22?l.slice(0,20)+'…':l;}
 // relationship chips for a node — prioritise links that leave this facet (other areas of the spine)
 function relChips(id,seen){
@@ -686,27 +773,24 @@ function renderFacetView(){
 
   const hier=FACET_HIER[fid];
   if(tree){
-    // roots: hierarchy parents (navigate down to children → their links); else all members
     const tc=document.createElement('div');tc.className='otree';
-    let roots;
-    if(fid==='facet:context'){
-      // Grouped by context class (Goals / Actors / Inputs / Techniques / Tools / Metrics) rather than
-      // one flat list — each element expands to the KAs that use it.
-      const groups=new Map();
-      members.forEach(e=>{const cls=(e.attributes&&e.attributes.ctxClass)||'other';if(!groups.has(cls))groups.set(cls,[]);groups.get(cls).push(e);});
-      const order=[...CTXCLASS_ORDER,...[...groups.keys()].filter(c=>!CTXCLASS_ORDER.includes(c))];
-      order.filter(c=>groups.has(c)).forEach(cls=>{
-        const list=groups.get(cls);
-        const gh=document.createElement('div');gh.className='trelhdr';gh.style.paddingLeft='8px';
-        gh.innerHTML='<span class="trelname">'+(CTXCLASS_LABEL[cls]||cls)+'</span><span class="trelcount">'+list.length+'</span>';
-        tc.appendChild(gh);
-        list.sort((a,b)=>a.preferredLabel.localeCompare(b.preferredLabel)).forEach(e=>tc.appendChild(treeNode(e,null,new Set([e.id]),0)));
+    // Flat facets (context / mastery / sfia / evidence) render as COLLAPSIBLE groups.
+    const groups=facetGroups(fid,members);
+    if(groups){
+      groups.forEach(grp=>{
+        const gh=document.createElement('div');gh.className='fgrphdr';
+        gh.innerHTML='<span class="fgrpcar">▸</span><span class="trelname">'+grp.label+'</span><span class="trelcount">'+grp.items.length+'</span>';
+        const kids=document.createElement('div');kids.className='fgrpkids';kids.style.display='none';let built=false;
+        gh.addEventListener('click',()=>{const open=kids.style.display==='block';
+          if(!built){grp.items.slice().sort((a,b)=>a.preferredLabel.localeCompare(b.preferredLabel)).forEach(e=>kids.appendChild(treeNode(e,null,new Set([e.id]),0)));built=true;}
+          kids.style.display=open?'none':'block';gh.querySelector('.fgrpcar').textContent=open?'▸':'▾';});
+        tc.appendChild(gh);tc.appendChild(kids);
       });
       wrap.appendChild(tc); c.innerHTML=''; c.appendChild(wrap); return;
     }
+    let roots;
     if(hier){ roots=members.filter(e=>e.entityTypeId===hier.parentType); const have=new Set(roots.map(r=>r.id)); members.forEach(e=>{if(!have.has(e.id)&&!outTo(e.id,hier.upRel).some(t=>have.has(t)))roots.push(e);}); }
     else {
-      // roots = members not reachable as a drill-down child of another member, so the chain nests under its top
       const memberIds=new Set(members.map(e=>e.id)), childOfMember=new Set();
       members.forEach(e=>treeChildren(e.id,new Set([e.id])).forEach(k=>{if(memberIds.has(k.id))childOfMember.add(k.id);}));
       roots=members.filter(e=>!childOfMember.has(e.id));

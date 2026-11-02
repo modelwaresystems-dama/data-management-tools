@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.5.0">
+<meta name="version" content="1.6.0">
 <meta name="mw-asset" content="true">
 <title>Capability Spine Map</title>
 <style>
@@ -186,9 +186,10 @@
     {id:'evidence',t:'core',x:300,y:372,w:160,label:'Evidence (E2–E5)',def:'Whether the Learner can produce the Deliverable a best practice requires — at what quality (Quality Scorecard), value delivered (Value Scorecard) and stakeholder feedback. A Deliverable is itself the Evidence. See the context diagram below.'},
     {id:'dmboklvl',t:'scale',x:770,y:372,w:250,label:'DMBOK Level: Oversight…Overall',def:'Upper-ontology grouping over the 18 Knowledge Areas: Oversight · Outcome · Lifecycle · Foundation · Overall.'},
     // realization band
-    {id:'pir',t:'realize',x:24,y:486,w:160,label:'People in Roles',def:'Individuals performing roles — where mastery meets work.'},
-    {id:'caprealize',t:'realize',x:224,y:486,w:180,label:'Capability Realization',def:'People in roles, combined, realize the organisation’s Business Capabilities.'},
-    {id:'outcome',t:'realize',x:444,y:486,w:160,label:'Business Outcome',def:'The business result that a Business Capability enables.'}
+    {id:'pir',t:'realize',x:24,y:486,w:150,label:'People in Roles',def:'Individuals performing roles — where mastery meets work. A Learner fills a Role as a Person-in-Role; People in Roles compose Teams.'},
+    {id:'team',t:'realize',x:196,y:486,w:130,label:'Team',def:'A balanced configuration of People in Roles — composed across Thinking Styles and Strengths for complementary fit. Teams, combined, form the Capability Realization.'},
+    {id:'caprealize',t:'realize',x:348,y:486,w:170,label:'Capability Realization',def:'People in roles, organised into teams, realize the organisation’s Business Capabilities.'},
+    {id:'outcome',t:'realize',x:540,y:486,w:150,label:'Business Outcome',def:'The business result that a Business Capability enables.'}
   ];
   const E=[
     ['strat','bcap','needs'],
@@ -210,7 +211,12 @@
     ['persona','strengths','exhibits (fit)'],
     ['persona','sfia','banded on'],
     ['sfia','mastery','maps to expected'],
-    ['pir','caprealize','form'],
+    ['learner','pir','fills'],
+    ['pir','role','in role'],
+    ['pir','team','compose'],
+    ['team','caprealize','form'],
+    ['think','team','informs fit'],
+    ['strengths','team','informs fit'],
     ['caprealize','bcap','realizes'],
     ['bcap','outcome','enables']
   ];
@@ -295,8 +301,30 @@
   svg.addEventListener('click',reset);
 
   // toggle all labels
+  // De-overlap edge labels: in "show all" mode many midpoint labels collide. After layout,
+  // greedily nudge any overlapping label vertically so every relationship stays legible.
+  let deoverlapDone=false;
+  function deoverlapLabels(){
+    requestAnimationFrame(()=>{
+      const items=edgeObjs.map(o=>({o,bb:o.tx.getBBox()})).filter(x=>x.bb.width>0);
+      items.sort((a,b)=>a.bb.y-b.bb.y||a.bb.x-b.bb.x);
+      const placed=[];
+      items.forEach(it=>{
+        let bb=it.o.tx.getBBox(); let guard=0;
+        const hits=()=>placed.find(p=>!(bb.x>p.x+p.w||bb.x+bb.width<p.x||bb.y>p.y+p.h||bb.y+bb.height<p.y));
+        let h; while((h=hits())&&guard++<40){
+          const shift=(h.y+h.h)-bb.y+3;
+          it.o.tx.setAttribute('y',(parseFloat(it.o.tx.getAttribute('y'))+shift));
+          bb=it.o.tx.getBBox();
+        }
+        it.o.bg.setAttribute('x',bb.x-3);it.o.bg.setAttribute('y',bb.y-1);
+        it.o.bg.setAttribute('width',bb.width+6);it.o.bg.setAttribute('height',bb.height+2);it.o.bg.setAttribute('rx',3);
+        placed.push({x:bb.x,y:bb.y,w:bb.width,h:bb.height});
+      });
+    });
+  }
   const tbtn=document.getElementById('toggleLabels');
-  tbtn.addEventListener('click',(e)=>{e.stopPropagation();const on=svg.classList.toggle('showlabels');tbtn.classList.toggle('on',on);tbtn.textContent=on?'Hide relationship labels':'Show all relationship labels';});
+  tbtn.addEventListener('click',(e)=>{e.stopPropagation();const on=svg.classList.toggle('showlabels');tbtn.classList.toggle('on',on);tbtn.textContent=on?'Hide relationship labels':'Show all relationship labels';if(on&&!deoverlapDone){deoverlapDone=true;deoverlapLabels();}});
 
   // legend
   document.getElementById('legend').innerHTML=Object.values(TYPE).map(t=>`<span class="lg"><i style="background:var(${t.c})"></i>${t.label}</span>`).join('');

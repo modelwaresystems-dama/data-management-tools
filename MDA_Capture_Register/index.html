@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.1.0">
 <meta name="data-src" content="gh:modelwaresystems-dama/modelware_app_storage/5W1H_Metadata_Viewer/_global/catalog.json@main">
 <meta name="updated" content="2026-11-02 10:18 SAST">
 <title>MDA Readiness Capture Register</title>
@@ -96,7 +96,7 @@
 </div>
 <script>
 const DATA = /*__DATA__*/null;
-const DATA_SCHEMA = 2;
+const DATA_SCHEMA = 3;
 function __run__(DATA){
 (function(){try{
  var NEED=DATA_SCHEMA, mv=((document.querySelector('meta[name="version"]')||{}).content)||'';
@@ -134,6 +134,16 @@ var TEMPLATES={
  "DMO-11":{title:"Data Residency / Hosting Record",fields:["Asset","Hosting location (in-country Y/N)","Critical-information category","Legal basis","Date"]}
 };
 
+// ---- governance-chain artifacts to produce (the 4 the policy pack cannot evidence) ----
+// Fields are drawn from the operating model's own Minimum Data Contract spec and API Product pattern.
+var GOV_TPL={
+ "contract":{title:"Data Contract",fields:["Dataset","Contract ID / version / status","Effective → expiry","Producer / consumer / owner / steward","Authoritative source & SoR","Purpose & permitted uses","Quality rules & thresholds","Freshness / latency / support window","Security / classification / retention","Delivery modes","Lineage reference","Compatibility / change notice","SLA/SLO reference","Date"]},
+ "api":{title:"API / API Product",fields:["Dataset","Resolve endpoint (id → record)","Read / lookup","Search","Bulk / snapshot","Change notification","Metadata endpoint","Access / auth & rate limits","Version","Support contact","Date"]},
+ "sla":{title:"SLA / SLO & Quality Rules",fields:["Dataset / service","Availability target","Freshness target","Completeness","Validity","Reconciliation","Issue response / remedies","Date"]},
+ "lineage":{title:"Lineage / Provenance Record",fields:["Dataset","Creation authority","Source(s)","Transformations","Publication route","Source-to-consumer trace","Certification status","Date"]}
+};
+var GOV_NAME={"contract":"Data Contract","api":"API / API Product","sla":"SLA/SLO & quality rules","lineage":"Lineage / provenance"};
+
 // ---- derive gaps from the catalog ----
 var ITEMS=[];           // one per not-on-file requirement
 var ONFILE=0, DSWITH={}, ENTS={};
@@ -150,10 +160,19 @@ var ONFILE=0, DSWITH={}, ENTS={};
 var ENTLIST=Object.keys(ENTS).sort();
 var DMOSET={}; ITEMS.forEach(function(i){if(i.dmoId)DMOSET[i.dmoId]={id:i.dmoId,name:i.dmoName};});
 var DMOLIST=Object.keys(DMOSET).sort();
+// governance-chain artifacts to produce (status to-produce on each dataset)
+var GOVITEMS=[];
+(DATA.datasets||[]).forEach(function(d){
+  var g=((d.artifactProfile||{}).grounded)||[];
+  var ent=(d.policyCompliance&&(d.policyCompliance.datasetEntityName||d.policyCompliance.datasetEntity))||'?';
+  g.forEach(function(a){ if(a.status==='to-produce') GOVITEMS.push({entity:ent,dataset:(d.title||d.id),datasetId:d.id,artifactId:a.id,artifactName:a.name}); });
+});
+var GOVSET={}; GOVITEMS.forEach(function(i){GOVSET[i.artifactId]=1;});
+var GOVLIST=["contract","api","sla","lineage"].filter(function(k){return GOVSET[k];});
 
 // ---- tiles ----
 (function(){
-  var tdefs=[[ITEMS.length,"Capture items"],[ENTLIST.length,"Entities"],[Object.keys(DSWITH).length,"Datasets with gaps"],[DMOLIST.length,"Artifact types"],[ONFILE,"On file"]];
+  var tdefs=[[ITEMS.length,"Metadata gaps"],[GOVITEMS.length,"Artifacts to produce"],[ENTLIST.length,"Entities"],[DMOLIST.length+GOVLIST.length,"Template types"],[ONFILE,"On file"]];
   var tl=$('#tiles'); tdefs.forEach(function(t){tl.append(el('div',{class:'t'},'<div class="n">'+t[0]+'</div><div class="l">'+t[1]+'</div>'));});
 })();
 
@@ -245,6 +264,31 @@ addPanel("templates","Capture Templates",function(p){
     tb.append(body); card.append(el('div',{class:'scroll'},tb));
     p.append(card);
   });
+  // --- governance-chain artifacts to produce (Data Contract, API, SLA, Lineage) ---
+  if(GOVLIST.length){
+    p.append(el('h3',{style:'margin:24px 0 2px'},'Governance-chain artifacts to produce'));
+    p.append(el('p',{class:'small muted'},'These four are operational artifacts the policy documents cannot evidence — produce them from systems and registries using the fields below, drawn from the operating model’s Minimum Data Contract specification and API Product pattern.'));
+    GOVLIST.forEach(function(gk){
+      var tpl=GOV_TPL[gk];
+      var items=GOVITEMS.filter(function(i){return i.artifactId===gk;});
+      var need={}; items.forEach(function(i){need[i.datasetId]={ds:i.dataset,ent:i.entity};});
+      var needList=Object.keys(need).map(function(k){return need[k];});
+      var card=el('div',{class:'card'});
+      card.append(el('div',{style:'display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px'},
+        '<h3>'+esc(tpl.title)+' <span class="muted small">governance artifact</span></h3>'+
+        '<button class="btn noprint" onclick="window.print()">Print</button>'));
+      card.append(el('div',{class:'need'},'To produce for '+needList.length+' dataset'+(needList.length===1?'':'s')+' across '+Object.keys(needList.reduce(function(a,x){a[x.ent]=1;return a;},{})).length+' entit'+(Object.keys(needList.reduce(function(a,x){a[x.ent]=1;return a;},{})).length===1?'y':'ies')+'.'));
+      var tb=el('table',{class:'formtbl'});
+      tb.innerHTML='<thead><tr>'+tpl.fields.map(function(f){return '<th>'+esc(f)+'</th>';}).join('')+'</tr></thead>';
+      var body=el('tbody',{});
+      needList.forEach(function(n){
+        body.append(el('tr',{}, tpl.fields.map(function(f,ix){ return ix===0?('<td>'+esc(n.ds)+'<div class="small muted">'+esc(n.ent)+'</div></td>'):'<td></td>'; }).join('') ));
+      });
+      for(var k=0;k<2;k++){ body.append(el('tr',{}, tpl.fields.map(function(){return '<td></td>';}).join('')) ); }
+      tb.append(body); card.append(el('div',{class:'scroll'},tb));
+      p.append(card);
+    });
+  }
 });
 
 // ===== About =====

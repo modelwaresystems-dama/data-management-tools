@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.5.1">
+<meta name="version" content="1.6.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Ontology Explorer</title>
@@ -172,6 +172,10 @@
   .tvia{font:600 10.5px var(--mono);color:var(--accent-ink);background:var(--accent-bg);border-radius:999px;padding:1px 7px}
   .ttype2{font:600 11px var(--mono);color:var(--muted);margin-left:auto;white-space:nowrap}
   .tkids{margin-left:2px;border-left:1px solid var(--line2)}
+  .trelhdr{display:flex;align-items:center;gap:7px;padding:7px 6px 2px;font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.04em}
+  .trelname{color:var(--accent-ink)}
+  .trelcount{color:var(--muted);background:var(--panel2);border:1px solid var(--line2);border-radius:999px;padding:0 6px;font-size:9.5px}
+  .tchipsrow{display:flex;flex-wrap:wrap;gap:4px;padding:1px 6px 5px}
   /* detail panel */
   .dh{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:800}
   .dt{font-size:19px;font-weight:800;line-height:1.2;margin:4px 0 4px}
@@ -605,30 +609,66 @@ function relChips(id,seen){
   return items.slice(0,6);
 }
 function chipHtml(items){ return items.length?'<div class="rchips">'+items.map(c=>'<span class="rchip'+(c.go?' lnk':'')+'"'+(c.go?' data-go="'+c.go+'"':'')+'>'+c.label+'</span>').join('')+'</div>':''; }
-// a node's connected entities (out + in), deduped, cycle-guarded — the tree's children
+// DRILL-DOWN ONLY: the tree follows containment / taxonomy links downward, never the full graph.
+// Outgoing links that go "down" (parent → the things it owns/contains/realizes):
+const DRILL_OUT=new Set(['rel:needs','rel:drives','rel:maps-to','rel:met-by','rel:develops','rel:fits','rel:allocates','rel:realizes','rel:enables','rel:form','rel:contains','rel:produces','rel:draws-on','rel:has-definition','rel:guided-by','rel:decomposes-into','rel:holds-practice','rel:requires','rel:performed-by','rel:consumes-input','rel:supplied-by','rel:used-by','rel:scored-by','rel:forms-evidence','rel:evidences','rel:measured-by','rel:has-participant','rel:uses-tool','rel:uses-technique','rel:has-input','rel:has-supplier','rel:serves-consumer','rel:tracked-by']);
+// Incoming links whose INVERSE goes "down": concept→instances, domain→themes, role→styles, level→KAs, scale→levels, capability→(knowledge it needs).
+const DRILL_IN=new Set(['rel:conforms-to','rel:rolls-up-to','rel:plays','rel:grouped-by','rel:comprises','rel:knowledge-for']);
+const DRILL_ALL=new Set([...DRILL_OUT,...DRILL_IN]);
 function treeChildren(id,ancestors){
   const map=new Map();
-  (M.out.get(id)||[]).forEach(r=>{if(!ancestors.has(r.targetEntityId)&&!map.has(r.targetEntityId)&&M.ent.get(r.targetEntityId))map.set(r.targetEntityId,relLabel(r.relationshipTypeId)+' →');});
-  (M.inc.get(id)||[]).forEach(r=>{const t=M.rtype.get(r.relationshipTypeId);if(!ancestors.has(r.sourceEntityId)&&!map.has(r.sourceEntityId)&&M.ent.get(r.sourceEntityId))map.set(r.sourceEntityId,'← '+((t&&t.inverseLabel)||relLabel(r.relationshipTypeId)));});
-  // order: structural / cross-spine links first, "has instance" (conforming instances) grouped at the bottom — at every level
+  (M.out.get(id)||[]).forEach(r=>{
+    if(!DRILL_OUT.has(r.relationshipTypeId))return;
+    if(r.relationshipTypeId==='rel:contains'&&typeLabel(r.targetEntityId)==='Phase')return; // skip BP→Phase (that's upward)
+    if(ancestors.has(r.targetEntityId)||map.has(r.targetEntityId)||!M.ent.get(r.targetEntityId))return;
+    map.set(r.targetEntityId,relLabel(r.relationshipTypeId)+' →');
+  });
+  (M.inc.get(id)||[]).forEach(r=>{
+    if(!DRILL_IN.has(r.relationshipTypeId))return;
+    if(ancestors.has(r.sourceEntityId)||map.has(r.sourceEntityId)||!M.ent.get(r.sourceEntityId))return;
+    const t=M.rtype.get(r.relationshipTypeId);
+    map.set(r.sourceEntityId,'← '+((t&&t.inverseLabel)||relLabel(r.relationshipTypeId)));
+  });
   return [...map.entries()].map(([id,rel])=>({id,rel})).sort((a,b)=>{
     const ai=/has instance/i.test(a.rel)?1:0, bi=/has instance/i.test(b.rel)?1:0;
     if(ai!==bi) return ai-bi;
     return M.ent.get(a.id).preferredLabel.localeCompare(M.ent.get(b.id).preferredLabel);
   });
 }
+// the NON-drill links for a node — shown as clickable chips, never expanded (so they don't explode the tree)
+function treeChips(id,ancestors){
+  const items=[];const add=(tid,lbl)=>{if(ancestors.has(tid)||!M.ent.get(tid))return;items.push({label:lbl+' '+shortLabel(tid),go:tid});};
+  (M.out.get(id)||[]).forEach(r=>{if(!DRILL_ALL.has(r.relationshipTypeId))add(r.targetEntityId,relLabel(r.relationshipTypeId));});
+  (M.inc.get(id)||[]).forEach(r=>{if(!DRILL_ALL.has(r.relationshipTypeId)){const t=M.rtype.get(r.relationshipTypeId);add(r.sourceEntityId,'← '+((t&&t.inverseLabel)||relLabel(r.relationshipTypeId)));}});
+  const u=new Map();items.forEach(i=>{if(!u.has(i.go))u.set(i.go,i);});
+  return [...u.values()].slice(0,5);
+}
 function treeNode(e,viaRel,ancestors,depth){
   const d=document.createElement('div');d.className='tn';
   const kids=treeChildren(e.id,ancestors);const hasKids=kids.length>0;
   const row=document.createElement('div');row.className='trow2'+(S.focus===e.id?' sel':'');row.style.paddingLeft=(depth*20+4)+'px';
   row.innerHTML='<span class="ttog'+(hasKids?' has':'')+'">'+(hasKids?'▸':'·')+'</span><span class="tdot" style="background:'+colorOf(e.id)+'"></span><span class="tlbl" data-go="'+e.id+'">'+e.preferredLabel+'</span>'+(viaRel?'<span class="tvia">'+viaRel+'</span>':'')+'<span class="ttype2">'+typeLabel(e.id)+(hasKids?' · '+kids.length:'')+'</span>';
+  const chips=treeChips(e.id,ancestors);let chipEl=null;
+  if(chips.length){chipEl=document.createElement('div');chipEl.className='tchipsrow';chipEl.style.paddingLeft=(depth*20+30)+'px';chipEl.innerHTML=chips.map(c=>'<span class="rchip lnk" data-go="'+c.go+'">'+c.label+'</span>').join('');}
   const kidWrap=document.createElement('div');kidWrap.className='tkids';kidWrap.style.display='none';let built=false;
   if(hasKids){const tog=row.querySelector('.ttog');
     const toggle=()=>{const open=kidWrap.style.display==='block';
-      if(!built){kids.forEach(k=>{const ce=M.ent.get(k.id);if(ce)kidWrap.appendChild(treeNode(ce,k.rel,new Set([...ancestors,k.id]),depth+1));});built=true;}
+      if(!built){
+        // group children by relationship; "has instance" groups sort to the bottom
+        const groups=new Map();
+        kids.forEach(k=>{if(!groups.has(k.rel))groups.set(k.rel,[]);groups.get(k.rel).push(k);});
+        [...groups.entries()].sort((a,b)=>{const ai=/has instance/i.test(a[0])?1:0,bi=/has instance/i.test(b[0])?1:0;if(ai!==bi)return ai-bi;return a[0].localeCompare(b[0]);})
+          .forEach(([rel,list])=>{
+            const gh=document.createElement('div');gh.className='trelhdr';gh.style.paddingLeft=((depth+1)*20+8)+'px';
+            gh.innerHTML='<span class="trelname">'+rel+'</span><span class="trelcount">'+list.length+'</span>';
+            kidWrap.appendChild(gh);
+            list.forEach(k=>{const ce=M.ent.get(k.id);if(ce)kidWrap.appendChild(treeNode(ce,null,new Set([...ancestors,k.id]),depth+1));});
+          });
+        built=true;
+      }
       kidWrap.style.display=open?'none':'block';tog.textContent=open?'▸':'▾';};
     tog.addEventListener('click',ev=>{ev.stopPropagation();toggle();});}
-  d.appendChild(row);d.appendChild(kidWrap);return d;
+  d.appendChild(row);if(chipEl)d.appendChild(chipEl);d.appendChild(kidWrap);return d;
 }
 function renderFacetView(){
   const fid=S.facet; const facet=M.facet.get(fid); const c=document.getElementById('canvas');
@@ -637,7 +677,7 @@ function renderFacetView(){
   const seen=new Set(members.map(e=>e.id));
   const wrap=document.createElement('div'); wrap.className='katree';
   const tree=S.facetMode!=='cards';
-  wrap.innerHTML='<div class="facethead"><div><div class="kahdr">'+facet.label+'</div><div class="kasub">'+members.length+' entities'+(tree?' — expand any node (▸) to walk its links up and down the spine. Click a label to open its detail.':', in their taxonomy. Pale chips are links to other parts of the spine — click to follow.')+'</div></div>'+
+  wrap.innerHTML='<div class="facethead"><div><div class="kahdr">'+facet.label+'</div><div class="kasub">'+members.length+' entities'+(tree?' — expand (▸) to drill DOWN the hierarchy, grouped by relationship. The pale chips are cross-links to other parts of the spine; click any label or chip to follow it.':', in their taxonomy. Pale chips are links to other parts of the spine — click to follow.')+'</div></div>'+
     '<div class="fmode"><button class="fmbtn'+(tree?' on':'')+'" data-fmode="tree">Tree</button><button class="fmbtn'+(tree?'':' on')+'" data-fmode="cards">Cards</button></div></div>';
   if(!members.length){ wrap.innerHTML+='<div class="empty">No entities carry this facet yet.</div>'; c.innerHTML=''; c.appendChild(wrap); return; }
 
@@ -648,7 +688,13 @@ function renderFacetView(){
     let roots;
     if(fid==='facet:context'){ roots=members.slice(); }
     else if(hier){ roots=members.filter(e=>e.entityTypeId===hier.parentType); const have=new Set(roots.map(r=>r.id)); members.forEach(e=>{if(!have.has(e.id)&&!outTo(e.id,hier.upRel).some(t=>have.has(t)))roots.push(e);}); }
-    else { roots=members.slice(); }
+    else {
+      // roots = members not reachable as a drill-down child of another member, so the chain nests under its top
+      const memberIds=new Set(members.map(e=>e.id)), childOfMember=new Set();
+      members.forEach(e=>treeChildren(e.id,new Set([e.id])).forEach(k=>{if(memberIds.has(k.id))childOfMember.add(k.id);}));
+      roots=members.filter(e=>!childOfMember.has(e.id));
+      if(!roots.length)roots=members.slice();
+    }
     roots.sort((a,b)=>a.preferredLabel.localeCompare(b.preferredLabel)).forEach(e=>tc.appendChild(treeNode(e,null,new Set([e.id]),0)));
     wrap.appendChild(tc);
     c.innerHTML=''; c.appendChild(wrap); return;

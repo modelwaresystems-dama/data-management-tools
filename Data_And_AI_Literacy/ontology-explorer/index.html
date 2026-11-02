@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.6.0">
+<meta name="version" content="1.7.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Ontology Explorer</title>
@@ -15,7 +15,7 @@
     --shadow:0 1px 2px rgba(20,24,29,.06),0 2px 10px rgba(20,24,29,.05);--radius:12px;
     --warn:#b23b2e;--ok:#12946a;
     --concept:#2f5bd0;--actor:#7c3aed;--activity:#0f7b5a;--artifact:#1f6f8b;--capability:#b23b2e;
-    --classification:#5c6673;--scale:#8a5a1a;--evidence:#0f7b5a;--other:#5c6673;--class:#9a3fb0;
+    --classification:#5c6673;--scale:#8a5a1a;--evidence:#0f7b5a;--other:#5c6673;--class:#9a3fb0;--assessment:#b8742a;
   }
   @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
     --bg:#0f1216;--panel:#171b21;--panel2:#1b2027;--ink:#e9edf2;--muted:#9aa5b2;
@@ -23,14 +23,14 @@
     --chip:#232a33;--chip-ink:#c3ccd7;--shadow:0 1px 2px rgba(0,0,0,.4),0 2px 12px rgba(0,0,0,.35);
     --warn:#e0725f;--ok:#39c08c;
     --concept:#6f97ff;--actor:#b49bf0;--activity:#43c494;--artifact:#5aa0cf;--capability:#e0725f;
-    --classification:#9aa5b2;--scale:#d9a56a;--evidence:#43c494;--other:#9aa5b2;--class:#c479d6;
+    --classification:#9aa5b2;--scale:#d9a56a;--evidence:#43c494;--other:#9aa5b2;--class:#c479d6;--assessment:#d99a52;
   }}
   :root[data-theme="dark"]{
     --bg:#0f1216;--panel:#171b21;--panel2:#1b2027;--ink:#e9edf2;--muted:#9aa5b2;
     --line:#272d36;--line2:#20262e;--accent:#6f97ff;--accent-ink:#9db8ff;--accent-bg:#17223c;
     --chip:#232a33;--chip-ink:#c3ccd7;--warn:#e0725f;--ok:#39c08c;
     --concept:#6f97ff;--actor:#b49bf0;--activity:#43c494;--artifact:#5aa0cf;--capability:#e0725f;
-    --classification:#9aa5b2;--scale:#d9a56a;--evidence:#43c494;--other:#9aa5b2;--class:#c479d6;
+    --classification:#9aa5b2;--scale:#d9a56a;--evidence:#43c494;--other:#9aa5b2;--class:#c479d6;--assessment:#d99a52;
   }
   *{box-sizing:border-box}html,body{margin:0;height:100%}
   body{background:var(--bg);color:var(--ink);font:14.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;height:100vh;overflow:hidden}
@@ -256,7 +256,7 @@
 document.getElementById('ver').textContent='v'+document.querySelector('meta[name="version"]').content;
 const TOKEN_KEY=(new URLSearchParams(location.search).get('tokenKey'))||'mdaReadiness.ghpat';
 const SRC=(new URLSearchParams(location.search).get('data'))||((document.querySelector('meta[name="ontology-src"]')||{}).content||'');
-const TYPECOLORVARS={concept:'--concept',actor:'--actor',activity:'--activity',artifact:'--artifact',capability:'--capability',classification:'--classification',scale:'--scale',evidence:'--evidence',class:'--class',other:'--other'};
+const TYPECOLORVARS={concept:'--concept',actor:'--actor',activity:'--activity',artifact:'--artifact',capability:'--capability',classification:'--classification',scale:'--scale',evidence:'--evidence',class:'--class',assessment:'--assessment',other:'--other'};
 
 function getToken(){try{return localStorage.getItem(TOKEN_KEY)||'';}catch(e){return'';}}
 // Parse a gh: source into its parts (or mark it a plain base URL).
@@ -586,6 +586,9 @@ function renderAffinity(){
 
 // ---------- Facet view (taxonomy hierarchy + cross-spine links) ----------
 const CTXROLE_LABEL={participant:'Participants & Roles',tool:'Tools & Technology',technique:'Techniques & Methods',metric:'Metrics',input:'Inputs',supplier:'Suppliers',consumer:'Consumers','serves-consumer':'Consumers',goal:'Goals & Guiding Principles','guided-by':'Goals & Guiding Principles'};
+// Deduped context elements group by ctxClass (an actor plays supplier/participant/consumer via its KA edges).
+const CTXCLASS_LABEL={goal:'Goals & Guiding Principles',actor:'Actors (Suppliers · Participants · Consumers)',input:'Inputs',technique:'Techniques & Methods',tool:'Tools & Technology',metric:'Metrics'};
+const CTXCLASS_ORDER=['goal','actor','input','technique','tool','metric'];
 // per-facet taxonomy: children roll up to a parent entity type via a relationship
 const FACET_HIER={
   'facet:strength':{parentType:'type:strength-domain',upRel:'rel:rolls-up-to'},   // theme → domain
@@ -686,8 +689,22 @@ function renderFacetView(){
     // roots: hierarchy parents (navigate down to children → their links); else all members
     const tc=document.createElement('div');tc.className='otree';
     let roots;
-    if(fid==='facet:context'){ roots=members.slice(); }
-    else if(hier){ roots=members.filter(e=>e.entityTypeId===hier.parentType); const have=new Set(roots.map(r=>r.id)); members.forEach(e=>{if(!have.has(e.id)&&!outTo(e.id,hier.upRel).some(t=>have.has(t)))roots.push(e);}); }
+    if(fid==='facet:context'){
+      // Grouped by context class (Goals / Actors / Inputs / Techniques / Tools / Metrics) rather than
+      // one flat list — each element expands to the KAs that use it.
+      const groups=new Map();
+      members.forEach(e=>{const cls=(e.attributes&&e.attributes.ctxClass)||'other';if(!groups.has(cls))groups.set(cls,[]);groups.get(cls).push(e);});
+      const order=[...CTXCLASS_ORDER,...[...groups.keys()].filter(c=>!CTXCLASS_ORDER.includes(c))];
+      order.filter(c=>groups.has(c)).forEach(cls=>{
+        const list=groups.get(cls);
+        const gh=document.createElement('div');gh.className='trelhdr';gh.style.paddingLeft='8px';
+        gh.innerHTML='<span class="trelname">'+(CTXCLASS_LABEL[cls]||cls)+'</span><span class="trelcount">'+list.length+'</span>';
+        tc.appendChild(gh);
+        list.sort((a,b)=>a.preferredLabel.localeCompare(b.preferredLabel)).forEach(e=>tc.appendChild(treeNode(e,null,new Set([e.id]),0)));
+      });
+      wrap.appendChild(tc); c.innerHTML=''; c.appendChild(wrap); return;
+    }
+    if(hier){ roots=members.filter(e=>e.entityTypeId===hier.parentType); const have=new Set(roots.map(r=>r.id)); members.forEach(e=>{if(!have.has(e.id)&&!outTo(e.id,hier.upRel).some(t=>have.has(t)))roots.push(e);}); }
     else {
       // roots = members not reachable as a drill-down child of another member, so the chain nests under its top
       const memberIds=new Set(members.map(e=>e.id)), childOfMember=new Set();
@@ -707,8 +724,9 @@ function renderFacetView(){
   const gridOf=(list,indent)=>{const g=document.createElement('div');g.className='fgrid'+(indent?' indent':'');list.sort((a,b)=>a.preferredLabel.localeCompare(b.preferredLabel)).forEach(e=>g.appendChild(node(e)));return g;};
   if(fid==='facet:context'){
     const groups=new Map();
-    members.forEach(e=>{const key=CTXROLE_LABEL[(e.attributes&&e.attributes.ctxRole)||'']||'Other context';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);});
-    [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0])).forEach(([g,l])=>{wrap.appendChild(groupHdr(g,l.length));wrap.appendChild(gridOf(l));});
+    members.forEach(e=>{const cls=(e.attributes&&e.attributes.ctxClass)||'other';const key=CTXCLASS_LABEL[cls]||'Other context';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);});
+    const classKeys=CTXCLASS_ORDER.map(c=>CTXCLASS_LABEL[c]);
+    [...groups.entries()].sort((a,b)=>{const ai=classKeys.indexOf(a[0]),bi=classKeys.indexOf(b[0]);return (ai<0?99:ai)-(bi<0?99:bi)||a[0].localeCompare(b[0]);}).forEach(([g,l])=>{wrap.appendChild(groupHdr(g,l.length));wrap.appendChild(gridOf(l));});
   } else if(hier){
     const parents=members.filter(e=>e.entityTypeId===hier.parentType);
     const pset=new Set(parents.map(p=>p.id));

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.1.0">
+<meta name="version" content="1.2.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Talent Strategy Pipeline</title>
@@ -103,6 +103,14 @@
   .rec .ra .kv{font-size:11.5px;color:var(--muted)}
   .rec .ra .kv b{color:var(--ink);font-weight:700}
   .empty{color:var(--muted);font-size:13px;padding:20px 4px}
+  .rgrp{margin-bottom:8px}
+  .rgrphdr{display:flex;align-items:center;gap:9px;padding:9px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;cursor:pointer;user-select:none}
+  .rgrphdr:hover{border-color:var(--accent)}
+  .rgrphdr.open{border-bottom-left-radius:0;border-bottom-right-radius:0}
+  .rgrphdr .cv{font-size:11px;color:var(--muted);width:11px}
+  .rgrphdr .gl{font-weight:800;font-size:13px;flex:1}
+  .rgrphdr .gc{font:800 12px var(--mono);color:var(--muted);background:var(--chip);border-radius:999px;padding:1px 9px}
+  .rgrpbody{border:1px solid var(--line);border-top:none;border-radius:0 0 9px 9px;padding:9px 9px 3px}
   /* detail */
   .dhd{font-size:16px;font-weight:800;letter-spacing:-.01em;margin:4px 0 2px}
   .dmeta{font-size:12px;color:var(--muted);margin-bottom:10px}
@@ -273,7 +281,7 @@ const wfOf=e=>{const w=(e.attributes||{}).workforce;if(w==='Human')return'human'
   const t=e.entityTypeId;if(t==='type:agent-role'||t==='type:autonomy-level')return'agent';return null;};
 
 // ---------- state ----------
-const S={stage:'1',rec:null,thread:null,layer:'template'};
+const S={stage:'1',rec:null,thread:null,layer:'template',openGroups:new Set()};
 const layerOf=e=>(e.attributes||{}).layer;
 
 // ---------- render: loop ----------
@@ -341,6 +349,20 @@ function recCard(e,sel){
     '<span class="tag">'+typeLabel(e.entityTypeId)+'</span></div>'+
     '<div class="ra">'+attrLine(e)+'</div></div>';
 }
+// collapsible grouping of the record column. Example layer → group by type; template → flat (matches the image).
+function renderRecList(recs, sel, ctx){
+  if(!recs.length) return '<div class="empty">No records here.</div>';
+  if(S.layer!=='example'){ return recs.map(e=>recCard(e,e.id===sel)).join(''); }
+  const m=new Map(); recs.forEach(e=>{const k=typeLabel(e.entityTypeId); if(!m.has(k))m.set(k,[]); m.get(k).push(e);});
+  const groups=[...m.entries()];
+  if(groups.length<=1){ return recs.map(e=>recCard(e,e.id===sel)).join(''); }
+  return groups.map(([label,items])=>{
+    const key=ctx+'|'+label;
+    const open=S.openGroups.has(key)||items.some(e=>e.id===sel);
+    return '<div class="rgrp"><div class="rgrphdr'+(open?' open':'')+'" data-grp="'+esc(key)+'"><span class="cv">'+(open?'▾':'▸')+'</span><span class="gl">'+esc(label)+'</span><span class="gc">'+items.length+'</span></div>'+
+      '<div class="rgrpbody"'+(open?'':' style="display:none"')+'>'+items.map(e=>recCard(e,e.id===sel)).join('')+'</div></div>';
+  }).join('');
+}
 function renderApp(){
   const app=document.getElementById('app');
   if(S.thread){ renderThread(); return; }
@@ -367,7 +389,7 @@ function renderApp(){
       '<div class="col recs">'+
         '<div class="colhd"><span class="sc" style="background:var('+scvar+')"></span><h2>'+esc(title)+'</h2><span class="ct">'+ct+' record'+(ct===1?'':'s')+'</span></div>'+
         '<div class="stagedesc">'+desc+'</div>'+
-        (recs.length?recs.map(e=>recCard(e,e.id===sel)).join(''):'<div class="empty">No records in this stage.</div>')+
+        renderRecList(recs, sel, (S.gov===true?'gov':'s'+S.stage))+
       '</div>'+
       '<div class="col det">'+renderDetail(sel)+'</div>'+
     '</div>';
@@ -468,12 +490,13 @@ function selectRec(id){ const stg=stageOfId(id); const e=M.ent.get(id);
   const el=document.querySelector('.rec[data-rec="'+CSS.escape(id)+'"]'); if(el)el.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 document.getElementById('layertog').addEventListener('click',ev=>{const b=ev.target.closest('button[data-layer]');if(!b)return;
-  if(S.layer===b.dataset.layer)return; S.layer=b.dataset.layer; S.rec=null; S.thread=null;
+  if(S.layer===b.dataset.layer)return; S.layer=b.dataset.layer; S.rec=null; S.thread=null; S.openGroups.clear();
   [...document.querySelectorAll('#layertog button')].forEach(x=>x.classList.toggle('on',x.dataset.layer===S.layer));
   renderAll();});
-document.getElementById('loop').addEventListener('click',ev=>{const c=ev.target.closest('.stagecard');if(c){S.gov=false;S.thread=null;S.stage=c.dataset.stage;S.rec=null;renderLoop();renderApp();}});
+document.getElementById('loop').addEventListener('click',ev=>{const c=ev.target.closest('.stagecard');if(c){S.gov=false;S.thread=null;S.stage=c.dataset.stage;S.rec=null;S.openGroups.clear();renderLoop();renderApp();}});
 document.getElementById('govbar').addEventListener('click',()=>{S.gov=true;S.thread=null;S.rec=null;renderLoop();renderApp();});
 document.getElementById('app').addEventListener('click',ev=>{
+  const gh=ev.target.closest('[data-grp]'); if(gh){ const k=gh.dataset.grp; if(S.openGroups.has(k))S.openGroups.delete(k); else S.openGroups.add(k); renderApp(); return; }
   const tr=ev.target.closest('[data-trace]'); if(tr){S.thread=tr.dataset.trace;renderLoop();renderThread();return;}
   const rc=ev.target.closest('[data-rec]'); if(rc){selectRec(rc.dataset.rec);}
 });

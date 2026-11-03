@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.5.0">
+<meta name="version" content="1.5.1">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Talent Strategy Pipeline</title>
@@ -114,6 +114,10 @@
   .rec.step{position:relative}
   .rec.step:not(:last-child)::after{content:"";position:absolute;left:23px;bottom:-9px;height:9px;width:2px;background:var(--line)}
   .stepno{flex:0 0 22px;width:22px;height:22px;border-radius:999px;background:var(--accent);color:#fff;font:800 11px var(--mono);display:flex;align-items:center;justify-content:center;margin-top:-1px}
+  .tag.toggle{cursor:pointer;background:var(--accent-bg);color:var(--accent-ink);border:1px solid var(--line)}
+  .tag.toggle:hover{border-color:var(--accent)}
+  .tkids{margin:-4px 0 9px 24px;border-left:2px solid var(--line);padding-left:11px}
+  .tkids .rec{margin-bottom:6px}
   .rec .rl{font-weight:700;font-size:13.5px;flex:1;letter-spacing:-.01em}
   .rec .tag{font:600 10px var(--mono);border-radius:5px;padding:1px 6px;white-space:nowrap;background:var(--chip);color:var(--chip-ink)}
   .wf{font:700 10px var(--mono);border-radius:5px;padding:1px 6px;white-space:nowrap}
@@ -303,7 +307,7 @@ const wfOf=e=>{const w=(e.attributes||{}).workforce;if(w==='Human')return'human'
   const t=e.entityTypeId;if(t==='type:agent-role'||t==='type:autonomy-level')return'agent';return null;};
 
 // ---------- state ----------
-const S={stage:'1',rec:null,thread:null,layer:'template',openGroups:new Set()};
+const S={stage:'1',rec:null,thread:null,layer:'template',openGroups:new Set(),openSteps:new Set()};
 const layerOf=e=>(e.attributes||{}).layer;
 
 // ---------- render: loop ----------
@@ -376,9 +380,24 @@ function recCard(e,sel){
     '<div class="ra">'+attrLine(e)+'</div></div>';
 }
 // collapsible grouping of the record column. Example layer → group by type; template → flat (matches the image).
+// a template step that has has-step children (e.g. the Prioritised Gap Register → 7 factors) renders expandable, children nested.
+function renderTemplateStep(e,sel){
+  const a=e.attributes||{};
+  const kids=(M.out.get(e.id)||[]).filter(r=>r.relationshipTypeId==='rel:has-step').map(r=>M.ent.get(r.targetEntityId)).filter(Boolean)
+    .sort((x,y)=>((x.attributes||{}).ord||0)-((y.attributes||{}).ord||0));
+  if(!kids.length) return recCard(e,e.id===sel);
+  const open=S.openSteps.has(e.id)||kids.some(k=>k.id===sel);
+  const ext=a.termSource==='external'; const note=(e.definition||'').replace(/^— /,''); const ord=a.ord?('<span class="stepno">'+a.ord+'</span>'):'';
+  return '<div class="rec step'+(e.id===sel?' sel':'')+'" data-rec="'+e.id+'">'+
+      '<div class="rh">'+ord+'<span class="rl">'+esc(e.preferredLabel)+hlp({elId:e.id,label:e.preferredLabel})+'</span>'+
+      (ext?'<span class="src ext">external</span>':'<span class="src loc">local</span>')+
+      '<span class="tag toggle" data-step="'+e.id+'">'+(open?'▾':'▸')+' '+kids.length+' factors</span></div>'+
+      (note?'<div class="ra"><span class="kv">'+esc(note)+'</span></div>':'')+'</div>'+
+    '<div class="tkids"'+(open?'':' style="display:none"')+'>'+kids.map(k=>recCard(k,k.id===sel)).join('')+'</div>';
+}
 function renderRecList(recs, sel, ctx){
   if(!recs.length) return '<div class="empty">No records here.</div>';
-  if(S.layer!=='example'){ return recs.map(e=>recCard(e,e.id===sel)).join(''); }
+  if(S.layer!=='example'){ return recs.map(e=>renderTemplateStep(e,sel)).join(''); }
   const m=new Map(); recs.forEach(e=>{const k=typeLabel(e.entityTypeId); if(!m.has(k))m.set(k,[]); m.get(k).push(e);});
   const groups=[...m.entries()];
   if(groups.length<=1){ return recs.map(e=>recCard(e,e.id===sel)).join(''); }
@@ -517,13 +536,14 @@ function selectRec(id){ const stg=stageOfId(id); const e=M.ent.get(id);
   const el=document.querySelector('.rec[data-rec="'+CSS.escape(id)+'"]'); if(el)el.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 document.getElementById('layertog').addEventListener('click',ev=>{const b=ev.target.closest('button[data-layer]');if(!b)return;
-  if(S.layer===b.dataset.layer)return; S.layer=b.dataset.layer; S.rec=null; S.thread=null; S.openGroups.clear();
+  if(S.layer===b.dataset.layer)return; S.layer=b.dataset.layer; S.rec=null; S.thread=null; S.openGroups.clear(); S.openSteps.clear();
   [...document.querySelectorAll('#layertog button')].forEach(x=>x.classList.toggle('on',x.dataset.layer===S.layer));
   renderAll();});
-document.getElementById('loop').addEventListener('click',ev=>{const c=ev.target.closest('.stagecard');if(c){S.gov=false;S.thread=null;S.stage=c.dataset.stage;S.rec=null;S.openGroups.clear();renderLoop();renderApp();}});
+document.getElementById('loop').addEventListener('click',ev=>{const c=ev.target.closest('.stagecard');if(c){S.gov=false;S.thread=null;S.stage=c.dataset.stage;S.rec=null;S.openGroups.clear();S.openSteps.clear();renderLoop();renderApp();}});
 document.getElementById('govbar').addEventListener('click',()=>{S.gov=true;S.thread=null;S.rec=null;renderLoop();renderApp();});
 document.getElementById('app').addEventListener('click',ev=>{
   const hp=ev.target.closest('.hlp'); if(hp){ ev.stopPropagation(); showDef(hp.dataset.def,hp); return; }
+  const st=ev.target.closest('[data-step]'); if(st){ ev.stopPropagation(); const k=st.dataset.step; if(S.openSteps.has(k))S.openSteps.delete(k); else S.openSteps.add(k); renderApp(); return; }
   const gh=ev.target.closest('[data-grp]'); if(gh){ const k=gh.dataset.grp; if(S.openGroups.has(k))S.openGroups.delete(k); else S.openGroups.add(k); renderApp(); return; }
   const tr=ev.target.closest('[data-trace]'); if(tr){S.thread=tr.dataset.trace;renderLoop();renderThread();return;}
   const rc=ev.target.closest('[data-rec]'); if(rc){selectRec(rc.dataset.rec);}

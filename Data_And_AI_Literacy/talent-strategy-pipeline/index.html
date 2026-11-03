@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.6.1">
+<meta name="version" content="1.6.2">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Talent Strategy Pipeline</title>
@@ -288,7 +288,7 @@ const M={ent:new Map(),type:new Map(),rtype:new Map(),facet:new Map(),out:new Ma
 function buildModel(ds){
   (ds.entityTypes.items).forEach(t=>M.type.set(t.id,t));
   (ds.relationshipTypes.items).forEach(t=>M.rtype.set(t.id,t));
-  (ds.facets.items).forEach(f=>M.facet.set(f.id,f));
+  ((ds.facets&&ds.facets.items)||[]).forEach(f=>M.facet.set(f.id,f));
   (ds.entities.items).forEach(e=>{M.ent.set(e.id,e);M.out.set(e.id,[]);M.inc.set(e.id,[]);});
   (ds.relationships.items).forEach(r=>{ if(M.out.has(r.sourceEntityId))M.out.get(r.sourceEntityId).push(r); if(M.inc.has(r.targetEntityId))M.inc.get(r.targetEntityId).push(r); });
 }
@@ -713,24 +713,37 @@ function renderAll(){
       else { line('   ✗ HTTP '+folder.status,'bad'); setVerdict('Could not list the ontology folder: HTTP '+folder.status+'.','bad'); return finish(false); }
     }
     log(''); line((SRCINFO.gh?'④':'①')+' Fetch datasets …','dim');
-    const data={}; let failed=null;
+    // facets (classification tags) and index (version metadata) are NON-critical — the pipeline renders without them.
+    const CRITICAL={'entity-types.json':1,'relationship-types.json':1,'entities.json':1,'relationships.json':1};
+    const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+    // GitHub's Contents API 500/502/503s transiently on a single blob — retry a couple of times before giving up.
+    async function fetchData(f){ let p; for(let a=0;a<3;a++){
+        p=await probe(fileUrl(f),{headers:SRCINFO.gh?ghHeaders(true):undefined,cache:'no-store'});
+        if(!p.threw&&p.ok&&p.json!=null) return p;
+        if(p.threw||p.status>=500||p.status===0){ if(a<2){ line('   … '+f+' — '+(p.threw?('network: '+p.error):('HTTP '+p.status))+', retrying ('+(a+1)+'/2)','warn'); await sleep(500*(a+1)); continue; } }
+        break; } return p; }
+    const data={}; let failed=null, degraded=[];
     for(const f of DATASETS){
-      const p=await probe(fileUrl(f),{headers:SRCINFO.gh?ghHeaders(true):undefined,cache:'no-store'});
-      if(p.threw){ line('   ✗ '+f+' — network error: '+p.error,'bad'); failed=failed||(f+': '+p.error); continue; }
-      if(!p.ok){ line('   ✗ '+f+' — HTTP '+p.status,'bad'); failed=failed||(f+': HTTP '+p.status); continue; }
-      if(p.json==null){ line('   ✗ '+f+' — not valid JSON','bad'); failed=failed||(f+': bad JSON'); continue; }
+      const p=await fetchData(f);
+      const why=p.threw?('network error: '+p.error):(!p.ok?('HTTP '+p.status):(p.json==null?'not valid JSON':null));
+      if(why){
+        if(CRITICAL[f]){ line('   ✗ '+f+' — '+why,'bad'); failed=failed||(f+': '+why); }
+        else { line('   ⚠ '+f+' — '+why+' · skipped (non-critical)','warn'); degraded.push(f); }
+        continue;
+      }
       const n=(p.json.count!=null?p.json.count:(Array.isArray(p.json.items)?p.json.items.length:'?'));
       line('   ✓ '+f+' — HTTP '+p.status+'  ('+n+' items)','ok'); data[f]=p.json;
     }
-    if(failed){ setVerdict('A dataset failed to load — '+failed+'.','bad'); return finish(false); }
+    if(failed){ setVerdict('A core dataset failed to load — '+failed+'. (Non-core files can be skipped, but this one is required.)','bad'); return finish(false); }
     try{
       buildModel({ entityTypes:data['entity-types.json'], relationshipTypes:data['relationship-types.json'], facets:data['facets.json'], entities:data['entities.json'], relationships:data['relationships.json']});
       const idx=data['index.json']||{};
       const mem=MEMBER().length;
       line('','dim'); line('✓ Loaded ontology v'+(idx.version||'?')+'  —  '+mem+' talent-strategy records','ok');
       if(!mem){ setVerdict('Ontology loaded, but it has no talent-strategy records yet (facet:talent-strategy is empty). Deploy ontology v0.9.0 or later.','bad'); return finish(false); }
-      setVerdict('Connected. Rendering…','ok');
-      setTimeout(()=>{ st.style.display='none'; renderAll(); },200);
+      if(degraded.length) line('   ⚠ loaded without: '+degraded.join(', ')+' — rendering anyway','warn');
+      setVerdict(degraded.length?('Connected (skipped '+degraded.join(', ')+'). Rendering…'):'Connected. Rendering…','ok');
+      setTimeout(()=>{ st.style.display='none'; renderAll(); },degraded.length?700:200);
     }catch(e){ line('   ✗ build error: '+((e&&e.message)||e),'bad'); setVerdict('Data loaded but failed to build the model: '+((e&&e.message)||e),'bad'); return finish(false); }
   }
   function finish(okFlag,showToken){ title.textContent=okFlag?'Connected':'Not connected'; msg.innerHTML=okFlag?'':'The pipeline could not load. The trace above shows exactly where it stopped.'; diagBtns.style.display='flex'; if(showToken) tokenBox.style.display='block'; }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.1.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Talent Strategy Pipeline</title>
@@ -43,6 +43,13 @@
   .legend{display:flex;gap:12px;margin-left:auto;flex-wrap:wrap;font-size:12px;color:var(--muted)}
   .legend span{display:inline-flex;align-items:center;gap:5px}
   .legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+  .layertog{display:inline-flex;border:1.5px solid var(--line);border-radius:9px;overflow:hidden}
+  .layertog button{border:none;background:var(--panel2);color:var(--muted);font:700 12px -apple-system,system-ui,sans-serif;padding:7px 13px;cursor:pointer}
+  .layertog button.on{background:var(--accent);color:#fff}
+  .layertog button:not(.on):hover{color:var(--ink)}
+  .src{font:700 9.5px var(--mono);border-radius:5px;padding:1px 6px;white-space:nowrap}
+  .src.ext{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted);border:1px solid var(--line)}
+  .src.loc{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
   .search{position:relative}
   .search input{width:220px;max-width:50vw;border:1.5px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:9px;padding:7px 11px;font:inherit;font-size:13px}
   .search input:focus{outline:none;border-color:var(--accent)}
@@ -154,17 +161,17 @@
   <div class="top">
     <div>
       <div class="ttl">Data &amp; AI Talent Strategy <span class="badge" id="ver">v1.0.0</span></div>
-      <div class="sub">8-stage closed-loop pipeline · Human + Agent workforce · live from the CA&amp;I ontology</div>
+      <div class="sub">Reusable 8-stage framework · closed loop · live from the CA&amp;I ontology</div>
+    </div>
+    <div class="layertog" id="layertog">
+      <button data-layer="template" class="on">Framework template</button>
+      <button data-layer="example">Worked example</button>
     </div>
     <div class="search">
-      <input id="q" type="text" placeholder="Search records…" autocomplete="off">
+      <input id="q" type="text" placeholder="Search…" autocomplete="off">
       <div class="results" id="results"></div>
     </div>
-    <div class="legend">
-      <span><i style="background:var(--human)"></i>Human</span>
-      <span><i style="background:var(--agent)"></i>Agent</span>
-      <span><i style="background:var(--gate)"></i>Governance gate</span>
-    </div>
+    <div class="legend" id="legend"></div>
   </div>
 
   <div class="loopwrap"><div class="loop" id="loop"></div></div>
@@ -242,14 +249,14 @@ const FACET='facet:talent-strategy';
 const hasFacet=(e,f)=>Array.isArray(e.facetIds)&&e.facetIds.indexOf(f)>=0;
 const MEMBER=()=>[...M.ent.values()].filter(e=>hasFacet(e,FACET));
 const STAGE_META={
-  '1':{nm:'Strategy Intake',sc:'--s1',desc:'Business strategy objectives enter the loop. Outcome accountability stays human; each objective carries a target, horizon and criticality.'},
-  '2':{nm:'Work Decomposition',sc:'--s2',desc:'Objectives become initiatives, then tasks. Each task declares its work type, allocation mode (Human-Led → Agent-Led) and volume.'},
-  '3':{nm:'Talent & Agent Demand',sc:'--s3',desc:'Tasks generate requirements: the human roles, competencies and proficiency levels needed, and the agent roles with their autonomy ceilings and oversight.'},
-  '4':{nm:'Current Baseline',sc:'--s4',desc:'Funded / filled / qualified capacity today, for the human workforce and the agent fleet side by side.'},
-  '5':{nm:'Gap & Risk',sc:'--s5',desc:'Required minus current — capacity gaps, capability gaps and control gaps (including greenfield, where neither capacity nor capability exists yet).'},
-  '6':{nm:'Development Plans',sc:'--s6',desc:'Directed development plans that move a role from its current level toward required and desired proficiency.'},
-  '7':{nm:'Intervention Portfolio',sc:'--s7',desc:'The decided portfolio of interventions — build, hire, configure, acquire — each one closing a specific gap and part of the CA&I roadmap.'},
-  '8':{nm:'Outcomes & Refresh',sc:'--s8',desc:'KPIs split into Business Strategy Outcomes and Learning & Development Outcomes; results feed the next refresh of the loop.'}
+  '1':{nm:'Data & AI Strategy Inputs',sc:'--s1',desc:'Strategic objectives, target outcomes and the operating-model, risk and technology context that drive the talent plan.'},
+  '2':{nm:'Work Decomposition',sc:'--s2',desc:'Objectives become outcomes, value streams, portfolio initiatives, deliverables and tasks/activities.'},
+  '3':{nm:'Talent Requirements',sc:'--s3',desc:'Tasks generate the role families, skills/behaviours, SFIA proficiency, experience, FTE capacity and sourcing constraints needed.'},
+  '4':{nm:'Current Talent Baseline',sc:'--s4',desc:'Today’s role coverage, skill distribution, validated evidence, availability, career level and attrition/retention risk.'},
+  '5':{nm:'Gap Engine',sc:'--s5',desc:'Required minus current — the Capacity Gap, the Capability Gap, and the Prioritised Gap Register that ranks them.'},
+  '6':{nm:'Desired Development Plan',sc:'--s6',desc:'Target role profile, goals, learning pathway, stretch work, rotations, mentoring, certification, evidence and review gates.'},
+  '7':{nm:'Intervention Portfolio',sc:'--s7',desc:'Build, hire, contract, redeploy, retain, redesign or automate/augment — each closing a prioritised gap.'},
+  '8':{nm:'Outcome & Refresh',sc:'--s8',desc:'Capability and critical-role coverage, time-to-capability, progression, mobility, retention, intervention effectiveness and business contribution — feeding the loop back.'}
 };
 // relationship types that are genuine traceability edges (exclude stage membership)
 const TRACE_SKIP={'rel:contains':1};
@@ -266,13 +273,19 @@ const wfOf=e=>{const w=(e.attributes||{}).workforce;if(w==='Human')return'human'
   const t=e.entityTypeId;if(t==='type:agent-role'||t==='type:autonomy-level')return'agent';return null;};
 
 // ---------- state ----------
-const S={stage:'1',rec:null,thread:null};
+const S={stage:'1',rec:null,thread:null,layer:'template'};
+const layerOf=e=>(e.attributes||{}).layer;
 
 // ---------- render: loop ----------
+// Template layer = the reusable framework (stage --has-step--> element). Example layer = the FNOL worked example (stage --contains--> instance).
 function stageRecords(n){
   const st=M.ent.get('e:ts:stage:'+n); if(!st)return [];
-  return (M.out.get(st.id)||[]).filter(r=>r.relationshipTypeId==='rel:contains').map(r=>M.ent.get(r.targetEntityId)).filter(Boolean);
+  const relId = S.layer==='template' ? 'rel:has-step' : 'rel:contains';
+  return (M.out.get(st.id)||[]).filter(r=>r.relationshipTypeId===relId).map(r=>M.ent.get(r.targetEntityId)).filter(Boolean)
+    .filter(e=>S.layer==='template' ? layerOf(e)==='template' : layerOf(e)==='example');
 }
+function councils(){return MEMBER().filter(e=>e.entityTypeId==='type:ts-council');}
+function exampleGates(){return MEMBER().filter(e=>e.entityTypeId==='type:governance-gate');}
 function renderLoop(){
   const loop=document.getElementById('loop'); loop.innerHTML='';
   for(let i=1;i<=8;i++){
@@ -280,20 +293,26 @@ function renderLoop(){
     const types={}; recs.forEach(e=>{const tl=typeLabel(e.entityTypeId);types[tl]=(types[tl]||0)+1;});
     const c=document.createElement('div'); c.className='stagecard'+(S.stage===String(i)&&!S.thread&&S.gov!==true?' on':''); c.style.setProperty('--sc','var('+meta.sc+')');
     c.dataset.stage=i;
+    const unit=S.layer==='template'?'step':'record';
     c.innerHTML='<div class="no">'+i+'</div>'+(i<8?'<div class="arrow"></div>':'')+
       '<div class="snm">'+meta.nm+'</div>'+
-      '<div class="scount">'+recs.length+' <small>record'+(recs.length===1?'':'s')+'</small></div>'+
-      '<div class="stypes">'+Object.entries(types).map(([k,v])=>'<span class="tt">'+k+' '+v+'</span>').join('')+'</div>';
+      '<div class="scount">'+recs.length+' <small>'+unit+(recs.length===1?'':'s')+'</small></div>'+
+      (S.layer==='template'
+        ? '<div class="stypes">'+recs.map(e=>'<span class="tt">'+esc(e.preferredLabel)+'</span>').join('')+'</div>'
+        : '<div class="stypes">'+Object.entries(types).map(([k,v])=>'<span class="tt">'+k+' '+v+'</span>').join('')+'</div>');
     loop.appendChild(c);
   }
-  // refresh band
+  // refresh / feedback band
   const ref=document.getElementById('refresh');
-  ref.innerHTML='↻ &nbsp;<b>Refresh</b>&nbsp; — Stage 8 outcomes feed the next cycle of Stage 1 (objective horizons re-set, gaps re-measured)';
-  // governance
-  const gates=MEMBER().filter(e=>e.entityTypeId==='type:governance-gate');
+  ref.innerHTML='↻ &nbsp;<b>Feedback loop</b>&nbsp; — Stage 8 outcomes feed back to <b>Stage 1</b> (update strategy inputs) and <b>Stage 3</b> (refine talent requirements)';
+  // governance band — councils (template) or worked-example gates (example)
   const gb=document.getElementById('govbar');
   gb.className='govbar'+(S.gov===true?' on':'');
-  gb.innerHTML='<span class="glbl">⚖ Governance gates</span><span class="gnote">cross-cutting · applied to agent roles across Stages 3–8 (design, deployment, autonomy escalation, periodic re-gate)</span><span class="gcount">'+gates.length+'</span>';
+  if(S.layer==='template'){
+    gb.innerHTML='<span class="glbl">⚖ Governance gates</span><span class="gnote">four approval councils — Strategy &amp; Portfolio (G1) · Data &amp; AI Capability (G2) · Workforce / Talent (G3) · Risk / Finance (G4)</span><span class="gcount">'+councils().length+'</span>';
+  }else{
+    gb.innerHTML='<span class="glbl">⚖ Agent governance gates</span><span class="gnote">worked example · cross-cutting approval gates on agent roles (design, deployment, autonomy escalation, re-gate)</span><span class="gcount">'+exampleGates().length+'</span>';
+  }
 }
 
 // ---------- render: records column ----------
@@ -305,7 +324,17 @@ function attrLine(e){
 function humanKey(k){return k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()).replace(/Fte/,'FTE').replace(/Kpi/,'KPI');}
 function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 function recCard(e,sel){
-  const wf=wfOf(e);
+  const wf=wfOf(e); const a=e.attributes||{};
+  if(e.entityTypeId==='type:ts-element'){
+    const ext=a.termSource==='external';
+    const kids=(M.out.get(e.id)||[]).filter(r=>r.relationshipTypeId==='rel:has-step').length;
+    const note=(e.definition||'').replace(/^— /,'');
+    return '<div class="rec'+(sel?' sel':'')+'" data-rec="'+e.id+'">'+
+      '<div class="rh"><span class="rl">'+esc(e.preferredLabel)+'</span>'+
+      (ext?'<span class="src ext">external</span>':'<span class="src loc">local</span>')+
+      (kids?'<span class="tag">'+kids+' factors</span>':'')+'</div>'+
+      (note?'<div class="ra"><span class="kv">'+esc(note)+'</span></div>':'')+'</div>';
+  }
   return '<div class="rec'+(sel?' sel':'')+'" data-rec="'+e.id+'">'+
     '<div class="rh"><span class="rl">'+esc(e.preferredLabel)+'</span>'+
     (wf?'<span class="wf '+wf+'">'+(wf==='human'?'Human':'Agent')+'</span>':'')+
@@ -317,9 +346,15 @@ function renderApp(){
   if(S.thread){ renderThread(); return; }
   let recs, title, ct, scvar, desc;
   if(S.gov===true){
-    recs=MEMBER().filter(e=>e.entityTypeId==='type:governance-gate');
-    title='Governance gates'; scvar='--gate';
-    desc='Agent work passes approval gates before and during deployment. Each gate names the agent, its autonomy ceiling, the approver, the decision and whether periodic re-gating applies.';
+    if(S.layer==='template'){
+      recs=councils().sort((a,b)=>((a.attributes||{}).gate||'').localeCompare((b.attributes||{}).gate||''));
+      title='Governance councils'; scvar='--gate';
+      desc='Four stage-approval councils gate the loop: Strategy & Portfolio (approve direction and scope), Data & AI Capability (approve capability plan), Workforce / Talent (approve talent strategy and investments), and Risk / Finance (approve execution and monitor benefits).';
+    }else{
+      recs=exampleGates().sort((a,b)=>a.id.localeCompare(b.id));
+      title='Agent governance gates (worked example)'; scvar='--gate';
+      desc='In the FNOL worked example, agent work passes approval gates before and during deployment. Each names the agent, its autonomy ceiling, the approver, the decision and whether periodic re-gating applies.';
+    }
   }else{
     const meta=STAGE_META[S.stage];
     recs=stageRecords(S.stage).sort((a,b)=>a.id.localeCompare(b.id));
@@ -355,8 +390,9 @@ function renderDetail(id){
   let h='<div class="dhd">'+esc(e.preferredLabel)+'</div>';
   h+='<div class="dmeta">'+typeLabel(e.entityTypeId)+(stg?' · Stage '+stg+' · '+STAGE_META[stg].nm:(isGate(id)?' · Governance (cross-cutting)':''))+(wf?' · '+(wf==='human'?'Human workforce':'Agent workforce'):'')+'</div>';
   if(e.definition) h+='<div class="ddef">'+esc(e.definition)+'</div>';
-  // attributes
-  const a=e.attributes||{}; const keys=Object.keys(a).filter(k=>k!=='stage');
+  // attributes (hide internal layer bookkeeping)
+  const a=e.attributes||{}; const HIDE={stage:1,layer:1,ord:1};
+  const keys=Object.keys(a).filter(k=>!HIDE[k]);
   if(keys.length){
     h+='<div class="sec">Attributes</div><table class="attr">'+keys.map(k=>'<tr><td class="k">'+humanKey(k)+'</td><td class="v">'+esc(String(a[k]))+'</td></tr>').join('')+'</table>';
   }
@@ -382,7 +418,10 @@ function renderDetail(id){
       return '<div class="lnk" data-rec="'+l.to+'"><span class="verb'+(l.dir==='in'?' in':'')+'">'+(l.dir==='in'?'← ':'→ ')+esc(l.verb)+'</span><span class="lt">'+esc(te.preferredLabel)+'</span><span class="ls">'+typeLabel(te.entityTypeId)+'</span></div>';
     }).join('');
   }
-  h+='<div style="margin-top:16px"><button class="tracebtn" data-trace="'+id+'">⛓ Trace the full thread</button></div>';
+  // "Trace the full thread" only makes sense on the worked-example instances (they carry the cross-stage chain)
+  if(layerOf(e)==='example'){
+    h+='<div style="margin-top:16px"><button class="tracebtn" data-trace="'+id+'">⛓ Trace the full thread</button></div>';
+  }
   return h;
 }
 
@@ -421,13 +460,17 @@ function renderThread(){
 }
 
 // ---------- interaction ----------
-function selectRec(id){ const stg=stageOfId(id);
+function selectRec(id){ const stg=stageOfId(id); const e=M.ent.get(id);
   if(S.thread){ S.thread=id; renderThread(); return; }
-  if(isGate(id)){ S.gov=true; }
+  if(isGate(id)||(e&&e.entityTypeId==='type:ts-council')){ S.gov=true; }
   else if(stg){ S.gov=false; S.stage=stg; }
   S.rec=id; renderLoop(); renderApp();
   const el=document.querySelector('.rec[data-rec="'+CSS.escape(id)+'"]'); if(el)el.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
+document.getElementById('layertog').addEventListener('click',ev=>{const b=ev.target.closest('button[data-layer]');if(!b)return;
+  if(S.layer===b.dataset.layer)return; S.layer=b.dataset.layer; S.rec=null; S.thread=null;
+  [...document.querySelectorAll('#layertog button')].forEach(x=>x.classList.toggle('on',x.dataset.layer===S.layer));
+  renderAll();});
 document.getElementById('loop').addEventListener('click',ev=>{const c=ev.target.closest('.stagecard');if(c){S.gov=false;S.thread=null;S.stage=c.dataset.stage;S.rec=null;renderLoop();renderApp();}});
 document.getElementById('govbar').addEventListener('click',()=>{S.gov=true;S.thread=null;S.rec=null;renderLoop();renderApp();});
 document.getElementById('app').addEventListener('click',ev=>{
@@ -445,7 +488,13 @@ q.addEventListener('input',()=>{ const v=q.value.trim().toLowerCase(); if(!v){re
 results.addEventListener('click',ev=>{const r=ev.target.closest('[data-rec]');if(r){S.thread=null;selectRec(r.dataset.rec);results.classList.remove('show');q.value='';}});
 document.addEventListener('click',ev=>{if(!ev.target.closest('.search'))results.classList.remove('show');});
 
-function renderAll(){ renderLoop(); renderApp(); }
+function renderLegend(){
+  const el=document.getElementById('legend'); if(!el)return;
+  el.innerHTML = S.layer==='template'
+    ? '<span><i class="src loc" style="width:auto;height:auto;padding:1px 5px;border-radius:5px">local</i>Enterprise-local</span><span><i class="src ext" style="width:auto;height:auto;padding:1px 5px;border-radius:5px">ext</i>External (SFIA/standard)</span><span><i style="background:var(--gate)"></i>Council gate</span>'
+    : '<span><i style="background:var(--human)"></i>Human</span><span><i style="background:var(--agent)"></i>Agent</span><span><i style="background:var(--gate)"></i>Governance gate</span>';
+}
+function renderAll(){ renderLegend(); renderLoop(); renderApp(); }
 
 // ---------- boot / connection diagnostics (shared with explorer) ----------
 (function(){

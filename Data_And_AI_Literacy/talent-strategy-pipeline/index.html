@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.4.0">
+<meta name="version" content="1.5.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Talent Strategy Pipeline</title>
@@ -62,6 +62,11 @@
   .glns.ext{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted);border:1px solid var(--line)}
   .glns.loc{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
   .gldef{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.5}
+  .hlp{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:999px;border:1.3px solid var(--muted);color:var(--muted);font:700 10px var(--mono);cursor:help;margin-left:5px;vertical-align:middle;flex:0 0 auto}
+  .hlp:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+  #defpop{display:none;position:absolute;z-index:60;background:var(--panel);border:1.5px solid var(--accent);border-radius:11px;box-shadow:var(--shadow);padding:12px 14px}
+  #defpop .dpt{font-weight:800;font-size:13.5px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;letter-spacing:-.01em}
+  #defpop .dpd{font-size:12.5px;color:var(--muted);line-height:1.55}
   .search{position:relative}
   .search input{width:220px;max-width:50vw;border:1.5px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:9px;padding:7px 11px;font:inherit;font-size:13px}
   .search input:focus{outline:none;border-color:var(--accent)}
@@ -203,6 +208,7 @@
   <div class="govbar" id="govbar"></div>
 
   <div id="app"></div>
+  <div id="defpop"></div>
 
   <div class="status" id="status"><div class="box">
     <h3 id="statusTitle">Loading pipeline…</h3>
@@ -275,7 +281,7 @@ const MEMBER=()=>[...M.ent.values()].filter(e=>hasFacet(e,FACET));
 const STAGE_META={
   '1':{nm:'Data & AI Strategy Inputs',sc:'--s1',desc:'Strategic objectives, target outcomes and the operating-model, risk and technology context that drive the talent plan.'},
   '2':{nm:'Work Decomposition',sc:'--s2',desc:'Objectives become outcomes, value streams, portfolio initiatives, deliverables and tasks/activities.'},
-  '3':{nm:'Talent Requirements',sc:'--s3',desc:'Tasks generate the role families, skills/behaviours, SFIA proficiency, experience, FTE capacity and sourcing constraints needed.'},
+  '3':{nm:'Talent Requirements',sc:'--s3',desc:'Tasks generate the role families, skills/behaviours, SFIA proficiency, experience, required capacity (effort-hours at SFIA level) and sourcing constraints needed.'},
   '4':{nm:'Current Talent Baseline',sc:'--s4',desc:'Today’s role coverage, skill distribution, validated evidence, availability, career level and attrition/retention risk.'},
   '5':{nm:'Gap Engine',sc:'--s5',desc:'Required minus current — the Capacity Gap, the Capability Gap, and the Prioritised Gap Register that ranks them.'},
   '6':{nm:'Desired Development Plan',sc:'--s6',desc:'Target role profile, goals, learning pathway, stretch work, rotations, mentoring, certification, evidence and review gates.'},
@@ -358,7 +364,7 @@ function recCard(e,sel){
     const note=(e.definition||'').replace(/^— /,'');
     const ord=a.ord?('<span class="stepno">'+a.ord+'</span>'):'';
     return '<div class="rec step'+(sel?' sel':'')+'" data-rec="'+e.id+'">'+
-      '<div class="rh">'+ord+'<span class="rl">'+esc(e.preferredLabel)+'</span>'+
+      '<div class="rh">'+ord+'<span class="rl">'+esc(e.preferredLabel)+hlp({elId:e.id,label:e.preferredLabel})+'</span>'+
       (ext?'<span class="src ext">external</span>':'<span class="src loc">local</span>')+
       (kids?'<span class="tag">'+kids+' factors</span>':'')+'</div>'+
       (note?'<div class="ra"><span class="kv">'+esc(note)+'</span></div>':'')+'</div>';
@@ -366,7 +372,7 @@ function recCard(e,sel){
   return '<div class="rec'+(sel?' sel':'')+'" data-rec="'+e.id+'">'+
     '<div class="rh"><span class="rl">'+esc(e.preferredLabel)+'</span>'+
     (wf?'<span class="wf '+wf+'">'+(wf==='human'?'Human':'Agent')+'</span>':'')+
-    '<span class="tag">'+typeLabel(e.entityTypeId)+'</span></div>'+
+    '<span class="tag">'+typeLabel(e.entityTypeId)+hlp({typeId:e.entityTypeId})+'</span></div>'+
     '<div class="ra">'+attrLine(e)+'</div></div>';
 }
 // collapsible grouping of the record column. Example layer → group by type; template → flat (matches the image).
@@ -431,13 +437,13 @@ function renderDetail(id){
   const e=M.ent.get(id); if(!e) return '<div class="empty">Not found.</div>';
   const wf=wfOf(e); const stg=stageOfId(id);
   let h='<div class="dhd">'+esc(e.preferredLabel)+'</div>';
-  h+='<div class="dmeta">'+typeLabel(e.entityTypeId)+(stg?' · Stage '+stg+' · '+STAGE_META[stg].nm:(isGate(id)?' · Governance (cross-cutting)':''))+(wf?' · '+(wf==='human'?'Human workforce':'Agent workforce'):'')+'</div>';
+  h+='<div class="dmeta">'+typeLabel(e.entityTypeId)+hlp({typeId:e.entityTypeId,elId:e.id})+(stg?' · Stage '+stg+' · '+STAGE_META[stg].nm:(isGate(id)?' · Governance (cross-cutting)':''))+(wf?' · '+(wf==='human'?'Human workforce':'Agent workforce'):'')+'</div>';
   if(e.definition) h+='<div class="ddef">'+esc(e.definition)+'</div>';
   // attributes (hide internal layer bookkeeping)
   const a=e.attributes||{}; const HIDE={stage:1,layer:1,ord:1};
   const keys=Object.keys(a).filter(k=>!HIDE[k]);
   if(keys.length){
-    h+='<div class="sec">Attributes</div><table class="attr">'+keys.map(k=>'<tr><td class="k">'+humanKey(k)+'</td><td class="v">'+esc(String(a[k]))+'</td></tr>').join('')+'</table>';
+    h+='<div class="sec">Attributes</div><table class="attr">'+keys.map(k=>'<tr><td class="k">'+humanKey(k)+hlp({label:humanKey(k)})+'</td><td class="v">'+esc(String(a[k]))+'</td></tr>').join('')+'</table>';
   }
   // links
   const out=traceOut(id), inc=traceIn(id);
@@ -517,10 +523,13 @@ document.getElementById('layertog').addEventListener('click',ev=>{const b=ev.tar
 document.getElementById('loop').addEventListener('click',ev=>{const c=ev.target.closest('.stagecard');if(c){S.gov=false;S.thread=null;S.stage=c.dataset.stage;S.rec=null;S.openGroups.clear();renderLoop();renderApp();}});
 document.getElementById('govbar').addEventListener('click',()=>{S.gov=true;S.thread=null;S.rec=null;renderLoop();renderApp();});
 document.getElementById('app').addEventListener('click',ev=>{
+  const hp=ev.target.closest('.hlp'); if(hp){ ev.stopPropagation(); showDef(hp.dataset.def,hp); return; }
   const gh=ev.target.closest('[data-grp]'); if(gh){ const k=gh.dataset.grp; if(S.openGroups.has(k))S.openGroups.delete(k); else S.openGroups.add(k); renderApp(); return; }
   const tr=ev.target.closest('[data-trace]'); if(tr){S.thread=tr.dataset.trace;renderLoop();renderThread();return;}
   const rc=ev.target.closest('[data-rec]'); if(rc){selectRec(rc.dataset.rec);}
 });
+// dismiss the definition popover on any outside click
+document.addEventListener('click',ev=>{ if(!ev.target.closest('.hlp')&&!ev.target.closest('#defpop')){ const p=document.getElementById('defpop'); if(p)p.style.display='none'; } });
 
 // ---------- search ----------
 const q=document.getElementById('q'), results=document.getElementById('results');
@@ -540,6 +549,35 @@ function renderLegend(){
     : '<span><i style="background:var(--human)"></i>Human</span><span><i style="background:var(--agent)"></i>Agent</span><span><i style="background:var(--gate)"></i>Governance gate</span>';
 }
 function glossaryTerms(){return [...M.ent.values()].filter(e=>e.entityTypeId==='type:glossary-term');}
+// ---------- glossary help lookup (?) ----------
+const GLOSS={byType:new Map(),byEl:new Map(),byLabel:new Map(),built:false};
+const normDef=s=>String(s).toLowerCase().replace(/\([^)]*\)/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+function buildGloss(){ if(GLOSS.built)return; GLOSS.built=true;
+  glossaryTerms().forEach(t=>{ const a=t.attributes||{};
+    if(a.definesType) GLOSS.byType.set(a.definesType,t);
+    const base=t.preferredLabel.split(/[—–\-]\s*[A-Z]{2,6}$/)[0].trim();
+    const k=normDef(base); if(k&&!GLOSS.byLabel.has(k))GLOSS.byLabel.set(k,t);
+    if(a.abbr){const ak=String(a.abbr).toLowerCase(); if(!GLOSS.byLabel.has(ak))GLOSS.byLabel.set(ak,t);}
+  });
+  [...M.ent.values()].forEach(e=>{const gid=(e.attributes||{}).glossaryTerm; if(gid&&M.ent.get(gid))GLOSS.byEl.set(e.id,M.ent.get(gid));});
+}
+function defFor(o){ buildGloss();
+  if(o.elId&&GLOSS.byEl.has(o.elId))return GLOSS.byEl.get(o.elId);
+  if(o.typeId&&GLOSS.byType.has(o.typeId))return GLOSS.byType.get(o.typeId);
+  if(o.label){ let k=normDef(o.label); if(GLOSS.byLabel.has(k))return GLOSS.byLabel.get(k);
+    k=k.replace(/s$/,''); if(GLOSS.byLabel.has(k))return GLOSS.byLabel.get(k); }
+  return null;
+}
+function hlp(o){ const t=defFor(o); return t?'<span class="hlp" data-def="'+t.id+'" title="What is this?">?</span>':''; }
+function showDef(termId,anchor){ const t=M.ent.get(termId); if(!t)return; const pop=document.getElementById('defpop');
+  const a=t.attributes||{}; const ns=a.namespace;
+  pop.innerHTML='<div class="dpt">'+esc(t.preferredLabel)+(ns?'<span class="glns '+(ns==='SFIA'?'ext':'loc')+'">'+esc(ns)+'</span>':'')+'</div><div class="dpd">'+esc(t.definition||'')+'</div>';
+  pop.style.display='block';
+  const r=anchor.getBoundingClientRect(); const pw=Math.min(320,window.innerWidth-24);
+  pop.style.width=pw+'px';
+  let left=r.left; if(left+pw>window.innerWidth-12)left=window.innerWidth-12-pw;
+  pop.style.left=Math.max(12,left)+'px'; pop.style.top=(r.bottom+6+window.scrollY)+'px';
+}
 function renderGlossary(){
   const app=document.getElementById('app');
   const q=(S.glq||'').toLowerCase();

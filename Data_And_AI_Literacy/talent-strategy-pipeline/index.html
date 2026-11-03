@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.3.0">
+<meta name="version" content="1.4.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Talent Strategy Pipeline</title>
@@ -50,6 +50,18 @@
   .src{font:700 9.5px var(--mono);border-radius:5px;padding:1px 6px;white-space:nowrap}
   .src.ext{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted);border:1px solid var(--line)}
   .src.loc{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+  .glosswrap{padding:14px 16px 50px;max-width:900px}
+  .glsearch{width:100%;max-width:420px;border:1.5px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:9px;padding:9px 12px;font:inherit;font-size:14px;margin:4px 0 16px}
+  .glsearch:focus{outline:none;border-color:var(--accent)}
+  .glcat{font:800 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);margin:20px 0 8px;display:flex;align-items:center;gap:8px}
+  .glcount{font:700 11px var(--mono);color:var(--muted);background:var(--chip);border-radius:999px;padding:1px 8px}
+  .glterm{border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:8px;background:var(--panel)}
+  .gltl{font-weight:800;font-size:14px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .glabbr{font:700 10px var(--mono);background:var(--accent-bg);color:var(--accent-ink);border-radius:5px;padding:1px 6px}
+  .glns{font:700 9.5px var(--mono);border-radius:5px;padding:1px 6px}
+  .glns.ext{background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--muted);border:1px solid var(--line)}
+  .glns.loc{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+  .gldef{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.5}
   .search{position:relative}
   .search input{width:220px;max-width:50vw;border:1.5px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:9px;padding:7px 11px;font:inherit;font-size:13px}
   .search input:focus{outline:none;border-color:var(--accent)}
@@ -177,6 +189,7 @@
     <div class="layertog" id="layertog">
       <button data-layer="template" class="on">Framework template</button>
       <button data-layer="example">Worked example</button>
+      <button data-layer="glossary">Glossary</button>
     </div>
     <div class="search">
       <input id="q" type="text" placeholder="Search…" autocomplete="off">
@@ -521,11 +534,46 @@ document.addEventListener('click',ev=>{if(!ev.target.closest('.search'))results.
 
 function renderLegend(){
   const el=document.getElementById('legend'); if(!el)return;
+  if(S.layer==='glossary'){ el.innerHTML=''; return; }
   el.innerHTML = S.layer==='template'
     ? '<span><i class="src loc" style="width:auto;height:auto;padding:1px 5px;border-radius:5px">local</i>Enterprise-local</span><span><i class="src ext" style="width:auto;height:auto;padding:1px 5px;border-radius:5px">ext</i>External (SFIA/standard)</span><span><i style="background:var(--gate)"></i>Council gate</span>'
     : '<span><i style="background:var(--human)"></i>Human</span><span><i style="background:var(--agent)"></i>Agent</span><span><i style="background:var(--gate)"></i>Governance gate</span>';
 }
-function renderAll(){ renderLegend(); renderLoop(); renderApp(); }
+function glossaryTerms(){return [...M.ent.values()].filter(e=>e.entityTypeId==='type:glossary-term');}
+function renderGlossary(){
+  const app=document.getElementById('app');
+  const q=(S.glq||'').toLowerCase();
+  let terms=glossaryTerms();
+  if(q) terms=terms.filter(e=>e.preferredLabel.toLowerCase().includes(q)||(e.definition||'').toLowerCase().includes(q));
+  // group by category (attributes.catOrd / category)
+  const groups=new Map();
+  terms.sort((a,b)=>((a.attributes||{}).catOrd||9)-((b.attributes||{}).catOrd||9)||a.preferredLabel.localeCompare(b.preferredLabel));
+  terms.forEach(e=>{const c=(e.attributes||{}).category||'Other'; if(!groups.has(c))groups.set(c,[]); groups.get(c).push(e);});
+  let h='<div class="glosswrap"><div class="colhd"><span class="sc" style="background:var(--s3)"></span><h2>Pipeline glossary</h2><span class="ct">'+glossaryTerms().length+' governed terms</span></div>'+
+    '<div class="stagedesc">Definitions for every term in the Human + Agent workforce pipeline, with their namespace (Enterprise-local, SFIA, NICE). Search filters term and definition.</div>'+
+    '<input id="glq" class="glsearch" placeholder="Filter terms…" value="'+esc(S.glq||'')+'">';
+  [...groups.entries()].forEach(([cat,items])=>{
+    h+='<div class="glcat">'+esc(cat)+' <span class="glcount">'+items.length+'</span></div>';
+    items.forEach(e=>{const ns=(e.attributes||{}).namespace; const ab=(e.attributes||{}).abbr;
+      h+='<div class="glterm"><div class="gltl">'+esc(e.preferredLabel)+(ab?' <span class="glabbr">'+esc(ab)+'</span>':'')+(ns?'<span class="glns '+(ns==='SFIA'?'ext':'loc')+'">'+esc(ns)+'</span>':'')+'</div><div class="gldef">'+esc(e.definition||'')+'</div></div>';
+    });
+  });
+  if(!terms.length) h+='<div class="empty">No terms match.</div>';
+  h+='</div>';
+  app.innerHTML=h;
+  const gi=document.getElementById('glq');
+  if(gi){ gi.addEventListener('input',()=>{S.glq=gi.value;const pos=gi.selectionStart;renderGlossary();const n=document.getElementById('glq');if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}}); }
+}
+function renderAll(){
+  const gl=S.layer==='glossary';
+  ['loopwrap','refresh','govbar'].forEach(id=>{const el=document.querySelector('.'+id)||document.getElementById(id);});
+  document.querySelector('.loopwrap').style.display=gl?'none':'';
+  document.getElementById('refresh').style.display=gl?'none':'';
+  document.getElementById('govbar').style.display=gl?'none':'';
+  document.querySelector('.search').style.display=gl?'none':'';
+  if(gl){ renderLegend(); renderGlossary(); return; }
+  renderLegend(); renderLoop(); renderApp();
+}
 
 // ---------- boot / connection diagnostics (shared with explorer) ----------
 (function(){

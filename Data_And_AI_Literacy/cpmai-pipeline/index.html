@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.1.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>CPMAI Delivery Pipeline</title>
@@ -15,7 +15,7 @@
     --shadow:0 1px 2px rgba(20,24,29,.06),0 2px 10px rgba(20,24,29,.05);--radius:12px;
     --warn:#b23b2e;--ok:#12946a;--gate:#b23b2e;
     --s1:#2f5bd0;--s2:#1f6f8b;--s3:#7c3aed;--s4:#0f7b5a;--s5:#b8742a;--s6:#12946a;
-    --deliv:#2f5bd0;--ctrl:#7c3aed;
+    --deliv:#2f5bd0;--ctrl:#7c3aed;--guard:#b23b2e;--plat:#1f6f8b;
   }
   @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
     --bg:#0f1216;--panel:#171b21;--panel2:#1b2027;--ink:#e9edf2;--muted:#9aa5b2;
@@ -23,13 +23,13 @@
     --chip:#232a33;--chip-ink:#c3ccd7;--shadow:0 1px 2px rgba(0,0,0,.4),0 2px 12px rgba(0,0,0,.35);
     --warn:#e0725f;--ok:#39c08c;--gate:#e0725f;
     --s1:#6f97ff;--s2:#5aa0cf;--s3:#b49bf0;--s4:#43c494;--s5:#d9a56a;--s6:#39c08c;
-    --deliv:#6f97ff;--ctrl:#b49bf0;
+    --deliv:#6f97ff;--ctrl:#b49bf0;--guard:#e0725f;--plat:#5aa0cf;
   }}
   :root[data-theme="dark"]{
     --bg:#0f1216;--panel:#171b21;--panel2:#1b2027;--ink:#e9edf2;--muted:#9aa5b2;
     --line:#272d36;--line2:#20262e;--accent:#6f97ff;--accent-ink:#9db8ff;--accent-bg:#17223c;
     --chip:#232a33;--chip-ink:#c3ccd7;--warn:#e0725f;--ok:#39c08c;--gate:#e0725f;
-    --s1:#6f97ff;--s2:#5aa0cf;--s3:#b49bf0;--s4:#43c494;--s5:#d9a56a;--s6:#39c08c;--deliv:#6f97ff;--ctrl:#b49bf0;
+    --s1:#6f97ff;--s2:#5aa0cf;--s3:#b49bf0;--s4:#43c494;--s5:#d9a56a;--s6:#39c08c;--deliv:#6f97ff;--ctrl:#b49bf0;--guard:#e0725f;--plat:#5aa0cf;
   }
   *{box-sizing:border-box}html,body{margin:0;min-height:100%}
   body{background:var(--bg);color:var(--ink);font:14.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
@@ -79,6 +79,8 @@
   .tag{font:600 10px var(--mono);border-radius:5px;padding:1px 6px;white-space:nowrap;background:var(--chip);color:var(--chip-ink)}
   .tag.deliv{background:rgba(47,91,208,.12);color:var(--deliv)}
   .tag.ctrl{background:rgba(124,58,237,.12);color:var(--ctrl)}
+  .tag.guard{background:rgba(178,59,46,.12);color:var(--guard)}
+  .tag.plat{background:rgba(31,111,139,.12);color:var(--plat)}
   .tag.ka{background:var(--accent-bg);color:var(--accent-ink)}
   .tag.own{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
   .ra{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.45}
@@ -192,20 +194,39 @@ const kaFor=id=>outOf(id,'rel:maps-to-ka').map(r=>M.ent.get(r.targetEntityId)).f
 const ownerFor=id=>{const r=outOf(id,'rel:owned-by').map(r=>M.ent.get(r.targetEntityId)).filter(Boolean);return r[0]||null;};
 const isCtrl=e=>e.entityTypeId==='type:dmbok-control';
 const isDeliv=e=>e.entityTypeId==='type:cpmai-deliverable';
-const phaseOfItem=id=>{const r=incOf(id,'rel:contains').map(r=>M.ent.get(r.sourceEntityId)).filter(e=>e&&e.entityTypeId==='type:cpmai-phase');return r[0]||null;};
+const phaseOfItem=id=>{const r=incOf(id,'rel:contains').map(r=>M.ent.get(r.sourceEntityId)).filter(e=>e&&(e.entityTypeId==='type:cpmai-phase'||e.entityTypeId==='type:cpmai-layer'));return r[0]||null;};
 
 const S={view:'phase',rec:null};
 
 // ---------- item card ----------
+const ITEMKIND={'type:dmbok-control':{cls:'ctrl',lc:'--ctrl',badge:'DMBOK control'},'type:cpmai-deliverable':{cls:'deliv',lc:'--deliv',badge:'CPMAI'},'type:guardrail':{cls:'guard',lc:'--guard',badge:'Guardrail'},'type:platform-capability':{cls:'plat',lc:'--plat',badge:'Platform'}};
 function recCard(e){
-  const sel=e.id===S.rec; const ctrl=isCtrl(e); const lc=ctrl?'--ctrl':'--deliv';
-  const own=ownerFor(e.id); const kas=ctrl?kaFor(e.id):[];
-  return '<div class="rec'+(sel?' sel':'')+'" style="--lc:var('+lc+')" data-rec="'+esc(e.id)+'">'+
+  const sel=e.id===S.rec; const a=e.attributes||{};
+  const k=ITEMKIND[e.entityTypeId]||{cls:'',lc:'--line',badge:typeLabel(e.entityTypeId)};
+  const badge=(e.entityTypeId==='type:guardrail'&&a.kind)?a.kind:k.badge;
+  const own=ownerFor(e.id); const kas=kaFor(e.id);
+  return '<div class="rec'+(sel?' sel':'')+'" style="--lc:var('+k.lc+')" data-rec="'+esc(e.id)+'">'+
     '<div class="rh"><span class="rl">'+esc(e.preferredLabel)+'</span>'+
-      '<span class="tag '+(ctrl?'ctrl':'deliv')+'">'+(ctrl?'DMBOK control':'CPMAI')+'</span>'+
+      '<span class="tag '+k.cls+'">'+esc(badge)+'</span>'+
       (own?'<span class="tag own">'+esc(own.preferredLabel)+'</span>':'')+
       (kas.length?'<span class="tag ka">'+esc(kas.map(k=>k.preferredLabel).join(' · '))+'</span>':'')+
     '</div>'+(e.definition?'<div class="ra">'+esc(e.definition)+'</div>':'')+'</div>';
+}
+const layers=()=>[...M.ent.values()].filter(e=>e.entityTypeId==='type:cpmai-layer').sort((a,b)=>((a.attributes||{}).ord||0)-((b.attributes||{}).ord||0));
+const layerItems=lid=>outOf(lid,'rel:contains').map(r=>M.ent.get(r.targetEntityId)).filter(Boolean);
+function layerSection(e){
+  const items=layerItems(e.id); const guard=e.id==='e:cpmai:layer:guardrails';
+  let body='';
+  if(guard){ const order=['Policy','Standard','Regulatory'];
+    const byKind=new Map(); items.forEach(it=>{const kd=(it.attributes||{}).kind||'Other';(byKind.get(kd)||byKind.set(kd,[]).get(kd)).push(it);});
+    const plural={Policy:'Policies',Standard:'Standards',Regulatory:'Regulatory crosswalks'};
+    [...byKind.keys()].sort((a,b)=>order.indexOf(a)-order.indexOf(b)).forEach(kd=>{const arr=byKind.get(kd);
+      body+='<div class="grp"><div class="grphd"><span>'+esc(plural[kd]||kd)+'</span><span class="gc">'+arr.length+'</span></div>'+arr.map(recCard).join('')+'</div>';});
+  } else body=items.map(recCard).join('');
+  return '<div class="ph" id="ph-'+esc(e.id)+'" style="--sc:var(--s5)">'+
+    '<div class="phhd'+(e.id===S.rec?' sel':'')+'" data-rec="'+esc(e.id)+'" title="Open this foundation layer"><span class="n" style="font-size:12px">⛓</span><span class="nm">'+esc(e.preferredLabel)+'</span><span class="ct">'+items.length+'</span></div>'+
+    '<div class="chips"><span class="chip gate" data-rec="e:cpmai:gate:G0" title="G0 readiness gate">⚖ G0 · Governance forum</span><span class="chip loop">foundation · set up once, applies across all phases</span></div>'+
+    '<div class="phdesc">'+esc(e.definition||'')+'</div>'+body+'</div>';
 }
 
 // ---------- By phase (outline) ----------
@@ -229,8 +250,8 @@ function phaseSection(e){
 }
 function renderPhaseView(){
   const app=document.getElementById('app');
-  let left=''; phases().forEach(p=>left+=phaseSection(p));
-  app.innerHTML='<div class="intro">The six CPMAI phases from Business Understanding to Model Operationalization, each with its governance gate, the CPMAI method deliverables it produces and the DMBOK controls it applies. Click any item to see its owner role and the DMBOK knowledge area it aligns to.</div>'+
+  let left=''; layers().forEach(l=>left+=layerSection(l)); phases().forEach(p=>left+=phaseSection(p));
+  app.innerHTML='<div class="intro">Two foundation layers set up once (Guardrails, Platform readiness, gated by G0), then the six CPMAI phases from Business Understanding to Model Operationalization, each with its governance gate, the CPMAI method deliverables it produces and the DMBOK controls it applies. Click any item to see its owner role and the DMBOK knowledge area it aligns to.</div>'+
     '<div class="outline"><div class="outcol">'+left+'</div>'+
     '<div class="outdet"><div class="outdetinner" id="outdetinner">'+renderDetail(S.rec)+'</div></div></div>';
 }
@@ -238,7 +259,7 @@ function renderPhaseView(){
 // ---------- By DMBOK knowledge area ----------
 function renderKAView(){
   const app=document.getElementById('app');
-  const ctrls=[...M.ent.values()].filter(isCtrl);
+  const ctrls=[...M.ent.values()].filter(e=>outOf(e.id,'rel:maps-to-ka').length); // controls + guardrails that align to a KA
   const byKA=new Map();
   ctrls.forEach(c=>kaFor(c.id).forEach(k=>{ if(!byKA.has(k.id))byKA.set(k.id,{ka:k,items:[]}); byKA.get(k.id).items.push(c); }));
   const groups=[...byKA.values()].sort((a,b)=>((a.ka.attributes||{}).dmbokChapter||99)-((b.ka.attributes||{}).dmbokChapter||99));

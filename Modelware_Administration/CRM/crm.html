@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Follow-up CRM</title>
-<meta name="crm-build" content="7e86257ef635" data-built="22 Oct 2026">
+<meta name="crm-build" content="42595faa9462" data-built="5 Nov 2026">
 <!-- Repo versioning standard: the ONE place the version is written. Bump it here
      only; the badge, the build line and index.html (the Asset Navigator card)
      all read or copy it. dev/stamp-build.py never overwrites it. -->
-<meta name="version" content="1.55.3">
+<meta name="version" content="1.56.0">
 <meta name="description" content="Show what needs follow-up today.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -3214,6 +3214,10 @@ function dealMoney(st, deal){
   var noComm = deal.commissionable === false;
   var rate = noComm ? null : deal.commissionRate;
   var out = { invoiced:{}, paid:{}, outstanding:{}, overdue:{},
+              /* F6b, 15 Oct: the VAT inside `invoiced`, kept apart. Nobody earns
+                 on it (C21) and an export that prints a gross with no VAT column
+                 leaves the reader to work out which part was the Receiver's. */
+              vat:{},
               commissionEarned:{}, commissionPending:{},
               earnedByUser:{}, pendingByUser:{},
               rate:rate, owner:deal.owner, invoices:[],
@@ -3229,6 +3233,7 @@ function dealMoney(st, deal){
     if (s.cancelled) return;
     var c = inv.currency || "ZAR";
     out.invoiced[c]    = round2((out.invoiced[c]    || 0) + s.gross);
+    out.vat[c]         = round2((out.vat[c]         || 0) + s.vat);
     out.paid[c]        = round2((out.paid[c]        || 0) + s.paid);
     out.outstanding[c] = round2((out.outstanding[c] || 0) + s.balance);
     var cm = invoiceCommission(deal, inv, s);
@@ -5706,6 +5711,95 @@ function bagText(bag){
     .map(function (c){ return fmtMoney(bag[c], c); }).join(" | ");
 }
 
+/* MONEY FOR A SPREADSHEET, WHICH IS NOT MONEY FOR A SCREEN.
+
+   "This CSV export of deals is including funny characters in the Invoiced,
+   Paid, Outstanding, and Commission Columns." (Howard, 5 Nov 2026.)
+
+   The export was writing `fmtMoney` into those cells — the same string the app
+   draws. That string is "R", a NO-BREAK SPACE (U+00A0), then digits grouped by
+   NARROW no-break spaces (U+202F), because that is what reads well on screen.
+   Excel opens a .csv as the system codepage unless the file says otherwise, so
+   every one of those bytes came back as mojibake: R‑à‑¢‑€‑˜658.
+
+   Two faults, and the encoding is the smaller one. A cell holding "R 53 658" is
+   TEXT: it cannot be summed, filtered above a threshold, or charted. An export
+   exists to be added up. So the money columns now carry BARE NUMBERS to the
+   cent, with the currency named in a column of its own — and the download gets
+   a UTF-8 byte-order mark so the words in every other column survive too.
+
+   One row per deal is kept, so a deal billed in two currencies cannot put two
+   numbers in one cell. The deal's OWN currency wins the numeric columns, and
+   anything else it was billed in is spelled out in "Other currencies" rather
+   than being added to a total it does not belong in (C16). */
+function moneyColumns(m, deal){
+  var bags = { invoiced:m.invoiced, vat:m.vat, paid:m.paid,
+               outstanding:m.outstanding, commission:m.commissionEarned };
+  var seen = {};
+  Object.keys(bags).forEach(function (k){
+    Object.keys(bags[k] || {}).forEach(function (c){
+      if (Math.abs(bags[k][c]) >= 0.005) seen[c] = 1; });
+  });
+  var curs = Object.keys(seen).sort();
+  if (!curs.length)
+    return { currency:"", invoiced:"", vat:"", paid:"", outstanding:"",
+             commission:"", others:"" };
+  /* The deal's own currency is the one the numbers should be in — it is what
+     the pipeline value is quoted in and what anybody reading the row expects. */
+  var main = (deal && deal.currency && seen[deal.currency]) ? deal.currency : curs[0];
+  var num = function (bag){
+    var v = (bag || {})[main];
+    return (v == null ? 0 : round2(v)).toFixed(2);
+  };
+  var rest = curs.filter(function (c){ return c !== main; });
+  return {
+    currency: main,
+    invoiced: num(m.invoiced), vat: num(m.vat), paid: num(m.paid),
+    outstanding: num(m.outstanding), commission: num(m.commissionEarned),
+    /* Named, never summed. A deal billed in two currencies is rare and real;
+       silently dropping the second one is how an export becomes a lie. */
+    others: rest.map(function (c){
+      var bits = [];
+      if (Math.abs((m.invoiced[c]    || 0)) >= 0.005) bits.push("invoiced "    + round2(m.invoiced[c]).toFixed(2));
+      if (Math.abs((m.vat[c]         || 0)) >= 0.005) bits.push("VAT "         + round2(m.vat[c]).toFixed(2));
+      if (Math.abs((m.paid[c]        || 0)) >= 0.005) bits.push("paid "        + round2(m.paid[c]).toFixed(2));
+      if (Math.abs((m.outstanding[c] || 0)) >= 0.005) bits.push("outstanding " + round2(m.outstanding[c]).toFixed(2));
+      if (Math.abs((m.commissionEarned[c] || 0)) >= 0.005) bits.push("commission " + round2(m.commissionEarned[c]).toFixed(2));
+      return c + " " + bits.join(", ");
+    }).join(" | ")
+  };
+}
+
+/* The documents behind the money, by their own numbers. One cell per kind,
+   because a deal really does carry several — SARB has a course quoted in August
+   and amended in September — and the number on the paperwork is the only thing
+   that joins this row to Sage or to an email from the customer. Cancelled
+   documents are left out: they are history, not a reference anybody should
+   quote back. */
+function docNumbers(st, dealId){
+  var pick = function (list, key){
+    var out = [], seen = {};
+    list.forEach(function (x){
+      var v = String((x && x[key]) || "").trim();
+      if (!v || seen[v]) return;
+      seen[v] = 1; out.push(v);
+    });
+    return out.join(" | ");
+  };
+  var invs = invoicesFor(st, dealId).filter(function (i){ return i.status !== "cancelled"; });
+  var receipts = [];
+  invs.forEach(function (i){
+    paymentsFor(st, i.id).forEach(function (p){ receipts.push(p); });
+  });
+  return {
+    quotes:   pick(quotesFor(st, dealId).filter(function (q){ return q.status !== "superseded"; }), "number"),
+    invoices: pick(invs, "number"),
+    /* A payment's reference IS the receipt number — it is what was typed off
+       the remittance. Blank is left blank rather than invented. */
+    receipts: pick(receipts, "reference")
+  };
+}
+
 function exportCSV(st, cfg, today){
   today = today || todayISO();
   var flags = computeFlags(st, cfg, today);
@@ -5714,7 +5808,9 @@ function exportCSV(st, cfg, today){
      if the export only carries names. It costs one column. */
   var rows = [["Deal id","Company","Deal","Stage","Owner","Value","Currency","Expected close",
                "Status","Next step","Next step due","Pushed","Last contact",
-               "Invoiced","Paid","Outstanding","Commission %","Commission earned","Flags"]];
+               "Quote number","Invoice number","Receipt number",
+               "Money currency","Invoiced","VAT","Paid","Outstanding",
+               "Commission %","Commission earned","Other currencies","Flags"]];
   Object.keys(st.deals).map(function(k){ return st.deals[k]; })
     .sort(function(a,b){ return a.name < b.name ? -1 : 1; })
     .forEach(function (d){
@@ -5722,6 +5818,8 @@ function exportCSV(st, cfg, today){
       var m = dealMoney(st, d);
       var ofs = openFollowupsFor(st, d.id);
       var nx = ofs[0];
+      var mc = moneyColumns(m, d);
+      var doc = docNumbers(st, d.id);
       rows.push([
         d.id, co.name, d.name, stageLabel(cfg, d.stage), d.owner,
         d.value == null ? "" : d.value, d.currency || "",
@@ -5729,9 +5827,14 @@ function exportCSV(st, cfg, today){
         d.status === "open" ? "Open" : (d.outcome === "won" ? "Won" : "Lost"),
         nx ? nx.what : "", nx ? nx.dueDate : "", nx ? nx.pushCount : "",
         lastContact(st, d.id) || "",
-        bagText(m.invoiced), bagText(m.paid), bagText(m.outstanding),
-        d.commissionRate == null ? "" : (Math.round(d.commissionRate * 1000) / 10) + "%",
-        bagText(m.commissionEarned),
+        doc.quotes, doc.invoices, doc.receipts,
+        mc.currency, mc.invoiced, mc.vat, mc.paid, mc.outstanding,
+        /* A bare number, like every other figure here. "20%" is text, and a
+           column of text cannot be averaged or filtered — the header carries
+           the unit instead. Blank still means nobody has set a rate, which is
+           not the same as 0 (C23). */
+        d.commissionRate == null ? "" : (Math.round(d.commissionRate * 1000) / 10),
+        mc.commission, mc.others,
         (flags[d.id] || []).join(" | ")
       ]);
     });
@@ -6038,6 +6141,7 @@ var API = {
   personReport:personReport, peopleWithWork:peopleWithWork, lastImport:lastImport,
   stageProb:stageProb, stageLabel:stageLabel, forecast:forecast, weekRetro:weekRetro,
   toCSV:toCSV, parseCSV:parseCSV, importCSV:importCSV, exportCSV:exportCSV,
+  moneyColumns:moneyColumns, docNumbers:docNumbers,
   importTriage:importTriage, triageCreate:triageCreate,
   parseTriageBatch:parseTriageBatch, financialEvents:financialEvents,
   unknownFields:unknownFields, TRIAGE_VERSION:TRIAGE_VERSION,
@@ -14261,6 +14365,11 @@ function exportEverything(){
 }
 
 function download(name, text, mime){
+  /* Excel opens a local .csv as the system codepage and ignores the blob's
+     charset, so a UTF-8 byte-order mark is the only thing that tells it. Without
+     it every accented name, em dash and currency symbol came back as mojibake.
+     `parseCSV` already strips a leading BOM, so the file still re-imports. */
+  if (/csv/.test(mime || "") && String(text).charAt(0) !== "\ufeff") text = "\ufeff" + text;
   var blob = new Blob([text], { type:(mime||"text/plain") + ";charset=utf-8" });
   var url = URL.createObjectURL(blob);
   var a = h("a", { href:url, download:name });

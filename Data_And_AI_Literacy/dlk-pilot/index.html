@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.6.2">
-<meta name="build-timestamp" content="2026-11-05 15:34 SAST">
+<meta name="version" content="1.7.0">
+<meta name="build-timestamp" content="2026-11-06 05:29 SAST">
 <title>DLK Lean Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -254,7 +254,15 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
         <button class="btn ghost" id="resetCohort">↺ Reset to template</button>
         <span class="muted small" id="saveMsg"></span>
       </div>
-      <div class="note" style="margin-top:12px"><span class="lab">To make this cohort the default everyone sees:</span> export <span class="mono">cohort.json</span> and commit it next to this app (<span class="mono">dlk-pilot/cohort.json</span>). The app loads it automatically on open; otherwise it uses your saved browser copy, then the synthetic seed.</div>
+      <div class="saveBar" style="margin-top:10px;align-items:center">
+        <span class="pill" title="Data_And_AI_Literacy/Ontology/database/dlk-cohort.json">☁ GitHub store: modelware_app_storage</span>
+        <button class="btn" id="ghLoad">↓ Load from GitHub</button>
+        <button class="btn" id="ghSave">↑ Save to GitHub</button>
+        <button class="btn ghost" id="ghToken">Set token</button>
+        <span class="pill" id="ghTokenState">no token</span>
+        <span class="muted small" id="ghMsg"></span>
+      </div>
+      <div class="note" style="margin-top:10px"><span class="lab">Connected data store:</span> this cohort reads from and writes to your private repo <span class="mono">modelwaresystems-dama/modelware_app_storage</span> at <span class="mono">Data_And_AI_Literacy/Ontology/database/dlk-cohort.json</span> (branch <span class="mono">main</span>), using the same browser token as your ontology apps (<span class="mono">mdaReadiness.ghpat</span>). The token needs <b>Contents: read and write</b>. When a token is set, the app loads from GitHub on open; <b>Save to GitHub</b> commits straight to <span class="mono">main</span>. Local <b>Save</b> / <b>Export</b> remain as an offline fallback.</div>
     </div>
   </section>
 
@@ -1168,6 +1176,56 @@ function renderManager(){
    ======================================================== */
 function refreshAll(){ rebuildCaps(); renderStrategy(); fillRouter(); fillDashLearner(); fillLedgerFilters(); renderDash(); renderLedger(); renderManager(); }
 
+/* ========================================================
+   GITHUB CLOUD STORAGE — modelware_app_storage (Contents API)
+   Reuses the ontology apps' token: localStorage['mdaReadiness.ghpat']
+   ======================================================== */
+const GH={owner:'modelwaresystems-dama', repo:'modelware_app_storage', path:'Data_And_AI_Literacy/Ontology/database', file:'dlk-cohort.json', ref:'main'};
+const GH_TOKEN_KEY='mdaReadiness.ghpat';
+function ghToken(){ try{return localStorage.getItem(GH_TOKEN_KEY)||'';}catch(e){return '';} }
+function ghHeaders(raw){ var tk=ghToken(), h={'Accept':raw?'application/vnd.github.raw':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}; if(tk)h['Authorization']='Bearer '+tk; return h; }
+function ghContentsUrl(withRef){ return 'https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/contents/'+GH.path+'/'+GH.file+(withRef?('?ref='+encodeURIComponent(GH.ref)):''); }
+function b64(str){ return btoa(unescape(encodeURIComponent(str))); }
+function ghMsg(t,tone){ const el=document.getElementById('ghMsg'); if(el){ el.textContent=t; el.style.color = tone==='bad'?'var(--bad)':tone==='ok'?'var(--ok)':'var(--muted)'; } }
+function ghStatusTag(){ const el=document.getElementById('ghTokenState'); if(el){ const has=!!ghToken(); el.textContent=has?'token set':'no token'; el.style.color=has?'var(--ok)':'var(--bad)'; } }
+async function ghLoadCohort(silent){
+  if(!ghToken()){ if(!silent) ghMsg('No token — click “Set token” and paste a PAT with Contents access.','bad'); return false; }
+  try{
+    const r=await fetch(ghContentsUrl(true),{headers:ghHeaders(true),cache:'no-store'});
+    if(r.status===404){ if(!silent) ghMsg('No dlk-cohort.json in the repo yet — click “Save to GitHub” to create it.','muted'); return false; }
+    if(!r.ok){ if(!silent) ghMsg('Load failed ('+r.status+'). '+((r.status===401||r.status===403)?'Check the token / its scope.':''),'bad'); return false; }
+    const d=JSON.parse(await r.text());
+    if(d&&d.roles&&d.people){ ENTERED={caps:d.caps||DEFAULT_CAPS.slice(),roles:d.roles,people:d.people,strategy:d.strategy||defaultStrategy()}; rebuildCaps(); persist(); renderCohortEditor(); renderStrategy(); setSource('entered');
+      if(!silent) ghMsg('Loaded from GitHub ('+GH.file+').','ok'); return true; }
+    if(!silent) ghMsg('That file has no roles/people.','bad'); return false;
+  }catch(e){ if(!silent) ghMsg('Load error: '+e.message,'bad'); return false; }
+}
+async function ghSaveCohort(){
+  if(!ghToken()){ ghMsg('No token — click “Set token” first.','bad'); return; }
+  ghMsg('Saving to GitHub…','muted');
+  try{
+    let sha=null;
+    const g=await fetch(ghContentsUrl(true),{headers:ghHeaders(false),cache:'no-store'});
+    if(g.ok){ const j=await g.json(); sha=j.sha; }
+    const payload={schema:'dlk-pilot-cohort',version:'1.7.0',tenant:'DLK',saved_at:new Date().toISOString(),caps:ENTERED.caps,strategy:ENTERED.strategy,roles:ENTERED.roles,people:ENTERED.people};
+    const body={ message:'DLK pilot cohort update ('+new Date().toISOString().slice(0,16).replace('T',' ')+'Z)', content:b64(JSON.stringify(payload,null,2)), branch:GH.ref };
+    if(sha) body.sha=sha;
+    const r=await fetch(ghContentsUrl(false),{method:'PUT',headers:ghHeaders(false),body:JSON.stringify(body)});
+    if(r.ok){ persist(); ghMsg('Saved to GitHub → '+GH.path+'/'+GH.file,'ok'); }
+    else { const t=await r.text(); ghMsg('Save failed ('+r.status+'). '+((r.status===401||r.status===403)?'Token needs Contents: read and write on the repo.':(r.status===409?'Conflict — Load from GitHub, then retry.':'')),'bad'); console.warn('GH save',r.status,t); }
+  }catch(e){ ghMsg('Save error: '+e.message,'bad'); }
+}
+function ghSetToken(){
+  const t=prompt('Paste a GitHub Personal Access Token with “Contents: read and write” on '+GH.owner+'/'+GH.repo+'.\nShared with your ontology apps (localStorage key “'+GH_TOKEN_KEY+'”). Leave blank to clear.', '');
+  if(t===null) return;
+  try{ if(t.trim()) localStorage.setItem(GH_TOKEN_KEY,t.trim()); else localStorage.removeItem(GH_TOKEN_KEY); }catch(e){}
+  ghStatusTag(); ghMsg(t.trim()?'Token saved in this browser.':'Token cleared.', t.trim()?'ok':'muted');
+  if(t.trim()) ghLoadCohort(false);
+}
+document.getElementById('ghLoad').onclick=()=>ghLoadCohort(false);
+document.getElementById('ghSave').onclick=ghSaveCohort;
+document.getElementById('ghToken').onclick=ghSetToken;
+
 function init(){
   const saved=loadEntered();
   ENTERED = saved || defaultEntered();
@@ -1177,13 +1235,17 @@ function init(){
   if(!ENTERED.caps||!ENTERED.caps.length) ENTERED.caps=DEFAULT_CAPS.slice();
   { const have=new Set(ENTERED.roles.map(r=>r.id)); DEFAULT_ROLES.forEach(r=>{ if(!have.has(r.id)) ENTERED.roles.push({...r,req:{...r.req}}); }); }
   rebuildCaps();
-  renderCohortEditor(); renderStrategy();
-  // try repo default cohort.json only if nothing saved (http(s) only — file:// blocks fetch)
-  if(!saved && location.protocol.indexOf('http')===0){
+  renderCohortEditor(); renderStrategy(); ghStatusTag();
+  // Connected store: GitHub (modelware_app_storage) is canonical when a token is present.
+  const online = location.protocol.indexOf('http')===0;
+  function fallbackRepoDefault(){ // relative dlk-pilot/cohort.json, if committed next to the app
+    if(saved) return;
     fetch('cohort.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{
       if(d&&d.roles&&d.people){ ENTERED={caps:d.caps||DEFAULT_CAPS.slice(),roles:d.roles,people:d.people,strategy:d.strategy||defaultStrategy()}; rebuildCaps(); renderCohortEditor(); renderStrategy(); setSource('entered'); }
     }).catch(()=>{});
   }
+  if(online && ghToken()){ ghLoadCohort(true).then(ok=>{ if(!ok) fallbackRepoDefault(); }); }
+  else if(online){ fallbackRepoDefault(); }
   // default to entered if it has named people, else seed
   const named = ENTERED.people.filter(p=>p.alias&&p.alias.trim()).length;
   setSource(named? 'entered' : 'seed');

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.12.0">
-<meta name="build-timestamp" content="2026-11-06 09:42 SAST">
+<meta name="version" content="2.0.0">
+<meta name="build-timestamp" content="2026-11-06 10:16 SAST">
 <title>DLK Lean Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -370,12 +370,28 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
       <div class="grid g4">
         <div><label class="fld" for="capLearner">Learner</label><select id="capLearner"></select></div>
         <div><label class="fld" for="capCap">Knowledge Area (capability)</label><select id="capCap"></select></div>
-        <div style="grid-column:span 2"><label class="fld" for="capTitle">Deliverable title</label><input type="text" id="capTitle" class="sm" style="width:100%" placeholder="e.g. DLK Retail Credit — Data Quality Assessment"></div>
+        <div><label class="fld" for="capDate">Assessed on</label><input type="date" id="capDate" class="sm" style="width:100%"></div>
       </div>
       <div class="grid g4" style="margin-top:8px">
-        <div style="grid-column:span 2"><label class="fld" for="capUrl">Deliverable link (MoWeb / repo URL)</label><input type="text" id="capUrl" class="sm" style="width:100%" placeholder="https://github.com/modelwaresystems-dama/modelware_app_storage/…"></div>
-        <div><label class="fld" for="capType">Deliverable type</label><input type="text" id="capType" class="sm" style="width:100%" placeholder="auto from KA"></div>
-        <div><label class="fld" for="capDate">Assessed on</label><input type="date" id="capDate" class="sm" style="width:100%"></div>
+        <div style="grid-column:span 3">
+          <label class="fld" for="capDeliv">Deliverable <span class="muted small">— ontology Deliverables for this KA, grouped by Best Practice (DMBOK activity)</span></label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="capDeliv" class="sm" style="flex:1"></select>
+            <button class="btn ghost sm" id="capDelivNew" type="button" title="Add a new Deliverable to the ontology">➕ New</button>
+          </div>
+          <div id="capDelivNewBox" style="display:none;margin-top:8px;padding:10px;border:1px dashed var(--line);border-radius:8px;background:var(--panel2,#fbfcfd)">
+            <div class="muted small" style="margin-bottom:6px">New Deliverable — added to the ontology (private repo) under the chosen Best Practice, flagged <code>pilot-added</code> for later reconciliation into the master graph.</div>
+            <div class="grid g4">
+              <div style="grid-column:span 2"><label class="fld" for="capDelivNewName">Deliverable name</label><input type="text" id="capDelivNewName" class="sm" style="width:100%" placeholder="e.g. AI Model Card"></div>
+              <div style="grid-column:span 2"><label class="fld" for="capDelivNewBp">Produced by Best Practice</label><select id="capDelivNewBp" class="sm" style="width:100%"></select></div>
+            </div>
+            <div style="margin-top:8px;display:flex;gap:8px"><button class="btn sm" id="capDelivAdd" type="button">Add to ontology &amp; select</button><button class="btn ghost sm" id="capDelivCancel" type="button">Cancel</button></div>
+          </div>
+        </div>
+        <div><label class="fld" for="capUrl">Deliverable link</label><input type="text" id="capUrl" class="sm" style="width:100%" placeholder="MoWeb / repo URL"></div>
+      </div>
+      <div class="grid g4" style="margin-top:8px">
+        <div style="grid-column:span 4"><label class="fld" for="capTitle">Deliverable instance title <span class="muted small">— the actual artefact the learner produced</span></label><input type="text" id="capTitle" class="sm" style="width:100%" placeholder="e.g. DLK Retail Credit — Data Governance Strategy v1"></div>
       </div>
       <div class="grid g4" style="margin-top:8px">
         <div><label class="fld" for="capQuality">Quality Scorecard <span class="muted small">(Modelware)</span></label><select id="capQuality" class="sm" style="width:100%"></select></div>
@@ -539,43 +555,19 @@ function priNew(f){ const n=CFG.w_info*f.info+CFG.w_gap*f.gap+CFG.w_role*f.role+
 // Mastery scale — ONTOLOGY type:mastery-level (e:m0…e:m5)
 const MLAB=['Unaware','Aware','Knowledgeable','Resource','Translator','Influencer'];
 const MOID=['e:m0','e:m1','e:m2','e:m3','e:m4','e:m5'];
-// Knowledge Areas — ONTOLOGY type:knowledge-area (17). code = internal key, oid = ontology entity id.
-const CAP_CATALOG=[
-  {id:'DG', oid:'e:ka:dg',  name:'Data Governance', risk:0.9},
-  {id:'DA', oid:'e:ka:da',  name:'Data Architecture', risk:0.6},
-  {id:'MOD',oid:'e:ka:dm',  name:'Data Modeling & Design', risk:0.5},
-  {id:'DSO',oid:'e:ka:dso', name:'Data Storage & Operations', risk:0.5},
-  {id:'DS', oid:'e:ka:ds',  name:'Data Security', risk:0.95},
-  {id:'DE', oid:'e:ka:dii', name:'Data Integration & Interoperability', risk:0.6},
-  {id:'DCM',oid:'e:ka:dcm', name:'Document & Content Management', risk:0.4},
-  {id:'RMD',oid:'e:ka:rmd', name:'Reference & Master Data', risk:0.6},
-  {id:'BI', oid:'e:ka:dwbi',name:'Data Warehousing & Business Intelligence', risk:0.6},
-  {id:'MD', oid:'e:ka:md',  name:'Metadata', risk:0.5},
-  {id:'DQ', oid:'e:ka:dq',  name:'Data Quality', risk:0.8},
-  {id:'AI', oid:'e:ka:bd',  name:'Big Data & Data Science', risk:1.0},
-  {id:'DMMA',oid:'e:ka:dmma',name:'Data Management Maturity Assessment', risk:0.5},
-  {id:'DMORG',oid:'e:ka:dmorg',name:'DM Organization & Role Expectations', risk:0.5},
-  {id:'DMOCM',oid:'e:ka:dmocm',name:'DM & Organizational Change Management', risk:0.5},
-  {id:'DHE',oid:'e:ka:dhe', name:'Data Handling Ethics', risk:0.7},
-  {id:'DVR',oid:'e:ka:dvr', name:'Data Valuation & Value Realization', risk:0.6}
-];
-const CAPBY=Object.fromEntries(CAP_CATALOG.map(c=>[c.id,c]));
-const DEFAULT_CAPS=['DG','DQ','MD','MOD','BI','DE','AI'];
-let CAPS=CAP_CATALOG.filter(c=>DEFAULT_CAPS.includes(c.id));
+// Knowledge Areas — loaded at runtime from the PRIVATE repo (ka-catalog.json). No ontology data is embedded in this app.
+let CAP_CATALOG=[];
+let CAPBY={};
+let DEFAULT_CAPS=[];
+let CAPS=[];
 function activeCapIds(){ return (typeof ENTERED!=='undefined'&&ENTERED&&ENTERED.caps&&ENTERED.caps.length)?ENTERED.caps:DEFAULT_CAPS; }
 function rebuildCaps(){ const act=activeCapIds(); CAPS=CAP_CATALOG.filter(c=>act.includes(c.id)); }
 function isActiveCap(id){ return activeCapIds().includes(id); }
 function reqKeys(role){ return Object.keys(role.req).filter(isActiveCap); }
 function reqEntries(role){ return Object.entries(role.req).filter(e=>isActiveCap(e[0])); }
 const CHAN={K:'E2 · Knowledge',J:'E3 · Judgement',P:'E4 · Practical',W:'E5 · Workplace'};
-// Required assessments — each referenced to its ONTOLOGY entity/type
-const ASSESSMENTS=[
-  {id:'TS',   oid:'type:thinking-style',  name:'Thinking Styles (Gregorc)', feeds:'Gregorc thinking style → persona fit & activity affinity'},
-  {id:'SF',   oid:'type:strength-domain', name:'StrengthsFinder',           feeds:'CliftonStrengths domains → persona fit'},
-  {id:'DMMA', oid:'e:ka:dmma',            name:'DMMA — DM Maturity Assessment', feeds:'Data Management Maturity (DMMA knowledge area)'},
-  {id:'SFIA', oid:'type:sfia-skill',      name:'SFIA',                      feeds:'SFIA skills & responsibility level'},
-  {id:'KYV',  oid:'e:valscore',           name:'Know Your Value',           feeds:'Personal Value Scorecard — persona & direction'}
-];
+// Required assessments — loaded at runtime from the PRIVATE repo (ka-catalog.json → assessments).
+let ASSESSMENTS=[];
 const ASTAT={'not-started':'not started','in-progress':'in progress','complete':'complete'};
 function asChip(s){ return s==='complete'?'<span class="flag good">complete</span>': s==='in-progress'?'<span class="flag warn">in&nbsp;progress</span>':'<span class="pill">not started</span>'; }
 function asCount(l){ const a=l.assessments||{}; let d=0; ASSESSMENTS.forEach(x=>{if(a[x.id]==='complete')d++;}); return d; }
@@ -607,7 +599,8 @@ const DEFAULT_ROLES=[
   {id:'R25',name:'AI Product Manager',       persona:'Project Manager', req:{AI:4,DG:3,BI:3,DQ:3,MOD:2}},
   {id:'R26',name:'CPMAI Project Manager',    persona:'Project Manager', req:{AI:3,DG:3,DQ:3,MOD:2,DE:2}}
 ];
-const SEED=[
+let SEED=[]; /* removed — loaded at runtime from the PRIVATE repo (seed-cohort.json). The literal below is retired.
+const _SEED_RETIRED=[
   {id:'L01', alias:'Thandi M.', role:'R1', caps:{
     BI:{K:[5,5],J:[4,5],P:[4,4],W:[4,4],conf:4},
     DQ:{K:[3,2],J:[2,3],P:[4,4],W:[4,4],conf:4},
@@ -649,15 +642,7 @@ const SEED=[
     BI:{K:[2,3],J:[2],conf:2}, DQ:{K:[2,2],J:[2],conf:4},
     AI:{K:[1,2],conf:3}, MOD:{K:[2,1],conf:2}
   }}
-];
-/* seed assessment completion (demo variety) */
-(function(){ const pat=[
-  ['complete','complete','complete','complete','in-progress'],
-  ['complete','complete','in-progress','not-started','not-started'],
-  ['complete','complete','complete','complete','complete'],
-  ['complete','in-progress','complete','in-progress','not-started'],
-  ['in-progress','not-started','complete','not-started','not-started']];
-  SEED.forEach((l,i)=>{ const row=pat[i%pat.length]; l.assessments={}; ASSESSMENTS.forEach((x,j)=>l.assessments[x.id]=row[j]); }); })();
+]; end retired SEED — seed-cohort.json in the private repo carries learners + assessments */
 
 /* ========================================================
    COHORT STATE  (entered vs seed)
@@ -1132,8 +1117,9 @@ function buildLedger(){
       const o=l.caps[capId];
       if(o.artifact){ // captured Deliverable scored by Modelware → two evidence rows (Quality→P, Stakeholder→W)
         const a=o.artifact;
-        const art={ title:a.title||((ARTYPE[capId]||capId+' deliverable')+' — '+(l.alias||l.id)),
-          type:a.type||ARTYPE[capId]||(CAPBY[capId]?CAPBY[capId].name+' deliverable':capId+' deliverable'),
+        const art={ title:a.title||((a.deliv||capId+' deliverable')+' — '+(l.alias||l.id)),
+          type:a.deliv||a.type||(CAPBY[capId]?CAPBY[capId].name+' deliverable':capId+' deliverable'),
+          delivId:a.delivId||'', deliv:a.deliv||'', bpId:a.bpId||'', bp:a.bp||'',
           url:a.url||'', store:a.store||'MoWeb / modelware_app_storage', date:a.date||'',
           reviewer:a.reviewer||'Modelware assessor',
           quality:+a.quality||0, value:(a.value!=null&&a.value!=='')?+a.value:null, stakeholder:+a.stakeholder||0 };
@@ -1178,7 +1164,9 @@ function renderTraceability(){
     const rv=it.review==='human-reviewed'?'<span class="flag good">human-reviewed</span>':it.review==='pending-review'?'<span class="flag warn">pending-review</span>':'<span class="pill">auto</span>';
     host.insertAdjacentHTML('beforeend',
       '<div class="trace">'+
-        '<div class="tnode"><div class="tlab">Deliverable (Output)</div><a href="'+it.art.url+'" target="_blank" rel="noopener"><b>'+it.art.type+'</b> ↗</a><div class="exp">'+(l.alias||l.id)+' · '+it.art.store+'</div></div>'+
+        '<div class="tnode"><div class="tlab">Deliverable (Output)</div>'+
+          (it.art.url?('<a href="'+it.art.url+'" target="_blank" rel="noopener"><b>'+esc(it.art.deliv||it.art.type)+'</b> ↗</a>'):('<b>'+esc(it.art.deliv||it.art.type)+'</b>'))+
+          '<div class="exp">'+(l.alias||l.id)+(it.art.delivId?(' · <span class="mono">'+it.art.delivId+'</span>'):'')+(it.art.bp?(' · produced by '+esc(it.art.bp)):'')+'</div></div>'+
         '<div class="trel">scored by →</div>'+
         '<div class="tnode"><div class="tlab">Scorecards</div>'+
           (it.art.quality!=null
@@ -1232,16 +1220,85 @@ function renderLedger(){
 [fLearner,fCap,fChan,fReview].forEach(s=>s.onchange=renderLedger);
 document.getElementById('exportCsv').onclick=()=>{
   const rb=ROLEBY(); const rows=filteredLedger();
-  const cols=['response_pubid','captured_at','tenant_id','learner_id','role_context','session','capability_id','serves_strategic_objectives','evidence_channel','item_id','item_version','item_format','artifact_type','artifact_url','artifact_store','raw_score','response_category','confidence','review_status'];
+  const cols=['response_pubid','captured_at','tenant_id','learner_id','role_context','session','capability_id','serves_strategic_objectives','evidence_channel','item_id','item_version','item_format','deliverable_id','deliverable_name','best_practice_id','artifact_url','artifact_store','raw_score','response_category','confidence','review_status'];
   const esc=v=>'"'+String(v).replace(/"/g,'""')+'"';
   const lines=[cols.join(',')];
-  rows.forEach(r=>lines.push([r.pubid,r.ts,'DLK',r.learner,(rb[r.role]&&rb[r.role].name)||r.role,'S'+r.learner,r.cap,servingSOs(r.cap).join('|'),r.chan,r.item,r.ver,r.format,r.art?r.art.type:'',r.art?r.art.url:'',r.art?r.art.store:'',r.raw,r.cat,r.conf,r.review].map(esc).join(',')));
+  rows.forEach(r=>lines.push([r.pubid,r.ts,'DLK',r.learner,(rb[r.role]&&rb[r.role].name)||r.role,'S'+r.learner,r.cap,servingSOs(r.cap).join('|'),r.chan,r.item,r.ver,r.format,r.art?(r.art.delivId||''):'',r.art?(r.art.deliv||r.art.type):'',r.art?(r.art.bpId||''):'',r.art?r.art.url:'',r.art?r.art.store:'',r.raw,r.cat,r.conf,r.review].map(esc).join(',')));
   const blob=new Blob([lines.join('\n')],{type:'text/csv'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='DLK_Assurance_Record_'+(new Date().toISOString().slice(0,10))+'.csv'; a.click();
 };
 
-/* ---------- CAPTURE EVIDENCE: Deliverable + 3 Scorecards → Evidence ---------- */
+/* ---------- CAPTURE EVIDENCE: ontology Deliverable + 3 Scorecards → Evidence ---------- */
+/* Deliverable dropdown is sourced from the ONTOLOGY at runtime (ka-deliverables.json in the
+   private repo), derived as KA --contains--> Best Practice --produces--> Deliverable.
+   Loaded via the same token as the cohort; cached in-browser so a refresh mid-demo keeps it. */
+let KADEL=null; // held in memory only for this session — never persisted in the app or browser; always from the repo
+function kaOid(capId){ return (CAPBY[capId]&&CAPBY[capId].oid)||''; }
+function capDelivMsg(t,tone){ const el=document.getElementById('capMsg'); if(el) el.innerHTML='<span style="color:'+(tone==='bad'?'var(--bad)':tone==='ok'?'var(--ok)':'var(--muted)')+'">'+t+'</span>'; }
+async function ghLoadKaDeliverables(silent){
+  if(!ghToken()){ if(!silent) capDelivMsg('No GitHub token — set one in Cohort setup to load the ontology deliverables.','bad'); return false; }
+  try{
+    const r=await fetch(ghUrl('ka-deliverables.json',true),{headers:ghHeaders(true),cache:'no-store'});
+    if(!r.ok){ if(!silent) capDelivMsg('Could not load ka-deliverables.json ('+r.status+').'+(r.status===404?' Commit the file to modelware_app_storage first.':''),'bad'); return false; }
+    KADEL=JSON.parse(await r.text());
+    fillDeliv(); if(!silent) capDelivMsg('Loaded '+(KADEL.count||'')+' ontology deliverables across '+Object.keys(KADEL.kas||{}).length+' KAs — from the private repo.','ok'); return true;
+  }catch(e){ if(!silent) capDelivMsg('Load error: '+e.message,'bad'); return false; }
+}
+async function ghSaveKaDeliverables(){
+  if(!ghToken()) return {ok:false,msg:'no token'};
+  try{
+    let sha=null; const g=await fetch(ghUrl('ka-deliverables.json',true),{headers:ghHeaders(false),cache:'no-store'});
+    if(g.ok){ const j=await g.json(); sha=j.sha; }
+    KADEL.updatedAt=new Date().toISOString();
+    const body={ message:'DLK pilot: deliverable added ('+new Date().toISOString().slice(0,16).replace('T',' ')+'Z)', content:b64(JSON.stringify(KADEL,null,1)), branch:GH.ref };
+    if(sha) body.sha=sha;
+    const r=await fetch(ghUrl('ka-deliverables.json',false),{method:'PUT',headers:ghHeaders(false),body:JSON.stringify(body)});
+    if(r.ok){ let c=''; try{ c=(((await r.json()).commit||{}).sha||'').slice(0,7); }catch(e){} return {ok:true,commit:c}; }
+    const t=await r.text(); console.warn('GH kadel save',r.status,t);
+    return {ok:false,status:r.status,msg:'HTTP '+r.status+(r.status===403?' — token needs Contents: write':'')};
+  }catch(e){ return {ok:false,msg:e.message}; }
+}
+function fillDeliv(){
+  const sel=document.getElementById('capDeliv'); if(!sel) return;
+  const cap=document.getElementById('capCap').value, oid=kaOid(cap), prev=sel.value;
+  sel.innerHTML='';
+  const ka=KADEL&&KADEL.kas&&KADEL.kas[oid];
+  if(!ka){ sel.add(new Option(KADEL?'— no ontology deliverables for this KA —':'— deliverables not loaded (set token / Load) —','')); fillDelivBp(); return; }
+  sel.add(new Option('— select the deliverable produced —',''));
+  (ka.bestPractices||[]).forEach(bp=>{
+    const og=document.createElement('optgroup'); og.label=bp.name;
+    (bp.deliverables||[]).forEach(d=>{ const o=new Option(d.name+(d.pilotAdded?' (pilot-added)':''),d.id);
+      o.dataset.bp=bp.id; o.dataset.bpname=bp.name; o.dataset.dname=d.name; og.appendChild(o); });
+    sel.appendChild(og);
+  });
+  if(prev) sel.value=prev;
+  fillDelivBp();
+}
+function fillDelivBp(){
+  const sel=document.getElementById('capDelivNewBp'); if(!sel) return;
+  const cap=document.getElementById('capCap').value, oid=kaOid(cap);
+  sel.innerHTML=''; const ka=KADEL&&KADEL.kas&&KADEL.kas[oid];
+  if(ka) (ka.bestPractices||[]).forEach(bp=>sel.add(new Option(bp.name,bp.id)));
+}
+async function capAddDeliverable(){
+  const cap=document.getElementById('capCap').value, oid=kaOid(cap);
+  const name=document.getElementById('capDelivNewName').value.trim(), bpId=document.getElementById('capDelivNewBp').value;
+  if(!name){ capDelivMsg('Enter a deliverable name.','bad'); return; }
+  if(!KADEL||!KADEL.kas||!KADEL.kas[oid]){ capDelivMsg('Ontology deliverables not loaded for this KA — Load them first.','bad'); return; }
+  const ka=KADEL.kas[oid]; let bp=(ka.bestPractices||[]).find(b=>b.id===bpId)||(ka.bestPractices||[])[0];
+  if(!bp){ capDelivMsg('This KA has no Best Practice to attach the deliverable to.','bad'); return; }
+  const newId='e:del:pilot-'+Date.now().toString(36);
+  bp.deliverables.push({id:newId,name:name,pilotAdded:true,addedAt:new Date().toISOString(),ka:oid,bestPractice:bp.id});
+  KADEL.count=(KADEL.count||0)+1;
+  fillDeliv(); document.getElementById('capDeliv').value=newId;
+  document.getElementById('capDelivNewBox').style.display='none'; document.getElementById('capDelivNewName').value='';
+  if(ghToken()){ capDelivMsg('Added “'+esc(name)+'” · writing to ontology repo…','muted');
+    const res=await ghSaveKaDeliverables();
+    if(res&&res.ok) capDelivMsg('Deliverable “'+esc(name)+'” added to ontology (ka-deliverables.json) ✓ '+(res.commit?('commit '+res.commit):'')+' · flagged pilot-added for reconciliation.','ok');
+    else capDelivMsg('Added in this browser, but ontology-repo write FAILED: '+esc((res&&res.msg)||'unknown')+'. It will still attach to the evidence.','bad');
+  } else capDelivMsg('Added in this browser only — set a GitHub token to write it to the ontology repo.','muted');
+}
 function scoreOptions(sel,optional){ let h=optional?'<option value="">—</option>':'';
   for(let b=0;b<=5;b++){h+='<option value="'+b+'"'+(sel==b?' selected':'')+'>M'+b+' '+MLAB[b]+'</option>';} return h; }
 function capPeople(){ return (ENTERED&&ENTERED.people?ENTERED.people:[]).filter(p=>p.alias&&p.alias.trim()); }
@@ -1258,11 +1315,8 @@ function fillCaptureForm(){
   const q=document.getElementById('capQuality'), v=document.getElementById('capValue'), w=document.getElementById('capStake');
   if(!q.options.length){ q.innerHTML=scoreOptions(4,true); v.innerHTML=scoreOptions('',true); w.innerHTML=scoreOptions(4,true); }
   const d=document.getElementById('capDate'); if(!d.value) d.value=new Date().toISOString().slice(0,10);
-  capTypeHint(); capPreviewUpdate();
-}
-function capTypeHint(){
-  const cap=document.getElementById('capCap').value, t=document.getElementById('capType');
-  if(!t.value||t.dataset.auto==='1'){ t.value=ARTYPE[cap]||(CAPBY[cap]?CAPBY[cap].name+' deliverable':''); t.dataset.auto='1'; }
+  if(!KADEL && ghToken()) ghLoadKaDeliverables(true); // pull straight from the private repo
+  fillDeliv(); capPreviewUpdate();
 }
 function capPreviewUpdate(){
   const q=document.getElementById('capQuality').value, w=document.getElementById('capStake').value, v=document.getElementById('capValue').value;
@@ -1277,22 +1331,30 @@ function capPreviewUpdate(){
     (conflict?'. <b>Flagged D1 (evidence conflict)</b> — quality and stakeholder differ by ≥2 bands; human validation required.':'. Quality and stakeholder agree.');
 }
 ['capQuality','capStake','capValue'].forEach(id=>{ const e=document.getElementById(id); if(e) e.onchange=capPreviewUpdate; });
-(function(){ const cc=document.getElementById('capCap'); if(cc) cc.onchange=capTypeHint;
-  const t=document.getElementById('capType'); if(t) t.oninput=()=>{t.dataset.auto='0';}; })();
+(function(){
+  const cc=document.getElementById('capCap'); if(cc) cc.onchange=()=>{ fillDeliv(); };
+  const nb=document.getElementById('capDelivNew'); if(nb) nb.onclick=()=>{ const b=document.getElementById('capDelivNewBox'); b.style.display=(b.style.display==='none'||!b.style.display)?'block':'none'; fillDelivBp(); };
+  const cancel=document.getElementById('capDelivCancel'); if(cancel) cancel.onclick=()=>{ document.getElementById('capDelivNewBox').style.display='none'; };
+  const add=document.getElementById('capDelivAdd'); if(add) add.onclick=capAddDeliverable;
+})();
 document.getElementById('capSave').onclick=()=>{
   const msg=document.getElementById('capMsg');
   const lid=document.getElementById('capLearner').value, cap=document.getElementById('capCap').value;
   const q=document.getElementById('capQuality').value, w=document.getElementById('capStake').value, v=document.getElementById('capValue').value;
   const title=document.getElementById('capTitle').value.trim(), url=document.getElementById('capUrl').value.trim();
-  const type=document.getElementById('capType').value.trim(), date=document.getElementById('capDate').value;
+  const date=document.getElementById('capDate').value;
   const reviewer=document.getElementById('capReviewer').value.trim()||'Modelware assessor';
   const note=document.getElementById('capNote').value.trim();
+  const dsel=document.getElementById('capDeliv'), opt=dsel.options[dsel.selectedIndex]||null;
+  const delivId=dsel.value, delivName=opt?(opt.dataset.dname||opt.text):'', bpId=opt?(opt.dataset.bp||''):'', bpName=opt?(opt.dataset.bpname||''):'';
   if(!lid){ msg.innerHTML='<span style="color:var(--bad)">Enter at least one named person in Cohort setup first.</span>'; return; }
+  if(!delivId){ msg.innerHTML='<span style="color:var(--bad)">Select the <b>Deliverable</b> from the ontology (or add a new one). Evidence must cite a real Deliverable.</span>'; return; }
   if(q===''||w===''){ msg.innerHTML='<span style="color:var(--bad)">Quality Scorecard and Stakeholder Feedback are both required — they create the evidence.</span>'; return; }
-  if(!title){ msg.innerHTML='<span style="color:var(--bad)">Give the Deliverable a title.</span>'; return; }
+  if(!title){ msg.innerHTML='<span style="color:var(--bad)">Give the deliverable instance a title (the actual artefact the learner produced).</span>'; return; }
   const P=ENTERED.people.find(p=>p.id===lid); if(!P){ msg.innerHTML='<span style="color:var(--bad)">Learner not found.</span>'; return; }
   P.caps[cap]=P.caps[cap]||{};
-  P.caps[cap].artifact={ title:title, type:type||ARTYPE[cap]||cap+' deliverable', url:url,
+  P.caps[cap].artifact={ title:title, type:delivName||cap+' deliverable', url:url,
+    delivId:delivId, deliv:delivName, bpId:bpId, bp:bpName,
     store:'MoWeb / modelware_app_storage', date:date, reviewer:reviewer, review:note,
     quality:+q, value:(v!==''?+v:null), stakeholder:+w, channel:'P', capturedAt:new Date().toISOString() };
   persist();
@@ -1433,7 +1495,8 @@ const GH={owner:'modelwaresystems-dama', repo:'modelware_app_storage', path:'Dat
 const GH_TOKEN_KEY='mdaReadiness.ghpat';
 function ghToken(){ try{return localStorage.getItem(GH_TOKEN_KEY)||'';}catch(e){return '';} }
 function ghHeaders(raw){ var tk=ghToken(), h={'Accept':raw?'application/vnd.github.raw':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}; if(tk)h['Authorization']='Bearer '+tk; return h; }
-function ghContentsUrl(withRef){ return 'https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/contents/'+GH.path+'/'+GH.file+(withRef?('?ref='+encodeURIComponent(GH.ref)):''); }
+function ghUrl(file,withRef){ return 'https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/contents/'+GH.path+'/'+file+(withRef?('?ref='+encodeURIComponent(GH.ref)):''); }
+function ghContentsUrl(withRef){ return ghUrl(GH.file,withRef); }
 function b64(str){ return btoa(unescape(encodeURIComponent(str))); }
 function ghMsg(t,tone){ const el=document.getElementById('ghMsg'); if(el){ el.textContent=t; el.style.color = tone==='bad'?'var(--bad)':tone==='ok'?'var(--ok)':'var(--muted)'; } }
 function ghStatusTag(){ const el=document.getElementById('ghTokenState'); if(el){ const has=!!ghToken(); el.textContent=has?'token set':'no token'; el.style.color=has?'var(--ok)':'var(--bad)'; } }
@@ -1477,7 +1540,7 @@ function ghSetToken(){
   if(t===null) return;
   try{ if(t.trim()) localStorage.setItem(GH_TOKEN_KEY,t.trim()); else localStorage.removeItem(GH_TOKEN_KEY); }catch(e){}
   ghStatusTag(); ghMsg(t.trim()?'Token saved in this browser.':'Token cleared.', t.trim()?'ok':'muted');
-  if(t.trim()) ghLoadCohort(false);
+  if(t.trim()) boot(); else showDataGate({reason:'no-token'});
 }
 document.getElementById('ghLoad').onclick=()=>ghLoadCohort(false);
 document.getElementById('ghSave').onclick=ghSaveCohort;
@@ -1487,7 +1550,7 @@ document.getElementById('ghToken').onclick=ghSetToken;
    ROLE ↔ KA COVERAGE — ontology-derived (role-ka-coverage.json)
    delivery-role <-owned by- (control|guardrail|deliverable) -maps to KA-> KA
    ======================================================== */
-const ROLE_KA_COVERAGE=[{"id":"e:cpmai:role:product-owner","name":"Product owner","kas":["BI","DMORG"]},{"id":"e:cpmai:role:delivery-lead","name":"Delivery lead","kas":["DMORG"]},{"id":"e:cpmai:role:cdo-office","name":"CDO office","kas":[]},{"id":"e:cpmai:role:dpo","name":"DPO","kas":["DHE","DS"]},{"id":"e:cpmai:role:data-governance","name":"Data Governance","kas":["DG","DMMA","DMORG","MD"]},{"id":"e:cpmai:role:change-lead","name":"Change lead","kas":["DMOCM"]},{"id":"e:cpmai:role:architect","name":"Architect","kas":["DA"]},{"id":"e:cpmai:role:security","name":"Security","kas":["DS"]},{"id":"e:cpmai:role:executive-sponsor","name":"Executive sponsor","kas":[]},{"id":"e:cpmai:role:data-science-lead","name":"Data science lead","kas":["AI"]},{"id":"e:cpmai:role:data-engineer","name":"Data engineer","kas":["DE"]},{"id":"e:cpmai:role:data-scientist","name":"Data scientist","kas":["AI","BI","DQ"]},{"id":"e:cpmai:role:data-quality-lead","name":"Data Quality lead","kas":["DQ"]},{"id":"e:cpmai:role:data-steward","name":"Data steward","kas":["MD"]},{"id":"e:cpmai:role:mdm-lead","name":"MDM lead","kas":["RMD"]},{"id":"e:cpmai:role:platform","name":"Platform","kas":["DSO"]},{"id":"e:cpmai:role:data-owner","name":"Data owner","kas":["DG","DMORG"]},{"id":"e:cpmai:role:data-modeller","name":"Data modeller","kas":["MOD"]},{"id":"e:cpmai:role:records-manager","name":"Records Manager","kas":["DCM"]},{"id":"e:cpmai:role:bi-analyst","name":"BI analyst","kas":["BI"]},{"id":"e:cpmai:role:bi-data-engineer","name":"BI / data engineer","kas":["BI"]},{"id":"e:cpmai:role:ml-engineer","name":"ML engineer","kas":["DCM","MD","MOD"]},{"id":"e:cpmai:role:model-owner","name":"Model owner","kas":["AI","DG","DMORG"]},{"id":"e:cpmai:role:business-owner","name":"Business owner","kas":[]},{"id":"e:cpmai:role:dpo-risk","name":"DPO + Risk","kas":["DHE"]},{"id":"e:cpmai:role:governance-forum","name":"Governance forum","kas":["DG"]},{"id":"e:cpmai:role:service-owner","name":"Service owner","kas":["AI","DMMA","DMORG","DS","DSO"]},{"id":"e:cpmai:role:independent-validator","name":"Independent validator","kas":[]},{"id":"e:cpmai:role:head-of-data-governance","name":"Head of Data Governance","kas":["DG","DMORG"]},{"id":"e:cpmai:role:cdo-ai-sponsor","name":"CDO / AI sponsor","kas":["AI","DG"]},{"id":"e:cpmai:role:chief-risk-officer","name":"Chief Risk Officer","kas":["DHE"]},{"id":"e:cpmai:role:ciso","name":"CISO","kas":["DS"]},{"id":"e:cpmai:role:model-risk-lead","name":"Model Risk lead","kas":["AI"]},{"id":"e:cpmai:role:cio-procurement","name":"CIO / Procurement","kas":["AI","DCM","DS"]},{"id":"e:cpmai:role:pmo","name":"PMO","kas":["DMMA"]},{"id":"e:cpmai:role:enterprise-architect","name":"Enterprise Architect","kas":["DA","DE","DSO"]},{"id":"e:cpmai:role:head-of-data-science","name":"Head of Data Science","kas":["AI","MD"]},{"id":"e:cpmai:role:product-owner-legal","name":"Product owner + Legal","kas":["DHE","DMOCM"]},{"id":"e:cpmai:role:compliance-lead","name":"Compliance lead","kas":[]},{"id":"e:cpmai:role:platform-lead","name":"Platform lead","kas":[]}];
+let ROLE_KA_COVERAGE=[]; // loaded at runtime from the PRIVATE repo (role-ka-coverage.json → roles)
 function renderRoleCoverage(filter){
   const host=document.getElementById('rcBody'); if(!host)return;
   const q=(filter||'').toLowerCase();
@@ -1506,7 +1569,59 @@ function renderRoleCoverage(filter){
 }
 (function(){ var s=document.getElementById('rcSearch'); if(s) s.oninput=function(e){renderRoleCoverage(e.target.value);}; })();
 
-function init(){
+/* ========================================================
+   RUNTIME DATA — everything comes from the PRIVATE repo.
+   No ontology/reference/seed data is embedded in this app.
+   ======================================================== */
+function applyCatalog(cat){
+  CAP_CATALOG = cat.caps||[];
+  CAPBY = Object.fromEntries(CAP_CATALOG.map(c=>[c.id,c]));
+  DEFAULT_CAPS = cat.defaultCaps||[];
+  ASSESSMENTS = cat.assessments||[];
+  rebuildCaps();
+}
+async function loadPilotData(){
+  if(!ghToken()) return {ok:false,reason:'no-token'};
+  try{
+    const [cR,sR,rR]=await Promise.all([
+      fetch(ghUrl('ka-catalog.json',true),{headers:ghHeaders(true),cache:'no-store'}),
+      fetch(ghUrl('seed-cohort.json',true),{headers:ghHeaders(true),cache:'no-store'}),
+      fetch(ghUrl('role-ka-coverage.json',true),{headers:ghHeaders(true),cache:'no-store'})
+    ]);
+    if(!cR.ok) return {ok:false,reason:'fetch',status:cR.status,file:'ka-catalog.json'};
+    if(!sR.ok) return {ok:false,reason:'fetch',status:sR.status,file:'seed-cohort.json'};
+    if(!rR.ok) return {ok:false,reason:'fetch',status:rR.status,file:'role-ka-coverage.json'};
+    const cat=JSON.parse(await cR.text()), seed=JSON.parse(await sR.text()), cov=JSON.parse(await rR.text());
+    applyCatalog(cat);
+    SEED = seed.learners||[];
+    ROLE_KA_COVERAGE = cov.roles||[];
+    return {ok:true};
+  }catch(e){ return {ok:false,reason:'error',msg:e.message}; }
+}
+function showDataGate(res){
+  let g=document.getElementById('dataGate');
+  if(!g){ g=document.createElement('div'); g.id='dataGate'; document.body.appendChild(g); }
+  g.style.cssText='position:fixed;left:0;right:0;top:0;z-index:9999;background:var(--bad,#b4341f);color:#fff;padding:12px 18px;font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.25)';
+  const why = res.reason==='no-token'
+      ? 'No GitHub token set. This app holds <b>no data of its own</b> — it loads every dataset from your private repo (modelware_app_storage). Set a token to load it.'
+    : res.reason==='fetch'
+      ? ('Could not load <b>'+res.file+'</b> from the private repo (HTTP '+res.status+'). '+(res.status===404?'Commit the data files (ka-catalog.json, seed-cohort.json, role-ka-coverage.json) to the repo first.':res.status===403?'The token needs <b>Contents: read</b> on the repo.':res.status===401?'The token is invalid or expired.':''))
+      : ('Load error: '+esc(res.msg||'unknown')+' (network / CORS).');
+  g.innerHTML='<div style="max-width:980px;margin:0 auto"><b>⚠ Ontology data not loaded.</b> '+why+
+    ' <button id="gateToken" style="margin:0 6px;background:#fff;color:var(--bad,#b4341f);border:none;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer">Set GitHub token</button>'+
+    '<button id="gateRetry" style="background:transparent;color:#fff;border:1px solid #fff;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer">Retry</button></div>';
+  document.body.style.paddingTop='64px';
+  document.getElementById('gateToken').onclick=()=>{ ghSetToken(); };
+  document.getElementById('gateRetry').onclick=()=>{ boot(); };
+}
+function clearDataGate(){ const g=document.getElementById('dataGate'); if(g) g.remove(); document.body.style.paddingTop=''; }
+async function boot(){
+  const res=await loadPilotData();
+  if(!res.ok){ showDataGate(res); return; }
+  clearDataGate();
+  runInit();
+}
+function runInit(){
   const saved=loadEntered();
   ENTERED = saved || defaultEntered();
   if(!ENTERED.strategy) ENTERED.strategy=defaultStrategy();
@@ -1532,13 +1647,15 @@ function init(){
   } else if(online && ghToken()){
     ghMsg('Showing your saved cohort from this browser. Use “Load from GitHub” to pull the repo copy, or “Save & use / Save to GitHub” to push.','muted');
   }
+  // Ontology deliverables come straight from the private repo (no copy kept in the app/browser).
+  if(online && ghToken()) ghLoadKaDeliverables(true);
   // default to entered if it has named people, else seed
   const named = ENTERED.people.filter(p=>p.alias&&p.alias.trim()).length;
   setSource(named? 'entered' : 'seed');
 }
 // Safety net: persist in-progress edits to the browser on refresh/close so nothing is lost.
 window.addEventListener('beforeunload', function(){ try{ if(typeof ENTERED!=='undefined' && ENTERED) persist(); }catch(e){} });
-init();
+boot();
 </script>
 </body>
 </html>

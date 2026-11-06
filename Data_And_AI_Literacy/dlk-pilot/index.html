@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.11.2">
-<meta name="build-timestamp" content="2026-11-06 09:00 SAST">
+<meta name="version" content="1.12.0">
+<meta name="build-timestamp" content="2026-11-06 09:42 SAST">
 <title>DLK Lean Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -357,6 +357,40 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
       </div>
       <div class="legend" id="ledgerCount"></div>
     </div>
+
+    <!-- CAPTURE EVIDENCE — attach a Deliverable + the three Scorecards -->
+    <div class="panel" id="capturePanel">
+      <div class="toprow">
+        <div>
+          <h3 style="margin-bottom:2px">➕ Capture evidence <span class="muted small">— attach a Deliverable and its three Scorecards</span></h3>
+          <p class="muted small" style="margin:0;max-width:72ch">This is how a self-reported level becomes <b>evidenced</b>. Pick the learner and Knowledge Area, link the <b>Deliverable</b> they produced (stored in MoWeb / the repo), then enter the three scores <b>Modelware</b> assigns. The evidenced band is <code>min(Quality, Stakeholder)</code> — the deliverable only counts at the level both the quality review <i>and</i> the stakeholder confirm. Value (KYV) is recorded as worth. This writes Practical (E4) + Workplace (E5) evidence, updates Mastery, and supersedes the self-report.</p>
+        </div>
+      </div>
+      <hr class="sep">
+      <div class="grid g4">
+        <div><label class="fld" for="capLearner">Learner</label><select id="capLearner"></select></div>
+        <div><label class="fld" for="capCap">Knowledge Area (capability)</label><select id="capCap"></select></div>
+        <div style="grid-column:span 2"><label class="fld" for="capTitle">Deliverable title</label><input type="text" id="capTitle" class="sm" style="width:100%" placeholder="e.g. DLK Retail Credit — Data Quality Assessment"></div>
+      </div>
+      <div class="grid g4" style="margin-top:8px">
+        <div style="grid-column:span 2"><label class="fld" for="capUrl">Deliverable link (MoWeb / repo URL)</label><input type="text" id="capUrl" class="sm" style="width:100%" placeholder="https://github.com/modelwaresystems-dama/modelware_app_storage/…"></div>
+        <div><label class="fld" for="capType">Deliverable type</label><input type="text" id="capType" class="sm" style="width:100%" placeholder="auto from KA"></div>
+        <div><label class="fld" for="capDate">Assessed on</label><input type="date" id="capDate" class="sm" style="width:100%"></div>
+      </div>
+      <div class="grid g4" style="margin-top:8px">
+        <div><label class="fld" for="capQuality">Quality Scorecard <span class="muted small">(Modelware)</span></label><select id="capQuality" class="sm" style="width:100%"></select></div>
+        <div><label class="fld" for="capValue">Value Scorecard · KYV</label><select id="capValue" class="sm" style="width:100%"></select></div>
+        <div><label class="fld" for="capStake">Stakeholder Feedback</label><select id="capStake" class="sm" style="width:100%"></select></div>
+        <div><label class="fld" for="capReviewer">Reviewer / assessor</label><input type="text" id="capReviewer" class="sm" style="width:100%" value="Modelware assessor"></div>
+      </div>
+      <div class="grid g4" style="margin-top:8px">
+        <div style="grid-column:span 3"><label class="fld" for="capNote">Review note <span class="muted small">(optional)</span></label><input type="text" id="capNote" class="sm" style="width:100%" placeholder="What the scoring was based on"></div>
+        <div style="display:flex;align-items:flex-end;gap:8px"><button class="btn" id="capSave" style="flex:1">Create evidence</button></div>
+      </div>
+      <div class="note" id="capPreview" style="margin-top:10px;display:none"></div>
+      <div class="legend" id="capMsg" style="margin-top:8px"></div>
+    </div>
+
     <div class="panel" id="ledgerPanel" style="overflow:auto">
       <table id="ledgerTbl"><thead><tr>
         <th>response_pubid <span class="pill">IRT</span></th><th>captured_at</th><th>learner</th><th>role / context</th>
@@ -663,10 +697,35 @@ function selfResult(band,conf){
     selfReport:true, conf:conf||3, old:'—',
     sK:{present:false},sJ:{present:false},sP:{present:false},sW:{present:false} };
 }
+/* captured Deliverable + three Scorecards → Evidence → Mastery
+   ONTOLOGY KA meta-model: Deliverable --scored by--> {Quality, Value(KYV), Stakeholder}
+   --form the evidence--> Evidence --evidences--> Mastery (M0..M5 of the KA).
+   Modelware performs the Quality Score in line with the Stakeholder Feedback, so the
+   evidenced band is only as strong as BOTH agree: band = min(Quality, Stakeholder).
+   Quality Scorecard → Practical (E4) channel · Stakeholder Feedback → Workplace (E5)
+   attestation · Value Scorecard (KYV) recorded as worth, shown but not gating the band. */
+function sc(v){ const n=Math.max(0,Math.min(5,+v||0)); return {present:true,mean:n/5,min:n/5,n:1,score:n}; }
+function scorecardResult(o){
+  const a=o.artifact;
+  const q=Math.max(0,Math.min(5,+a.quality||0)), w=Math.max(0,Math.min(5,+a.stakeholder||0));
+  const val=(a.value!=null&&a.value!=='')?Math.max(0,Math.min(5,+a.value)):null;
+  const bn=Math.min(q,w);
+  const flags=['evidenced'];
+  if(Math.abs(q-w)>=2) flags.push('evidence-conflict');
+  let state;
+  if(flags.includes('evidence-conflict')) state='Uncertain — Quality and Stakeholder disagree, validation required';
+  else if(bn<=1) state='Development need — deliverable evidences only M'+bn;
+  else state='Capability evidenced at M'+bn+' — deliverable scored by Modelware';
+  return { band:'M'+bn, state, flags, conf:5, old:oldBand(0,0,q/5,w/5),
+    evidenced:true, kyv:val, selfReport:false,
+    sK:{present:false,mean:0,min:0,n:0}, sJ:{present:false,mean:0,min:0,n:0},
+    sP:sc(q), sW:sc(w) };
+}
 function resultFor(l,capId){
   const o=l.caps[capId]; if(!o) return null;
-  if(o.self!=null){ const r=selfResult(o.self,o.conf); r.raw=o; return r; }
+  if(o.artifact){ const r=scorecardResult(o); r.raw=o; return r; }          // real evidence supersedes
   if(o.K||o.J||o.P||o.W){ const r=evaluate(o.K,o.J,o.P,o.W,o.conf||3,!!o.dq); r.conf=o.conf||3; r.raw=o; return r; }
+  if(o.self!=null){ const r=selfResult(o.self,o.conf); r.raw=o; return r; }  // self-report is the baseline
   return null;
 }
 function bandNum(b){return +String(b).replace('M','')||0;}
@@ -807,7 +866,9 @@ document.getElementById('saveCohort').onclick=()=>{
   const msg=document.getElementById('saveMsg');
   if(ghToken()){
     msg.textContent='Saved to this browser — '+named+' '+(named===1?'person':'people')+' · saving to GitHub…';
-    ghSaveCohort().then(()=>{ msg.textContent='Saved — '+named+' '+(named===1?'person':'people')+' · browser + GitHub repo.'; });
+    ghSaveCohort().then(res=>{ msg.textContent = (res&&res.ok)
+      ? 'Saved — '+named+' '+(named===1?'person':'people')+' · browser + GitHub repo'+(res.commit?(' ('+res.commit+')'):'')+'.'
+      : 'Saved to this browser — '+named+' '+(named===1?'person':'people')+'. ⚠ GitHub save FAILED: '+((res&&res.msg)||'unknown'); });
   } else {
     msg.textContent='Saved to this browser — '+named+' '+(named===1?'person':'people')+'. Set a GitHub token (below) to also store it in modelware_app_storage.';
   }
@@ -951,7 +1012,7 @@ function chanBox(k,st){ return '<div class="chanbox"><div class="k">'+k+'</div><
 function flagChips(flags){
   const map={'evidence-conflict':['','D1 · evidence conflict'],'disqualifying-error':['','disqualifying error'],
     'false-confidence':['warn','over-confident vs evidence'],'hidden-capability':['good','hidden capability'],
-    'self-report':['info','self-reported']};
+    'self-report':['info','self-reported'],'evidenced':['good','evidenced · deliverable scored']};
   return flags.map(f=>'<span class="flag '+(map[f]?map[f][0]:'')+'">'+(map[f]?map[f][1]:f)+'</span>').join('');
 }
 function renderDash(){
@@ -1068,7 +1129,23 @@ function buildLedger(){
   LEDGER=[]; let rid=0; const base=new Date('2026-10-28T08:00:00Z').getTime();
   ACTIVE.forEach(l=>{
     Object.keys(l.caps).forEach(capId=>{
-      const o=l.caps[capId]; if(o.self!=null) return; // self-report produces no evidence yet
+      const o=l.caps[capId];
+      if(o.artifact){ // captured Deliverable scored by Modelware → two evidence rows (Quality→P, Stakeholder→W)
+        const a=o.artifact;
+        const art={ title:a.title||((ARTYPE[capId]||capId+' deliverable')+' — '+(l.alias||l.id)),
+          type:a.type||ARTYPE[capId]||(CAPBY[capId]?CAPBY[capId].name+' deliverable':capId+' deliverable'),
+          url:a.url||'', store:a.store||'MoWeb / modelware_app_storage', date:a.date||'',
+          reviewer:a.reviewer||'Modelware assessor',
+          quality:+a.quality||0, value:(a.value!=null&&a.value!=='')?+a.value:null, stakeholder:+a.stakeholder||0 };
+        const q=+a.quality||0, w=+a.stakeholder||0;
+        [['P',q,'Quality Scorecard'],['W',w,'Stakeholder Feedback']].forEach(([ch,raw,src],k)=>{ rid++;
+          LEDGER.push({ pubid:ulid(rid), ts:new Date(base+rid*37e5).toISOString().slice(0,16).replace('T',' ')+'Z',
+            learner:l.id, role:l.role, cap:capId, chan:ch, item:capId+'-'+ch+'-01', ver:'1.2.0',
+            format:FMT[ch], raw:raw, cat:raw, conf:5, review:'human-reviewed', src:src, art:art });
+        });
+        return;
+      }
+      if(o.self!=null) return; // self-report produces no evidence yet
       const art=(o.P||o.W)?artifactFor(l,capId):null;
       let itemN=1;
       ['K','J','P','W'].forEach(ch=>{ (o[ch]||[]).forEach(raw=>{ rid++;
@@ -1103,7 +1180,11 @@ function renderTraceability(){
       '<div class="trace">'+
         '<div class="tnode"><div class="tlab">Deliverable (Output)</div><a href="'+it.art.url+'" target="_blank" rel="noopener"><b>'+it.art.type+'</b> ↗</a><div class="exp">'+(l.alias||l.id)+' · '+it.art.store+'</div></div>'+
         '<div class="trel">scored by →</div>'+
-        '<div class="tnode"><div class="tlab">Scorecards</div>Quality · Value (KYV) · Stakeholder<div class="exp">Modelware performs scoring</div></div>'+
+        '<div class="tnode"><div class="tlab">Scorecards</div>'+
+          (it.art.quality!=null
+            ? 'Quality <b>M'+(+it.art.quality)+'</b> · Value/KYV '+(it.art.value!=null?'<b>M'+(+it.art.value)+'</b>':'—')+' · Stakeholder <b>M'+(+it.art.stakeholder)+'</b>'
+            : 'Quality · Value (KYV) · Stakeholder')+
+          '<div class="exp">Modelware performs scoring</div></div>'+
         '<div class="trel">form the evidence →</div>'+
         '<div class="tnode"><div class="tlab">Evidence</div>'+rv+'</div>'+
         '<div class="trel">evidences →</div>'+
@@ -1121,8 +1202,8 @@ function renderLedger(){
   if(!LEDGER.length){
     document.getElementById('ledgerCount').innerHTML='';
     panel.innerHTML='<div class="empty"><b>No evidence captured yet.</b><br>'+
-      (SOURCE==='entered'? 'The DLK cohort is self-reported. Run the assessment to produce the Assurance Record — every response is captured in the IRT-ready shape below.' :
-       'Switch the data source to a cohort with evidence.')+
+      (SOURCE==='entered'? 'The DLK cohort is self-reported. Use <b>➕ Capture evidence</b> above to attach a Deliverable and its three Scorecards — each capture writes Practical + Workplace rows into the Assurance Record in the IRT-ready shape below.' :
+       'Switch the data source to a cohort with evidence, or use <b>➕ Capture evidence</b> above on the DLK entered cohort.')+
       '<div style="margin-top:12px" class="legend">'+['response_pubid','captured_at','tenant_id','learner_id','capability_id','evidence_channel','item_id · version','raw_score','response_category','confidence','review_status'].map(f=>'<span class="pill">'+f+'</span>').join('')+'</div></div>';
     return;
   }
@@ -1158,6 +1239,78 @@ document.getElementById('exportCsv').onclick=()=>{
   const blob=new Blob([lines.join('\n')],{type:'text/csv'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='DLK_Assurance_Record_'+(new Date().toISOString().slice(0,10))+'.csv'; a.click();
+};
+
+/* ---------- CAPTURE EVIDENCE: Deliverable + 3 Scorecards → Evidence ---------- */
+function scoreOptions(sel,optional){ let h=optional?'<option value="">—</option>':'';
+  for(let b=0;b<=5;b++){h+='<option value="'+b+'"'+(sel==b?' selected':'')+'>M'+b+' '+MLAB[b]+'</option>';} return h; }
+function capPeople(){ return (ENTERED&&ENTERED.people?ENTERED.people:[]).filter(p=>p.alias&&p.alias.trim()); }
+function fillCaptureForm(){
+  const cl=document.getElementById('capLearner'); if(!cl) return;
+  const ppl=capPeople(), prevL=cl.value;
+  cl.innerHTML='';
+  if(!ppl.length){ cl.add(new Option('— no named people entered (add them in Cohort setup) —','')); }
+  else ppl.forEach(p=>cl.add(new Option((p.alias||p.id)+' — '+((ROLEBY()[p.role]||{}).name||p.role),p.id)));
+  if(prevL&&ppl.find(p=>p.id===prevL)) cl.value=prevL;
+  const cc=document.getElementById('capCap'), prevC=cc.value;
+  cc.innerHTML=''; CAPS.forEach(c=>cc.add(new Option(c.id+' · '+c.name,c.id)));
+  if(prevC&&CAPS.find(c=>c.id===prevC)) cc.value=prevC;
+  const q=document.getElementById('capQuality'), v=document.getElementById('capValue'), w=document.getElementById('capStake');
+  if(!q.options.length){ q.innerHTML=scoreOptions(4,true); v.innerHTML=scoreOptions('',true); w.innerHTML=scoreOptions(4,true); }
+  const d=document.getElementById('capDate'); if(!d.value) d.value=new Date().toISOString().slice(0,10);
+  capTypeHint(); capPreviewUpdate();
+}
+function capTypeHint(){
+  const cap=document.getElementById('capCap').value, t=document.getElementById('capType');
+  if(!t.value||t.dataset.auto==='1'){ t.value=ARTYPE[cap]||(CAPBY[cap]?CAPBY[cap].name+' deliverable':''); t.dataset.auto='1'; }
+}
+function capPreviewUpdate(){
+  const q=document.getElementById('capQuality').value, w=document.getElementById('capStake').value, v=document.getElementById('capValue').value;
+  const box=document.getElementById('capPreview');
+  if(q===''||w===''){ box.style.display='none'; return; }
+  const bn=Math.min(+q,+w), conflict=Math.abs(+q-+w)>=2;
+  box.style.display='block';
+  box.style.background=conflict?'var(--mid-bg,#fdefdd)':'var(--ok-bg,#e7f5ee)';
+  box.style.borderLeftColor=conflict?'var(--mid,#8a4b00)':'var(--ok,#0f7b5a)';
+  box.innerHTML='<span class="lab" style="color:'+(conflict?'var(--mid,#8a4b00)':'var(--ok,#0f7b5a)')+'">Evidenced band → <b>M'+bn+' '+MLAB[bn]+'</b></span> '+
+    '— min(Quality M'+q+', Stakeholder M'+w+')'+(v!==''?' · Value/KYV M'+v:'')+
+    (conflict?'. <b>Flagged D1 (evidence conflict)</b> — quality and stakeholder differ by ≥2 bands; human validation required.':'. Quality and stakeholder agree.');
+}
+['capQuality','capStake','capValue'].forEach(id=>{ const e=document.getElementById(id); if(e) e.onchange=capPreviewUpdate; });
+(function(){ const cc=document.getElementById('capCap'); if(cc) cc.onchange=capTypeHint;
+  const t=document.getElementById('capType'); if(t) t.oninput=()=>{t.dataset.auto='0';}; })();
+document.getElementById('capSave').onclick=()=>{
+  const msg=document.getElementById('capMsg');
+  const lid=document.getElementById('capLearner').value, cap=document.getElementById('capCap').value;
+  const q=document.getElementById('capQuality').value, w=document.getElementById('capStake').value, v=document.getElementById('capValue').value;
+  const title=document.getElementById('capTitle').value.trim(), url=document.getElementById('capUrl').value.trim();
+  const type=document.getElementById('capType').value.trim(), date=document.getElementById('capDate').value;
+  const reviewer=document.getElementById('capReviewer').value.trim()||'Modelware assessor';
+  const note=document.getElementById('capNote').value.trim();
+  if(!lid){ msg.innerHTML='<span style="color:var(--bad)">Enter at least one named person in Cohort setup first.</span>'; return; }
+  if(q===''||w===''){ msg.innerHTML='<span style="color:var(--bad)">Quality Scorecard and Stakeholder Feedback are both required — they create the evidence.</span>'; return; }
+  if(!title){ msg.innerHTML='<span style="color:var(--bad)">Give the Deliverable a title.</span>'; return; }
+  const P=ENTERED.people.find(p=>p.id===lid); if(!P){ msg.innerHTML='<span style="color:var(--bad)">Learner not found.</span>'; return; }
+  P.caps[cap]=P.caps[cap]||{};
+  P.caps[cap].artifact={ title:title, type:type||ARTYPE[cap]||cap+' deliverable', url:url,
+    store:'MoWeb / modelware_app_storage', date:date, reviewer:reviewer, review:note,
+    quality:+q, value:(v!==''?+v:null), stakeholder:+w, channel:'P', capturedAt:new Date().toISOString() };
+  persist();
+  if(SOURCE!=='entered'){ setSource('entered'); } else { buildLedger(); refreshAll(); }
+  // focus this learner in the views
+  fLearner.value=lid; if(dashLearner.querySelector('option[value="'+lid+'"]')) dashLearner.value=lid;
+  renderLedger(); renderDash();
+  const bn=Math.min(+q,+w);
+  const head='✓ Evidence created for <b>'+esc((P.alias||P.id))+'</b> · '+cap+' → <b>M'+bn+'</b> (Quality M'+q+' / Stakeholder M'+w+(v!==''?' / KYV M'+v:'')+'). ';
+  if(ghToken()){
+    msg.innerHTML='<span style="color:var(--muted)">'+head+'Saved to this browser · writing to GitHub…</span>';
+    ghSaveCohort().then(res=>{
+      if(res&&res.ok){ msg.innerHTML='<span style="color:var(--ok)">'+head+'Stored in GitHub repo ✓ '+(res.commit?('commit '+res.commit):'')+'</span>'; }
+      else { msg.innerHTML='<span style="color:var(--ok)">'+head+'</span><br><span style="color:var(--bad)">⚠ Saved in this browser, but <b>NOT stored in GitHub</b>: '+esc((res&&res.msg)||'unknown error')+'</span>'; }
+    });
+  } else {
+    msg.innerHTML='<span style="color:var(--ok)">'+head+'</span><br><span style="color:var(--mid)">Saved to this browser only — set a GitHub token (Cohort setup) to store it in modelware_app_storage.</span>';
+  }
 };
 
 /* ========================================================
@@ -1270,7 +1423,7 @@ function renderManager(){
 /* ========================================================
    REFRESH + INIT
    ======================================================== */
-function refreshAll(){ rebuildCaps(); renderStrategy(); fillRouter(); fillDashLearner(); fillLedgerFilters(); renderDash(); renderLedger(); renderManager(); }
+function refreshAll(){ rebuildCaps(); renderStrategy(); fillRouter(); fillDashLearner(); fillLedgerFilters(); fillCaptureForm(); renderDash(); renderLedger(); renderManager(); }
 
 /* ========================================================
    GITHUB CLOUD STORAGE — modelware_app_storage (Contents API)
@@ -1297,19 +1450,27 @@ async function ghLoadCohort(silent){
   }catch(e){ if(!silent) ghMsg('Load error: '+e.message,'bad'); return false; }
 }
 async function ghSaveCohort(){
-  if(!ghToken()){ ghMsg('No token — click “Set token” first.','bad'); return; }
+  if(!ghToken()){ const m='No token — click “Set token” first.'; ghMsg(m,'bad'); return {ok:false,status:0,msg:m}; }
   ghMsg('Saving to GitHub…','muted');
   try{
     let sha=null;
     const g=await fetch(ghContentsUrl(true),{headers:ghHeaders(false),cache:'no-store'});
     if(g.ok){ const j=await g.json(); sha=j.sha; }
-    const payload={schema:'dlk-pilot-cohort',version:'1.7.0',tenant:'DLK',saved_at:new Date().toISOString(),caps:ENTERED.caps,strategy:ENTERED.strategy,roles:ENTERED.roles,people:ENTERED.people};
+    const payload={schema:'dlk-pilot-cohort',version:'1.8.0',tenant:'DLK',saved_at:new Date().toISOString(),caps:ENTERED.caps,strategy:ENTERED.strategy,roles:ENTERED.roles,people:ENTERED.people};
     const body={ message:'DLK pilot cohort update ('+new Date().toISOString().slice(0,16).replace('T',' ')+'Z)', content:b64(JSON.stringify(payload,null,2)), branch:GH.ref };
     if(sha) body.sha=sha;
     const r=await fetch(ghContentsUrl(false),{method:'PUT',headers:ghHeaders(false),body:JSON.stringify(body)});
-    if(r.ok){ persist(); ghMsg('Saved to GitHub → '+GH.path+'/'+GH.file,'ok'); }
-    else { const t=await r.text(); ghMsg('Save failed ('+r.status+'). '+((r.status===401||r.status===403)?'Token needs Contents: read and write on the repo.':(r.status===409?'Conflict — Load from GitHub, then retry.':'')),'bad'); console.warn('GH save',r.status,t); }
-  }catch(e){ ghMsg('Save error: '+e.message,'bad'); }
+    if(r.ok){ let commit=''; try{ const j=await r.json(); commit=((j.commit&&j.commit.sha)||'').slice(0,7); }catch(e){}
+      persist(); const m='Saved to GitHub → '+GH.path+'/'+GH.file+(commit?(' ('+commit+')'):''); ghMsg(m,'ok');
+      return {ok:true,status:r.status,msg:m,commit:commit}; }
+    const t=await r.text();
+    const why=(r.status===401)?'Token is invalid or expired — set a new one.':
+      (r.status===403)?'Your token can READ but not WRITE this repo. Regenerate a PAT with Contents: Read AND Write on '+GH.owner+'/'+GH.repo+'.':
+      (r.status===404)?'Repo/path not found for this token — check it has access to '+GH.owner+'/'+GH.repo+'.':
+      (r.status===409||r.status===422)?'Conflict — click “Load from GitHub”, then capture/save again.':'';
+    const m='Save FAILED ('+r.status+'). '+why; ghMsg(m,'bad'); console.warn('GH save',r.status,t);
+    return {ok:false,status:r.status,msg:m,detail:t};
+  }catch(e){ const m='Save error: '+e.message+' (network/CORS).'; ghMsg(m,'bad'); return {ok:false,status:-1,msg:m}; }
 }
 function ghSetToken(){
   const t=prompt('Paste a GitHub Personal Access Token with “Contents: read and write” on '+GH.owner+'/'+GH.repo+'.\nShared with your ontology apps (localStorage key “'+GH_TOKEN_KEY+'”). Leave blank to clear.', '');

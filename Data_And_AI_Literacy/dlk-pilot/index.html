@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="2.0.0">
-<meta name="build-timestamp" content="2026-11-06 10:16 SAST">
+<meta name="version" content="2.1.0">
+<meta name="build-timestamp" content="2026-11-06 16:53 SAST">
 <title>DLK Lean Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -172,6 +172,7 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
     <button class="tab" role="tab" data-v="manager" aria-selected="false">7 · Manager view</button>
     <button class="tab" role="tab" data-v="rolecov" aria-selected="false">8 · Role↔KA (ontology)</button>
     <button class="tab" role="tab" data-v="engine" aria-selected="false">9 · Why the rating is trustworthy</button>
+    <button class="tab" role="tab" data-v="import" aria-selected="false">10 · Import (Excel)</button>
   </nav>
 
   <!-- ===================== FRAMEWORK ===================== -->
@@ -478,6 +479,30 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
       <table id="proofTbl"><thead><tr><th>Case</th><th>K</th><th>J</th><th>P</th><th>W</th><th>Old model</th><th>Corrected</th><th>State</th><th>Flags</th></tr></thead><tbody></tbody></table>
       <p class="muted small" style="margin-top:10px">Mastery ladder: <b>M1</b> Orient · <b>M2</b> Understand · <b>M3</b> Apply · <b>M4</b> Operate · <b>M5</b> Govern. Channels: K Knowledge · J Judgement · P Practical · W Workplace (0–5 rubric). Human review is mandatory on M3+ and anything consequential before it becomes an Assurance Record entry.</p>
     </div>
+  </section>
+
+  <!-- ===================== IMPORT (EXCEL) ===================== -->
+  <section class="view" id="v-import">
+    <div class="panel">
+      <div class="toprow">
+        <div>
+          <h3 style="margin-bottom:2px">Import assessments from Excel <span class="muted small">— the 6-tab starter workbook</span></h3>
+          <p class="muted small" style="margin:0;max-width:74ch">Upload the <b>DLK Pilot Assessment Import Starter</b> (Business AI &amp; Data Strategy, Learner Cohorts, Thinking Styles, StrengthsFinder, PDMMA, Know Your Value). The importer reads each tab, maps it to the ontology, shows a preview, then writes to the private repo (<span class="mono">dlk-cohort.json</span>). Nothing is embedded in this app. Learner names must match across tabs.</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="file" id="impFile" accept=".xlsx" style="display:none">
+          <button class="btn" id="impPick">⤒ Choose .xlsx</button>
+          <button class="btn ghost" id="impApply" disabled>Apply → write to repo</button>
+        </div>
+      </div>
+      <hr class="sep">
+      <div class="legend" id="impStatus">No file loaded. The workbook is in your private repo under <span class="mono">Ontology/import/</span>, and was delivered to you in chat.</div>
+    </div>
+    <div class="panel" id="impPreview" style="display:none">
+      <h3 style="margin-bottom:6px">Preview <span class="muted small">— review before writing</span></h3>
+      <div id="impPreviewBody"></div>
+    </div>
+    <div class="panel" id="impMsg2" style="display:none"></div>
   </section>
 
   <div class="foot">
@@ -947,6 +972,153 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.getElementById('v-'+t.dataset.v).classList.add('on');
 });
 function goTab(v){document.querySelector('.tab[data-v="'+v+'"]').click();}
+
+/* ========================================================
+   IMPORT — Excel (6-tab starter) → ontology → private repo
+   SheetJS loaded on demand from CDN; no data embedded in app.
+   ======================================================== */
+let IMPORT_MODEL=null;
+function impMsg(t,tone){ const el=document.getElementById('impStatus'); if(el){ el.innerHTML='<span style="color:'+(tone==='bad'?'var(--bad)':tone==='ok'?'var(--ok)':'var(--muted)')+'">'+t+'</span>'; } }
+function impLoadSheetJS(){ return new Promise((res,rej)=>{
+  if(window.XLSX) return res(window.XLSX);
+  const s=document.createElement('script');
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  s.onload=()=>res(window.XLSX); s.onerror=()=>rej(new Error('Could not load the Excel reader (offline?)'));
+  document.head.appendChild(s);
+}); }
+const _norm=s=>String(s==null?'':s).trim();
+const _low=s=>_norm(s).toLowerCase();
+const _isName=s=>{ s=_norm(s); return s && s.length<=60 && !/\(/.test(s); }; // a learner name, not a footnote/sentence (periods ok for initials; parens/length flag notes)
+const _isId=s=>{ s=_norm(s); return s && s.length<=24 && !/\s|\(/.test(s); };   // a short id, not a section title
+function impFindSheet(wb,kw){ return wb.SheetNames.find(n=>_low(n).includes(kw)); }
+function rowsOf(wb,name){ return name?XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''}):[]; }
+function headerIndex(row){ const m={}; (row||[]).forEach((h,i)=>{ const k=_low(h).replace(/\s*\(auto\)/,'').trim(); if(k) m[k]=i; }); return m; }
+
+function impMap(wb){
+  const M={people:[], strategy:[], kpis:[], thinking:{}, strengths:{}, pdmma:{}, kyv:{}, issues:[], sheets:wb.SheetNames};
+  // ---- Cohorts ----
+  const cs=impFindSheet(wb,'cohort'); if(cs){ const r=rowsOf(wb,cs); const h=headerIndex(r[0]);
+    for(let i=1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); if(!_isName(name)) continue;
+      M.people.push({ alias:name, role:_norm(row[h['role']]), company:_norm(row[h['company']]),
+        func:_norm(row[h['function']]), unit:_norm(row[h['unit']]), persona:_norm(row[h['persona']]) }); } }
+  // ---- Strategy (objectives + KPIs stacked) ----
+  const ss=impFindSheet(wb,'strategy'); if(ss){ const r=rowsOf(wb,ss); let mode=null,h=null;
+    for(let i=0;i<r.length;i++){ const row=r[i]; const first=_low(row[0]);
+      if(first==='objective id'){ mode='obj'; h=headerIndex(row); continue; }
+      if(first==='kpi id'){ mode='kpi'; h=headerIndex(row); continue; }
+      if(!mode) continue; const id=_norm(row[0]); if(!_isId(id)) continue;
+      if(mode==='obj'){ M.strategy.push({ id:id, title:_norm(row[h['strategic objective']]), kpi:_norm(row[h['outcome / kpi']]),
+        target:_norm(row[h['target']]), horizon:_norm(row[h['horizon']]), criticality:_norm(row[h['criticality']]),
+        owner:_norm(row[h['owner']]), status:_norm(row[h['status']]), layer:_norm(row[h['layer']]),
+        workforce:_norm(row[h['workforce implication']]), driver:_norm(row[h['cost / value driver']]) }); }
+      else { M.kpis.push({ id:id, kpi:_norm(row[h['kpi']]), definition:_norm(row[h['definition']]), target:_norm(row[h['target']]),
+        current:_norm(row[h['current result']]), unit:_norm(row[h['unit']]), rag:_norm(row[h['rag']]), owner:_norm(row[h['owner']]) }); } } }
+  // ---- Thinking Styles ----
+  const ts=impFindSheet(wb,'thinking'); if(ts){ const r=rowsOf(wb,ts); const h=headerIndex(r[0]);
+    for(let i=1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); if(!_isName(name)) continue;
+      const o={ CS:+row[h['concrete sequential']]||null, AS:+row[h['abstract sequential']]||null,
+        CR:+row[h['concrete random']]||null, AR:+row[h['abstract random']]||null };
+      const pairs=[['Concrete Sequential',o.CS],['Abstract Sequential',o.AS],['Concrete Random',o.CR],['Abstract Random',o.AR]].filter(p=>p[1]!=null);
+      o.dominant = pairs.length? pairs.sort((a,b)=>b[1]-a[1])[0][0] : '';
+      M.thinking[_low(name)]={name:name,data:o}; } }
+  // ---- Strengths (tall) ----
+  const sr=impFindSheet(wb,'strength'); if(sr){ const r=rowsOf(wb,sr); const h=headerIndex(r[0]);
+    for(let i=1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); const theme=_norm(row[h['theme']]); if(!_isName(name)||!theme) continue;
+      const rank=+row[h['rank (1–34)']]||+row[h['rank']]||null; const dom=_norm(row[h['domain']]);
+      (M.strengths[_low(name)]=M.strengths[_low(name)]||{name:name,items:[]}).items.push({rank:rank,theme:theme,domain:dom}); } }
+  // ---- PDMMA (wide A/R/D per learner) ----
+  const ps=impFindSheet(wb,'pdmma'); if(ps){ const r=rowsOf(wb,ps); const g1=r[0]||[], g2=r[1]||[];
+    // learner groups start at column index 5, step 3
+    const groups=[]; for(let c=5;c<g1.length;c+=3){ const gn=_norm(g1[c]); if(gn && !/^learner \d+ \(rename\)$/i.test(gn)) groups.push({name:gn,col:c}); }
+    for(let i=2;i<r.length;i++){ const row=r[i]; const did=_norm(row[3]); if(!did) continue;
+      groups.forEach(g=>{ const A=_norm(row[g.col]),R=_norm(row[g.col+1]),D=_norm(row[g.col+2]); if(!A&&!R&&!D) return;
+        const key=_low(g.name); (M.pdmma[key]=M.pdmma[key]||{name:g.name,rows:{}}).rows[did]={ka:_norm(row[0]),deliverable:_norm(row[4]),A:A,R:R,D:D}; }); } }
+  // ---- Know Your Value (work audit) ----
+  const ks=impFindSheet(wb,'value')||impFindSheet(wb,'kyv'); if(ks){ const r=rowsOf(wb,ks); const h=headerIndex(r[0]);
+    for(let i=1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); const act=_norm(row[h['activity']]); if(!_isName(name)||!act) continue;
+      (M.kyv[_low(name)]=M.kyv[_low(name)]||{name:name,items:[]}).items.push({ category:_norm(row[h['category']]), activity:act,
+        pctMonth:_norm(row[h['% of month']]), action:_norm(row[h['action strategy']]), notes:_norm(row[h['notes']]) }); } }
+  // ---- cross-tab learner-name validation ----
+  const cohortNames=new Set(M.people.map(p=>_low(p.alias)));
+  ['thinking','strengths','pdmma','kyv'].forEach(k=>Object.values(M[k]).forEach(v=>{ if(!cohortNames.has(_low(v.name))) M.issues.push(v.name+' has '+k+' data but is not in the Cohorts tab'); }));
+  return M;
+}
+
+function impRenderPreview(M){
+  const host=document.getElementById('impPreviewBody');
+  const count=o=>Object.keys(o).length;
+  const rows=[['Learner cohort', M.people.length+' learner(s)'],
+    ['Strategy — objectives', M.strategy.length+' objective(s)'],
+    ['Strategy — KPIs', M.kpis.length+' KPI(s)'],
+    ['Thinking Styles', count(M.thinking)+' learner(s)'],
+    ['StrengthsFinder', count(M.strengths)+' learner(s) · '+Object.values(M.strengths).reduce((a,v)=>a+v.items.length,0)+' theme rows'],
+    ['PDMMA (A/R/D)', count(M.pdmma)+' learner(s) · '+Object.values(M.pdmma).reduce((a,v)=>a+Object.keys(v.rows).length,0)+' deliverable readings'],
+    ['Know Your Value', count(M.kyv)+' learner(s) · '+Object.values(M.kyv).reduce((a,v)=>a+v.items.length,0)+' activities']];
+  let h='<table><thead><tr><th>Import</th><th>Parsed</th></tr></thead><tbody>'+
+    rows.map(r=>'<tr><td><b>'+r[0]+'</b></td><td>'+r[1]+'</td></tr>').join('')+'</tbody></table>';
+  if(M.people.length){ h+='<div style="margin-top:8px" class="legend">Learners: '+M.people.map(p=>'<span class="pill">'+esc(p.alias)+'</span>').join(' ')+'</div>'; }
+  if(M.issues.length){ h+='<div class="callout" style="margin-top:10px;border-left-color:var(--mid)"><b>⚠ '+M.issues.length+' name mismatch(es):</b><br>'+M.issues.map(esc).join('<br>')+'<div class="muted small" style="margin-top:4px">These will still import, but won’t attach to a cohort learner until the names match.</div></div>'; }
+  host.innerHTML=h;
+  document.getElementById('impPreview').style.display='block';
+  document.getElementById('impApply').disabled=false;
+}
+
+function impResolveRole(name,persona){
+  name=_norm(name); if(!name) return (ENTERED.roles[0]||{}).id||'R1';
+  const found=ENTERED.roles.find(r=>_low(r.name)===_low(name)); if(found) return found.id;
+  const pmap=p=>{ p=_low(p); return p.includes('exec')?'Executive':p.includes('practice manager')?'Project Manager':p.includes('thought leader')?'Team Lead':p.includes('citizen')?'Citizen':'Professional'; };
+  const id='RI'+(ENTERED.roles.length+1);
+  ENTERED.roles.push({id:id,name:name,persona:pmap(persona),req:{}});
+  return id;
+}
+function impApply(){
+  const M=IMPORT_MODEL; if(!M) return;
+  const msg=document.getElementById('impMsg2'); msg.style.display='block';
+  const byAlias={}; ENTERED.people.forEach(p=>{ if(p.alias) byAlias[_low(p.alias)]=p; });
+  // people (add/update)
+  let added=0,updated=0;
+  M.people.forEach(ip=>{ const key=_low(ip.alias); let p=byAlias[key];
+    if(!p){ p={id:'P'+String(ENTERED.people.length+1).padStart(2,'0'),alias:ip.alias,role:null,caps:{},assessments:{}}; ENTERED.people.push(p); byAlias[key]=p; added++; }
+    else updated++;
+    p.company=ip.company||p.company; p.persona=ip.persona||p.persona; p.func=ip.func||p.func; p.unit=ip.unit||p.unit;
+    p.role=impResolveRole(ip.role,ip.persona); });
+  // strategy
+  if(M.strategy.length){ ENTERED.strategy=M.strategy.map(o=>({ id:o.id, title:o.title, kpi:o.kpi,
+    init:o.driver||o.workforce||'', caps:[], attrs:o })); }
+  if(M.kpis.length) ENTERED.strategyKpis=M.kpis;
+  // per-learner assessments → attach + mark completion
+  const attach=(map,field,flag)=>{ Object.values(map).forEach(v=>{ const p=byAlias[_low(v.name)]; if(!p) return;
+    p[field]=v.data||v.items||v.rows||v; p.assessments=p.assessments||{}; if(flag) p.assessments[flag]='complete'; }); };
+  attach(M.thinking,'thinking','TS');
+  attach(M.strengths,'strengths','SF');
+  attach(M.pdmma,'pdmma','DMMA');
+  attach(M.kyv,'kyv','KYV');
+  persist();
+  setSource('entered');
+  const sum='Imported — '+added+' new learner(s), '+updated+' updated · '+M.strategy.length+' objectives · '+
+    Object.keys(M.thinking).length+' thinking · '+Object.keys(M.strengths).length+' strengths · '+Object.keys(M.pdmma).length+' PDMMA · '+Object.keys(M.kyv).length+' KYV. ';
+  if(ghToken()){
+    msg.innerHTML='<span style="color:var(--muted)">'+sum+'Saved to this browser · writing to private repo…</span>';
+    ghSaveCohort().then(res=>{ msg.innerHTML = (res&&res.ok)
+      ? '<span style="color:var(--ok)">✓ '+sum+'Stored in private repo (dlk-cohort.json) '+(res.commit?('commit '+res.commit):'')+'</span>'
+      : '<span style="color:var(--ok)">'+sum+'</span><br><span style="color:var(--bad)">⚠ Saved in browser, NOT in repo: '+esc((res&&res.msg)||'unknown')+'</span>'; });
+  } else { msg.innerHTML='<span style="color:var(--ok)">'+sum+'</span><br><span style="color:var(--mid)">Saved to this browser only — set a GitHub token to write to the repo.</span>'; }
+}
+(function(){
+  const pick=document.getElementById('impPick'), file=document.getElementById('impFile'), apply=document.getElementById('impApply');
+  if(!pick) return;
+  pick.onclick=()=>file.click();
+  file.onchange=async(e)=>{
+    const f=e.target.files[0]; if(!f) return;
+    impMsg('Reading '+f.name+'…','muted');
+    try{ await impLoadSheetJS();
+      const buf=await f.arrayBuffer(); const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+      IMPORT_MODEL=impMap(wb); impRenderPreview(IMPORT_MODEL);
+      impMsg('Loaded '+f.name+' · '+wb.SheetNames.length+' sheets. Review the preview, then Apply.','ok');
+    }catch(err){ impMsg('Could not read the file: '+esc(err.message),'bad'); }
+  };
+  apply.onclick=impApply;
+})();
 
 /* ========================================================
    ROUTER

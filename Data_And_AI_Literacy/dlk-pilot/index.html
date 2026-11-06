@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.11.1">
-<meta name="build-timestamp" content="2026-11-06 08:42 SAST">
+<meta name="version" content="1.11.2">
+<meta name="build-timestamp" content="2026-11-06 09:00 SAST">
 <title>DLK Lean Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -803,8 +803,14 @@ document.getElementById('saveCohort').onclick=()=>{
   ENTERED.people.forEach((p,i)=>{ if(!p.id) p.id='P'+String(i+1).padStart(2,'0'); });
   persist();
   const named=ENTERED.people.filter(p=>p.alias&&p.alias.trim()).length;
-  document.getElementById('saveMsg').textContent='Saved — '+named+' '+(named===1?'person':'people')+'. Now shown across the pilot.';
   setSource('entered');
+  const msg=document.getElementById('saveMsg');
+  if(ghToken()){
+    msg.textContent='Saved to this browser — '+named+' '+(named===1?'person':'people')+' · saving to GitHub…';
+    ghSaveCohort().then(()=>{ msg.textContent='Saved — '+named+' '+(named===1?'person':'people')+' · browser + GitHub repo.'; });
+  } else {
+    msg.textContent='Saved to this browser — '+named+' '+(named===1?'person':'people')+'. Set a GitHub token (below) to also store it in modelware_app_storage.';
+  }
 };
 document.getElementById('resetCohort').onclick=()=>{
   if(!confirm('Reset roles and people to the built-in template? Your entered cohort will be cleared.'))return;
@@ -1357,12 +1363,20 @@ function init(){
       if(d&&d.roles&&d.people){ ENTERED={caps:d.caps||DEFAULT_CAPS.slice(),roles:d.roles,people:d.people,strategy:d.strategy||defaultStrategy()}; rebuildCaps(); renderCohortEditor(); renderStrategy(); setSource('entered'); }
     }).catch(()=>{});
   }
-  if(online && ghToken()){ ghLoadCohort(true).then(ok=>{ if(!ok) fallbackRepoDefault(); }); }
-  else if(online){ fallbackRepoDefault(); }
+  // LOCAL-FIRST: never overwrite the browser's saved cohort on refresh.
+  // Only auto-load from GitHub / repo default when there is no local save.
+  if(!saved){
+    if(online && ghToken()){ ghLoadCohort(true).then(ok=>{ if(!ok) fallbackRepoDefault(); }); }
+    else if(online){ fallbackRepoDefault(); }
+  } else if(online && ghToken()){
+    ghMsg('Showing your saved cohort from this browser. Use “Load from GitHub” to pull the repo copy, or “Save & use / Save to GitHub” to push.','muted');
+  }
   // default to entered if it has named people, else seed
   const named = ENTERED.people.filter(p=>p.alias&&p.alias.trim()).length;
   setSource(named? 'entered' : 'seed');
 }
+// Safety net: persist in-progress edits to the browser on refresh/close so nothing is lost.
+window.addEventListener('beforeunload', function(){ try{ if(typeof ENTERED!=='undefined' && ENTERED) persist(); }catch(e){} });
 init();
 </script>
 </body>

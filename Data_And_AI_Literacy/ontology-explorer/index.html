@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.10.0">
+<meta name="version" content="1.11.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Ontology Explorer</title>
@@ -82,6 +82,22 @@
   .bandlab{font:800 10px var(--mono);fill:var(--muted);text-transform:uppercase;letter-spacing:.04em}
   .bandlab.sub{font-weight:700;opacity:.8}
   .lanediv{stroke:var(--line);stroke-width:1.2;stroke-dasharray:3 4}
+  .spinetiers{font:700 10.5px var(--mono);color:var(--muted);display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap}
+  .spinetiers .tl{border-radius:5px;padding:1px 7px}
+  .spinetiers .tl.ext{background:#2f5bd022;color:#2f5bd0}.spinetiers .tl.ip{background:#b8742a22;color:#b8742a}.spinetiers .tl.gov{background:#1f8f5b22;color:#1f8f5b}
+  /* Work & Decision Architecture view */
+  .wawrap{padding:4px 2px 60px}
+  .walegend{display:flex;gap:12px;margin:6px 2px 14px;font:700 11px var(--mono)}
+  .walegend .wlg{border-radius:6px;padding:2px 9px}
+  .walegend .wlg.ext{background:#2f5bd022;color:#2f5bd0}.walegend .wlg.ip{background:#b8742a22;color:#b8742a}.walegend .wlg.gov{background:#1f8f5b22;color:#1f8f5b}
+  .waband{margin:0 0 13px}
+  .wabh{font:800 10.5px var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:8px 2px 7px}
+  .wabrow{display:flex;flex-wrap:wrap;gap:8px}
+  .wacard{border-radius:9px;border:1.5px solid var(--cc);background:var(--cb);padding:8px 11px;cursor:pointer;min-width:120px;max-width:260px;transition:transform .1s}
+  .wacard:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .wacard.sel{box-shadow:0 0 0 2px var(--cc)}
+  .wacard.ext{--cc:#2f5bd0;--cb:#2f5bd014}.wacard.ip{--cc:#b8742a;--cb:#b8742a14}.wacard.gov{--cc:#1f8f5b;--cb:#1f8f5b14}
+  .wacard .wn{font-weight:800;font-size:12.5px;letter-spacing:-.01em;color:var(--ink)}
   .elab{font:700 9.5px var(--mono);fill:var(--accent-ink);opacity:0;pointer-events:none;transition:opacity .15s;paint-order:stroke;stroke:var(--bg);stroke-width:3px;stroke-linejoin:round}
   svg.spine.showlabels .elab{opacity:1}
   .elab.hot{opacity:1;fill:var(--accent);font-weight:800}.elab.faded{opacity:0}
@@ -241,6 +257,7 @@
     <div class="side">
       <h4>Views</h4>
       <button class="vbtn" data-view="spine">Capability Spine</button>
+      <button class="vbtn" data-view="wa">Work &amp; Decision Architecture</button>
       <button class="vbtn" data-view="ka">Knowledge Area</button>
       <button class="vbtn" data-view="context">Context Diagram</button>
       <button class="vbtn" data-view="affinity">Activity Affinity</button>
@@ -323,6 +340,13 @@ function buildModel(ds){
 }
 const semCat=id=>{const e=M.ent.get(id);const t=e&&M.type.get(e.entityTypeId);return (t&&t.semanticCategory)||'other';};
 const colorOf=id=>getComputedStyle(document.documentElement).getPropertyValue(TYPECOLORVARS[semCat(id)]||'--other').trim()||'#5c6673';
+// Work-Architecture tier colour (External / Modelware IP / Governance) — overrides type colour on the WDA layer
+const TIERHEX={ext:'#2f5bd0',ip:'#b8742a',gov:'#1f8f5b'};
+function waTier(id){const e=M.ent.get(id);const c=(e&&e.attributes&&e.attributes.classification)||'';
+  if(/external/i.test(c))return'ext'; if(/governance/i.test(c))return'gov'; if(/modelware|ip/i.test(c))return'ip'; return null;}
+// for the dedicated WA view, give the two shared nodes a sensible tier
+const waTierOr=id=>waTier(id)||(id==='e:evidence-concept'?'gov':id==='e:bcap'?'ext':'ip');
+const tierColorOf=id=>{const t=waTier(id);return t?TIERHEX[t]:null;};
 const typeLabel=id=>{const e=M.ent.get(id);const t=e&&M.type.get(e.entityTypeId);return t?t.label:'';};
 
 // ---------- state ----------
@@ -332,7 +356,29 @@ function pushHist(){ S.hist=S.hist.slice(0,S.hi+1); S.hist.push(snapshot()); S.h
 function restore(s){S.view=s.view;S.focus=s.focus;S.facet=s.facet;S.kaRoot=s.kaRoot||'e:ka:dg';S.kaInstance=s.kaInstance||null;S.filters=new Set(s.filters);renderAll();}
 function syncNav(){document.getElementById('back').disabled=S.hi<=0;document.getElementById('fwd').disabled=S.hi>=S.hist.length-1;}
 
-function select(id,record){ S.focus=id; if(record!==false)pushHist(); renderDetail(); highlightSpine(); if(S.view==='context')renderContext(); else if(S.view==='affinity')renderAffinity(); if(window.innerWidth<=860)document.getElementById('wrap').classList.add('showdetail'); renderCrumbs(); }
+function select(id,record){ S.focus=id; if(record!==false)pushHist(); renderDetail(); highlightSpine(); if(S.view==='context')renderContext(); else if(S.view==='affinity')renderAffinity(); else if(S.view==='wa')renderWA(); if(window.innerWidth<=860)document.getElementById('wrap').classList.add('showdetail'); renderCrumbs(); }
+// ---------- Work & Decision Architecture view (curated metamodel, by tier) ----------
+function renderWA(){
+  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const WB=[
+    ['Stakeholder & value — upstream',['e:wa:stakeholder','e:wa:need','e:wa:valueprop','e:wa:valuestream','e:wa:valuestage']],
+    ['Business spine',['e:bcap','e:wa:process']],
+    ['Work architecture · Work Unit is the superclass',['e:wa:workunit','e:wa:task','e:wa:outcome','e:wa:servicelevel','e:wa:volume','e:wa:frequency','e:wa:reqcap','e:wa:workevidence']],
+    ['Decision — the governed choice point',['e:wa:decision']],
+    ['Decision inputs & logic',['e:wa:inputdata','e:wa:bkm','e:wa:dtable','e:wa:drule','e:wa:ksource','e:wa:pmodel','e:wa:llmrag','e:wa:agent','e:wa:dservice']],
+    ['Decision governance',['e:wa:authority','e:wa:control','e:evidence-concept','e:wa:confidence','e:wa:autonomy','e:wa:explanation']],
+    ['Workforce planning & operating model',['e:wa:demand','e:wa:composition','e:wa:allocation','e:wa:career']],
+    ['Accountability — Governance Role Types',['e:wa:gov:business-owner','e:wa:gov:decision-owner','e:wa:gov:data-owner','e:wa:gov:data-steward','e:wa:gov:ai-owner','e:wa:gov:ai-steward']],
+    ['Value realization — closes the loop to strategy',['e:wa:benefit']]
+  ];
+  const c=document.getElementById('canvas');
+  let h='<div class="wawrap"><div class="facethead"><div><div class="kahdr">Work &amp; Decision Architecture — metamodel</div><div class="kasub">The organisation-agnostic metamodel every tenant conforms to, laid out by layer and coloured by tier. Click any concept for its definition and links.</div></div></div>'+
+    '<div class="walegend"><span class="wlg ext">External standard</span><span class="wlg ip">Modelware IP</span><span class="wlg gov">Governance / control</span></div>';
+  WB.forEach(([t,ids])=>{const got=ids.filter(id=>M.ent.get(id)); if(!got.length)return;
+    h+='<div class="waband"><div class="wabh">'+esc(t)+'</div><div class="wabrow">'+got.map(id=>{const e=M.ent.get(id);
+      return '<div class="wacard '+waTierOr(id)+(id===S.focus?' sel':'')+'" data-go="'+id+'" title="'+esc(e.definition)+'"><div class="wn">'+esc(e.preferredLabel)+'</div></div>';}).join('')+'</div></div>';});
+  c.innerHTML=h+'</div>';
+}
 // v: 'spine' | 'ka' (arg = KA entity id) | 'facet' (arg = facet id)
 function setView(v,arg){ S.view=v; if(v==='ka'&&arg)S.kaRoot=arg; if(v==='facet'&&arg)S.facet=arg; pushHist(); renderAll(); }
 
@@ -354,18 +400,23 @@ function renderSpine(){
   let W=BANDS.length*colW+padX, Hh=bandH*rowH+padY+30;
   const pos={};
   BANDS.forEach((b,bi)=>{const ids=b.ids.filter(id=>M.ent.get(id));ids.forEach((id,ri)=>{pos[id]={x:padX+bi*colW,y:padY+ri*rowH};});});
-  // --- second lane: Work & Decision Architecture (allocate-work spine), v0.20.0+ ---
-  const WDA_SPINE=['e:wa:process','e:wa:workunit','e:wa:task','e:wa:decision','e:wa:demand','e:wa:composition','e:wa:allocation'];
-  const WDA_GOV=['e:wa:inputdata','e:wa:control','e:wa:autonomy'];
-  const hasWA=WDA_SPINE.every(id=>M.ent.get(id));
-  const laneStep=190; let laneLabelY=0,govLabelY=0,dividerY=0;
+  // --- second layer: Work & Decision Architecture (full metamodel spine), v0.22.0+ ---
+  const VALUE_LANE=['e:wa:stakeholder','e:wa:need','e:wa:valueprop','e:wa:valuestream','e:wa:valuestage'];
+  const WORK_LANE=['e:wa:process','e:wa:workunit','e:wa:task','e:wa:decision','e:wa:demand','e:wa:composition','e:wa:allocation'];
+  const GOV_LANE=['e:wa:inputdata','e:wa:dservice','e:wa:authority','e:wa:control','e:wa:confidence','e:wa:autonomy','e:wa:explanation'];
+  const hasWA=!!(M.ent.get('e:wa:workunit')&&M.ent.get('e:wa:stakeholder'));
+  const laneStep=190; const govStep=nodeW+18;
+  let valueLabelY=0,workLabelY=0,govLabelY=0,dividerY=0;
   if(hasWA){
-    dividerY=padY+(bandH-1)*rowH+nodeH+24; laneLabelY=dividerY+20; const laneY=laneLabelY+16;
-    WDA_SPINE.forEach((id,i)=>{pos[id]={x:padX+i*laneStep,y:laneY};});
-    const govY=laneY+rowH+34; govLabelY=govY-12; const decX=padX+3*laneStep;
-    WDA_GOV.forEach((id,i)=>{if(M.ent.get(id))pos[id]={x:decX+(i-1)*(nodeW+22),y:govY};});
-    WDA_SPINE.concat(WDA_GOV).forEach(id=>{if(M.ent.get(id)&&!aset.has(id)){anchors.push(id);aset.add(id);}});
-    W=Math.max(W,padX+(WDA_SPINE.length-1)*laneStep+nodeW+padX);
+    dividerY=padY+(bandH-1)*rowH+nodeH+26;
+    valueLabelY=dividerY+20; const valueY=valueLabelY+14;
+    VALUE_LANE.forEach((id,i)=>{if(M.ent.get(id))pos[id]={x:padX+i*laneStep,y:valueY};});
+    workLabelY=valueY+rowH+16; const workY=workLabelY+14;
+    WORK_LANE.forEach((id,i)=>{if(M.ent.get(id))pos[id]={x:padX+i*laneStep,y:workY};});
+    govLabelY=workY+rowH+16; const govY=govLabelY+14;
+    GOV_LANE.forEach((id,i)=>{if(M.ent.get(id))pos[id]={x:padX+i*govStep,y:govY};});
+    VALUE_LANE.concat(WORK_LANE,GOV_LANE).forEach(id=>{if(M.ent.get(id)&&!aset.has(id)){anchors.push(id);aset.add(id);}});
+    W=Math.max(W,padX+(WORK_LANE.length-1)*laneStep+nodeW+padX,padX+(GOV_LANE.length-1)*govStep+nodeW+padX);
     Hh=govY+nodeH+24;
   }
   const NS='http://www.w3.org/2000/svg';
@@ -374,8 +425,10 @@ function renderSpine(){
   BANDS.forEach((b,bi)=>{const t=document.createElementNS(NS,'text');t.setAttribute('class','bandlab');t.setAttribute('x',padX+bi*colW);t.setAttribute('y',24);t.textContent=b.label;svg.appendChild(t);});
   if(hasWA){
     const div=document.createElementNS(NS,'line');div.setAttribute('x1',padX);div.setAttribute('y1',dividerY);div.setAttribute('x2',W-padX);div.setAttribute('y2',dividerY);div.setAttribute('class','lanediv');svg.appendChild(div);
-    const ll=document.createElementNS(NS,'text');ll.setAttribute('class','bandlab');ll.setAttribute('x',padX);ll.setAttribute('y',laneLabelY);ll.textContent='Work & decision architecture';svg.appendChild(ll);
-    const gl=document.createElementNS(NS,'text');gl.setAttribute('class','bandlab sub');gl.setAttribute('x',padX+3*laneStep);gl.setAttribute('y',govLabelY);gl.textContent='Decision governance';svg.appendChild(gl);
+    const mkLab=(y,txt,sub)=>{const l=document.createElementNS(NS,'text');l.setAttribute('class','bandlab'+(sub?' sub':''));l.setAttribute('x',padX);l.setAttribute('y',y);l.textContent=txt;svg.appendChild(l);};
+    mkLab(valueLabelY,'Work & Decision Architecture · stakeholder & value chain');
+    mkLab(workLabelY,'Work & decision spine',true);
+    mkLab(govLabelY,'Decision inputs & governance',true);
   }
   // edges among anchors
   spineEls={nodes:{},edges:[]};
@@ -392,7 +445,7 @@ function renderSpine(){
   // nodes
   anchors.forEach(id=>{const e=M.ent.get(id),p=pos[id];
     const g=document.createElementNS(NS,'g');g.setAttribute('class','snode');g.dataset.id=id;
-    const rect=document.createElementNS(NS,'rect');rect.setAttribute('x',p.x);rect.setAttribute('y',p.y);rect.setAttribute('width',nodeW);rect.setAttribute('height',nodeH);rect.setAttribute('rx',9);rect.setAttribute('fill',colorOf(id));g.appendChild(rect);
+    const rect=document.createElementNS(NS,'rect');rect.setAttribute('x',p.x);rect.setAttribute('y',p.y);rect.setAttribute('width',nodeW);rect.setAttribute('height',nodeH);rect.setAttribute('rx',9);rect.setAttribute('fill',tierColorOf(id)||colorOf(id));g.appendChild(rect);
     const t=document.createElementNS(NS,'text');t.setAttribute('class','l');t.setAttribute('x',p.x+nodeW/2);t.setAttribute('y',p.y+nodeH/2+4);t.setAttribute('text-anchor','middle');
     let lab=e.preferredLabel;if(lab.length>24)lab=lab.slice(0,22)+'…';t.textContent=lab;g.appendChild(t);
     g.addEventListener('click',ev=>{ev.stopPropagation();select(id);});
@@ -400,7 +453,9 @@ function renderSpine(){
   });
   const c=document.getElementById('canvas');c.innerHTML='';
   const bar=document.createElement('div');bar.className='spinebar';
-  bar.innerHTML='<button class="tgl'+(S.spineLabels?' on':'')+'" id="spineLabelToggle">'+(S.spineLabels?'✓ ':'')+'Show all relationship labels</button><span class="spinehint">Click any element to focus it and read its links.</span>';
+  bar.innerHTML='<button class="tgl'+(S.spineLabels?' on':'')+'" id="spineLabelToggle">'+(S.spineLabels?'✓ ':'')+'Show all relationship labels</button>'+
+    (hasWA?'<span class="spinetiers">Work &amp; Decision Architecture tier: <span class="tl ext">External</span><span class="tl ip">Modelware IP</span><span class="tl gov">Governance</span></span>':'')+
+    '<span class="spinehint">Click any element to focus it and read its links.</span>';
   c.appendChild(bar);c.appendChild(svg);
   highlightSpine();
 }
@@ -915,6 +970,7 @@ function renderCrumbs(){
 function renderAll(){
   document.querySelectorAll('.vbtn').forEach(b=>b.classList.toggle('on',b.dataset.view===S.view));
   if(S.view==='spine')renderSpine();
+  else if(S.view==='wa')renderWA();
   else if(S.view==='ka')renderKA();
   else if(S.view==='context')renderContext();
   else if(S.view==='affinity')renderAffinity();

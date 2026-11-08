@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.3.0">
-<meta name="build" content="2026-11-08 16:11 SAST">
+<meta name="version" content="1.5.0">
+<meta name="build" content="2026-11-08 16:23 SAST">
 <meta name="mw-asset" content="true">
 <meta name="description" content="Modelware Thinking Styles Engine — Gregorc assessment, scoring, individual report and team/cohort dashboard.">
 <title>Thinking Styles Engine</title>
@@ -162,6 +162,10 @@
   table.cohort th{font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2)}
   .filters{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
   .filters select{padding:6px 9px;font-size:.8rem;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink)}
+  .filters input[type=date]{padding:5px 8px;font-size:.8rem;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-family:inherit}
+  .dflab{display:inline-flex;align-items:center;gap:6px;font-size:.74rem;color:var(--ink-2)}
+  .namesearch{width:min(320px,100%);padding:7px 11px;font-size:.86rem;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-family:inherit}
+  .namesearch:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
   .stat{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:.86rem}
   .stat:first-child{border-top:none}
   .flag{font-size:.82rem;padding:8px 10px;border-radius:8px;border:1px solid var(--line);margin-top:8px;background:var(--surface-2)}
@@ -631,11 +635,26 @@ function ingest(obj){
     if(r.scores){ r.dominant=r.dominant||STYLE_ORDER.reduce((a,b)=>r.scores[b]>r.scores[a]?b:a,"CS"); COHORT.push(r); }
   });
 }
-const FILT={age:"",role:"",pinnacle:"",team:"",org:""};
+const FILT={name:"",age:"",role:"",pinnacle:"",team:"",org:"",dateStart:"",dateEnd:""};
 const ci=s=>String(s==null?"":s).trim().toLowerCase();
-function filtered(){return COHORT.filter(r=>
-  (!FILT.age||ci(r.age_group)===ci(FILT.age))&&(!FILT.role||ci(r.role)===ci(FILT.role))&&
-  (!FILT.pinnacle||ci(r.pinnacle)===ci(FILT.pinnacle))&&(!FILT.team||ci(r.team)===ci(FILT.team))&&(!FILT.org||ci(r.organisation)===ci(FILT.org)));}
+// timestamps are "DD/MM/YYYY HH:MM:SS" (fallback to native parse for anything else)
+function parseTS(s){if(!s)return null;const m=String(s).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);if(m)return new Date(+m[3],+m[2]-1,+m[1]);const d=new Date(s);return isNaN(d)?null:d;}
+function iso(d){return d?d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'):'';}
+function dateRange(){let lo=null,hi=null;COHORT.forEach(r=>{const d=parseTS(r.timestamp);if(!d)return;if(!lo||d<lo)lo=d;if(!hi||d>hi)hi=d;});return [lo,hi];}
+function filtered(){
+  const ds=FILT.dateStart?new Date(FILT.dateStart+'T00:00:00'):null;
+  const de=FILT.dateEnd?new Date(FILT.dateEnd+'T23:59:59'):null;
+  return COHORT.filter(r=>{
+    if(FILT.name&&!ci(r.name).includes(ci(FILT.name)))return false;
+    if(FILT.age&&ci(r.age_group)!==ci(FILT.age))return false;
+    if(FILT.role&&ci(r.role)!==ci(FILT.role))return false;
+    if(FILT.pinnacle&&ci(r.pinnacle)!==ci(FILT.pinnacle))return false;
+    if(FILT.team&&ci(r.team)!==ci(FILT.team))return false;
+    if(FILT.org&&ci(r.organisation)!==ci(FILT.org))return false;
+    if(ds||de){const d=parseTS(r.timestamp);if(!d)return false;if(ds&&d<ds)return false;if(de&&d>de)return false;}
+    return true;
+  });
+}
 // unique values, de-duplicated case-insensitively (keeps the most common casing — so "Debswana"/"DEBSWANA" become one option)
 function uniqCI(k){
   const groups=new Map();
@@ -655,6 +674,7 @@ function renderDash(){
   if(SELECTED && !rows.includes(SELECTED)) SELECTED=null;
   const fsel=(k,label,key)=>`<select data-filt="${key}"><option value="">${label} (all)</option>${uniqCI(k).map(v=>`<option ${ci(FILT[key])===ci(v)?'selected':''}>${v}</option>`).join('')}</select>`;
   const palette=["#0f6d6f","#d1612a","#caa21e","#2a7fb8","#7a4fb0","#2f7d4f","#b4571a","#4a86c4"];
+  const [dlo,dhi]=dateRange();
   let countLine, radarCard, rightCard;
 
   if(SELECTED){
@@ -686,7 +706,11 @@ function renderDash(){
   }
 
   body.innerHTML=`
-    <div class="filters">${fsel('age_group','Age','age')}${fsel('role','Role','role')}${fsel('pinnacle','Target role','pinnacle')}${fsel('team','Team','team')}${fsel('organisation','Organisation','org')}</div>
+    <div style="margin-bottom:8px"><input type="search" class="namesearch" data-searchfilt="name" placeholder="Search name…" value="${FILT.name.replace(/"/g,'&quot;')}"></div>
+    <div class="filters">${fsel('age_group','Age','age')}${fsel('role','Role','role')}${fsel('pinnacle','Target role','pinnacle')}${fsel('team','Team','team')}${fsel('organisation','Organisation','org')}
+      <label class="dflab">From&nbsp;<input type="date" data-datefilt="dateStart" value="${FILT.dateStart}" min="${iso(dlo)}" max="${iso(dhi)}"></label>
+      <label class="dflab">To&nbsp;<input type="date" data-datefilt="dateEnd" value="${FILT.dateEnd}" min="${iso(dlo)}" max="${iso(dhi)}"></label>
+      ${FILT.dateStart||FILT.dateEnd?`<button class="asLink" id="clearDates">clear dates</button>`:''}</div>
     <p class="mono" style="font-size:.76rem;color:var(--ink-2)">${countLine}</p>
     <div class="grid2" style="margin-top:6px">${radarCard}${rightCard}</div>
     <h2 class="sec">People</h2>
@@ -698,6 +722,12 @@ function renderDash(){
         <td><button class="asLink reportBtn" data-ri="${i}">report&nbsp;↗</button></td></tr>`).join('')}</tbody></table>
     </div>`;
   body.querySelectorAll('[data-filt]').forEach(sel=>sel.addEventListener('change',()=>{FILT[sel.dataset.filt]=sel.value;SELECTED=null;renderDash();}));
+  body.querySelectorAll('[data-datefilt]').forEach(inp=>inp.addEventListener('change',()=>{FILT[inp.dataset.datefilt]=inp.value;SELECTED=null;renderDash();}));
+  body.querySelectorAll('[data-searchfilt]').forEach(inp=>inp.addEventListener('input',()=>{
+    const pos=inp.selectionStart; FILT[inp.dataset.searchfilt]=inp.value; SELECTED=null; renderDash();
+    const ni=document.querySelector('[data-searchfilt="'+inp.dataset.searchfilt+'"]'); if(ni){ni.focus(); try{ni.setSelectionRange(pos,pos);}catch(e){}}
+  }));
+  const cd=document.getElementById('clearDates'); if(cd)cd.addEventListener('click',()=>{FILT.dateStart='';FILT.dateEnd='';SELECTED=null;renderDash();});
   body.querySelectorAll('tr[data-selidx]').forEach(tr=>tr.addEventListener('click',()=>{SELECTED=rows[+tr.dataset.selidx];renderDash();}));
   body.querySelectorAll('.legName').forEach(el=>el.addEventListener('click',()=>{SELECTED=rows[+el.dataset.i];renderDash();}));
   body.querySelectorAll('.reportBtn').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();openReport(rows[+btn.dataset.ri]);}));

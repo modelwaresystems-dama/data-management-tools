@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.2.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <meta name="tenant-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/tenants/Modelware/work-architecture">
@@ -115,6 +115,43 @@
   .ra{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.45}
   .srcrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
   .empty{color:var(--muted);font-size:13px;padding:14px;text-align:center}
+  /* metamodel diagram */
+  .mmlegend{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px 4px}
+  .mmlegend .lg{font:700 10.5px var(--mono);border-radius:6px;padding:2px 9px}
+  .mmlegend .lg.ext{background:var(--accent-bg);color:var(--proc)}
+  .mmlegend .lg.ip{background:rgba(184,116,42,.14);color:var(--borrow)}
+  .mmlegend .lg.gov{background:rgba(18,148,106,.14);color:var(--alloc)}
+  .mmlegend .mmnote{color:var(--muted);font-size:11.5px;flex:1 1 280px;min-width:220px}
+  .mmdiagram{padding:6px 0 60px;min-width:0}
+  .mmband{margin:0 0 13px}
+  .mmband .bhd{font:800 11px var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:12px 2px 7px;display:flex;flex-direction:column;gap:2px}
+  .mmband .bhd .bsub{font:500 11.5px -apple-system,sans-serif;text-transform:none;letter-spacing:0;opacity:.9}
+  .mmrow{display:flex;flex-wrap:wrap;gap:9px}
+  .mmcard{flex:1 1 185px;min-width:158px;max-width:320px;border-radius:10px;padding:9px 11px;border:1.5px solid var(--cc);background:var(--cb);cursor:pointer;transition:transform .1s,box-shadow .1s}
+  .mmcard:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .mmcard.sel{box-shadow:0 0 0 2px var(--cc)}
+  .mmcard.big{flex-basis:300px;min-width:240px}
+  .mmcard.ext{--cc:var(--proc);--cb:var(--accent-bg)}
+  .mmcard.ip{--cc:var(--borrow);--cb:rgba(184,116,42,.13)}
+  .mmcard.gov{--cc:var(--alloc);--cb:rgba(18,148,106,.13)}
+  .mmcard .mn{font-weight:800;font-size:13.5px;letter-spacing:-.01em;color:var(--ink)}
+  .mmcard .mt{font:600 9.5px var(--mono);color:var(--cc);margin:1px 0 3px}
+  .mmcard .md{font-size:11px;color:var(--muted);line-height:1.42}
+  /* connected metamodel diagram */
+  .mmcanvas{position:relative}
+  .mmsvg{position:absolute;inset:0;pointer-events:none}
+  .mmedge{fill:none;stroke:var(--line);stroke-width:1.3}
+  .mmedge.dash{stroke-dasharray:4 4;stroke:var(--borrow)}
+  .mmelab{font:600 8px var(--mono);fill:var(--muted);paint-order:stroke;stroke:var(--bg);stroke-width:3px;stroke-linejoin:round}
+  .mmnodes{position:absolute;inset:0}
+  .mmn{position:absolute;border-radius:9px;border:1.5px solid var(--cc);background:var(--cb);padding:4px 7px;cursor:pointer;overflow:hidden;display:flex;flex-direction:column;justify-content:center;box-shadow:var(--shadow)}
+  .mmn.ext{--cc:var(--proc);--cb:var(--accent-bg)}
+  .mmn.ip{--cc:var(--borrow);--cb:rgba(184,116,42,.14)}
+  .mmn.gov{--cc:var(--alloc);--cb:rgba(18,148,106,.14)}
+  .mmn:hover{filter:brightness(1.03);box-shadow:0 2px 10px rgba(0,0,0,.18)}
+  .mmn.sel{box-shadow:0 0 0 2px var(--cc)}
+  .mmn .nn{font-weight:800;font-size:11px;line-height:1.15;color:var(--ink)}
+  .mmn .nc{position:absolute;top:2px;right:4px;font:700 8.5px var(--mono);color:var(--cc)}
   /* detail */
   .dhd{font-size:16px;font-weight:800;letter-spacing:-.01em;margin:2px 0 3px}
   .dmeta{font-size:12px;color:var(--muted);margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
@@ -354,22 +391,75 @@ function renderDecisionView(){
 }
 
 // ---------- Metamodel (org-agnostic concept spine) ----------
-function metaCard(e){
+// ---------- Metamodel diagram (the Modelware Human + AI Workforce Metamodel) ----------
+function tierOf(e){const c=((e&&e.attributes)||{}).classification||'';
+  if(/external/i.test(c))return'ext'; if(/governance/i.test(c))return'gov'; if(/modelware|ip/i.test(c))return'ip';
+  if(e&&e.id==='e:bcap')return'ext'; if(e&&e.id==='e:evidence-concept')return'gov'; return'ip';}
+const TIERLBL={ext:'External standard',ip:'Modelware IP',gov:'Governance / control'};
+function mmCard(id,big){const e=M.ent.get(id); if(!e)return''; const t=tierOf(e);
   const inst=[...M.ent.values()].filter(x=>isTenant(x)&&outOf(x.id,'rel:conforms-to').some(r=>r.targetEntityId===e.id)).length;
-  const x=inst?'<span class="tag own">'+inst+' in example</span>':'';
-  return recCard(e,x);
-}
+  const d=e.definition||''; const ds=d.length>96?d.slice(0,94)+'…':d;
+  return '<div class="mmcard '+t+(big?' big':'')+(e.id===S.rec?' sel':'')+'" data-rec="'+esc(id)+'">'+
+    '<div class="mn">'+esc(e.preferredLabel)+'</div>'+
+    '<div class="mt">'+TIERLBL[t]+(inst?' · '+inst+' in example':'')+'</div>'+
+    (ds?'<div class="md">'+esc(ds)+'</div>':'')+'</div>';}
+// curated layout of the Modelware Human + AI Workforce Metamodel — [id,x,y,w,h,tier,labelOverride]
+const VBW=1240, VBH=760;
+const NODES=[
+ // upstream value chain (ADDED)
+ ['e:wa:stakeholder',20,16,150,38,'ext'],['e:wa:need',185,16,150,38,'ext'],['e:wa:valueprop',350,16,160,38,'ext'],['e:wa:valuestream',525,16,160,38,'ext'],['e:strat',700,16,170,38,'ext','Business Strategy'],
+ // business spine
+ ['e:bcap',350,86,160,38,'ext','Business Capability'],['e:wa:valuestage',525,86,160,38,'ext'],['e:wa:process',700,86,170,38,'ext'],
+ // work architecture
+ ['e:wa:task',700,160,170,36,'ext','Activity / Task'],['e:wa:workunit',500,154,175,52,'ip'],
+ ['e:wa:outcome',900,120,175,30,'ip'],['e:wa:servicelevel',900,154,175,30,'ip'],['e:wa:volume',900,188,175,30,'ip'],['e:wa:frequency',900,222,175,30,'ip'],['e:wa:reqcap',900,256,175,30,'ip'],['e:wa:workevidence',900,290,175,30,'ip'],
+ // decision
+ ['e:wa:decision',470,268,230,52,'gov'],
+ // inputs & logic
+ ['e:wa:inputdata',16,372,145,38,'ext'],['e:wa:bkm',171,372,150,38,'ext'],['e:wa:dtable',331,372,150,38,'ext'],['e:wa:pmodel',491,372,150,38,'ext'],['e:wa:llmrag',651,372,150,38,'ext'],['e:wa:agent',811,372,140,38,'ext'],['e:wa:dservice',961,372,160,38,'ext'],
+ // governance
+ ['e:wa:authority',16,436,170,38,'gov'],['e:wa:control',196,436,150,38,'gov'],['e:evidence-concept',356,436,150,38,'gov','Evidence'],['e:wa:confidence',516,436,175,38,'gov'],['e:wa:autonomy',701,436,160,38,'gov'],['e:wa:explanation',871,436,175,38,'gov'],
+ // workforce flow
+ ['e:wa:demand',16,528,235,46,'ip'],['e:wa:composition',291,528,260,46,'ip'],['e:wa:allocation',591,528,240,46,'ip'],['e:wa:career',871,528,250,46,'ip'],
+ // accountability + loop
+ ['e:wa:gov:decision-owner',16,620,195,36,'gov'],['e:wa:gov:data-owner',221,620,160,36,'gov'],['e:wa:gov:ai-owner',391,620,185,36,'gov'],['e:wa:benefit',700,620,170,36,'ip'],['e:wa:valuerealise',890,620,200,36,'gov','Value Realization → Strategy Refresh']
+];
+const EDGES=[
+ ['e:strat','e:wa:stakeholder','drives'],['e:wa:stakeholder','e:wa:need','has need','1..*'],['e:wa:valueprop','e:wa:need','addresses'],['e:wa:valueprop','e:wa:valuestream','realised by'],
+ ['e:wa:valuestream','e:wa:valuestage','contains','1..*'],['e:bcap','e:wa:valuestage','supports / realises','0..*'],['e:wa:valuestage','e:wa:process','enabled by'],['e:wa:process','e:bcap','realises','0..*'],
+ ['e:wa:workunit','e:wa:process','realises','0..*↔1..*'],['e:wa:workunit','e:wa:task','decomposes','0..*'],['e:wa:workunit','e:wa:outcome','produces'],['e:wa:workunit','e:wa:servicelevel','has'],['e:wa:workunit','e:wa:volume','has'],['e:wa:workunit','e:wa:frequency','has'],['e:wa:workunit','e:wa:reqcap','requires'],['e:wa:workunit','e:wa:workevidence','evidence'],
+ ['e:wa:workunit','e:wa:decision','has decision point','0..*'],['e:wa:process','e:wa:decision','has decision point','0..*'],
+ ['e:wa:decision','e:wa:inputdata','needs','1..*'],['e:wa:decision','e:wa:bkm','uses'],['e:wa:decision','e:wa:dtable','uses'],['e:wa:decision','e:wa:pmodel','uses'],['e:wa:decision','e:wa:llmrag','uses'],['e:wa:decision','e:wa:agent','uses'],['e:wa:decision','e:wa:dservice','served by'],
+ ['e:wa:decision','e:wa:authority','decided by','1..*'],['e:wa:decision','e:wa:control','controlled by','0..*'],['e:wa:decision','e:evidence-concept','evidenced by','0..*'],['e:wa:decision','e:wa:confidence','bounded by'],['e:wa:decision','e:wa:autonomy','capped by'],['e:wa:decision','e:wa:explanation','explained by'],
+ ['e:wa:workunit','e:wa:demand','informs'],['e:wa:decision','e:wa:demand','informs'],['e:wa:demand','e:wa:composition','sourced by'],['e:wa:composition','e:wa:allocation','selected by'],['e:wa:allocation','e:wa:career','allocates to'],
+ ['e:wa:gov:decision-owner','e:wa:decision','owns'],['e:wa:gov:data-owner','e:wa:dataproduct','governs',''],['e:wa:gov:ai-owner','e:wa:decision','authority'],
+ ['e:wa:benefit','e:wa:valueprop','realises value'],['e:wa:benefit','e:wa:valuerealise','proves'],['e:wa:valuerealise','e:strat','refreshes',''],['e:wa:demand','e:wa:workdemand','traces (Work Demand → stakeholder value)','']
+];
+const NBY={};NODES.forEach(n=>{NBY[n[0]]=n;});
+// border anchor point on node n toward (tx,ty)
+function anchor(n,tx,ty){const cx=n[1]+n[2]/2,cy=n[3]+n[4]/2,hw=n[2]/2,hh=n[4]/2;let dx=tx-cx,dy=ty-cy;if(!dx&&!dy)return{x:cx,y:cy};
+  const sx=dx?hw/Math.abs(dx):1e9, sy=dy?hh/Math.abs(dy):1e9, s=Math.min(sx,sy);return{x:cx+dx*s,y:cy+dy*s};}
 function renderMetaView(){
   const app=document.getElementById('app');
-  const spineIds=['e:wa:process','e:wa:workunit','e:wa:task','e:wa:decision','e:wa:demand','e:wa:composition','e:wa:allocation'];
-  const govIds=['e:wa:inputdata','e:wa:control','e:wa:autonomy'];
-  const get=ids=>ids.map(i=>M.ent.get(i)).filter(Boolean);
-  const sec=(title,desc,arr,sc)=>'<div class="ph" style="--sc:var('+sc+')"><div class="phhd"><span class="n">'+(sc==='--gate'?'⚖':'▤')+'</span><span class="nm">'+title+'</span><span class="ct">'+arr.length+'</span></div><div class="phdesc">'+desc+'</div>'+arr.map(metaCard).join('')+'</div>';
-  app.innerHTML='<div class="intro">The organisation-agnostic metamodel for allocating work — the structure every tenant’s graph conforms to. The <b>spine</b> runs Business Process → Work Unit → Task → Decision → Workforce Demand → Composition → Human-Agent Allocation; the <b>governance</b> objects constrain the decisions and the agents that make them. Counts show how many Modelware worked-example instances conform to each concept.</div>'+
-    '<div class="outline"><div class="outcol">'+
-      sec('Allocation spine','The seven classes that carry work from capability to an allocated human/agent.',get(spineIds),'--wu')+
-      sec('Decision governance','Input, control and the autonomy ceiling — what keeps decisions safe and accountable.',get(govIds),'--gate')+
-    '</div><div class="outdet"><div class="outdetinner" id="outdetinner">'+renderDetail(S.rec)+'</div></div></div>';
+  let paths='',labels='';
+  EDGES.forEach(e=>{const na=NBY[e[0]],nb=NBY[e[1]];if(!na||!nb)return;
+    const ca={x:nb[1]+nb[2]/2,y:nb[3]+nb[4]/2}, cb={x:na[1]+na[2]/2,y:na[3]+na[4]/2};
+    const a=anchor(na,ca.x,ca.y), b=anchor(nb,cb.x,cb.y);
+    const dashed=/refreshes|proves|traces/.test(e[2]||'');
+    const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+    paths+='<path class="mmedge'+(dashed?' dash':'')+'" d="M'+a.x.toFixed(0)+' '+a.y.toFixed(0)+' L'+b.x.toFixed(0)+' '+b.y.toFixed(0)+'" marker-end="url(#mmar)"/>';
+    const lbl=e[3]?((e[2]&&e[2].length<14?e[2]+' ':'')+e[3]):'';  // show cardinality edges (+short verb); hide plain-verb clutter
+    if(lbl)labels+='<text class="mmelab" x="'+mx.toFixed(0)+'" y="'+(my-2).toFixed(0)+'" text-anchor="middle">'+esc(lbl)+'</text>';});
+  const svg='<svg class="mmsvg" viewBox="0 0 '+VBW+' '+VBH+'" width="'+VBW+'" height="'+VBH+'"><defs><marker id="mmar" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="var(--muted)"/></marker></defs>'+paths+labels+'</svg>';
+  let nodes='';
+  NODES.forEach(n=>{const[id,x,y,w,h,tier,ov]=n;const e=M.ent.get(id);const lab=ov||(e&&e.preferredLabel)||id;
+    const inst=e?[...M.ent.values()].filter(x=>isTenant(x)&&outOf(x.id,'rel:conforms-to').some(r=>r.targetEntityId===e.id)).length:0;
+    nodes+='<div class="mmn '+tier+(id===S.rec?' sel':'')+'" data-rec="'+esc(id)+'" style="left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+h+'px">'+
+      '<div class="nn">'+esc(lab)+'</div>'+(inst?'<div class="nc">'+inst+'</div>':'')+'</div>';});
+  app.innerHTML='<div class="mmlegend"><span class="lg ext">External standard</span><span class="lg ip">Modelware IP</span><span class="lg gov">Governance / control</span>'+
+    '<span class="mmnote">Modelware Human + AI Workforce Metamodel — connected diagram from ontology v0.22.0. Arrows are the real relationships (key cardinalities shown); dashed = closed loop. Click any box for its full links.</span></div>'+
+    '<div style="overflow-x:auto;padding:4px 16px 8px"><div class="mmcanvas" style="width:'+VBW+'px;height:'+VBH+'px">'+svg+'<div class="mmnodes">'+nodes+'</div></div></div>'+
+    '<div class="outdetinner" id="outdetinner" style="padding:12px 16px 50px;border-top:1px solid var(--line);margin-top:4px">'+renderDetail(S.rec)+'</div>';
 }
 
 // ---------- detail ----------

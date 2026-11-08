@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.1.1">
-<meta name="build" content="2026-11-08 15:56 SAST">
+<meta name="version" content="1.2.0">
+<meta name="build" content="2026-11-08 16:03 SAST">
 <meta name="mw-asset" content="true">
 <meta name="description" content="Modelware Thinking Styles Engine — Gregorc assessment, scoring, individual report and team/cohort dashboard.">
 <title>Thinking Styles Engine</title>
@@ -167,6 +167,14 @@
   .flag{font-size:.82rem;padding:8px 10px;border-radius:8px;border:1px solid var(--line);margin-top:8px;background:var(--surface-2)}
   .flag.warn{border-color:var(--warn);background:var(--warn-soft)}
   .flag.ok{border-color:var(--rec)}
+  table.cohort tbody tr{cursor:pointer}
+  table.cohort tbody tr:hover{background:var(--surface-2)}
+  table.cohort tbody tr.sel{background:var(--accent-soft)}
+  .legend .legName{cursor:pointer}
+  .legend .legName:hover{text-decoration:underline}
+  .rhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+  .btn.sm{padding:5px 11px;font-size:.78rem}
+  .asLink{background:none;border:none;color:var(--accent-ink);text-decoration:underline;cursor:pointer;font:inherit;padding:0}
 
   footer{border-top:1px solid var(--line);margin-top:30px;padding-block:16px;font-family:"IBM Plex Mono",monospace;font-size:.66rem;color:var(--ink-2);text-align:center;line-height:1.7}
 
@@ -607,7 +615,7 @@ document.getElementById('loadSample').addEventListener('click',()=>{
   ]});
   renderDash();
 });
-document.getElementById('clearCohort').addEventListener('click',()=>{COHORT=[];dashAutoLoaded=true;renderDash();});
+document.getElementById('clearCohort').addEventListener('click',()=>{COHORT=[];SELECTED=null;dashAutoLoaded=true;renderDash();});
 document.getElementById('ghTokBtn').addEventListener('click',setToken);
 document.getElementById('loadHistoryBtn').addEventListener('click',()=>loadRepoHistory(false));
 document.getElementById('loadResultsBtn').addEventListener('click',loadRepoResults);
@@ -634,40 +642,59 @@ function uniqCI(k){
   return [...groups.values()].map(c=>[...c.entries()].sort((a,b)=>b[1]-a[1])[0][0]).sort((a,b)=>a.localeCompare(b));
 }
 
+let SELECTED=null;
 function renderDash(){
   const body=document.getElementById('dashBody');
   document.getElementById('clearCohort').hidden = COHORT.length===0;
-  if(!COHORT.length){ body.innerHTML=`<div class="empty" style="margin-top:16px">No results loaded yet. Load JSON files you exported from the assessment, or the migrated <span class="mono">thinking_styles_norming_2021_2023.json</span>.</div>`; return; }
+  if(!COHORT.length){ SELECTED=null; body.innerHTML=`<div class="empty" style="margin-top:16px">No results loaded yet. Load JSON files you exported from the assessment, or the migrated <span class="mono">thinking_styles_responses.json</span>.</div>`; return; }
   const rows=filtered();
+  if(SELECTED && !rows.includes(SELECTED)) SELECTED=null;
   const fsel=(k,label,key)=>`<select data-filt="${key}"><option value="">${label} (all)</option>${uniqCI(k).map(v=>`<option ${ci(FILT[key])===ci(v)?'selected':''}>${v}</option>`).join('')}</select>`;
-  // composition
-  const dist={CS:0,AS:0,AR:0,CR:0}; rows.forEach(r=>dist[r.dominant]++);
-  const avg={}; STYLE_ORDER.forEach(k=>avg[k]=rows.length?Math.round(rows.reduce((s,r)=>s+(r.scores[k]||0),0)/rows.length):0);
-  const missing=STYLE_ORDER.filter(k=>dist[k]===0);
   const palette=["#0f6d6f","#d1612a","#caa21e","#2a7fb8","#7a4fb0","#2f7d4f","#b4571a","#4a86c4"];
-  const overlay = rows.slice(0,8).map((r,i)=>({scores:r.scores,colour:palette[i%palette.length],name:r.name}));
+  let countLine, radarCard, rightCard;
+
+  if(SELECTED){
+    const p=SELECTED;
+    countLine=`Showing <b>${p.name||'—'}</b> only — click another name, or <button class="asLink" id="showAll">show the whole team</button>.`;
+    radarCard=`<div class="card"><div class="rhead"><strong>${p.name||'—'}</strong><button class="btn sub sm" id="showAll2">← whole team</button></div>
+      <div class="radarWrap">${radarSVG([{scores:p.scores,colour:'var(--accent)',name:p.name}],320)}</div>
+      <div class="legend">${STYLE_ORDER.map(k=>`<span><span class="dot" style="background:${KEY.styles[k].colour}"></span>${k} ${p.scores[k]}</span>`).join('')}</div></div>`;
+    rightCard=`<div class="card"><h3 style="font-family:Fraunces,serif">${p.name||'—'}</h3>
+      <p style="font-size:.8rem;color:var(--ink-2);margin:4px 0 2px">${p.role||'—'}${p.team?' · '+p.team:''}</p>
+      <p style="font-size:.8rem;color:var(--ink-2);margin:0 0 10px">Target role: <b style="color:var(--ink)">${p.pinnacle||'—'}</b></p>
+      ${STYLE_ORDER.map(k=>{const v=p.scores[k],bd=bandOf(v),st=KEY.styles[k];
+        return `<div class="scoreRow"><div class="nm"><span class="dot" style="background:${st.colour}"></span>${st.name}</div>
+        <div class="sbar"><i style="width:${v/60*100}%;background:${st.colour}"></i></div><div class="sval">${v}</div><div class="band ${bd.cls}">${bd.label}</div></div>`;}).join('')}</div>`;
+  } else {
+    const dist={CS:0,AS:0,AR:0,CR:0}; rows.forEach(r=>dist[r.dominant]++);
+    const avg={}; STYLE_ORDER.forEach(k=>avg[k]=rows.length?Math.round(rows.reduce((s,r)=>s+(r.scores[k]||0),0)/rows.length):0);
+    const missing=STYLE_ORDER.filter(k=>dist[k]===0);
+    const overlay=rows.slice(0,8).map((r,i)=>({scores:r.scores,colour:palette[i%palette.length],name:r.name}));
+    countLine=`${rows.length} of ${COHORT.length} loaded · first ${Math.min(8,rows.length)} on the radar · <b>click a name to see one radar</b>`;
+    radarCard=`<div class="card"><div class="radarWrap">${radarSVG(overlay.length?overlay:[{scores:avg,colour:'var(--accent)',name:'avg'}],320)}</div>
+      <div class="legend">${overlay.map((s,i)=>`<span class="legName" data-i="${i}"><span class="dot" style="background:${s.colour}"></span>${s.name}</span>`).join('')||'<span>no rows</span>'}</div></div>`;
+    rightCard=`<div class="card"><h3 style="font-family:Fraunces,serif">Composition</h3>
+      <p style="font-size:.8rem;color:var(--ink-2);margin:4px 0 8px">Dominant-style spread &amp; average score across the ${rows.length} filtered ${rows.length===1?'person':'people'}.</p>
+      ${STYLE_ORDER.map(k=>`<div class="stat"><span><span class="dot" style="background:${KEY.styles[k].colour}"></span> ${KEY.styles[k].name}</span>
+        <span class="mono">${dist[k]} dom · avg ${avg[k]}</span></div>`).join('')}
+      ${missing.length?`<div class="flag warn"><b>Blind spot:</b> no one is dominant in ${missing.map(k=>KEY.styles[k].name).join(', ')}. This team may under-serve ${missing.map(k=>({CS:'structure & delivery',AS:'analysis & rigour',AR:'relationships & collaboration',CR:'experimentation & risk'}[k])).join(', ')}.</div>`:`<div class="flag ok">All four styles are represented as someone's dominant — balanced coverage.</div>`}</div>`;
+  }
 
   body.innerHTML=`
-    <div class="filters">${fsel('age_group','Age','age')}${fsel('role','Role','role')}${fsel('pinnacle','Pinnacle','pinnacle')}${fsel('team','Team','team')}${fsel('organisation','Organisation','org')}</div>
-    <p class="mono" style="font-size:.76rem;color:var(--ink-2)">${rows.length} of ${COHORT.length} loaded · showing first ${Math.min(8,rows.length)} on the radar</p>
-    <div class="grid2" style="margin-top:6px">
-      <div class="card"><div class="radarWrap">${radarSVG(overlay.length?overlay:[{scores:avg,colour:'var(--accent)',name:'avg'}],320)}</div>
-        <div class="legend">${overlay.map((s,i)=>`<span><span class="dot" style="background:${s.colour}"></span>${s.name}</span>`).join('')||'<span>no rows</span>'}</div></div>
-      <div class="card"><h3 style="font-family:Fraunces,serif">Composition</h3>
-        <p style="font-size:.8rem;color:var(--ink-2);margin:4px 0 8px">Dominant-style spread &amp; average score across the ${rows.length} filtered ${rows.length===1?'person':'people'}.</p>
-        ${STYLE_ORDER.map(k=>`<div class="stat"><span><span class="dot" style="background:${KEY.styles[k].colour}"></span> ${KEY.styles[k].name}</span>
-          <span class="mono">${dist[k]} dom · avg ${avg[k]}</span></div>`).join('')}
-        ${missing.length?`<div class="flag warn"><b>Blind spot:</b> no one is dominant in ${missing.map(k=>KEY.styles[k].name).join(', ')}. This team may under-serve ${missing.map(k=>({CS:'structure & delivery',AS:'analysis & rigour',AR:'relationships & collaboration',CR:'experimentation & risk'}[k])).join(', ')}.</div>`:`<div class="flag ok">All four styles are represented as someone's dominant — balanced coverage.</div>`}
-      </div>
-    </div>
+    <div class="filters">${fsel('age_group','Age','age')}${fsel('role','Role','role')}${fsel('pinnacle','Target role','pinnacle')}${fsel('team','Team','team')}${fsel('organisation','Organisation','org')}</div>
+    <p class="mono" style="font-size:.76rem;color:var(--ink-2)">${countLine}</p>
+    <div class="grid2" style="margin-top:6px">${radarCard}${rightCard}</div>
     <h2 class="sec">People</h2>
     <div class="card" style="overflow-x:auto">
-      <table class="cohort"><thead><tr><th>Name</th><th>Role</th><th>Team</th><th>Dominant</th><th>CS</th><th>AS</th><th>AR</th><th>CR</th></tr></thead>
-      <tbody>${rows.map(r=>`<tr><td>${r.name||'—'}</td><td>${r.role||'—'}</td><td>${r.team||'—'}</td>
+      <table class="cohort"><thead><tr><th>Name</th><th>Role</th><th>Target role</th><th>Team</th><th>Dom</th><th>CS</th><th>AS</th><th>AR</th><th>CR</th></tr></thead>
+      <tbody>${rows.map((r,i)=>`<tr data-selidx="${i}" class="${SELECTED===r?'sel':''}"><td>${r.name||'—'}</td><td>${r.role||'—'}</td><td>${r.pinnacle||'—'}</td><td>${r.team||'—'}</td>
         <td><span class="dot" style="background:${KEY.styles[r.dominant].colour};display:inline-block;margin-right:5px"></span>${r.dominant}</td>
         <td class="mono">${r.scores.CS}</td><td class="mono">${r.scores.AS}</td><td class="mono">${r.scores.AR}</td><td class="mono">${r.scores.CR}</td></tr>`).join('')}</tbody></table>
     </div>`;
-  body.querySelectorAll('[data-filt]').forEach(sel=>sel.addEventListener('change',()=>{FILT[sel.dataset.filt]=sel.value;renderDash();}));
+  body.querySelectorAll('[data-filt]').forEach(sel=>sel.addEventListener('change',()=>{FILT[sel.dataset.filt]=sel.value;SELECTED=null;renderDash();}));
+  body.querySelectorAll('tr[data-selidx]').forEach(tr=>tr.addEventListener('click',()=>{SELECTED=rows[+tr.dataset.selidx];renderDash();}));
+  body.querySelectorAll('.legName').forEach(el=>el.addEventListener('click',()=>{SELECTED=rows[+el.dataset.i];renderDash();}));
+  body.querySelectorAll('#showAll,#showAll2').forEach(b=>b.addEventListener('click',()=>{SELECTED=null;renderDash();}));
 }
 
 updateProgress();

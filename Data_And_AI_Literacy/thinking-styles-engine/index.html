@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.0.2">
-<meta name="build" content="2026-11-08 15:08 SAST">
+<meta name="version" content="1.1.0">
+<meta name="build" content="2026-11-08 15:33 SAST">
 <meta name="mw-asset" content="true">
 <meta name="description" content="Modelware Thinking Styles Engine — Gregorc assessment, scoring, individual report and team/cohort dashboard.">
 <title>Thinking Styles Engine</title>
@@ -248,9 +248,24 @@
   <!-- DASHBOARD -->
   <section class="view" id="view-dashboard">
     <h1 class="title" style="font-size:1.5rem">Team &amp; cohort dashboard</h1>
-    <p class="lead" style="margin-top:8px">Load exported results or the norming dataset to compare people, see a team's style composition, and find its blind spots.</p>
+    <p class="lead" style="margin-top:8px">Pulls the historical responses and saved results from your private repo. Compare people, see a team's style composition, and find its blind spots.</p>
+
+    <div class="card" style="margin:14px 0">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div><strong>Private repo</strong><br><span class="mono" style="font-size:.72rem;color:var(--ink-2)">modelwaresystems-dama / modelware_app_storage · Data_And_AI_Literacy/thinking-styles-engine</span></div>
+        <button class="btn ghost" id="ghTokBtn">GitHub token · <span class="tokState mono"></span></button>
+      </div>
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn" id="loadHistoryBtn">Load historical responses (repo)</button>
+        <button class="btn sub" id="loadResultsBtn">Load saved results (repo)</button>
+        <button class="btn sub" id="loadNormingBtn">Load norming 523 (repo)</button>
+      </div>
+      <p id="repoMsg" class="mono" style="font-size:.74rem;color:var(--ink-2);margin:10px 0 0"></p>
+      <p style="font-size:.74rem;color:var(--ink-2);margin:8px 0 0">The token is a GitHub fine-grained PAT (Contents: read on <span class="mono">modelware_app_storage</span>), stored only in this browser under <span class="mono">mdaReadiness.ghpat</span> — the same key the Modelware apps share. It never leaves your device and isn't in the app source.</p>
+    </div>
+
     <div class="btnrow">
-      <label class="btn sub" style="cursor:pointer">Load result JSON…<input type="file" id="loadFiles" accept="application/json,.json" multiple hidden></label>
+      <label class="btn sub" style="cursor:pointer">Load result JSON (file)…<input type="file" id="loadFiles" accept="application/json,.json" multiple hidden></label>
       <button class="btn sub" id="loadSample">Load sample (you &amp; Veronica)</button>
       <button class="btn ghost" id="clearCohort" hidden>Clear</button>
     </div>
@@ -337,11 +352,14 @@ function bandOf(v){ // Howard's choice: dominant >40, less-likely <30, weak <20
 
 /* ---- navigation ---- */
 const views={home:"view-home",assess:"view-assess",result:"view-result",dashboard:"view-dashboard"};
+let dashAutoLoaded=false;
 function go(v){
   Object.values(views).forEach(id=>document.getElementById(id).classList.remove('on'));
   document.getElementById(views[v]).classList.add('on');
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.go===v));
   window.scrollTo(0,0);
+  // auto-load the historical data from the repo the first time the dashboard opens with a token set
+  if(v==='dashboard' && ghToken() && COHORT.length===0 && !dashAutoLoaded){ dashAutoLoaded=true; loadRepoHistory(true); }
 }
 document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
 
@@ -493,12 +511,15 @@ function renderResult(p){
       <button class="btn" onclick="window.print()">Print / save PDF</button>
       <button class="btn sub" id="exportBtn">Export JSON</button>
       <button class="btn ghost" id="saveBtn">Save to Modelware</button>
+      <button class="btn ghost" id="tokBtnR">GitHub token · <span class="tokState mono"></span></button>
       <button class="btn ghost" data-go="assess">Retake</button>
     </div>
     <p id="saveMsg" class="mono" style="font-size:.74rem;color:var(--ink-2);margin-top:8px"></p>`;
   document.getElementById('exportBtn').addEventListener('click',()=>exportJSON(p));
   document.getElementById('saveBtn').addEventListener('click',()=>saveToModelware(p));
+  document.getElementById('tokBtnR').addEventListener('click',setToken);
   document.querySelectorAll('#resultBody [data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
+  tokenState();
 }
 
 function exportJSON(p){
@@ -508,26 +529,70 @@ function exportJSON(p){
   document.body.appendChild(a);a.click();a.remove();
 }
 
-/* GitHub Contents API save to the PRIVATE repo, matching the Modelware pattern
-   (fine-grained PAT in localStorage 'mdaReadiness.ghpat', Contents: read & write). */
-const GH={owner:"modelwaresystems-dama",repo:"modelware_app_storage",dir:"Data_And_AI_Literacy/ThinkingStyles/results"};
+/* ---------- Private GitHub repo — config & linking ----------
+   Fine-grained PAT (Contents: read & write on modelwaresystems-dama/modelware_app_storage),
+   stored in THIS BROWSER ONLY under localStorage 'mdaReadiness.ghpat' — the shared key used
+   across the Modelware apps. The public app source stays keyless. */
+const GH={
+  owner:"modelwaresystems-dama", repo:"modelware_app_storage", ref:"main",
+  base:"Data_And_AI_Literacy/thinking-styles-engine",
+  resultsDir:"Data_And_AI_Literacy/thinking-styles-engine/results",
+  responsesFile:"Data_And_AI_Literacy/thinking-styles-engine/thinking_styles_responses.json",
+  normingFile:"Data_And_AI_Literacy/thinking-styles-engine/norming-baselines.json"
+};
+const GH_TOKEN_KEY="mdaReadiness.ghpat";
+function ghToken(){try{return localStorage.getItem(GH_TOKEN_KEY)||"";}catch(e){return"";}}
+function ghHeaders(raw){const t=ghToken(),h={Accept:raw?"application/vnd.github.raw":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};if(t)h.Authorization="Bearer "+t;return h;}
+function ghUrl(p){return "https://api.github.com/repos/"+GH.owner+"/"+GH.repo+"/contents/"+p.split("/").map(encodeURIComponent).join("/");}
+function tokenState(){const set=!!ghToken();document.querySelectorAll('.tokState').forEach(e=>{e.textContent=set?'set':'not set';e.style.color=set?'var(--rec)':'var(--warn)';});}
+function setToken(){
+  const t=prompt("Paste a GitHub fine-grained token (Contents: read & write on "+GH.owner+"/"+GH.repo+").\nStored only in this browser under \""+GH_TOKEN_KEY+"\". Blank to clear.","");
+  if(t===null)return;
+  try{ if(t.trim())localStorage.setItem(GH_TOKEN_KEY,t.trim()); else localStorage.removeItem(GH_TOKEN_KEY);}catch(e){}
+  tokenState();
+}
+async function ghGet(path,raw){
+  const r=await fetch(ghUrl(path),{headers:ghHeaders(raw)});
+  if(!r.ok)throw new Error("HTTP "+r.status+(r.status===404?" (not found — is it pushed?)":r.status===401?" (token invalid)":r.status===403?" (token lacks read)":""));
+  return r.json();
+}
 async function saveToModelware(p){
   const msg=document.getElementById('saveMsg');
-  let tok=""; try{tok=localStorage.getItem('mdaReadiness.ghpat')||"";}catch(e){}
-  if(!tok){ tok=prompt("Paste your Modelware GitHub token (stored only in this browser):")||""; if(tok){try{localStorage.setItem('mdaReadiness.ghpat',tok);}catch(e){}} }
-  if(!tok){ msg.textContent="Save cancelled — no token."; return; }
-  const path=`${GH.dir}/${new Date().toISOString().slice(0,10)}_${(p.name||'result').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.json`;
+  if(!ghToken())setToken();
+  if(!ghToken()){ msg.textContent="No token set — click “GitHub token”."; return; }
+  const path=`${GH.resultsDir}/${new Date().toISOString().slice(0,10)}_${(p.name||'result').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.json`;
   const content=btoa(unescape(encodeURIComponent(JSON.stringify(p,null,2))));
   msg.textContent="Saving to "+GH.repo+"…";
   try{
-    const r=await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${encodeURIComponent(path).replace(/%2F/g,'/')}`,{
-      method:"PUT",headers:{Authorization:"Bearer "+tok,Accept:"application/vnd.github+json"},
-      body:JSON.stringify({message:`Thinking Styles result: ${p.name} (v${V})`,content})
-    });
+    let sha; try{const h=await fetch(ghUrl(path),{headers:ghHeaders()});if(h.ok)sha=(await h.json()).sha;}catch(e){}
+    const r=await fetch(ghUrl(path),{method:"PUT",headers:ghHeaders(),
+      body:JSON.stringify({message:`Thinking Styles result: ${p.name} (v${V})`,content,sha})});
     if(r.ok){ msg.textContent="✓ Saved to "+GH.repo+"/"+path; }
-    else { const e=await r.json().catch(()=>({})); msg.textContent="Save failed ("+r.status+"): "+(e.message||"check token scope"); }
+    else { const e=await r.json().catch(()=>({})); msg.textContent="Save failed ("+r.status+"): "+(e.message||"check token scope")+(r.status===403?" — token needs Contents:write":r.status===401?" — token invalid":""); }
   }catch(e){ msg.textContent="Save failed: "+e.message; }
 }
+async function loadRepoResults(){
+  const m=document.getElementById('repoMsg');
+  if(!ghToken()){ setToken(); if(!ghToken()){m.textContent="No token set — click “GitHub token”.";return;} }
+  m.textContent="Reading "+GH.resultsDir+"…";
+  try{
+    const list=await ghGet(GH.resultsDir,false);
+    const files=(Array.isArray(list)?list:[]).filter(f=>f.type==="file"&&/\.json$/i.test(f.name));
+    if(!files.length){ m.textContent="No saved results in the repo yet."; return; }
+    let n=0; for(const f of files){ try{ ingest(await ghGet(GH.resultsDir+"/"+f.name,true)); n++; }catch(e){} }
+    m.textContent="Loaded "+n+" saved result"+(n===1?"":"s")+" from the repo."; renderDash();
+  }catch(e){ m.textContent="Couldn’t read results: "+e.message; }
+}
+async function loadRepoFile(path,label,silent){
+  const m=document.getElementById('repoMsg');
+  if(!ghToken()){ if(silent)return false; setToken(); if(!ghToken()){m.textContent="No token set — click “GitHub token”.";return false;} }
+  if(!silent)m.textContent="Reading "+label+"…";
+  try{ const obj=await ghGet(path,true); const before=COHORT.length; ingest(obj);
+    m.textContent="Loaded "+(COHORT.length-before)+" records ("+label+") from the repo."; renderDash(); return true; }
+  catch(e){ m.textContent="Couldn’t read "+label+": "+e.message; return false; }
+}
+function loadRepoHistory(silent){return loadRepoFile(GH.responsesFile,"historical responses",silent);}
+function loadRepoNorming(){return loadRepoFile(GH.normingFile,"norming baseline (523)");}
 
 /* ============================ DASHBOARD ============================ */
 let COHORT=[];
@@ -542,10 +607,19 @@ document.getElementById('loadSample').addEventListener('click',()=>{
   ]});
   renderDash();
 });
-document.getElementById('clearCohort').addEventListener('click',()=>{COHORT=[];renderDash();});
+document.getElementById('clearCohort').addEventListener('click',()=>{COHORT=[];dashAutoLoaded=true;renderDash();});
+document.getElementById('ghTokBtn').addEventListener('click',setToken);
+document.getElementById('loadHistoryBtn').addEventListener('click',()=>loadRepoHistory(false));
+document.getElementById('loadResultsBtn').addEventListener('click',loadRepoResults);
+document.getElementById('loadNormingBtn').addEventListener('click',loadRepoNorming);
+function scoreAnswers(ans){const m={CS:0,AS:0,AR:0,CR:0};Object.values(ans||{}).forEach(ws=>(ws||[]).forEach(w=>{const s=WORD2STYLE[norm(w)];if(s)m[s]++;}));return scoreMarks(m);}
 function ingest(obj){
   const recs = Array.isArray(obj)?obj : (obj.records?obj.records:[obj]);
-  recs.forEach(r=>{ if(r&&r.scores){ r.dominant=r.dominant||STYLE_ORDER.reduce((a,b)=>r.scores[b]>r.scores[a]?b:a,"CS"); COHORT.push(r);} });
+  recs.forEach(r=>{
+    if(!r)return;
+    if(!r.scores && r.answers){ r.scores=scoreAnswers(r.answers); r.total_marks=Object.values(r.answers).reduce((n,w)=>n+(w?w.length:0),0); r.complete=(r.total_marks===30); }
+    if(r.scores){ r.dominant=r.dominant||STYLE_ORDER.reduce((a,b)=>r.scores[b]>r.scores[a]?b:a,"CS"); COHORT.push(r); }
+  });
 }
 const FILT={age:"",role:"",pinnacle:"",team:"",org:""};
 function filtered(){return COHORT.filter(r=>
@@ -590,6 +664,7 @@ function renderDash(){
 }
 
 updateProgress();
+tokenState();
 </script>
 </body>
 </html>

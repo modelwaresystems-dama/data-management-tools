@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.1.0">
-<meta name="build" content="2026-11-08 15:33 SAST">
+<meta name="version" content="1.1.1">
+<meta name="build" content="2026-11-08 15:56 SAST">
 <meta name="mw-asset" content="true">
 <meta name="description" content="Modelware Thinking Styles Engine — Gregorc assessment, scoring, individual report and team/cohort dashboard.">
 <title>Thinking Styles Engine</title>
@@ -622,17 +622,24 @@ function ingest(obj){
   });
 }
 const FILT={age:"",role:"",pinnacle:"",team:"",org:""};
+const ci=s=>String(s==null?"":s).trim().toLowerCase();
 function filtered(){return COHORT.filter(r=>
-  (!FILT.age||r.age_group===FILT.age)&&(!FILT.role||r.role===FILT.role)&&
-  (!FILT.pinnacle||r.pinnacle===FILT.pinnacle)&&(!FILT.team||r.team===FILT.team)&&(!FILT.org||r.organisation===FILT.org));}
+  (!FILT.age||ci(r.age_group)===ci(FILT.age))&&(!FILT.role||ci(r.role)===ci(FILT.role))&&
+  (!FILT.pinnacle||ci(r.pinnacle)===ci(FILT.pinnacle))&&(!FILT.team||ci(r.team)===ci(FILT.team))&&(!FILT.org||ci(r.organisation)===ci(FILT.org)));}
+// unique values, de-duplicated case-insensitively (keeps the most common casing — so "Debswana"/"DEBSWANA" become one option)
+function uniqCI(k){
+  const groups=new Map();
+  COHORT.forEach(r=>{const v=(r[k]||"").trim();if(!v)return;const key=v.toLowerCase();
+    if(!groups.has(key))groups.set(key,new Map());const c=groups.get(key);c.set(v,(c.get(v)||0)+1);});
+  return [...groups.values()].map(c=>[...c.entries()].sort((a,b)=>b[1]-a[1])[0][0]).sort((a,b)=>a.localeCompare(b));
+}
 
 function renderDash(){
   const body=document.getElementById('dashBody');
   document.getElementById('clearCohort').hidden = COHORT.length===0;
   if(!COHORT.length){ body.innerHTML=`<div class="empty" style="margin-top:16px">No results loaded yet. Load JSON files you exported from the assessment, or the migrated <span class="mono">thinking_styles_norming_2021_2023.json</span>.</div>`; return; }
   const rows=filtered();
-  const uniq=(k)=>[...new Set(COHORT.map(r=>r[k]).filter(Boolean))].sort();
-  const fsel=(k,label,key)=>`<select data-filt="${key}"><option value="">${label} (all)</option>${uniq(k).map(v=>`<option ${FILT[key]===v?'selected':''}>${v}</option>`).join('')}</select>`;
+  const fsel=(k,label,key)=>`<select data-filt="${key}"><option value="">${label} (all)</option>${uniqCI(k).map(v=>`<option ${ci(FILT[key])===ci(v)?'selected':''}>${v}</option>`).join('')}</select>`;
   // composition
   const dist={CS:0,AS:0,AR:0,CR:0}; rows.forEach(r=>dist[r.dominant]++);
   const avg={}; STYLE_ORDER.forEach(k=>avg[k]=rows.length?Math.round(rows.reduce((s,r)=>s+(r.scores[k]||0),0)/rows.length):0);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.9.0">
+<meta name="version" content="1.10.0">
 <meta name="mw-asset" content="true">
 <meta name="ontology-src" content="gh:modelwaresystems-dama/modelware_app_storage/Data_And_AI_Literacy/Ontology/database">
 <title>Ontology Explorer</title>
@@ -80,6 +80,8 @@
   .sedge.hot{stroke:var(--accent);stroke-width:2.4}.sedge.faded{opacity:.1}
   .sedge.prop{stroke-dasharray:5 4;stroke:var(--muted)}
   .bandlab{font:800 10px var(--mono);fill:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .bandlab.sub{font-weight:700;opacity:.8}
+  .lanediv{stroke:var(--line);stroke-width:1.2;stroke-dasharray:3 4}
   .elab{font:700 9.5px var(--mono);fill:var(--accent-ink);opacity:0;pointer-events:none;transition:opacity .15s;paint-order:stroke;stroke:var(--bg);stroke-width:3px;stroke-linejoin:round}
   svg.spine.showlabels .elab{opacity:1}
   .elab.hot{opacity:1;fill:var(--accent);font-weight:800}.elab.faded{opacity:0}
@@ -349,13 +351,32 @@ function renderSpine(){
   const aset=new Set(anchors);
   const colW=210, rowH=66, padX=30, padY=42, nodeW=168, nodeH=42;
   const bandH=Math.max(...BANDS.map(b=>b.ids.filter(id=>M.ent.get(id)).length));
-  const W=BANDS.length*colW+padX, Hh=bandH*rowH+padY+30;
+  let W=BANDS.length*colW+padX, Hh=bandH*rowH+padY+30;
   const pos={};
   BANDS.forEach((b,bi)=>{const ids=b.ids.filter(id=>M.ent.get(id));ids.forEach((id,ri)=>{pos[id]={x:padX+bi*colW,y:padY+ri*rowH};});});
+  // --- second lane: Work & Decision Architecture (allocate-work spine), v0.20.0+ ---
+  const WDA_SPINE=['e:wa:process','e:wa:workunit','e:wa:task','e:wa:decision','e:wa:demand','e:wa:composition','e:wa:allocation'];
+  const WDA_GOV=['e:wa:inputdata','e:wa:control','e:wa:autonomy'];
+  const hasWA=WDA_SPINE.every(id=>M.ent.get(id));
+  const laneStep=190; let laneLabelY=0,govLabelY=0,dividerY=0;
+  if(hasWA){
+    dividerY=padY+(bandH-1)*rowH+nodeH+24; laneLabelY=dividerY+20; const laneY=laneLabelY+16;
+    WDA_SPINE.forEach((id,i)=>{pos[id]={x:padX+i*laneStep,y:laneY};});
+    const govY=laneY+rowH+34; govLabelY=govY-12; const decX=padX+3*laneStep;
+    WDA_GOV.forEach((id,i)=>{if(M.ent.get(id))pos[id]={x:decX+(i-1)*(nodeW+22),y:govY};});
+    WDA_SPINE.concat(WDA_GOV).forEach(id=>{if(M.ent.get(id)&&!aset.has(id)){anchors.push(id);aset.add(id);}});
+    W=Math.max(W,padX+(WDA_SPINE.length-1)*laneStep+nodeW+padX);
+    Hh=govY+nodeH+24;
+  }
   const NS='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(NS,'svg');svg.setAttribute('class','spine'+(S.spineLabels?' showlabels':''));svg.setAttribute('viewBox','0 0 '+W+' '+Hh);
   // band labels
   BANDS.forEach((b,bi)=>{const t=document.createElementNS(NS,'text');t.setAttribute('class','bandlab');t.setAttribute('x',padX+bi*colW);t.setAttribute('y',24);t.textContent=b.label;svg.appendChild(t);});
+  if(hasWA){
+    const div=document.createElementNS(NS,'line');div.setAttribute('x1',padX);div.setAttribute('y1',dividerY);div.setAttribute('x2',W-padX);div.setAttribute('y2',dividerY);div.setAttribute('class','lanediv');svg.appendChild(div);
+    const ll=document.createElementNS(NS,'text');ll.setAttribute('class','bandlab');ll.setAttribute('x',padX);ll.setAttribute('y',laneLabelY);ll.textContent='Work & decision architecture';svg.appendChild(ll);
+    const gl=document.createElementNS(NS,'text');gl.setAttribute('class','bandlab sub');gl.setAttribute('x',padX+3*laneStep);gl.setAttribute('y',govLabelY);gl.textContent='Decision governance';svg.appendChild(gl);
+  }
   // edges among anchors
   spineEls={nodes:{},edges:[]};
   const seen=new Set();

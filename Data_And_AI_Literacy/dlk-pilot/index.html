@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.1.0">
-<meta name="build-timestamp" content="2026-11-09 05:11 SAST">
+<meta name="version" content="3.2.0">
+<meta name="build-timestamp" content="2026-11-09 05:46 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -1021,6 +1021,16 @@ function impMap(wb){
         workforce:_norm(row[h['workforce implication']]), driver:_norm(row[h['cost / value driver']]) }); }
       else { M.kpis.push({ id:id, kpi:_norm(row[h['kpi']]), definition:_norm(row[h['definition']]), target:_norm(row[h['target']]),
         current:_norm(row[h['current result']]), unit:_norm(row[h['unit']]), rag:_norm(row[h['rag']]), owner:_norm(row[h['owner']]) }); } } }
+  // ---- Business capability → KA bridge → objective caps (sheet 10 Capabilities) ----
+  M.objectiveKAs={};
+  const capS=impFindSheet(wb,'capabilit');
+  if(capS){ const r=rowsOf(wb,capS); const {i:hi,h}=findHdr(r,['businesscapabilityid','name']);
+    const kaCol=['knowledge area ids','knowledgeareaids','dmbok kas','dmbok knowledge areas','capability kas','capability knowledge areas','kas','ka ids'].map(k=>h[k]).find(x=>x!=null);
+    const objCol=['strategic objective ids','strategicobjectiveids','objective ids','objectiveids'].map(k=>h[k]).find(x=>x!=null);
+    if(kaCol!=null && objCol!=null){ for(let j=hi+1;j<r.length;j++){ const row=r[j];
+      const objs=_norm(row[objCol]).split(/[;,/]/).map(x=>x.trim()).filter(Boolean);
+      const kas=_norm(row[kaCol]).split(/[;,/]/).map(x=>x.trim().toUpperCase()).filter(Boolean);
+      objs.forEach(o=>{ const a=(M.objectiveKAs[o]=M.objectiveKAs[o]||[]); kas.forEach(k=>{ if(a.indexOf(k)<0) a.push(k); }); }); } } }
   // ---- Thinking Styles ----
   const ts=impFindSheet(wb,'thinking'); if(ts){ const r=rowsOf(wb,ts); const {i:hi,h}=findHdr(r,['learner name']);
     for(let i=hi+1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); if(!_isName(name)) continue;
@@ -1164,7 +1174,7 @@ async function impApply(){
     p.role=impResolveRole(ip.role,ip.persona); });
   // strategy
   if(M.strategy.length){ ENTERED.strategy=M.strategy.map(o=>({ id:o.id, title:o.title, kpi:o.kpi,
-    init:o.driver||o.workforce||'', caps:[], attrs:o })); }
+    init:o.driver||o.workforce||'', caps:(M.objectiveKAs&&M.objectiveKAs[o.id]?M.objectiveKAs[o.id].filter(k=>CAPBY[k]):[]), attrs:o })); }
   if(M.kpis.length) ENTERED.strategyKpis=M.kpis;
   // per-learner assessments → attach + mark completion
   const attach=(map,field,flag)=>{ Object.values(map).forEach(v=>{ const p=byAlias[_low(v.name)]; if(!p) return;

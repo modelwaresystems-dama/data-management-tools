@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.0.0">
-<meta name="build-timestamp" content="2026-11-07 08:31 SAST">
+<meta name="version" content="3.1.0">
+<meta name="build-timestamp" content="2026-11-09 05:11 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -492,8 +492,8 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
     <div class="panel">
       <div class="toprow">
         <div>
-          <h3 style="margin-bottom:2px">Import assessments from Excel <span class="muted small">— the 6-tab starter workbook</span></h3>
-          <p class="muted small" style="margin:0;max-width:74ch">Upload the <b>DLK Pilot Assessment Import Starter</b> (Business AI &amp; Data Strategy, Learner Cohorts, Thinking Styles, StrengthsFinder, PDMMA, Know Your Value). The importer reads each tab, maps it to the ontology, shows a preview, then writes to the <b>active tenant's</b> cohort in the private repo (<span class="mono">tenants/&lt;tenant&gt;/cohort.json</span>). Nothing is embedded in this app. Learner names must match across tabs.</p>
+          <h3 style="margin-bottom:2px">Import workbook <span class="muted small">— assessments + Work &amp; Decision Architecture, one upload</span></h3>
+          <p class="muted small" style="margin:0;max-width:74ch">Upload the <b>tenant workbook</b> (assessment tabs: Strategy, Cohorts, Thinking Styles, StrengthsFinder, PDMMA, Know Your Value; plus the Work &amp; Decision Architecture tabs). The importer reads each tab, maps it to the ontology, shows a preview, then writes to the <b>active tenant</b> in the private repo in one pass: the assessment tabs → <span class="mono">cohort.json</span>, and the Work &amp; Decision Architecture tabs → <span class="mono">work-architecture/</span> (entities + relationships, conforming to the ontology). Undefined-but-referenced IDs become <b>provisional</b> entities and every data-quality issue is surfaced. Nothing is embedded in this app.</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input type="file" id="impFile" accept=".xlsx" style="display:none">
@@ -1000,12 +1000,14 @@ function impFindSheet(wb,kw){ return wb.SheetNames.find(n=>_low(n).includes(kw))
 function rowsOf(wb,name){ return name?XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,defval:''}):[]; }
 function headerIndex(row){ const m={}; (row||[]).forEach((h,i)=>{ const k=_low(h).replace(/\s*\(auto\)/,'').trim(); if(k) m[k]=i; }); return m; }
 
+function findHdr(r,hints){ for(let i=0;i<Math.min(8,r.length);i++){ const hi=headerIndex(r[i]);
+    if(hints.some(x=>x in hi)) return {i:i,h:hi}; } return {i:0,h:headerIndex(r[0]||[])}; }
 function impMap(wb){
   const M={people:[], strategy:[], kpis:[], thinking:{}, strengths:{}, pdmma:{}, kyv:{}, issues:[], sheets:wb.SheetNames};
-  // ---- Cohorts ----
-  const cs=impFindSheet(wb,'cohort'); if(cs){ const r=rowsOf(wb,cs); const h=headerIndex(r[0]);
-    for(let i=1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); if(!_isName(name)) continue;
-      M.people.push({ alias:name, role:_norm(row[h['role']]), company:_norm(row[h['company']]),
+  // ---- Cohorts ----  (header may sit below title/note rows)
+  const cs=impFindSheet(wb,'cohort'); if(cs){ const r=rowsOf(wb,cs); const {i:hi,h}=findHdr(r,['learner name','learner id']);
+    for(let i=hi+1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); if(!_isName(name)) continue;
+      M.people.push({ alias:name, learnerId:_norm(row[h['learner id']]), role:_norm(row[h['role']]), company:_norm(row[h['company']]),
         func:_norm(row[h['function']]), unit:_norm(row[h['unit']]), persona:_norm(row[h['persona']]) }); } }
   // ---- Strategy (objectives + KPIs stacked) ----
   const ss=impFindSheet(wb,'strategy'); if(ss){ const r=rowsOf(wb,ss); let mode=null,h=null;
@@ -1020,28 +1022,30 @@ function impMap(wb){
       else { M.kpis.push({ id:id, kpi:_norm(row[h['kpi']]), definition:_norm(row[h['definition']]), target:_norm(row[h['target']]),
         current:_norm(row[h['current result']]), unit:_norm(row[h['unit']]), rag:_norm(row[h['rag']]), owner:_norm(row[h['owner']]) }); } } }
   // ---- Thinking Styles ----
-  const ts=impFindSheet(wb,'thinking'); if(ts){ const r=rowsOf(wb,ts); const h=headerIndex(r[0]);
-    for(let i=1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); if(!_isName(name)) continue;
+  const ts=impFindSheet(wb,'thinking'); if(ts){ const r=rowsOf(wb,ts); const {i:hi,h}=findHdr(r,['learner name']);
+    for(let i=hi+1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); if(!_isName(name)) continue;
       const o={ CS:+row[h['concrete sequential']]||null, AS:+row[h['abstract sequential']]||null,
         CR:+row[h['concrete random']]||null, AR:+row[h['abstract random']]||null };
       const pairs=[['Concrete Sequential',o.CS],['Abstract Sequential',o.AS],['Concrete Random',o.CR],['Abstract Random',o.AR]].filter(p=>p[1]!=null);
       o.dominant = pairs.length? pairs.sort((a,b)=>b[1]-a[1])[0][0] : '';
       M.thinking[_low(name)]={name:name,data:o}; } }
   // ---- Strengths (tall) ----
-  const sr=impFindSheet(wb,'strength'); if(sr){ const r=rowsOf(wb,sr); const h=headerIndex(r[0]);
-    for(let i=1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); const theme=_norm(row[h['theme']]); if(!_isName(name)||!theme) continue;
+  const sr=impFindSheet(wb,'strength'); if(sr){ const r=rowsOf(wb,sr); const {i:hi,h}=findHdr(r,['learner name']);
+    for(let i=hi+1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); const theme=_norm(row[h['theme']]); if(!_isName(name)||!theme) continue;
       const rank=+row[h['rank (1–34)']]||+row[h['rank']]||null; const dom=_norm(row[h['domain']]);
       (M.strengths[_low(name)]=M.strengths[_low(name)]||{name:name,items:[]}).items.push({rank:rank,theme:theme,domain:dom}); } }
   // ---- PDMMA (wide A/R/D per learner) ----
-  const ps=impFindSheet(wb,'pdmma'); if(ps){ const r=rowsOf(wb,ps); const g1=r[0]||[], g2=r[1]||[];
-    // learner groups start at column index 5, step 3
+  const ps=impFindSheet(wb,'pdmma'); if(ps){ const r=rowsOf(wb,ps);
+    // find the Acquired/Required/Desired sub-header row; the group-name row sits just above it
+    let sub=-1; for(let i=0;i<Math.min(6,r.length);i++){ if((r[i]||[]).some(c=>_low(c)==='acquired')){ sub=i; break; } }
+    if(sub<1) sub=1; const g1=r[sub-1]||[];
     const groups=[]; for(let c=5;c<g1.length;c+=3){ const gn=_norm(g1[c]); if(gn && !/^learner \d+ \(rename\)$/i.test(gn)) groups.push({name:gn,col:c}); }
-    for(let i=2;i<r.length;i++){ const row=r[i]; const did=_norm(row[3]); if(!did) continue;
+    for(let i=sub+1;i<r.length;i++){ const row=r[i]; const did=_norm(row[3]); if(!did||_low(did)==='deliverable id') continue;
       groups.forEach(g=>{ const A=_norm(row[g.col]),R=_norm(row[g.col+1]),D=_norm(row[g.col+2]); if(!A&&!R&&!D) return;
         const key=_low(g.name); (M.pdmma[key]=M.pdmma[key]||{name:g.name,rows:{}}).rows[did]={ka:_norm(row[0]),deliverable:_norm(row[4]),A:A,R:R,D:D}; }); } }
   // ---- Know Your Value (work audit) ----
-  const ks=impFindSheet(wb,'value')||impFindSheet(wb,'kyv'); if(ks){ const r=rowsOf(wb,ks); const h=headerIndex(r[0]);
-    for(let i=1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); const act=_norm(row[h['activity']]); if(!_isName(name)||!act) continue;
+  const ks=impFindSheet(wb,'value')||impFindSheet(wb,'kyv'); if(ks){ const r=rowsOf(wb,ks); const {i:hi,h}=findHdr(r,['learner name','activity']);
+    for(let i=hi+1;i<r.length;i++){ const row=r[i]; const name=_norm(row[h['learner name']]); const act=_norm(row[h['activity']]); if(!_isName(name)||!act) continue;
       (M.kyv[_low(name)]=M.kyv[_low(name)]||{name:name,items:[]}).items.push({ category:_norm(row[h['category']]), activity:act,
         pctMonth:_norm(row[h['% of month']]), action:_norm(row[h['action strategy']]), notes:_norm(row[h['notes']]) }); } }
   // ---- cross-tab learner-name validation ----
@@ -1064,9 +1068,79 @@ function impRenderPreview(M){
     rows.map(r=>'<tr><td><b>'+r[0]+'</b></td><td>'+r[1]+'</td></tr>').join('')+'</tbody></table>';
   if(M.people.length){ h+='<div style="margin-top:8px" class="legend">Learners: '+M.people.map(p=>'<span class="pill">'+esc(p.alias)+'</span>').join(' ')+'</div>'; }
   if(M.issues.length){ h+='<div class="callout" style="margin-top:10px;border-left-color:var(--mid)"><b>⚠ '+M.issues.length+' name mismatch(es):</b><br>'+M.issues.map(esc).join('<br>')+'<div class="muted small" style="margin-top:4px">These will still import, but won’t attach to a cohort learner until the names match.</div></div>'; }
+  // ---- Work & Decision Architecture section ----
+  const w=M.workarch;
+  if(w){
+    h+='<hr class="sep"><h3 style="margin:10px 0 4px">Work &amp; Decision Architecture → <span class="mono">'+esc(activeTenantName())+'/work-architecture</span></h3>';
+    h+='<div class="legend"><b>'+w.entities.length+'</b> entities · <b>'+w.relationships.length+'</b> relationships · <b style="color:'+(w.stubs.length?'var(--mid)':'var(--ok)')+'">'+w.stubs.length+'</b> provisional stub(s) · <b style="color:'+(w.warnings.length?'var(--mid)':'var(--ok)')+'">'+w.warnings.length+'</b> data-quality warning(s)</div>';
+    const te=Object.entries(w.byType).sort((a,b)=>b[1]-a[1]);
+    h+='<div class="two" style="margin-top:8px"><div class="col"><h3 style="font-size:12px">Entities by type</h3><div class="legend">'+
+      te.map(([t,c])=>'<span class="pill">'+t.replace('type:','')+' '+c+'</span>').join(' ')+'</div></div>'+
+      '<div class="col"><h3 style="font-size:12px">Relationships by predicate</h3><div class="legend">'+
+      Object.entries(w.byPred).sort((a,b)=>b[1]-a[1]).map(([t,c])=>'<span class="pill">'+t.replace('rel:','')+' '+c+'</span>').join(' ')+'</div></div></div>';
+    if(w.stubs.length){ h+='<div class="callout" style="margin-top:10px;border-left-color:var(--mid)"><b>'+w.stubs.length+' provisional entit'+(w.stubs.length===1?'y':'ies')+'</b> (referenced but not defined in the workbook — created with <span class="mono">needsDefinition:true</span>): '+w.stubs.slice(0,30).map(s=>'<span class="pill">'+esc(s.replace(/^.*:/,''))+'</span>').join(' ')+'</div>'; }
+    if(w.warnings.length){ h+='<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">⚠ '+w.warnings.length+' data-quality warning(s) — fix at source to get it right</summary><div class="legend" style="margin-top:6px;max-height:220px;overflow:auto">'+w.warnings.slice(0,300).map(esc).join('<br>')+'</div></details>'; }
+  } else {
+    h+='<hr class="sep"><div class="muted small">Work &amp; Decision Architecture mapping (<span class="mono">work-arch-mapping.json</span>) not loaded — set a token / commit the config to import the architecture sheets.</div>';
+  }
   host.innerHTML=h;
   document.getElementById('impPreview').style.display='block';
   document.getElementById('impApply').disabled=false;
+}
+
+/* ---- Work & Decision Architecture ETL (config-driven; same logic as work-arch-mapping.json) ---- */
+let WAMAP=null;
+async function ghLoadWorkArchMapping(){
+  if(WAMAP) return WAMAP; if(!ghToken()) return null;
+  try{ const r=await fetch(ghUrl('work-arch-mapping.json',true),{headers:ghHeaders(true),cache:'no-store'});
+    if(r.ok) WAMAP=JSON.parse(await r.text()); }catch(e){}
+  return WAMAP;
+}
+function waRows(wb,sheet){ const ws=wb.Sheets[sheet]; if(!ws) return [];
+  const arr=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''});
+  let hi=0; for(let i=0;i<Math.min(4,arr.length);i++){ const c0=String(arr[i][0]||'').trim();
+    if(c0 && !c0.endsWith('.') && c0.indexOf('ontology:')<0 && c0.length<40 && /^[A-Za-z]/.test(c0)){ hi=i; break; } }
+  const hdr=(arr[hi]||[]).map(x=>String(x==null?'':x).trim()); const out=[];
+  for(let i=hi+1;i<arr.length;i++){ const r=arr[i]; if(!r||r[0]===''||r[0]==null) continue;
+    const d={}; for(let j=0;j<hdr.length;j++) d[hdr[j]]=(r[j]!=null?r[j]:''); out.push(d); }
+  return out;
+}
+function waCamel(h){ h=String(h).replace(/[^A-Za-z0-9]+/g,''); return h?h[0].toLowerCase()+h.slice(1):h; }
+function waSplit(v){ v=_norm(v); return v?v.split(/[;,/]| and /).map(x=>x.trim()).filter(Boolean):[]; }
+function buildWorkArch(wb,tenantId){
+  const cfg=WAMAP; if(!cfg) return null;
+  const ENT={},REL=[],WARN=[],STUBS=[],IDMAP={},PREFIXMAP={}; let rid=0;
+  const eid=(p,s)=>'e:t:'+p+':'+s, nrid=()=>'t'+(++rid);
+  function addE(prefix,srcid,etype,concept,label,def,attrs){ const i=eid(prefix,srcid); if(ENT[i]) return i;
+    const a={tenant:tenantId}; Object.keys(attrs||{}).forEach(k=>{ const v=attrs[k]; if(v!==''&&v!=null) a[waCamel(k)]=v; });
+    ENT[i]={id:i,entityTypeId:etype,preferredLabel:label||srcid,definition:def||'',facetIds:[cfg.facet],attributes:a};
+    REL.push({id:nrid(),sourceEntityId:i,relationshipTypeId:cfg.conformsToPredicate,targetEntityId:concept}); return i; }
+  function addR(s,p,t){ if(s&&t) REL.push({id:nrid(),sourceEntityId:s,relationshipTypeId:p,targetEntityId:t}); }
+  const idpat=new RegExp(cfg.stubPolicy.idPattern);
+  function ref(srcid,ctx){ srcid=_norm(srcid); if(!srcid) return null; if(IDMAP[srcid]) return IDMAP[srcid];
+    if(idpat.test(srcid)){ const pm0=(srcid.match(/^([A-Za-z]+)/)||[])[1], pm=pm0&&PREFIXMAP[pm0.toUpperCase()];
+      if(pm){ const i=addE(pm.prefix,srcid,pm.type,pm.concept,srcid,'',{needsDefinition:true,referencedBy:ctx||''});
+        IDMAP[srcid]=i; STUBS.push(srcid); WARN.push('STUB: '+srcid+' referenced ('+(ctx||'')+') but not defined — provisional entity'); return i; } }
+    return null; }
+  (cfg.entitySheets||[]).forEach(es=>{ waRows(wb,es.sheet).forEach(d=>{ const srcid=_norm(d[es.idCol]); if(!srcid) return;
+    const attrs={}; Object.keys(d).forEach(k=>{ if(k!==es.idCol) attrs[k]=d[k]; });
+    const i=addE(es.prefix,srcid,es.type,es.concept,_norm(d[es.labelCol]),_norm(d[es.defCol]),attrs); IDMAP[srcid]=i;
+    const m=srcid.match(/^([A-Za-z]+)/); if(m) PREFIXMAP[m[1].toUpperCase()]=PREFIXMAP[m[1].toUpperCase()]||{prefix:es.prefix,type:es.type,concept:es.concept}; }); });
+  (cfg.derivedEntities||[]).forEach(de=>{
+    if(de.from){ (Array.isArray(de.from)?de.from:[de.from]).forEach(sh=>waRows(wb,sh).forEach(d=>{ const id=_norm(d[de.idCol]);
+      if(id&&!ENT[eid(de.prefix,id)]){ addE(de.prefix,id,de.type,de.concept,_norm(d[de.labelCol])||id,'',{}); IDMAP[id]=eid(de.prefix,id); } })); }
+    else if(de.fromRefs){ const seen={}; de.fromRefs.forEach(fr=>{ const p=fr.indexOf('.'),sh=fr.slice(0,p),col=fr.slice(p+1);
+      waRows(wb,sh).forEach(d=>{ const v=_norm(d[col]); if(v&&!seen[v]){ seen[v]=1; if(!ENT[eid(de.prefix,v)]){ addE(de.prefix,v,de.type,de.concept,v,'',{}); IDMAP[v]=eid(de.prefix,v); } } }); }); }
+  });
+  (cfg.fkRelationships||[]).forEach(fk=>{ const rd=waRows(wb,fk.sheet); if(!rd.length) return; const idc=Object.keys(rd[0])[0];
+    rd.forEach(d=>{ const s=ref(d[idc],fk.sheet); if(!s) return; const vals=fk.multi?waSplit(d[fk.col]):[_norm(d[fk.col])];
+      vals.forEach(v=>{ const t=ref(v,fk.sheet+'.'+fk.col); if(v&&!t) WARN.push(fk.sheet+' '+_norm(d[idc])+' → unresolved '+fk.col+' "'+v+'"'); if(t) addR(s,fk.predicate,t); }); }); });
+  (cfg.mapSheets||[]).concat(cfg.specialRelationships||[]).forEach(ms=>{ waRows(wb,ms.sheet).forEach(d=>{
+    const s=ref(d[ms.srcCol],ms.sheet+'.'+ms.srcCol), t=ref(d[ms.tgtCol],ms.sheet+'.'+ms.tgtCol); if(s&&t) addR(s,ms.predicate,t); }); });
+  const ents=Object.values(ENT), byType={},byPred={};
+  ents.forEach(e=>byType[e.entityTypeId]=(byType[e.entityTypeId]||0)+1);
+  REL.forEach(r=>byPred[r.relationshipTypeId]=(byPred[r.relationshipTypeId]||0)+1);
+  return {entities:ents,relationships:REL,warnings:WARN,stubs:STUBS,byType:byType,byPred:byPred};
 }
 
 function impResolveRole(name,persona){
@@ -1077,7 +1151,7 @@ function impResolveRole(name,persona){
   ENTERED.roles.push({id:id,name:name,persona:pmap(persona),req:{}});
   return id;
 }
-function impApply(){
+async function impApply(){
   const M=IMPORT_MODEL; if(!M) return;
   const msg=document.getElementById('impMsg2'); msg.style.display='block';
   const byAlias={}; ENTERED.people.forEach(p=>{ if(p.alias) byAlias[_low(p.alias)]=p; });
@@ -1101,14 +1175,30 @@ function impApply(){
   attach(M.kyv,'kyv','KYV');
   persist();
   setSource('entered');
-  const sum='Imported — '+added+' new learner(s), '+updated+' updated · '+M.strategy.length+' objectives · '+
-    Object.keys(M.thinking).length+' thinking · '+Object.keys(M.strengths).length+' strengths · '+Object.keys(M.pdmma).length+' PDMMA · '+Object.keys(M.kyv).length+' KYV. ';
-  if(ghToken()){
-    msg.innerHTML='<span style="color:var(--muted)">'+sum+'Saved to this browser · writing to private repo…</span>';
-    ghSaveCohort().then(res=>{ msg.innerHTML = (res&&res.ok)
-      ? '<span style="color:var(--ok)">✓ '+sum+'Stored in private repo (dlk-cohort.json) '+(res.commit?('commit '+res.commit):'')+'</span>'
-      : '<span style="color:var(--ok)">'+sum+'</span><br><span style="color:var(--bad)">⚠ Saved in browser, NOT in repo: '+esc((res&&res.msg)||'unknown')+'</span>'; });
-  } else { msg.innerHTML='<span style="color:var(--ok)">'+sum+'</span><br><span style="color:var(--mid)">Saved to this browser only — set a GitHub token to write to the repo.</span>'; }
+  const w=M.workarch;
+  const sum='Imported to <b>'+esc(activeTenantName())+'</b> — '+added+' new learner(s), '+updated+' updated · '+M.strategy.length+' objectives · '+
+    Object.keys(M.thinking).length+' thinking · '+Object.keys(M.strengths).length+' strengths · '+Object.keys(M.pdmma).length+' PDMMA · '+Object.keys(M.kyv).length+' KYV'+
+    (w?(' · work-architecture '+w.entities.length+' entities / '+w.relationships.length+' rels'):'')+'. ';
+  if(!ghToken()){ msg.innerHTML='<span style="color:var(--ok)">'+sum+'</span><br><span style="color:var(--mid)">Saved to this browser only — set a GitHub token to write to the repo.</span>'; return; }
+  msg.innerHTML='<span style="color:var(--muted)">'+sum+'Saved to this browser · writing to private repo…</span>';
+  const cohortRes=await ghSaveCohort();
+  let waNote='';
+  if(w){
+    const tid=activeTenantId(), dir=GH.base+'/tenants/'+tid+'/work-architecture/';
+    const stamp=new Date().toISOString();
+    const e1=await ghPut(dir+'entities.json',{tenant:tid.toLowerCase(),generatedAt:stamp,source:M.fileName||'',items:w.entities},activeTenantName()+' work-architecture entities');
+    const e2=await ghPut(dir+'relationships.json',{tenant:tid.toLowerCase(),generatedAt:stamp,items:w.relationships},activeTenantName()+' work-architecture relationships');
+    const e3=await ghPut(dir+'index.json',{tenant:tid.toLowerCase(),label:activeTenantName()+' (imported)',conformsTo:'ontology',source:M.fileName||'',generatedAt:stamp,datasets:{entities:w.entities.length,relationships:w.relationships.length},provisionalStubs:w.stubs.length,warnings:w.warnings.length},activeTenantName()+' work-architecture index');
+    const okWA=e1.ok&&e2.ok&&e3.ok;
+    // register the path on the tenant
+    if(okWA && TENANT && !TENANT.workArchitecturePath){ TENANT.workArchitecturePath=dir+'index.json';
+      const t=TENANTS.find(x=>x.id===tid); if(t) t.workArchitecturePath=dir+'index.json';
+      await ghPut(tenantsRegistryPath(),{schema:'pilot-tenants',updatedAt:stamp,tenants:TENANTS},'Register work-architecture path for '+activeTenantName()); }
+    waNote = okWA ? ' · work-architecture → '+dir+' ✓' : '<br><span style="color:var(--bad)">⚠ work-architecture write FAILED: '+esc((e1.ok?'':e1.msg)||(e2.ok?'':e2.msg)||(e3.ok?'':e3.msg)||'unknown')+'</span>';
+  }
+  msg.innerHTML = (cohortRes&&cohortRes.ok)
+    ? '<span style="color:var(--ok)">✓ '+sum+'Stored in private repo (cohort'+(cohortRes.commit?' '+cohortRes.commit:'')+')'+waNote+'</span>'
+    : '<span style="color:var(--ok)">'+sum+'</span><br><span style="color:var(--bad)">⚠ cohort NOT stored: '+esc((cohortRes&&cohortRes.msg)||'unknown')+'</span>'+waNote;
 }
 (function(){
   const pick=document.getElementById('impPick'), file=document.getElementById('impFile'), apply=document.getElementById('impApply');
@@ -1119,7 +1209,11 @@ function impApply(){
     impMsg('Reading '+f.name+'…','muted');
     try{ await impLoadSheetJS();
       const buf=await f.arrayBuffer(); const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
-      IMPORT_MODEL=impMap(wb); impRenderPreview(IMPORT_MODEL);
+      await ghLoadWorkArchMapping();
+      IMPORT_MODEL=impMap(wb);
+      IMPORT_MODEL.fileName=f.name;
+      IMPORT_MODEL.workarch = WAMAP ? buildWorkArch(wb, activeTenantId().toLowerCase()) : null;
+      impRenderPreview(IMPORT_MODEL);
       impMsg('Loaded '+f.name+' · '+wb.SheetNames.length+' sheets. Review the preview, then Apply.','ok');
     }catch(err){ impMsg('Could not read the file: '+esc(err.message),'bad'); }
   };

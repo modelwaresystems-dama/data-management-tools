@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.2.0">
-<meta name="build-timestamp" content="2026-11-09 05:46 SAST">
+<meta name="version" content="3.4.0">
+<meta name="build-timestamp" content="2026-11-09 10:36 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -1132,7 +1132,8 @@ function buildWorkArch(wb,tenantId){
       if(pm){ const i=addE(pm.prefix,srcid,pm.type,pm.concept,srcid,'',{needsDefinition:true,referencedBy:ctx||''});
         IDMAP[srcid]=i; STUBS.push(srcid); WARN.push('STUB: '+srcid+' referenced ('+(ctx||'')+') but not defined — provisional entity'); return i; } }
     return null; }
-  (cfg.entitySheets||[]).forEach(es=>{ waRows(wb,es.sheet).forEach(d=>{ const srcid=_norm(d[es.idCol]); if(!srcid) return;
+  const passFilter=(d,f)=>!f||_low(d[f.col])===_low(f.equals);
+  (cfg.entitySheets||[]).forEach(es=>{ waRows(wb,es.sheet).forEach(d=>{ if(!passFilter(d,es.filter)) return; const srcid=_norm(d[es.idCol]); if(!srcid) return;
     const attrs={}; Object.keys(d).forEach(k=>{ if(k!==es.idCol) attrs[k]=d[k]; });
     const i=addE(es.prefix,srcid,es.type,es.concept,_norm(d[es.labelCol]),_norm(d[es.defCol]),attrs); IDMAP[srcid]=i;
     const m=srcid.match(/^([A-Za-z]+)/); if(m) PREFIXMAP[m[1].toUpperCase()]=PREFIXMAP[m[1].toUpperCase()]||{prefix:es.prefix,type:es.type,concept:es.concept}; }); });
@@ -1142,8 +1143,8 @@ function buildWorkArch(wb,tenantId){
     else if(de.fromRefs){ const seen={}; de.fromRefs.forEach(fr=>{ const p=fr.indexOf('.'),sh=fr.slice(0,p),col=fr.slice(p+1);
       waRows(wb,sh).forEach(d=>{ const v=_norm(d[col]); if(v&&!seen[v]){ seen[v]=1; if(!ENT[eid(de.prefix,v)]){ addE(de.prefix,v,de.type,de.concept,v,'',{}); IDMAP[v]=eid(de.prefix,v); } } }); }); }
   });
-  (cfg.fkRelationships||[]).forEach(fk=>{ const rd=waRows(wb,fk.sheet); if(!rd.length) return; const idc=Object.keys(rd[0])[0];
-    rd.forEach(d=>{ const s=ref(d[idc],fk.sheet); if(!s) return; const vals=fk.multi?waSplit(d[fk.col]):[_norm(d[fk.col])];
+  (cfg.fkRelationships||[]).forEach(fk=>{ const rd=waRows(wb,fk.sheet); if(!rd.length) return; const idc=fk.idCol||Object.keys(rd[0])[0];
+    rd.forEach(d=>{ if(!passFilter(d,fk.filter)) return; const s=ref(d[idc],fk.sheet); if(!s) return; const vals=fk.multi?waSplit(d[fk.col]):[_norm(d[fk.col])];
       vals.forEach(v=>{ const t=ref(v,fk.sheet+'.'+fk.col); if(v&&!t) WARN.push(fk.sheet+' '+_norm(d[idc])+' → unresolved '+fk.col+' "'+v+'"'); if(t) addR(s,fk.predicate,t); }); }); });
   (cfg.mapSheets||[]).concat(cfg.specialRelationships||[]).forEach(ms=>{ waRows(wb,ms.sheet).forEach(d=>{
     const s=ref(d[ms.srcCol],ms.sheet+'.'+ms.srcCol), t=ref(d[ms.tgtCol],ms.sheet+'.'+ms.tgtCol); if(s&&t) addR(s,ms.predicate,t); }); });
@@ -1183,6 +1184,8 @@ async function impApply(){
   attach(M.strengths,'strengths','SF');
   attach(M.pdmma,'pdmma','DMMA');
   attach(M.kyv,'kyv','KYV');
+  // adopt the standard active KA set (catalog defaultCaps) without removing any the tenant already has
+  ENTERED.caps=Array.from(new Set([...(ENTERED.caps||[]),...DEFAULT_CAPS])).filter(k=>CAPBY[k]); rebuildCaps();
   persist();
   setSource('entered');
   const w=M.workarch;

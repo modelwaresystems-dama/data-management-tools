@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.8.0">
-<meta name="build-timestamp" content="2026-11-10 18:04 SAST">
+<meta name="version" content="3.9.0">
+<meta name="build-timestamp" content="2026-11-11 06:05 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -1823,6 +1823,33 @@ async function ghPut(repoPath,obj,message){
 function b64(str){ return btoa(unescape(encodeURIComponent(str))); }
 function ghMsg(t,tone){ const el=document.getElementById('ghMsg'); if(el){ el.textContent=t; el.style.color = tone==='bad'?'var(--bad)':tone==='ok'?'var(--ok)':'var(--muted)'; } }
 function ghStatusTag(){ const el=document.getElementById('ghTokenState'); if(el){ const has=!!ghToken(); el.textContent=has?'token set':'no token'; el.style.color=has?'var(--ok)':'var(--bad)'; } }
+/* ---- auto-wire: pull per-person results from the standalone assessment engines ---- */
+const ASSESS_ENGINES=[
+  {dir:'Data_And_AI_Literacy/thinking-styles-engine/results', kind:'thinking', flag:'TS'},
+  {dir:'Data_And_AI_Literacy/strengths-engine/results', kind:'strengths', flag:'SF'}
+];
+async function syncAssessmentResults(){
+  if(!ghToken()) return {ok:false};
+  const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+  const byKey={}; (ENTERED.people||[]).forEach(p=>{ if(p.alias)byKey[norm(p.alias)]=p; if(p.email)byKey[norm(p.email)]=p; });
+  let ts=0,sf=0; const unmatched=[];
+  for(const eng of ASSESS_ENGINES){
+    let list; try{ const r=await fetch(ghPathUrl(eng.dir,true),{headers:ghHeaders(false),cache:'no-store'}); if(!r.ok) continue; list=await r.json(); }catch(e){ continue; }
+    if(!Array.isArray(list)) continue;
+    for(const f of list){
+      if(f.type!=='file'||!/\.json$/i.test(f.name)) continue;
+      let res; try{ const rr=await fetch(ghPathUrl(eng.dir+'/'+f.name,true),{headers:ghHeaders(true),cache:'no-store'}); res=JSON.parse(await rr.text()); }catch(e){ continue; }
+      const fromName=f.name.replace(/\.json$/i,'').replace(/[_\s-]*\d{4}-\d{2}-\d{2}.*$/,'').replace(/[_-]+/g,' ');
+      const cand=[res.email,res.name,fromName].map(norm).filter(Boolean);
+      let person=null; for(const c of cand){ if(byKey[c]){ person=byKey[c]; break; } }
+      if(!person){ unmatched.push(f.name); continue; }
+      person.assessments=person.assessments||{};
+      if(eng.kind==='thinking'&&res.scores){ person.thinking={CS:res.scores.CS,AS:res.scores.AS,AR:res.scores.AR,CR:res.scores.CR,dominant:res.dominant||''}; person.assessments.TS='complete'; ts++; }
+      else if(eng.kind==='strengths'&&Array.isArray(res.ranking)){ person.strengths=res.ranking.map(x=>({rank:x.rank,theme:x.theme,domain:x.domain})); person.assessments.SF='complete'; sf++; }
+    }
+  }
+  return {ok:true,ts,sf,unmatched};
+}
 async function ghLoadCohort(silent){
   if(!ghToken()){ if(!silent) ghMsg('No token — click “Set token” and paste a PAT with Contents access.','bad'); return false; }
   try{
@@ -1831,7 +1858,9 @@ async function ghLoadCohort(silent){
     if(!r.ok){ if(!silent) ghMsg('Load failed ('+r.status+'). '+((r.status===401||r.status===403)?'Check the token / its scope.':''),'bad'); return false; }
     const d=JSON.parse(await r.text());
     if(d&&d.roles&&d.people){ ENTERED={caps:d.caps||DEFAULT_CAPS.slice(),roles:d.roles,people:d.people,strategy:d.strategy||defaultStrategy()}; rebuildCaps(); persist(); renderCohortEditor(); renderStrategy(); setSource('entered');
-      if(!silent) ghMsg('Loaded '+activeTenantName()+' from the private repo.','ok'); return true; }
+      let _sy=null; try{ _sy=await syncAssessmentResults(); }catch(e){}
+      if(_sy&&_sy.ok&&(_sy.ts||_sy.sf)){ persist(); renderCohortEditor(); renderStrategy(); if(typeof refreshAll==='function')refreshAll(); }
+      if(!silent){ let _m='Loaded '+activeTenantName()+' from the private repo.'; if(_sy&&_sy.ok&&(_sy.ts||_sy.sf))_m+=' · synced '+_sy.ts+' Thinking Styles + '+_sy.sf+' Strengths from the engines (“Save to GitHub” to persist)'; ghMsg(_m,'ok'); } return true; }
     if(!silent) ghMsg('That file has no roles/people.','bad'); return false;
   }catch(e){ if(!silent) ghMsg('Load error: '+e.message,'bad'); return false; }
 }

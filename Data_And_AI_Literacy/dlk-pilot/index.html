@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.13.0">
-<meta name="build-timestamp" content="2026-11-11 06:39 SAST">
+<meta name="version" content="3.14.0">
+<meta name="build-timestamp" content="2026-11-11 08:18 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -836,6 +836,7 @@ function renderRoleEditor(){
     renderPeopleEditor();
   });
 }
+let PEOPLE_OPEN=new Set();
 function renderPeopleEditor(){
   const host=document.getElementById('peopleEd'); host.innerHTML='';
   const roles=ENTERED.roles;
@@ -854,10 +855,18 @@ function renderPeopleEditor(){
         '<select class="sm" data-p="'+pi+'" data-pas="'+x.id+'">'+
         ['not-started','in-progress','complete'].map(o=>'<option value="'+o+'"'+(s===o?' selected':'')+'>'+ASTAT[o]+'</option>').join('')+'</select></div>';
     }).join('');
+    const selfN=reqCaps.filter(c=>p.caps&&p.caps[c]&&p.caps[c].self!=null).length;
+    const stPill=(label,state)=>{const on=state==='complete',mid=state==='in-progress';const col=on?'var(--ok)':mid?'#b45309':'var(--line)',fg=on?'var(--ok)':mid?'#b45309':'var(--muted)';return '<span style="font-family:var(--mono,monospace);font-size:10.5px;padding:1px 6px;border-radius:999px;border:1px solid '+col+';color:'+fg+';white-space:nowrap" title="'+esc(label)+': '+state+'">'+(on?'\u2713':'')+esc(label)+'</span>';};
+    const statusPills=ASSESSMENTS.map(x=>stPill(x.id,p.assessments[x.id]||'not-started')).join(' ');
+    const roleSummary=personRoles(p).length?'<span style="font-family:var(--mono,monospace);font-size:12px;color:var(--accent-ink)">'+personRoles(p).map(rid=>esc((ROLEBY()[rid]||{}).name||rid)).join(' \u00b7 ')+'</span>':'<span class="muted small">\u2014 unassigned \u2014</span>';
     host.insertAdjacentHTML('beforeend',
-      '<div class="personCard"><div class="pHead">'+
-      '<span class="pill">'+(pi+1)+'</span>'+
-      '<input type="text" class="sm" data-pname="'+pi+'" value="'+(p.alias||'')+'" placeholder="Person name">'+
+      '<details class="personCard" data-pdet="'+pi+'"'+(PEOPLE_OPEN.has(pi)?' open':'')+' style="border:1px solid var(--line);border-radius:10px;padding:4px 12px;margin-bottom:8px">'+
+      '<summary style="cursor:pointer;padding:6px 2px;line-height:2.1">'+
+        '<span class="pill">'+(pi+1)+'</span> <b style="font-size:14px">'+esc(p.alias||'(unnamed)')+'</b> &nbsp; '+roleSummary+
+        ' &nbsp; <span class="muted" style="font-size:11px">self '+selfN+'/'+reqCaps.length+'</span> '+statusPills+
+      '</summary>'+
+      '<div class="pHead" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">'+
+      '<input type="text" class="sm" data-pname="'+pi+'" value="'+esc(p.alias||'')+'" placeholder="Person name" style="flex:1;min-width:160px">'+
       '<span class="roleMulti" style="display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center">'+
         (personRoles(p).length?personRoles(p).map(rid=>'<span class="pill" style="background:var(--accent-bg);color:var(--accent-ink)">'+esc((ROLEBY()[rid]||{}).name||rid)+' <a href="#" data-prdel="'+pi+'" data-rid="'+rid+'" title="remove" style="text-decoration:none;font-weight:800">\u00d7</a></span>').join(''):'<span class="muted small">\u2014 unassigned \u2014</span>')+
         '<select class="sm" data-pradd="'+pi+'"><option value="">+ add role\u2026</option>'+roles.filter(r=>!personRoles(p).includes(r.id)).map(r=>'<option value="'+r.id+'">'+esc(r.name||r.id)+'</option>').join('')+'</select>'+
@@ -867,9 +876,10 @@ function renderPeopleEditor(){
       '<div class="fld" style="margin:10px 0 4px">Self-reported level per required capability</div>'+
       '<div class="srGrid">'+(sr||'<span class="muted small">This role has no required capabilities set.</span>')+'</div>'+
       '<div class="fld" style="margin:12px 0 4px">Required assessments</div>'+
-      '<div class="srGrid">'+asCells+'</div></div>');
+      '<div class="srGrid">'+asCells+'</div></details>');
   });
   document.getElementById('peopleCount').textContent=ENTERED.people.length;
+  host.querySelectorAll('details[data-pdet]').forEach(el=>el.addEventListener('toggle',()=>{ const i=+el.dataset.pdet; if(el.open)PEOPLE_OPEN.add(i); else PEOPLE_OPEN.delete(i); }));
   host.querySelectorAll('[data-pname]').forEach(el=>el.oninput=e=>{ENTERED.people[+e.target.dataset.pname].alias=e.target.value;});
   host.querySelectorAll('[data-pradd]').forEach(el=>el.onchange=e=>{ const pi=+e.target.dataset.pradd, rid=e.target.value; if(!rid)return; const P=ENTERED.people[pi]; P.roles=personRoles(P); if(!P.roles.includes(rid))P.roles.push(rid); P.role=P.roles[0]; renderPeopleEditor(); });
   host.querySelectorAll('[data-prdel]').forEach(el=>el.onclick=e=>{ e.preventDefault(); const pi=+e.target.dataset.prdel, rid=e.target.dataset.rid; const P=ENTERED.people[pi]; P.roles=personRoles(P).filter(x=>x!==rid); P.role=P.roles[0]||''; renderPeopleEditor(); });

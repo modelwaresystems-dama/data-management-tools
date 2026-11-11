@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.12.0">
-<meta name="build-timestamp" content="2026-11-11 07:05 SAST">
+<meta name="version" content="3.13.0">
+<meta name="build-timestamp" content="2026-11-11 06:39 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -146,7 +146,7 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
 <div class="wrap">
   <header class="mast">
     <div class="eyebrow">Modelware Systems · CA&amp;I · Phase 1 — Capability Pilot</div>
-    <h1><span id="hTenant">Capability</span> Pilot <span class="badge" id="appVersion"></span></h1>
+    <h1><span id="hTenant">Capability</span> Pilot <span class="badge" id="appVersion"></span> <span class="badge" id="syncPill" title="App vs repo — click to re-check" style="cursor:pointer"></span></h1>
     <p class="lede">A multi-tenant capability pilot: pick a tenant, enter its cohort, route by role, score with the corrected engine, and produce capability vectors, a private learner dashboard and an Article&nbsp;4 evidence ledger — every response captured in IRT-ready shape.</p>
   </header>
 
@@ -529,6 +529,30 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
   document.getElementById('appVersion').textContent='v'+m+' · '+ts;
   document.getElementById('footVer').textContent='v'+m;
   var fb=document.getElementById('footBuild'); if(fb)fb.textContent=ts;})();
+
+/* ---------- app-vs-repo sync check: catches a stale cached build (data+app in sync) ---------- */
+const APP_SRC={owner:'modelwaresystems-dama',repo:'data-management-tools',path:'Data_And_AI_Literacy/dlk-pilot/index.html',ref:'main'};
+function semverCmp(a,b){ const pa=(a||'0').split('.').map(Number),pb=(b||'0').split('.').map(Number); for(let i=0;i<3;i++){ const d=(pa[i]||0)-(pb[i]||0); if(d) return d<0?-1:1; } return 0; }
+function setSyncPill(state,txt){ const el=document.getElementById('syncPill'); if(!el)return; const c={ok:'var(--ok)',stale:'var(--bad)',ahead:'var(--muted)',checking:'var(--muted)',unknown:'var(--muted)'}[state]||'var(--muted)'; el.textContent=txt; el.style.color=c; el.style.borderColor=(state==='stale')?'var(--bad)':''; el.style.fontWeight=(state==='stale')?'800':''; }
+async function checkAppSync(){
+  setSyncPill('checking','⟳ sync…');
+  const runV=document.querySelector('meta[name="version"]').content;
+  try{
+    const url='https://api.github.com/repos/'+APP_SRC.owner+'/'+APP_SRC.repo+'/contents/'+encodeURI(APP_SRC.path)+'?ref='+APP_SRC.ref;
+    const h={'Accept':'application/vnd.github.raw','X-GitHub-Api-Version':'2022-11-28'}; const tk=(typeof ghToken==='function')?ghToken():''; if(tk)h['Authorization']='Bearer '+tk;
+    const r=await fetch(url,{headers:h,cache:'no-store'});
+    if(!r.ok){ setSyncPill('unknown','sync: repo check failed ('+r.status+')'); return; }
+    const txt=await r.text();
+    const m=txt.match(/name="version"\s+content="([0-9]+\.[0-9]+\.[0-9]+)"/);
+    const repoV=m?m[1]:null;
+    if(!repoV){ setSyncPill('unknown','sync: repo version unknown'); return; }
+    const cmp=semverCmp(repoV,runV);
+    if(cmp>0) setSyncPill('stale','⚠ v'+repoV+' is live — hard-refresh');
+    else if(cmp<0) setSyncPill('ahead','running v'+runV+' (repo v'+repoV+')');
+    else setSyncPill('ok','✓ in sync v'+runV);
+  }catch(e){ setSyncPill('unknown','sync: offline'); }
+}
+(function(){ const el=document.getElementById('syncPill'); if(el) el.onclick=checkAppSync; setTimeout(checkAppSync,1200); })();
 
 /* ---------- theme toggle ---------- */
 document.getElementById('themeBtn').onclick=function(){

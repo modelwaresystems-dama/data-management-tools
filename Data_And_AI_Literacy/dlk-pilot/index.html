@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.18.0">
-<meta name="build-timestamp" content="2026-11-11 16:07 SAST">
+<meta name="version" content="3.19.0">
+<meta name="build-timestamp" content="2026-11-11 17:38 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -524,7 +524,7 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
   <section class="view" id="v-insights">
     <div class="panel">
       <h3 style="margin-bottom:2px">Cohort insights <span class="muted small">— Thinking Styles &amp; Strengths across the cohort</span></h3>
-      <p class="muted small" style="margin:0 0 6px;max-width:72ch">A visual read of the whole cohort, sourced from the repo. Thinking Styles plots everyone on the Gregorc grid and averages their profile; Strengths rolls up each person&rsquo;s ranked themes by domain, with a Top&#8209;5 / Top&#8209;10 switch.</p>
+      <p class="muted small" style="margin:0 0 6px;max-width:72ch">A visual read of the whole cohort, sourced from the repo. Thinking Styles plots everyone on the Gregorc grid and averages their profile; Strengths rolls up each person&rsquo;s ranked themes by domain, with a Top&#8209;10 / Complete switch (Complete = all 34 ranked themes).</p>
       <div id="ciBody"></div>
     </div>
   </section>
@@ -1075,7 +1075,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
 function goTab(v){document.querySelector('.tab[data-v="'+v+'"]').click();}
 
 /* ======================= COHORT INSIGHTS ======================= */
-let SF_TOPN=5;
+let SF_TOPN=999; /* 999 = Complete (all themes); 10 = Top 10 */
 const TSI_C={CS:'#c9742e',AS:'#b8991c',AR:'#d1612a',CR:'#2a7fb8'};
 const TSI_NM={CS:'Concrete Sequential',AS:'Abstract Sequential',AR:'Abstract Random',CR:'Concrete Random'};
 const SFI_DOMC={'Executing':'#7e3f98','Influencing':'#d9822b','Relationship Building':'#2f80c4','Strategic Thinking':'#2e9e5b'};
@@ -1103,8 +1103,8 @@ function tsiPerPerson(tsp){const keys=['CS','AS','AR','CR'];let h='';tsp.forEach
 function sfiCount(sfp,N){const dom={},theme={};let total=0;sfp.forEach(p=>{p.strengths.filter(x=>x.rank<=N).forEach(x=>{dom[x.domain]=(dom[x.domain]||0)+1;theme[x.theme]=(theme[x.theme]||0)+1;total++;});});return {dom,theme,total};}
 function sfiDomainMix(sfp,N){const o=sfiCount(sfp,N);return ['Executing','Influencing','Relationship Building','Strategic Thinking'].map(d=>ciBar(d,o.dom[d]||0,o.total||1,SFI_DOMC[d],(o.dom[d]||0)+' ('+(o.total?Math.round(100*(o.dom[d]||0)/o.total):0)+'%)')).join('');}
 function sfiTopThemes(sfp,N){const o=sfiCount(sfp,N);const arr=Object.entries(o.theme).sort((a,b)=>b[1]-a[1]).slice(0,12);const mx=arr.length?arr[0][1]:1;const dmap={};sfp.forEach(p=>p.strengths.forEach(x=>{dmap[x.theme]=x.domain;}));return arr.length?arr.map(([t,c])=>ciBar(t,c,mx,SFI_DOMC[dmap[t]]||'var(--accent)',c)).join(''):'<div class="muted small">—</div>';}
-function sfiPerPerson(sfp,N){const order=['Executing','Influencing','Relationship Building','Strategic Thinking'];let h='';sfp.forEach(p=>{const d={};p.strengths.filter(x=>x.rank<=N).forEach(x=>{d[x.domain]=(d[x.domain]||0)+1;});let seg='';order.forEach(dm=>{const c=d[dm]||0;if(c)seg+='<span style="height:16px;width:'+(100*c/N).toFixed(1)+'%;background:'+SFI_DOMC[dm]+'" title="'+dm+': '+c+'"></span>';});h+='<div style="margin:5px 0;font-size:12px"><span style="font-weight:600">'+esc(p.alias)+'</span><div style="display:flex;height:16px;border-radius:5px;overflow:hidden;background:var(--panel2,#eef2f1);margin-top:2px">'+seg+'</div></div>';});return h+'<div class="legend" style="margin-top:8px;font-size:11px">'+order.map(d=>'<span style="margin-right:12px"><span style="display:inline-block;width:10px;height:10px;background:'+SFI_DOMC[d]+';border-radius:2px;vertical-align:middle"></span> '+d+'</span>').join('')+'</div>';}
-function sfiGaps(sfp,N){const inTop=new Set(),all={};sfp.forEach(p=>p.strengths.forEach(x=>{all[x.theme]=x.domain;if(x.rank<=N)inTop.add(x.theme);}));const gaps=Object.keys(all).filter(t=>!inTop.has(t)).sort();if(!gaps.length)return '<div class="muted small">Every theme appears in someone’s Top '+N+'.</div>';return '<div class="legend">'+gaps.map(t=>'<span class="pill" title="'+esc(all[t])+'" style="border-color:'+(SFI_DOMC[all[t]]||'var(--line)')+'">'+esc(t)+'</span>').join(' ')+'</div>';}
+function sfiPerPerson(sfp,N){const order=['Executing','Influencing','Relationship Building','Strategic Thinking'];let h='';sfp.forEach(p=>{const picks=p.strengths.filter(x=>x.rank<=N);const tot=picks.length||1;const d={};picks.forEach(x=>{d[x.domain]=(d[x.domain]||0)+1;});let seg='';order.forEach(dm=>{const c=d[dm]||0;if(!c)return;const pct=100*c/tot;seg+='<span style="width:'+pct.toFixed(1)+'%;background:'+SFI_DOMC[dm]+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;overflow:hidden" title="'+dm+': '+c+' ('+Math.round(pct)+'%)">'+(pct>=9?Math.round(pct)+'%':'')+'</span>';});h+='<div style="margin:5px 0;font-size:12px"><span style="font-weight:600">'+esc(p.alias)+'</span><div style="display:flex;height:18px;border-radius:5px;overflow:hidden;background:var(--panel2,#eef2f1);margin-top:2px">'+seg+'</div></div>';});return h+'<div class="legend" style="margin-top:8px;font-size:11px">'+order.map(d=>'<span style="margin-right:12px"><span style="display:inline-block;width:10px;height:10px;background:'+SFI_DOMC[d]+';border-radius:2px;vertical-align:middle"></span> '+d+'</span>').join('')+'</div>';}
+function sfiGaps(sfp,N){const inTop=new Set(),all={};sfp.forEach(p=>p.strengths.forEach(x=>{all[x.theme]=x.domain;if(x.rank<=N)inTop.add(x.theme);}));const gaps=Object.keys(all).filter(t=>!inTop.has(t)).sort();if(!gaps.length)return '<div class="muted small">Every theme appears in someone’s '+(N>=99?'Complete profile':'Top '+N)+'.</div>';return '<div class="legend">'+gaps.map(t=>'<span class="pill" title="'+esc(all[t])+'" style="border-color:'+(SFI_DOMC[all[t]]||'var(--line)')+'">'+esc(t)+'</span>').join(' ')+'</div>';}
 function renderCohortInsights(){ const host=document.getElementById('ciBody'); if(!host)return;
   const ppl=(ENTERED.people||[]).filter(p=>p.alias&&p.alias.trim());
   const tsp=ppl.filter(p=>p.thinking&&['CS','AS','AR','CR'].some(k=>p.thinking[k]!=null));
@@ -1112,9 +1112,9 @@ function renderCohortInsights(){ const host=document.getElementById('ciBody'); i
   let h='<h3 style="margin-bottom:2px">Thinking Styles — cohort <span class="muted small">('+tsp.length+' of '+ppl.length+' with results)</span></h3>';
   if(!tsp.length)h+='<div class="empty">No Thinking Styles results in this cohort yet.</div>';
   else h+='<div class="ci-two" style="margin-top:8px"><div><div class="ci-fld">Gregorc quadrant</div>'+tsiQuadrant(tsp)+'</div><div><div class="ci-fld">Cohort average profile</div>'+tsiRadar(tsp)+'</div></div><div class="ci-fld" style="margin-top:14px">Dominant style across the cohort</div>'+tsiDominant(tsp)+'<div class="ci-fld" style="margin-top:14px">Per-person scores (0–60)</div>'+tsiPerPerson(tsp);
-  h+='<hr class="sep"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h3 style="margin:0">Strengths — cohort <span class="muted small">('+sfp.length+' of '+ppl.length+' with results)</span></h3><span style="margin-left:auto"><button class="btn ghost sm" data-topn="5"'+(SF_TOPN===5?' style="background:var(--accent-bg);font-weight:800"':'')+'>Top 5</button> <button class="btn ghost sm" data-topn="10"'+(SF_TOPN===10?' style="background:var(--accent-bg);font-weight:800"':'')+'>Top 10</button></span></div>';
+  h+='<hr class="sep"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h3 style="margin:0">Strengths — cohort <span class="muted small">('+sfp.length+' of '+ppl.length+' with results)</span></h3><span style="margin-left:auto"><button class="btn ghost sm" data-topn="10"'+(SF_TOPN<99?' style="background:var(--accent-bg);font-weight:800"':'')+'>Top 10</button> <button class="btn ghost sm" data-topn="999"'+(SF_TOPN>=99?' style="background:var(--accent-bg);font-weight:800"':'')+'>Complete</button></span></div>';
   if(!sfp.length)h+='<div class="empty">No Strengths results in this cohort yet.</div>';
-  else h+='<div class="ci-two" style="margin-top:10px"><div><div class="ci-fld">Domain mix (Top '+SF_TOPN+')</div>'+sfiDomainMix(sfp,SF_TOPN)+'</div><div><div class="ci-fld">Most-common themes (Top '+SF_TOPN+')</div>'+sfiTopThemes(sfp,SF_TOPN)+'</div></div><div class="ci-fld" style="margin-top:14px">Per-person domain breakdown (Top '+SF_TOPN+')</div>'+sfiPerPerson(sfp,SF_TOPN)+'<div class="ci-fld" style="margin-top:14px">Coverage — themes in nobody’s Top '+SF_TOPN+'</div>'+sfiGaps(sfp,SF_TOPN);
+  else h+='<div class="ci-two" style="margin-top:10px"><div><div class="ci-fld">Domain mix ('+(SF_TOPN>=99?'Complete':'Top '+SF_TOPN)+')</div>'+sfiDomainMix(sfp,SF_TOPN)+'</div><div><div class="ci-fld">Most-common themes ('+(SF_TOPN>=99?'Complete':'Top '+SF_TOPN)+')</div>'+sfiTopThemes(sfp,SF_TOPN)+'</div></div><div class="ci-fld" style="margin-top:14px">Per-person domain breakdown ('+(SF_TOPN>=99?'Complete':'Top '+SF_TOPN)+')</div>'+sfiPerPerson(sfp,SF_TOPN)+'<div class="ci-fld" style="margin-top:14px">Coverage — themes in nobody’s '+(SF_TOPN>=99?'Complete profile':'Top '+SF_TOPN)+'</div>'+sfiGaps(sfp,SF_TOPN);
   host.innerHTML=h;
   host.querySelectorAll('[data-topn]').forEach(b=>b.onclick=()=>{SF_TOPN=+b.dataset.topn;renderCohortInsights();});
 }

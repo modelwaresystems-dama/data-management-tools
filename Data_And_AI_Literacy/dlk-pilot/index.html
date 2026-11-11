@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.6.0">
-<meta name="build-timestamp" content="2026-11-10 06:13 SAST">
+<meta name="version" content="3.8.0">
+<meta name="build-timestamp" content="2026-11-10 18:04 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -596,6 +596,10 @@ function rebuildCaps(){ const act=activeCapIds(); CAPS=CAP_CATALOG.filter(c=>act
 function isActiveCap(id){ return activeCapIds().includes(id); }
 function reqKeys(role){ return Object.keys(role.req).filter(isActiveCap); }
 function reqEntries(role){ return Object.entries(role.req).filter(e=>isActiveCap(e[0])); }
+/* ---- multi-role: a person may hold several roles; required profile = max band per KA ---- */
+function personRoles(p){ return (p&&p.roles&&p.roles.length)?p.roles.slice():(p&&p.role?[p.role]:[]); }
+function personReq(p){ const out={}; personRoles(p).forEach(function(rid){ const r=ROLEBY()[rid]; if(!r||!r.req)return; Object.keys(r.req).forEach(function(k){ const v=r.req[k]; if(out[k]==null||v>out[k]) out[k]=v; }); }); return out; }
+function personRole(p){ const ids=personRoles(p); return {id:ids[0]||null, roleIds:ids, name:ids.length?ids.map(function(rid){return (ROLEBY()[rid]||{}).name||rid;}).join(' + '):'— unassigned —', req:personReq(p)}; }
 const CHAN={K:'E2 · Knowledge',J:'E3 · Judgement',P:'E4 · Practical',W:'E5 · Workplace'};
 // Required assessments — loaded at runtime from the PRIVATE repo (ka-catalog.json → assessments).
 let ASSESSMENTS=[];
@@ -629,7 +633,9 @@ const DEFAULT_ROLES=[
   {id:'R24',name:'Technical Data Steward',   persona:'Professional', req:{MD:4,DQ:3,MOD:3,DA:2}},
   {id:'R25',name:'AI Product Manager',       persona:'Project Manager', req:{AI:4,DG:3,BI:3,DQ:3,MOD:2,DMORG:2,DMOCM:3}},
   {id:'R26',name:'CPMAI Project Manager',    persona:'Project Manager', req:{AI:3,DG:3,DQ:3,MOD:2,DE:2,DMORG:2,DMMA:3,DMOCM:4}},
-  {id:'R27',name:'Data Value Architect',   persona:'Team Lead',    req:{DVR:4,DMMA:3,DMORG:3,BI:3,DG:2}}
+  {id:'R27',name:'Data Value Architect',   persona:'Team Lead',    req:{DVR:4,DMMA:3,DMORG:3,BI:3,DG:2}},
+  {id:'R28',name:'Business Executive',      persona:'Executive',    req:{DG:2,AI:2,DMORG:2,DMOCM:2,DVR:2}},
+  {id:'R29',name:'Records Manager',         persona:'Team Lead',    req:{DCM:4,MD:3,DG:2}}
 ];
 let SEED=[]; /* removed — loaded at runtime from the PRIVATE repo (seed-cohort.json). The literal below is retired.
 const _SEED_RETIRED=[
@@ -791,7 +797,7 @@ function renderRoleEditor(){
   host.querySelectorAll('[data-rolepersona]').forEach(el=>el.onchange=e=>{ENTERED.roles[+e.target.dataset.rolepersona].persona=e.target.value;});
   host.querySelectorAll('[data-rolerem]').forEach(el=>el.onclick=e=>{
     const ri=+e.target.dataset.rolerem, removed=ENTERED.roles[ri].id; ENTERED.roles.splice(ri,1);
-    const fb=(ENTERED.roles[0]||{}).id||'R1'; ENTERED.people.forEach(p=>{if(p.role===removed)p.role=fb;});
+    ENTERED.people.forEach(p=>{ if(p.roles)p.roles=p.roles.filter(x=>x!==removed); if(p.role===removed)p.role=(p.roles&&p.roles[0])||''; });
     renderRoleEditor(); renderPeopleEditor();
   });
   host.querySelectorAll('[data-cap]').forEach(el=>el.onchange=e=>{
@@ -804,7 +810,7 @@ function renderPeopleEditor(){
   const host=document.getElementById('peopleEd'); host.innerHTML='';
   const roles=ENTERED.roles;
   ENTERED.people.forEach((p,pi)=>{
-    const role=roles.find(r=>r.id===p.role)||roles[0];
+    const role=personRole(p);
     const reqCaps=reqKeys(role);
     let sr=reqCaps.map(c=>{
       const cur=p.caps[c]||{};
@@ -822,7 +828,10 @@ function renderPeopleEditor(){
       '<div class="personCard"><div class="pHead">'+
       '<span class="pill">'+(pi+1)+'</span>'+
       '<input type="text" class="sm" data-pname="'+pi+'" value="'+(p.alias||'')+'" placeholder="Person name">'+
-      '<select class="sm" data-prole="'+pi+'">'+roles.map(r=>'<option value="'+r.id+'"'+(p.role===r.id?' selected':'')+'>'+r.name+'</option>').join('')+'</select>'+
+      '<span class="roleMulti" style="display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center">'+
+        (personRoles(p).length?personRoles(p).map(rid=>'<span class="pill" style="background:var(--accent-bg);color:var(--accent-ink)">'+esc((ROLEBY()[rid]||{}).name||rid)+' <a href="#" data-prdel="'+pi+'" data-rid="'+rid+'" title="remove" style="text-decoration:none;font-weight:800">\u00d7</a></span>').join(''):'<span class="muted small">\u2014 unassigned \u2014</span>')+
+        '<select class="sm" data-pradd="'+pi+'"><option value="">+ add role\u2026</option>'+roles.filter(r=>!personRoles(p).includes(r.id)).map(r=>'<option value="'+r.id+'">'+esc(r.name||r.id)+'</option>').join('')+'</select>'+
+      '</span>'+
       '<button class="btn ghost sm" data-prem="'+pi+'">Remove</button>'+
       '</div>'+
       '<div class="fld" style="margin:10px 0 4px">Self-reported level per required capability</div>'+
@@ -832,7 +841,8 @@ function renderPeopleEditor(){
   });
   document.getElementById('peopleCount').textContent=ENTERED.people.length;
   host.querySelectorAll('[data-pname]').forEach(el=>el.oninput=e=>{ENTERED.people[+e.target.dataset.pname].alias=e.target.value;});
-  host.querySelectorAll('[data-prole]').forEach(el=>el.onchange=e=>{ENTERED.people[+e.target.dataset.prole].role=e.target.value;ENTERED.people[+e.target.dataset.prole].caps={};renderPeopleEditor();});
+  host.querySelectorAll('[data-pradd]').forEach(el=>el.onchange=e=>{ const pi=+e.target.dataset.pradd, rid=e.target.value; if(!rid)return; const P=ENTERED.people[pi]; P.roles=personRoles(P); if(!P.roles.includes(rid))P.roles.push(rid); P.role=P.roles[0]; renderPeopleEditor(); });
+  host.querySelectorAll('[data-prdel]').forEach(el=>el.onclick=e=>{ e.preventDefault(); const pi=+e.target.dataset.prdel, rid=e.target.dataset.rid; const P=ENTERED.people[pi]; P.roles=personRoles(P).filter(x=>x!==rid); P.role=P.roles[0]||''; renderPeopleEditor(); });
   host.querySelectorAll('[data-prem]').forEach(el=>el.onclick=e=>{ENTERED.people.splice(+e.target.dataset.prem,1);renderPeopleEditor();});
   host.querySelectorAll('[data-scap]').forEach(el=>el.onchange=e=>{
     const pi=+e.target.dataset.p, cap=e.target.dataset.scap, v=e.target.value, P=ENTERED.people[pi];
@@ -1062,6 +1072,8 @@ function impMap(wb){
   // ---- cross-tab learner-name validation ----
   const cohortNames=new Set(M.people.map(p=>_low(p.alias)));
   ['thinking','strengths','pdmma','kyv'].forEach(k=>Object.values(M[k]).forEach(v=>{ if(!cohortNames.has(_low(v.name))) M.issues.push(v.name+' has '+k+' data but is not in the Cohorts tab'); }));
+  M.roleUnresolved=M.people.filter(p=>!_norm(p.role)).map(p=>p.alias);
+  M.roleNew=[]; M.people.forEach(p=>{ _norm(p.role).split(';').map(t=>t.trim()).filter(Boolean).forEach(t=>{ let k=_low(t); if(ROLE_ALIAS[k])k=ROLE_ALIAS[k]; if(!ENTERED.roles.find(x=>_low(x.name)===k)) M.roleNew.push({name:p.alias,role:t}); }); });
   return M;
 }
 
@@ -1078,6 +1090,8 @@ function impRenderPreview(M){
   let h='<table><thead><tr><th>Import</th><th>Parsed</th></tr></thead><tbody>'+
     rows.map(r=>'<tr><td><b>'+r[0]+'</b></td><td>'+r[1]+'</td></tr>').join('')+'</tbody></table>';
   if(M.people.length){ h+='<div style="margin-top:8px" class="legend">Learners: '+M.people.map(p=>'<span class="pill">'+esc(p.alias)+'</span>').join(' ')+'</div>'; }
+  if(M.roleUnresolved&&M.roleUnresolved.length){ h+='<div class="callout" style="margin-top:10px;border-left-color:var(--bad)"><b>\u26a0 '+M.roleUnresolved.length+' learner(s) have no role in the Cohorts tab</b> \u2014 they will import <b>unassigned</b> (not Data Analyst). Set the Role column and re-import: '+M.roleUnresolved.map(esc).join(', ')+'</div>'; }
+  if(M.roleNew&&M.roleNew.length){ h+='<div class="callout" style="margin-top:10px;border-left-color:var(--mid)"><b>'+M.roleNew.length+' new role(s) will be created</b> \u2014 these titles are not among the pilot roles, so each is added with no capability profile: '+M.roleNew.map(x=>esc(x.name)+' \u2192 '+esc(x.role)).join('; ')+'</div>'; }
   if(M.issues.length){ h+='<div class="callout" style="margin-top:10px;border-left-color:var(--mid)"><b>⚠ '+M.issues.length+' name mismatch(es):</b><br>'+M.issues.map(esc).join('<br>')+'<div class="muted small" style="margin-top:4px">These will still import, but won’t attach to a cohort learner until the names match.</div></div>'; }
   // ---- Work & Decision Architecture section ----
   const w=M.workarch;
@@ -1155,9 +1169,12 @@ function buildWorkArch(wb,tenantId){
   return {entities:ents,relationships:REL,warnings:WARN,stubs:STUBS,byType:byType,byPred:byPred};
 }
 
+const ROLE_ALIAS={'ai lead':'ai governance lead','business data streward':'business data steward','project manager':'cpmai project manager','data governance':'data governance lead','data architecture':'data architect','data modelling':'data modeller','chief executive officer':'business executive','digital librarian':'records manager'};
+function impResolveRoles(str){ return _norm(str).split(';').map(t=>t.trim()).filter(Boolean).map(t=>impResolveRole(t,'')).filter(Boolean); }
 function impResolveRole(name,persona){
-  name=_norm(name); if(!name) return (ENTERED.roles[0]||{}).id||'R1';
-  const found=ENTERED.roles.find(r=>_low(r.name)===_low(name)); if(found) return found.id;
+  name=_norm(name); if(!name) return null;
+  let key=_low(name); if(ROLE_ALIAS[key]) key=ROLE_ALIAS[key];
+  const found=ENTERED.roles.find(r=>_low(r.name)===key); if(found) return found.id;
   const pmap=p=>{ p=_low(p); return p.includes('exec')?'Executive':p.includes('practice manager')?'Project Manager':p.includes('thought leader')?'Team Lead':p.includes('citizen')?'Citizen':'Professional'; };
   const id='RI'+(ENTERED.roles.length+1);
   ENTERED.roles.push({id:id,name:name,persona:pmap(persona),req:{}});
@@ -1173,7 +1190,7 @@ async function impApply(){
     if(!p){ p={id:'P'+String(ENTERED.people.length+1).padStart(2,'0'),alias:ip.alias,role:null,caps:{},assessments:{}}; ENTERED.people.push(p); byAlias[key]=p; added++; }
     else updated++;
     p.company=ip.company||p.company; p.persona=ip.persona||p.persona; p.func=ip.func||p.func; p.unit=ip.unit||p.unit;
-    p.role=impResolveRole(ip.role,ip.persona); });
+    const _rids=impResolveRoles(ip.role); p.roles=_rids; p.role=_rids[0]||null; });
   // strategy
   if(M.strategy.length){ ENTERED.strategy=M.strategy.map(o=>({ id:o.id, title:o.title, kpi:o.kpi,
     init:o.driver||o.workforce||'', caps:(M.objectiveKAs&&M.objectiveKAs[o.id]?M.objectiveKAs[o.id].filter(k=>CAPBY[k]):[]), attrs:o })); }
@@ -1249,7 +1266,7 @@ function fillRouter(){
 }
 function fillLearners(roleId){
   learnerSel.innerHTML='';
-  ACTIVE.filter(l=>l.role===roleId).forEach(l=>learnerSel.add(new Option((l.alias||l.id)+' ('+l.id+')', l.id)));
+  ACTIVE.filter(l=>personRoles(l).includes(roleId)).forEach(l=>learnerSel.add(new Option((l.alias||l.id)+' ('+l.id+')', l.id)));
   if(!learnerSel.options.length) learnerSel.add(new Option('— no one in this role —',''));
   renderRoleReq(); renderLearnerMini();
 }
@@ -1260,7 +1277,7 @@ function renderRoleReq(){
 }
 function renderLearnerMini(){
   const l=ACTIVE.find(x=>x.id===learnerSel.value); if(!l){document.getElementById('learnerMini').innerHTML='';return;}
-  const role=ROLEBY()[l.role]||ROLES[0]; const caps=reqKeys(role);
+  const role=personRole(l); const caps=reqKeys(role);
   let met=0,tot=0; caps.forEach(c=>{const r=resultFor(l,c); if(r){tot++; if(bandNum(r.band)>=role.req[c])met++;}});
   document.getElementById('learnerMini').innerHTML=
     '<div class="card"><b>'+(l.alias||l.id)+'</b> <span class="muted">· '+role.name+'</span><br>'+
@@ -1276,7 +1293,7 @@ document.getElementById('openDash').onclick=()=>{ if(learnerSel.value){dashLearn
 const dashLearner=document.getElementById('dashLearner');
 function fillDashLearner(){
   dashLearner.innerHTML='';
-  ACTIVE.forEach(l=>dashLearner.add(new Option((l.alias||l.id)+' — '+(ROLEBY()[l.role]?ROLEBY()[l.role].name:l.role),l.id)));
+  ACTIVE.forEach(l=>dashLearner.add(new Option((l.alias||l.id)+' — '+personRole(l).name,l.id)));
 }
 function chanBox(k,st){ return '<div class="chanbox"><div class="k">'+k+'</div><div class="v">'+
   (st.present?(st.mean*5).toFixed(1):'—')+'</div><div class="bar"><span style="width:'+(st.present?st.mean*100:0)+'%"></span></div></div>'; }
@@ -1290,7 +1307,7 @@ function renderDash(){
   if(!ACTIVE.length){ document.getElementById('learnerHead').innerHTML='<div class="empty">No learners in this source. Add people in <b>Cohort setup</b>, or switch the data source to Synthetic seed.</div>';
     document.getElementById('selfBanner').innerHTML=''; document.getElementById('learnerKpis').innerHTML=''; document.getElementById('asmtPanel').innerHTML=''; document.getElementById('capList').innerHTML=''; document.getElementById('roadmap').innerHTML=''; return; }
   if(!dashLearner.value || !ACTIVE.find(x=>x.id===dashLearner.value)) dashLearner.value=ACTIVE[0].id;
-  const l=ACTIVE.find(x=>x.id===dashLearner.value); const role=ROLEBY()[l.role]||ROLES[0];
+  const l=ACTIVE.find(x=>x.id===dashLearner.value); const role=personRole(l);
   document.getElementById('learnerHead').innerHTML=
     '<div class="toprow"><div><span style="font-size:18px;font-weight:800">'+(l.alias||l.id)+'</span> '+
     '<span class="pill">'+role.name+'</span> <span class="pill">Persona: '+role.persona+'</span></div></div>';
@@ -1412,7 +1429,7 @@ function buildLedger(){
         const q=+a.quality||0, w=+a.stakeholder||0;
         [['P',q,'Quality Scorecard'],['W',w,'Stakeholder Feedback']].forEach(([ch,raw,src],k)=>{ rid++;
           LEDGER.push({ pubid:ulid(rid), ts:new Date(base+rid*37e5).toISOString().slice(0,16).replace('T',' ')+'Z',
-            learner:l.id, role:l.role, cap:capId, chan:ch, item:capId+'-'+ch+'-01', ver:'1.2.0',
+            learner:l.id, role:(personRoles(l)[0]||''), cap:capId, chan:ch, item:capId+'-'+ch+'-01', ver:'1.2.0',
             format:FMT[ch], raw:raw, cat:raw, conf:5, review:'human-reviewed', src:src, art:art });
         });
         return;
@@ -1423,7 +1440,7 @@ function buildLedger(){
       ['K','J','P','W'].forEach(ch=>{ (o[ch]||[]).forEach(raw=>{ rid++;
         const needsReview=(ch==='P'||ch==='W')||raw>=4;
         LEDGER.push({ pubid:ulid(rid), ts:new Date(base+rid*37e5).toISOString().slice(0,16).replace('T',' ')+'Z',
-          learner:l.id, role:l.role, cap:capId, chan:ch, item:capId+'-'+ch+'-'+String(itemN).padStart(2,'0'), ver:'1.2.0',
+          learner:l.id, role:(personRoles(l)[0]||''), cap:capId, chan:ch, item:capId+'-'+ch+'-'+String(itemN).padStart(2,'0'), ver:'1.2.0',
           format:FMT[ch], raw:raw, cat:raw, conf:o.conf||3, review: needsReview?(raw>=3?'human-reviewed':'pending-review'):'auto',
           art: (ch==='P'||ch==='W')?art:null });
         itemN++; }); });
@@ -1443,7 +1460,7 @@ function renderTraceability(){
   if(!items.length){ host.innerHTML='<div class="empty">No artifacts yet. Artifacts attach to <b>Practical</b> and <b>Workplace</b> evidence — the deliverables a learner submits at assessment. '+(SOURCE==='entered'?'The entered '+activeTenantName()+' cohort is self-reported, so none exist yet; switch to Synthetic seed to see the traceability.':'')+'</div>'; return; }
   host.innerHTML='';
   items.forEach(it=>{
-    const l=ACTIVE.find(x=>x.id===it.learner); const role=rb[l.role]||ROLES[0];
+    const l=ACTIVE.find(x=>x.id===it.learner); const role=personRole(l);
     const r=resultFor(l,it.cap); const band=r?r.band:'M0'; const req=role.req[it.cap];
     const sos=servingSOs(it.cap);
     const soTxt=sos.length?sos.map(id=>{const so=strat().find(s=>s.id===id); return '<span class="pill" title="'+(so?esc(so.title):'')+'">'+id+'</span>';}).join(' '):'<span class="muted">—</span>';
@@ -1593,7 +1610,7 @@ function fillCaptureForm(){
   const ppl=capPeople(), prevL=cl.value;
   cl.innerHTML='';
   if(!ppl.length){ cl.add(new Option('— no named people entered (add them in Cohort setup) —','')); }
-  else ppl.forEach(p=>cl.add(new Option((p.alias||p.id)+' — '+((ROLEBY()[p.role]||{}).name||p.role),p.id)));
+  else ppl.forEach(p=>cl.add(new Option((p.alias||p.id)+' — '+personRole(p).name,p.id)));
   if(prevL&&ppl.find(p=>p.id===prevL)) cl.value=prevL;
   const cc=document.getElementById('capCap'), prevC=cc.value;
   cc.innerHTML=''; CAPS.forEach(c=>cc.add(new Option(c.id+' · '+c.name,c.id)));
@@ -1666,7 +1683,7 @@ document.getElementById('capSave').onclick=()=>{
    ======================================================== */
 function coverage(capId,roleId){
   const role=ROLEBY()[roleId], req=role.req[capId]; if(req==null) return null;
-  const ls=ACTIVE.filter(l=>l.role===roleId); let met=0,ass=0;
+  const ls=ACTIVE.filter(l=>personRoles(l).includes(roleId)); let met=0,ass=0;
   ls.forEach(l=>{const r=resultFor(l,capId); if(r){ass++; if(bandNum(r.band)>=req)met++;}});
   return {req,met,ass,n:ls.length};
 }
@@ -1691,7 +1708,7 @@ function renderManager(){
   document.getElementById('mgrSelfNote').innerHTML = anySelf
     ? '<div class="note" style="margin-top:10px"><span class="lab">Coverage is self-reported —</span> these figures reflect what the cohort reported; the assessment evidences and may revise them. Treat as a starting picture of need, not validated capability.</div>' : '';
   let totReq=0,totMet=0, needVal=0, caps=new Set();
-  ACTIVE.forEach(l=>{const role=rb[l.role]; if(!role)return; reqKeys(role).forEach(c=>{caps.add(c);
+  ACTIVE.forEach(l=>{const role=personRole(l); if(!role.roleIds.length)return; reqKeys(role).forEach(c=>{caps.add(c);
     const r=resultFor(l,c); if(r){totReq++; if(bandNum(r.band)>=role.req[c])totMet++; if(r.flags.includes('evidence-conflict'))needVal++;}});});
   const mk=document.getElementById('mgrKpis'); mk.innerHTML='';
   [['Cohort',ACTIVE.length+' '+(ACTIVE.length===1?'learner':'learners'),'accent-ink'],['Capabilities in scope',caps.size,'accent-ink'],
@@ -1699,7 +1716,7 @@ function renderManager(){
    [anySelf?'Self-reported':'Records needing validation',anySelf?totReq:needVal,anySelf?'accent-ink':(needVal?'bad':'ok')]].forEach(([t,v,c])=>
     mk.insertAdjacentHTML('beforeend','<div class="card"><div class="muted small">'+t+'</div><div class="kpi sm" style="color:var(--'+c+')">'+v+'</div></div>'));
   const capsArr=CAPS.map(c=>c.id);
-  const rolesInUse=ROLES.filter(r=>ACTIVE.some(l=>l.role===r.id));
+  const rolesInUse=ROLES.filter(r=>ACTIVE.some(l=>personRoles(l).includes(r.id)));
   let html='<div class="hm" style="grid-template-columns:170px repeat('+capsArr.length+',1fr)">';
   html+='<div class="cell" style="background:transparent;border:none"></div>';
   capsArr.forEach(c=>html+='<div class="cell" style="background:transparent;border:none;color:var(--muted)">'+c+'</div>');

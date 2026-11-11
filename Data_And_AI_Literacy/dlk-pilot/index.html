@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.14.0">
-<meta name="build-timestamp" content="2026-11-11 08:18 SAST">
+<meta name="version" content="3.17.0">
+<meta name="build-timestamp" content="2026-11-11 15:37 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -131,11 +131,12 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
 .personCard{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--panel2);margin-bottom:10px}
 .pHead{display:grid;grid-template-columns:28px 1fr 1fr auto;gap:10px;align-items:center}
 @media(max-width:620px){.pHead{grid-template-columns:1fr}}
-.srGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin-top:10px}
-.srCell{border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--panel);display:flex;gap:8px;align-items:center;justify-content:space-between}
-.srCell .cn{font:700 12px var(--mono);color:var(--accent-ink)}
-.srCell .ins{display:flex;gap:6px}
-.srCell select{width:auto}
+.srGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:10px}
+.srCell{border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--panel);display:flex;flex-direction:column;gap:6px;min-width:0;align-items:stretch}
+.srCell .cn{font:700 12px var(--mono);color:var(--accent-ink);white-space:nowrap}
+.srCell>select{width:100%;min-width:0}
+.srCell .ins{display:flex;gap:6px;min-width:0}
+.srCell .ins select{flex:1;min-width:0;width:auto}
 .saveBar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
 .srcTag{font-size:12px;font-weight:700;color:var(--accent-ink);background:var(--accent-bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
 .empty{text-align:center;color:var(--muted);padding:34px 16px}
@@ -840,7 +841,9 @@ let PEOPLE_OPEN=new Set();
 function renderPeopleEditor(){
   const host=document.getElementById('peopleEd'); host.innerHTML='';
   const roles=ENTERED.roles;
-  ENTERED.people.forEach((p,pi)=>{
+  const _order=ENTERED.people.map((_,i)=>i).sort((a,b)=>{const A=(ENTERED.people[a].alias||'').trim()?0:1,B=(ENTERED.people[b].alias||'').trim()?0:1;return A-B;});
+  let _dispN=0;
+  _order.forEach((pi)=>{ const p=ENTERED.people[pi]; _dispN++;
     const role=personRole(p);
     const reqCaps=reqKeys(role);
     let sr=reqCaps.map(c=>{
@@ -850,10 +853,18 @@ function renderPeopleEditor(){
         '<select class="sm" data-p="'+pi+'" data-sconf="'+c+'">'+confOptions(cur.self!=null?cur.conf:'')+'</select></span></div>';
     }).join('');
     p.assessments=p.assessments||{};
+    const ASSESS_APP={TS:'../thinking-styles-engine/',SF:'../strengths-engine/'};
     let asCells=ASSESSMENTS.map(x=>{const s=p.assessments[x.id]||'not-started';
-      return '<div class="srCell"><span class="cn" title="'+x.feeds+'">'+x.name+'</span>'+
+      const app=ASSESS_APP[x.id], nm=(p.alias||'').trim();
+      let links='';
+      if(app&&nm){ const q='?learner='+encodeURIComponent(nm)+(p.email?('&email='+encodeURIComponent(p.email)):'');
+        links='<div style="display:flex;gap:12px;margin-top:5px;font-size:11px;font-family:var(--mono,monospace)">'
+          +'<a href="'+app+q+'" target="_blank" rel="noopener" style="color:var(--accent-ink)">take ↗</a>'
+          +(s==='complete'?'<a href="'+app+q+'&view=result" target="_blank" rel="noopener" style="color:var(--ok)">view result ↗</a>':'<span class="muted" style="opacity:.6">no result yet</span>')
+          +'</div>'; }
+      return '<div class="srCell"><span class="cn" title="'+esc(x.feeds||'')+'">'+esc(x.name)+'</span>'+
         '<select class="sm" data-p="'+pi+'" data-pas="'+x.id+'">'+
-        ['not-started','in-progress','complete'].map(o=>'<option value="'+o+'"'+(s===o?' selected':'')+'>'+ASTAT[o]+'</option>').join('')+'</select></div>';
+        ['not-started','in-progress','complete'].map(o=>'<option value="'+o+'"'+(s===o?' selected':'')+'>'+ASTAT[o]+'</option>').join('')+'</select>'+links+'</div>';
     }).join('');
     const selfN=reqCaps.filter(c=>p.caps&&p.caps[c]&&p.caps[c].self!=null).length;
     const stPill=(label,state)=>{const on=state==='complete',mid=state==='in-progress';const col=on?'var(--ok)':mid?'#b45309':'var(--line)',fg=on?'var(--ok)':mid?'#b45309':'var(--muted)';return '<span style="font-family:var(--mono,monospace);font-size:10.5px;padding:1px 6px;border-radius:999px;border:1px solid '+col+';color:'+fg+';white-space:nowrap" title="'+esc(label)+': '+state+'">'+(on?'\u2713':'')+esc(label)+'</span>';};
@@ -862,7 +873,7 @@ function renderPeopleEditor(){
     host.insertAdjacentHTML('beforeend',
       '<details class="personCard" data-pdet="'+pi+'"'+(PEOPLE_OPEN.has(pi)?' open':'')+' style="border:1px solid var(--line);border-radius:10px;padding:4px 12px;margin-bottom:8px">'+
       '<summary style="cursor:pointer;padding:6px 2px;line-height:2.1">'+
-        '<span class="pill">'+(pi+1)+'</span> <b style="font-size:14px">'+esc(p.alias||'(unnamed)')+'</b> &nbsp; '+roleSummary+
+        '<span class="pill">'+_dispN+'</span> <b style="font-size:14px">'+esc(p.alias||'(unnamed)')+'</b> &nbsp; '+roleSummary+
         ' &nbsp; <span class="muted" style="font-size:11px">self '+selfN+'/'+reqCaps.length+'</span> '+statusPills+
       '</summary>'+
       '<div class="pHead" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">'+

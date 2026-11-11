@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.10.0">
-<meta name="build-timestamp" content="2026-11-11 06:20 SAST">
+<meta name="version" content="3.11.0">
+<meta name="build-timestamp" content="2026-11-11 06:35 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -258,6 +258,7 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
       <button class="btn ghost sm" id="addRole" style="margin-top:8px">＋ Add role</button>
 
       <h3 style="margin-top:20px">People <span class="muted small">(<span id="peopleCount">0</span>) — add each person, assign a role, and set their self-reported level + confidence per required capability</span></h3>
+      <div id="cohortRoster" style="margin:6px 0 16px"></div>
       <div id="peopleEd"></div>
       <button class="btn ghost sm" id="addPerson" style="margin-top:4px">＋ Add person</button>
 
@@ -865,7 +866,35 @@ function renderKaChooser(){
     host.insertAdjacentHTML('beforeend','<span class="pill" title="'+c.name+'" style="background:var(--accent-bg);color:var(--accent-ink);border-color:#c9dbf6;font-weight:700">'+c.id+' · '+c.name+'</span>');
   });
 }
-function renderCohortEditor(){ renderKaChooser(); renderRoleEditor(); renderPeopleEditor(); }
+function renderCohortEditor(){ renderKaChooser(); renderRoleEditor(); renderCohortRoster(); renderPeopleEditor(); }
+function renderCohortRoster(){
+  const host=document.getElementById('cohortRoster'); if(!host)return;
+  const ppl=(ENTERED.people||[]).filter(p=>p.alias&&p.alias.trim());
+  if(!ppl.length){ host.innerHTML=''; return; }
+  const pill=(ok,txt)=>'<span style="font-family:var(--mono,monospace);font-size:11px;padding:2px 7px;border-radius:999px;white-space:nowrap;border:1px solid '+(ok?'var(--ok)':'var(--line)')+';color:'+(ok?'var(--ok)':'var(--muted)')+'">'+txt+'</span>';
+  const td='style="padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top"';
+  const tdc='style="padding:7px 10px;border-bottom:1px solid var(--line);text-align:center;font-variant-numeric:tabular-nums"';
+  const row=p=>{
+    const pr=personRole(p), req=reqKeys(pr);
+    const selfN=req.filter(c=>p.caps&&p.caps[c]&&p.caps[c].self!=null).length;
+    const a=p.assessments||{};
+    const ts=a.TS==='complete', sf=a.SF==='complete';
+    const tsTxt=ts?('✓ '+((p.thinking&&p.thinking.dominant)||'done')):'—';
+    const roleTxt=pr.roleIds.length?esc(pr.name):'<span style="color:var(--muted)">unassigned</span>';
+    return '<tr><td '+td+'><b>'+esc(p.alias)+'</b></td>'
+      +'<td '+td+'><span style="font-family:var(--mono,monospace);font-size:12px">'+roleTxt+'</span></td>'
+      +'<td '+tdc+'>'+req.length+'</td>'
+      +'<td '+tdc+'>'+selfN+' / '+req.length+'</td>'
+      +'<td '+td+'>'+pill(ts,tsTxt)+'</td>'
+      +'<td '+td+'>'+pill(sf,sf?'✓ ranked':'—')+'</td></tr>';
+  };
+  const th=h=>'<th style="text-align:left;padding:7px 10px;background:var(--panel2,#eef2f1);border-bottom:1px solid var(--line);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);white-space:nowrap">'+h+'</th>';
+  host.innerHTML='<div class="fld" style="margin:4px 0 6px">Cohort roster — who is allocated to what, and what has been assessed</div>'
+    +'<div style="overflow-x:auto;border:1px solid var(--line);border-radius:10px">'
+    +'<table style="border-collapse:collapse;width:100%;min-width:560px;font-size:13px">'
+    +'<thead><tr>'+['Person','Allocated role(s)','Req caps','Self-rep.','Thinking Styles','Strengths'].map(th).join('')+'</tr></thead>'
+    +'<tbody>'+ppl.map(row).join('')+'</tbody></table></div>';
+}
 
 document.getElementById('addRole').onclick=()=>{
   const used=new Set(ENTERED.roles.map(r=>+String(r.id).replace(/\D/g,'')||0));
@@ -2029,8 +2058,8 @@ async function boot(){
   runInit();
 }
 function runInit(){
-  const saved=loadEntered();
-  ENTERED = saved || defaultEntered();
+  // ALWAYS source the cohort from the private repo — the browser's local copy is never read.
+  ENTERED = defaultEntered();
   if(!ENTERED.strategy) ENTERED.strategy=defaultStrategy();
   if(!ENTERED.roles) ENTERED.roles=DEFAULT_ROLES.map(r=>({...r,req:{...r.req}}));
   if(!ENTERED.people) ENTERED.people=blankPeople();
@@ -2038,27 +2067,15 @@ function runInit(){
   { const have=new Set(ENTERED.roles.map(r=>r.id)); DEFAULT_ROLES.forEach(r=>{ if(!have.has(r.id)) ENTERED.roles.push({...r,req:{...r.req}}); }); }
   rebuildCaps();
   renderCohortEditor(); renderStrategy(); renderRoleCoverage(); ghStatusTag();
-  // Connected store: GitHub (modelware_app_storage) is canonical when a token is present.
   const online = location.protocol.indexOf('http')===0;
-  function fallbackRepoDefault(){ // relative dlk-pilot/cohort.json, if committed next to the app
-    if(saved) return;
-    fetch('cohort.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{
-      if(d&&d.roles&&d.people){ ENTERED={caps:d.caps||DEFAULT_CAPS.slice(),roles:d.roles,people:d.people,strategy:d.strategy||defaultStrategy()}; rebuildCaps(); renderCohortEditor(); renderStrategy(); setSource('entered'); }
-    }).catch(()=>{});
+  setSource('seed');
+  if(online && ghToken()){
+    ghMsg('Loading '+activeTenantName()+' from the private repo…','muted');
+    ghLoadCohort(false).then(ok=>{ if(!ok) setSource('seed'); });
+    ghLoadKaDeliverables(true);
+  } else {
+    ghMsg(online?('Set a GitHub token to load '+activeTenantName()+' from the repo — this app never uses browser-stored data.'):('Open the hosted app with a token set to load '+activeTenantName()+' from the repo.'),'muted');
   }
-  // LOCAL-FIRST: never overwrite the browser's saved cohort on refresh.
-  // Only auto-load from GitHub / repo default when there is no local save.
-  if(!saved){
-    if(online && ghToken()){ ghLoadCohort(true).then(ok=>{ if(!ok) fallbackRepoDefault(); }); }
-    else if(online){ fallbackRepoDefault(); }
-  } else if(online && ghToken()){
-    ghMsg('Showing your saved cohort from this browser. Use “Load from GitHub” to pull the repo copy, or “Save & use / Save to GitHub” to push.','muted');
-  }
-  // Ontology deliverables come straight from the private repo (no copy kept in the app/browser).
-  if(online && ghToken()) ghLoadKaDeliverables(true);
-  // default to entered if it has named people, else seed
-  const named = ENTERED.people.filter(p=>p.alias&&p.alias.trim()).length;
-  setSource(named? 'entered' : 'seed');
 }
 // Safety net: persist in-progress edits to the browser on refresh/close so nothing is lost.
 window.addEventListener('beforeunload', function(){ try{ if(typeof ENTERED!=='undefined' && ENTERED) persist(); }catch(e){} });

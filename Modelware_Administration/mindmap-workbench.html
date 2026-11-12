@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="mw-asset" content="true">
-<meta name="version" content="2.3.0">
+<meta name="version" content="2.4.0">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mind Map Renderer — mindmap.v1</title>
@@ -316,6 +316,7 @@ html.embed .hint{bottom:46px}   /* make room for the full-workbench link */
     <select id="nbFilter" class="ctl" title="Show one notebook"></select>
     <select id="typeFilter" class="ctl" title="Show one kind of item"></select>
     <select id="sourceFilter" class="ctl" title="Show items whose notebook cites this source"></select>
+    <select id="toolFilter" class="ctl" title="Show items from one tool (CoPilot or Gemini / NotebookLM)"></select>
     <select id="sortBy" class="ctl" title="Sort order">
       <option value="notebook">Sort: notebook</option>
       <option value="title">Sort: title</option>
@@ -1444,11 +1445,22 @@ function linkSource(e){
 const FILE_TYPES = { png:"infographic", jpg:"infographic", jpeg:"infographic", webp:"infographic",
                      pdf:"slide_deck", mp3:"audio", m4a:"audio", wav:"audio",
                      mp4:"video", md:"report", txt:"report" };
-function fileAsset(name, folder){
+function copilotTitle(stem){
+  return String(stem)
+    .replace(/[_-]?\d{8}[_-]\d{6}$/,"")   /* strip _YYYYMMDD_HHMMSS */
+    .replace(/[_-]?\d{6,}$/,"")            /* strip other long numeric suffixes */
+    .replace(/_+/g," ").replace(/\s+/g," ").trim()
+    .replace(/^./,c=>c.toUpperCase());
+}
+function fileAsset(name, folder, tool){
   const ext = (name.split(".").pop()||"").toLowerCase();
-  const type = FILE_TYPES[ext];
+  let type = FILE_TYPES[ext];
   if(!type) return null;
-  const doc = assetDoc(type, stemOf(name), folder, name, { items:null });
+  /* CoPilot research inputs: a PDF is a research document, not a slide deck */
+  if(tool === "copilot" && type === "slide_deck") type = "document";
+  const title = (tool === "copilot") ? copilotTitle(stemOf(name)) : stemOf(name);
+  const doc = assetDoc(type, title, folder, name, { items:null });
+  if(tool) doc.asset.tool = tool;
   return doc;
 }
 function assetDoc(type, title, folder, filename, extra){
@@ -1456,7 +1468,7 @@ function assetDoc(type, title, folder, filename, extra){
   const id = "asset-" + (nb + "-" + title).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
   return Object.assign({
     schema:"notebook.asset.v1", kind:"asset",
-    asset:{ id, type, title, notebook:{ title:nb, url:null },
+    asset:{ id, type, title, tool:null, notebook:{ title:nb, url:null },
             created_at:null, description:null, source_ids:[], file:filename,
             remote_url:null, present:true },
     sources:[]
@@ -1497,7 +1509,7 @@ function applyManifest(j){
     let e = library.find(x => x.key === id);
     const doc = {
       schema:"notebook.asset.v1", kind:"asset",
-      asset:{ id, type:a.type, title:a.title, notebook:{ title:nb, url:nbUrl },
+      asset:{ id, tool:(a.tool||j.tool||null), type:a.type, title:a.title, notebook:{ title:nb, url:nbUrl },
               created_at:a.created_at || null, description:a.description || null,
               source_ids:a.source_ids || [], file:a.file || null,
               /* keep the repo path an earlier tree-walk discovered */
@@ -1605,7 +1617,7 @@ function summarise(e){
   if(e.kind === "asset"){
     const a = d.asset;
     const ix = nbIndex(e.notebook);
-    return { asset:true, type:a.type, nodes:0, branches:0, tags: ix?ix.tags.slice():[],
+    return { asset:true, type:a.type, tool:a.tool||"gemini", nodes:0, branches:0, tags: ix?ix.tags.slice():[],
              sources: ix?ix.sources.length:(a.source_ids||[]).length, srcList: ix?ix.sources:[], method:"asset",
              citations:null, present:a.present, file:a.file, remote:a.remote_url,
              count:(d.items ? d.items.length : a.item_count) || 0,
@@ -1615,7 +1627,7 @@ function summarise(e){
   return withMap(d, e.view, () => {
     const L = layout();
     const ix = nbIndex(e.notebook);
-    return { layoutItems:L, tags: ix?ix.tags.slice():[], mapTags: tags.map(t=>t.key),
+    return { layoutItems:L, tool:"gemini", tags: ix?ix.tags.slice():[], mapTags: tags.map(t=>t.key),
              nodes: d.nodes.length, branches: (kids[rootId()]||[]).length,
              sources: ix?ix.sources.length:(d.sources||[]).length, srcList: ix?ix.sources:[],
              method: (d.map.provenance||{}).method,
@@ -1669,7 +1681,7 @@ function thumbnail(e){
 }
 
 /* ============ inventory render ============ */
-let nbFilter = "", typeFilter = "", sortBy = "notebook", grouped = true, sourceFilter = "", groupMode = "notebook", searchScope = "titles";
+let nbFilter = "", typeFilter = "", sortBy = "notebook", grouped = true, sourceFilter = "", toolFilter = "", groupMode = "notebook", searchScope = "titles";
 const treeOpen = new Set();
 const closedGroups = new Set();
 
@@ -1682,6 +1694,7 @@ function visibleEntries(){
       if(t !== typeFilter) return false;
     }
     if(sourceFilter){ const ixv = nbIndex(e.notebook); if(!ixv || !(ixv.sources||[]).some(s=>s.title===sourceFilter)) return false; }
+    if(toolFilter){ if((e.summary.tool||"gemini") !== toolFilter) return false; }
     if(libFilter){ const dl = taxoDescLeaves(libFilter); const want = dl ? dl.map(l=>l.id) : [libFilter];
       if(!(e.summary.tags||[]).some(t=>want.includes(t))) return false; }
     if(query){
@@ -1745,6 +1758,14 @@ function renderInventory(){
     ssel.innerHTML = `<option value="">All sources (${arr.length})</option>` +
       arr.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t.length>64?t.slice(0,62)+"\u2026":t)}</option>`).join("");
     ssel.value = sourceFilter; }
+  { const tfsel = $("toolFilter");
+    if(tfsel){ const tlc = {};
+      for(const e of library){ const tl = e.kind==="asset" ? (e.versions[0].data.asset.tool||"gemini") : "gemini"; tlc[tl]=(tlc[tl]||0)+1; }
+      const TOOL_LABEL = { copilot:"CoPilot", gemini:"Gemini / NotebookLM" };
+      const tks = Object.keys(tlc).sort();
+      tfsel.innerHTML = `<option value="">All tools (${tks.length})</option>` +
+        tks.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(TOOL_LABEL[t]||t)} · ${tlc[t]}</option>`).join("");
+      tfsel.value = toolFilter; } }
   { const gm = $("groupMode"); if(gm) gm.value = groupMode; }
   { const ss = $("searchScope"); if(ss) ss.value = searchScope; }
 
@@ -1783,6 +1804,7 @@ const TYPE_META = {
   quiz:{label:"Quiz", hue:"#5B78D8"}, flashcards:{label:"Flashcards", hue:"#43B37A"},
   infographic:{label:"Infographic", hue:"#EE7A3C"}, slide_deck:{label:"Slide deck", hue:"#C948C3"},
   report:{label:"Report", hue:"#3FA9DE"}, audio:{label:"Audio", hue:"#98A0AC"},
+  document:{label:"Research document", hue:"#7A6FF0"},
   mind_map:{label:"Mind map", hue:"#43B37A"}
 };
 const thumbObserver = ("IntersectionObserver" in window)
@@ -1810,7 +1832,7 @@ function assetCard(e){
      bytes come from GitHub on demand, so fetch lazily — only when the card scrolls into
      view — and fall back to the badge on any failure. */
   const isImgThumb = s.type === "infographic" || /\.(png|jpe?g|webp|gif)$/i.test(a.file||"");
-  const isPdfThumb = s.type === "slide_deck" || /\.pdf$/i.test(a.file||"");
+  const isPdfThumb = s.type === "slide_deck" || s.type === "document" || /\.pdf$/i.test(a.file||"");
   const canPreview = blobUrls[a.id] || (s.present && a.file) || (a.repo_path && repoReady());
   if((isImgThumb || isPdfThumb) && canPreview){
     const holder = typeBadge(meta, s);
@@ -1854,11 +1876,11 @@ function assetCard(e){
        ${when ? `<span>${escapeHtml(when)}</span>` : ""}
        ${s.present ? "" : '<span style="color:#B4443E">not downloaded</span>'}
      </div>
-     <div class="tags"><span class="mini" style="background:${mix(meta.hue,.16)};color:${darken(meta.hue,.35)}">${escapeHtml(meta.label)}</span></div>`;
+     <div class="tags"><span class="mini" style="background:${mix(meta.hue,.16)};color:${darken(meta.hue,.35)}">${escapeHtml(meta.label)}</span>${a.tool==="copilot"?`<span class="mini" style="background:#E9E6FB;color:#4A3FB0">CoPilot</span>`:""}</div>`;
   card.appendChild(b);
   const openable = s.type === "quiz" || s.type === "flashcards";
   const go = async () => {
-    const pdf = s.type === "slide_deck" || /\.pdf$/i.test(a.file||"");
+    const pdf = s.type === "slide_deck" || s.type === "document" || /\.pdf$/i.test(a.file||"");
     const img = s.type === "infographic" || /\.(png|jpe?g|webp|gif)$/i.test(a.file||"");
     if(pdf || img){
       let url; try { url = await resolveAssetUrl(e); }
@@ -2450,7 +2472,10 @@ async function loadFromGitHub(full){
       if(incremental && repoSeen[f.path] === f.sha){ skipped++;
         if((done % 8) === 0 || done === total) repoProgress(done, total); continue; }
       const name = f.path.split("/").pop();
-      const folder = f.path.split("/").slice(-2, -1)[0] || null;
+      const _parts = f.path.split("/");
+      let folder = _parts.slice(-2, -1)[0] || null;
+      let tool = null;
+      if(folder && folder.toLowerCase() === "copilot"){ tool = "copilot"; folder = _parts.slice(-3, -1)[0] || folder; }
       if(name === "_index.json"){
         try { LIBINDEX = JSON.parse(await ghText(f.path)); persistIndex(); repoSeen[f.path] = f.sha; } catch(err){}
         if((done % 8) === 0 || done === total) repoProgress(done, total);
@@ -2470,7 +2495,7 @@ async function loadFromGitHub(full){
         }
         repoSeen[f.path] = f.sha;
       } else {
-        const a = fileAsset(name, folder);
+        const a = fileAsset(name, folder, tool);
         if(a){ a.asset.repo_path = f.path; a.asset.repo_sha = f.sha; a.asset.present = true; assets.push(a); }
         repoSeen[f.path] = f.sha;
       }
@@ -3046,6 +3071,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("nbFilter").onchange = e => { nbFilter = e.target.value; renderInventory(); };
   $("typeFilter").onchange = e => { typeFilter = e.target.value; renderInventory(); };
   { const se=$("sourceFilter"); if(se) se.onchange = e => { sourceFilter = e.target.value; renderInventory(); }; }
+  { const te=$("toolFilter"); if(te) te.onchange = e => { toolFilter = e.target.value; renderInventory(); }; }
   { const tb=$("btnTags"); if(tb) tb.onclick = openTagManager; }
   $("sortBy").onchange = e => { sortBy = e.target.value; renderInventory(); };
   { const gm=$("groupMode"); if(gm) gm.onchange = e => { groupMode = e.target.value; renderInventory(); }; }

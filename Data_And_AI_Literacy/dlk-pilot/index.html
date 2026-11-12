@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.21.0">
-<meta name="build-timestamp" content="2026-11-11 18:24 SAST">
+<meta name="version" content="3.22.0">
+<meta name="build-timestamp" content="2026-11-12 15:13 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -531,6 +531,12 @@ hr.sep{border:none;border-top:1px solid var(--line2);margin:14px 0}
       <h3 style="margin-bottom:2px">Cohort insights <span class="muted small">— Thinking Styles &amp; Strengths across the cohort</span></h3>
       <p class="muted small" style="margin:0 0 6px;max-width:72ch">A visual read of the whole cohort, sourced from the repo. Thinking Styles plots everyone on the Gregorc grid and averages their profile; Strengths rolls up each person&rsquo;s ranked themes by domain, with a Top&#8209;10 / Complete switch (Complete = all 34 ranked themes).</p>
       <div id="ciBody"></div>
+    </div>
+    <div class="panel">
+      <div class="toprow"><h3 style="margin:0">Team Strengths <span class="muted small">— Gallup baselines · Top&#8209;10 themes weighted (35&minus;rank) by domain, with the <b>Omni</b> balanced benchmark</span></h3>
+        <details id="teamPickWrap" style="margin-left:auto"><summary class="btn ghost sm" style="list-style:none;cursor:pointer">Choose team ▾</summary>
+          <div id="teamPick" style="position:absolute;z-index:20;margin-top:4px;max-height:320px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;box-shadow:var(--shadow);min-width:240px"></div></details></div>
+      <div id="teamStrBody" style="margin-top:8px"><div class="muted small">Open this tab to load the Gallup baselines…</div></div>
     </div>
   </section>
 
@@ -1075,7 +1081,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   t.setAttribute('aria-selected','true');
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('v-'+t.dataset.v).classList.add('on');
-  if(t.dataset.v==='insights') renderCohortInsights();
+  if(t.dataset.v==='insights'){ renderCohortInsights(); renderTeamStrengths(); }
 });
 function goTab(v){document.querySelector('.tab[data-v="'+v+'"]').click();}
 
@@ -1122,6 +1128,64 @@ function renderCohortInsights(){ const host=document.getElementById('ciBody'); i
   else h+='<div class="ci-two" style="margin-top:10px"><div><div class="ci-fld">Domain mix ('+(SF_TOPN>=99?'Complete':'Top '+SF_TOPN)+')</div>'+sfiDomainMix(sfp,SF_TOPN)+'</div><div><div class="ci-fld">Most-common themes ('+(SF_TOPN>=99?'Complete':'Top '+SF_TOPN)+')</div>'+sfiTopThemes(sfp,SF_TOPN)+'</div></div><div class="ci-fld" style="margin-top:14px">Per-person domain breakdown ('+(SF_TOPN>=99?'Complete':'Top '+SF_TOPN)+')</div>'+sfiPerPerson(sfp,SF_TOPN)+'<div class="ci-fld" style="margin-top:14px">Coverage — themes in nobody’s '+(SF_TOPN>=99?'Complete profile':'Top '+SF_TOPN)+'</div>'+sfiGaps(sfp,SF_TOPN);
   host.innerHTML=h;
   host.querySelectorAll('[data-topn]').forEach(b=>b.onclick=()=>{SF_TOPN=+b.dataset.topn;renderCohortInsights();});
+}
+
+/* ======================= TEAM STRENGTHS (Gallup baselines) ======================= */
+const THEME_DOMAIN={"Achiever":"Executing","Arranger":"Executing","Belief":"Executing","Consistency":"Executing","Deliberative":"Executing","Discipline":"Executing","Focus":"Executing","Responsibility":"Executing","Restorative":"Executing","Activator":"Influencing","Command":"Influencing","Communication":"Influencing","Competition":"Influencing","Maximizer":"Influencing","Self-Assurance":"Influencing","Significance":"Influencing","Woo":"Influencing","Adaptability":"Relationship Building","Connectedness":"Relationship Building","Developer":"Relationship Building","Empathy":"Relationship Building","Harmony":"Relationship Building","Includer":"Relationship Building","Individualization":"Relationship Building","Positivity":"Relationship Building","Relator":"Relationship Building","Analytical":"Strategic Thinking","Context":"Strategic Thinking","Futuristic":"Strategic Thinking","Ideation":"Strategic Thinking","Input":"Strategic Thinking","Intellection":"Strategic Thinking","Learner":"Strategic Thinking","Strategic":"Strategic Thinking"};
+const TS_DOMS=['Executing','Influencing','Relationship Building','Strategic Thinking'];
+const TS_DOMC={'Executing':'#2f6fb2','Influencing':'#d9822b','Relationship Building':'#9099a3','Strategic Thinking':'#e3b93c'};
+const TEAM_DEFAULT=['Arianne Shaw','Carolyn Fulton','Debbie Diesel','Howard Diesel','Mark Diesel','Monica Diesel','Paul Bolton','Ross Diesel','Veronica Diesel','Melinda Bolton','Marc Scheepbouwer'];
+const TEAM_PAL=['#2a7fb8','#d1612a','#2e9e5b','#7e3f98','#b8991c','#c0498a','#1b9e9e','#8a6d3b','#4463c9','#cf4b4b','#5a9e2e','#a24bb5','#277d9e','#b06a1e'];
+let GALLUP=null, TEAM_SEL=null;
+async function loadGallup(){ if(GALLUP)return GALLUP; if(!ghToken())return null;
+  try{ const u=ghPathUrl('Data_And_AI_Literacy/strengths-engine/gallup-baselines.json',true); const r=await fetch(u,{headers:ghHeaders(true),cache:'no-store'}); if(r.ok){ const j=JSON.parse(await r.text()); GALLUP=(j.people||[]).map(p=>({name:p.name,ranking:(p.ranking||[]).slice()})); } }catch(e){} return GALLUP; }
+function teamScore(ranking){ const s={Executing:0,Influencing:0,'Relationship Building':0,'Strategic Thinking':0}; (ranking||[]).slice(0,10).forEach((t,i)=>{ const d=THEME_DOMAIN[t]; if(s[d]!=null) s[d]+=35-(i+1); }); return s; }
+function tsHeat(v,max){ const t=max>0?Math.max(0,Math.min(1,v/max)):0; return 'hsl('+Math.round(5+115*t)+',62%,'+Math.round(78-16*t)+'%)'; }
+function tsStacked(rows){ let h=''; rows.forEach(r=>{ const tot=TS_DOMS.reduce((a,d)=>a+r.s[d],0)||1; let seg='';
+    TS_DOMS.forEach(d=>{ const pct=100*r.s[d]/tot; if(pct<=0)return; seg+='<span style="width:'+pct.toFixed(1)+'%;background:'+TS_DOMC[d]+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;overflow:hidden" title="'+d+': '+Math.round(r.s[d])+' ('+Math.round(pct)+'%)">'+(pct>=8?Math.round(pct)+'%':'')+'</span>'; });
+    h+='<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px"><span style="width:150px;flex:0 0 150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'+(r.omni?';font-weight:800':'')+'">'+esc(r.name)+(r.omni?' ◆':'')+'</span><div style="flex:1;display:flex;height:17px;border-radius:5px;overflow:hidden;background:var(--panel2,#eef2f1)'+(r.omni?';outline:2px dashed #555;outline-offset:1px':'')+'">'+seg+'</div></div>'; });
+  return h+'<div class="legend" style="margin-top:8px;font-size:11px">'+TS_DOMS.map(d=>'<span style="margin-right:12px"><span style="display:inline-block;width:10px;height:10px;background:'+TS_DOMC[d]+';border-radius:2px;vertical-align:middle"></span> '+d+'</span>').join('')+'<span style="margin-right:12px">◆ Omni = balanced benchmark</span></div>'; }
+function tsRadar(rows,maxv){ const cx=160,cy=150,R=108,ang={Executing:-90,Influencing:0,'Relationship Building':90,'Strategic Thinking':180};
+  const pt=(d,v)=>{const a=ang[d]*Math.PI/180,r=R*(maxv?v/maxv:0);return [cx+r*Math.cos(a),cy+r*Math.sin(a)];};
+  let g=''; [0.25,0.5,0.75,1].forEach(f=>{g+='<polygon points="'+TS_DOMS.map(d=>pt(d,maxv*f).join(',')).join(' ')+'" fill="none" stroke="var(--line)"/>';});
+  TS_DOMS.forEach(d=>{const e=pt(d,maxv);g+='<line x1="'+cx+'" y1="'+cy+'" x2="'+e[0]+'" y2="'+e[1]+'" stroke="var(--line)"/>';});
+  rows.forEach((r,i)=>{ const col=r.omni?'#333':TEAM_PAL[i%TEAM_PAL.length]; const pts=TS_DOMS.map(d=>pt(d,r.s[d]).join(',')).join(' ');
+    g+='<polygon points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="'+(r.omni?2.2:1.3)+'"'+(r.omni?' stroke-dasharray="5 3"':' stroke-opacity="0.72"')+'><title>'+esc(r.name)+'</title></polygon>'; });
+  const lp={Executing:[cx,cy-R-6,'middle'],Influencing:[cx+R+8,cy+3,'start'],'Relationship Building':[cx,cy+R+16,'middle'],'Strategic Thinking':[cx-R-8,cy+3,'end']};
+  TS_DOMS.forEach(d=>{const l=lp[d];g+='<text x="'+l[0]+'" y="'+l[1]+'" font-size="10" font-weight="700" text-anchor="'+l[2]+'" fill="'+TS_DOMC[d]+'">'+d.replace('Relationship Building','Rel. Building').replace('Strategic Thinking','Strategic')+'</text>';});
+  return '<svg viewBox="-6 0 372 300" width="100%" style="max-width:360px;height:auto">'+g+'</svg>'; }
+function tsTable(people){ // people: real only (no omni). rows=domains, cols=people + grand total/stdev/comment
+  let maxCell=0; people.forEach(p=>TS_DOMS.forEach(d=>{if(p.s[d]>maxCell)maxCell=p.s[d];}));
+  const stats={}; TS_DOMS.forEach(d=>{ const v=people.map(p=>p.s[d]); const mean=v.reduce((a,b)=>a+b,0)/(v.length||1);
+    const sd=v.length>1?Math.sqrt(v.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(v.length-1)):0; stats[d]={mean,sd}; });
+  const ranked=TS_DOMS.slice().sort((a,b)=>stats[b].mean-stats[a].mean); const LAB=['Strongest','Medium','Good','Weakest']; const cmt={}; ranked.forEach((d,i)=>cmt[d]=LAB[i]);
+  let h='<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11.5px;white-space:nowrap"><thead><tr><th style="text-align:left;padding:4px 6px;position:sticky;left:0;background:var(--panel)">Domain</th>'+
+    people.map(p=>'<th style="padding:4px 5px;text-align:center;font-weight:600" title="'+esc(p.name)+'">'+esc(p.name.split(' ')[0])+'<br><span class="muted" style="font-weight:400;font-size:9.5px">'+esc((p.name.split(' ')[1]||'').slice(0,6))+'</span></th>').join('')+
+    '<th style="padding:4px 6px;text-align:right">Mean</th><th style="padding:4px 6px;text-align:right">StdDev</th><th style="padding:4px 6px">Team</th></tr></thead><tbody>';
+  TS_DOMS.forEach(d=>{ h+='<tr><td style="padding:4px 6px;font-weight:700;position:sticky;left:0;background:var(--panel)"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+TS_DOMC[d]+';margin-right:5px"></span>'+d+'</td>'+
+      people.map(p=>'<td style="padding:4px 5px;text-align:center;background:'+tsHeat(p.s[d],maxCell)+';color:#1a1a1a">'+Math.round(p.s[d])+'</td>').join('')+
+      '<td style="padding:4px 6px;text-align:right;font-weight:700">'+stats[d].mean.toFixed(1)+'</td><td style="padding:4px 6px;text-align:right">'+stats[d].sd.toFixed(1)+'</td>'+
+      '<td style="padding:4px 6px"><span class="pill" style="font-size:10px">'+cmt[d]+'</span></td></tr>'; });
+  return h+'</tbody></table></div><div class="muted small" style="margin-top:6px">Mean &amp; StdDev are across the '+people.length+' selected people (Omni excluded). <b>Team</b> ranks the domains by mean: Strongest → Weakest.</div>'; }
+function tsBuildPicker(){ const host=document.getElementById('teamPick'); if(!host||!GALLUP)return;
+  const names=GALLUP.map(p=>p.name).sort((a,b)=>a.localeCompare(b));
+  host.innerHTML='<div style="display:flex;gap:8px;margin-bottom:6px"><button class="btn ghost sm" data-tall="1">All</button><button class="btn ghost sm" data-tall="0">None</button><button class="btn ghost sm" data-tall="def">Default 11</button></div>'+
+    names.map(n=>'<label style="display:block;font-size:12px;padding:1px 0;cursor:pointer"><input type="checkbox" data-tname="'+esc(n)+'"'+(TEAM_SEL.has(n)?' checked':'')+'> '+esc(n)+'</label>').join('');
+  host.querySelectorAll('[data-tname]').forEach(c=>c.onchange=()=>{ if(c.checked)TEAM_SEL.add(c.dataset.tname); else TEAM_SEL.delete(c.dataset.tname); renderTeamStrengths(true); });
+  host.querySelectorAll('[data-tall]').forEach(b=>b.onclick=()=>{ const m=b.dataset.tall; TEAM_SEL=new Set(m==='1'?names:m==='def'?TEAM_DEFAULT.filter(n=>names.includes(n)):[]); renderTeamStrengths(true); });
+}
+async function renderTeamStrengths(keepPicker){ const body=document.getElementById('teamStrBody'); if(!body)return;
+  if(!GALLUP){ await loadGallup(); if(!GALLUP){ body.innerHTML='<div class="empty">Couldn’t load the Gallup baselines (needs the GitHub token).</div>'; return; } }
+  if(!TEAM_SEL){ const have=new Set(GALLUP.map(p=>p.name)); TEAM_SEL=new Set(TEAM_DEFAULT.filter(n=>have.has(n))); }
+  if(!keepPicker) tsBuildPicker();
+  const people=GALLUP.filter(p=>TEAM_SEL.has(p.name)).map(p=>({name:p.name,s:teamScore(p.ranking)})).sort((a,b)=>a.name.localeCompare(b.name));
+  if(!people.length){ body.innerHTML='<div class="empty">No team selected — use “Choose team”.</div>'; return; }
+  const omni={name:'Omni',omni:true,s:(function(){const v=295/4;return {Executing:v,Influencing:v,'Relationship Building':v,'Strategic Thinking':v};})()};
+  const barRows=[omni].concat(people);
+  let maxv=0; barRows.forEach(r=>TS_DOMS.forEach(d=>{if(r.s[d]>maxv)maxv=r.s[d];})); maxv=Math.ceil(maxv/25)*25||150;
+  body.innerHTML='<div class="ci-two" style="margin-top:4px"><div><div class="ci-fld">Domain mix per person (100%)</div>'+tsStacked(barRows)+'</div>'+
+    '<div><div class="ci-fld">Team shape (radar)</div>'+tsRadar(barRows,maxv)+'</div></div>'+
+    '<div class="ci-fld" style="margin-top:16px">Domain scores by person · heat-mapped</div>'+tsTable(people);
 }
 
 /* ========================================================

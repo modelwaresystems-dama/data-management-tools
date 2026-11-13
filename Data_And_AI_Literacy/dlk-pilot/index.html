@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.22.1">
-<meta name="build-timestamp" content="2026-11-13 05:32 SAST">
+<meta name="version" content="3.23.0">
+<meta name="build-timestamp" content="2026-11-13 06:15 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -1081,7 +1081,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   t.setAttribute('aria-selected','true');
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
   document.getElementById('v-'+t.dataset.v).classList.add('on');
-  if(t.dataset.v==='insights'){ renderCohortInsights(); renderTeamStrengths(); }
+  if(t.dataset.v==='insights') openInsights();
 });
 function goTab(v){document.querySelector('.tab[data-v="'+v+'"]').click();}
 
@@ -1126,6 +1126,8 @@ function renderCohortInsights(){ const host=document.getElementById('ciBody'); i
   h+='<hr class="sep"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h3 style="margin:0">Strengths — cohort <span class="muted small">('+sfp.length+' of '+ppl.length+' with results)</span></h3><span style="margin-left:auto"><button class="btn ghost sm" data-topn="10"'+(SF_TOPN<99?' style="background:var(--accent-bg);font-weight:800"':'')+'>Top 10</button> <button class="btn ghost sm" data-topn="999"'+(SF_TOPN>=99?' style="background:var(--accent-bg);font-weight:800"':'')+'>Complete</button></span></div>';
   if(!sfp.length)h+='<div class="empty">No Strengths results in this cohort yet.</div>';
   else h+='<div class="ci-two" style="margin-top:10px"><div><div class="ci-fld">Domain mix ('+(SF_TOPN>=99?'Complete':'Top '+SF_TOPN)+')</div>'+sfiDomainMix(sfp,SF_TOPN)+'</div><div><div class="ci-fld">Most-common themes ('+(SF_TOPN>=99?'Complete':'Top '+SF_TOPN)+')</div>'+sfiTopThemes(sfp,SF_TOPN)+'</div></div><div class="ci-fld" style="margin-top:14px">Per-person domain breakdown ('+(SF_TOPN>=99?'Complete':'Top '+SF_TOPN)+')</div>'+sfiPerPerson(sfp,SF_TOPN)+'<div class="ci-fld" style="margin-top:14px">Coverage — themes in nobody’s '+(SF_TOPN>=99?'Complete profile':'Top '+SF_TOPN)+'</div>'+sfiGaps(sfp,SF_TOPN);
+  const noData=ppl.filter(p=>!(p.thinking&&['CS','AS','AR','CR'].some(k=>p.thinking[k]!=null))&&!(Array.isArray(p.strengths)&&p.strengths.length)).map(p=>p.alias);
+  if(noData.length) h+='<hr class="sep"><div class="muted small">In your cohort but no Thinking Styles or Strengths data yet (excluded from the charts above): <b>'+noData.map(esc).join(', ')+'</b>.</div>';
   host.innerHTML=h;
   host.querySelectorAll('[data-topn]').forEach(b=>b.onclick=()=>{SF_TOPN=+b.dataset.topn;renderCohortInsights();});
 }
@@ -1176,6 +1178,10 @@ function tsBuildPicker(){ const host=document.getElementById('teamPick'); if(!ho
   host.querySelectorAll('[data-tname]').forEach(c=>c.onchange=()=>{ if(c.checked)TEAM_SEL.add(c.dataset.tname); else TEAM_SEL.delete(c.dataset.tname); renderTeamStrengths(true); });
   host.querySelectorAll('[data-tall]').forEach(b=>b.onclick=()=>{ const m=b.dataset.tall; TEAM_SEL = m==='1'?new Set(names) : m==='cohort'?cohortTeam() : new Set(); renderTeamStrengths(true); });
 }
+/* Gallup is the uniform strengths source for the cohort views: fill each cohort person's strengths from their Gallup baseline */
+function enrichStrengthsFromGallup(){ if(!GALLUP)return; const byNz={}; GALLUP.forEach(p=>byNz[tsNz(p.name)]=p);
+  (ENTERED.people||[]).forEach(p=>{ const g=byNz[tsNz(p.alias)]; if(g&&g.ranking&&g.ranking.length){ p.strengths=g.ranking.map((t,i)=>({rank:i+1,theme:t,domain:THEME_DOMAIN[t]||''})); p.assessments=p.assessments||{}; p.assessments.SF='complete'; } }); }
+async function openInsights(){ await loadGallup(); enrichStrengthsFromGallup(); renderCohortInsights(); renderTeamStrengths(); }
 async function renderTeamStrengths(keepPicker){ const body=document.getElementById('teamStrBody'); if(!body)return;
   if(!GALLUP){ await loadGallup(); if(!GALLUP){ body.innerHTML='<div class="empty">Couldn’t load the Gallup baselines (needs the GitHub token).</div>'; return; } }
   if(!TEAM_SEL){ TEAM_SEL=cohortTeam(); }

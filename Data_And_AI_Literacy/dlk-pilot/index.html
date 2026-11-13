@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="3.22.0">
-<meta name="build-timestamp" content="2026-11-12 15:13 SAST">
+<meta name="version" content="3.22.1">
+<meta name="build-timestamp" content="2026-11-13 05:32 SAST">
 <title>Capability Pilot — CA&amp;I</title>
 <style>
 :root{
@@ -1140,6 +1140,8 @@ let GALLUP=null, TEAM_SEL=null;
 async function loadGallup(){ if(GALLUP)return GALLUP; if(!ghToken())return null;
   try{ const u=ghPathUrl('Data_And_AI_Literacy/strengths-engine/gallup-baselines.json',true); const r=await fetch(u,{headers:ghHeaders(true),cache:'no-store'}); if(r.ok){ const j=JSON.parse(await r.text()); GALLUP=(j.people||[]).map(p=>({name:p.name,ranking:(p.ranking||[]).slice()})); } }catch(e){} return GALLUP; }
 function teamScore(ranking){ const s={Executing:0,Influencing:0,'Relationship Building':0,'Strategic Thinking':0}; (ranking||[]).slice(0,10).forEach((t,i)=>{ const d=THEME_DOMAIN[t]; if(s[d]!=null) s[d]+=35-(i+1); }); return s; }
+function tsNz(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,''); }
+function cohortTeam(){ const sel=new Set(); if(!GALLUP)return sel; const byNz={}; GALLUP.forEach(p=>byNz[tsNz(p.name)]=p.name); (ENTERED.people||[]).forEach(p=>{ const nm=byNz[tsNz(p.alias)]; if(nm)sel.add(nm); }); return sel; }
 function tsHeat(v,max){ const t=max>0?Math.max(0,Math.min(1,v/max)):0; return 'hsl('+Math.round(5+115*t)+',62%,'+Math.round(78-16*t)+'%)'; }
 function tsStacked(rows){ let h=''; rows.forEach(r=>{ const tot=TS_DOMS.reduce((a,d)=>a+r.s[d],0)||1; let seg='';
     TS_DOMS.forEach(d=>{ const pct=100*r.s[d]/tot; if(pct<=0)return; seg+='<span style="width:'+pct.toFixed(1)+'%;background:'+TS_DOMC[d]+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;overflow:hidden" title="'+d+': '+Math.round(r.s[d])+' ('+Math.round(pct)+'%)">'+(pct>=8?Math.round(pct)+'%':'')+'</span>'; });
@@ -1169,23 +1171,26 @@ function tsTable(people){ // people: real only (no omni). rows=domains, cols=peo
   return h+'</tbody></table></div><div class="muted small" style="margin-top:6px">Mean &amp; StdDev are across the '+people.length+' selected people (Omni excluded). <b>Team</b> ranks the domains by mean: Strongest → Weakest.</div>'; }
 function tsBuildPicker(){ const host=document.getElementById('teamPick'); if(!host||!GALLUP)return;
   const names=GALLUP.map(p=>p.name).sort((a,b)=>a.localeCompare(b));
-  host.innerHTML='<div style="display:flex;gap:8px;margin-bottom:6px"><button class="btn ghost sm" data-tall="1">All</button><button class="btn ghost sm" data-tall="0">None</button><button class="btn ghost sm" data-tall="def">Default 11</button></div>'+
+  host.innerHTML='<div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap"><button class="btn ghost sm" data-tall="cohort">My cohort</button><button class="btn ghost sm" data-tall="1">All 59</button><button class="btn ghost sm" data-tall="0">None</button></div>'+
     names.map(n=>'<label style="display:block;font-size:12px;padding:1px 0;cursor:pointer"><input type="checkbox" data-tname="'+esc(n)+'"'+(TEAM_SEL.has(n)?' checked':'')+'> '+esc(n)+'</label>').join('');
   host.querySelectorAll('[data-tname]').forEach(c=>c.onchange=()=>{ if(c.checked)TEAM_SEL.add(c.dataset.tname); else TEAM_SEL.delete(c.dataset.tname); renderTeamStrengths(true); });
-  host.querySelectorAll('[data-tall]').forEach(b=>b.onclick=()=>{ const m=b.dataset.tall; TEAM_SEL=new Set(m==='1'?names:m==='def'?TEAM_DEFAULT.filter(n=>names.includes(n)):[]); renderTeamStrengths(true); });
+  host.querySelectorAll('[data-tall]').forEach(b=>b.onclick=()=>{ const m=b.dataset.tall; TEAM_SEL = m==='1'?new Set(names) : m==='cohort'?cohortTeam() : new Set(); renderTeamStrengths(true); });
 }
 async function renderTeamStrengths(keepPicker){ const body=document.getElementById('teamStrBody'); if(!body)return;
   if(!GALLUP){ await loadGallup(); if(!GALLUP){ body.innerHTML='<div class="empty">Couldn’t load the Gallup baselines (needs the GitHub token).</div>'; return; } }
-  if(!TEAM_SEL){ const have=new Set(GALLUP.map(p=>p.name)); TEAM_SEL=new Set(TEAM_DEFAULT.filter(n=>have.has(n))); }
+  if(!TEAM_SEL){ TEAM_SEL=cohortTeam(); }
   if(!keepPicker) tsBuildPicker();
+  const haveNz=new Set(GALLUP.map(p=>tsNz(p.name)));
+  const missing=(ENTERED.people||[]).map(p=>p.alias).filter(a=>a&&!haveNz.has(tsNz(a)));
   const people=GALLUP.filter(p=>TEAM_SEL.has(p.name)).map(p=>({name:p.name,s:teamScore(p.ranking)})).sort((a,b)=>a.name.localeCompare(b.name));
-  if(!people.length){ body.innerHTML='<div class="empty">No team selected — use “Choose team”.</div>'; return; }
+  if(!people.length){ body.innerHTML='<div class="empty">No cohort members have a Gallup baseline yet. Use “Choose team” to pick people, or add their baselines.</div>'; return; }
   const omni={name:'Omni',omni:true,s:(function(){const v=295/4;return {Executing:v,Influencing:v,'Relationship Building':v,'Strategic Thinking':v};})()};
   const barRows=[omni].concat(people);
   let maxv=0; barRows.forEach(r=>TS_DOMS.forEach(d=>{if(r.s[d]>maxv)maxv=r.s[d];})); maxv=Math.ceil(maxv/25)*25||150;
   body.innerHTML='<div class="ci-two" style="margin-top:4px"><div><div class="ci-fld">Domain mix per person (100%)</div>'+tsStacked(barRows)+'</div>'+
     '<div><div class="ci-fld">Team shape (radar)</div>'+tsRadar(barRows,maxv)+'</div></div>'+
-    '<div class="ci-fld" style="margin-top:16px">Domain scores by person · heat-mapped</div>'+tsTable(people);
+    '<div class="ci-fld" style="margin-top:16px">Domain scores by person · heat-mapped</div>'+tsTable(people)+
+    (missing.length?'<div class="muted small" style="margin-top:6px">In your cohort but no Gallup baseline yet (excluded): <b>'+missing.map(esc).join(', ')+'</b>.</div>':'');
 }
 
 /* ========================================================

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta name="version" content="1.7.0">
+<meta name="version" content="1.9.0">
 <meta name="mw-asset" content="true">
-<meta name="updated" content="2026-11-16T17:40:37+02:00">
+<meta name="updated" content="2026-11-16T17:49:16+02:00">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoWeb Learning Asset Reviewer</title>
@@ -66,6 +66,11 @@
   @media(max-width:900px){.layout{grid-template-columns:1fr}}
 
   .filters{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:10px}
+  .listbar{display:flex; align-items:center; gap:9px; margin:0 0 9px}
+  .btn.approve{background:var(--ok); border-color:var(--ok); color:#fff}
+  .btn.approve:hover{background:#17854f; border-color:#17854f}
+  .btn.approve:disabled{opacity:.45; background:var(--ok); border-color:var(--ok)}
+  .aahint{font-size:11px; color:var(--muted)}
   input[type=text],select,textarea{font-family:inherit; font-size:13px; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:7px 9px}
   input[type=text]{flex:1; min-width:120px}
   select{min-width:120px}
@@ -228,6 +233,13 @@
         </select>
         <label class="nr" title="Show only candidates still needing a steward decision (pending) or flagged for attention"><input type="checkbox" id="needsReview"> &#9888; Needs review <span id="nrCount"></span></label>
       </div>
+      <div class="listbar">
+        <button class="btn approve" id="approveAll" disabled>&#10003; Approve all <span id="aaCount"></span></button>
+        <span class="aahint" id="aaHint"></span>
+        <span style="flex:1"></span>
+        <button class="minibtn" id="colGroups" title="Collapse all KA groups">&#9650; Collapse</button>
+        <button class="minibtn" id="expGroups" title="Expand all KA groups">&#9660; Expand</button>
+      </div>
       <div class="list" id="list"></div>
     </div>
     <div class="detail" id="detail">
@@ -309,12 +321,20 @@ async function ghLoad(){
     if(!Array.isArray(items)) throw new Error('Unexpected response (path not a folder?)');
     const cfiles=items.filter(i=>i.type==='file'&&/\.classification\.json$/i.test(i.name));
     const rfile=items.find(i=>i.type==='file'&&i.name===REVIEWS_FILE);
-    const cands=[];
-    for(const it of cfiles){
-      const fr=await fetch(it.url,{headers:ghHeaders(true)});
-      if(!fr.ok) continue;
-      try{ cands.push(mkCand(it.name, JSON.parse(await fr.text()))); }catch(_){ }
+    // fetch files in parallel (concurrency-limited) with a visible progress count
+    const cands=[]; let done=0, failed=0; const CONC=8, queue=cfiles.slice();
+    const setProg=m=>{ const c=$('#connStatus'); if(c) c.innerHTML=m; const l=$('#loadState'); if(l) l.innerHTML=' &middot; '+m; };
+    setProg(`loading <b>0/${cfiles.length}</b> classifications…`);
+    async function worker(){
+      while(queue.length){
+        const it=queue.shift();
+        try{ const fr=await fetch(it.url,{headers:ghHeaders(true)}); if(fr.ok){ cands.push(mkCand(it.name, JSON.parse(await fr.text()))); } else failed++; }
+        catch(_){ failed++; }
+        done++; if(done%4===0||done===cfiles.length) setProg(`loading <b>${done}/${cfiles.length}</b> classifications…`);
+      }
     }
+    await Promise.all(Array.from({length:Math.min(CONC,queue.length||1)}, worker));
+    if(failed) toast(failed+' file(s) failed to load');
     let rev={};
     reviewsSha=null;
     if(rfile){
@@ -469,6 +489,30 @@ function render(){
   }).join('');
   $('#list').querySelectorAll('.card').forEach(el=>el.addEventListener('click',()=>select(el.dataset.id)));
   $('#list').querySelectorAll('.kagrp').forEach(el=>el.addEventListener('click',()=>{ const ka=el.dataset.ka; kaCollapsed[ka]=!kaCollapsed[ka]; render(); }));
+  updateApproveAll();
+}
+/* ===== Approve all: pending & unflagged in the current view ===== */
+function eligibleAA(){ return filtered().filter(c=>verdictOf(c.id)==='pending' && !c.flags.length); }
+function updateApproveAll(){
+  const n=eligibleAA().length, b=$('#approveAll'); if(!b) return;
+  b.disabled=!n; $('#aaCount').textContent=n?('('+n+')'):'';
+  const h=$('#aaHint'); if(h) h.textContent=CANDS.length?(n?'pending & unflagged in view':'nothing pending to approve in view'):'';
+}
+function setAllGroups(collapse){
+  [...new Set(CANDS.map(c=>c.primaryKA||'(unset)'))].forEach(k=>{ if(collapse) kaCollapsed[k]=true; else delete kaCollapsed[k]; });
+  render();
+}
+function approveAllEligible(){
+  const elig=eligibleAA();
+  if(!elig.length){ toast('No pending, unflagged candidates in view'); return; }
+  const saveNote=(autosaveOn()&&getTok())?' They auto-save to GitHub.':' Remember to click Save to GitHub.';
+  if(!confirm('Approve '+elig.length+' pending candidate'+(elig.length>1?'s':'')+' in the current view?\n\nFlagged ⚠ items and anything already decided are left untouched.'+saveNote)) return;
+  const who=($('#reviewer')&&$('#reviewer').value.trim())||'Howard';
+  const now=new Date().toISOString().replace('T',' ').slice(0,16);
+  elig.forEach(c=>{ const r=REVIEWS[c.id]||(REVIEWS[c.id]={}); r.verdict='approved'; r.reviewer=r.reviewer||who; r.notes=r.notes||''; r.updated=now; });
+  if(autosaveOn()&&getTok()){ scheduleAutosave(300); toast('Approved '+elig.length+' — saving…'); }
+  else { setSaveState('dirty'); toast('Approved '+elig.length+' — click Save to GitHub'); }
+  if(selId) select(selId); else render();
 }
 function renderStats(){
   const by={pending:0,approved:0,rejected:0}; CANDS.forEach(c=>by[verdictOf(c.id)]++);
@@ -559,6 +603,9 @@ $('#exportBtn').addEventListener('click',()=>{
   if(!getTok()){ const jb=new Blob([JSON.stringify(mkReviewsPayload(),null,1)],{type:'application/json'}),ju=URL.createObjectURL(jb),ja=document.createElement('a'); ja.href=ju; ja.download=REVIEWS_FILE; ja.click(); URL.revokeObjectURL(ju); }
   toast('Exported decisions');
 });
+$('#approveAll').addEventListener('click', approveAllEligible);
+$('#colGroups').addEventListener('click',()=>setAllGroups(true));
+$('#expGroups').addEventListener('click',()=>setAllGroups(false));
 window.addEventListener('beforeunload',e=>{ if(JSON.stringify(cleanReviews())!==lastSaved){ e.preventDefault(); e.returnValue=''; } });
 
 /* ===== boot: auto-load from GitHub when a token is present ===== */

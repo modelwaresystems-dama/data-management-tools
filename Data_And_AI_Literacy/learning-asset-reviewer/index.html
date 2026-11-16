@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta name="version" content="1.4.0">
+<meta name="version" content="1.6.0">
 <meta name="mw-asset" content="true">
-<meta name="updated" content="2026-11-16T16:48:16+02:00">
+<meta name="updated" content="2026-11-16T17:08:03+02:00">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoWeb Learning Asset Reviewer</title>
@@ -116,6 +116,21 @@
   a.ts{text-decoration:none; cursor:pointer; display:inline-flex; align-items:center; gap:3px; padding:1px 7px; border:1px solid var(--line); border-radius:20px; background:var(--panel2)}
   a.ts:hover{border-color:var(--accent2); background:#fff}
   .watch{font-size:12.5px; font-weight:600}
+  .dur{font-size:10.5px; color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums}
+  .osectools{display:flex; gap:7px; margin:0 0 10px}
+  .minibtn{font-size:11px; font-weight:600; color:var(--muted); background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:4px 9px; cursor:pointer}
+  .minibtn:hover{border-color:var(--accent2)}
+  details.osec{border:1px solid var(--line); border-radius:10px; margin-bottom:9px; background:var(--panel); overflow:hidden}
+  details.osec > summary{list-style:none; cursor:pointer; padding:9px 13px; display:flex; align-items:center; gap:9px; background:var(--panel2); font-weight:700; font-size:12.5px}
+  details.osec > summary::-webkit-details-marker{display:none}
+  details.osec > summary::before{content:'\25B8'; color:var(--accent2); font-size:10px}
+  details.osec[open] > summary::before{content:'\25BE'}
+  details.osec .osec-t{color:var(--accent2); text-transform:uppercase; letter-spacing:.5px; font-size:11.5px}
+  details.osec .relhint{font-size:10px; font-weight:600; color:var(--muted); background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:1px 8px; font-variant-numeric:tabular-nums}
+  details.osec .scnt{margin-left:auto; font-size:11px; color:var(--muted); font-weight:700; background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:1px 9px; min-width:26px; text-align:center}
+  .osec-body{padding:10px 14px}
+  .declared{margin-bottom:10px; padding-bottom:9px; border-bottom:1px dashed var(--line)}
+  .declared b{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px}
   .gnotes li{font-size:12.5px; margin:4px 0 4px 16px}
   .roles{display:flex; flex-wrap:wrap; gap:6px}
   .role{font-size:11.5px; background:var(--panel2); border:1px solid var(--line); border-radius:7px; padding:3px 9px}
@@ -236,6 +251,7 @@ const getTok=()=>{try{return localStorage.getItem(GH.tokenKey)||'';}catch(_){ret
 const b64enc=s=>btoa(unescape(encodeURIComponent(s)));
 function tsSec(ts){ if(!ts) return 0; const p=String(ts).trim().split(':').map(Number); if(p.some(n=>isNaN(n))) return 0; return p.reduce((s,n)=>s*60+n,0); }
 function ytLink(id,ts){ return 'https://www.youtube.com/watch?v='+encodeURIComponent(id)+(ts?('&t='+tsSec(ts)+'s'):''); }
+function fmtDur(s){ s=+s||0; return s<120?(s+'s'):(Math.floor(s/60)+'m'+String(s%60).padStart(2,'0')+'s'); }
 
 function refreshTokTag(){
   const has=!!getTok(); const t=$('#tokTag');
@@ -450,11 +466,22 @@ function select(id){
   const a=d.assertions||{}, primClean=(kal.primary_KA||'').replace(/\s*\(.*$/,'').trim();
   const kachips=Object.entries(edges).map(([k,conf])=>{const name=k.replace(/^e:ka:\S+\s*\(/,'').replace(/\)$/,'');const isP=name===primClean||k.includes(primClean);return `<span class="kachip ${isP?'primary':''}">${esc(name)}<span class="conf c-${esc(conf)}">${esc(conf)}</span></span>`;}).join('');
   const lo=(row.LearningOutcome||[]).map(x=>`<li>${esc(x)}</li>`).join('');
-  const groups=[['knowledge_areas','Knowledge areas'],['concepts','Concepts taught'],['practices','Practices / activities'],['learning_outcomes','Learning outcomes'],['audience','Audience']];
-  const assertHTML=groups.map(([k,label])=>{const arr=a[k]||[]; if(!arr.length) return '';
-    const rows=arr.map(x=>`<div class="assert"><div class="tag">${esc(x.tag)}</div>${x.evidence?`<div class="ev">${esc(x.evidence)}</div>`:''}<div class="m">${x.timestamp?`<a class="ts" href="${ytLink(id,x.timestamp)}" target="_blank" rel="noopener" title="Open the video at ${esc(x.timestamp)}">▶ ${esc(x.timestamp)}</a>`:''}${x.confidence?`<span class="conf c-${esc(x.confidence)}">${esc(x.confidence)}</span>`:''}</div></div>`).join('');
-    return `<div class="agroup"><h5>${label} <span class="cnt">(${arr.length})</span></h5>${rows}</div>`;}).join('');
+  const assertRow=x=>`<div class="assert"><div class="tag">${esc(x.tag)}</div>${x.evidence?`<div class="ev">${esc(x.evidence)}</div>`:''}<div class="m">${x.timestamp?`<a class="ts" href="${ytLink(id,x.timestamp)}" target="_blank" rel="noopener" title="Open the video at ${esc(x.timestamp)}${x.timestamp_end?(' · segment to '+esc(x.timestamp_end)):''}">▶ ${esc(x.timestamp)}</a>`:''}${x.duration_s?`<span class="dur" title="approx. watch window (segment length)">~${fmtDur(x.duration_s)}</span>`:''}${x.confidence?`<span class="conf c-${esc(x.confidence)}">${esc(x.confidence)}</span>`:''}</div></div>`;
+  // ontology/taxonomy facet accordion
+  const facetMeta={
+    knowledge_areas:['Knowledge Areas','supports-development-toward → DMBOK KA', true],
+    concepts:['Concepts Taught','teaches → Concept', true],
+    practices:['Practices / Activities','demonstrates → Practice', false],
+    learning_outcomes:['Learning Outcomes','supports-outcome → Learning Outcome', true],
+    audience:['Audience','targets → Audience', false]
+  };
+  const facetDetails=key=>{
+    const meta=facetMeta[key]; const arr=a[key]||[]; if(!arr.length && !(key==='learning_outcomes'&&lo)) return '';
+    const lead = key==='learning_outcomes'&&lo ? `<div class="declared"><b>Declared outcomes (Sheet-49)</b><ul class="lo">${lo}</ul></div>` : '';
+    return `<details class="osec" ${meta[2]?'open':''}><summary><span class="osec-t">${meta[0]}</span><span class="relhint">${meta[1]}</span><span class="scnt">${arr.length}</span></summary><div class="osec-body">${lead}${arr.map(assertRow).join('')||'<i>none</i>'}</div></details>`;
+  };
   const roles=(a.roles_candidate||[]).map(r=>`<span class="role">${esc(r)}</span>`).join('');
+  const rolesDetails = roles?`<details class="osec"><summary><span class="osec-t">Candidate Roles</span><span class="relhint">suitable-for → Role</span><span class="scnt">${(a.roles_candidate||[]).length}</span></summary><div class="osec-body"><div class="roles">${roles}</div></div></details>`:'';
   const gnotes=(d.governance_notes||[]).map(n=>`<li>${esc(n)}</li>`).join('');
   const cu=d.catalog_update||{}, rv=REVIEWS[id]||{};
   const vnow=verdictOf(id), needsResp=(vnow==='pending')||c.flags.length>0;
@@ -477,16 +504,21 @@ function select(id){
         <div style="margin-top:6px">How to respond: use <b>Steward decision</b> below \u2014 <b>Approve</b> to accept this classification as-is, or <b>Reject</b> to send it back \u2014 and record what to change (e.g. fix the catalogue KA tag / title, change the primary KA) in <b>Steward notes</b>. Deciding it resolves the flag and clears it from the <b>Needs review</b> queue. Data fixes to the catalogue/ontology happen at import, driven by your note.</div>
       </div>`:''}
       ${needsResp?reviewBlock('top'):''}
-      <div class="sec"><h4>Asset</h4>
-        <div class="kv"><b>Video:</b> <a class="watch" href="${ytLink(id)}" target="_blank" rel="noopener">▶ Watch on YouTube (${esc(id)}) ↗</a> &middot; click any <span class="ts" style="padding:0 4px">timestamp</span> below to jump to that point</div>
+      <div class="osectools"><button class="minibtn" id="expAll">Expand all</button><button class="minibtn" id="colAll">Collapse all</button></div>
+      <details class="osec" open><summary><span class="osec-t">Asset</span><span class="relhint">e:wa:content · Learning Asset</span></summary><div class="osec-body">
+        <div class="kv"><b>Video:</b> <a class="watch" href="${ytLink(id)}" target="_blank" rel="noopener">▶ Watch on YouTube (${esc(id)}) ↗</a> &middot; click any <span class="ts" style="padding:0 4px">timestamp</span> to jump</div>
         <div class="kv"><b>Source:</b> ${esc(row.Source||'')}</div>
         <div class="kv"><b>Agent grounding:</b> ${esc(row.ApprovedForAgentGrounding||'')}</div>
         <div class="kv"><b>Catalogue KA:</b> ${esc(cu.ka_before||'?')} &rarr; ${esc(cu.ka_after||'?')}</div>
-        <div class="kachips">${kachips}</div></div>
-      ${lo?`<div class="sec"><h4>Learning outcomes</h4><ul class="lo">${lo}</ul></div>`:''}
-      <div class="sec"><h4>Evidence-backed assertions</h4>${assertHTML||'<i>none</i>'}</div>
-      ${roles?`<div class="sec"><h4>Candidate roles</h4><div class="roles">${roles}</div></div>`:''}
-      <div class="sec"><h4>Governance notes</h4><ul class="gnotes">${gnotes}</ul></div></div>
+        <div class="kachips">${kachips}</div></div></details>
+      ${facetDetails('knowledge_areas')}
+      ${facetDetails('concepts')}
+      ${facetDetails('practices')}
+      ${facetDetails('learning_outcomes')}
+      ${facetDetails('audience')}
+      ${rolesDetails}
+      <details class="osec"><summary><span class="osec-t">Governance Notes</span><span class="relhint">governance</span><span class="scnt">${(d.governance_notes||[]).length}</span></summary><div class="osec-body"><ul class="gnotes">${gnotes}</ul></div></details>
+    </div>
     ${needsResp?'':reviewBlock('bottom')}`;
   $('#detail').querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>setVerdict(id,b.dataset.v)));
   $('#rnotes').addEventListener('input',()=>stash(id)); $('#reviewer').addEventListener('input',()=>stash(id));

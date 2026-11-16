@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta name="version" content="1.6.0">
+<meta name="version" content="1.7.0">
 <meta name="mw-asset" content="true">
-<meta name="updated" content="2026-11-16T17:08:03+02:00">
+<meta name="updated" content="2026-11-16T17:40:37+02:00">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoWeb Learning Asset Reviewer</title>
@@ -20,7 +20,7 @@
   body{background:var(--bg); color:var(--text); font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif; line-height:1.45; font-size:14px}
   a{color:var(--accent2)}
   button{font-family:inherit; cursor:pointer}
-  .wrap{max-width:1500px; margin:0 auto; padding:18px 18px 50px}
+  .wrap{max-width:min(1860px,96vw); margin:0 auto; padding:18px 18px 50px}
 
   header.top{display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px; margin-bottom:12px}
   .brand h1{font-size:23px; font-weight:700}
@@ -61,7 +61,8 @@
   .stat .n{font-size:21px; font-weight:700; font-variant-numeric:tabular-nums}
   .stat .l{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-top:2px}
 
-  .layout{display:grid; grid-template-columns:minmax(320px,400px) 1fr; gap:16px; align-items:start}
+  .layout{display:grid; grid-template-columns:minmax(290px,360px) 1fr; gap:16px; align-items:start}
+  @media(min-width:1500px){.layout{grid-template-columns:340px 1fr}}
   @media(max-width:900px){.layout{grid-template-columns:1fr}}
 
   .filters{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:10px}
@@ -70,6 +71,15 @@
   select{min-width:120px}
 
   .list{display:flex; flex-direction:column; gap:7px; max-height:74vh; overflow:auto; padding-right:4px}
+  .kagrp{position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:8px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 10px; margin-top:4px; cursor:pointer; user-select:none}
+  .kagrp:first-child{margin-top:0}
+  .kagrp .tw{color:var(--accent2); font-size:10px; width:9px}
+  .kagrp .nm{font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text)}
+  .kagrp .ct{margin-left:auto; font-size:11px; font-weight:700; color:var(--muted); background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:1px 9px; min-width:24px; text-align:center}
+  .kagrp .fl{color:var(--warn); font-weight:700}
+  .kagrp.collapsed .tw{transform:none}
+  .kabody{display:flex; flex-direction:column; gap:7px}
+  .kabody.collapsed{display:none}
   .card{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; cursor:pointer; position:relative}
   .card:hover{border-color:var(--accent2)}
   .card.sel{border-color:var(--accent); box-shadow:0 0 0 2px rgba(214,58,49,.12)}
@@ -243,7 +253,7 @@ const FLAG_RX=/(mismatch|weak[\s-]?fit|weak\s+dmbok|flagged?\b|flag for|title\/c
 document.getElementById('appVersion').textContent=document.querySelector('meta[name="version"]').content;
 document.getElementById('updatedTs').textContent=document.querySelector('meta[name="updated"]').content.replace('T',' ').replace(/([+-]\d\d:\d\d)$/,' SAST');
 
-let CANDS=[], REVIEWS={}, reviewsSha=null, selId=null, dirHandle=null, lastSaved='{}';
+let CANDS=[], REVIEWS={}, reviewsSha=null, selId=null, dirHandle=null, lastSaved='{}', kaCollapsed={};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const toast=m=>{const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600);};
@@ -443,14 +453,22 @@ function filtered(){
 function render(){
   renderStats();
   const items=filtered();
-  $('#list').innerHTML=items.map(c=>{const v=verdictOf(c.id);
+  if(!items.length){ $('#list').innerHTML='<div class="empty" style="padding:30px">No candidates match the filters.</div>'; return; }
+  // group the list by primary Knowledge Area
+  const groups=new Map();
+  items.forEach(c=>{ const k=c.primaryKA||'(unset)'; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(c); });
+  const cardHTML=c=>{const v=verdictOf(c.id);
     return `<div class="card ${c.id===selId?'sel':''}" data-id="${esc(c.id)}">
       <span class="verdict v-${v}">${v}</span>
       <h3>${c.flags.length?`<span class="flagdot" title="Flagged: ${esc((c.flagReasons||[]).join(' \u00B7 ')||'see governance notes')}">\u26A0 </span>`:''}${esc(c.title)}</h3>
-      <div class="meta">${esc(c.id)} &middot; ${c.nAssert} assertions</div>
-      <div class="row"><span class="pill ka">${esc(c.primaryKA)}</span></div></div>`;
-  }).join('')||'<div class="empty" style="padding:30px">No candidates match the filters.</div>';
+      <div class="meta">${esc(c.id)} &middot; ${c.nAssert} assertions</div></div>`;};
+  $('#list').innerHTML=[...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([ka,cs])=>{
+    const col=!!kaCollapsed[ka], nf=cs.filter(c=>c.flags.length).length;
+    return `<div class="kagrp ${col?'collapsed':''}" data-ka="${esc(ka)}" title="${col?'Show':'Hide'} ${esc(ka)}"><span class="tw">${col?'\u25B8':'\u25BE'}</span><span class="nm">${esc(ka)}</span>${nf?`<span class="fl" title="${nf} flagged">\u26A0 ${nf}</span>`:''}<span class="ct">${cs.length}</span></div>
+      <div class="kabody ${col?'collapsed':''}">${cs.map(cardHTML).join('')}</div>`;
+  }).join('');
   $('#list').querySelectorAll('.card').forEach(el=>el.addEventListener('click',()=>select(el.dataset.id)));
+  $('#list').querySelectorAll('.kagrp').forEach(el=>el.addEventListener('click',()=>{ const ka=el.dataset.ka; kaCollapsed[ka]=!kaCollapsed[ka]; render(); }));
 }
 function renderStats(){
   const by={pending:0,approved:0,rejected:0}; CANDS.forEach(c=>by[verdictOf(c.id)]++);
@@ -522,6 +540,9 @@ function select(id){
     ${needsResp?'':reviewBlock('bottom')}`;
   $('#detail').querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>setVerdict(id,b.dataset.v)));
   $('#rnotes').addEventListener('input',()=>stash(id)); $('#reviewer').addEventListener('input',()=>stash(id));
+  const ea=$('#expAll'), ca=$('#colAll');
+  if(ea) ea.addEventListener('click',()=>$('#detail').querySelectorAll('details.osec').forEach(d=>d.open=true));
+  if(ca) ca.addEventListener('click',()=>$('#detail').querySelectorAll('details.osec').forEach(d=>d.open=false));
   render();
 }
 function dirtyFlag(){ return JSON.stringify(cleanReviews())!==lastSaved?'<span class="dirty">\u2022 unsaved</span>':''; }

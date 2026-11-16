@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta name="version" content="1.3.0">
+<meta name="version" content="1.4.0">
 <meta name="mw-asset" content="true">
-<meta name="updated" content="2026-11-16T15:50:24+02:00">
+<meta name="updated" content="2026-11-16T16:48:16+02:00">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoWeb Learning Asset Reviewer</title>
@@ -113,6 +113,9 @@
   .assert .ev::before{content:'\201C'} .assert .ev::after{content:'\201D'}
   .assert .m{font-size:11px; color:var(--muted); margin-top:3px; display:flex; gap:9px; align-items:center}
   .ts{font-variant-numeric:tabular-nums; font-weight:600; color:var(--accent2)}
+  a.ts{text-decoration:none; cursor:pointer; display:inline-flex; align-items:center; gap:3px; padding:1px 7px; border:1px solid var(--line); border-radius:20px; background:var(--panel2)}
+  a.ts:hover{border-color:var(--accent2); background:#fff}
+  .watch{font-size:12.5px; font-weight:600}
   .gnotes li{font-size:12.5px; margin:4px 0 4px 16px}
   .roles{display:flex; flex-wrap:wrap; gap:6px}
   .role{font-size:11.5px; background:var(--panel2); border:1px solid var(--line); border-radius:7px; padding:3px 9px}
@@ -231,6 +234,8 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 const toast=m=>{const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600);};
 const getTok=()=>{try{return localStorage.getItem(GH.tokenKey)||'';}catch(_){return'';}};
 const b64enc=s=>btoa(unescape(encodeURIComponent(s)));
+function tsSec(ts){ if(!ts) return 0; const p=String(ts).trim().split(':').map(Number); if(p.some(n=>isNaN(n))) return 0; return p.reduce((s,n)=>s*60+n,0); }
+function ytLink(id,ts){ return 'https://www.youtube.com/watch?v='+encodeURIComponent(id)+(ts?('&t='+tsSec(ts)+'s'):''); }
 
 function refreshTokTag(){
   const has=!!getTok(); const t=$('#tokTag');
@@ -447,7 +452,7 @@ function select(id){
   const lo=(row.LearningOutcome||[]).map(x=>`<li>${esc(x)}</li>`).join('');
   const groups=[['knowledge_areas','Knowledge areas'],['concepts','Concepts taught'],['practices','Practices / activities'],['learning_outcomes','Learning outcomes'],['audience','Audience']];
   const assertHTML=groups.map(([k,label])=>{const arr=a[k]||[]; if(!arr.length) return '';
-    const rows=arr.map(x=>`<div class="assert"><div class="tag">${esc(x.tag)}</div>${x.evidence?`<div class="ev">${esc(x.evidence)}</div>`:''}<div class="m">${x.timestamp?`<span class="ts">${esc(x.timestamp)}</span>`:''}${x.confidence?`<span class="conf c-${esc(x.confidence)}">${esc(x.confidence)}</span>`:''}</div></div>`).join('');
+    const rows=arr.map(x=>`<div class="assert"><div class="tag">${esc(x.tag)}</div>${x.evidence?`<div class="ev">${esc(x.evidence)}</div>`:''}<div class="m">${x.timestamp?`<a class="ts" href="${ytLink(id,x.timestamp)}" target="_blank" rel="noopener" title="Open the video at ${esc(x.timestamp)}">▶ ${esc(x.timestamp)}</a>`:''}${x.confidence?`<span class="conf c-${esc(x.confidence)}">${esc(x.confidence)}</span>`:''}</div></div>`).join('');
     return `<div class="agroup"><h5>${label} <span class="cnt">(${arr.length})</span></h5>${rows}</div>`;}).join('');
   const roles=(a.roles_candidate||[]).map(r=>`<span class="role">${esc(r)}</span>`).join('');
   const gnotes=(d.governance_notes||[]).map(n=>`<li>${esc(n)}</li>`).join('');
@@ -473,6 +478,7 @@ function select(id){
       </div>`:''}
       ${needsResp?reviewBlock('top'):''}
       <div class="sec"><h4>Asset</h4>
+        <div class="kv"><b>Video:</b> <a class="watch" href="${ytLink(id)}" target="_blank" rel="noopener">▶ Watch on YouTube (${esc(id)}) ↗</a> &middot; click any <span class="ts" style="padding:0 4px">timestamp</span> below to jump to that point</div>
         <div class="kv"><b>Source:</b> ${esc(row.Source||'')}</div>
         <div class="kv"><b>Agent grounding:</b> ${esc(row.ApprovedForAgentGrounding||'')}</div>
         <div class="kv"><b>Catalogue KA:</b> ${esc(cu.ka_before||'?')} &rarr; ${esc(cu.ka_after||'?')}</div>
@@ -503,6 +509,7 @@ $('#exportBtn').addEventListener('click',()=>{
 window.addEventListener('beforeunload',e=>{ if(JSON.stringify(cleanReviews())!==lastSaved){ e.preventDefault(); e.returnValue=''; } });
 
 /* ===== boot: auto-load from GitHub when a token is present ===== */
+try{ $('#autosave').checked = (localStorage.getItem('mdaLAR.autosave')!=='0'); }catch(_){ $('#autosave').checked=true; }
 setPanel(true);
 refreshTokTag();
 if(getTok()){ ghLoad(); }

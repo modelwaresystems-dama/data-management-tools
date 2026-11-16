@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta name="version" content="1.2.1">
+<meta name="version" content="1.2.2">
 <meta name="mw-asset" content="true">
-<meta name="updated" content="2026-11-16T15:36:25+02:00">
+<meta name="updated" content="2026-11-16T15:39:23+02:00">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoWeb Learning Asset Reviewer</title>
@@ -114,6 +114,8 @@
   .role{font-size:11.5px; background:var(--panel2); border:1px solid var(--line); border-radius:7px; padding:3px 9px}
 
   .review{position:sticky; bottom:0; background:var(--panel); border-top:2px solid var(--line); padding:14px 20px; margin-top:4px}
+  .review.top{position:static; border-top:none; border:2px solid var(--accent); border-radius:10px; margin:0 0 16px; padding:12px 16px; background:#fff}
+  .rlabel{font-size:11.5px; font-weight:700; color:var(--accent); margin-bottom:8px}
   .review .rrow{display:flex; gap:9px; align-items:center; flex-wrap:wrap}
   .vbtn{border:1px solid var(--line); background:var(--panel); border-radius:8px; padding:8px 15px; font-weight:650; font-size:13px}
   .vbtn.app.on{background:var(--ok); border-color:var(--ok); color:#fff}
@@ -432,12 +434,26 @@ function select(id){
   const roles=(a.roles_candidate||[]).map(r=>`<span class="role">${esc(r)}</span>`).join('');
   const gnotes=(d.governance_notes||[]).map(n=>`<li>${esc(n)}</li>`).join('');
   const cu=d.catalog_update||{}, rv=REVIEWS[id]||{};
+  const vnow=verdictOf(id), needsResp=(vnow==='pending')||c.flags.length>0;
+  const reviewBlock=cls=>`<div class="review ${cls}">
+      ${cls==='top'?'<div class="rlabel">'+(c.flags.length?'⚠ Requires review':'Requires approval')+' — respond here</div>':''}
+      <div class="rrow"><strong style="font-size:13px">Steward decision:</strong>
+        <button class="vbtn app ${rv.verdict==='approved'?'on':''}" data-v="approved">Approve</button>
+        <button class="vbtn rej ${rv.verdict==='rejected'?'on':''}" data-v="rejected">Reject</button>
+        <button class="vbtn rst ${(!rv.verdict||rv.verdict==='pending')?'on':''}" data-v="pending">Reset</button>
+        <input type="text" id="reviewer" placeholder="Reviewer" value="${esc(rv.reviewer||'Howard')}" style="margin-left:auto;max-width:170px"></div>
+      <textarea id="rnotes" placeholder="Steward notes / flag resolution — e.g. accept primary KA, correct catalogue tag or title, change primary KA, bind capability…">${esc(rv.notes||'')}</textarea>
+      <div class="rmeta" id="rmeta">${rv.updated?('last changed '+esc(rv.updated)+(rv.reviewer?(' by '+esc(rv.reviewer)):'')):'not yet reviewed'} ${dirtyFlag()}</div></div>`;
   $('#detail').innerHTML=`
     <div class="dhead"><h2>${c.flags.length?'\u26A0 ':''}${esc(row.Title||id)}</h2>
       <div class="sub">${esc(row.Version||'')}</div>
       <div class="ids">${esc(id)} &middot; primary KA: <b>${esc(primClean||'(unset)')}</b> &middot; ${esc(row.LicenseIPStatus||'')}</div></div>
     <div class="dbody">
-      ${c.flags.length?`<div class="flagbanner">\u26A0 Flagged for steward attention \u2014 see governance notes (e.g. title/content mismatch, catalogue-tag vs content, weak DMBOK fit).</div>`:''}
+      ${c.flags.length?`<div class="flagbanner">
+        <div><b>\u26A0 Flagged for steward attention.</b> Why: ${(c.flagReasons&&c.flagReasons.length)?c.flagReasons.map(r=>'\u201C'+esc(r)+'\u201D').join(' &middot; '):'see governance notes below'}.</div>
+        <div style="margin-top:6px">How to respond: use <b>Steward decision</b> below \u2014 <b>Approve</b> to accept this classification as-is, or <b>Reject</b> to send it back \u2014 and record what to change (e.g. fix the catalogue KA tag / title, change the primary KA) in <b>Steward notes</b>. Deciding it resolves the flag and clears it from the <b>Needs review</b> queue. Data fixes to the catalogue/ontology happen at import, driven by your note.</div>
+      </div>`:''}
+      ${needsResp?reviewBlock('top'):''}
       <div class="sec"><h4>Asset</h4>
         <div class="kv"><b>Source:</b> ${esc(row.Source||'')}</div>
         <div class="kv"><b>Agent grounding:</b> ${esc(row.ApprovedForAgentGrounding||'')}</div>
@@ -447,14 +463,7 @@ function select(id){
       <div class="sec"><h4>Evidence-backed assertions</h4>${assertHTML||'<i>none</i>'}</div>
       ${roles?`<div class="sec"><h4>Candidate roles</h4><div class="roles">${roles}</div></div>`:''}
       <div class="sec"><h4>Governance notes</h4><ul class="gnotes">${gnotes}</ul></div></div>
-    <div class="review">
-      <div class="rrow"><strong style="font-size:13px">Steward decision:</strong>
-        <button class="vbtn app ${rv.verdict==='approved'?'on':''}" data-v="approved">Approve</button>
-        <button class="vbtn rej ${rv.verdict==='rejected'?'on':''}" data-v="rejected">Reject</button>
-        <button class="vbtn rst ${(!rv.verdict||rv.verdict==='pending')?'on':''}" data-v="pending">Reset</button>
-        <input type="text" id="reviewer" placeholder="Reviewer" value="${esc(rv.reviewer||'Howard')}" style="margin-left:auto;max-width:170px"></div>
-      <textarea id="rnotes" placeholder="Steward notes \u2014 e.g. fix primary KA, correct catalogue title, bind capability\u2026">${esc(rv.notes||'')}</textarea>
-      <div class="rmeta" id="rmeta">${rv.updated?('last changed '+esc(rv.updated)+(rv.reviewer?(' by '+esc(rv.reviewer)):'')):'not yet reviewed'} ${dirtyFlag()}</div></div>`;
+    ${needsResp?'':reviewBlock('bottom')}`;
   $('#detail').querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>setVerdict(id,b.dataset.v)));
   $('#rnotes').addEventListener('input',()=>stash(id)); $('#reviewer').addEventListener('input',()=>stash(id));
   render();

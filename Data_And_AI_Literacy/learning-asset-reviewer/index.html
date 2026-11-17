@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta name="version" content="1.10.0">
+<meta name="version" content="1.12.1">
 <meta name="mw-asset" content="true">
-<meta name="updated" content="2026-11-17T11:47:22+02:00">
+<meta name="updated" content="2026-11-17T14:35:13+02:00">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoWeb Learning Asset Reviewer</title>
@@ -166,12 +166,35 @@
   code{background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:12px}
   .dirty{color:var(--accent); font-weight:600}
 
+  /* ===== v1.11.0 assertion-level verdicts ===== */
+  .assert{position:relative; padding-right:76px}
+  .assert.av-approved{border-left-color:var(--ok); background:var(--okbg)}
+  .assert.av-rejected{border-left-color:var(--bad); background:var(--badbg)} .assert.av-rejected .tag{text-decoration:line-through}
+  .avbs{position:absolute; right:4px; top:5px; display:flex; gap:4px}
+  .avb{width:30px; height:26px; border:1px solid var(--line); background:var(--panel); border-radius:6px; font-weight:700; font-size:13px; color:var(--muted)}
+  .avb.ok.on{background:var(--ok); border-color:var(--ok); color:#fff} .avb.no.on{background:var(--bad); border-color:var(--bad); color:#fff}
+  .acount{font-size:12px; color:var(--muted); font-weight:600; margin-left:8px}
+  .mok{color:var(--ok); font-weight:700; margin-left:6px; font-size:11px}
   /* ===== v1.10.0 Search tab + study list ===== */
   .tabs{display:flex; gap:6px; margin:0 0 14px; border-bottom:2px solid var(--line)}
   .tab{background:none; border:none; border-bottom:3px solid transparent; margin-bottom:-2px; padding:9px 16px; font-size:14px; font-weight:650; color:var(--muted)}
   .tab.on{color:var(--accent); border-bottom-color:var(--accent)}
-  .sgrid{display:grid; grid-template-columns:1fr 380px; gap:16px; align-items:start}
-  @media(max-width:1100px){.sgrid{grid-template-columns:1fr}}
+  .sgrid{display:grid; grid-template-columns:330px 1fr 340px; gap:16px; align-items:start}
+  @media(max-width:1300px){.sgrid{grid-template-columns:300px 1fr}}
+  @media(max-width:800px){.sgrid{grid-template-columns:1fr}}
+  /* ===== v1.12.0 topic tree ===== */
+  .stree{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:12px; position:sticky; top:10px; max-height:calc(100vh - 24px); overflow:auto}
+  .stabs{display:flex; gap:6px; margin-bottom:8px}
+  .stabs .minibtn.on{background:var(--accent); border-color:var(--accent); color:#fff}
+  .tsel{font-size:12px; background:var(--okbg); border:1px solid var(--ok); border-radius:8px; padding:6px 9px; margin-bottom:8px; display:none}
+  .tsel.on{display:block} .tsel button{float:right; border:none; background:none; color:var(--bad); font-weight:700}
+  .tn{display:flex; align-items:baseline; gap:4px; padding:3px 4px; border-radius:6px; font-size:13px; cursor:pointer; line-height:1.3}
+  .tn:hover{background:var(--panel2)} .tn.sel{background:var(--okbg); font-weight:650}
+  .tn .tg{width:16px; flex:none; color:var(--muted); font-size:11px; text-align:center}
+  .tn .tl{flex:1; min-width:0} .tn .tc{flex:none; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums}
+  .tn.d0{font-weight:650} .tn.aux .tl{color:var(--muted); font-style:italic}
+  .thint{font-size:11.5px; color:var(--muted); margin:6px 2px 0}
+  .grp{display:inline-block; font-size:10.5px; border:1px solid var(--line); border-radius:10px; padding:0 7px; margin-left:6px; color:var(--muted); background:var(--panel2)}
   .sctl{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px}
   .sctl input[type=text]{flex:1; min-width:260px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; font-family:inherit}
   .sctl select{padding:9px 10px; border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; background:var(--panel)}
@@ -311,6 +334,12 @@
     </div>
     <div class="sstat" id="sStat">Open this tab with a token set and the search index loads from the private repo.</div>
     <div class="sgrid">
+      <div class="stree">
+        <div class="stabs"><button class="minibtn on" id="tByKA">By Knowledge Area</button><button class="minibtn" id="tByRole">By role</button></div>
+        <div class="tsel" id="sTreeSel"></div>
+        <div id="sTree"></div>
+        <div class="thint" id="sTreeHint"></div>
+      </div>
       <div id="sRes"></div>
       <div class="slist">
         <h3>Study list</h3>
@@ -318,6 +347,7 @@
         <textarea id="slReq" rows="2" placeholder="What they asked for"></textarea>
         <div id="slItems"></div>
         <div class="stot" id="slTot"></div>
+        <label class="auto" style="margin:0 0 9px"><input type="checkbox" id="slRead" checked> Add recommended reading for these Knowledge Areas <span id="slReadN"></span></label>
         <button class="btn gh" id="slPrint" disabled>Print study list (save as PDF)</button>
         <button class="btn" id="slClear">Clear</button>
       </div>
@@ -603,7 +633,7 @@ function select(id){
   const a=d.assertions||{}, primClean=(kal.primary_KA||'').replace(/\s*\(.*$/,'').trim();
   const kachips=Object.entries(edges).map(([k,conf])=>{const name=k.replace(/^e:ka:\S+\s*\(/,'').replace(/\)$/,'');const isP=name===primClean||k.includes(primClean);return `<span class="kachip ${isP?'primary':''}">${esc(name)}<span class="conf c-${esc(conf)}">${esc(conf)}</span></span>`;}).join('');
   const lo=(row.LearningOutcome||[]).map(x=>`<li>${esc(x)}</li>`).join('');
-  const assertRow=x=>`<div class="assert"><div class="tag">${esc(x.tag)}</div>${x.evidence?`<div class="ev">${esc(x.evidence)}</div>`:''}<div class="m">${x.timestamp?`<a class="ts" href="${ytLink(id,x.timestamp)}" target="_blank" rel="noopener" title="Open the video at ${esc(x.timestamp)}${x.timestamp_end?(' · segment to '+esc(x.timestamp_end)):''}">▶ ${esc(x.timestamp)}</a>`:''}${x.duration_s?`<span class="dur" title="approx. watch window (segment length)">~${fmtDur(x.duration_s)}</span>`:''}${x.confidence?`<span class="conf c-${esc(x.confidence)}">${esc(x.confidence)}</span>`:''}</div></div>`;
+  const assertRow=(x,key)=>{ const ak=aKey(key,x), av=aVerdict(id,ak); return `<div class="assert av-${av}" data-ak="${esc(ak)}" data-conf="${esc(x.confidence||'')}"><span class="avbs"><button class="avb ok ${av==='approved'?'on':''}" data-av="approved" title="Approve this assertion">&#10003;</button><button class="avb no ${av==='rejected'?'on':''}" data-av="rejected" title="Reject this assertion">&#10007;</button></span><div class="tag">${esc(x.tag)}</div>${x.evidence?`<div class="ev">${esc(x.evidence)}</div>`:''}<div class="m">${x.timestamp?`<a class="ts" href="${ytLink(id,x.timestamp)}" target="_blank" rel="noopener" title="Open the video at ${esc(x.timestamp)}${x.timestamp_end?(' · segment to '+esc(x.timestamp_end)):''}">▶ ${esc(x.timestamp)}</a>`:''}${x.duration_s?`<span class="dur" title="approx. watch window (segment length)">~${fmtDur(x.duration_s)}</span>`:''}${x.confidence?`<span class="conf c-${esc(x.confidence)}">${esc(x.confidence)}</span>`:''}</div></div>`; };
   // ontology/taxonomy facet accordion
   const facetMeta={
     knowledge_areas:['Knowledge Areas','supports-development-toward → DMBOK KA', true],
@@ -615,7 +645,7 @@ function select(id){
   const facetDetails=key=>{
     const meta=facetMeta[key]; const arr=a[key]||[]; if(!arr.length && !(key==='learning_outcomes'&&lo)) return '';
     const lead = key==='learning_outcomes'&&lo ? `<div class="declared"><b>Declared outcomes (Sheet-49)</b><ul class="lo">${lo}</ul></div>` : '';
-    return `<details class="osec" ${meta[2]?'open':''}><summary><span class="osec-t">${meta[0]}</span><span class="relhint">${meta[1]}</span><span class="scnt">${arr.length}</span></summary><div class="osec-body">${lead}${arr.map(assertRow).join('')||'<i>none</i>'}</div></details>`;
+    return `<details class="osec" ${meta[2]?'open':''}><summary><span class="osec-t">${meta[0]}</span><span class="relhint">${meta[1]}</span><span class="scnt">${arr.length}</span></summary><div class="osec-body">${lead}${arr.map(x=>assertRow(x,key)).join('')||'<i>none</i>'}</div></details>`;
   };
   const roles=(a.roles_candidate||[]).map(r=>`<span class="role">${esc(r)}</span>`).join('');
   const rolesDetails = roles?`<details class="osec"><summary><span class="osec-t">Candidate Roles</span><span class="relhint">suitable-for → Role</span><span class="scnt">${(a.roles_candidate||[]).length}</span></summary><div class="osec-body"><div class="roles">${roles}</div></div></details>`:'';
@@ -641,7 +671,8 @@ function select(id){
         <div style="margin-top:6px">How to respond: use <b>Steward decision</b> below \u2014 <b>Approve</b> to accept this classification as-is, or <b>Reject</b> to send it back \u2014 and record what to change (e.g. fix the catalogue KA tag / title, change the primary KA) in <b>Steward notes</b>. Deciding it resolves the flag and clears it from the <b>Needs review</b> queue. Data fixes to the catalogue/ontology happen at import, driven by your note.</div>
       </div>`:''}
       ${needsResp?reviewBlock('top'):''}
-      <div class="osectools"><button class="minibtn" id="expAll">Expand all</button><button class="minibtn" id="colAll">Collapse all</button></div>
+      <div class="osectools"><button class="minibtn" id="expAll">Expand all</button><button class="minibtn" id="colAll">Collapse all</button>
+        <button class="btn approve" id="apprHigh" title="Approve every High-confidence assertion on this video that you have not already decided. Medium and Low stay for individual review.">&#10003; Approve High-confidence assertions</button><span class="acount" id="aCount"></span></div>
       <details class="osec" open><summary><span class="osec-t">Asset</span><span class="relhint">e:wa:content · Learning Asset</span></summary><div class="osec-body">
         <div class="kv"><b>Video:</b> <a class="watch" href="${ytLink(id)}" target="_blank" rel="noopener">▶ Watch on YouTube (${esc(id)}) ↗</a> &middot; click any <span class="ts" style="padding:0 4px">timestamp</span> to jump</div>
         <div class="kv"><b>Source:</b> ${esc(row.Source||'')}</div>
@@ -659,15 +690,28 @@ function select(id){
     ${needsResp?'':reviewBlock('bottom')}`;
   $('#detail').querySelectorAll('.vbtn').forEach(b=>b.addEventListener('click',()=>setVerdict(id,b.dataset.v)));
   $('#rnotes').addEventListener('input',()=>stash(id)); $('#reviewer').addEventListener('input',()=>stash(id));
+  $('#detail').querySelectorAll('.avb').forEach(b=>b.addEventListener('click',ev=>{ ev.preventDefault(); const row=b.closest('.assert'); const cur=aVerdict(id,row.dataset.ak); setAVerdict(id,row.dataset.ak, cur===b.dataset.av?'pending':b.dataset.av); paintAsserts(id); }));
+  const ah=$('#apprHigh'); if(ah) ah.addEventListener('click',()=>{ let n=0; $('#detail').querySelectorAll('.assert[data-conf="High"]').forEach(row=>{ if(aVerdict(id,row.dataset.ak)==='pending'){ setAVerdict(id,row.dataset.ak,'approved',true); n++; } }); paintAsserts(id); toast(n?('Approved '+n+' High-confidence assertion'+(n===1?'':'s')):'No undecided High-confidence assertions'); if(n) scheduleAutosave(400); });
+  paintAsserts(id);
   const ea=$('#expAll'), ca=$('#colAll');
   if(ea) ea.addEventListener('click',()=>$('#detail').querySelectorAll('details.osec').forEach(d=>d.open=true));
   if(ca) ca.addEventListener('click',()=>$('#detail').querySelectorAll('details.osec').forEach(d=>d.open=false));
   render();
 }
+/* ===== v1.11.0 assertion-level verdicts: reviews[id].assertions["<facet key>|<timestamp>|<tag>"] = approved|rejected ===== */
+function aKey(key,x){ return key+'|'+(x.timestamp||'')+'|'+(x.tag||''); }
+function aVerdict(id,ak){ const r=REVIEWS[id]; return (r&&r.assertions&&r.assertions[ak])||'pending'; }
+function setAVerdict(id,ak,v,quiet){ const r=REVIEWS[id]||(REVIEWS[id]={verdict:'pending'}); r.assertions=r.assertions||{}; if(v==='pending') delete r.assertions[ak]; else r.assertions[ak]=v;
+  r.reviewer=($('#reviewer')?$('#reviewer').value:r.reviewer)||''; r.updated=new Date().toISOString().replace('T',' ').slice(0,16); if(!quiet) scheduleAutosave(600); }
+function paintAsserts(id){ let ap=0,rj=0,pd=0;
+  $('#detail').querySelectorAll('.assert[data-ak]').forEach(row=>{ const v=aVerdict(id,row.dataset.ak); row.classList.remove('av-approved','av-rejected','av-pending'); row.classList.add('av-'+v);
+    row.querySelector('.avb.ok').classList.toggle('on',v==='approved'); row.querySelector('.avb.no').classList.toggle('on',v==='rejected'); if(v==='approved')ap++; else if(v==='rejected')rj++; else pd++; });
+  const c=$('#aCount'); if(c) c.textContent='Assertions: '+ap+' approved, '+rj+' rejected, '+pd+' undecided';
+  const m=$('#rmeta'); if(m && JSON.stringify(cleanReviews())!==lastSaved && !m.querySelector('.dirty')) m.insertAdjacentHTML('beforeend',' <span class="dirty">\u2022 unsaved</span>'); }
 function dirtyFlag(){ return JSON.stringify(cleanReviews())!==lastSaved?'<span class="dirty">\u2022 unsaved</span>':''; }
 function stash(id){ const r=REVIEWS[id]||(REVIEWS[id]={verdict:'pending'}); r.notes=$('#rnotes').value; r.reviewer=$('#reviewer').value; const m=$('#rmeta'); if(m) m.innerHTML=m.innerHTML.replace(/\s*<span class="dirty">.*?<\/span>/,'')+' '+dirtyFlag(); scheduleAutosave(1500); }
 function setVerdict(id,v){ const r=REVIEWS[id]||(REVIEWS[id]={}); r.verdict=v; r.notes=($('#rnotes')?$('#rnotes').value:r.notes)||''; r.reviewer=($('#reviewer')?$('#reviewer').value:r.reviewer)||''; r.updated=new Date().toISOString().replace('T',' ').slice(0,16); select(id); toast(autosaveOn()&&getTok()?('Marked '+v+' — saving…'):('Marked '+v)); scheduleAutosave(400); }
-function cleanReviews(){ const out={}; Object.entries(REVIEWS).forEach(([id,r])=>{ if(r&&(r.verdict&&r.verdict!=='pending'||(r.notes&&r.notes.trim()))) out[id]={verdict:r.verdict||'pending',notes:r.notes||'',reviewer:r.reviewer||'',updated:r.updated||''}; }); return out; }
+function cleanReviews(){ const out={}; Object.entries(REVIEWS).forEach(([id,r])=>{ const hasA=r&&r.assertions&&Object.keys(r.assertions).length; if(r&&(r.verdict&&r.verdict!=='pending'||(r.notes&&r.notes.trim())||hasA)){ out[id]={verdict:r.verdict||'pending',notes:r.notes||'',reviewer:r.reviewer||'',updated:r.updated||''}; if(hasA) out[id].assertions=r.assertions; } }); return out; }
 function mkReviewsPayload(){ const rv=cleanReviews(); const vals=Object.values(rv); const reviewer=(vals.find(x=>x.reviewer)||{}).reviewer||''; const by={approved:0,rejected:0}; vals.forEach(x=>{if(x.verdict==='approved')by.approved++; else if(x.verdict==='rejected')by.rejected++;}); return {_type:'moweb.learning-asset.steward-reviews', saved_utc:new Date().toISOString(), ontology_version:(CANDS[0]&&CANDS[0].data.ontology_version)||'', reviewer, summary:by, reviews:rv}; }
 
 $('#exportBtn').addEventListener('click',()=>{
@@ -691,23 +735,68 @@ const FACET_LABEL={ka:'Knowledge Area',concept:'Concept',practice:'Practice',out
 let LSI=null, LS_LIST=[], lsShown={};
 function lsTokens(q){ return Array.from(new Set(String(q||'').toLowerCase().split(/[^a-z0-9&]+/).filter(t=>t.length>1&&!LS_STOP.has(t)))); }
 function lsHits(text,toks){ const t=String(text||'').toLowerCase(); return toks.filter(k=>t.includes(k)); }
+/* ===== v1.12.0 topic tree =====
+   Every concept / practice / outcome moment sits at one place in the tree:
+   Knowledge Area > CDMP category > CDMP concept        (m.g, proposed mapping from the private repo), or
+   Knowledge Area > [Other topics >] word group [> sub]  (m.w / m.w2, automatic, not governed). */
+let LS_SEL=null, lsTreeMode='ka', lsOpen={}, LS_CDMP=new Set();
+const LS_AUX=new Set(['Other topics','Other','General','Other roles']);
+function lsPathOf(a,m){
+  if(m.g) return [a.primaryKA,m.g[0]].concat(m.g[1]?[m.g[1]]:[]);
+  if(m.w) return (LS_CDMP.has(a.primaryKA)?[a.primaryKA,'Other topics',m.w]:[a.primaryKA,m.w]).concat(m.w2?[m.w2]:[]);
+  return null;
+}
+function lsInSel(a,m,sel){ if(sel.mode==='role') return m.f==='ka'; const p=lsPathOf(a,m); return !!p && sel.path.every((x,i)=>p[i]===x); }
+function lsBuildTree(){
+  LS_CDMP=new Set(); LSI.assets.forEach(a=>{ if(a.sendable && a.moments.some(m=>m.g)) LS_CDMP.add(a.primaryKA); });
+  const root={kids:{}}, add=(node,name)=>node.kids[name]||(node.kids[name]={name,kids:{},vids:new Set(),n:0,gov:false});
+  LSI.assets.forEach(a=>{ if(!a.sendable) return; a.moments.forEach(m=>{ if(m.v==='rejected') return; const p=lsPathOf(a,m); if(!p) return;
+    let node=root; p.forEach((x,i)=>{ node=add(node,x); node.vids.add(a.id); node.n++; if(m.g&&i>0) node.gov=true; }); }); });
+  const roles={}; LSI.assets.forEach(a=>{ if(a.sendable) (a.roles||[]).forEach(r=>{ (roles[r]||(roles[r]=new Set())).add(a.id); }); });
+  LSI._tree=root; LSI._roles=roles;
+}
+function lsSortKids(node,depth){ return Object.values(node.kids).sort((x,y)=>(LS_AUX.has(x.name)-LS_AUX.has(y.name))||(depth===0?(y.vids.size-x.vids.size):((y.gov-x.gov)||(y.n-x.n)))||x.name.localeCompare(y.name)); }
+function lsRenderTree(){
+  if(!LSI) return; const selKey=LS_SEL?(LS_SEL.mode==='role'?('role›'+LS_SEL.role):LS_SEL.path.join('›')):'';
+  let h='';
+  if(lsTreeMode==='ka'){
+    const walk=(node,depth,prefix)=>{ lsSortKids(node,depth).forEach(k=>{ const key=prefix?prefix+'›'+k.name:k.name, has=Object.keys(k.kids).length>0, open=!!lsOpen[key];
+      h+=`<div class="tn d${depth} ${key===selKey?'sel':''} ${LS_AUX.has(k.name)?'aux':''}" data-key="${esc(key)}" style="padding-left:${4+depth*15}px"><span class="tg" data-tg="1">${has?(open?'&#9662;':'&#9656;'):''}</span><span class="tl">${esc(k.name)}</span><span class="tc" title="videos / moments">${k.vids.size} / ${k.n}</span></div>`;
+      if(has&&open) walk(k,depth+1,key); }); };
+    walk(LSI._tree,0,'');
+    $('#sTreeHint').textContent='Counts are videos / timed moments. Named topics under a Knowledge Area come from the CDMP exam categories or the DMBOK essential concepts, as proposed mappings. "Other topics" and plain word groups are automatic, not governed.';
+  } else {
+    const rs=Object.entries(LSI._roles).sort((x,y)=>y[1].size-x[1].size||x[0].localeCompare(y[0])), main=rs.filter(r=>r[1].size>1), rest=rs.filter(r=>r[1].size<=1);
+    const row=(r,d)=>`<div class="tn d${d} ${('role›'+r[0])===selKey?'sel':''}" data-role="${esc(r[0])}" style="padding-left:${4+d*15}px"><span class="tg"></span><span class="tl">${esc(r[0])}</span><span class="tc" title="videos">${r[1].size}</span></div>`;
+    h=main.map(r=>row(r,0)).join('');
+    if(rest.length){ const open=!!lsOpen['Other roles']; h+=`<div class="tn d0 aux" data-key="Other roles" style="padding-left:4px"><span class="tg" data-tg="1">${open?'&#9662;':'&#9656;'}</span><span class="tl">Other roles</span><span class="tc">${rest.length}</span></div>`; if(open) h+=rest.map(r=>row(r,1)).join(''); }
+    $('#sTreeHint').textContent='Roles are candidate roles named in each classification. They apply to the whole video, so results show the video with its Knowledge Area moments.';
+  }
+  $('#sTree').innerHTML=h||'<div class="thint">Nothing to browse yet.</div>';
+  const ts=$('#sTreeSel'); ts.classList.toggle('on',!!LS_SEL);
+  ts.innerHTML=LS_SEL?('<button id="tClear" title="Clear the tree selection">&times;</button>Showing: <b>'+esc(LS_SEL.mode==='role'?('Role: '+LS_SEL.role):LS_SEL.path.join(' › '))+'</b>'):'';
+}
 /* pure: returns [{a, moments:[{m,score}], coverage, score, band}].
+   sel (tree selection) narrows to the moments under that node; q then searches within them.
    Words are weighted by rarity across the corpus, so "data" counts for little and "anomaly" for a lot.
    Order: match-quality band (3 strong, 2 good, 1 partial), approved first within a band, then score. */
-function lsSearch(index,q,ka,minConf,apprOnly){
+function lsSearch(index,q,ka,minConf,apprOnly,sel){
   const toks=lsTokens(q), min=CONF_RANK[{H:'High',M:'Medium',L:'Low'}[minConf]||'Low'];
-  if(!toks.length && !ka) return [];
-  const pool=index.assets.filter(a=>a.sendable && !(apprOnly && a.verdict!=='approved') && (!ka || Object.values(a.kas||{}).some(k=>k.name===ka)));
+  if(!toks.length && !ka && !sel) return [];
+  const base=sel?index.assets.filter(a=>a.sendable && (sel.mode==='role'?(a.roles||[]).includes(sel.role):a.primaryKA===sel.path[0]))
+      .map(a=>Object.assign({},a,{moments:a.moments.filter(m=>lsInSel(a,m,sel))})).filter(a=>a.moments.length):index.assets;
+  const pool=base.filter(a=>a.sendable && (!ka || Object.values(a.kas||{}).some(k=>k.name===ka)));
+  const isAppr=x=>x.a.verdict==='approved'||x.moments.some(k=>k.m.v==='approved');
   const out=[];
   if(toks.length){
-    const N=index.assets.length, w={};
-    toks.forEach(k=>{ const df=index.assets.filter(a=>(a.title+' '+a.moments.map(m=>m.tag+' '+m.ev).join(' ')).toLowerCase().includes(k)).length; w[k]=df?Math.log(1+N/df):0; });
+    const N=base.length, w={};
+    toks.forEach(k=>{ const df=base.filter(a=>(a.title+' '+a.moments.map(m=>m.tag+' '+m.ev).join(' ')).toLowerCase().includes(k)).length; w[k]=df?Math.log(1+N/df):0; });
     const wsum=ks=>ks.reduce((n,k)=>n+w[k],0);
     for(const a of pool){
       const covered=new Set(), th=lsHits(a.title,toks); th.forEach(k=>covered.add(k));
       const moments=[];
       for(const m of a.moments){
-        if((CONF_RANK[m.conf]||0)<min) continue;
+        if((CONF_RANK[m.conf]||0)<min || m.v==='rejected') continue;
         const tg=lsHits(m.tag,toks), ev=lsHits(m.ev,toks);
         if(!tg.length && !ev.length) continue;
         const both=Array.from(new Set(tg.concat(ev))); both.forEach(k=>covered.add(k));
@@ -722,17 +811,24 @@ function lsSearch(index,q,ka,minConf,apprOnly){
     out.forEach(x=>{ const r=x.coverage/top; x.band=r>=0.8?3:r>=0.5?2:1; });
     const keep=out.filter(x=>x.band>=2); if(keep.length>=3) { out.length=0; keep.forEach(x=>out.push(x)); }
     out.forEach(x=>{ const mt=x.moments[0].score; x.moments=x.moments.filter(k=>k.score>=mt*0.35); });
+  } else if(sel){
+    for(const a of pool){
+      const ms=a.moments.filter(m=>m.v!=='rejected'&&(CONF_RANK[m.conf]||0)>=min).sort((x,y)=>x.s-y.s);
+      if(ms.length) out.push({a,moments:ms.map(m=>({m,score:CONF_RANK[m.conf]||0})),coverage:0,band:3,score:ms.length});
+    }
   } else {
     for(const a of pool){
       const kaLink=Object.values(a.kas||{}).find(k=>k.name===ka);
-      let ms=a.moments.filter(m=>m.f==='ka'&&m.tag===ka&&(CONF_RANK[m.conf]||0)>=min);
+      let ms=a.moments.filter(m=>m.f==='ka'&&m.tag===ka&&m.v!=='rejected'&&(CONF_RANK[m.conf]||0)>=min);
       if(!ms.length) continue;
       const c=CONF_RANK[kaLink.confidence]||0;
       out.push({a,moments:ms.map(m=>({m,score:CONF_RANK[m.conf]||0})),coverage:0,band:(a.primaryKA===ka?3:c>=3?2:1),score:c});
     }
   }
-  out.sort((x,y)=>y.band-x.band||((y.a.verdict==='approved')-(x.a.verdict==='approved'))||y.score-x.score||String(x.a.title).localeCompare(String(y.a.title)));
-  return out;
+  out.forEach(x=>{ x.appr=isAppr(x); });
+  const fin=apprOnly?out.filter(x=>x.appr):out;
+  fin.sort((x,y)=>y.band-x.band||(y.appr-x.appr)||y.score-x.score||String(x.a.title).localeCompare(String(y.a.title)));
+  return fin;
 }
 function lsRange(m){ return esc(m.t)+(m.te?('&ndash;'+esc(m.te)):''); }
 function lsAbout(sec){ sec=+sec||0; return sec<90?('about '+sec+' sec'):('about '+Math.round(sec/60)+' min'); }
@@ -746,42 +842,45 @@ async function lsLoadIndex(){
     LSI=JSON.parse(await r.text());
     const names=new Set(); LSI.assets.forEach(a=>{ if(a.sendable) Object.values(a.kas||{}).forEach(k=>names.add(k.name)); });
     $('#sKA').innerHTML='<option value="">Any Knowledge Area</option>'+Array.from(names).sort().map(n=>`<option>${esc(n)}</option>`).join('');
-    lsRender();
-  }catch(e){ LSI=null; st.className='sstat err'; st.textContent='Search index could not be loaded: '+e.message; $('#sRes').innerHTML=''; }
+    LS_SEL=null; lsBuildTree(); lsRenderTree(); lsRender(); lsRenderList();
+  }catch(e){ LSI=null; $('#sTree').innerHTML=''; st.className='sstat err'; st.textContent='Search index could not be loaded: '+e.message; $('#sRes').innerHTML=''; }
 }
 function lsRender(){
   if(!LSI) return;
   const c=LSI.counts, excl=c.assets-c.sendable;
-  const res=lsSearch(LSI,$('#sq').value,$('#sKA').value,$('#sConf').value,$('#sAppr').checked);
-  $('#sStat').innerHTML=`<b>${res.length}</b> video${res.length===1?'':'s'} match &middot; searching ${c.sendable} sendable videos and ${c.moments} timed moments &middot; ${excl} steward-held or private video${excl===1?'':'s'} excluded &middot; ${c.approved} approved, the rest are candidates &middot; index built ${esc(String(LSI.generated_utc||'').replace('T',' ').replace('Z',' UTC'))}`;
-  if(!res.length){ $('#sRes').innerHTML='<div class="res" style="color:var(--muted)">'+((lsTokens($('#sq').value).length||$('#sKA').value)?'Nothing in the classified videos matches. Try fewer or different words, or pick a Knowledge Area.':'Type what the customer wants to study, or pick a Knowledge Area.')+'</div>'; return; }
+  const res=lsSearch(LSI,$('#sq').value,$('#sKA').value,$('#sConf').value,$('#sAppr').checked,LS_SEL);
+  $('#sStat').innerHTML=`<b>${res.length}</b> video${res.length===1?'':'s'} match &middot; searching ${c.sendable} sendable videos and ${c.moments} timed moments &middot; ${excl} steward-held or private video${excl===1?'':'s'} excluded &middot; ${c.approved} video${c.approved===1?'':'s'} and ${c.approvedMoments||0} moment${c.approvedMoments===1?'':'s'} approved, the rest are candidates &middot; index built ${esc(String(LSI.generated_utc||'').replace('T',' ').replace('Z',' UTC'))}`;
+  if(!res.length){ $('#sRes').innerHTML='<div class="res" style="color:var(--muted)">'+((lsTokens($('#sq').value).length||$('#sKA').value||LS_SEL)?'Nothing in the classified videos matches. Try fewer or different words, a wider topic in the tree, or clear the tree selection.':'Pick a topic in the tree on the left, type what the customer wants to study, or do both to search inside a topic.')+'</div>'; return; }
   $('#sRes').innerHTML=res.map(r=>{
     const a=r.a, all=lsShown[a.id], ms=all?r.moments:r.moments.slice(0,6);
     return `<div class="res" data-id="${esc(a.id)}">
       <h3><a href="${ytLink(a.id)}" target="_blank" rel="noopener">${esc(a.title)}</a></h3>
-      <div class="rb"><span class="pill ${a.verdict==='approved'?'appr':'cand'}">${a.verdict==='approved'?'Approved':'Candidate'}</span>
+      <div class="rb"><span class="pill ${a.verdict==='approved'?'appr':'cand'}">${a.verdict==='approved'?'Video approved':'Candidate'}</span>
         <span class="pill">${r.band===3?'Strong match':r.band===2?'Good match':'Partial match'}</span>
         <span class="pill">YouTube ${esc(a.youtube)}</span><span class="pill">${esc(a.primaryKA||'')}</span>
         <span>${esc(a.speaker&&a.speaker!=='Unknown'?a.speaker:'')} ${esc(a.date||'')}</span></div>
-      ${ms.map(x=>{const m=x.m, i=a.moments.indexOf(m); return `<label class="mom"><input type="checkbox" class="mck" data-i="${i}" checked>
+      ${ms.map(x=>{const m=x.m, i=(LSI.assets.find(z=>z.id===a.id)||a).moments.indexOf(m); return `<label class="mom"><input type="checkbox" class="mck" data-i="${i}" checked>
         <span class="tm"><a href="${ytLink(a.id,m.t)}" target="_blank" rel="noopener">${lsRange(m)}</a><small>${lsAbout(m.dur)}</small></span>
-        <span><span class="fc">${FACET_LABEL[m.f]||esc(m.f)}</span><span class="c${esc((m.conf||'L')[0])}">${esc(m.conf)}</span><br>${esc(m.tag)}<div class="ev">&ldquo;${esc(m.ev)}&rdquo;</div></span></label>`;}).join('')}
+        <span><span class="fc">${FACET_LABEL[m.f]||esc(m.f)}</span><span class="c${esc((m.conf||'L')[0])}">${esc(m.conf)}</span>${m.v==='approved'?'<span class="mok">&#10003; approved</span>':''}${m.g?('<span class="grp" title="'+(m.gk==='dmbok'?'DMBOK essential concept':'CDMP exam topic')+(m.gs==='proposed'?' (proposed mapping, not yet steward-approved)':'')+'">'+(m.gk==='dmbok'?'DMBOK: ':'CDMP: ')+esc(m.g[0])+(m.g[1]?(' \u203A '+esc(m.g[1])):'')+(m.gs==='proposed'?' \u00B7 proposed':'')+'</span>'):(m.w&&m.w!=='Other'?('<span class="grp" title="automatic word group">'+esc(m.w)+(m.w2&&m.w2!=='General'?(' \u203A '+esc(m.w2)):'')+'</span>'):'')}<br>${esc(m.tag)}<div class="ev">&ldquo;${esc(m.ev)}&rdquo;</div></span></label>`;}).join('')}
       <div class="resfoot"><button class="btn gh sadd">Add ticked moments to study list</button>
         ${r.moments.length>6?`<button class="minibtn smore">${all?'Show top 6':('Show all '+r.moments.length+' matching moments')}</button>`:''}</div>
     </div>`;}).join('');
 }
+const lsNormKA=k=>String(k||'').toLowerCase().replace(/modelling/g,'modeling').replace(/\band\b/g,'&').replace(/\s+/g,' ').trim();
+function lsReading(){ if(!LSI||!LSI.reading) return []; const kas=new Set(LS_LIST.map(v=>lsNormKA(v.ka))); return LSI.reading.filter(b=>kas.has(lsNormKA(b.knowledgeArea))); }
 function lsSaveList(){ try{ localStorage.setItem('mdaLAR.studyList',JSON.stringify({list:LS_LIST,cust:$('#slCust').value,req:$('#slReq').value})); }catch(_){ } }
 function lsRenderList(){
   const tot=LS_LIST.reduce((n,v)=>n+v.moments.reduce((k,m)=>k+(+m.dur||0),0),0), nm=LS_LIST.reduce((n,v)=>n+v.moments.length,0);
   $('#slItems').innerHTML=LS_LIST.length?LS_LIST.map((v,i)=>`<div class="sli"><button class="x" data-i="${i}" title="Remove">&times;</button><b>${esc(v.title)}</b>${v.moments.map(m=>`<div>${lsRange(m)} &middot; ${esc(m.tag)}</div>`).join('')}</div>`).join(''):'<div class="sli" style="color:var(--muted)">Nothing added yet. Search, tick the moments that fit, and add them.</div>';
   $('#slTot').textContent=LS_LIST.length?(LS_LIST.length+' video'+(LS_LIST.length===1?'':'s')+', '+nm+' moment'+(nm===1?'':'s')+', '+lsAbout(tot)+' of selected moments'):'';
+  const rn=lsReading().length; $('#slReadN').textContent=LS_LIST.length?(rn?('('+rn+' book'+(rn===1?'':'s')+')'):'(none listed for these areas)'):'';
   $('#slPrint').disabled=!LS_LIST.length; lsSaveList();
 }
 function lsAdd(card){
   const a=LSI.assets.find(x=>x.id===card.dataset.id); if(!a) return;
   const picked=Array.from(card.querySelectorAll('.mck:checked')).map(c=>a.moments[+c.dataset.i]);
   if(!picked.length){ toast('Tick at least one moment'); return; }
-  let v=LS_LIST.find(x=>x.id===a.id); if(!v){ v={id:a.id,title:a.title,moments:[]}; LS_LIST.push(v); }
+  let v=LS_LIST.find(x=>x.id===a.id); if(!v){ v={id:a.id,title:a.title,ka:a.primaryKA||'',moments:[]}; LS_LIST.push(v); }
   picked.forEach(m=>{ if(!v.moments.some(k=>k.t===m.t&&k.tag===m.tag)) v.moments.push({t:m.t,te:m.te,dur:m.dur,tag:m.tag,f:m.f}); });
   v.moments.sort((x,y)=>tsSec(x.t)-tsSec(y.t)); lsRenderList(); toast('Added to study list');
 }
@@ -792,6 +891,7 @@ function lsPrint(){
     <div class="pmeta">${$('#slReq').value.trim()?('Your request: '+esc($('#slReq').value.trim())+'<br>'):''}Modelware Systems and DAMA South Africa webinar recordings. Each line is a moment to watch: open the link and the video starts at that time. Selected moments total ${lsAbout(tot)}.</div>
     ${LS_LIST.map((v,i)=>`<h2>${i+1}. ${esc(v.title)}</h2><table><thead><tr><th style="width:26mm">Watch</th><th>What it covers</th><th style="width:62mm">Link (opens at this time)</th></tr></thead><tbody>
       ${v.moments.map(m=>`<tr><td>${lsRange(m)}<br><small>${lsAbout(m.dur)}</small></td><td>${esc(m.tag)}</td><td><a href="${ytLink(v.id,m.t)}">${esc(ytLink(v.id,m.t))}</a></td></tr>`).join('')}</tbody></table>`).join('')}
+    ${($('#slRead').checked&&lsReading().length)?('<h2>Recommended extra reading</h2><table><thead><tr><th style="width:44mm">Knowledge Area</th><th>Book</th><th style="width:62mm">Link</th></tr></thead><tbody>'+lsReading().map(b=>`<tr><td>${esc(b.knowledgeArea)}</td><td>${esc(b.title)}${b.author?('<br><small>'+esc(b.author)+(b.isbn?(' &middot; ISBN '+esc(b.isbn)):'')+'</small>'):''}</td><td>${b.url?`<a href="${esc(b.url)}">${esc(b.url)}</a>`:''}</td></tr>`).join('')+'</tbody></table>'):''}
     <div class="pfoot">Prepared ${esc(stamp)} SAST &middot; Modelware Learning Asset Reviewer v${esc(document.querySelector('meta[name="version"]').content)} &middot; times are approximate</div>`;
   window.print();
 }
@@ -804,6 +904,14 @@ function lsTab(which){
 $('#tabReview').addEventListener('click',()=>lsTab('review'));
 $('#tabSearch').addEventListener('click',()=>lsTab('search'));
 $('#sReload').addEventListener('click',lsLoadIndex);
+$('#sTree').addEventListener('click',e=>{ const n=e.target.closest('.tn'); if(!n) return;
+  if(n.dataset.role){ LS_SEL={mode:'role',role:n.dataset.role}; }
+  else { const key=n.dataset.key; if(e.target.dataset.tg||key==='Other roles'){ lsOpen[key]=!lsOpen[key]; lsRenderTree(); return; }
+    const same=LS_SEL&&LS_SEL.mode==='ka'&&LS_SEL.path.join('\u203A')===key; lsOpen[key]=same?!lsOpen[key]:true; LS_SEL={mode:'ka',path:key.split('\u203A')}; }
+  lsShown={}; lsRenderTree(); lsRender(); });
+$('#sTreeSel').addEventListener('click',e=>{ if(e.target.id==='tClear'){ LS_SEL=null; lsRenderTree(); lsRender(); } });
+$('#tByKA').addEventListener('click',()=>{ lsTreeMode='ka'; $('#tByKA').classList.add('on'); $('#tByRole').classList.remove('on'); lsRenderTree(); });
+$('#tByRole').addEventListener('click',()=>{ lsTreeMode='role'; $('#tByRole').classList.add('on'); $('#tByKA').classList.remove('on'); lsRenderTree(); });
 let lsTimer; $('#sq').addEventListener('input',()=>{ clearTimeout(lsTimer); lsTimer=setTimeout(lsRender,180); });
 ['#sKA','#sConf','#sAppr'].forEach(k=>$(k).addEventListener('change',lsRender));
 $('#sRes').addEventListener('click',e=>{ const card=e.target.closest('.res'); if(!card) return;

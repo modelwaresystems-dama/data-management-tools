@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta name="version" content="1.12.2">
+<meta name="version" content="1.13.0">
 <meta name="mw-asset" content="true">
-<meta name="updated" content="2026-11-17T15:47:39+02:00">
+<meta name="updated" content="2026-11-17T17:48:12+02:00">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MoWeb Learning Asset Reviewer</title>
@@ -740,31 +740,32 @@ function lsHits(text,toks){ const t=String(text||'').toLowerCase(); return toks.
    Knowledge Area > CDMP category > CDMP concept        (m.g, proposed mapping from the private repo), or
    Knowledge Area > [Other topics >] word group [> sub]  (m.w / m.w2, automatic, not governed). */
 let LS_SEL=null, lsTreeMode='ka', lsOpen={}, LS_CDMP=new Set();
-const LS_AUX=new Set(['Other topics','Other','General','Other roles']);
+const LS_AUX=new Set(['Other topics','Other activities','Other','General','Other roles']);
+const LS_RANK={'Activities':1,'Audience':2,'Other topics':3,'Other activities':3,'Other':3,'General':3};
 function lsPathOf(a,m){
   if(m.g) return [a.primaryKA,m.g[0]].concat(m.g[1]?[m.g[1]]:[]);
-  if(m.w) return (LS_CDMP.has(a.primaryKA)?[a.primaryKA,'Other topics',m.w]:[a.primaryKA,m.w]).concat(m.w2?[m.w2]:[]);
+  if(m.w) return (m.act?[a.primaryKA,'Activities','Other activities',m.w]:LS_CDMP.has(a.primaryKA)?[a.primaryKA,'Other topics',m.w]:[a.primaryKA,m.w]).concat(m.w2?[m.w2]:[]);
   return null;
 }
 function lsInSel(a,m,sel){ if(sel.mode==='role') return m.f==='ka'; const p=lsPathOf(a,m); return !!p && sel.path.every((x,i)=>p[i]===x); }
 function lsBuildTree(){
-  LS_CDMP=new Set(); LSI.assets.forEach(a=>{ if(a.sendable && a.moments.some(m=>m.g)) LS_CDMP.add(a.primaryKA); });
+  LS_CDMP=new Set(); LSI.assets.forEach(a=>{ if(a.sendable && a.moments.some(m=>m.g&&(m.gk==='cdmp'||m.gk==='dmbok'))) LS_CDMP.add(a.primaryKA); });
   const root={kids:{}}, add=(node,name)=>node.kids[name]||(node.kids[name]={name,kids:{},vids:new Set(),n:0,gov:false});
   LSI.assets.forEach(a=>{ if(!a.sendable) return; a.moments.forEach(m=>{ if(m.v==='rejected') return; const p=lsPathOf(a,m); if(!p) return;
     let node=root; p.forEach((x,i)=>{ node=add(node,x); node.vids.add(a.id); node.n++; if(m.g&&i>0) node.gov=true; }); }); });
   const roles={}; LSI.assets.forEach(a=>{ if(a.sendable) (a.roles||[]).forEach(r=>{ (roles[r]||(roles[r]=new Set())).add(a.id); }); });
   LSI._tree=root; LSI._roles=roles;
 }
-function lsSortKids(node,depth){ return Object.values(node.kids).sort((x,y)=>(LS_AUX.has(x.name)-LS_AUX.has(y.name))||(depth===0?(y.vids.size-x.vids.size):((y.gov-x.gov)||(y.n-x.n)))||x.name.localeCompare(y.name)); }
+function lsSortKids(node,depth){ return Object.values(node.kids).sort((x,y)=>((LS_RANK[x.name]||0)-(LS_RANK[y.name]||0))||(depth===0?(y.vids.size-x.vids.size):((y.gov-x.gov)||(y.n-x.n)))||x.name.localeCompare(y.name)); }
 function lsRenderTree(){
   if(!LSI) return; const selKey=LS_SEL?(LS_SEL.mode==='role'?('role›'+LS_SEL.role):LS_SEL.path.join('›')):'';
   let h='';
   if(lsTreeMode==='ka'){
     const walk=(node,depth,prefix)=>{ lsSortKids(node,depth).forEach(k=>{ const key=prefix?prefix+'›'+k.name:k.name, has=Object.keys(k.kids).length>0, open=!!lsOpen[key];
-      h+=`<div class="tn d${depth} ${key===selKey?'sel':''} ${LS_AUX.has(k.name)?'aux':''}" data-key="${esc(key)}" style="padding-left:${4+depth*15}px"><span class="tg" data-tg="1">${has?(open?'&#9662;':'&#9656;'):''}</span><span class="tl">${esc(k.name)}</span><span class="tc" title="videos / moments">${k.vids.size} / ${k.n}</span></div>`;
+      h+=`<div class="tn d${depth} ${key===selKey?'sel':''} ${(LS_AUX.has(k.name)||(depth===1&&LS_RANK[k.name]))?'aux':''}" data-key="${esc(key)}" style="padding-left:${4+depth*15}px"><span class="tg" data-tg="1">${has?(open?'&#9662;':'&#9656;'):''}</span><span class="tl">${esc(k.name)}</span><span class="tc" title="videos / moments">${k.vids.size} / ${k.n}</span></div>`;
       if(has&&open) walk(k,depth+1,key); }); };
     walk(LSI._tree,0,'');
-    $('#sTreeHint').textContent='Counts are videos / timed moments. Named topics under a Knowledge Area come from the CDMP exam categories or the DMBOK essential concepts, as proposed mappings. "Other topics" and plain word groups are automatic, not governed.';
+    $('#sTreeHint').textContent='Counts are videos / timed moments. Named topics come from the CDMP exam categories or the DMBOK essential concepts; Activities are the DMBOK activities; Audience is the five personas. All are proposed mappings. "Other" branches and plain word groups are automatic, not governed.';
   } else {
     const rs=Object.entries(LSI._roles).sort((x,y)=>y[1].size-x[1].size||x[0].localeCompare(y[0])), main=rs.filter(r=>r[1].size>1), rest=rs.filter(r=>r[1].size<=1);
     const row=(r,d)=>`<div class="tn d${d} ${('role›'+r[0])===selKey?'sel':''}" data-role="${esc(r[0])}" style="padding-left:${4+d*15}px"><span class="tg"></span><span class="tl">${esc(r[0])}</span><span class="tc" title="videos">${r[1].size}</span></div>`;
@@ -861,7 +862,7 @@ function lsRender(){
         <span>${esc(a.speaker&&a.speaker!=='Unknown'?a.speaker:'')} ${esc(a.date||'')}</span></div>
       ${ms.map(x=>{const m=x.m, i=(LSI.assets.find(z=>z.id===a.id)||a).moments.indexOf(m); return `<label class="mom"><input type="checkbox" class="mck" data-i="${i}" checked>
         <span class="tm"><a href="${ytLink(a.id,m.t)}" target="_blank" rel="noopener">${lsRange(m)}</a><small>${lsAbout(m.dur)}</small></span>
-        <span><span class="fc">${FACET_LABEL[m.f]||esc(m.f)}</span><span class="c${esc((m.conf||'L')[0])}">${esc(m.conf)}</span>${m.v==='approved'?'<span class="mok">&#10003; approved</span>':''}${m.g?('<span class="grp" title="'+(m.gk==='dmbok'?'DMBOK essential concept':'CDMP exam topic')+(m.gs==='proposed'?' (proposed mapping, not yet steward-approved)':'')+'">'+(m.gk==='dmbok'?'DMBOK: ':'CDMP: ')+esc(m.g[0])+(m.g[1]?(' \u203A '+esc(m.g[1])):'')+(m.gs==='proposed'?' \u00B7 proposed':'')+'</span>'):(m.w&&m.w!=='Other'?('<span class="grp" title="automatic word group">'+esc(m.w)+(m.w2&&m.w2!=='General'?(' \u203A '+esc(m.w2)):'')+'</span>'):'')}<br>${esc(m.tag)}<div class="ev">&ldquo;${esc(m.ev)}&rdquo;</div></span></label>`;}).join('')}
+        <span><span class="fc">${FACET_LABEL[m.f]||esc(m.f)}</span><span class="c${esc((m.conf||'L')[0])}">${esc(m.conf)}</span>${m.v==='approved'?'<span class="mok">&#10003; approved</span>':''}${m.g?('<span class="grp" title="'+({dmbok:'DMBOK essential concept','dmbok-activity':'DMBOK activity',persona:'Audience persona'}[m.gk]||'CDMP exam topic')+(m.gs==='proposed'?' (proposed mapping, not yet steward-approved)':'')+'">'+({dmbok:'DMBOK: ','dmbok-activity':'Activity: ',persona:'Audience: '}[m.gk]||'CDMP: ')+esc((m.gk==='dmbok-activity'||m.gk==='persona')?(m.g[1]||m.g[0]):(m.g[0]+(m.g[1]?(' \u203A '+m.g[1]):'')))+(m.gs==='proposed'?' \u00B7 proposed':'')+'</span>'):(m.w&&m.w!=='Other'?('<span class="grp" title="automatic word group">'+esc(m.w)+(m.w2&&m.w2!=='General'?(' \u203A '+esc(m.w2)):'')+'</span>'):'')}<br>${esc(m.tag)}<div class="ev">&ldquo;${esc(m.ev)}&rdquo;</div></span></label>`;}).join('')}
       <div class="resfoot"><button class="btn gh sadd">Add ticked moments to study list</button>
         ${r.moments.length>6?`<button class="minibtn smore">${all?'Show top 6':('Show all '+r.moments.length+' matching moments')}</button>`:''}</div>
     </div>`;}).join('');

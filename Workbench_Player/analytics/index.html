@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.1.1">
-<meta name="build" content="2026-11-24 18:09 SAST">
+<meta name="version" content="1.1.2">
+<meta name="build" content="2026-11-24 18:32 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -354,7 +354,7 @@ var CORE = (function(){
   // ---- Moodle join (enrol + grade-items) -> per-student Moodle columns ----
   function parseMoodleCourse(enrolJson, gradeJson){
     var users={};
-    (enrolJson||[]).forEach(function(u){
+    (Array.isArray(enrolJson)?enrolJson:[]).forEach(function(u){
       var key=nameKey(u.fullname);
       users[key]={ name:u.fullname, username:u.username||null, email:u.email||null,
         lastaccess:u.lastaccess||u.lastcourseaccess||0, roles:(u.roles||[]).map(function(r){return r.shortname;}),
@@ -392,7 +392,7 @@ var CORE = (function(){
       roles:roles||[], lastaccess:la||0, enrolled:true, grade:null,
       quizzes:[], quizItems:0, quizGraded:0, quizAvg:null, quizCompletion:null,
       pre:[], post:[], preAvg:null, postAvg:null, uplift:null }; }
-    (enrolJson||[]).forEach(function(u){
+    (Array.isArray(enrolJson)?enrolJson:[]).forEach(function(u){
       byId[u.id]=blank(u.id, u.fullname, u.username, (u.roles||[]).map(function(r){return r.shortname;}),
         u.lastcourseaccess||u.lastaccess||0);
     });
@@ -1198,10 +1198,14 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var keys=Object.keys(state.map||{}); if(!keys.length){ setStatus('Map a cohort to a Moodle course first (Moodle ⚙).', true); return; }
     setStatus('Pulling Moodle enrolment + grades…', true);
     var merged={};
-    for(var i=0;i<keys.length;i++){ var id=state.map[keys[i]];
+    for(var i=0;i<keys.length;i++){ var e=state.map[keys[i]]; var id=mapCourseId(e); var gid=mapGroupId(e);
+      if(!id) continue;
       try{
         var enrol=await fetchJSON(MOODLE+"?fn=enroll&courseid="+encodeURIComponent(id));
-        var grades=await fetchJSON(MOODLE+"?fn=grades&courseid="+encodeURIComponent(id)+"&userid=0");
+        var grades=await fetchJSON(MOODLE+"?fn=grades&courseid="+encodeURIComponent(id)+"&userid=0").catch(function(){ return {}; });
+        var mids = gid? await fetchGroupMemberIds(gid) : null;
+        if(mids && Array.isArray(enrol)) enrol=enrol.filter(function(u){ return mids[u.id]; });
+        if(mids && grades && Array.isArray(grades.usergrades)) grades={usergrades:grades.usergrades.filter(function(g){ return mids[g.userid]; })};
         var users=CORE.parseMoodleCourse(enrol, grades);
         Object.keys(users).forEach(function(k){ merged[k]=users[k]; });
       }catch(e){ setStatus('Moodle pull failed for '+esc(keys[i])+': '+esc(e.message), true); return; }

@@ -1,4 +1,5 @@
 /* ============================================================
+   Version: 1.1.0 · 2026-11-24 07:58 SAST  (added sessionsApi + moodleApi)
    PUBLIC config — safe to commit. Contains NO secrets/keys.
    Both URLs point at your PRIVATE backend (Netlify), where the
    real Ably key lives as a server-side environment variable.

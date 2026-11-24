@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.0.1">
-<meta name="build" content="2026-11-24 16:07 SAST">
+<meta name="version" content="1.0.2">
+<meta name="build" content="2026-11-24 16:13 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -223,7 +223,10 @@ var CORE = (function(){
       var k=f.playerKey+"|"+f.cohort+"|"+(f.quizPath||f.quizTitle)+"|"+f.quizIndex;
       var cur=by[k];
       if(!cur){ by[k]=f; return; }
-      var better = rank(f.source)>rank(cur.source) || (rank(f.source)===rank(cur.source) && num(f.answered)>num(cur.answered));
+      // A real attempt (more answered) always beats a stale 0/0/0; then newer save wins; then completed>active.
+      var better = num(f.answered)>num(cur.answered)
+        || (num(f.answered)===num(cur.answered) && String(f.at||"")>String(cur.at||""))
+        || (num(f.answered)===num(cur.answered) && String(f.at||"")===String(cur.at||"") && rank(f.source)>rank(cur.source));
       if(better) by[k]=f;
     });
     return Object.keys(by).map(function(k){ return by[k]; });
@@ -306,10 +309,11 @@ var CORE = (function(){
   function quizRuns(facts){
     var byRun={};
     facts.forEach(function(f){
-      var r=byRun[f.runId]||(byRun[f.runId]={runId:f.runId, at:f.at, cohort:f.cohort, course:f.course, quizTitle:f.quizTitle, quizPath:f.quizPath, source:f.source, players:{}, ans:0,corr:0,q:0});
+      var key=f.runId+"||"+(f.quizPath||f.quizTitle); // one row per quiz per run, not per whole session
+      var r=byRun[key]||(byRun[key]={runId:f.runId, at:f.at, cohort:f.cohort, course:f.course, quizTitle:f.quizTitle, quizPath:f.quizPath, source:f.source, players:{}, ans:0,corr:0,q:0});
       r.players[f.playerKey]=true; r.ans+=num(f.answered); r.corr+=num(f.correct); r.q+=num(f.questions);
     });
-    var rows=Object.keys(byRun).map(function(k){ var r=byRun[k]; r.participants=Object.keys(r.players).length; r.engagement=pct(r.ans,r.q); r.score=pct(r.corr,r.q); return r; });
+    var rows=Object.keys(byRun).map(function(k){ var r=byRun[k]; r.participants=Object.keys(r.players).length; r.engagement=pct(r.ans,r.q); r.score=pct(r.corr,r.q); return r; }).filter(function(r){ return r.q>0; }); // drop not-yet-attempted quizzes
     // group rows by quiz title for trend
     var byQuiz={};
     rows.forEach(function(r){ (byQuiz[r.quizTitle]||(byQuiz[r.quizTitle]=[])).push(r); });

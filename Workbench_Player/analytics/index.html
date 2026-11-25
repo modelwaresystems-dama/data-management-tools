@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.1.3">
-<meta name="build" content="2026-11-24 18:37 SAST">
+<meta name="version" content="1.1.4">
+<meta name="build" content="2026-11-25 05:33 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -1052,7 +1052,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
           '<td class="num faint">'+b.quiz_persistence+'</td>'+
           '<td class="num faint">'+b.forum_engagement+'</td></tr>';
       }).join("");
-      var warn=noData?'<div class="banner" style="border-color:var(--bad)"><b>SES can\'t be computed yet.</b> Moodle returned no quiz-attempt or activity-completion data, so every effort score is 0 and the tiers would be meaningless — so they are hidden. Enable <code class="k">mod_quiz_get_user_attempts</code> and <code class="k">core_completion_get_activities_completion_status</code> on the <b>PowerBI Grade Export</b> service, and make sure the token user can view reports (Manager / teacher level). Grades load fine; only the effort signals are missing.</div>':'';
+      var dmsg=''; if(noData){ var _dp=[]; if(meta.attErr)_dp.push('quiz attempts → “'+esc(meta.attErr)+'”'); if(meta.compErr)_dp.push('completion → “'+esc(meta.compErr)+'”'); if(_dp.length)dmsg='<br><b>Moodle&#39;s actual response:</b> '+_dp.join(' · '); }
+      var warn=noData?'<div class="banner" style="border-color:var(--bad)"><b>SES can\'t be computed yet.</b> Moodle returned no quiz-attempt or activity-completion data, so every effort score is 0 and the tiers would be meaningless — so they are hidden. Enable <code class="k">mod_quiz_get_user_attempts</code> and <code class="k">core_completion_get_activities_completion_status</code> on the <b>PowerBI Grade Export</b> service, and make sure the token user can view reports (Manager / teacher level). Grades load fine; only the effort signals are missing.'+dmsg+'</div>':'';
       body=warn+'<p class="note">'+(meta.students||rows.length)+' students · '+(meta.quizzes||0)+' quizzes · forums '+(meta.hasForums?'included':'none (reweighted)')+' · quiz attempts seen: '+(meta.nAttempts||0)+' · completion records: '+(meta.nStatuses||0)+'.</p>'+
         '<div class="flex"><div class="grow"><div class="scroll"><table><thead><tr><th>Student</th><th class="num">SES</th><th class="num">Grade</th><th>Tier</th><th class="num">Compl</th><th class="num">Dur</th><th class="num">Persist</th><th class="num">Forum</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'+
         '<div style="min-width:360px">'+sesScatter(state.ses)+tierLegend()+'</div></div>';
@@ -1090,13 +1091,16 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
         if(tot) courseGrades[id]= (tot.percentageformatted!=null?pctNumUI(tot.percentageformatted):ratioUI(tot.graderaw,tot.grademax))||0;
       });
 
-      var completions={}, attempts={};
+      var completions={}, attempts={}, compErr=null, attErr=null;
+      function moodleErr(o){ return (o&&(o.exception||o.errorcode))?(o.message||o.errorcode||'Moodle error'):null; }
       for(var i=0;i<students.length;i++){ var uid=students[i].id;
         setStatus('Computing SES — student '+(i+1)+'/'+students.length+'…', true);
         completions[uid]=await fetchJSON(MOODLE+"?fn=completion&courseid="+encodeURIComponent(courseid)+"&userid="+uid).catch(function(){ return {statuses:[]}; });
+        if(!compErr) compErr=moodleErr(completions[uid]);
         attempts[uid]={};
         for(var j=0;j<quizzes.length;j++){ var qid=quizzes[j].id;
           var aw=await fetchJSON(MOODLE+"?fn=attempts&quizid="+encodeURIComponent(qid)+"&userid="+uid).catch(function(){ return {}; });
+          if(!attErr) attErr=moodleErr(aw);
           attempts[uid][qid]=(aw&&aw.attempts)||[];
         }
       }
@@ -1123,7 +1127,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
         forum_discussions:discussions, forum_posts_by_discussion:postsByDisc, course_grades:courseGrades };
       var _nSt=0,_nAt=0; Object.keys(completions).forEach(function(u){ _nSt+=((completions[u]&&completions[u].statuses)||[]).length; }); Object.keys(attempts).forEach(function(u){ Object.keys(attempts[u]||{}).forEach(function(q){ _nAt+=(((attempts[u]||{})[q])||[]).length; }); });
       state.ses=CORE.computeSES(payload);
-      state.sesMeta={ students:students.length, quizzes:quizzes.length, hasForums:hasForums, nStatuses:_nSt, nAttempts:_nAt, noEffortData:(_nSt===0&&_nAt===0) };
+      state.sesMeta={ students:students.length, quizzes:quizzes.length, hasForums:hasForums, nStatuses:_nSt, nAttempts:_nAt, noEffortData:(_nSt===0&&_nAt===0), compErr:compErr, attErr:attErr };
       await saveSnapshot("ses-"+courseid+".json", { courseid:courseid, computedAt:new Date().toISOString(), meta:state.sesMeta, results:state.ses });
       setStatus('', false); state.tab="ses"; syncTabs(); render();
     }catch(e){ setStatus('SES computation failed: '+esc(e.message)+'. Check the Worker /moodle route and that your token allows the quiz/completion/forum functions.', true); }

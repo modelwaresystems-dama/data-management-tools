@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.6.1">
-<meta name="build" content="2026-11-25 08:51 SAST">
+<meta name="version" content="1.7.0">
+<meta name="build" content="2026-11-25 08:57 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -1091,6 +1091,62 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     return head+cards+matrix+stackedQuizBars(S, quizNames)+comboCompletionScore(S)+table+'</div>';
   }
 
+  // ---- Certificates (branded print → PDF; mirrors the Live Player, fed with Moodle grade + SES) ----
+  function certCfg(){
+    var d={org:"Modelware Systems",sub:"datasherpa · DAMA South Africa",presenter:"[Presenter name]",role:"Facilitator",signatureImg:"",logoImg:"",accent:"#0E8F7E"};
+    try{var s=JSON.parse(localStorage.getItem("ds_cert_cfg")||"{}");if(s&&typeof s==="object")Object.keys(s).forEach(function(k){if(s[k]!=null&&s[k]!=="")d[k]=s[k];});}catch(e){}
+    return d;
+  }
+  function certGradeTier(g,B){ B=B||bandLines(); if(g==null) return {name:"Attended",cls:"t-attend"}; if(g>=B.master) return {name:"Master Pass",cls:"t-master"}; if(g>=B.practitioner) return {name:"Practitioner",cls:"t-pract"}; if(g>=B.associate) return {name:"Associate",cls:"t-assoc"}; return {name:"Attended",cls:"t-attend"}; }
+  function produceCertificates(){
+    var d=state.cohortDetail[state.cohortSel];
+    if(!d || !d.students || !d.students.length){ setStatus("No cohort data yet — pick a cohort and click <b>↻ Refresh</b> first, then try certificates again.", true); return; }
+    var cfg=certCfg(), accent=cfg.accent||"#0E8F7E", B=bandLines();
+    var courseName=deEntity(d.courseName||state.cohortSel), cohort=deEntity(d.groupName||state.cohortSel);
+    var dateStr=new Date().toLocaleDateString(undefined,{year:"numeric",month:"long",day:"numeric"});
+    var sesByName={}; (state.ses||[]).forEach(function(r){ sesByName[CORE.nameKey(r.fullname)]=r; });
+    var recips=d.students.map(function(s){
+      var sr=sesByName[CORE.nameKey(s.name)];
+      return { name:s.name,
+        grade:(s.grade==null?null:Math.round(s.grade)),
+        tier:certGradeTier(s.grade,B),
+        ses:(sr&&sr.ses!=null?Math.round(sr.ses):null),
+        sestier:(sr?sr.tier:null),
+        uplift:(s.uplift==null?null:Math.round(s.uplift)),
+        completion:(s.quizCompletion==null?null:Math.round(s.quizCompletion)) };
+    });
+    recips.sort(function(a,b){ return (b.grade||0)-(a.grade||0) || (b.ses||0)-(a.ses||0) || a.name.localeCompare(b.name); });
+    var logo = cfg.logoImg ? '<img class="logoimg" src="'+esc(cfg.logoImg)+'" alt="">' : '<div class="logoph">LOGO</div>';
+    var sig = cfg.signatureImg ? '<img class="sigimg" src="'+esc(cfg.signatureImg)+'" alt="">' : '<div class="sigph"></div>';
+    var certs=recips.map(function(r){
+      var sesTxt = r.ses==null? '' : '<span>SES <b>'+r.ses+'</b>'+(r.sestier?' · '+esc(r.sestier):'')+'</span>';
+      var upTxt = r.uplift==null? '' : '<span>uplift <b>'+(r.uplift>=0?'+':'')+r.uplift+'%</b></span>';
+      var compTxt = r.completion==null? '' : '<span><b>'+r.completion+'%</b> completion</span>';
+      return '<section class="cert"><div class="frame '+r.tier.cls+'">'
+        +'<div class="watermark">'+esc(cfg.org)+'</div>'
+        +'<div class="ch"><div class="logo">'+logo+'</div><div class="org"><div class="o1">'+esc(cfg.org)+'</div><div class="o2">'+esc(cfg.sub)+'</div></div></div>'
+        +'<div class="ttl">Certificate of Achievement</div>'
+        +'<div class="tier">'+esc(r.tier.name)+'</div>'
+        +'<div class="pre">This is proudly presented to</div>'
+        +'<div class="who">'+esc(r.name)+'</div>'
+        +'<div class="bdy">for completing <b>'+esc(courseName)+'</b>'+(cohort?' — '+esc(cohort):'')+', assessed on '+esc(dateStr)+'.</div>'
+        +'<div class="stats"><span><b>'+(r.grade==null?'–':r.grade+'%')+'</b> grade</span>'+sesTxt+upTxt+compTxt+'</div>'
+        +'<div class="cf"><div class="sig">'+sig+'<div class="sigline"></div><div class="signame">'+esc(cfg.presenter)+'</div><div class="sigrole">'+esc(cfg.role)+'</div></div>'
+        +'<div class="seal"><div class="sealscore">'+(r.grade==null?'–':r.grade+'%')+'</div><div class="sealtier">'+esc(r.tier.name)+'</div></div></div>'
+        +'</div></section>';
+    }).join("");
+    var sumRows=recips.map(function(r){ return '<tr><td>'+esc(r.name)+'</td><td class="n">'+(r.grade==null?'–':r.grade+'%')+'</td><td>'+esc(r.tier.name)+'</td><td class="n">'+(r.ses==null?'–':r.ses)+'</td><td>'+esc(r.sestier||'–')+'</td><td class="n">'+(r.uplift==null?'–':(r.uplift>=0?'+':'')+r.uplift+'%')+'</td><td class="n">'+(r.completion==null?'–':r.completion+'%')+'</td></tr>'; }).join("");
+    var summary='<section class="cert summary"><div class="sumwrap"><h1>'+esc(courseName)+(cohort?' — '+esc(cohort):'')+'</h1><div class="sumsub">Cohort results · '+esc(dateStr)+' · '+recips.length+' students</div>'
+      +'<table class="sumtbl"><thead><tr><th>Name</th><th>Grade</th><th>Certificate</th><th>SES</th><th>Effort tier</th><th>Uplift</th><th>Completion</th></tr></thead><tbody>'+sumRows+'</tbody></table>'
+      +'<div class="legend"><b>Certificate bands (course grade):</b> Master Pass &ge; '+B.master+'% &middot; Practitioner '+B.practitioner+'&ndash;'+(B.master-1)+'% &middot; Associate '+B.associate+'&ndash;'+(B.practitioner-1)+'% &middot; Attended &lt; '+B.associate+'%. &nbsp; <b>SES</b> = blended Student Effort Score (0&ndash;100); the effort tier blends live-quiz participation with Moodle signals.</div></div></section>';
+    var css='<style>*{box-sizing:border-box;margin:0;padding:0}:root{--acc:'+accent+'}body{font-family:Georgia,"Times New Roman",serif;color:#1a2330;background:#50606f}@page{size:A4 landscape;margin:0}.cert{width:297mm;height:210mm;page-break-after:always;display:flex;align-items:center;justify-content:center;padding:12mm;background:#fff}.cert:last-child{page-break-after:auto}.frame{position:relative;width:100%;height:100%;border:3px solid var(--acc);outline:1px solid var(--acc);outline-offset:5px;border-radius:4px;padding:15mm 20mm;display:flex;flex-direction:column;align-items:center;text-align:center;overflow:hidden}.watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:120px;font-weight:bold;color:var(--acc);opacity:.045;letter-spacing:4px;pointer-events:none;white-space:nowrap}.ch{display:flex;align-items:center;gap:14px;margin-bottom:5mm}.logoimg{height:52px}.logoph{width:120px;height:52px;border:1.5px dashed #9aa7b4;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9aa7b4;font-family:Arial,sans-serif;font-size:12px;letter-spacing:2px}.org .o1{font-size:20px;font-weight:bold;color:var(--acc)}.org .o2{font-size:12px;color:#6b7785;font-family:Arial,sans-serif;letter-spacing:.5px}.ttl{font-size:16px;letter-spacing:5px;text-transform:uppercase;color:#6b7785;font-family:Arial,sans-serif;margin-top:1mm}.tier{font-size:38px;font-weight:bold;color:var(--acc);margin:1mm 0 4mm}.pre{font-size:15px;font-style:italic;color:#55616e}.who{font-size:42px;font-weight:bold;margin:3mm 0;padding-bottom:3mm;border-bottom:2px solid var(--acc);min-width:55%}.bdy{font-size:17px;line-height:1.5;max-width:210mm;color:#333}.stats{display:flex;gap:9mm;margin-top:5mm;font-family:Arial,sans-serif;font-size:13px;color:#55616e;align-items:baseline;flex-wrap:wrap;justify-content:center}.stats b{color:var(--acc);font-size:16px}.cf{display:flex;justify-content:space-between;align-items:flex-end;width:100%;margin-top:auto}.sig{text-align:center;min-width:70mm}.sigimg{height:42px;margin-bottom:2px}.sigph{height:42px}.sigline{border-top:1.5px solid #333;width:70mm;margin:0 auto}.signame{font-size:15px;font-weight:bold;margin-top:4px}.sigrole{font-size:12px;color:#6b7785;font-family:Arial,sans-serif}.seal{width:34mm;height:34mm;border-radius:50%;border:3px double var(--acc);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--acc);flex:none}.sealscore{font-size:26px;font-weight:bold;line-height:1}.sealtier{font-size:9px;font-family:Arial,sans-serif;text-transform:uppercase;letter-spacing:1px;margin-top:3px;max-width:30mm}.summary{align-items:flex-start}.summary .sumwrap{width:100%;font-family:Arial,sans-serif;padding:4mm}.summary h1{font-family:Georgia,serif;color:var(--acc);font-size:28px}.sumsub{color:#6b7785;margin:4px 0 8mm;font-size:14px}.sumtbl{width:100%;border-collapse:collapse;font-size:13px}.sumtbl th{background:var(--acc);color:#fff;text-align:left;padding:8px 10px}.sumtbl td{padding:7px 10px;border-bottom:1px solid #dce3ea}.sumtbl td.n{text-align:right;font-variant-numeric:tabular-nums}.legend{margin-top:8mm;font-size:12px;color:#55616e;line-height:1.7}@media screen{body{padding:20px}.cert{box-shadow:0 4px 20px rgba(0,0,0,.3);margin:0 auto 20px}}</style>';
+    var html='<!doctype html><html><head><meta charset="utf-8"><title>Certificates — '+esc(courseName)+'</title>'+css
+      +'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.focus();window.print();},350);};<\/scr'+'ipt></head><body>'+certs+summary+'</body></html>';
+    var w=window.open("","_blank");
+    if(w){ w.document.open(); w.document.write(html); w.document.close(); return; }
+    setStatus("Please allow pop-ups for this site to open the printable certificates, then try again.", true);
+  }
+
   // ---- Student Effort Score (SES) view ----
   var TIERCLASS={ "Thriving":"good", "Struggling (High Effort)":"warn", "Coasting":"warn", "At-Risk (Disengaged)":"bad", "Moderate / Developing":"" };
   var TIERCOLOR={ "Thriving":"var(--good)", "Struggling (High Effort)":"var(--accent)", "Coasting":"var(--gold)", "At-Risk (Disengaged)":"var(--bad)", "Moderate / Developing":"var(--faint)" };
@@ -1139,7 +1195,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     } else {
       body='<div class="empty">No cached Student Effort Score for this cohort yet — click <b>↻ Refresh</b> (top right).</div>';
     }
-    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. Plotted against course grade to flag intervention tiers.</p><div class="toolbar">'+picker+'</div>'+body+'</div>';
+    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. Plotted against course grade to flag intervention tiers.</p><div class="toolbar">'+picker+' <button class="btn primary" id="makeCerts" title="Produce printable branded certificates (PDF) for every registered student in this cohort — grade tier, SES score and summary">&#128220; Produce certificates</button></div>'+body+'</div>';
   }
 
   function idByName(students, name){ var k=CORE.nameKey(name); var s=students.find(function(x){ return CORE.nameKey(x.fullname)===k; }); return s?s.id:null; }
@@ -1309,6 +1365,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   document.addEventListener("click", function(e){
     var t=e.target.closest('.tab'); if(t){ state.tab=t.getAttribute('data-t'); syncTabs(); render(); return; }
     var cr=e.target.closest('[data-pick-cohort]'); if(cr){ selectCohort(cr.getAttribute('data-pick-cohort')); return; }
+    if(e.target.closest && e.target.closest('#makeCerts')){ produceCertificates(); return; }
   });
   document.addEventListener("change", function(e){
     if(e.target.id==="cohortSel"){ selectCohort(e.target.value); }

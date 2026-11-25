@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.4.1">
-<meta name="build" content="2026-11-25 08:30 SAST">
+<meta name="version" content="1.5.0">
+<meta name="build" content="2026-11-25 08:39 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -29,7 +29,7 @@
   .wrap{flex:1;width:100%;max-width:min(1800px,96vw);margin:0 auto;padding:clamp(14px,2.5vw,26px) clamp(14px,3vw,26px) 60px;}
   .eyebrow{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink);margin:0 0 6px;}
   h1{font-family:"Sora";font-weight:800;font-size:clamp(22px,3.4vw,30px);line-height:1.08;margin:0 0 4px;}
-  p.lead{color:var(--muted);font-size:14.5px;margin:0 0 18px;max-width:72ch;}
+  p.lead{color:var(--muted);font-size:14.5px;margin:0 0 14px;max-width:none;}
   /* KPI row */
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0 0 18px;}
   .kpi{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow);}
@@ -108,7 +108,7 @@
   <div class="wrap">
     <p class="eyebrow">Training Utilities · engagement</p>
     <h1>Student engagement across your live quizzes</h1>
-    <p class="lead">Reads your saved live-session results straight from the private repo (no CSV export), and — when connected — joins Moodle enrolment, grades and group membership per student. Live-quiz views (per-student, drop-off, runs, cohorts, effort) plus Moodle views: <b>Assessment</b> (Pre/Post/Uplift vs certification bands) and <b>Quizzes</b> (per-quiz score + completion). The cohort is the Moodle group you pick.</p>
+    <p class="lead">Live-quiz engagement from your saved sessions, joined with Moodle enrolment, grades, groups, pre/post uplift and effort (SES). Pick a cohort (the Moodle group) to drive every tab.</p>
 
     <div id="status" class="banner" style="display:none"></div>
 
@@ -662,8 +662,10 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   function buildFilters(){
     var courses={}, cohorts={};
     state.facts.forEach(function(f){ if(f.course) courses[f.course]=1; cohorts[f.cohort]=1; });
+    Object.keys(state.map||{}).forEach(function(c){ cohorts[c]=1; });
     var cS=document.getElementById("fCourse"); cS.length=1; Object.keys(courses).sort().forEach(function(c){ cS.appendChild(opt(c,c)); });
     var hS=document.getElementById("fCohort"); hS.length=1; Object.keys(cohorts).sort().forEach(function(c){ hS.appendChild(opt(c,c)); });
+    if(state.cohortSel){ hS.value=state.cohortSel; }
   }
 
   function currentFacts(){
@@ -769,7 +771,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var rows=list.map(function(c){
       var mc=(state.moodleData.cohorts||{})[c.cohort];
       var refresh = (mc && mc.refreshedAt) ? (esc(lastRefreshStr(c.cohort))+(mc.inRepo?' <span style="color:var(--good)" title="saved in '+esc((mc.repoPath||'').split('/').pop())+'">✓</span>':'')) : '<span class="faint">never</span>';
-      return '<tr><td class="name">'+esc(c.cohort)+'</td>'+
+      return '<tr data-pick-cohort="'+esc(c.cohort)+'" style="cursor:pointer" title="Click to work with this cohort across all tabs"><td class="name">'+esc(c.cohort)+'</td>'+
         '<td class="muted">'+esc(c.course||'–')+'</td>'+
         '<td class="num">'+c.nStudents+'</td>'+
         '<td class="num">'+c.nQuizzes+'</td>'+
@@ -784,27 +786,21 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   function viewMoodle(f){
     var mapKeys=Object.keys(state.map||{});
     if(!MOODLE) return '<div class="panel"><h2>Moodle</h2><div class="empty">No <code class="k">moodleApi</code> configured. Add the Worker <code class="k">/moodle</code> route URL to app-config.js, then map a cohort to a Moodle course.</div></div>';
-    if(!mapKeys.length) return '<div class="panel"><h2>Moodle</h2><p class="hint">Join Moodle enrolment + grades to the quiz roster. Click <b>Moodle ⚙</b> above to map a cohort to its Moodle course.</p><div class="empty">No cohort mapped yet.</div></div>';
+    if(!mapKeys.length) return '<div class="panel"><h2>Moodle</h2><p class="hint">Map a cohort to its Moodle course + group first — click <b>Moodle ⚙</b>.</p><div class="empty">No cohort mapped yet.</div></div>';
     if(!Object.keys(state.moodle||{}).length) return '<div class="panel"><h2>Moodle</h2><div class="toolbar">'+cohortBar()+'</div><div class="empty">No cached Moodle data for <b>'+esc(state.cohortSel||'this cohort')+'</b> yet — click <b>↻ Refresh</b> (top right).</div></div>';
-    // merge quiz roster (per-student) with moodle users by nameKey
-    var stu=CORE.perStudent(CORE.select(state.facts,{cohort:state.cohortSel})); var byKey={}; stu.forEach(function(s){ byKey[s.key]=s; });
-    var rows=[]; var allKeys={};
-    Object.keys(state.moodle).forEach(function(k){ allKeys[k]=1; }); stu.forEach(function(s){ allKeys[s.key]=1; });
-    Object.keys(allKeys).forEach(function(k){
-      var m=state.moodle[k]||{}; var s=byKey[k]||{};
+    var rows=Object.keys(state.moodle).map(function(k){
+      var m=state.moodle[k]||{};
       var la=m.lastaccess? new Date(m.lastaccess*1000).toISOString().slice(0,10):'–';
-      rows.push('<tr><td class="name">'+esc(m.name||s.name||k)+'</td>'+
-        '<td class="num">'+engBar(s.engagement)+'</td>'+
-        '<td class="num">'+fmtPct(s.score)+'</td>'+
+      return '<tr><td class="name">'+esc(m.name||k)+'</td>'+
         '<td class="num">'+(m.enrolled?'<span class="chip good">yes</span>':'<span class="chip">–</span>')+'</td>'+
         '<td class="num">'+fmtPct(m.quizCompletion)+'</td>'+
         '<td class="num">'+fmtPct(m.quizAvg)+'</td>'+
         '<td class="num">'+fmtPct(m.grade)+'</td>'+
         '<td class="num">'+(m.uplift==null?'<span class="faint">–</span>':(m.uplift>=0?'+':'')+Math.round(m.uplift)+'%')+'</td>'+
-        '<td class="muted mono">'+la+'</td></tr>');
-    });
-    return '<div class="panel"><h2>Moodle engagement, joined per student</h2><p class="hint">Live-quiz engagement/score beside Moodle enrolment, quiz completion, course grade and pre→post uplift for the selected cohort. Joined by name.</p><div class="toolbar">'+cohortBar()+'</div>'+
-      '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">Quiz eng</th><th class="num">Quiz score</th><th class="num">Enrolled</th><th class="num">Completion</th><th class="num">Moodle quiz avg</th><th class="num">Course grade</th><th class="num">Uplift</th><th>Last access</th></tr></thead><tbody>'+rows.join("")+'</tbody></table></div>'+
+        '<td class="muted mono">'+la+'</td></tr>';
+    }).join("");
+    return '<div class="panel"><h2>Moodle — per student</h2><p class="hint">Moodle enrolment, quiz completion, Moodle quiz average, course grade and pre→post uplift for the selected cohort. (Live-quiz engagement is on the Per-student and Cohorts tabs.)</p><div class="toolbar">'+cohortBar()+'</div>'+
+      '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">Enrolled</th><th class="num">Completion</th><th class="num">Moodle quiz avg</th><th class="num">Course grade</th><th class="num">Uplift</th><th>Last access</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
       '<p class="note">Completion = graded quiz items ÷ quiz items. Uplift = post-assessment avg − pre-assessment avg (items named “pre”/“post”).</p></div>';
   }
 
@@ -917,12 +913,14 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     return 'Last refresh: <b>'+t+'</b> <span style="color:var(--warn)">(this session — not yet saved to repo)</span>. Click <b>↻ Refresh</b> (top right).';
   }
   function cohortBar(){
-    var mapped=Object.keys(state.map||{});
     if(!MOODLE) return '<span class="muted">Configure <code class="k">moodleApi</code> first.</span>';
+    var mapped=Object.keys(state.map||{});
     if(!mapped.length) return '<span class="muted">Map a cohort to a Moodle course + group first — click <b>Moodle ⚙</b>.</span>';
-    if(!state.cohortSel || mapped.indexOf(state.cohortSel)<0) state.cohortSel=mapped[0];
-    return '<label>Cohort <select id="cohortSel">'+mapped.map(function(co){ return '<option value="'+esc(co)+'"'+(co===state.cohortSel?' selected':'')+'>'+esc(co)+'</option>'; }).join("")+'</select></label>'+
-      ' <span class="muted" style="font-size:12.5px">'+refreshLine(state.cohortSel)+'</span>';
+    if(!state.cohortSel) state.cohortSel=mapped[0];
+    var cohorts=allCohorts(); if(cohorts.indexOf(state.cohortSel)<0) cohorts.unshift(state.cohortSel);
+    var dd='<label style="margin:0">Cohort <select id="cohortSel">'+cohorts.map(function(co){ return '<option value="'+esc(co)+'"'+(co===state.cohortSel?' selected':'')+'>'+esc(co)+'</option>'; }).join("")+'</select></label>';
+    var info = (mapped.indexOf(state.cohortSel)>=0) ? refreshLine(state.cohortSel) : '<b>'+esc(state.cohortSel)+'</b> is not mapped to Moodle — map it via <b>Moodle ⚙</b>.';
+    return '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+dd+'<span class="muted" style="font-size:12.5px">'+info+'</span></div>';
   }
   function buildMoodleJoin(detail){
     var m={}; if(!detail||!detail.students) return m;
@@ -934,6 +932,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     if(e){ if(e.detail) state.cohortDetail[cohort]=e.detail; state.ses=e.ses||null; state.sesMeta=e.sesMeta||null; state.moodle=buildMoodleJoin(e.detail); }
     else { state.ses=null; state.sesMeta=null; state.moodle={}; }
   }
+  function allCohorts(){ var set={}; state.facts.forEach(function(f){ set[f.cohort]=1; }); Object.keys(state.map||{}).forEach(function(c){ set[c]=1; }); return Object.keys(set).sort(); }
+  function selectCohort(c){ if(!c) return; state.cohortSel=c; var fc=document.getElementById('fCohort'); if(fc){ for(var i=0;i<fc.options.length;i++){ if(fc.options[i].value===c){ fc.value=c; break; } } } hydrateCohort(c); render(); }
 
   async function fetchCourseGroups(courseid){
     var g=await fetchJSON(MOODLE+"?fn=groups&courseid="+encodeURIComponent(courseid)).catch(function(){ return null; });
@@ -1299,14 +1299,15 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   // wire up
   document.addEventListener("click", function(e){
     var t=e.target.closest('.tab'); if(t){ state.tab=t.getAttribute('data-t'); syncTabs(); render(); return; }
+    var cr=e.target.closest('[data-pick-cohort]'); if(cr){ selectCohort(cr.getAttribute('data-pick-cohort')); return; }
   });
   document.addEventListener("change", function(e){
-    if(e.target.id==="cohortSel"){ state.cohortSel=e.target.value; hydrateCohort(state.cohortSel); render(); }
+    if(e.target.id==="cohortSel"){ selectCohort(e.target.value); }
     if(e.target && e.target.getAttribute && e.target.getAttribute("data-cohort-course")!=null){ onCourseChange(e.target); }
   });
   document.getElementById("btnReload").addEventListener("click", refreshAll);
   document.getElementById("fCourse").addEventListener("change", render);
-  document.getElementById("fCohort").addEventListener("change", render);
+  document.getElementById("fCohort").addEventListener("change", function(e){ var v=e.target.value; if(v){ selectCohort(v); } else { render(); } });
   document.getElementById("fSource").addEventListener("change", render);
   document.getElementById("btnMoodle").addEventListener("click", openMoodle);
   document.getElementById("moodleClose").addEventListener("click", function(){ document.getElementById("moodleDlg").close(); });

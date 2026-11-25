@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.10.0">
-<meta name="build" content="2026-11-25 15:13 SAST">
+<meta name="version" content="1.11.0">
+<meta name="build" content="2026-11-25 15:43 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -524,7 +524,8 @@ var CORE = (function(){
     var out={}; Object.keys(threads).forEach(function(uid){ out[uid]=2*threads[uid]+1*replies[uid]; });
     return out;
   }
-  function classifyTier(ses, grade){
+  function classifyTier(ses, grade, uplift){
+    if(uplift!=null && uplift<0) return "Regressed";
     if(ses>=70 && grade>=70) return "Thriving";
     if(ses>=70 && grade<70) return "Struggling (High Effort)";
     if(ses<50 && grade>=75) return "Coasting";
@@ -559,9 +560,11 @@ var CORE = (function(){
       if(hasForums) comps.push(['forum',f,WB.forum]);
       var wsum=comps.reduce(function(a,x){return a+x[2];},0);
       var ses = wsum>0 ? 100*comps.reduce(function(a,x){ return a+(x[2]/wsum)*x[1]; },0) : 0;
-      var grade=num((d.course_grades||{})[uid]);
-      return { userid:uid, fullname:st.fullname||("User "+uid), ses:round2(ses), grade_pct:round2(grade),
-        tier:classifyTier(ses, grade),
+      var _ag=(d.assess_grades||{})[uid];
+      var grade=num(_ag!=null?_ag:(d.course_grades||{})[uid]);
+      var _upl=(d.uplift_by_user||{})[uid]; if(_upl===undefined) _upl=null;
+      return { userid:uid, fullname:st.fullname||("User "+uid), ses:round2(ses), grade_pct:round2(grade), uplift:(_upl==null?null:round1(_upl)),
+        tier:classifyTier(ses, grade, _upl),
         breakdown:{ live_quiz:(lq==null?null:round1(lq*100)), completion_pacing:round1(c*100), quiz_duration:round1(dur*100), quiz_persistence:round1(pers*100), forum_engagement:round1(f*100) } };
     });
     return rows.sort(function(a,b){ return b.ses-a.ses; });
@@ -1103,6 +1106,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     return d;
   }
   function certGradeTier(g,B){ B=B||bandLines(); if(g==null) return {name:"Attended",cls:"t-attend"}; if(g>=B.master) return {name:"Master Pass",cls:"t-master"}; if(g>=B.practitioner) return {name:"Practitioner",cls:"t-pract"}; if(g>=B.associate) return {name:"Associate",cls:"t-assoc"}; return {name:"Attended",cls:"t-attend"}; }
+  // The score that certifies is the Post-Assessment when taken, else the Moodle course total.
+  function assessGradeOf(s){ return (s && s.postAvg!=null) ? s.postAvg : (s? s.grade : null); }
   function produceCertificates(){
     var d=state.cohortDetail[state.cohortSel];
     if(!d || !d.students || !d.students.length){ setStatus("No cohort data yet — pick a cohort and click <b>↻ Refresh</b> first, then try certificates again.", true); return; }
@@ -1112,9 +1117,10 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var sesByName={}; (state.ses||[]).forEach(function(r){ sesByName[CORE.nameKey(r.fullname)]=r; });
     var recips=d.students.map(function(s){
       var sr=sesByName[CORE.nameKey(s.name)];
+      var _ag=assessGradeOf(s);
       return { name:s.name,
-        grade:(s.grade==null?null:Math.round(s.grade)),
-        tier:certGradeTier(s.grade,B),
+        grade:(_ag==null?null:Math.round(_ag)),
+        tier:certGradeTier(_ag,B),
         ses:(sr&&sr.ses!=null?Math.round(sr.ses):null),
         sestier:(sr?sr.tier:null),
         uplift:(s.uplift==null?null:Math.round(s.uplift)),
@@ -1304,8 +1310,9 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var attAvail=!!(att && att.N);
     var rows=d.students.filter(function(s){ var a=alloc.byName[CORE.nameKey(s.name)]; return a && a.company===company; }).map(function(s){
       var sr=sesByName[CORE.nameKey(s.name)]; var ar=attAvail? att.byName[CORE.nameKey(s.name)] : null;
+      var _ag=assessGradeOf(s);
       return { name:s.name,
-        grade:(s.grade==null?null:Math.round(s.grade)), tier:certGradeTier(s.grade,B),
+        grade:(_ag==null?null:Math.round(_ag)), tier:certGradeTier(_ag,B), regressed:(s.uplift!=null && s.uplift<0),
         pre:(s.preAvg==null?null:Math.round(s.preAvg)), post:(s.postAvg==null?null:Math.round(s.postAvg)),
         uplift:(s.uplift==null?null:Math.round(s.uplift)),
         ses:(sr&&sr.ses!=null?Math.round(sr.ses):null), sestier:(sr?sr.tier:null),
@@ -1332,19 +1339,20 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     function bar(label,count,color){ var w=n?Math.round(count/n*100):0; return '<div class="brow"><span class="blab">'+esc(label)+'</span><span class="btrack"><span class="bfill" style="width:'+w+'%;background:'+color+'"></span></span><span class="bval">'+count+'</span></div>'; }
     var certBars=bandOrder.map(function(b){ return bar(b, bandCount[b], bandColor[b]); }).join("");
     var sesTierChips=Object.keys(sesTiers).map(function(t){ return '<span class="pill">'+esc(t)+' · '+sesTiers[t]+'</span>'; }).join(" ") || '<span class="muted">–</span>';
-    var trows=rows.map(function(r){ return '<tr><td class="nm">'+esc(r.name)+'</td><td class="n">'+fp(r.grade)+'</td><td>'+esc(r.tier.name)+'</td><td class="n">'+fp(r.pre)+'</td><td class="n">'+fp(r.post)+'</td><td class="n">'+sgn(r.uplift)+'</td><td class="n">'+fnum(r.ses)+'</td><td>'+esc(r.sestier||'–')+'</td><td class="n">'+fp(r.completion)+'</td><td class="n">'+fp(r.live)+'</td><td class="n">'+fatt(r)+'</td></tr>'; }).join("");
+    function upCell(r){ var v=sgn(r.uplift); return (r.regressed?'<span style="color:#b00020;font-weight:700">'+v+'</span>':v); }
+    var trows=rows.map(function(r){ return '<tr><td class="nm">'+esc(r.name)+(r.regressed?' <span title="Post-assessment below pre-assessment" style="color:#b00020">\u26a0</span>':'')+'</td><td class="n">'+fp(r.grade)+'</td><td>'+esc(r.tier.name)+'</td><td class="n">'+fp(r.pre)+'</td><td class="n">'+fp(r.post)+'</td><td class="n">'+upCell(r)+'</td><td class="n">'+fnum(r.ses)+'</td><td>'+esc(r.sestier||'–')+'</td><td class="n">'+fp(r.completion)+'</td><td class="n">'+fp(r.live)+'</td><td class="n">'+fatt(r)+'</td></tr>'; }).join("");
     var logo = cfg.logoImg ? '<img class="logoimg" src="'+esc(cfg.logoImg)+'" alt="">' : '<div class="logoph">LOGO</div>';
     var kpis=kpi(n,"staff sponsored")+kpi(passed+' / '+n,"certified (Associate+)")+kpi(sgn(avgUp),"avg learning gain")+kpi(avgSes==null?'–':avgSes,"avg effort (SES)");
     var head='<div class="rhead"><div class="rh-l">'+logo+'<div class="org"><div class="o1">'+esc(cfg.org)+'</div><div class="o2">'+esc(cfg.sub)+'</div></div></div><div class="rh-r"><div class="rtag">Training Outcomes Report</div><div class="rprep">Prepared for <b>'+esc(company)+'</b> · Learning &amp; Development</div></div></div>';
     var meta='<div class="rmeta"><div><span>Course</span><b>'+esc(courseName)+(courseCode?' ('+esc(courseCode)+')':'')+'</b></div><div><span>Cohort</span><b>'+esc(cohort)+'</b></div><div><span>Report date</span><b>'+esc(dateStr)+'</b></div><div><span>Facilitator</span><b>'+esc(cfg.presenter)+'</b></div></div>';
     var s1='<section class="sec"><h2>Certification outcomes</h2><p class="lead">How '+esc(company)+'’s '+n+' sponsored '+(n===1?'learner':'learners')+' performed against the course certification bands.</p><div class="bars">'+certBars+'</div></section>';
-    var s2='<section class="sec"><h2>Learning gain (pre → post)</h2><div class="trio"><div><span>Avg pre-assessment</span><b>'+fp(avgPre)+'</b></div><div class="arrow">→</div><div><span>Avg post-assessment</span><b>'+fp(avgPost)+'</b></div><div class="gain"><span>Uplift</span><b>'+sgn(avgUp)+'</b></div></div><p class="muted">Uplift is the change from the Pre-Assessment to the Post-Assessment — the core measure of what the training moved.</p></section>';
+    var s2='<section class="sec"><h2>Learning gain (pre → post)</h2><div class="trio"><div><span>Avg pre-assessment</span><b>'+fp(avgPre)+'</b></div><div class="arrow">→</div><div><span>Avg post-assessment</span><b>'+fp(avgPost)+'</b></div><div class="gain"><span>Uplift</span><b>'+sgn(avgUp)+'</b></div></div><p class="muted">Uplift is the change from the Pre-Assessment to the Post-Assessment — the core measure of what the training moved.'+((function(){ var rn=rows.filter(function(r){return r.regressed;}).length; return rn? ' <b style="color:#b00020">'+rn+' learner'+(rn===1?'':'s')+' scored lower on the post-assessment than the pre</b> (flagged \u26a0 below).':''; })())+'</p></section>';
     var s3='<section class="sec"><h2>Engagement &amp; effort</h2><p class="lead">Average Student Effort Score <b>'+(avgSes==null?'–':avgSes)+'</b> / 100. Effort tiers across the group:</p><div class="pills">'+sesTierChips+'</div></section>';
     var s4inner='<div><span>Avg course completion</span><b>'+fp(avgComp)+'</b></div><div><span>Avg live-quiz participation</span><b>'+fp(avgLive)+'</b></div>'+(attAvail?'<div><span>Avg Teams attendance</span><b>'+fp(avgAtt)+'</b></div>':'');
     var s4note=attAvail?('Teams attendance averaged across '+att.N+' session'+(att.N===1?'':'s')+' (each learner’s in-meeting time ÷ meeting length); “'+'n/m” in the table is sessions attended. Live-quiz participation counts only quizzes each learner took part in.'):('Teams attendance not included — drop meeting exports in <code>data/attendance/'+esc(state.cohortSel)+'/</code> to add it. Live-quiz participation counts only quizzes each learner took part in.');
     var s4='<section class="sec"><h2>Attendance &amp; participation</h2><div class="trio">'+s4inner+'</div><p class="muted">'+s4note+'</p></section>';
-    var table='<section class="sec"><h2>Individual results</h2><div class="tbl"><table><thead><tr><th>Name</th><th class="n">Grade</th><th>Certificate</th><th class="n">Pre</th><th class="n">Post</th><th class="n">Uplift</th><th class="n">SES</th><th>Effort tier</th><th class="n">Compl.</th><th class="n">Live</th><th class="n">Attend.</th></tr></thead><tbody>'+trows+'</tbody></table></div></section>';
-    var legend='<div class="legend"><b>Certification bands (course grade):</b> Master Pass &ge; '+B.master+'% · Practitioner '+B.practitioner+'–'+(B.master-1)+'% · Associate '+B.associate+'–'+(B.practitioner-1)+'% · Attended &lt; '+B.associate+'%. &nbsp; <b>SES</b> is a 0–100 behavioural effort score blending live-quiz participation with Moodle signals.</div>';
+    var table='<section class="sec"><h2>Individual results</h2><div class="tbl"><table><thead><tr><th>Name</th><th class="n">Result</th><th>Certificate</th><th class="n">Pre</th><th class="n">Post</th><th class="n">Uplift</th><th class="n">SES</th><th>Effort tier</th><th class="n">Compl.</th><th class="n">Live</th><th class="n">Attend.</th></tr></thead><tbody>'+trows+'</tbody></table></div></section>';
+    var legend='<div class="legend"><b>Certification bands (course grade):</b> Master Pass &ge; '+B.master+'% · Practitioner '+B.practitioner+'–'+(B.master-1)+'% · Associate '+B.associate+'–'+(B.practitioner-1)+'% · Attended &lt; '+B.associate+'%. &nbsp; <b>SES</b> is a 0–100 behavioural effort score blending live-quiz participation with Moodle signals. &nbsp; <b>Result</b> is the Post-Assessment score where taken, otherwise the Moodle course total; it is what the certificate band is based on.</div>';
     var foot='<div class="rfoot">'+esc(cfg.org)+' · '+esc(cfg.sub)+' · Generated '+esc(dateStr)+'</div>';
     var css='<style>*{box-sizing:border-box;margin:0;padding:0}:root{--acc:'+accent+'}body{font-family:"Segoe UI",Arial,sans-serif;color:#1a2330;background:#50606f}@page{size:A4 portrait;margin:14mm}.page{width:182mm;margin:0 auto;background:#fff}@media screen{body{padding:20px}.page{box-shadow:0 4px 20px rgba(0,0,0,.3);padding:14mm}}.rhead{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid var(--acc);padding-bottom:10px}.rh-l{display:flex;gap:12px;align-items:center}.logoimg{height:46px}.logoph{width:100px;height:46px;border:1.5px dashed #9aa7b4;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9aa7b4;font-size:11px;letter-spacing:2px}.org .o1{font-size:17px;font-weight:700;color:var(--acc)}.org .o2{font-size:11px;color:#6b7785}.rh-r{text-align:right}.rtag{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#6b7785}.rprep{font-size:15px;margin-top:2px}.rmeta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}.rmeta>div{background:#f4f7f9;border-radius:8px;padding:8px 10px}.rmeta span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6b7785}.rmeta b{font-size:13px}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:6px 0 14px}.kpi{border:1px solid #e1e7ec;border-top:3px solid var(--acc);border-radius:8px;padding:10px;text-align:center}.kv{font-size:24px;font-weight:800;color:var(--acc)}.kl{font-size:11px;color:#55616e;margin-top:3px}.sec{margin:12px 0;page-break-inside:avoid}.sec h2{font-size:15px;color:var(--acc);border-bottom:1px solid #e1e7ec;padding-bottom:4px;margin-bottom:8px}.lead{font-size:12.5px;color:#3a4652;margin-bottom:8px}.muted{color:#6b7785;font-size:11.5px;margin-top:6px}.bars{display:flex;flex-direction:column;gap:6px}.brow{display:flex;align-items:center;gap:10px}.blab{width:34mm;font-size:12px}.btrack{flex:1;height:14px;background:#eef2f5;border-radius:7px;overflow:hidden}.bfill{display:block;height:100%}.bval{width:28px;text-align:right;font-weight:700;font-size:12px}.trio{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.trio>div{background:#f4f7f9;border-radius:8px;padding:10px 14px;flex:1;min-width:30%;text-align:center}.trio span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6b7785}.trio b{font-size:20px}.trio .arrow{flex:none;background:none;font-size:20px;color:var(--acc);min-width:0}.gain b{color:var(--acc)}.pills{display:flex;flex-wrap:wrap;gap:6px}.pill{background:#eef3f2;border:1px solid #d7e2df;border-radius:999px;padding:3px 10px;font-size:12px}.tbl{overflow:hidden}table{width:100%;border-collapse:collapse;font-size:10px}th{background:var(--acc);color:#fff;text-align:left;padding:5px 5px;font-weight:600}td{padding:4px 5px;border-bottom:1px solid #e6ebef}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}td.nm{font-weight:600}.legend{margin-top:10px;font-size:10.5px;color:#55616e;line-height:1.6;border-top:1px solid #e1e7ec;padding-top:8px}.rfoot{margin-top:10px;text-align:center;font-size:10px;color:#8a97a4}</style>';
     var html='<!doctype html><html><head><meta charset="utf-8"><title>'+esc(company)+' — Training Outcomes — '+esc(courseName)+'</title>'+css+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.focus();window.print();},350);};<\/scr'+'ipt></head><body><div class="page">'+head+meta+'<div class="kpis">'+kpis+'</div>'+s1+s2+s3+s4+table+legend+foot+'</div></body></html>';
@@ -1353,8 +1361,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   }
 
   // ---- Student Effort Score (SES) view ----
-  var TIERCLASS={ "Thriving":"good", "Struggling (High Effort)":"warn", "Coasting":"warn", "At-Risk (Disengaged)":"bad", "Moderate / Developing":"" };
-  var TIERCOLOR={ "Thriving":"var(--good)", "Struggling (High Effort)":"var(--accent)", "Coasting":"var(--gold)", "At-Risk (Disengaged)":"var(--bad)", "Moderate / Developing":"var(--faint)" };
+  var TIERCLASS={ "Regressed":"bad", "Thriving":"good", "Struggling (High Effort)":"warn", "Coasting":"warn", "At-Risk (Disengaged)":"bad", "Moderate / Developing":"" };
+  var TIERCOLOR={ "Regressed":"var(--bad)", "Thriving":"var(--good)", "Struggling (High Effort)":"var(--accent)", "Coasting":"var(--gold)", "At-Risk (Disengaged)":"var(--bad)", "Moderate / Developing":"var(--faint)" };
   function sesBar(v){ var c=v>=70?'var(--good)':v>=50?'var(--gold)':'var(--bad)'; return '<span class="pct"><span class="mbar" style="width:'+Math.max(2,Math.round(v*0.6))+'px;background:'+c+'"></span><span class="v">'+Math.round(v)+'</span></span>'; }
   function tierChip(t){ return '<span class="chip '+(TIERCLASS[t]||'')+'">'+esc(t)+'</span>'; }
   function tierLegend(){ return '<div class="legend">'+Object.keys(TIERCOLOR).map(function(t){ return '<span><span class="dotk" style="background:'+TIERCOLOR[t]+'"></span>'+esc(t)+'</span>'; }).join("")+'</div>'; }
@@ -1424,11 +1432,24 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       var quizzes=((quizWrap&&quizWrap.quizzes)||(Array.isArray(quizWrap)?quizWrap:[])||[]).map(function(q){ return {id:q.id, name:q.name, timelimit:CORE.num(q.timelimit), grade:CORE.num(q.grade)||CORE.num(q.sumgrades)||10}; });
 
       var gradeJson=await fetchJSON(MOODLE+"?fn=grades&courseid="+encodeURIComponent(courseid)+"&userid=0").catch(function(){ return {}; });
-      var courseGrades={};
+      var courseGrades={}, assessGrades={}, upliftByUser={};
       ((gradeJson&&gradeJson.usergrades)||[]).forEach(function(g){
-        var tot=(g.gradeitems||[]).find(function(it){ return it.itemtype==="course"; });
         var id=idByName(students, g.userfullname); if(id==null) id=g.userid;
-        if(tot) courseGrades[id]= (tot.percentageformatted!=null?pctNumUI(tot.percentageformatted):ratioUI(tot.graderaw,tot.grademax))||0;
+        var items=g.gradeitems||[];
+        var tot=items.find(function(it){ return it.itemtype==="course"; });
+        var courseG = tot? ((tot.percentageformatted!=null?pctNumUI(tot.percentageformatted):ratioUI(tot.graderaw,tot.grademax))||0) : null;
+        if(courseG!=null) courseGrades[id]=courseG;
+        var preV=null, postV=null;
+        items.forEach(function(it){
+          if(it.itemmodule!=="quiz") return;
+          var has=(it.graderaw!=null&&it.graderaw!==""); if(!has) return;
+          var p=(it.percentageformatted!=null?pctNumUI(it.percentageformatted):ratioUI(it.graderaw,it.grademax)); if(p==null) return;
+          var nm=String(it.itemname||"");
+          if(CORE.PRE_RE.test(nm)) preV=p; else if(CORE.POST_RE.test(nm)) postV=p;
+        });
+        // the grade that certifies = the Post-Assessment when taken, else the course total
+        assessGrades[id] = (postV!=null? postV : (courseG!=null?courseG:0));
+        if(preV!=null && postV!=null) upliftByUser[id]=postV-preV;
       });
 
       var completions={}, attempts={}, compErr=null, attErr=null;
@@ -1478,7 +1499,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       var _nSt=0,_nAt=0; Object.keys(completions).forEach(function(u){ _nSt+=((completions[u]&&completions[u].statuses)||[]).length; }); Object.keys(attempts).forEach(function(u){ Object.keys(attempts[u]||{}).forEach(function(q){ _nAt+=(((attempts[u]||{})[q])||[]).length; }); });
       var payload={ course_startdate:startdate, quizzes_meta:quizzes, has_forums:hasForums, has_completion:(_nSt>0), students:students,
         completions_by_user:completions, attempts_by_user_quiz:attempts, live_by_user:liveByUser,
-        forum_discussions:discussions, forum_posts_by_discussion:postsByDisc, course_grades:courseGrades };
+        forum_discussions:discussions, forum_posts_by_discussion:postsByDisc, course_grades:courseGrades, assess_grades:assessGrades, uplift_by_user:upliftByUser };
       var _ses=CORE.computeSES(payload);
       var _meta={ students:students.length, quizzes:quizzes.length, hasForums:hasForums, hasCompletion:(_nSt>0), nStatuses:_nSt, nAttempts:_nAt, nLive:nLive, noEffortData:(_nSt===0&&_nAt===0&&nLive===0), compErr:compErr, attErr:attErr };
       return { ses:_ses, sesMeta:_meta };

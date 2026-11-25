@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.7.0">
-<meta name="build" content="2026-11-25 08:57 SAST">
+<meta name="version" content="1.8.0">
+<meta name="build" content="2026-11-25 13:58 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -1195,7 +1195,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     } else {
       body='<div class="empty">No cached Student Effort Score for this cohort yet — click <b>↻ Refresh</b> (top right).</div>';
     }
-    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. Plotted against course grade to flag intervention tiers.</p><div class="toolbar">'+picker+' <button class="btn primary" id="makeCerts" title="Produce printable branded certificates (PDF) for every registered student in this cohort — grade tier, SES score and summary">&#128220; Produce certificates</button></div>'+body+'</div>';
+    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. A live quiz counts for a student only if they actually took part in it — quizzes not run with them don’t lower their score. Plotted against course grade to flag intervention tiers.</p><div class="toolbar">'+picker+' <button class="btn primary" id="makeCerts" title="Produce printable branded certificates (PDF) for every registered student in this cohort — grade tier, SES score and summary">&#128220; Produce certificates</button></div>'+body+'</div>';
   }
 
   function idByName(students, name){ var k=CORE.nameKey(name); var s=students.find(function(x){ return CORE.nameKey(x.fullname)===k; }); return s?s.id:null; }
@@ -1257,9 +1257,18 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       var startdate=0;
       try{ var cj=await fetchJSON(MOODLE+"?fn=courses"); var list=Array.isArray(cj)?cj:(cj.courses||[]); var cc=list.find(function(c){ return String(c.id)===String(courseid); }); if(cc) startdate=CORE.num(cc.startdate); }catch(e){}
 
-      // Player live-quiz participation (blended into SES), matched to Moodle students by name
-      var liveByUser={};
-      CORE.perStudent(CORE.select(state.facts, { cohort: cohort })).forEach(function(ps){ if(ps.aQ>0){ var lid=idByName(students, ps.name); if(lid!=null) liveByUser[lid]=ps.engagement/100; } });
+      // Player live-quiz participation (blended into SES), matched to Moodle students by name.
+      // Only count a quiz toward a student's live-quiz engagement if they actually took part
+      // in it (answered > 0). A live quiz that wasn't run with this student - recorded as
+      // answered 0 - must NOT drag their score down: grade them only on quizzes done with them.
+      var liveByUser={}, _lqAgg={};
+      CORE.select(state.facts, { cohort: cohort }).forEach(function(f){
+        if(CORE.num(f.answered) > 0){
+          var a=_lqAgg[f.playerKey] || (_lqAgg[f.playerKey]={ name:f.player, ans:0, q:0 });
+          a.ans += CORE.num(f.answered); a.q += CORE.num(f.questions);
+        }
+      });
+      Object.keys(_lqAgg).forEach(function(k){ var a=_lqAgg[k]; if(a.q>0){ var lid=idByName(students, a.name); if(lid!=null) liveByUser[lid]=Math.max(0, Math.min(1, a.ans/a.q)); } });
       var nLive=Object.keys(liveByUser).length;
       var _nSt=0,_nAt=0; Object.keys(completions).forEach(function(u){ _nSt+=((completions[u]&&completions[u].statuses)||[]).length; }); Object.keys(attempts).forEach(function(u){ Object.keys(attempts[u]||{}).forEach(function(q){ _nAt+=(((attempts[u]||{})[q])||[]).length; }); });
       var payload={ course_startdate:startdate, quizzes_meta:quizzes, has_forums:hasForums, has_completion:(_nSt>0), students:students,

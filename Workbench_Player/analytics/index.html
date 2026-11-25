@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.1.5">
-<meta name="build" content="2026-11-25 05:37 SAST">
+<meta name="version" content="1.2.0">
+<meta name="build" content="2026-11-25 06:29 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -535,17 +535,27 @@ var CORE = (function(){
     var raw=rawForumScores(d.students||[], d.forum_discussions||[], d.forum_posts_by_discussion||{});
     var p75=percentile(Object.keys(raw).map(function(k){return raw[k];}), 75);
     var benchmark=Math.max(1, p75);
+    var liveByUser=d.live_by_user||{};
+    var hasCompletion=d.has_completion!==false;
+    var WB={ lq:0.35, dur:0.25, pers:0.20, comp:0.12, forum:0.08 };
     var rows=(d.students||[]).map(function(st){
       var uid=st.id;
       var c=calcCompletionPacing((d.completions_by_user||{})[uid]||{}, wElapsed);
       var dur=calcQuizDuration((d.attempts_by_user_quiz||{})[uid]||{}, quizzesMeta, ref);
       var pers=calcQuizPersistence((d.attempts_by_user_quiz||{})[uid]||{}, quizzesMeta);
       var f=Math.min(1, (raw[uid]||0)/benchmark);
-      var ses=hasForums ? 100*(0.35*c+0.30*dur+0.20*pers+0.15*f) : 100*(0.41*c+0.35*dur+0.24*pers);
+      var lq=(liveByUser[uid]!=null)? Math.max(0,Math.min(1,liveByUser[uid])) : null;
+      // weight only the signals actually present, then renormalise to 100%
+      var comps=[['dur',dur,WB.dur],['pers',pers,WB.pers]];
+      if(lq!=null) comps.push(['lq',lq,WB.lq]);
+      if(hasCompletion) comps.push(['comp',c,WB.comp]);
+      if(hasForums) comps.push(['forum',f,WB.forum]);
+      var wsum=comps.reduce(function(a,x){return a+x[2];},0);
+      var ses = wsum>0 ? 100*comps.reduce(function(a,x){ return a+(x[2]/wsum)*x[1]; },0) : 0;
       var grade=num((d.course_grades||{})[uid]);
       return { userid:uid, fullname:st.fullname||("User "+uid), ses:round2(ses), grade_pct:round2(grade),
         tier:classifyTier(ses, grade),
-        breakdown:{ completion_pacing:round1(c*100), quiz_duration:round1(dur*100), quiz_persistence:round1(pers*100), forum_engagement:round1(f*100) } };
+        breakdown:{ live_quiz:(lq==null?null:round1(lq*100)), completion_pacing:round1(c*100), quiz_duration:round1(dur*100), quiz_persistence:round1(pers*100), forum_engagement:round1(f*100) } };
     });
     return rows.sort(function(a,b){ return b.ses-a.ses; });
   }
@@ -977,7 +987,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var postAll=avgOrNull(S.map(function(s){return s.postAvg;}));
     var totalRow='<tr style="font-weight:700;background:var(--surface2)"><td>'+esc(d.groupName)+'</td><td>Group average</td><td class="num">'+fmtPct(preAll)+'</td><td class="num">'+fmtPct(postAll)+'</td><td class="num">'+(gUp==null?'–':(gUp>=0?'+':'')+Math.round(gUp)+'%')+'</td></tr>';
     var table='<div class="subh">Course results</div><div class="scroll"><table><thead><tr><th>Group</th><th>Student</th><th class="num">Pre</th><th class="num">Post</th><th class="num">Uplift</th></tr></thead><tbody>'+trows+totalRow+'</tbody></table></div>';
-    return head+cards+assessBarChart('Pre-Assessment', S, 'preAvg')+assessBarChart('Post-Assessment', S, 'postAvg')+upliftChart(S)+table+'</div>';
+    return head+cards+'<div class="flex" style="align-items:flex-start;gap:18px"><div class="grow" style="min-width:0">'+assessBarChart('Pre-Assessment', S, 'preAvg')+'</div><div class="grow" style="min-width:0">'+assessBarChart('Post-Assessment', S, 'postAvg')+'</div></div>'+upliftChart(S)+table+'</div>';
   }
 
   function viewQuizzes(){
@@ -1047,6 +1057,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
           '<td class="num">'+(noData?'<span class="faint">n/a</span>':sesBar(r.ses))+'</td>'+
           '<td class="num">'+fmtPct(r.grade_pct)+'</td>'+
           '<td>'+(noData?'<span class="chip">no effort data</span>':tierChip(r.tier))+'</td>'+
+          '<td class="num faint">'+(b.live_quiz==null?'–':b.live_quiz)+'</td>'+
           '<td class="num faint">'+b.completion_pacing+'</td>'+
           '<td class="num faint">'+b.quiz_duration+'</td>'+
           '<td class="num faint">'+b.quiz_persistence+'</td>'+
@@ -1054,13 +1065,13 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       }).join("");
       var dmsg=''; if(noData){ var _dp=[]; if(meta.attErr)_dp.push('quiz attempts → “'+esc(meta.attErr)+'”'); if(meta.compErr)_dp.push('completion → “'+esc(meta.compErr)+'”'); if(_dp.length)dmsg='<br><b>Moodle&#39;s actual response:</b> '+_dp.join(' · '); }
       var warn=noData?'<div class="banner" style="border-color:var(--bad)"><b>SES can\'t be computed yet.</b> Moodle returned no quiz-attempt or activity-completion data, so every effort score is 0 and the tiers would be meaningless — so they are hidden. Enable <code class="k">mod_quiz_get_user_attempts</code> and <code class="k">core_completion_get_activities_completion_status</code> on the <b>PowerBI Grade Export</b> service, and make sure the token user can view reports (Manager / teacher level). Grades load fine; only the effort signals are missing.'+dmsg+'</div>':'';
-      body=warn+'<p class="note">'+(meta.students||rows.length)+' students · '+(meta.quizzes||0)+' quizzes · forums '+(meta.hasForums?'included':'none (reweighted)')+' · quiz attempts seen: '+(meta.nAttempts||0)+' · completion records: '+(meta.nStatuses||0)+'.</p>'+
+      body=warn+'<p class="note">'+(meta.students||rows.length)+' students · '+(meta.quizzes||0)+' quizzes · forums '+(meta.hasForums?'included':'none (reweighted)')+' · quiz attempts seen: '+(meta.nAttempts||0)+' · completion records: '+(meta.nStatuses||0)+' · live-quiz students: '+(meta.nLive||0)+'.</p>'+
         '<div style="margin:0 0 18px;text-align:center">'+sesScatter(state.ses)+tierLegend()+'</div>'+
-        '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">SES</th><th class="num">Grade</th><th>Tier</th><th class="num">Compl</th><th class="num">Dur</th><th class="num">Persist</th><th class="num">Forum</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+        '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">SES</th><th class="num">Grade</th><th>Tier</th><th class="num">Live</th><th class="num">Compl</th><th class="num">Dur</th><th class="num">Persist</th><th class="num">Forum</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     } else {
       body='<div class="empty">No Student Effort Score computed yet. Pick a mapped course and click <b>Compute</b>.</div>';
     }
-    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100 — completion+pacing 35%, quiz time-on-task 30%, persistence 20%, forum 15% (reweighted when a course has no forums). Plotted against course grade to flag intervention tiers.</p><div class="toolbar">'+picker+'</div>'+body+'</div>';
+    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. Plotted against course grade to flag intervention tiers.</p><div class="toolbar">'+picker+'</div>'+body+'</div>';
   }
 
   function idByName(students, name){ var k=CORE.nameKey(name); var s=students.find(function(x){ return CORE.nameKey(x.fullname)===k; }); return s?s.id:null; }
@@ -1122,12 +1133,16 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       var startdate=0;
       try{ var cj=await fetchJSON(MOODLE+"?fn=courses"); var list=Array.isArray(cj)?cj:(cj.courses||[]); var cc=list.find(function(c){ return String(c.id)===String(courseid); }); if(cc) startdate=CORE.num(cc.startdate); }catch(e){}
 
-      var payload={ course_startdate:startdate, quizzes_meta:quizzes, has_forums:hasForums, students:students,
-        completions_by_user:completions, attempts_by_user_quiz:attempts,
-        forum_discussions:discussions, forum_posts_by_discussion:postsByDisc, course_grades:courseGrades };
+      // Player live-quiz participation (blended into SES), matched to Moodle students by name
+      var liveByUser={};
+      CORE.perStudent(CORE.select(state.facts, { cohort: cohort })).forEach(function(ps){ if(ps.aQ>0){ var lid=idByName(students, ps.name); if(lid!=null) liveByUser[lid]=ps.engagement/100; } });
+      var nLive=Object.keys(liveByUser).length;
       var _nSt=0,_nAt=0; Object.keys(completions).forEach(function(u){ _nSt+=((completions[u]&&completions[u].statuses)||[]).length; }); Object.keys(attempts).forEach(function(u){ Object.keys(attempts[u]||{}).forEach(function(q){ _nAt+=(((attempts[u]||{})[q])||[]).length; }); });
+      var payload={ course_startdate:startdate, quizzes_meta:quizzes, has_forums:hasForums, has_completion:(_nSt>0), students:students,
+        completions_by_user:completions, attempts_by_user_quiz:attempts, live_by_user:liveByUser,
+        forum_discussions:discussions, forum_posts_by_discussion:postsByDisc, course_grades:courseGrades };
       state.ses=CORE.computeSES(payload);
-      state.sesMeta={ students:students.length, quizzes:quizzes.length, hasForums:hasForums, nStatuses:_nSt, nAttempts:_nAt, noEffortData:(_nSt===0&&_nAt===0), compErr:compErr, attErr:attErr };
+      state.sesMeta={ students:students.length, quizzes:quizzes.length, hasForums:hasForums, hasCompletion:(_nSt>0), nStatuses:_nSt, nAttempts:_nAt, nLive:nLive, noEffortData:(_nSt===0&&_nAt===0&&nLive===0), compErr:compErr, attErr:attErr };
       await saveSnapshot("ses-"+courseid+".json", { courseid:courseid, computedAt:new Date().toISOString(), meta:state.sesMeta, results:state.ses });
       setStatus('', false); state.tab="ses"; syncTabs(); render();
     }catch(e){ setStatus('SES computation failed: '+esc(e.message)+'. Check the Worker /moodle route and that your token allows the quiz/completion/forum functions.', true); }

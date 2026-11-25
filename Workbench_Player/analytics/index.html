@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.2.0">
-<meta name="build" content="2026-11-25 06:29 SAST">
+<meta name="version" content="1.3.0">
+<meta name="build" content="2026-11-25 07:50 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -581,7 +581,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   var MOODLE = cfg.moodleApi || (ASSET? ASSET.replace(/\/asset$/,"/moodle"):"");
   var state = { records:[], facts:[], runs:[], tab:"students", moodle:{} , map:{},
     bands:{ master:80, practitioner:70, associate:60, danger:40 },
-    cohortDetail:{}, cohortSel:null };
+    cohortDetail:{}, cohortSel:null, moodleData:{ cohorts:{} } };
 
   // demo sample so the page is useful in dev mode (no backend). Replaced by live data when SESSIONS is set.
   var SAMPLE = [
@@ -780,9 +780,9 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var mapKeys=Object.keys(state.map||{});
     if(!MOODLE) return '<div class="panel"><h2>Moodle</h2><div class="empty">No <code class="k">moodleApi</code> configured. Add the Worker <code class="k">/moodle</code> route URL to app-config.js, then map a cohort to a Moodle course.</div></div>';
     if(!mapKeys.length) return '<div class="panel"><h2>Moodle</h2><p class="hint">Join Moodle enrolment + grades to the quiz roster. Click <b>Moodle ⚙</b> above to map a cohort to its Moodle course.</p><div class="empty">No cohort mapped yet.</div></div>';
-    if(!Object.keys(state.moodle||{}).length) return '<div class="panel"><h2>Moodle</h2><p class="hint">'+mapKeys.length+' cohort(s) mapped. Pull enrolment + grades to join them to the quiz roster.</p><div class="toolbar"><button class="btn primary" id="mdlPull">Pull enrolment + grades</button></div><div class="empty">Nothing pulled yet. (Needs the Worker <code class="k">/moodle</code> route deployed.)</div></div>';
+    if(!Object.keys(state.moodle||{}).length) return '<div class="panel"><h2>Moodle</h2><div class="toolbar">'+cohortBar()+'</div><div class="empty">No cached Moodle data for <b>'+esc(state.cohortSel||'this cohort')+'</b> yet — click <b>↻ Refresh from Moodle</b>.</div></div>';
     // merge quiz roster (per-student) with moodle users by nameKey
-    var stu=CORE.perStudent(f); var byKey={}; stu.forEach(function(s){ byKey[s.key]=s; });
+    var stu=CORE.perStudent(CORE.select(state.facts,{cohort:state.cohortSel})); var byKey={}; stu.forEach(function(s){ byKey[s.key]=s; });
     var rows=[]; var allKeys={};
     Object.keys(state.moodle).forEach(function(k){ allKeys[k]=1; }); stu.forEach(function(s){ allKeys[s.key]=1; });
     Object.keys(allKeys).forEach(function(k){
@@ -798,7 +798,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
         '<td class="num">'+(m.uplift==null?'<span class="faint">–</span>':(m.uplift>=0?'+':'')+Math.round(m.uplift)+'%')+'</td>'+
         '<td class="muted mono">'+la+'</td></tr>');
     });
-    return '<div class="panel"><h2>Moodle engagement, joined per student</h2><p class="hint">Live-quiz engagement/score beside Moodle enrolment, quiz completion, course grade and pre→post uplift. Joined by name — unmatched names show on one side only.</p>'+
+    return '<div class="panel"><h2>Moodle engagement, joined per student</h2><p class="hint">Live-quiz engagement/score beside Moodle enrolment, quiz completion, course grade and pre→post uplift for the selected cohort. Joined by name.</p><div class="toolbar">'+cohortBar()+'</div>'+
       '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">Quiz eng</th><th class="num">Quiz score</th><th class="num">Enrolled</th><th class="num">Completion</th><th class="num">Moodle quiz avg</th><th class="num">Course grade</th><th class="num">Uplift</th><th>Last access</th></tr></thead><tbody>'+rows.join("")+'</tbody></table></div>'+
       '<p class="note">Completion = graded quiz items ÷ quiz items. Uplift = post-assessment avg − pre-assessment avg (items named “pre”/“post”).</p></div>';
   }
@@ -903,12 +903,25 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     return '<div class="subh">Completion rate &amp; quiz score by student</div><div class="scroll" style="text-align:center"><svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:'+W+'px;height:auto;display:inline-block">'+axis+g+'</svg></div>'+leg;
   }
 
-  function cohortPicker(btnId){
+  function lastRefreshStr(cohort){ var e=(state.moodleData.cohorts||{})[cohort]; if(!e||!e.refreshedAt) return 'never'; try{ return new Date(e.refreshedAt).toLocaleString('en-ZA',{dateStyle:'medium',timeStyle:'short'}); }catch(x){ return e.refreshedAt; } }
+  function cohortBar(){
     var mapped=Object.keys(state.map||{});
     if(!MOODLE) return '<span class="muted">Configure <code class="k">moodleApi</code> first.</span>';
     if(!mapped.length) return '<span class="muted">Map a cohort to a Moodle course + group first — click <b>Moodle ⚙</b>.</span>';
     if(!state.cohortSel || mapped.indexOf(state.cohortSel)<0) state.cohortSel=mapped[0];
-    return '<label>Cohort <select id="cohortSel">'+mapped.map(function(co){ return '<option value="'+esc(co)+'"'+(co===state.cohortSel?' selected':'')+'>'+esc(co)+'</option>'; }).join("")+'</select></label> <button class="btn primary" id="'+btnId+'">Pull from Moodle</button>';
+    return '<label>Cohort <select id="cohortSel">'+mapped.map(function(co){ return '<option value="'+esc(co)+'"'+(co===state.cohortSel?' selected':'')+'>'+esc(co)+'</option>'; }).join("")+'</select></label>'+
+      ' <button class="btn primary" id="moodleRefresh">↻ Refresh from Moodle</button>'+
+      ' <span class="muted" style="font-size:12.5px">Last Moodle refresh: <b>'+esc(lastRefreshStr(state.cohortSel))+'</b></span>';
+  }
+  function buildMoodleJoin(detail){
+    var m={}; if(!detail||!detail.students) return m;
+    detail.students.forEach(function(s){ m[CORE.nameKey(s.name)]={ name:s.name, enrolled:true, quizCompletion:s.quizCompletion, quizAvg:s.quizAvg, grade:s.grade, uplift:s.uplift, lastaccess:s.lastaccess }; });
+    return m;
+  }
+  function hydrateCohort(cohort){
+    var e=(state.moodleData.cohorts||{})[cohort];
+    if(e){ if(e.detail) state.cohortDetail[cohort]=e.detail; state.ses=e.ses||null; state.sesMeta=e.sesMeta||null; state.moodle=buildMoodleJoin(e.detail); }
+    else { state.ses=null; state.sesMeta=null; state.moodle={}; }
   }
 
   async function fetchCourseGroups(courseid){
@@ -947,22 +960,39 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       courseName:courseName, courseCode:courseCode, teacher:teacher,
       students:students, enrolledCount:enrolledCount, hasGroup:!!groupid };
   }
-  async function runCohortPull(tab){
-    var sel=document.getElementById("cohortSel"); var cohort=sel? sel.value : state.cohortSel;
-    if(!cohort){ setStatus('Pick a cohort first.', true); return; }
-    state.cohortSel=cohort;
-    setStatus('Pulling Moodle data for '+esc(cohort)+'…', true);
+  async function refreshMoodle(){
+    var cohort=state.cohortSel;
+    if(!cohort){ setStatus('Pick a cohort to refresh.', true); return; }
+    setStatus('Refreshing '+esc(cohort)+' from Moodle…', true);
     try{
-      var d=await pullCohortMoodle(cohort);
-      state.cohortDetail[cohort]=d;
+      var detail=await pullCohortMoodle(cohort);
+      var sesRes=await computeCohortSES(cohort);
+      state.moodleData.cohorts[cohort]={ refreshedAt:new Date().toISOString(), detail:detail, ses:sesRes.ses, sesMeta:sesRes.sesMeta };
+      state.cohortDetail[cohort]=detail; state.ses=sesRes.ses; state.sesMeta=sesRes.sesMeta; state.moodle=buildMoodleJoin(detail);
+      await saveMoodleSnapshot();
       setStatus('', false); render();
-    }catch(e){ setStatus('Moodle pull failed for '+esc(cohort)+': '+esc(e.message)+'. Check the Worker /moodle route and that the group functions are enabled on your token.', true); }
+    }catch(e){ setStatus('Refresh failed for '+esc(cohort)+': '+esc(e.message)+'. Check the Worker /moodle route and token functions.', true); }
+  }
+  async function saveMoodleSnapshot(){
+    if(!hasToken()){ setStatus('Refreshed for this session, but not saved to the repo — no repo token in this browser. Set it via <b>Moodle ⚙</b> to persist.', true); return; }
+    var path=DATA_PREFIX+"analytics/moodle-snapshot.json";
+    var cur=await ghGet(path).catch(function(){ return {sha:null, json:null}; });
+    var snap=(cur.json&&cur.json.cohorts)? cur.json : { cohorts:{} };
+    Object.keys(state.moodleData.cohorts).forEach(function(c){ snap.cohorts[c]=state.moodleData.cohorts[c]; });
+    snap.updatedAt=new Date().toISOString();
+    await ghPut(path, snap, cur.sha, "Analytics: Moodle snapshot refresh ("+state.cohortSel+")");
+  }
+  async function loadMoodleSnapshot(){
+    var j=null;
+    try{ if(ASSET){ j=await fetchJSON(ASSET+"?path="+encodeURIComponent("analytics/moodle-snapshot.json")); } }catch(e){}
+    if(!j||!j.cohorts){ try{ var g=await ghGet(DATA_PREFIX+"analytics/moodle-snapshot.json"); j=g.json; }catch(e){} }
+    if(j&&j.cohorts){ state.moodleData.cohorts=j.cohorts; var mapped=Object.keys(state.map||{}); if((!state.cohortSel||mapped.indexOf(state.cohortSel)<0)&&mapped.length) state.cohortSel=mapped[0]; if(state.cohortSel) hydrateCohort(state.cohortSel); }
   }
 
   function viewAssess(){
-    var head='<div class="panel"><h2>Assessment — Pre / Post / Uplift</h2><p class="hint">Pre- and Post-Assessment against the certification bands (Master '+bandLines().master+' · Practitioner '+bandLines().practitioner+' · Associate '+bandLines().associate+' · Danger '+bandLines().danger+'). Only registered group members are shown. Uplift = Post − Pre.</p><div class="toolbar">'+cohortPicker('assessRun')+'</div>';
+    var head='<div class="panel"><h2>Assessment — Pre / Post / Uplift</h2><p class="hint">Pre- and Post-Assessment against the certification bands (Master '+bandLines().master+' · Practitioner '+bandLines().practitioner+' · Associate '+bandLines().associate+' · Danger '+bandLines().danger+'). Only registered group members are shown. Uplift = Post − Pre.</p><div class="toolbar">'+cohortBar()+'</div>';
     var d=state.cohortDetail[state.cohortSel];
-    if(!d) return head+'<div class="empty">Pick a cohort and click <b>Pull from Moodle</b>.</div></div>';
+    if(!d) return head+'<div class="empty">No cached Moodle data for this cohort yet — click <b>↻ Refresh from Moodle</b>.</div></div>';
     var S=d.students;
     if(!S.length) return head+'<div class="empty">No registered students in group <b>'+esc(d.groupName)+'</b>.</div></div>';
     var preDone=S.filter(function(s){return s.preAvg!=null;}).length;
@@ -991,9 +1021,9 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   }
 
   function viewQuizzes(){
-    var head='<div class="panel"><h2>Quizzes</h2><p class="hint">Per-quiz score and completion for the group (excludes the Pre/Post assessments). Completion = graded quiz items ÷ quiz items; Quiz score = average across graded quizzes.</p><div class="toolbar">'+cohortPicker('quizzesRun')+'</div>';
+    var head='<div class="panel"><h2>Quizzes</h2><p class="hint">Per-quiz score and completion for the group (excludes the Pre/Post assessments). Completion = graded quiz items ÷ quiz items; Quiz score = average across graded quizzes.</p><div class="toolbar">'+cohortBar()+'</div>';
     var d=state.cohortDetail[state.cohortSel];
-    if(!d) return head+'<div class="empty">Pick a cohort and click <b>Pull from Moodle</b>.</div></div>';
+    if(!d) return head+'<div class="empty">No cached Moodle data for this cohort yet — click <b>↻ Refresh from Moodle</b>.</div></div>';
     var S=d.students;
     if(!S.length) return head+'<div class="empty">No registered students in group <b>'+esc(d.groupName)+'</b>.</div></div>';
     var names={}; S.forEach(function(s){ (s.quizzes||[]).forEach(function(q){ names[q.name]=1; }); });
@@ -1043,11 +1073,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       '<text x="6" y="16" fill="var(--muted)" font-size="10">grade ↑</text>'+pts+'</svg>';
   }
   function viewSES(f){
-    var mapped=Object.keys(state.map||{});
-    var picker;
-    if(!MOODLE) picker='<span class="muted">Configure <code class="k">moodleApi</code> first.</span>';
-    else if(!mapped.length) picker='<span class="muted">Map a cohort to a Moodle course first — click <b>Moodle ⚙</b>.</span>';
-    else picker='<label>Cohort <select id="sesCohort">'+mapped.map(function(co){ var e=state.map[co]; return '<option value="'+esc(co)+'">'+esc(co)+' (course #'+esc(mapCourseId(e))+(mapGroupId(e)?', group '+esc(mapGroupName(e)||mapGroupId(e)):', no group')+')</option>'; }).join("")+'</select></label> <button class="btn primary" id="sesRun">Compute Student Effort Score</button>';
+    var picker=cohortBar();
     var body;
     if(state.ses && state.ses.length){
       var meta=state.sesMeta||{};
@@ -1069,7 +1095,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
         '<div style="margin:0 0 18px;text-align:center">'+sesScatter(state.ses)+tierLegend()+'</div>'+
         '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">SES</th><th class="num">Grade</th><th>Tier</th><th class="num">Live</th><th class="num">Compl</th><th class="num">Dur</th><th class="num">Persist</th><th class="num">Forum</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     } else {
-      body='<div class="empty">No Student Effort Score computed yet. Pick a mapped course and click <b>Compute</b>.</div>';
+      body='<div class="empty">No cached Student Effort Score for this cohort yet — click <b>↻ Refresh from Moodle</b>.</div>';
     }
     return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. Plotted against course grade to flag intervention tiers.</p><div class="toolbar">'+picker+'</div>'+body+'</div>';
   }
@@ -1078,18 +1104,18 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   function pctNumUI(s){ var n=Number(String(s).replace(/[^0-9.]/g,"")); return isFinite(n)?n:null; }
   function ratioUI(a,b){ a=Number(a); b=Number(b); if(!isFinite(a)||!isFinite(b)||b===0) return null; return a/b*100; }
 
-  async function orchestrateSES(cohort){
+  async function computeCohortSES(cohort){
     try{
       var entry=(state.map||{})[cohort]; if(entry==null) entry=cohort;
       var courseid=mapCourseId(entry), groupid=mapGroupId(entry);
-      if(!courseid){ setStatus('No Moodle course mapped for '+esc(cohort)+'.', true); return; }
+      if(!courseid){ throw new Error('No Moodle course mapped for '+cohort); }
       setStatus('Computing Student Effort Score — pulling enrolment…', true);
       var enroll=await fetchJSON(MOODLE+"?fn=enroll&courseid="+encodeURIComponent(courseid));
       var memberIds = groupid? await fetchGroupMemberIds(groupid) : null;
       var students=(enroll||[]).filter(function(u){ var roles=u.roles||[]; return !roles.length || roles.some(function(r){ return r.shortname==="student"; }); })
         .filter(function(u){ return memberIds? !!memberIds[u.id] : true; })
         .map(function(u){ return {id:u.id, fullname:u.fullname, lastaccess:u.lastcourseaccess||u.lastaccess||0}; });
-      if(!students.length){ setStatus('No '+(memberIds?'group ':'enrolled ')+'students returned for '+esc(cohort)+'.', true); return; }
+      if(!students.length){ throw new Error('No '+(memberIds?'group ':'enrolled ')+'students for '+cohort); }
 
       var quizWrap=await fetchJSON(MOODLE+"?fn=quizzes&courseid="+encodeURIComponent(courseid));
       var quizzes=((quizWrap&&quizWrap.quizzes)||(Array.isArray(quizWrap)?quizWrap:[])||[]).map(function(q){ return {id:q.id, name:q.name, timelimit:CORE.num(q.timelimit), grade:CORE.num(q.grade)||CORE.num(q.sumgrades)||10}; });
@@ -1141,11 +1167,10 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       var payload={ course_startdate:startdate, quizzes_meta:quizzes, has_forums:hasForums, has_completion:(_nSt>0), students:students,
         completions_by_user:completions, attempts_by_user_quiz:attempts, live_by_user:liveByUser,
         forum_discussions:discussions, forum_posts_by_discussion:postsByDisc, course_grades:courseGrades };
-      state.ses=CORE.computeSES(payload);
-      state.sesMeta={ students:students.length, quizzes:quizzes.length, hasForums:hasForums, hasCompletion:(_nSt>0), nStatuses:_nSt, nAttempts:_nAt, nLive:nLive, noEffortData:(_nSt===0&&_nAt===0&&nLive===0), compErr:compErr, attErr:attErr };
-      await saveSnapshot("ses-"+courseid+".json", { courseid:courseid, computedAt:new Date().toISOString(), meta:state.sesMeta, results:state.ses });
-      setStatus('', false); state.tab="ses"; syncTabs(); render();
-    }catch(e){ setStatus('SES computation failed: '+esc(e.message)+'. Check the Worker /moodle route and that your token allows the quiz/completion/forum functions.', true); }
+      var _ses=CORE.computeSES(payload);
+      var _meta={ students:students.length, quizzes:quizzes.length, hasForums:hasForums, hasCompletion:(_nSt>0), nStatuses:_nSt, nAttempts:_nAt, nLive:nLive, noEffortData:(_nSt===0&&_nAt===0&&nLive===0), compErr:compErr, attErr:attErr };
+      return { ses:_ses, sesMeta:_meta };
+    }catch(e){ throw e; }
   }
 
   // ---- Moodle dialog ----
@@ -1241,13 +1266,10 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   // wire up
   document.addEventListener("click", function(e){
     var t=e.target.closest('.tab'); if(t){ state.tab=t.getAttribute('data-t'); syncTabs(); render(); return; }
-    if(e.target.id==="sesRun"){ var sel=document.getElementById("sesCohort"); if(sel&&sel.value) orchestrateSES(sel.value); }
-    if(e.target.id==="assessRun"){ runCohortPull("assess"); }
-    if(e.target.id==="quizzesRun"){ runCohortPull("quizzes"); }
-    if(e.target.id==="mdlPull"){ pullMoodleData(); }
+    if(e.target.id==="moodleRefresh"){ refreshMoodle(); }
   });
   document.addEventListener("change", function(e){
-    if(e.target.id==="cohortSel"){ state.cohortSel=e.target.value; }
+    if(e.target.id==="cohortSel"){ state.cohortSel=e.target.value; hydrateCohort(state.cohortSel); render(); }
     if(e.target && e.target.getAttribute && e.target.getAttribute("data-cohort-course")!=null){ onCourseChange(e.target); }
   });
   document.getElementById("btnReload").addEventListener("click", load);
@@ -1259,7 +1281,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   document.getElementById("moodleApply").addEventListener("click", applyMoodle);
   state.map={};
   load();
-  loadMoodleConfig().then(function(){ if(state.tab==="moodle"||state.tab==="ses") render(); });
+  loadMoodleConfig().then(function(){ return loadMoodleSnapshot(); }).then(function(){ render(); }).catch(function(){ render(); });
 })();
 </script>
 

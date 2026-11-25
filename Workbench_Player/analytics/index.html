@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.4.0">
-<meta name="build" content="2026-11-25 08:17 SAST">
+<meta name="version" content="1.4.1">
+<meta name="build" content="2026-11-25 08:30 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -132,10 +132,10 @@
     </div>
 
     <div class="tabs" id="tabs">
-      <div class="tab active" data-t="students">Per-student</div>
+      <div class="tab active" data-t="cohorts">Cohorts</div>
+      <div class="tab" data-t="students">Per-student</div>
       <div class="tab" data-t="dropoff">Drop-off</div>
       <div class="tab" data-t="runs">Quiz runs</div>
-      <div class="tab" data-t="cohorts">Cohorts</div>
       <div class="tab" data-t="moodle">Moodle</div>
       <div class="tab" data-t="assess">Assessment</div>
       <div class="tab" data-t="quizzes">Quizzes</div>
@@ -579,7 +579,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   var ASSET = cfg.assetApi || "";
   var SESSIONS = cfg.sessionsApi || (ASSET? ASSET.replace(/\/asset$/,"/sessions-index"):"");
   var MOODLE = cfg.moodleApi || (ASSET? ASSET.replace(/\/asset$/,"/moodle"):"");
-  var state = { records:[], facts:[], runs:[], tab:"students", moodle:{} , map:{},
+  var state = { records:[], facts:[], runs:[], tab:"cohorts", moodle:{} , map:{},
     bands:{ master:80, practitioner:70, associate:60, danger:40 },
     cohortDetail:{}, cohortSel:null, moodleData:{ cohorts:{} } };
 
@@ -684,7 +684,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   }
 
   // Moodle-driven views (assess/quizzes/ses) manage their own data and can render with no live facts.
-  var MOODLE_TABS={ assess:1, quizzes:1, ses:1, moodle:1 };
+  var MOODLE_TABS={ assess:1, quizzes:1, ses:1, moodle:1, cohorts:1 };
   function render(){
     var f=currentFacts();
     renderKPIs(f);
@@ -764,16 +764,21 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   }
 
   function viewCohorts(f){
-    var rows=CORE.cohorts(f).map(function(c){
+    var list=CORE.cohorts(f); var seen={}; list.forEach(function(c){ seen[c.cohort]=1; });
+    Object.keys(state.map||{}).forEach(function(co){ if(!seen[co]) list.push({cohort:co, course:'–', nStudents:0, nQuizzes:0, engagement:null, score:null}); });
+    var rows=list.map(function(c){
+      var mc=(state.moodleData.cohorts||{})[c.cohort];
+      var refresh = (mc && mc.refreshedAt) ? (esc(lastRefreshStr(c.cohort))+(mc.inRepo?' <span style="color:var(--good)" title="saved in '+esc((mc.repoPath||'').split('/').pop())+'">✓</span>':'')) : '<span class="faint">never</span>';
       return '<tr><td class="name">'+esc(c.cohort)+'</td>'+
         '<td class="muted">'+esc(c.course||'–')+'</td>'+
         '<td class="num">'+c.nStudents+'</td>'+
         '<td class="num">'+c.nQuizzes+'</td>'+
         '<td class="num">'+engBar(c.engagement)+'</td>'+
-        '<td class="num"><span class="chip '+band(c.score)+'">'+fmtPct(c.score)+'</span></td></tr>';
+        '<td class="num"><span class="chip '+band(c.score)+'">'+fmtPct(c.score)+'</span></td>'+
+        '<td class="muted" style="font-size:12.5px">'+refresh+'</td></tr>';
     }).join("");
-    return '<div class="panel"><h2>Cohort comparison</h2><p class="hint">Engagement and score rolled up per cohort.</p>'+
-      '<div class="scroll"><table><thead><tr><th>Cohort</th><th>Course</th><th class="num">Students</th><th class="num">Quizzes</th><th class="num">Engagement</th><th class="num">Score</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+    return '<div class="panel"><h2>Cohorts</h2><p class="hint">Every cohort you have worked on — live-quiz engagement/score rolled up, plus the last Moodle refresh read from each cohort&#39;s JSON file in the repo. Pick a cohort and hit <b>↻ Refresh</b> (top right) to update it from Moodle.</p>'+
+      '<div class="scroll"><table><thead><tr><th>Cohort</th><th>Course</th><th class="num">Students</th><th class="num">Quizzes</th><th class="num">Engagement</th><th class="num">Score</th><th>Last Moodle refresh</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
   }
 
   function viewMoodle(f){
@@ -996,12 +1001,22 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     e.inRepo=true; e.repoPath=rel; e.savedAt=new Date().toISOString();
     state.repoSync={ ok:true, at:e.savedAt, path:full };
   }
+  async function loadConsolidated(){
+    var j=null;
+    try{ if(ASSET){ j=await fetchJSON(ASSET+"?path="+encodeURIComponent("analytics/moodle-snapshot.json")); } }catch(e){}
+    if(!j){ try{ var g=await ghGet(DATA_PREFIX+"analytics/moodle-snapshot.json"); j=g.json; }catch(e){} }
+    return (j&&j.cohorts)? j.cohorts : {};
+  }
   async function loadCohortSnapshots(){
     var mapped=Object.keys(state.map||{});
+    var cons=null; // lazily read the old consolidated snapshot as fallback
     for(var i=0;i<mapped.length;i++){ var c=mapped[i], rel=cohortPath(c), j=null;
       try{ if(ASSET){ j=await fetchJSON(ASSET+"?path="+encodeURIComponent(rel)); } }catch(e){}
       if(!j){ try{ var g=await ghGet(DATA_PREFIX+rel); j=g.json; }catch(e){} }
-      if(j && j.detail){ j.inRepo=true; j.repoPath=rel; state.moodleData.cohorts[c]=j; }
+      if(j && j.detail){ j.inRepo=true; j.repoPath=rel; state.moodleData.cohorts[c]=j; continue; }
+      if(cons===null) cons=await loadConsolidated();
+      var e2=cons[c];
+      if(e2 && e2.detail){ e2.cohort=e2.cohort||c; e2.inRepo=true; e2.repoPath="analytics/moodle-snapshot.json"; state.moodleData.cohorts[c]=e2; }
     }
     if((!state.cohortSel||mapped.indexOf(state.cohortSel)<0)&&mapped.length) state.cohortSel=mapped[0];
     if(state.cohortSel) hydrateCohort(state.cohortSel);

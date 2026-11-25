@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.11.0">
-<meta name="build" content="2026-11-25 15:43 SAST">
+<meta name="version" content="1.12.0">
+<meta name="build" content="2026-11-25 16:48 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -1222,6 +1222,20 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     if(h||m||sec) return (h?+h[1]:0)*60 + (m?+m[1]:0) + (sec?Math.round(+sec[1]/60):0);
     var n=parseFloat(s.replace(/[^0-9.]/g,"")); return isNaN(n)?null:n;
   }
+    function normTeamsName(disp){
+    disp=String(disp==null?"":disp).trim(); if(!disp) return "";
+    var first=null, rest=disp;
+    var paren=/\(([^)]+)\)/.exec(disp);           // "(Aarti)"
+    if(paren){ first=paren[1].trim(); rest=disp.replace(/\([^)]*\)/g,"").trim(); }
+    var comma=rest.indexOf(",");
+    if(comma>=0){                                  // "Govan, A." or "Williamson, Natalie"
+      var last=rest.slice(0,comma).trim();
+      var after=rest.slice(comma+1).trim().replace(/\.$/,"").trim();
+      if(!first) first=after;                      // "Williamson, Natalie" -> Natalie
+      return (first+" "+last).replace(/\s+/g," ").trim();
+    }
+    return rest.replace(/\s+/g," ").trim();         // "Howard Diesel"
+  }
   function parseTeamsAttendance(text){
     if(!text) return null;
     text=String(text).replace(/^﻿/,"");
@@ -1229,32 +1243,56 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var delim=(lines.slice(0,60).join("\n").indexOf("\t")>=0)?"\t":",";
     var meetMin=null;
     for(var i=0;i<lines.length;i++){ var c=delimSplit(lines[i],delim); if(/meeting duration/i.test(c[0]||"")){ var mm=parseMinutes(c[1]); if(mm){ meetMin=mm; break; } } }
-    var hdrIdx=-1, cols=null;
-    for(var i=0;i<lines.length;i++){ var c=delimSplit(lines[i],delim).map(function(x){ return String(x).toLowerCase().trim(); });
-      var hasName=c.indexOf("name")>=0 || c.indexOf("full name")>=0;
-      var hasDur=c.some(function(x){ return /in-?meeting duration/.test(x)||x==="duration"; });
-      if(hasName && hasDur){ hdrIdx=i; cols=c; break; } }
     var people={};
+    function lower(a){ return a.map(function(x){ return String(x).toLowerCase().trim(); }); }
+    // Format A — Teams "attendance report": Participants section with an In-Meeting Duration column
+    var hdrIdx=-1, cols=null;
+    for(var i=0;i<lines.length;i++){ var c=lower(delimSplit(lines[i],delim));
+      if((c.indexOf("name")>=0||c.indexOf("full name")>=0) && c.some(function(x){ return /in-?meeting duration/.test(x)||x==="duration"; })){ hdrIdx=i; cols=c; break; } }
     if(hdrIdx>=0){
       var nameI=cols.indexOf("name"); if(nameI<0) nameI=cols.indexOf("full name"); if(nameI<0) nameI=0;
       var durI=-1; cols.forEach(function(x,ix){ if(durI<0 && (/in-?meeting duration/.test(x)||x==="duration")) durI=ix; });
       var emailI=cols.indexOf("email");
       for(var i=hdrIdx+1;i<lines.length;i++){ var raw=lines[i]; if(raw.trim()==="") break; if(/^\d+\.\s/.test(raw.trim())) break;
-        var c=delimSplit(raw,delim); var nm=(c[nameI]||"").trim(); if(!nm||/^(name|full name)$/i.test(nm)) continue;
+        var c=delimSplit(raw,delim); var nm=normTeamsName(c[nameI]); if(!nm||/^(name|full name)$/i.test(nm)) continue;
         var dur=durI>=0?parseMinutes(c[durI]):null; var key=CORE.nameKey(nm);
         if(!people[key]) people[key]={ name:nm, dur:(dur||0), email:(emailI>=0?(c[emailI]||""):"") };
         else people[key].dur=Math.max(people[key].dur, dur||0); }
-    } else {
-      // fallback: a Join/Leave action timeline (Name, UserAction/Action, Timestamp)
+    }
+    // Format C — Graph attendance records / CQD: per-join rows with joinDateTime & leaveDateTime
+    if(!Object.keys(people).length){
+      var h3=-1, c3=null;
+      for(var i=0;i<lines.length;i++){ var c=lower(delimSplit(lines[i],delim));
+        var hasJoin=c.some(function(x){ return /join/.test(x) && /date|time/.test(x); });
+        var hasLeave=c.some(function(x){ return /leave/.test(x) && /date|time/.test(x); });
+        var hasName=c.indexOf("display")>=0||c.indexOf("name")>=0||c.indexOf("full name")>=0||c.indexOf("username")>=0;
+        if(hasJoin && hasLeave && hasName){ h3=i; c3=c; break; } }
+      if(h3>=0){
+        var di=c3.indexOf("display"); if(di<0) di=c3.indexOf("name"); if(di<0) di=c3.indexOf("full name");
+        var ui=c3.indexOf("username"); if(ui<0) ui=c3.indexOf("email");
+        var ji=-1, li=-1; c3.forEach(function(x,ix){ if(ji<0 && /join/.test(x) && /date|time/.test(x)) ji=ix; if(li<0 && /leave/.test(x) && /date|time/.test(x)) li=ix; });
+        var minJoin=null, maxLeave=null;
+        for(var i=h3+1;i<lines.length;i++){ var raw=lines[i]; if(raw.trim()==="") continue; var c=delimSplit(raw,delim);
+          var nmRaw=(di>=0?c[di]:""); if(!nmRaw && ui>=0) nmRaw=c[ui];
+          var nm=normTeamsName(nmRaw); if(!nm) continue; var key=CORE.nameKey(nm);
+          var jt=Date.parse(c[ji]), lt=Date.parse(c[li]);
+          if(!people[key]) people[key]={ name:nm, dur:0, email:(ui>=0?(c[ui]||""):"") };
+          if(!isNaN(jt) && !isNaN(lt) && lt>jt){ people[key].dur += (lt-jt)/60000; if(minJoin==null||jt<minJoin) minJoin=jt; if(maxLeave==null||lt>maxLeave) maxLeave=lt; } }
+        Object.keys(people).forEach(function(k){ people[k].dur=Math.round(people[k].dur); if(!people[k].dur) people[k].dur=null; });
+        if(meetMin==null && minJoin!=null && maxLeave!=null) meetMin=Math.round((maxLeave-minJoin)/60000);
+      }
+    }
+    // Format B — a Join/Leave action timeline (Name, User Action, Timestamp)
+    if(!Object.keys(people).length){
       var h2=-1, c2=null;
-      for(var i=0;i<lines.length;i++){ var c=delimSplit(lines[i],delim).map(function(x){ return String(x).toLowerCase().trim(); });
+      for(var i=0;i<lines.length;i++){ var c=lower(delimSplit(lines[i],delim));
         if((c.indexOf("name")>=0||c.indexOf("full name")>=0) && c.some(function(x){ return /action/.test(x); }) && c.some(function(x){ return /time/.test(x); })){ h2=i; c2=c; break; } }
       if(h2>=0){
         var ni=c2.indexOf("name"); if(ni<0)ni=c2.indexOf("full name"); if(ni<0)ni=0;
         var ai=-1,ti=-1; c2.forEach(function(x,ix){ if(ai<0&&/action/.test(x))ai=ix; if(ti<0&&/time/.test(x))ti=ix; });
         var open={};
         for(var i=h2+1;i<lines.length;i++){ var raw=lines[i]; if(raw.trim()==="") continue; var c=delimSplit(raw,delim);
-          var nm=(c[ni]||"").trim(); if(!nm) continue; var act=(c[ai]||"").toLowerCase(); var ts=Date.parse(c[ti]||""); var key=CORE.nameKey(nm);
+          var nm=normTeamsName(c[ni]); if(!nm) continue; var act=(c[ai]||"").toLowerCase(); var ts=Date.parse(c[ti]||""); var key=CORE.nameKey(nm);
           if(!people[key]) people[key]={ name:nm, dur:0, email:"" };
           if(/join/.test(act) && !isNaN(ts)) open[key]=ts;
           else if(/leave/.test(act) && !isNaN(ts) && open[key]!=null){ people[key].dur+=Math.max(0,(ts-open[key])/60000); open[key]=null; } }
@@ -1408,7 +1446,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     } else {
       body='<div class="empty">No cached Student Effort Score for this cohort yet — click <b>↻ Refresh</b> (top right).</div>';
     }
-    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. A live quiz counts for a student only if they actually took part in it — quizzes not run with them don’t lower their score. Plotted against course grade to flag intervention tiers.</p><div class="toolbar">'+picker+' <button class="btn primary" id="makeCerts" title="Produce printable branded certificates (PDF) for every registered student in this cohort — grade tier, SES score and summary">&#128220; Produce certificates</button> <button class="btn" id="sponsorReportBtn" title="Produce a management report (PDF) for a sponsoring company — their staff\u2019s certification, uplift, effort and participation">&#128196; Sponsor report</button></div>'+body+'</div>';
+    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. A live quiz counts for a student only if they actually took part in it — quizzes not run with them don’t lower their score. Plotted against the post-assessment (the course total when no post has been taken) to flag intervention tiers.</p><div class="toolbar">'+picker+' <button class="btn primary" id="makeCerts" title="Produce printable branded certificates (PDF) for every registered student in this cohort — grade tier, SES score and summary">&#128220; Produce certificates</button> <button class="btn" id="sponsorReportBtn" title="Produce a management report (PDF) for a sponsoring company — their staff\u2019s certification, uplift, effort and participation">&#128196; Sponsor report</button></div>'+body+'</div>';
   }
 
   function idByName(students, name){ var k=CORE.nameKey(name); var s=students.find(function(x){ return CORE.nameKey(x.fullname)===k; }); return s?s.id:null; }

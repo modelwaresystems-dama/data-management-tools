@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.5.0">
-<meta name="build" content="2026-11-25 08:39 SAST">
+<meta name="version" content="1.6.1">
+<meta name="build" content="2026-11-25 08:51 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -79,12 +79,14 @@
   .grow{flex:1;min-width:280px;}
   .subh{font:600 12px "IBM Plex Mono";letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:14px 0 8px;}
   code.k{font-family:"IBM Plex Mono";font-size:12px;background:var(--surface2);padding:2px 6px;border-radius:6px;border:1px solid var(--line);}
-  dialog{background:var(--surface);color:var(--ink);border:1px solid var(--line2);border-radius:16px;padding:0;max-width:640px;width:92vw;box-shadow:var(--shadow);}
+  dialog{background:var(--surface);color:var(--ink);border:1px solid var(--line2);border-radius:16px;padding:0;max-width:880px;width:94vw;box-shadow:var(--shadow);}
   dialog::backdrop{background:rgba(4,8,16,.6);}
   .dlg-h{padding:16px 20px;border-bottom:1px solid var(--line);font-family:"Sora";font-weight:700;}
   .dlg-b{padding:16px 20px;max-height:62vh;overflow:auto;}
   .dlg-f{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px;}
   .maprow{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center;margin-bottom:8px;}
+  .maprow>*{min-width:0;}
+  .dlg-b select,.dlg-b input{width:100%;max-width:100%;box-sizing:border-box;}
 
 /* === LIGHT THEME (appended override) === */
   :root{--bg:#EEF2F8;--surface:#FFFFFF;--surface2:#F3F6FC;--line:#D7DFEC;--line2:#C4D0E2;--ink:#142033;--muted:#47566E;--faint:#5A6880;--accent:#0E8F7E;--accent-ink:#0A6F62;--gold:#9A7B12;--good:#1E9E63;--warn:#B6861A;--bad:#C6553A;--shadow:0 8px 26px rgba(22,38,66,.12);}
@@ -918,9 +920,9 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     if(!mapped.length) return '<span class="muted">Map a cohort to a Moodle course + group first — click <b>Moodle ⚙</b>.</span>';
     if(!state.cohortSel) state.cohortSel=mapped[0];
     var cohorts=allCohorts(); if(cohorts.indexOf(state.cohortSel)<0) cohorts.unshift(state.cohortSel);
-    var dd='<label style="margin:0">Cohort <select id="cohortSel">'+cohorts.map(function(co){ return '<option value="'+esc(co)+'"'+(co===state.cohortSel?' selected':'')+'>'+esc(co)+'</option>'; }).join("")+'</select></label>';
+    var dd='<span style="font-size:13px;font-weight:600">Cohort</span> <select id="cohortSel" style="margin:0">'+cohorts.map(function(co){ return '<option value="'+esc(co)+'"'+(co===state.cohortSel?' selected':'')+'>'+esc(co)+'</option>'; }).join("")+'</select>';
     var info = (mapped.indexOf(state.cohortSel)>=0) ? refreshLine(state.cohortSel) : '<b>'+esc(state.cohortSel)+'</b> is not mapped to Moodle — map it via <b>Moodle ⚙</b>.';
-    return '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+dd+'<span class="muted" style="font-size:12.5px">'+info+'</span></div>';
+    return '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%">'+dd+'<span class="muted" style="font-size:12.5px">'+info+'</span></div>';
   }
   function buildMoodleJoin(detail){
     var m={}; if(!detail||!detail.students) return m;
@@ -1079,7 +1081,14 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     }).join("");
     var totalRow='<tr style="font-weight:700;background:var(--surface2)"><td></td><td></td><td>Total</td><td class="num">'+fmtPct(compAll)+'</td><td class="num">'+fmtPct(scoreAll)+'</td></tr>';
     var table='<div class="subh">Quiz completion rate</div><div class="scroll"><table><thead><tr><th>Course code</th><th>Group</th><th>Student</th><th class="num">Completion</th><th class="num">Quiz score</th></tr></thead><tbody>'+trows+totalRow+'</tbody></table></div>';
-    return head+cards+stackedQuizBars(S, quizNames)+comboCompletionScore(S)+table+'</div>';
+    var qHead='<tr><th>Student</th>'+quizNames.map(function(n){ return '<th class="num" title="'+esc(n)+'">'+esc(trunc(n,18))+'</th>'; }).join("")+'<th class="num">Avg</th></tr>';
+    var qRows=S.map(function(s){
+      var byq={}; (s.quizzes||[]).forEach(function(q){ byq[q.name]=q; });
+      var cells=quizNames.map(function(n){ var q=byq[n]; if(!q || q.pct==null) return '<td class="num faint">–</td>'; return '<td class="num"><span class="chip '+band(q.pct)+'">'+Math.round(q.pct)+'%</span></td>'; }).join("");
+      return '<tr><td class="name" style="white-space:nowrap">'+esc(s.name)+'</td>'+cells+'<td class="num"><b>'+fmtPct(s.quizAvg)+'</b></td></tr>';
+    }).join("");
+    var matrix = quizNames.length ? '<div class="subh">Quiz scores per student — each quiz (green ≥80, amber ≥60, red below; – = not attempted)</div><div class="scroll"><table><thead>'+qHead+'</thead><tbody>'+qRows+'</tbody></table></div>' : '';
+    return head+cards+matrix+stackedQuizBars(S, quizNames)+comboCompletionScore(S)+table+'</div>';
   }
 
   // ---- Student Effort Score (SES) view ----
@@ -1218,7 +1227,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     groupEl.innerHTML='<option value="">loading…</option>';
     var groups=await fetchCourseGroups(cid);
     if(!groups){ groupEl.innerHTML='<option value="">— all enrolled (groups unavailable) —</option>'; return; }
-    groupEl.innerHTML='<option value="">— all enrolled —</option>'+groups.map(function(g){ return '<option value="'+esc(g.id)+'" data-gname="'+esc(g.name)+'"'+(String(g.id)===String(selectGid||'')?' selected':'')+'>'+esc(g.name)+' (#'+esc(g.id)+')</option>'; }).join("");
+    groupEl.innerHTML='<option value="">— all enrolled —</option>'+groups.map(function(g){ var gn=deEntity(g.name); return '<option value="'+esc(g.id)+'" data-gname="'+esc(gn)+'"'+(String(g.id)===String(selectGid||'')?' selected':'')+'>'+esc(gn)+' (#'+esc(g.id)+')</option>'; }).join("");
   }
   function onCourseChange(courseEl){ var co=courseEl.getAttribute("data-cohort-course"); if(co) fillGroupSelect(co, ""); }
 
@@ -1229,7 +1238,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var cohorts={}; state.facts.forEach(function(f){ cohorts[f.cohort]=1; }); Object.keys(state.map||{}).forEach(function(c){ cohorts[c]=1; });
     var cohortList=Object.keys(cohorts).sort();
     var courses=null;
-    try{ var cj=await fetchJSON(MOODLE+"?fn=courses"); courses=(Array.isArray(cj)?cj:(cj.courses||[])).map(function(c){ return {id:c.id, name:c.fullname||c.displayname||c.shortname||('Course '+c.id)}; }); }catch(e){ courses=null; }
+    try{ var cj=await fetchJSON(MOODLE+"?fn=courses"); courses=(Array.isArray(cj)?cj:(cj.courses||[])).map(function(c){ return {id:c.id, name:deEntity(c.fullname||c.displayname||c.shortname||('Course '+c.id))}; }); }catch(e){ courses=null; }
     function courseField(co, cur){
       if(courses){
         var opts='<option value="">none</option>'+courses.map(function(c){ return '<option value="'+esc(c.id)+'"'+(String(c.id)===String(cur)?' selected':'')+'>'+esc(c.name)+' (#'+esc(c.id)+')</option>'; }).join("");

@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.8.0">
-<meta name="build" content="2026-11-25 13:58 SAST">
+<meta name="version" content="1.10.0">
+<meta name="build" content="2026-11-25 15:13 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -164,6 +164,11 @@
       <button class="btn" id="moodleClose">Close</button>
       <button class="btn primary" id="moodleApply">Save map to repo</button>
     </div>
+  </dialog>
+  <dialog id="sponsorDlg">
+    <div class="dlg-h">Sponsor report — choose a company</div>
+    <div class="dlg-b" id="sponsorBody"></div>
+    <div class="dlg-f"><button class="btn" id="sponsorClose">Close</button></div>
   </dialog>
 
   <script>window.PAGE_BUILD="1.22.15";</script>
@@ -1147,6 +1152,206 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     setStatus("Please allow pop-ups for this site to open the printable certificates, then try again.", true);
   }
 
+  // ---- Sponsor management report (per company, allocated from the Player class CSV) ----
+  function csvSplit(line){
+    var out=[], cur="", q=false;
+    for(var i=0;i<line.length;i++){ var ch=line[i];
+      if(q){ if(ch==='"'){ if(line[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=ch; }
+      else { if(ch==='"') q=true; else if(ch===',') { out.push(cur); cur=""; } else cur+=ch; } }
+    out.push(cur); return out.map(function(s){ return s.trim(); });
+  }
+  function delimSplit(line, delim){
+    if(delim!=="\t") return csvSplit(line);
+    return String(line).split("\t").map(function(s){ return s.replace(/^"|"$/g,"").trim(); });
+  }
+  function parseClassCsv(text){
+    var empty={ hasCompany:false, byName:{}, companies:[] };
+    if(text==null) return empty;
+    text=String(text).replace(/^﻿/,"");
+    var lines=text.split(/\r?\n/), i=0;
+    while(i<lines.length){ var ln=lines[i].trim(); if(ln==="" || /^(session|topic)\s*:/i.test(ln)){ i++; continue; } break; }
+    if(i>=lines.length) return empty;
+    var header=csvSplit(lines[i]); i++;
+    var lc=header.map(function(h){ return h.toLowerCase(); });
+    function findCol(names){ for(var n=0;n<names.length;n++){ var idx=lc.indexOf(names[n]); if(idx>=0) return idx; } return -1; }
+    var nameIdx=findCol(["name","full name","learner","student"]); if(nameIdx<0) nameIdx=0;
+    var compIdx=findCol(["company","organisation","organization","employer","sponsor"]);
+    var byName={}, compSet={};
+    for(; i<lines.length; i++){ var raw=lines[i]; if(raw.trim()==="") continue; var cols=csvSplit(raw);
+      var nm=(cols[nameIdx]||"").trim(); if(!nm) continue;
+      var co=compIdx>=0? (cols[compIdx]||"").trim() : "";
+      byName[CORE.nameKey(nm)]={ name:nm, company:co }; if(co) compSet[co]=(compSet[co]||0)+1; }
+    return { hasCompany:(compIdx>=0), byName:byName, companies:Object.keys(compSet).sort() };
+  }
+  async function loadCohortCompanies(cohort){
+    var rel="classes/"+cohort+".csv", text=null;
+    if(ASSET){ try{ var r=await fetch(ASSET+"?path="+encodeURIComponent(rel),{cache:"no-store"}); if(r.ok) text=await r.text(); }catch(e){} }
+    if(text==null){ try{ var c=ghCfg(); var u=ghApiUrl(DATA_PREFIX+rel)+"?ref="+encodeURIComponent(c.branch); var r2=await fetch(u,{headers:ghHdr(),cache:"no-store"}); if(r2.ok){ var j=await r2.json(); text=b64d(j.content); } }catch(e){} }
+    if(text==null) return null;
+    return parseClassCsv(text);
+  }
+
+  // ---- Teams attendance (manual CSV exports dropped in data/attendance/<cohort>/) ----
+  function decodeBytes(binStr){
+    var len=binStr.length, bytes=new Uint8Array(len);
+    for(var i=0;i<len;i++) bytes[i]=binStr.charCodeAt(i)&0xff;
+    var enc="utf-8";
+    if(bytes.length>=2 && bytes[0]===0xFF && bytes[1]===0xFE) enc="utf-16le";
+    else if(bytes.length>=2 && bytes[0]===0xFE && bytes[1]===0xFF) enc="utf-16be";
+    try{ return new TextDecoder(enc).decode(bytes); }catch(e){ try{ return decodeURIComponent(escape(binStr)); }catch(e2){ return binStr; } }
+  }
+  async function ghListDir(path){
+    var c=ghCfg(); var r=await fetch(ghApiUrl(path)+"?ref="+encodeURIComponent(c.branch),{headers:ghHdr(),cache:"no-store"});
+    if(r.status===404) return []; if(!r.ok) throw new Error("LIST "+r.status);
+    var j=await r.json(); return Array.isArray(j)? j : [];
+  }
+  async function ghGetTextRaw(path){
+    var c=ghCfg(); var r=await fetch(ghApiUrl(path)+"?ref="+encodeURIComponent(c.branch),{headers:ghHdr(),cache:"no-store"});
+    if(!r.ok) throw new Error("GET "+r.status); var j=await r.json();
+    return decodeBytes(atob(String(j.content||"").replace(/\s+/g,"")));
+  }
+  function parseMinutes(s){
+    if(s==null) return null; s=String(s).trim(); if(!s) return null;
+    var h=/(\d+)\s*h/i.exec(s), m=/(\d+)\s*m/i.exec(s), sec=/(\d+)\s*s/i.exec(s);
+    if(h||m||sec) return (h?+h[1]:0)*60 + (m?+m[1]:0) + (sec?Math.round(+sec[1]/60):0);
+    var n=parseFloat(s.replace(/[^0-9.]/g,"")); return isNaN(n)?null:n;
+  }
+  function parseTeamsAttendance(text){
+    if(!text) return null;
+    text=String(text).replace(/^﻿/,"");
+    var lines=text.split(/\r?\n/);
+    var delim=(lines.slice(0,60).join("\n").indexOf("\t")>=0)?"\t":",";
+    var meetMin=null;
+    for(var i=0;i<lines.length;i++){ var c=delimSplit(lines[i],delim); if(/meeting duration/i.test(c[0]||"")){ var mm=parseMinutes(c[1]); if(mm){ meetMin=mm; break; } } }
+    var hdrIdx=-1, cols=null;
+    for(var i=0;i<lines.length;i++){ var c=delimSplit(lines[i],delim).map(function(x){ return String(x).toLowerCase().trim(); });
+      var hasName=c.indexOf("name")>=0 || c.indexOf("full name")>=0;
+      var hasDur=c.some(function(x){ return /in-?meeting duration/.test(x)||x==="duration"; });
+      if(hasName && hasDur){ hdrIdx=i; cols=c; break; } }
+    var people={};
+    if(hdrIdx>=0){
+      var nameI=cols.indexOf("name"); if(nameI<0) nameI=cols.indexOf("full name"); if(nameI<0) nameI=0;
+      var durI=-1; cols.forEach(function(x,ix){ if(durI<0 && (/in-?meeting duration/.test(x)||x==="duration")) durI=ix; });
+      var emailI=cols.indexOf("email");
+      for(var i=hdrIdx+1;i<lines.length;i++){ var raw=lines[i]; if(raw.trim()==="") break; if(/^\d+\.\s/.test(raw.trim())) break;
+        var c=delimSplit(raw,delim); var nm=(c[nameI]||"").trim(); if(!nm||/^(name|full name)$/i.test(nm)) continue;
+        var dur=durI>=0?parseMinutes(c[durI]):null; var key=CORE.nameKey(nm);
+        if(!people[key]) people[key]={ name:nm, dur:(dur||0), email:(emailI>=0?(c[emailI]||""):"") };
+        else people[key].dur=Math.max(people[key].dur, dur||0); }
+    } else {
+      // fallback: a Join/Leave action timeline (Name, UserAction/Action, Timestamp)
+      var h2=-1, c2=null;
+      for(var i=0;i<lines.length;i++){ var c=delimSplit(lines[i],delim).map(function(x){ return String(x).toLowerCase().trim(); });
+        if((c.indexOf("name")>=0||c.indexOf("full name")>=0) && c.some(function(x){ return /action/.test(x); }) && c.some(function(x){ return /time/.test(x); })){ h2=i; c2=c; break; } }
+      if(h2>=0){
+        var ni=c2.indexOf("name"); if(ni<0)ni=c2.indexOf("full name"); if(ni<0)ni=0;
+        var ai=-1,ti=-1; c2.forEach(function(x,ix){ if(ai<0&&/action/.test(x))ai=ix; if(ti<0&&/time/.test(x))ti=ix; });
+        var open={};
+        for(var i=h2+1;i<lines.length;i++){ var raw=lines[i]; if(raw.trim()==="") continue; var c=delimSplit(raw,delim);
+          var nm=(c[ni]||"").trim(); if(!nm) continue; var act=(c[ai]||"").toLowerCase(); var ts=Date.parse(c[ti]||""); var key=CORE.nameKey(nm);
+          if(!people[key]) people[key]={ name:nm, dur:0, email:"" };
+          if(/join/.test(act) && !isNaN(ts)) open[key]=ts;
+          else if(/leave/.test(act) && !isNaN(ts) && open[key]!=null){ people[key].dur+=Math.max(0,(ts-open[key])/60000); open[key]=null; } }
+        Object.keys(people).forEach(function(k){ people[k].dur=Math.round(people[k].dur); if(!people[k].dur) people[k].dur=null; });
+      }
+    }
+    if(!Object.keys(people).length) return null;
+    return { meetMin:meetMin, people:people };
+  }
+  async function loadCohortAttendance(cohort){
+    var items; try{ items=await ghListDir(DATA_PREFIX+"attendance/"+cohort); }catch(e){ return null; }
+    var files=(items||[]).filter(function(x){ return x.type==="file" && /\.(csv|tsv|txt)$/i.test(x.name); });
+    if(!files.length) return null;
+    var sessions=[];
+    for(var k=0;k<files.length;k++){ try{ var txt=await ghGetTextRaw(files[k].path); var p=parseTeamsAttendance(txt); if(p) sessions.push(p); }catch(e){} }
+    if(!sessions.length) return null;
+    var N=sessions.length, withDur=sessions.filter(function(s){ return !!s.meetMin; }).length, byName={};
+    sessions.forEach(function(s){ Object.keys(s.people).forEach(function(key){ var pp=s.people[key];
+      var rec=byName[key]||(byName[key]={ name:pp.name, sessionsAttended:0, pctSum:0 });
+      rec.sessionsAttended++; if(s.meetMin) rec.pctSum+=Math.min(100, Math.round((pp.dur||0)/s.meetMin*100)); }); });
+    Object.keys(byName).forEach(function(key){ var r=byName[key]; r.sessions=N; r.pct = withDur? Math.round(r.pctSum/withDur) : null; });
+    return { N:N, withDur:withDur, byName:byName };
+  }
+
+  async function openSponsorReport(){
+    var d=state.cohortDetail[state.cohortSel];
+    if(!d || !d.students || !d.students.length){ setStatus("No cohort data yet — pick a cohort and <b>↻ Refresh</b> first, then try the sponsor report.", true); return; }
+    setStatus("Loading company allocation from the class list…", true);
+    var alloc=await loadCohortCompanies(state.cohortSel);
+    if(!alloc || !alloc.hasCompany){ setStatus('No company allocation found. Add a <b>Company</b> column to <code class="k">data/classes/'+esc(state.cohortSel)+'.csv</code> (Name, Company) in the storage repo, then try again.', true); return; }
+    setStatus("Loading Teams attendance (if present)…", true);
+    try{ state._attend=await loadCohortAttendance(state.cohortSel); }catch(e){ state._attend=null; }
+    setStatus("", false);
+    var present={}; d.students.forEach(function(s){ var a=alloc.byName[CORE.nameKey(s.name)]; if(a && a.company) present[a.company]=(present[a.company]||0)+1; });
+    var names=Object.keys(present).sort();
+    if(!names.length){ setStatus("The class list has companies, but none of its names match this cohort's registered students.", true); return; }
+    state._alloc=alloc;
+    var body=document.getElementById("sponsorBody");
+    var html='<p class="note">Choose the sponsoring company — the report covers only that company’s staff in <b>'+esc(deEntity(d.groupName||state.cohortSel))+'</b>.'+(state._attend?' <span class="muted">Teams attendance found: '+state._attend.N+' session'+(state._attend.N===1?'':'s')+'.</span>':'')+'</p>';
+    html+=names.map(function(co){ return '<button class="btn primary sponsor-pick" type="button" data-sponsor="'+esc(co)+'" style="display:block;width:100%;text-align:left;margin:6px 0">'+esc(co)+' <span class="muted">— '+present[co]+' '+(present[co]===1?'student':'students')+'</span></button>'; }).join("");
+    var unmatched=d.students.filter(function(s){ var a=alloc.byName[CORE.nameKey(s.name)]; return !a || !a.company; });
+    if(unmatched.length){ html+='<p class="muted" style="margin-top:10px">'+unmatched.length+' student'+(unmatched.length===1?'':'s')+' in this cohort have no company in the class list'+(unmatched.length<=6?': '+unmatched.map(function(s){ return esc(s.name); }).join(', '):'')+'.</p>'; }
+    body.innerHTML=html;
+    document.getElementById("sponsorDlg").showModal();
+  }
+  function produceSponsorReport(company){
+    var d=state.cohortDetail[state.cohortSel], alloc=state._alloc, att=state._attend;
+    if(!d || !alloc) return;
+    var cfg=certCfg(), accent=cfg.accent||"#0E8F7E", B=bandLines();
+    var courseName=deEntity(d.courseName||state.cohortSel), cohort=deEntity(d.groupName||state.cohortSel), courseCode=deEntity(d.courseCode||"");
+    var dateStr=new Date().toLocaleDateString(undefined,{year:"numeric",month:"long",day:"numeric"});
+    var sesByName={}; (state.ses||[]).forEach(function(r){ sesByName[CORE.nameKey(r.fullname)]=r; });
+    var attAvail=!!(att && att.N);
+    var rows=d.students.filter(function(s){ var a=alloc.byName[CORE.nameKey(s.name)]; return a && a.company===company; }).map(function(s){
+      var sr=sesByName[CORE.nameKey(s.name)]; var ar=attAvail? att.byName[CORE.nameKey(s.name)] : null;
+      return { name:s.name,
+        grade:(s.grade==null?null:Math.round(s.grade)), tier:certGradeTier(s.grade,B),
+        pre:(s.preAvg==null?null:Math.round(s.preAvg)), post:(s.postAvg==null?null:Math.round(s.postAvg)),
+        uplift:(s.uplift==null?null:Math.round(s.uplift)),
+        ses:(sr&&sr.ses!=null?Math.round(sr.ses):null), sestier:(sr?sr.tier:null),
+        live:(sr&&sr.breakdown&&sr.breakdown.live_quiz!=null?Math.round(sr.breakdown.live_quiz):null),
+        completion:(s.quizCompletion==null?null:Math.round(s.quizCompletion)),
+        att:!!ar, attPct:(ar&&ar.pct!=null?ar.pct:null), attSess:(ar?ar.sessionsAttended:0) };
+    });
+    if(!rows.length){ setStatus("No students for "+esc(company)+" in this cohort.", true); return; }
+    rows.sort(function(a,b){ return (b.grade||0)-(a.grade||0) || a.name.localeCompare(b.name); });
+    var n=rows.length;
+    function avgOf(f){ var v=rows.map(f).filter(function(x){ return x!=null; }); return v.length? Math.round(v.reduce(function(a,b){ return a+b; },0)/v.length) : null; }
+    var bandOrder=["Master Pass","Practitioner","Associate","Attended"], bandCount={};
+    bandOrder.forEach(function(b){ bandCount[b]=0; }); rows.forEach(function(r){ bandCount[r.tier.name]=(bandCount[r.tier.name]||0)+1; });
+    var passed=bandCount["Master Pass"]+bandCount["Practitioner"]+bandCount["Associate"];
+    var avgPre=avgOf(function(r){return r.pre;}), avgPost=avgOf(function(r){return r.post;}), avgUp=avgOf(function(r){return r.uplift;});
+    var avgSes=avgOf(function(r){return r.ses;}), avgComp=avgOf(function(r){return r.completion;}), avgLive=avgOf(function(r){return r.live;}), avgAtt=avgOf(function(r){return r.attPct;});
+    var sesTiers={}; rows.forEach(function(r){ if(r.sestier) sesTiers[r.sestier]=(sesTiers[r.sestier]||0)+1; });
+    var bandColor={ "Master Pass":accent, "Practitioner":"#2f6fb0", "Associate":"#C9A227", "Attended":"#8a97a4" };
+    function fp(v){ return v==null?'–':v+'%'; }
+    function fnum(v){ return v==null?'–':v; }
+    function sgn(v){ return v==null?'–':((v>=0?'+':'')+v+'%'); }
+    function fatt(r){ if(!attAvail || !r.att) return '–'; return (r.attPct==null?'':r.attPct+'% ')+'('+r.attSess+'/'+att.N+')'; }
+    function kpi(v,l){ return '<div class="kpi"><div class="kv">'+v+'</div><div class="kl">'+esc(l)+'</div></div>'; }
+    function bar(label,count,color){ var w=n?Math.round(count/n*100):0; return '<div class="brow"><span class="blab">'+esc(label)+'</span><span class="btrack"><span class="bfill" style="width:'+w+'%;background:'+color+'"></span></span><span class="bval">'+count+'</span></div>'; }
+    var certBars=bandOrder.map(function(b){ return bar(b, bandCount[b], bandColor[b]); }).join("");
+    var sesTierChips=Object.keys(sesTiers).map(function(t){ return '<span class="pill">'+esc(t)+' · '+sesTiers[t]+'</span>'; }).join(" ") || '<span class="muted">–</span>';
+    var trows=rows.map(function(r){ return '<tr><td class="nm">'+esc(r.name)+'</td><td class="n">'+fp(r.grade)+'</td><td>'+esc(r.tier.name)+'</td><td class="n">'+fp(r.pre)+'</td><td class="n">'+fp(r.post)+'</td><td class="n">'+sgn(r.uplift)+'</td><td class="n">'+fnum(r.ses)+'</td><td>'+esc(r.sestier||'–')+'</td><td class="n">'+fp(r.completion)+'</td><td class="n">'+fp(r.live)+'</td><td class="n">'+fatt(r)+'</td></tr>'; }).join("");
+    var logo = cfg.logoImg ? '<img class="logoimg" src="'+esc(cfg.logoImg)+'" alt="">' : '<div class="logoph">LOGO</div>';
+    var kpis=kpi(n,"staff sponsored")+kpi(passed+' / '+n,"certified (Associate+)")+kpi(sgn(avgUp),"avg learning gain")+kpi(avgSes==null?'–':avgSes,"avg effort (SES)");
+    var head='<div class="rhead"><div class="rh-l">'+logo+'<div class="org"><div class="o1">'+esc(cfg.org)+'</div><div class="o2">'+esc(cfg.sub)+'</div></div></div><div class="rh-r"><div class="rtag">Training Outcomes Report</div><div class="rprep">Prepared for <b>'+esc(company)+'</b> · Learning &amp; Development</div></div></div>';
+    var meta='<div class="rmeta"><div><span>Course</span><b>'+esc(courseName)+(courseCode?' ('+esc(courseCode)+')':'')+'</b></div><div><span>Cohort</span><b>'+esc(cohort)+'</b></div><div><span>Report date</span><b>'+esc(dateStr)+'</b></div><div><span>Facilitator</span><b>'+esc(cfg.presenter)+'</b></div></div>';
+    var s1='<section class="sec"><h2>Certification outcomes</h2><p class="lead">How '+esc(company)+'’s '+n+' sponsored '+(n===1?'learner':'learners')+' performed against the course certification bands.</p><div class="bars">'+certBars+'</div></section>';
+    var s2='<section class="sec"><h2>Learning gain (pre → post)</h2><div class="trio"><div><span>Avg pre-assessment</span><b>'+fp(avgPre)+'</b></div><div class="arrow">→</div><div><span>Avg post-assessment</span><b>'+fp(avgPost)+'</b></div><div class="gain"><span>Uplift</span><b>'+sgn(avgUp)+'</b></div></div><p class="muted">Uplift is the change from the Pre-Assessment to the Post-Assessment — the core measure of what the training moved.</p></section>';
+    var s3='<section class="sec"><h2>Engagement &amp; effort</h2><p class="lead">Average Student Effort Score <b>'+(avgSes==null?'–':avgSes)+'</b> / 100. Effort tiers across the group:</p><div class="pills">'+sesTierChips+'</div></section>';
+    var s4inner='<div><span>Avg course completion</span><b>'+fp(avgComp)+'</b></div><div><span>Avg live-quiz participation</span><b>'+fp(avgLive)+'</b></div>'+(attAvail?'<div><span>Avg Teams attendance</span><b>'+fp(avgAtt)+'</b></div>':'');
+    var s4note=attAvail?('Teams attendance averaged across '+att.N+' session'+(att.N===1?'':'s')+' (each learner’s in-meeting time ÷ meeting length); “'+'n/m” in the table is sessions attended. Live-quiz participation counts only quizzes each learner took part in.'):('Teams attendance not included — drop meeting exports in <code>data/attendance/'+esc(state.cohortSel)+'/</code> to add it. Live-quiz participation counts only quizzes each learner took part in.');
+    var s4='<section class="sec"><h2>Attendance &amp; participation</h2><div class="trio">'+s4inner+'</div><p class="muted">'+s4note+'</p></section>';
+    var table='<section class="sec"><h2>Individual results</h2><div class="tbl"><table><thead><tr><th>Name</th><th class="n">Grade</th><th>Certificate</th><th class="n">Pre</th><th class="n">Post</th><th class="n">Uplift</th><th class="n">SES</th><th>Effort tier</th><th class="n">Compl.</th><th class="n">Live</th><th class="n">Attend.</th></tr></thead><tbody>'+trows+'</tbody></table></div></section>';
+    var legend='<div class="legend"><b>Certification bands (course grade):</b> Master Pass &ge; '+B.master+'% · Practitioner '+B.practitioner+'–'+(B.master-1)+'% · Associate '+B.associate+'–'+(B.practitioner-1)+'% · Attended &lt; '+B.associate+'%. &nbsp; <b>SES</b> is a 0–100 behavioural effort score blending live-quiz participation with Moodle signals.</div>';
+    var foot='<div class="rfoot">'+esc(cfg.org)+' · '+esc(cfg.sub)+' · Generated '+esc(dateStr)+'</div>';
+    var css='<style>*{box-sizing:border-box;margin:0;padding:0}:root{--acc:'+accent+'}body{font-family:"Segoe UI",Arial,sans-serif;color:#1a2330;background:#50606f}@page{size:A4 portrait;margin:14mm}.page{width:182mm;margin:0 auto;background:#fff}@media screen{body{padding:20px}.page{box-shadow:0 4px 20px rgba(0,0,0,.3);padding:14mm}}.rhead{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid var(--acc);padding-bottom:10px}.rh-l{display:flex;gap:12px;align-items:center}.logoimg{height:46px}.logoph{width:100px;height:46px;border:1.5px dashed #9aa7b4;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9aa7b4;font-size:11px;letter-spacing:2px}.org .o1{font-size:17px;font-weight:700;color:var(--acc)}.org .o2{font-size:11px;color:#6b7785}.rh-r{text-align:right}.rtag{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#6b7785}.rprep{font-size:15px;margin-top:2px}.rmeta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}.rmeta>div{background:#f4f7f9;border-radius:8px;padding:8px 10px}.rmeta span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6b7785}.rmeta b{font-size:13px}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:6px 0 14px}.kpi{border:1px solid #e1e7ec;border-top:3px solid var(--acc);border-radius:8px;padding:10px;text-align:center}.kv{font-size:24px;font-weight:800;color:var(--acc)}.kl{font-size:11px;color:#55616e;margin-top:3px}.sec{margin:12px 0;page-break-inside:avoid}.sec h2{font-size:15px;color:var(--acc);border-bottom:1px solid #e1e7ec;padding-bottom:4px;margin-bottom:8px}.lead{font-size:12.5px;color:#3a4652;margin-bottom:8px}.muted{color:#6b7785;font-size:11.5px;margin-top:6px}.bars{display:flex;flex-direction:column;gap:6px}.brow{display:flex;align-items:center;gap:10px}.blab{width:34mm;font-size:12px}.btrack{flex:1;height:14px;background:#eef2f5;border-radius:7px;overflow:hidden}.bfill{display:block;height:100%}.bval{width:28px;text-align:right;font-weight:700;font-size:12px}.trio{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.trio>div{background:#f4f7f9;border-radius:8px;padding:10px 14px;flex:1;min-width:30%;text-align:center}.trio span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6b7785}.trio b{font-size:20px}.trio .arrow{flex:none;background:none;font-size:20px;color:var(--acc);min-width:0}.gain b{color:var(--acc)}.pills{display:flex;flex-wrap:wrap;gap:6px}.pill{background:#eef3f2;border:1px solid #d7e2df;border-radius:999px;padding:3px 10px;font-size:12px}.tbl{overflow:hidden}table{width:100%;border-collapse:collapse;font-size:10px}th{background:var(--acc);color:#fff;text-align:left;padding:5px 5px;font-weight:600}td{padding:4px 5px;border-bottom:1px solid #e6ebef}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}td.nm{font-weight:600}.legend{margin-top:10px;font-size:10.5px;color:#55616e;line-height:1.6;border-top:1px solid #e1e7ec;padding-top:8px}.rfoot{margin-top:10px;text-align:center;font-size:10px;color:#8a97a4}</style>';
+    var html='<!doctype html><html><head><meta charset="utf-8"><title>'+esc(company)+' — Training Outcomes — '+esc(courseName)+'</title>'+css+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.focus();window.print();},350);};<\/scr'+'ipt></head><body><div class="page">'+head+meta+'<div class="kpis">'+kpis+'</div>'+s1+s2+s3+s4+table+legend+foot+'</div></body></html>';
+    var w=window.open("","_blank"); if(w){ w.document.open(); w.document.write(html); w.document.close(); return; }
+    setStatus("Please allow pop-ups for this site to open the report, then save it as PDF.", true);
+  }
+
   // ---- Student Effort Score (SES) view ----
   var TIERCLASS={ "Thriving":"good", "Struggling (High Effort)":"warn", "Coasting":"warn", "At-Risk (Disengaged)":"bad", "Moderate / Developing":"" };
   var TIERCOLOR={ "Thriving":"var(--good)", "Struggling (High Effort)":"var(--accent)", "Coasting":"var(--gold)", "At-Risk (Disengaged)":"var(--bad)", "Moderate / Developing":"var(--faint)" };
@@ -1195,7 +1400,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     } else {
       body='<div class="empty">No cached Student Effort Score for this cohort yet — click <b>↻ Refresh</b> (top right).</div>';
     }
-    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. A live quiz counts for a student only if they actually took part in it — quizzes not run with them don’t lower their score. Plotted against course grade to flag intervention tiers.</p><div class="toolbar">'+picker+' <button class="btn primary" id="makeCerts" title="Produce printable branded certificates (PDF) for every registered student in this cohort — grade tier, SES score and summary">&#128220; Produce certificates</button></div>'+body+'</div>';
+    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. A live quiz counts for a student only if they actually took part in it — quizzes not run with them don’t lower their score. Plotted against course grade to flag intervention tiers.</p><div class="toolbar">'+picker+' <button class="btn primary" id="makeCerts" title="Produce printable branded certificates (PDF) for every registered student in this cohort — grade tier, SES score and summary">&#128220; Produce certificates</button> <button class="btn" id="sponsorReportBtn" title="Produce a management report (PDF) for a sponsoring company — their staff\u2019s certification, uplift, effort and participation">&#128196; Sponsor report</button></div>'+body+'</div>';
   }
 
   function idByName(students, name){ var k=CORE.nameKey(name); var s=students.find(function(x){ return CORE.nameKey(x.fullname)===k; }); return s?s.id:null; }
@@ -1375,6 +1580,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var t=e.target.closest('.tab'); if(t){ state.tab=t.getAttribute('data-t'); syncTabs(); render(); return; }
     var cr=e.target.closest('[data-pick-cohort]'); if(cr){ selectCohort(cr.getAttribute('data-pick-cohort')); return; }
     if(e.target.closest && e.target.closest('#makeCerts')){ produceCertificates(); return; }
+    if(e.target.closest && e.target.closest('#sponsorReportBtn')){ openSponsorReport(); return; }
+    var _sp=e.target.closest && e.target.closest('.sponsor-pick'); if(_sp){ var _dlg=document.getElementById('sponsorDlg'); if(_dlg) _dlg.close(); produceSponsorReport(_sp.getAttribute('data-sponsor')); return; }
   });
   document.addEventListener("change", function(e){
     if(e.target.id==="cohortSel"){ selectCohort(e.target.value); }
@@ -1386,6 +1593,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   document.getElementById("fSource").addEventListener("change", render);
   document.getElementById("btnMoodle").addEventListener("click", openMoodle);
   document.getElementById("moodleClose").addEventListener("click", function(){ document.getElementById("moodleDlg").close(); });
+  var _sc=document.getElementById("sponsorClose"); if(_sc) _sc.addEventListener("click", function(){ document.getElementById("sponsorDlg").close(); });
   document.getElementById("moodleApply").addEventListener("click", applyMoodle);
   state.map={};
   load();

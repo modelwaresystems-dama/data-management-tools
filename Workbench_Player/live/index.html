@@ -537,7 +537,42 @@ function shuffleQuiz(quiz){
   return quiz;
 }
 let ROSTERS=null;
-async function loadRosters(){ if(ROSTERS)return ROSTERS; try{ROSTERS=await fetchAsset("rosters.json","");}catch(e){ROSTERS={classes:[]};} return ROSTERS; }
+/* Live class list straight from the data/classes/ CSV folder, so a newly-added
+   class shows the instant its CSV is pushed — no wait for the build-rosters Action.
+   Falls back silently to the compiled rosters.json if the endpoint is not deployed. */
+function classesApiUrl(){ const c=window.APP_CONFIG||{};
+  if(c.classesApi) return c.classesApi;
+  if(c.assetApi)   return c.assetApi.replace(/\/asset\/?$/,"")+"/classes-index";
+  return ""; }
+async function loadLiveClasses(){
+  const u=classesApiUrl(); if(!u) return null;
+  try{ const r=await fetch(u+(u.includes("?")?"&":"?")+"t="+Date.now(),{cache:"no-store"});
+    if(!r.ok) return null; const j=await r.json();
+    return Array.isArray(j&&j.classes)?j.classes:null; }catch(e){ return null; }
+}
+function mergeLiveClasses(compiled, sessions, live){
+  const byId={}; (compiled||[]).forEach(c=>{ byId[c.id]=c; });
+  const sIndex={}; (sessions||[]).forEach(s=>{ sIndex[slugify(s.title||"")]=s.id; sIndex[slugify(s.id||"")]=s.id; });
+  const out=[];
+  live.forEach(lc=>{
+    const ex=byId[lc.id];
+    if(ex){ out.push(Object.assign({},ex,{ name:lc.name, members:(lc.members&&lc.members.length?lc.members:ex.members)||[] })); delete byId[lc.id]; }
+    else { const cs=lc.sessions||[], ct=lc.topics||[];
+      out.push({ id:lc.id, name:lc.name, members:lc.members||[],
+        sessions:cs, sessionIds:cs.map(v=>sIndex[slugify(v)]||slugify(v)),
+        topics:ct, topicSlugs:ct.map(slugify) }); }
+  });
+  Object.keys(byId).forEach(id=>out.push(byId[id]));   // keep any compiled-only class (CSV just deleted)
+  return out;
+}
+async function loadRosters(){
+  if(ROSTERS)return ROSTERS;
+  try{ROSTERS=await fetchAsset("rosters.json","");}catch(e){ROSTERS={classes:[],sessions:[]};}
+  if(!ROSTERS.classes)ROSTERS.classes=[]; if(!ROSTERS.sessions)ROSTERS.sessions=[];
+  const live=await loadLiveClasses();
+  if(live&&live.length){ ROSTERS.classes=mergeLiveClasses(ROSTERS.classes, ROSTERS.sessions, live); }
+  return ROSTERS;
+}
 function joinBase(){ return (CFG.joinBaseUrl&&CFG.joinBaseUrl.trim()) || (location.origin+location.pathname); }
 function newCode(){ const A="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s=""; for(let i=0;i<5;i++)s+=A[Math.floor(Math.random()*A.length)]; return s; }
 
@@ -586,6 +621,7 @@ function renderHostScreen(){
           <p class="sub">Pick a day, a full course, or a single quiz — then start the room.</p>
         </div>
         <button class="btn2" id="ch-refresh" type="button" title="Re-check the private repo for newly built or updated courses">\u21bb Refresh courses</button>
+        <span id="ch-refreshnote" style="margin-left:12px;font-size:13px;align-self:center"></span>
       </div>
       ${liveUnconfigured()?`<div class="banner warn">Set <b>tokenUrl</b> in app-config.js (your backend) before hosting — see README.</div>`:""}
       <div id="landingBody"></div>
@@ -593,9 +629,18 @@ function renderHostScreen(){
   const rb=document.getElementById("ch-refresh");
   if(rb) rb.onclick=async()=>{
     rb.disabled=true; const prev=rb.textContent; rb.textContent="\u21bb Refreshing\u2026";
+    const before=(ROSTERS&&ROSTERS.classes)?ROSTERS.classes.map(c=>c.id):[];
     ROSTERS=null; MANIFEST=null;
     try{ await renderHostSetup(document.getElementById("landingBody")); }
     catch(e){}
+    try{
+      const after=(ROSTERS&&ROSTERS.classes)?ROSTERS.classes:[];
+      const added=after.filter(c=>!before.includes(c.id)).map(c=>c.name);
+      const tm=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+      const el=document.getElementById("ch-refreshnote");
+      if(el){ el.style.color="#0E8F7E";
+        el.textContent="\u2713 "+after.length+" class"+(after.length===1?"":"es")+" loaded"+(added.length?" \u00b7 added "+added.join(", "):"")+" \u00b7 "+tm; }
+    }catch(e){}
     rb.disabled=false; rb.textContent=prev;
   };
   renderHostSetup(document.getElementById("landingBody"));

@@ -6697,9 +6697,9 @@
 }</script>
 <script>
 /* ===== APP VERSION — bump on each release ===== */
-const APP_VERSION = 'v5.13';
+const APP_VERSION = 'v5.14';
 const BUILD_DATE  = '2026-11-26';   // auto-stamped at build time (never hand-typed)
-const BUILD_TIME  = '10:16 SAST';   // auto-stamped at build time (SAST)
+const BUILD_TIME  = '10:45 SAST';   // auto-stamped at build time (SAST)
 
 const VIDEOS = JSON.parse(document.getElementById('data').textContent);
 let AN = JSON.parse(document.getElementById('adata').textContent);
@@ -7881,6 +7881,16 @@ renderTrace();
 /* ================= Data (edit & export) tab ================= */
 let RCOLS=null, RECORDS=null, ORIG_RECORDS=null, dataRendered=false;
 let dsortKey=null, dsortDir=1;   // Data-tab sort state (dir: 1 asc, -1 desc)
+// Normalise the record schema (RCOLS) — runs on the baked data AND on every imported/team-pulled package,
+// so the Playlist column (v5.13) and the v5.9 core/prod/hidden grouping survive a package whose stored cols predate them.
+const SCHEMA_PROD_KEYS=new Set(['Write_up_done','First_Review','Final','Posted','Chapters','Exec_Summary','Thumbnail','YouTube_updated']);   // production workflow → collapsible group
+const SCHEMA_HIDE_KEYS=new Set(['Adjusted_Title','CDMP_Training','Priority_Week','Date_Writeup','Date_YouTube','Date_Posted','IsDIY','IsDAMASouthAfrica','IsQ_A','IsDataCitizen','IsDataExecutive','IsDataPrivacy']);   // empty / redundant / derivable
+const SCHEMA_RELABEL={Date:'Published', Webinar_Date:'Recording Date'};   // Date = YouTube publish date; Webinar_Date = actual recording date
+function ensureRecordSchema(){
+  if(!RCOLS) return;
+  if(!RCOLS.some(c=>c.k==='Playlist')){ const pi=RCOLS.findIndex(c=>c.k==='Platform'); RCOLS.splice(pi>=0?pi+1:RCOLS.length, 0, {k:'Playlist', src:'Playlist', label:'Playlist', type:'text'}); }
+  RCOLS.forEach(c=>{ c.grp = SCHEMA_PROD_KEYS.has(c.k)?'prod' : SCHEMA_HIDE_KEYS.has(c.k)?'hidden' : 'core'; if(SCHEMA_RELABEL[c.k]) c.label=SCHEMA_RELABEL[c.k]; });
+}
 let dcolFilters={};              // per-column filter text (key → lowercased substring)
 let currentView=[];              // rows currently shown (filtered + sorted), for "filtered only" export
 // ---- Data-tab grouping — nested HIERARCHY of up to 3 levels, saved collapse/expand ----
@@ -7976,14 +7986,7 @@ const REC_KEY='moweb_catalog_edits';
 (function initRecords(){
   const base=JSON.parse(document.getElementById('rdata').textContent);
   RCOLS=base.cols;
-  // v5.13: Playlist column (which channel playlist the video belongs to) — a core catalogue field,
-  // kept in sync with the authoritative YouTube membership (VIDEOS[id].pl) by syncDerivedColumns().
-  if(!RCOLS.some(c=>c.k==='Playlist')){ const pi=RCOLS.findIndex(c=>c.k==='Platform'); RCOLS.splice(pi>=0?pi+1:RCOLS.length, 0, {k:'Playlist', src:'Playlist', label:'Playlist', type:'text'}); }
-  // --- v5.9 column cleanup: tag each field core / prod / hidden (non-destructive — data retained) ---
-  const PROD_KEYS=new Set(['Write_up_done','First_Review','Final','Posted','Chapters','Exec_Summary','Thumbnail','YouTube_updated']);  // production workflow → collapsible group
-  const HIDE_KEYS=new Set(['Adjusted_Title','CDMP_Training','Priority_Week','Date_Writeup','Date_YouTube','Date_Posted','IsDIY','IsDAMASouthAfrica','IsQ_A','IsDataCitizen','IsDataExecutive','IsDataPrivacy']);  // empty / redundant / derivable
-  const RELABEL={Date:'Published', Webinar_Date:'Recording Date'};   // Date = YouTube publish date; Webinar_Date = actual recording date — two distinct facts
-  RCOLS.forEach(c=>{ c.grp = PROD_KEYS.has(c.k)?'prod' : HIDE_KEYS.has(c.k)?'hidden' : 'core'; if(RELABEL[c.k]) c.label=RELABEL[c.k]; });
+  ensureRecordSchema();   // insert the Playlist column (v5.13) + tag core/prod/hidden + relabel the two dates (v5.9)
   // an imported content package supplies the shared rows; else the embedded data
   const pkgRows = (CONTENT_PKG && CONTENT_PKG.records && Array.isArray(CONTENT_PKG.records.rows)) ? CONTENT_PKG.records.rows : base.rows;
   ORIG_RECORDS=pkgRows;
@@ -9715,8 +9718,11 @@ function applyContent(pkg){
   lastStamp = pkg.exported || lastStamp;
   if(pkg.records && Array.isArray(pkg.records.rows)){
     if(Array.isArray(pkg.records.cols) && pkg.records.cols.length) RCOLS = pkg.records.cols;
+    ensureRecordSchema();        // an imported/team-pulled package may predate the Playlist column + v5.9 tagging → re-apply
     ORIG_RECORDS = pkg.records.rows;
     RECORDS = pkg.records.rows.map(r=>({...r}));
+    syncDerivedColumns();        // fill the Playlist column + YouTube-term Status for the adopted rows
+    if(dataRendered) rebuildGrid();   // RCOLS changed → rebuild the grid's colgroup/header so the new column shows (lazy build otherwise picks it up)
   }
   buildCatalogStats();
   buildCatalogFilters();

@@ -1,4 +1,5 @@
 /* ============================================================
+   Version: 1.1.0 · 2026-11-24 07:58 SAST  (added sessionsApi + moodleApi)
    PUBLIC config — safe to commit. Contains NO secrets/keys.
    Both URLs point at your PRIVATE backend (Netlify), where the
    real Ably key lives as a server-side environment variable.
@@ -10,6 +11,12 @@ window.APP_CONFIG = {
 
   // Serves private quiz/flashcard JSON, CORS-locked to your app's origin:
   assetApi: "https://workbook-player.howard-217.workers.dev/asset",
+
+  // Lists saved live-session files so the Engagement Analytics page can discover them:
+  sessionsApi: "https://workbook-player.howard-217.workers.dev/sessions-index",
+
+  // Whitelisted Moodle Web Services proxy (enrol + grades + courses; token stays in the Worker):
+  moodleApi: "https://workbook-player.howard-217.workers.dev/moodle",
 
   // Which private assets this deployment loads (relative to the backend's data/ dir):
   quizPath:  "dama-dmbok-data-management-and-lifecycle-overview/Ch 01. Data Management Quiz.json",

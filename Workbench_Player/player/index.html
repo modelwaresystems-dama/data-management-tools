@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.22.12">
+<meta name="version" content="1.22.15">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -276,7 +276,7 @@
 </aside>
 
 <script src="../app-config.js"></script>
-<script>window.PAGE_BUILD="1.22.12";</script>
+<script>window.PAGE_BUILD="1.22.15";</script>
 <script>document.write('<scr'+'ipt src="../version.js?t='+Date.now()+'"><\/scr'+'ipt>')</script>
 <script>
 /* ============ Workbench Player ============
@@ -290,11 +290,19 @@ const C=window.APP_CONFIG||{};
 const SESS_KEY="wbp-session-draft-v1";
 
 async function fetchAsset(pathRel, devFallback){
+  let r;
   if(C.assetApi){
     const u=C.assetApi+(C.assetApi.includes("?")?"&":"?")+"path="+encodeURIComponent(pathRel);
-    const r=await fetch(u,{cache:"no-store"}); if(!r.ok) throw new Error("asset backend "+r.status); return await r.json();
+    r=await fetch(u,{cache:"no-store"}); if(!r.ok) throw new Error("asset backend "+r.status);
+  } else {
+    r=await fetch(devFallback,{cache:"no-store"});
   }
-  return await (await fetch(devFallback,{cache:"no-store"})).json();
+  const raw=await r.text();
+  try{ return JSON.parse(raw); }
+  catch(pe){
+    if((raw||"").trim().charAt(0)==="<"){ const e=new Error("Your network blocked the download \u2014 a Wi-Fi sign-in page or content filter returned a web page instead of the quiz. Switch to mobile data or a different network, then reload."); e.networkBlocked=true; throw e; }
+    throw pe;
+  }
 }
 
 const OPTS=[{k:"a",gl:"A"},{k:"b",gl:"B"},{k:"c",gl:"C"},{k:"d",gl:"D"}];
@@ -353,7 +361,7 @@ function shuffleQuiz(quiz){
     for(let i=others.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [others[i],others[j]]=[others[j],others[i]]; }
     const order=new Array(k); order[target]=q.correct;
     let oi=0; for(let s=0;s<k;s++){ if(s!==target) order[s]=others[oi++]; }
-    q.options=order.map(i=>q.options[i]); q.correct=target;
+    q.options=order.map(i=>q.options[i]); if(q.rats) q.rats=order.map(i=>q.rats[i]); q.correct=target;
   });
   return quiz;
 }
@@ -883,6 +891,6 @@ document.getElementById("sessDownload").onclick=()=>{
 })();
 </script>
 <span id="appVersion" style="position:fixed;right:8px;bottom:6px;z-index:2147483000;font:700 11px/1.2 'IBM Plex Mono',ui-monospace,SFMono-Regular,monospace;color:#fff;background:rgba(12,18,32,.85);padding:4px 9px;border-radius:6px;pointer-events:none;letter-spacing:.03em;border:1px solid rgba(47,212,192,.7)"></span>
-<script>try{document.getElementById('appVersion').textContent='v'+document.querySelector('meta[name="version"]').content;}catch(e){}</script>
+<script>try{document.getElementById('appVersion').textContent='v'+document.querySelector('meta[name="version"]').content+((window.APP_VERSION&&window.APP_VERSION.built)?' · '+window.APP_VERSION.built:'');}catch(e){}</script>
 </body>
 </html>

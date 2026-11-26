@@ -6697,9 +6697,9 @@
 }</script>
 <script>
 /* ===== APP VERSION — bump on each release ===== */
-const APP_VERSION = 'v5.14';
+const APP_VERSION = 'v5.15';
 const BUILD_DATE  = '2026-11-26';   // auto-stamped at build time (never hand-typed)
-const BUILD_TIME  = '10:45 SAST';   // auto-stamped at build time (SAST)
+const BUILD_TIME  = '10:58 SAST';   // auto-stamped at build time (SAST)
 
 const VIDEOS = JSON.parse(document.getElementById('data').textContent);
 let AN = JSON.parse(document.getElementById('adata').textContent);
@@ -7884,7 +7884,7 @@ let dsortKey=null, dsortDir=1;   // Data-tab sort state (dir: 1 asc, -1 desc)
 // Normalise the record schema (RCOLS) — runs on the baked data AND on every imported/team-pulled package,
 // so the Playlist column (v5.13) and the v5.9 core/prod/hidden grouping survive a package whose stored cols predate them.
 const SCHEMA_PROD_KEYS=new Set(['Write_up_done','First_Review','Final','Posted','Chapters','Exec_Summary','Thumbnail','YouTube_updated']);   // production workflow → collapsible group
-const SCHEMA_HIDE_KEYS=new Set(['Adjusted_Title','CDMP_Training','Priority_Week','Date_Writeup','Date_YouTube','Date_Posted','IsDIY','IsDAMASouthAfrica','IsQ_A','IsDataCitizen','IsDataExecutive','IsDataPrivacy']);   // empty / redundant / derivable
+const SCHEMA_HIDE_KEYS=new Set(['Adjusted_Title','CDMP_Training','Priority_Week','Date_Writeup','Date_YouTube','Date_Posted','IsDIY','IsDAMASouthAfrica','IsQ_A','IsDataCitizen','IsDataExecutive','IsDataPrivacy','Knowledge_Area','DM_Role']);   // empty / redundant / derivable; Knowledge_Area + DM_Role hidden v5.15 (to be pulled from the Learning Asset app)
 const SCHEMA_RELABEL={Date:'Published', Webinar_Date:'Recording Date'};   // Date = YouTube publish date; Webinar_Date = actual recording date
 function ensureRecordSchema(){
   if(!RCOLS) return;
@@ -8009,8 +8009,19 @@ function rebuildGrid(){ const t=$('dgrid'); if(!t) return; const cg=t.querySelec
 // the record-level Status column and exports show the proper-case YouTube term.
 function ytStatusLabel(s){ s=String(s||'').trim().toLowerCase();
   return s==='public'?'Public':s==='unlisted'?'Unlisted':s==='private'?'Private':s==='deleted'?'Deleted':s==='unknown'?'Unknown':(s?s.charAt(0).toUpperCase()+s.slice(1):''); }
-// Keep the derived columns aligned with the authoritative video objects: Playlist membership (VIDEOS[id].pl)
-// and the YouTube-term Status. Safe to call repeatedly; a no-op before RECORDS exist.
+// Platform is stipulated by the playlist the video sits in (v5.15): a DAMA South Africa playlist → "DAMA SA";
+// the Book Club (Modelware Systems & Technics Pub) → "Modelware Systems & Technics Pub"; any other Modelware
+// Systems playlist → "Modelware Systems". A video in no mapped playlist keeps whatever Platform it already had.
+function platformFromPlaylists(pl, cur){
+  for(const n of (pl||[])){ const s=String(n||'');
+    if(/technics pub|book club/i.test(s)) return 'Modelware Systems & Technics Pub';
+    if(/^\s*dama\b/i.test(s)) return 'DAMA SA';
+    if(/^\s*modelware\b/i.test(s)) return 'Modelware Systems';
+  }
+  return cur||'';   // no owning playlist → keep the existing value
+}
+// Keep the derived columns aligned with the authoritative video objects: Playlist membership (VIDEOS[id].pl),
+// Platform (from the playlist) and the YouTube-term Status. Safe to call repeatedly; a no-op before RECORDS exist.
 function syncDerivedColumns(){
   if(!(typeof RECORDS!=='undefined' && RECORDS)) return 0;
   const vById={}; VIDEOS.forEach(v=>{ vById[v.id]=v; v.Playlist=(v.pl||[]).join(' · '); });   // also expose on videos for Catalog/SEO grouping
@@ -8018,6 +8029,10 @@ function syncDerivedColumns(){
   RECORDS.forEach(r=>{ const v=vById[r.VideoID];
     const pl = v ? v.Playlist : (r.Playlist||'');
     if(r.Playlist!==pl){ r.Playlist=pl; ch++; }
+    if(v){ const plat=platformFromPlaylists(v.pl, r.Platform || v.p || '');
+      if(plat && r.Platform!==plat){ r.Platform=plat; ch++; }
+      if(plat && v.p!==plat){ v.p=plat; }   // keep the Catalog platform facet/grouping in step
+    }
     const st = r.Status ? ytStatusLabel(r.Status) : (v ? ytStatusLabel(v.s) : '');
     if(r.Status!==st){ r.Status=st; ch++; }
   });

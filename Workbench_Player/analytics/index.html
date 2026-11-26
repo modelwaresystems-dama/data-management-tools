@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.12.0">
-<meta name="build" content="2026-11-25 16:48 SAST">
+<meta name="version" content="1.13.0">
+<meta name="build" content="2026-11-26 10:23 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -646,6 +646,16 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     try{ var cur=await ghGet(DATA_PREFIX+"analytics/"+name).catch(function(){ return {sha:null}; }); await ghPut(DATA_PREFIX+"analytics/"+name, obj, cur.sha, "Analytics: snapshot "+name); }catch(e){}
   }
 
+  async function loadClasses(){
+    var names=[];
+    try{
+      var j=null;
+      if(ASSET){ try{ j=await fetchJSON(ASSET+"?path=rosters.json"); }catch(e){} }
+      if(!j){ try{ var r=await ghGet(DATA_PREFIX+"rosters.json"); j=r&&r.json; }catch(e){} }
+      if(j && j.classes){ names=j.classes.map(function(c){ return c.name; }).filter(Boolean); }
+    }catch(e){}
+    state.classesList=names;
+  }
   async function load(){
     setStatus('Loading saved sessions…', true);
     try{
@@ -664,6 +674,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       state.records=SAMPLE.slice();
       setStatus('<b>Couldn\'t reach the backend</b> ('+esc(e.message)+') — showing bundled sample data so you can still see the layout.', true);
     }
+    await loadClasses();
     var n=CORE.normalize(state.records); state.facts=n.facts; state.runs=n.runs;
     buildFilters(); render();
   }
@@ -672,7 +683,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   function buildFilters(){
     var courses={}, cohorts={};
     state.facts.forEach(function(f){ if(f.course) courses[f.course]=1; cohorts[f.cohort]=1; });
-    Object.keys(state.map||{}).forEach(function(c){ cohorts[c]=1; });
+    Object.keys(state.map||{}).forEach(function(c){ cohorts[c]=1; }); (state.classesList||[]).forEach(function(c){ cohorts[c]=1; });
     var cS=document.getElementById("fCourse"); cS.length=1; Object.keys(courses).sort().forEach(function(c){ cS.appendChild(opt(c,c)); });
     var hS=document.getElementById("fCohort"); hS.length=1; Object.keys(cohorts).sort().forEach(function(c){ hS.appendChild(opt(c,c)); });
     if(state.cohortSel){ hS.value=state.cohortSel; }
@@ -777,7 +788,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
 
   function viewCohorts(f){
     var list=CORE.cohorts(f); var seen={}; list.forEach(function(c){ seen[c.cohort]=1; });
-    Object.keys(state.map||{}).forEach(function(co){ if(!seen[co]) list.push({cohort:co, course:'–', nStudents:0, nQuizzes:0, engagement:null, score:null}); });
+    Object.keys(state.map||{}).forEach(function(co){ if(!seen[co]){ seen[co]=1; list.push({cohort:co, course:'–', nStudents:0, nQuizzes:0, engagement:null, score:null}); } });
+    (state.classesList||[]).forEach(function(co){ if(!seen[co]){ seen[co]=1; list.push({cohort:co, course:'–', nStudents:0, nQuizzes:0, engagement:null, score:null}); } });
     var rows=list.map(function(c){
       var mc=(state.moodleData.cohorts||{})[c.cohort];
       var refresh = (mc && mc.refreshedAt) ? (esc(lastRefreshStr(c.cohort))+(mc.inRepo?' <span style="color:var(--good)" title="saved in '+esc((mc.repoPath||'').split('/').pop())+'">✓</span>':'')) : '<span class="faint">never</span>';
@@ -942,7 +954,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     if(e){ if(e.detail) state.cohortDetail[cohort]=e.detail; state.ses=e.ses||null; state.sesMeta=e.sesMeta||null; state.moodle=buildMoodleJoin(e.detail); }
     else { state.ses=null; state.sesMeta=null; state.moodle={}; }
   }
-  function allCohorts(){ var set={}; state.facts.forEach(function(f){ set[f.cohort]=1; }); Object.keys(state.map||{}).forEach(function(c){ set[c]=1; }); return Object.keys(set).sort(); }
+  function allCohorts(){ var set={}; state.facts.forEach(function(f){ set[f.cohort]=1; }); Object.keys(state.map||{}).forEach(function(c){ set[c]=1; }); (state.classesList||[]).forEach(function(c){ set[c]=1; }); return Object.keys(set).sort(); }
   function selectCohort(c){ if(!c) return; state.cohortSel=c; var fc=document.getElementById('fCohort'); if(fc){ for(var i=0;i<fc.options.length;i++){ if(fc.options[i].value===c){ fc.value=c; break; } } } hydrateCohort(c); render(); }
 
   async function fetchCourseGroups(courseid){
@@ -1564,7 +1576,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var dlg=document.getElementById("moodleDlg");
     var rowsEl=document.getElementById("mapRows");
     if(dlg.showModal) dlg.showModal(); else dlg.setAttribute("open","");
-    var cohorts={}; state.facts.forEach(function(f){ cohorts[f.cohort]=1; }); Object.keys(state.map||{}).forEach(function(c){ cohorts[c]=1; });
+    var cohorts={}; state.facts.forEach(function(f){ cohorts[f.cohort]=1; }); Object.keys(state.map||{}).forEach(function(c){ cohorts[c]=1; }); (state.classesList||[]).forEach(function(c){ cohorts[c]=1; });
     var cohortList=Object.keys(cohorts).sort();
     var courses=null;
     try{ var cj=await fetchJSON(MOODLE+"?fn=courses"); courses=(Array.isArray(cj)?cj:(cj.courses||[])).map(function(c){ return {id:c.id, name:deEntity(c.fullname||c.displayname||c.shortname||('Course '+c.id))}; }); }catch(e){ courses=null; }

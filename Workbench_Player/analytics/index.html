@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.14.0">
-<meta name="build" content="2026-11-26 15:12 SAST">
+<meta name="version" content="1.15.0">
+<meta name="build" content="2026-11-26 15:29 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -603,6 +603,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
 
   function setStatus(html, show){ var el=document.getElementById("status"); el.innerHTML=html; el.style.display=show?"block":"none"; }
   function fmtPct(v){ return v==null? '<span class="faint">–</span>' : (Math.round(v)+'%'); }
+  function fmtDur(min){ if(min==null) return '–'; min=Math.round(min); if(min<1) return '<1m'; if(min<60) return min+'m'; var h=Math.floor(min/60), m=min%60; return h+'h'+(m?' '+m+'m':''); }
   function band(v){ if(v==null) return ""; if(v>=80) return "good"; if(v>=60) return "warn"; return "bad"; }
   function engBar(v){ if(v==null) return '<span class="faint">n/a</span>'; var c=v>=80?'var(--good)':v>=60?'var(--accent)':'var(--bad)'; return '<span class="pct"><span class="mbar" style="width:'+Math.max(2,Math.round(v*0.6))+'px;background:'+c+'"></span><span class="v">'+Math.round(v)+'%</span></span>'; }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -953,8 +954,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   }
   function hydrateCohort(cohort){
     var e=(state.moodleData.cohorts||{})[cohort];
-    if(e){ if(e.detail) state.cohortDetail[cohort]=e.detail; state.ses=e.ses||null; state.sesMeta=e.sesMeta||null; state.moodle=buildMoodleJoin(e.detail); }
-    else { state.ses=null; state.sesMeta=null; state.moodle={}; }
+    if(e){ if(e.detail) state.cohortDetail[cohort]=e.detail; state.ses=e.ses||null; state.sesMeta=e.sesMeta||null; state.moodle=buildMoodleJoin(e.detail); state.attendance=e.attendance||null; }
+    else { state.ses=null; state.sesMeta=null; state.moodle={}; state.attendance=null; }
   }
   function allCohorts(){ var set={}; state.facts.forEach(function(f){ set[f.cohort]=1; }); Object.keys(state.map||{}).forEach(function(c){ set[c]=1; }); (state.classesList||[]).forEach(function(c){ set[c]=1; }); return Object.keys(set).sort(); }
   function selectCohort(c){ if(!c) return; state.cohortSel=c; var fc=document.getElementById('fCohort'); if(fc){ for(var i=0;i<fc.options.length;i++){ if(fc.options[i].value===c){ fc.value=c; break; } } } hydrateCohort(c); render(); }
@@ -1006,8 +1007,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     try{
       var detail=await pullCohortMoodle(cohort);
       var sesRes=await computeCohortSES(cohort);
-      state.moodleData.cohorts[cohort]={ cohort:cohort, refreshedAt:new Date().toISOString(), detail:detail, ses:sesRes.ses, sesMeta:sesRes.sesMeta };
-      state.cohortDetail[cohort]=detail; state.ses=sesRes.ses; state.sesMeta=sesRes.sesMeta; state.moodle=buildMoodleJoin(detail);
+      state.moodleData.cohorts[cohort]={ cohort:cohort, refreshedAt:new Date().toISOString(), detail:detail, ses:sesRes.ses, sesMeta:sesRes.sesMeta, attendance:sesRes.attendance };
+      state.cohortDetail[cohort]=detail; state.ses=sesRes.ses; state.sesMeta=sesRes.sesMeta; state.moodle=buildMoodleJoin(detail); state.attendance=sesRes.attendance||null;
       await saveCohortSnapshot(cohort);
       if(state.repoSync && state.repoSync.ok){ setStatus('✓ Saved to GitHub repo: <code class="k">'+esc(DATA_PREFIX+cohortPath(cohort))+'</code>', true); setTimeout(function(){ setStatus('', false); }, 6000); }
       else { setStatus('Refreshed for this session, but NOT saved to the repo — no repo token in this browser (set it via <b>Moodle ⚙</b>).', true); }
@@ -1019,7 +1020,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   async function saveCohortSnapshot(cohort){
     if(!hasToken()){ state.repoSync={ ok:false, reason:'no-token' }; return; }
     var rel=cohortPath(cohort), full=DATA_PREFIX+rel, e=state.moodleData.cohorts[cohort];
-    var obj={ cohort:cohort, refreshedAt:e.refreshedAt, detail:e.detail, ses:e.ses, sesMeta:e.sesMeta };
+    var obj={ cohort:cohort, refreshedAt:e.refreshedAt, detail:e.detail, ses:e.ses, sesMeta:e.sesMeta, attendance:e.attendance };
     var cur=await ghGet(full).catch(function(){ return {sha:null}; });
     await ghPut(full, obj, cur.sha, "Analytics: Moodle snapshot for "+cohort);
     e.inRepo=true; e.repoPath=rel; e.savedAt=new Date().toISOString();
@@ -1345,8 +1346,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var N=sessions.length, withDur=sessions.filter(function(s){ return !!s.meetMin; }).length, byName={};
     var anyEng=sessions.some(function(s){ return s.hasEng; });
     sessions.forEach(function(s){ Object.keys(s.people).forEach(function(key){ var pp=s.people[key];
-      var rec=byName[key]||(byName[key]={ name:pp.name, sessionsAttended:0, pctSum:0, eng:{cameraOn:0,raiseHands:0,unmute:0,reactions:0} });
-      rec.sessionsAttended++; if(s.meetMin) rec.pctSum+=Math.min(100, Math.round((pp.dur||0)/s.meetMin*100));
+      var rec=byName[key]||(byName[key]={ name:pp.name, sessionsAttended:0, pctSum:0, durMin:0, eng:{cameraOn:0,raiseHands:0,unmute:0,reactions:0} });
+      rec.sessionsAttended++; rec.durMin+=(pp.dur||0); if(s.meetMin) rec.pctSum+=Math.min(100, Math.round((pp.dur||0)/s.meetMin*100));
       if(pp.eng){ rec.eng.cameraOn+=pp.eng.cameraOn; rec.eng.raiseHands+=pp.eng.raiseHands; rec.eng.unmute+=pp.eng.unmute; rec.eng.reactions+=pp.eng.reactions; } }); });
     Object.keys(byName).forEach(function(key){ var r=byName[key]; r.sessions=N; r.pct = withDur? Math.round(r.pctSum/withDur) : null; r.engScore = anyEng? engScore(r.eng) : null; });
     return { N:N, withDur:withDur, anyEng:anyEng, byName:byName };
@@ -1391,7 +1392,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
         ses:(sr&&sr.ses!=null?Math.round(sr.ses):null), sestier:(sr?sr.tier:null),
         live:(sr&&sr.breakdown&&sr.breakdown.live_quiz!=null?Math.round(sr.breakdown.live_quiz):null),
         completion:(s.quizCompletion==null?null:Math.round(s.quizCompletion)),
-        att:!!ar, attPct:(ar&&ar.pct!=null?ar.pct:null), attSess:(ar?ar.sessionsAttended:0), eng:(ar&&ar.eng?ar.eng:null), engsc:(ar&&ar.engScore!=null?Math.round(ar.engScore*100):null) };
+        att:!!ar, attPct:(ar&&ar.pct!=null?ar.pct:null), attSess:(ar?ar.sessionsAttended:0), eng:(ar&&ar.eng?ar.eng:null), engsc:(ar&&ar.engScore!=null?Math.round(ar.engScore*100):null), engdur:(ar&&ar.durMin!=null?ar.durMin:null) };
     });
     if(!rows.length){ setStatus("No students for "+esc(company)+" in this cohort.", true); return; }
     rows.sort(function(a,b){ return (b.grade||0)-(a.grade||0) || a.name.localeCompare(b.name); });
@@ -1423,8 +1424,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var s3='<section class="sec"><h2>Engagement &amp; effort</h2><p class="lead">Average Student Effort Score <b>'+(avgSes==null?'–':avgSes)+'</b> / 100. Effort tiers across the group:</p><div class="pills">'+sesTierChips+'</div></section>';
     var engAvail=!!(att && att.anyEng);
     var s4inner='<div><span>Avg course completion</span><b>'+fp(avgComp)+'</b></div><div><span>Avg live-quiz participation</span><b>'+fp(avgLive)+'</b></div>'+(attAvail?'<div><span>Avg Teams attendance</span><b>'+fp(avgAtt)+'</b></div>':'')+(engAvail?'<div><span>Avg Teams engagement</span><b>'+(avgEng==null?'\u2013':avgEng)+'</b></div>':'');
-    var engRows=rows.filter(function(r){ return r.eng; }).map(function(r){ return '<tr><td class="nm">'+esc(r.name)+'</td><td class="n">'+fp(r.attPct)+'</td><td class="n">'+((r.eng.cameraOn)||0)+'</td><td class="n">'+((r.eng.raiseHands)||0)+'</td><td class="n">'+((r.eng.unmute)||0)+'</td><td class="n">'+((r.eng.reactions)||0)+'</td><td class="n">'+(r.engsc==null?'\u2013':r.engsc)+'</td></tr>'; }).join("");
-    var s5=(engAvail && engRows)?'<section class="sec"><h2>Live-session engagement (Teams)</h2><p class="lead">Active participation in the live training sessions \u2014 camera on, hands raised, microphone (unmute) and reactions. Engagement is a 0\u2013100 index built from these signals, and it now contributes to the Student Effort Score.</p><div class="tbl"><table><thead><tr><th>Name</th><th class="n">Attend.</th><th class="n">Camera on</th><th class="n">Hands</th><th class="n">Mic</th><th class="n">Reactions</th><th class="n">Engagement</th></tr></thead><tbody>'+engRows+'</tbody></table></div></section>':'';
+    var engRows=rows.filter(function(r){ return r.eng; }).map(function(r){ return '<tr><td class="nm">'+esc(r.name)+'</td><td class="n">'+fmtDur(r.engdur)+'</td><td class="n">'+fp(r.attPct)+'</td><td class="n">'+((r.eng.cameraOn)||0)+'</td><td class="n">'+((r.eng.raiseHands)||0)+'</td><td class="n">'+((r.eng.unmute)||0)+'</td><td class="n">'+((r.eng.reactions)||0)+'</td><td class="n">'+(r.engsc==null?'\u2013':r.engsc)+'</td></tr>'; }).join("");
+    var s5=(engAvail && engRows)?'<section class="sec"><h2>Live-session engagement (Teams)</h2><p class="lead">Active participation in the live training sessions \u2014 camera on, hands raised, microphone (unmute) and reactions. Engagement is a 0\u2013100 index built from these signals, and it now contributes to the Student Effort Score.</p><div class="tbl"><table><thead><tr><th>Name</th><th class="n">Time</th><th class="n">Attend.</th><th class="n">Camera on</th><th class="n">Hands</th><th class="n">Mic</th><th class="n">Reactions</th><th class="n">Engagement</th></tr></thead><tbody>'+engRows+'</tbody></table></div></section>':'';
     var s4note=attAvail?('Teams attendance averaged across '+att.N+' session'+(att.N===1?'':'s')+' (each learner’s in-meeting time ÷ meeting length); “'+'n/m” in the table is sessions attended. Live-quiz participation counts only quizzes each learner took part in.'):('Teams attendance not included — drop meeting exports in <code>data/attendance/'+esc(state.cohortSel)+'/</code> to add it. Live-quiz participation counts only quizzes each learner took part in.');
     var s4='<section class="sec"><h2>Attendance &amp; participation</h2><div class="trio">'+s4inner+'</div><p class="muted">'+s4note+'</p></section>';
     var table='<section class="sec"><h2>Individual results</h2><div class="tbl"><table><thead><tr><th>Name</th><th class="n">Result</th><th>Certificate</th><th class="n">Pre</th><th class="n">Post</th><th class="n">Uplift</th><th class="n">SES</th><th>Effort tier</th><th class="n">Compl.</th><th class="n">Live</th><th class="n">Attend.</th></tr></thead><tbody>'+trows+'</tbody></table></div></section>';
@@ -1474,13 +1475,33 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
           '<td class="num faint">'+b.completion_pacing+'</td>'+
           '<td class="num faint">'+b.quiz_duration+'</td>'+
           '<td class="num faint">'+b.quiz_persistence+'</td>'+
-          '<td class="num faint">'+b.forum_engagement+'</td></tr>';
+          '<td class="num faint">'+b.forum_engagement+'</td>'+
+          '<td class="num faint">'+(b.teams_engagement==null?'–':b.teams_engagement)+'</td></tr>';
       }).join("");
       var dmsg=''; if(noData){ var _dp=[]; if(meta.attErr)_dp.push('quiz attempts → “'+esc(meta.attErr)+'”'); if(meta.compErr)_dp.push('completion → “'+esc(meta.compErr)+'”'); if(_dp.length)dmsg='<br><b>Moodle&#39;s actual response:</b> '+_dp.join(' · '); }
       var warn=noData?'<div class="banner" style="border-color:var(--bad)"><b>SES can\'t be computed yet.</b> Moodle returned no quiz-attempt or activity-completion data, so every effort score is 0 and the tiers would be meaningless — so they are hidden. Enable <code class="k">mod_quiz_get_user_attempts</code> and <code class="k">core_completion_get_activities_completion_status</code> on the <b>PowerBI Grade Export</b> service, and make sure the token user can view reports (Manager / teacher level). Grades load fine; only the effort signals are missing.'+dmsg+'</div>':'';
+      var engBlock='';
+      if(state.attendance && state.attendance.anyEng){
+        var _at=state.attendance;
+        var _recs=Object.keys(_at.byName).map(function(k){return _at.byName[k];}).filter(function(r){return r.eng;});
+        _recs.sort(function(a,b){ return (b.engScore||0)-(a.engScore||0) || a.name.localeCompare(b.name); });
+        var _tot={cam:0,mic:0,hand:0,react:0}; _recs.forEach(function(r){ _tot.cam+=r.eng.cameraOn; _tot.mic+=r.eng.unmute; _tot.hand+=r.eng.raiseHands; _tot.react+=r.eng.reactions; });
+        var _er=_recs.map(function(r){ var e=r.eng; return '<tr><td class="name">'+esc(r.name)+'</td>'+
+          '<td class="num">'+fmtDur(r.durMin)+'</td>'+
+          '<td class="num">'+(r.pct==null?'–':r.pct+'%')+'</td>'+
+          '<td class="num faint">'+r.sessionsAttended+'/'+_at.N+'</td>'+
+          '<td class="num">'+(e.cameraOn||0)+'</td>'+
+          '<td class="num">'+(e.unmute||0)+'</td>'+
+          '<td class="num">'+(e.raiseHands||0)+'</td>'+
+          '<td class="num">'+(e.reactions||0)+'</td>'+
+          '<td class="num">'+(r.engScore==null?'–':Math.round(r.engScore*100))+'</td></tr>'; }).join("");
+        if(_er) engBlock='<h3 style="font-family:\'Sora\';font-size:16px;margin:24px 0 2px">Attendance &amp; live-session engagement (Teams)</h3>'+
+          '<p class="note">Time spent in the live sessions and active participation with the trainer, across '+_at.N+' session'+(_at.N===1?'':'s')+' — camera, microphone (unmute), hands raised and reactions. Cohort totals: camera '+_tot.cam+' · mic '+_tot.mic+' · hands '+_tot.hand+' · reactions '+_tot.react+'. The 0–100 engagement score feeds the SES.</p>'+
+          '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">Time in session</th><th class="num">Attend.</th><th class="num">Sessions</th><th class="num">Camera</th><th class="num">Mic</th><th class="num">Hands</th><th class="num">Reactions</th><th class="num">Engagement</th></tr></thead><tbody>'+_er+'</tbody></table></div>';
+      }
       body=warn+'<p class="note">'+(meta.students||rows.length)+' students · '+(meta.quizzes||0)+' quizzes · forums '+(meta.hasForums?'included':'none (reweighted)')+' · quiz attempts seen: '+(meta.nAttempts||0)+' · completion records: '+(meta.nStatuses||0)+' · live-quiz students: '+(meta.nLive||0)+'.</p>'+
         '<div style="margin:0 0 18px;text-align:center">'+sesScatter(state.ses)+tierLegend()+'</div>'+
-        '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">SES</th><th class="num">Grade</th><th>Tier</th><th class="num">Live</th><th class="num">Compl</th><th class="num">Dur</th><th class="num">Persist</th><th class="num">Forum</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+        '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">SES</th><th class="num">Grade</th><th>Tier</th><th class="num">Live</th><th class="num">Compl</th><th class="num">Dur</th><th class="num">Persist</th><th class="num">Forum</th><th class="num">Teams</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+engBlock;
     } else {
       body='<div class="empty">No cached Student Effort Score for this cohort yet — click <b>↻ Refresh</b> (top right).</div>';
     }
@@ -1572,15 +1593,15 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       });
       Object.keys(_lqAgg).forEach(function(k){ var a=_lqAgg[k]; if(a.q>0){ var lid=idByName(students, a.name); if(lid!=null) liveByUser[lid]=Math.max(0, Math.min(1, a.ans/a.q)); } });
       var nLive=Object.keys(liveByUser).length;
-      var engByUser={};
-      try{ var _att=await loadCohortAttendance(cohort); if(_att && _att.anyEng){ Object.keys(_att.byName).forEach(function(k){ var r=_att.byName[k]; if(r.engScore!=null){ var lid=idByName(students, r.name); if(lid!=null) engByUser[lid]=r.engScore; } }); } }catch(e){}
+      var engByUser={}, _att=null;
+      try{ _att=await loadCohortAttendance(cohort); if(_att && _att.anyEng){ Object.keys(_att.byName).forEach(function(k){ var r=_att.byName[k]; if(r.engScore!=null){ var lid=idByName(students, r.name); if(lid!=null) engByUser[lid]=r.engScore; } }); } }catch(e){}
       var _nSt=0,_nAt=0; Object.keys(completions).forEach(function(u){ _nSt+=((completions[u]&&completions[u].statuses)||[]).length; }); Object.keys(attempts).forEach(function(u){ Object.keys(attempts[u]||{}).forEach(function(q){ _nAt+=(((attempts[u]||{})[q])||[]).length; }); });
       var payload={ course_startdate:startdate, quizzes_meta:quizzes, has_forums:hasForums, has_completion:(_nSt>0), students:students,
         completions_by_user:completions, attempts_by_user_quiz:attempts, live_by_user:liveByUser,
         forum_discussions:discussions, forum_posts_by_discussion:postsByDisc, course_grades:courseGrades, assess_grades:assessGrades, uplift_by_user:upliftByUser, teams_eng:engByUser };
       var _ses=CORE.computeSES(payload);
       var _meta={ students:students.length, quizzes:quizzes.length, hasForums:hasForums, hasCompletion:(_nSt>0), nStatuses:_nSt, nAttempts:_nAt, nLive:nLive, noEffortData:(_nSt===0&&_nAt===0&&nLive===0), compErr:compErr, attErr:attErr };
-      return { ses:_ses, sesMeta:_meta };
+      return { ses:_ses, sesMeta:_meta, attendance:_att };
     }catch(e){ throw e; }
   }
 

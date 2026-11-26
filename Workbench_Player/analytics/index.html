@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.15.0">
-<meta name="build" content="2026-11-26 15:29 SAST">
+<meta name="version" content="1.15.1">
+<meta name="build" content="2026-11-26 15:55 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -1336,12 +1336,24 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var react=Math.min(0.1,(e.reactions||0)*0.05);
     return Math.round((cam+hands+mic+react)*100)/100;
   }
-  async function loadCohortAttendance(cohort){
-    var items; try{ items=await ghListDir(DATA_PREFIX+"attendance/"+cohort); }catch(e){ return null; }
-    var files=(items||[]).filter(function(x){ return x.type==="file" && /\.(csv|tsv|txt)$/i.test(x.name); });
-    if(!files.length) return null;
+  async function loadCohortAttendance(cohort, studentKeys){
+    function isCsv(x){ return x && x.type==="file" && /\.(csv|tsv|txt)$/i.test(x.name); }
     var sessions=[];
-    for(var k=0;k<files.length;k++){ try{ var txt=await ghGetTextRaw(files[k].path); var p=parseTeamsAttendance(txt); if(p) sessions.push(p); }catch(e){} }
+    // 1) per-cohort subfolder data/attendance/<cohort>/ — every file there belongs to this cohort
+    try{ var sub=await ghListDir(DATA_PREFIX+"attendance/"+cohort);
+      var sf=(sub||[]).filter(isCsv);
+      for(var a=0;a<sf.length;a++){ try{ var t1=await ghGetTextRaw(sf[a].path); var p1=parseTeamsAttendance(t1); if(p1) sessions.push(p1); }catch(e){} }
+    }catch(e){}
+    // 2) flat files dropped directly in data/attendance/ — assign to this cohort when their
+    //    participants match its registered students (so you don't have to use subfolders)
+    if(studentKeys && studentKeys.length){
+      var keySet={}; studentKeys.forEach(function(k){ if(k) keySet[k]=1; });
+      try{ var top=await ghListDir(DATA_PREFIX+"attendance");
+        var ff=(top||[]).filter(isCsv);
+        for(var b=0;b<ff.length;b++){ try{ var t2=await ghGetTextRaw(ff[b].path); var p2=parseTeamsAttendance(t2);
+          if(p2 && Object.keys(p2.people).some(function(pk){ return keySet[pk]; })) sessions.push(p2); }catch(e){} }
+      }catch(e){}
+    }
     if(!sessions.length) return null;
     var N=sessions.length, withDur=sessions.filter(function(s){ return !!s.meetMin; }).length, byName={};
     var anyEng=sessions.some(function(s){ return s.hasEng; });
@@ -1360,7 +1372,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var alloc=await loadCohortCompanies(state.cohortSel);
     if(!alloc || !alloc.hasCompany){ setStatus('No company allocation found. Add a <b>Company</b> column to <code class="k">data/classes/'+esc(state.cohortSel)+'.csv</code> (Name, Company) in the storage repo, then try again.', true); return; }
     setStatus("Loading Teams attendance (if present)…", true);
-    try{ state._attend=await loadCohortAttendance(state.cohortSel); }catch(e){ state._attend=null; }
+    try{ state._attend=await loadCohortAttendance(state.cohortSel, (d.students||[]).map(function(x){ return CORE.nameKey(x.name); })); }catch(e){ state._attend=null; }
     setStatus("", false);
     var present={}; d.students.forEach(function(s){ var a=alloc.byName[CORE.nameKey(s.name)]; if(a && a.company) present[a.company]=(present[a.company]||0)+1; });
     var names=Object.keys(present).sort();
@@ -1594,7 +1606,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       Object.keys(_lqAgg).forEach(function(k){ var a=_lqAgg[k]; if(a.q>0){ var lid=idByName(students, a.name); if(lid!=null) liveByUser[lid]=Math.max(0, Math.min(1, a.ans/a.q)); } });
       var nLive=Object.keys(liveByUser).length;
       var engByUser={}, _att=null;
-      try{ _att=await loadCohortAttendance(cohort); if(_att && _att.anyEng){ Object.keys(_att.byName).forEach(function(k){ var r=_att.byName[k]; if(r.engScore!=null){ var lid=idByName(students, r.name); if(lid!=null) engByUser[lid]=r.engScore; } }); } }catch(e){}
+      try{ _att=await loadCohortAttendance(cohort, students.map(function(u){ return CORE.nameKey(u.fullname); })); if(_att && _att.anyEng){ Object.keys(_att.byName).forEach(function(k){ var r=_att.byName[k]; if(r.engScore!=null){ var lid=idByName(students, r.name); if(lid!=null) engByUser[lid]=r.engScore; } }); } }catch(e){}
       var _nSt=0,_nAt=0; Object.keys(completions).forEach(function(u){ _nSt+=((completions[u]&&completions[u].statuses)||[]).length; }); Object.keys(attempts).forEach(function(u){ Object.keys(attempts[u]||{}).forEach(function(q){ _nAt+=(((attempts[u]||{})[q])||[]).length; }); });
       var payload={ course_startdate:startdate, quizzes_meta:quizzes, has_forums:hasForums, has_completion:(_nSt>0), students:students,
         completions_by_user:completions, attempts_by_user_quiz:attempts, live_by_user:liveByUser,

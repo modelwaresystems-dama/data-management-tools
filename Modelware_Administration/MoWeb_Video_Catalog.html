@@ -820,13 +820,8 @@
     <div class="stats" id="pgstats"></div>
 
     <div class="pgcard">
-      <h3 class="pgh">📝 Blog write-up pipeline <span class="pgsub">draft → review → final → published on the website</span></h3>
+      <h3 class="pgh">📝 Blog write-ups live on your website</h3>
       <div id="pgfunnel"></div>
-    </div>
-
-    <div class="pgcard">
-      <h3 class="pgh">Cataloguing steps — completion across the team</h3>
-      <div id="pgsteps"></div>
     </div>
 
     <div class="pgcard">
@@ -835,7 +830,7 @@
     </div>
 
     <div class="pgcard">
-      <h3 class="pgh">🚩 Webinars with no blog on the website <span class="pgsub">no write-up link found on your site — click a row to open the record</span></h3>
+      <h3 class="pgh">🚩 Webinars missing a write-up <span class="pgsub">no blog link yet — Use a suggested match, mark Not required, or ✎ Update; the choice writes to the Data table</span></h3>
       <div class="controls" style="margin:0 0 10px">
         <input type="search" id="pgtodoq" placeholder="Filter this list…">
         <label class="chk"><input type="checkbox" id="pgtodopub" checked> Public only</label>
@@ -6698,9 +6693,9 @@
 }</script>
 <script>
 /* ===== APP VERSION — bump on each release ===== */
-const APP_VERSION = 'v5.17';
+const APP_VERSION = 'v5.18';
 const BUILD_DATE  = '2026-11-26';   // auto-stamped at build time (never hand-typed)
-const BUILD_TIME  = '11:33 SAST';   // auto-stamped at build time (SAST)
+const BUILD_TIME  = '11:53 SAST';   // auto-stamped at build time (SAST)
 
 const VIDEOS = JSON.parse(document.getElementById('data').textContent);
 let AN = JSON.parse(document.getElementById('adata').textContent);
@@ -8595,40 +8590,21 @@ function renderProgress(){
   $('pgnote').textContent = `${N} webinars in scope · figures update live as the team edits the Data tab or refreshes the blog`;
   // KPI tiles
   const tile=(n,l)=>`<div class="stat"><div class="n">${n}</div><div class="l">${esc(l)}</div></div>`;
+  const isSentinel=r=>SENTINEL_RE.test(String(r.Webinar_Writeup||'').trim());
+  const missing=rows.filter(r=>!writeupUrl(r) && !isSentinel(r)).length;
+  const notReq=rows.filter(r=>isSentinel(r)).length;
   $('pgstats').innerHTML =
     tile(N,'Webinars in scope') +
     tile(`<span class="done">${blogLive}</span>`,`Blog live on website (${pct(blogLive,N)}%)`) +
-    tile(`<span class="done">${posted}</span>`,`Marked Posted (${pct(posted,postedApp)}% of ${postedApp})`) +
-    tile(wdone,'Write-ups done') +
-    tile(`<span class="todo">${N-blogLive}</span>`,'No blog on site yet');
+    tile(`<span class="todo">${missing}</span>`,'Missing a write-up') +
+    tile(notReq,'Marked not required');
 
-  // blog pipeline funnel (share of scope) — last stage is the ACTUAL blog on the website
-  const funMax=N||1;
-  const funStages=[
-    ['Write-up drafted', stepCounts['Write_up_done'].yes, '#8aa0c6'],
-    ['First review',     stepCounts['First_Review'].yes,  '#6f8fc0'],
-    ['Final',            stepCounts['Final'].yes,          '#d9a441'],
-    ['Marked Posted',    stepCounts['Posted'].yes,         '#2f9e69'],
-    ['Blog live on website ✓', blogLive,                   '#1a7f37']
-  ];
-  $('pgfunnel').innerHTML = `<div class="pgfun">`+funStages.map(([lbl,y,col])=>{
-    const p=pct(y,funMax);
-    return `<div class="pgfrow"><div class="pgflabel">${esc(lbl)}</div>
-      <div class="pgftrack"><div class="pgfbar" style="width:${Math.max(p,3)}%;background:${col}">${p}%</div></div>
-      <div class="pgfmeta"><b>${y}</b> / ${N}</div></div>`;
-  }).join('')+`</div>`+
-  `<div class="pgnote" style="margin-top:10px">Reconcile vs your website: <b style="color:#b06a10">${blogNotPosted}</b> webinars have a blog live on the site but aren't ticked <b>Posted</b> yet · <b style="color:#c0362c">${postedNoBlog}</b> are marked Posted but have no blog link (verify). Use <b>🔄 Refresh blog write-ups</b> above to re-check the website.</div>`;
-
-  // step completion bars
-  $('pgsteps').innerHTML = WF_STEPS.map(s=>{
-    const c=stepCounts[s.k]; const app=c.yes+c.no; const p=pct(c.yes,app);
-    const w=x=>N?(100*x/N):0;
-    return `<div class="pgstep"><div class="pgsname">${esc(s.label)}</div>
-      <div class="pgsbar" title="${c.yes} done · ${c.no} outstanding · ${c.na} n/a">
-        <div class="seg yes" style="width:${w(c.yes)}%"></div><div class="seg no" style="width:${w(c.no)}%"></div><div class="seg na" style="width:${w(c.na)}%"></div>
-      </div>
-      <div class="pgsmeta"><b>${p}%</b> · ${c.yes}/${app}${c.na?` · ${c.na} n/a`:''}</div></div>`;
-  }).join('') + `<div class="pglegend"><span class="ly">Done</span><span class="ln">Outstanding</span><span class="lna">N/A (not applicable)</span></div>`;
+  // single bar — how many webinars have a write-up live on the website
+  const plive=pct(blogLive,N||1);
+  $('pgfunnel').innerHTML = `<div class="pgfun"><div class="pgfrow"><div class="pgflabel">Blog live on website ✓</div>`
+    + `<div class="pgftrack"><div class="pgfbar" style="width:${Math.max(plive,3)}%;background:#1a7f37">${plive}%</div></div>`
+    + `<div class="pgfmeta"><b>${blogLive}</b> / ${N}</div></div></div>`
+    + `<div class="pgnote" style="margin-top:10px"><b style="color:#c0362c">${missing}</b> webinar${missing===1?'':'s'} still missing a write-up — resolve them in the worklist below. Use <b>🔄 Refresh blog write-ups</b> above to pull suggestions from your website.</div>`;
 
   renderProgressGroups(rows, stepCounts);
   renderProgressTodo();
@@ -8641,50 +8617,52 @@ function renderProgressGroups(rows){
   const groups={};
   rows.forEach(r=>{ const k=keyOf(r); (groups[k]=groups[k]||[]).push(r); });
   const arr=Object.entries(groups).map(([name,rs])=>{
-    const app=rs.filter(r=>yn(r.Posted)!=='na').length;
-    const pub=rs.filter(r=>yn(r.Posted)==='yes').length;
-    const wd=rs.filter(r=>yn(r.Write_up_done)==='yes').length;
-    return {name, total:rs.length, app, pub, wd, p:pct(pub,app)};
-  }).filter(g=>g.total>=1).sort((a,b)=> a.p-b.p || b.total-a.total);   // worst-published first
-  $('pggroup').innerHTML = `<thead><tr><th>${'Group'}</th><th>Webinars</th><th>Write-ups done</th><th>Published</th><th>Published %</th></tr></thead><tbody>`+
-    arr.map(g=>`<tr><td>${esc(g.name)}</td><td class="num">${g.total}</td><td class="num">${g.wd}</td>
-      <td class="num">${g.pub}${g.app?` / ${g.app}`:''}</td>
+    const live=rs.filter(r=>writeupUrl(r)).length;
+    return {name, total:rs.length, live, p:pct(live,rs.length)};
+  }).filter(g=>g.total>=1).sort((a,b)=> a.p-b.p || b.total-a.total);   // fewest-live first
+  $('pggroup').innerHTML = `<thead><tr><th>${'Group'}</th><th>Webinars</th><th>Blog live</th><th>Blog live %</th></tr></thead><tbody>`+
+    arr.map(g=>`<tr><td>${esc(g.name)}</td><td class="num">${g.total}</td><td class="num">${g.live} / ${g.total}</td>
       <td class="num"><span class="minibar"><i style="width:${g.p}%"></i></span><span class="pctlabel">${g.p}%</span></td></tr>`).join('')+
     `</tbody>`;
 }
 function renderProgressTodo(){
   const q=($('pgtodoq').value||'').trim().toLowerCase();
   const pubOnly=$('pgtodopub').checked;
+  const sugOf=id=>{ const d=BLOG_DECISIONS[id]; return (d && d.action==='fill' && d.status==='pending') ? d : null; };
   let list=progressCohort().filter(r=>{
-    if(writeupUrl(r)) return false;                       // already has a blog on the website
+    if(writeupUrl(r)) return false;                                               // already has a blog on the website
+    if(SENTINEL_RE.test(String(r.Webinar_Writeup||'').trim())) return false;      // already marked Not required
     if(pubOnly && String(r.Status||'').toLowerCase()!=='public') return false;
     if(q && !`${r.Webinar} ${r.Author} ${r.Knowledge_Area}`.toLowerCase().includes(q)) return false;
     return true;
   });
-  list.sort((a,b)=> String(b.Date||'').localeCompare(String(a.Date||'')));
-  $('pgtodocount').textContent = `${list.length} webinar${list.length!==1?'s':''} with no blog on the website yet`;
-  const stepDots=r=>WF_STEPS.map(s=>`<span class="dot ${yn(r[s.k])}" title="${esc(s.label)}: ${yn(r[s.k])}"></span>`).join('');
+  // suggested matches first (highest confidence), then the rest newest-first
+  list.sort((a,b)=>{ const sa=sugOf(a.VideoID), sb=sugOf(b.VideoID); const fa=sa?sa.f1:-1, fb=sb?sb.f1:-1; return (fb-fa) || String(b.Date||'').localeCompare(String(a.Date||'')); });
+  const withSug=list.filter(r=>sugOf(r.VideoID)).length;
+  $('pgtodocount').textContent = `${list.length} missing a write-up · ${withSug} with a suggested match`;
   const badge=st=>{ st=String(st||'').toLowerCase(); const m={public:['pub','public'],unlisted:['un','unlisted'],private:['pv','private'],deleted:['pv','deleted']}[st]; return m?`<span class="pgbadge ${m[0]}">${m[1]}</span>`:''; };
-  $('pgtodo').innerHTML = `<thead><tr><th>Webinar</th><th>Date</th><th>Author</th><th>Status</th><th title="Write-up · Review · Final · Posted · Chapters · Exec · Thumb · YT">Steps</th><th>Links</th></tr></thead><tbody>`+
+  $('pgtodo').innerHTML = `<thead><tr><th>Webinar</th><th>Date</th><th>Status</th><th>Suggested write-up (from your blog)</th><th></th></tr></thead><tbody>`+
     (list.length? list.map(r=>{
-      const url=writeupUrl(r);
+      const d=sugOf(r.VideoID);
+      const sug = d
+        ? `<a href="${esc(d.to)}" target="_blank" rel="noopener">${esc(d.postTitle||d.to)}</a> <span class="pgnote">(${d.cls==='confident'?'confident':'near'} ${d.f1!=null?d.f1.toFixed(2):''})</span> <button class="linkbtn tduse" data-id="${esc(r.VideoID)}">use</button>`
+        : `<span class="pgnote">no match found — Refresh to check your site</span>`;
       return `<tr data-vid="${esc(r.VideoID||'')}">
-        <td>${esc(r.Webinar||'(untitled)')}</td>
+        <td>${r.VideoID?`<a class="ytl" href="https://www.youtube.com/watch?v=${esc(r.VideoID)}" target="_blank" rel="noopener" title="Open on YouTube">▶</a> `:''}${esc(r.Webinar||'(untitled)')}</td>
         <td class="num">${esc(r.Date||'')}</td>
-        <td>${esc(r.Author||'')}</td>
         <td>${badge(r.Status)}</td>
-        <td style="white-space:nowrap">${stepDots(r)}</td>
-        <td class="tlinks" data-noopen="1">
-          ${r.VideoID?`<a href="https://www.youtube.com/watch?v=${esc(r.VideoID)}" target="_blank" rel="noopener">▶ Video</a>`:''}
-          ${url?`<a href="${esc(url)}" target="_blank" rel="noopener">📝 Blog</a>`:''}
-          <button class="pgedit" type="button">✎ Update</button>
-        </td></tr>`;
-    }).join('') : `<tr><td colspan="6" style="text-align:center;color:#1a9d63;padding:18px">🎉 Every webinar in scope has a blog on the website.</td></tr>`)+
+        <td data-noopen="1">${sug}</td>
+        <td class="tlinks" style="white-space:nowrap"><button class="linkbtn tdnr" data-id="${esc(r.VideoID)}">not required</button> · <button class="pgedit" type="button">✎ Update</button></td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="5" style="text-align:center;color:#1a9d63;padding:18px">🎉 No webinars missing a write-up.</td></tr>`)+
     `</tbody>`;
 }
-// open the record form when a to-do row is clicked (except on the link cell's real links)
+// Worklist actions: Use the suggested URL, mark Not required, or open the record form (✎ Update / row click)
 $('pgtodo').addEventListener('click', e=>{
+  const u=e.target.closest('.tduse'); if(u){ resolveBlogDecision(u.dataset.id, true); return; }
+  const nr=e.target.closest('.tdnr'); if(nr){ markNotRequired(nr.dataset.id); return; }
   if(e.target.closest('a')) return;
+  if(e.target.closest('[data-noopen]')) return;
   const tr=e.target.closest('tr[data-vid]'); if(!tr) return;
   const rec=(RECORDS||[]).find(r=>r.VideoID===tr.dataset.vid); if(!rec) return;
   setTab('data'); openForm(rec);
@@ -8756,23 +8734,28 @@ function matchBlogsDetailed(posts){
   });
   return {proposals, noMatch, confirmed, sentinel};
 }
-// Fold proposals into the register: auto-apply confident blank fills; log the rest PENDING (skip URLs already rejected).
+// Fold proposals into the register as PENDING suggestions — nothing auto-fills (Howard decides each in the worklist).
+// Blank-fill suggestions surface in the Progress worklist; existing-link mismatches surface in the audit register.
+// Proposals whose exact URL was rejected before are not re-raised.
 function reconcileProposals(res){
-  let autoFilled=0, pendingNear=0, pendingMismatch=0; const by={}; (RECORDS||[]).forEach(r=>by[r.VideoID]=r);
+  let pendingConfident=0, pendingNear=0, pendingMismatch=0; const by={}; (RECORDS||[]).forEach(r=>by[r.VideoID]=r);
   res.proposals.forEach(pr=>{
     const r=by[pr.id]; if(!r) return;
     const dec=BLOG_DECISIONS[pr.id] || {rejectedUrls:[]};
     if((dec.rejectedUrls||[]).some(u=>normU(u)===normU(pr.to))) return;     // this exact proposal was rejected before
-    if(pr.action==='fill' && pr.cls==='confident'){
-      if(!String(r.Webinar_Writeup||'').trim()){ r.Webinar_Writeup=pr.to; autoFilled++; }
-      BLOG_DECISIONS[pr.id]=Object.assign(dec,{action:'fill',cls:'confident',from:'',to:pr.to,postTitle:pr.postTitle,f1:pr.f1,title:pr.title,status:'approved',auto:true,ts:Date.now()});
-    } else {
-      BLOG_DECISIONS[pr.id]=Object.assign(dec,{action:pr.action,cls:pr.cls,from:pr.from,to:pr.to,postTitle:pr.postTitle,f1:pr.f1,curF1:pr.curF1,title:pr.title,status:'pending',ts:Date.now()});
-      if(pr.cls==='mismatch') pendingMismatch++; else pendingNear++;
-    }
+    BLOG_DECISIONS[pr.id]=Object.assign(dec,{action:pr.action,cls:pr.cls,from:pr.from,to:pr.to,postTitle:pr.postTitle,f1:pr.f1,curF1:pr.curF1,title:pr.title,status:'pending',ts:Date.now()});
+    if(pr.cls==='mismatch') pendingMismatch++; else if(pr.cls==='confident') pendingConfident++; else pendingNear++;
   });
   persistBlogDecisions();
-  return {autoFilled, pendingNear, pendingMismatch};
+  return {pendingConfident, pendingNear, pendingMismatch};
+}
+// Mark a missing write-up as "not required" — writes the sentinel to the record (Data table) and logs the decision.
+function markNotRequired(id){
+  const r=recOf(id); if(!r) return;
+  r.Webinar_Writeup='No Article Required';
+  const dec=BLOG_DECISIONS[id] || {};
+  BLOG_DECISIONS[id]=Object.assign(dec,{action:'na',cls:'na',status:'na',from:'',to:'No Article Required',title:r.Webinar||'',ts:Date.now()});
+  persistBlogDecisions(); renderProgress(); render(); if(dataRendered) drawRows();
 }
 function resolveBlogDecision(id, approve){
   const dec=BLOG_DECISIONS[id], r=recOf(id); if(!dec) return;
@@ -8799,20 +8782,16 @@ function decTable(list, titleOf, showCur){
 function renderDecisionRegister(){
   const el=$('blogreview'); if(!el) return;
   const titleOf={}; (typeof VIDEOS!=='undefined'?VIDEOS:[]).forEach(v=>titleOf[v.id]=v.t);
-  const pend=pendingDecisions();
-  const mis=pend.filter(d=>d.cls==='mismatch'), near=pend.filter(d=>d.cls!=='mismatch');
+  const mis=pendingDecisions().filter(d=>d.cls==='mismatch');
   const all=Object.values(BLOG_DECISIONS);
-  const resolved=all.filter(d=>d.status!=='pending').length, approved=all.filter(d=>d.status==='approved').length, rejected=all.filter(d=>d.status==='rejected').length;
-  if(!pend.length && !resolved){ el.hidden=true; el.innerHTML=''; return; }
-  let html=`<b>📋 Blog write-up decision register</b> — <b>${pend.length}</b> pending · ${approved} approved · ${rejected} rejected.`;
+  const misResolved=all.filter(d=>d.cls==='mismatch' && d.status!=='pending').length;
+  const anyDecision=all.length>0;
+  if(!mis.length && !misResolved && !anyDecision){ el.hidden=true; el.innerHTML=''; return; }
+  let html=`<b>📋 Existing-link audit</b> — <b>${mis.length}</b> possible mismatch${mis.length===1?'':'es'} pending${misResolved?` · ${misResolved} resolved`:''}.`;
   if(mis.length){
-    html+=`<p style="margin:8px 0 4px"><b>${mis.length} possible mismatch${mis.length===1?'':'es'} on existing links</b> — the current link matches the title poorly and a more confident post was found. Approve to replace it (removes the old link, adds the new); reject to keep the current link:</p>`+decTable(mis, titleOf, true);
-  }
-  if(near.length){
-    html+=`<p style="margin:10px 0 4px"><b>${near.length} new match${near.length===1?'':'es'} for blank links</b> — the YouTube title differs slightly (often the character-limit truncation). Approve the ones that are the same webinar:</p>`+decTable(near, titleOf, false);
-  }
-  if(!pend.length) html+=`<p style="margin:8px 0 0;color:#1a7f37">No pending decisions — all caught up.</p>`;
-  html+=`<p style="margin:8px 0 0"><button class="linkbtn" id="blogcsv">⤓ Download register (CSV)</button> · decisions are saved and travel in ☁ Team.</p>`;
+    html+=`<p style="margin:8px 0 4px">The current link matches the title poorly and a more confident post was found. Approve to replace it (removes the old link, adds the new); reject to keep the current link:</p>`+decTable(mis, titleOf, true);
+  } else html+=` <span style="color:#1a7f37">No pending mismatches on the already-filled links.</span>`;
+  html+=`<p style="margin:8px 0 0"><button class="linkbtn" id="blogcsv">⤓ Download decision register (CSV)</button> · decisions are saved and travel in ☁ Team.</p>`;
   el.innerHTML=html; el.hidden=false;
 }
 function blogStatus(msg,cls){ const el=$('blogstatus'); if(el){ el.textContent=msg; el.style.color = cls==='err'?'#c0362c':(cls==='ok'?'#1a7f37':'var(--muted)'); } }
@@ -8841,8 +8820,8 @@ async function refreshBlog(){
     store.set(BLOG_CACHE_KEY, JSON.stringify({stamp:blogStamp, site, count:posts.length}));
     renderDecisionRegister();
     renderProgress(); render(); if(dataRendered) drawRows();   // render() refreshes the 📝 Post clips on the Catalog
-    const pend=rc.pendingNear+rc.pendingMismatch;
-    blogStatus(`✓ ${rc.autoFilled} auto-filled · ${rc.pendingMismatch} mismatch${rc.pendingMismatch===1?'':'es'} + ${rc.pendingNear} new match${rc.pendingNear===1?'':'es'} to review below · scanned ${posts.length} posts · ${new Date(blogStamp).toLocaleString()}`,'ok');
+    const sugg=rc.pendingConfident+rc.pendingNear;
+    blogStatus(`✓ ${sugg} suggestion${sugg===1?'':'s'} for missing write-ups (${rc.pendingConfident} confident) · ${rc.pendingMismatch} existing-link mismatch${rc.pendingMismatch===1?'':'es'} to review · scanned ${posts.length} posts · ${new Date(blogStamp).toLocaleString()}`,'ok');
   }catch(err){
     let m=(err&&err.message)||String(err);
     if(/Failed to fetch|NetworkError|Load failed|CORS/i.test(m))

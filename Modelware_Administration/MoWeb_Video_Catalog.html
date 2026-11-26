@@ -596,12 +596,14 @@
           <button id="c_signout" class="btn" hidden>Sign out</button>
           <button id="c_fetch" class="btn">Fetch latest stats</button>
           <button id="c_checkvids" class="btn">Check for new videos</button>
+          <button id="c_reconcile" class="btn" title="Check your catalogued videos against YouTube and mark/flag any that have been deleted">Reconcile deleted</button>
           <button id="c_playlists" class="btn">Fetch playlists</button>
           <button id="c_export" class="btn">Export settings</button>
           <button id="c_import" class="btn">Import settings</button>
           <input type="file" id="c_importfile" accept="application/json,.json" hidden>
         </div>
         <div class="cred-status" id="c_status"></div>
+        <div id="recpanel" class="note" hidden style="margin-top:8px"></div>
         <details class="adv" id="tracepanel">
           <summary>API call trace (diagnostics)</summary>
           <p class="note">Every request the page sends to Google is logged here with its exact query and the response/error, so you can see precisely which call fails. <button id="trace_export" class="linkbtn">Export trace (JSON)</button> · <button id="trace_clear" class="linkbtn">Clear</button></p>
@@ -6690,9 +6692,9 @@
 }</script>
 <script>
 /* ===== APP VERSION — bump on each release ===== */
-const APP_VERSION = 'v5.7';
-const BUILD_DATE  = '2026-07-24';   // auto-stamped at build time (never hand-typed)
-const BUILD_TIME  = '12:29 SAST';   // auto-stamped at build time (SAST)
+const APP_VERSION = 'v5.8';
+const BUILD_DATE  = '2026-11-26';   // auto-stamped at build time (never hand-typed)
+const BUILD_TIME  = '07:26 SAST';   // auto-stamped at build time (SAST)
 
 const VIDEOS = JSON.parse(document.getElementById('data').textContent);
 let AN = JSON.parse(document.getElementById('adata').textContent);
@@ -6739,21 +6741,25 @@ const mmss = s => { if(s==null) return '–'; const m=Math.floor(s/60), ss=s%60;
 
 /* ---- stats ---- */
 const tileHtml = arr => arr.map(([n,l])=>`<div class="stat"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join('');
+// live catalogue = everything except videos deleted on YouTube (they're retained but hidden from counts)
+function liveCount(){ return VIDEOS.filter(v=>v.s!=='deleted').length; }
 function buildCatalogStats(){
-  const dates = VIDEOS.map(v=>v.d).filter(Boolean).sort();
+  const live = VIDEOS.filter(v=>v.s!=='deleted');
+  const del = VIDEOS.length - live.length;
+  const dates = live.map(v=>v.d).filter(Boolean).sort();
   const latest = dates[dates.length-1];
   $('stats').innerHTML = tileHtml([
-    [VIDEOS.length,'Total videos'],
-    [VIDEOS.filter(v=>v.s==='public').length,'Public on YouTube'],
-    [VIDEOS.filter(v=>v.s==='unlisted').length,'Unlisted'],
-    [new Set(VIDEOS.map(v=>v.ka)).size,'Knowledge areas'],
+    [live.length, 'Total videos'+(del?` · ${del} deleted hidden`:'')],
+    [live.filter(v=>v.s==='public').length,'Public on YouTube'],
+    [live.filter(v=>v.s==='unlisted').length,'Unlisted'],
+    [new Set(live.map(v=>v.ka)).size,'Knowledge areas'],
     [fmtDate(latest),'Latest webinar']
   ]);
 }
 buildCatalogStats();
 $('verbadge').textContent = `Version ${APP_VERSION} · ${BUILD_DATE} ${BUILD_TIME}`;
 $('verbadge').title = `MoWeb Video Catalog ${APP_VERSION}, built ${BUILD_DATE} at ${BUILD_TIME}`;
-$('foot').textContent = `MoWeb Video Catalog ${APP_VERSION} · built ${BUILD_DATE} ${BUILD_TIME} · Sources: MoWebDashboard Video Catalog.xlsx + YouTube Analytics · ${VIDEOS.length} videos`;
+$('foot').textContent = `MoWeb Video Catalog ${APP_VERSION} · built ${BUILD_DATE} ${BUILD_TIME} · Sources: MoWebDashboard Video Catalog.xlsx + YouTube Analytics · ${liveCount()} videos`;
 
 /* ---- analytics KPI tiles (recomputed on every render) ---- */
 function renderAnalyticsTiles(){
@@ -6869,7 +6875,7 @@ function render(){
     : ' <span class="plest">(playlists estimated — Fetch from YouTube for exact membership)</span>';
   const catKeys=catGroup.norm();
   const groupNote = catKeys.length ? ` <span class="plest" style="font-style:normal">· grouped by ${catKeys.map(k=>esc(GROUPABLE[k])).join(' › ')}</span>` : '';
-  $('count').innerHTML = `Showing <b>${shown.length}</b> of ${VIDEOS.length} videos` + (groupPl||pl ? srcTag : '') + groupNote;
+  $('count').innerHTML = `Showing <b>${shown.length}</b> of ${liveCount()} videos` + (groupPl||pl ? srcTag : '') + groupNote;
   $('empty').style.display = shown.length ? 'none' : 'block';
   if(catKeys.length){
     // hierarchy grouping (Platform / Knowledge Area / Meetup Taxonomy) takes precedence over playlist grouping
@@ -7491,7 +7497,10 @@ async function checkNewVideos(){
     const added=fresh.map(it=>{
       const id=it.contentDetails.videoId, sn=it.snippet||{};
       const d=(it.contentDetails.videoPublishedAt||sn.publishedAt||'').slice(0,10);
-      return {id, t:sn.title||'Untitled', d:d||null, s:(statusMap[id]||'unknown'), ka:'Uncategorised', p:'Unspecified', a:'Unknown', r:null, c:null, w:null, g:[], vw:null, lk:null, wm:null, avd:null, _new:true};
+      // a deleted/private video surfaces from the uploads playlist with the placeholder title and is
+      // NOT returned by videos.list — flag it 'deleted', never leave it 'unknown' to leak into counts/views
+      const gone = isPlaceholderTitle(sn.title) || !(id in statusMap);
+      return {id, t:sn.title||'Untitled', d:d||null, s:(gone?'deleted':(statusMap[id]||'unknown')), ka:'Uncategorised', p:'Unspecified', a:'Unknown', r:null, c:null, w:null, g:[], vw:null, lk:null, wm:null, avd:null, _new:true};
     });
     addNewVideos(added);
     // the public view/like counts we just pulled feed the cards; keep them in the SEO cache too
@@ -7506,6 +7515,96 @@ async function checkNewVideos(){
     $('tracepanel').open=true;
     cstatus('Error: '+m+' — see "API call trace" below.', 'err');
   }finally{ btn.disabled=false; }
+}
+
+/* ===== Deleted-video reconciliation (v5.8) =====================================================
+   The catalogue lifecycle had a one-way gap: "Check for new videos" only ADDED. YouTube returns a
+   deleted video's title as the placeholder "Deleted video", so removed videos lingered — some
+   flagged 'deleted', some left 'unknown' — leaking into counts, exports and views. This closes it:
+   placeholder titles normalise to 'deleted' on load, and a reconcile sweep checks every catalogued
+   id against YouTube with the owner token. Cross-channel safe: an unlisted/private video that the
+   sign-in can't see (it lives on the OTHER channel) is flagged for review, never auto-deleted.    */
+const DELETED_RE=/^\s*(deleted|private) video\s*$/i;
+function isPlaceholderTitle(t){ return DELETED_RE.test(t||''); }
+function recOf(id){ return (typeof RECORDS!=='undefined' && RECORDS) ? RECORDS.find(r=>r.VideoID===id) : null; }
+function setVideoStatus(v, s){ if(v.s===s) return false; v.s=s; const r=recOf(v.id); if(r) r.Status=s; return true; }
+// Persist status/record changes so they survive reload AND travel in the content package / Team sync.
+function persistCatalog(){
+  try{ if(typeof RECORDS!=='undefined' && RECORDS) store.set(REC_KEY, JSON.stringify({rows:RECORDS})); }catch(e){}
+  try{ if(CONTENT_PKG){ CONTENT_PKG.videos=VIDEOS; if(CONTENT_PKG.records && typeof RECORDS!=='undefined' && RECORDS) CONTENT_PKG.records.rows=RECORDS; store.set(PKG_KEY, JSON.stringify(CONTENT_PKG)); } }catch(e){}
+}
+// Any catalogued video whose YouTube title is the "Deleted/Private video" placeholder → 'deleted'.
+// Runs at boot so a mislabelled ('unknown') row self-heals the first time this version loads.
+function normalizeDeleted(){
+  let n=0; VIDEOS.forEach(v=>{ if(v.s!=='deleted' && isPlaceholderTitle(v.t)){ if(setVideoStatus(v,'deleted')) n++; } });
+  if(n){ persistCatalog(); if(typeof buildCatalogStats==='function') buildCatalogStats(); if(typeof render==='function') render(); if(typeof dataRendered!=='undefined' && dataRendered) drawRows(); }
+  return n;
+}
+function recReport(html){ const el=$('recpanel'); if(!el) return; el.innerHTML=html; el.hidden=false; }
+async function reconcileDeleted(){
+  const c=formCreds(); saveCreds();
+  if(!signedIn() && !c.accessToken && !(c.clientID && c.clientSecret && c.refreshToken)){
+    cstatus('Sign in with Google first to reconcile against YouTube.','err'); return;
+  }
+  const btn=$('c_reconcile'); if(btn) btn.disabled=true;
+  if($('recpanel')){ $('recpanel').hidden=true; $('recpanel').innerHTML=''; }
+  traceReset();
+  try{
+    cstatus('Authorizing with Google…');
+    const token=await getAccessToken(c);
+    const marked=[];
+    // 0) placeholder-title rows are deleted regardless of what status they currently wear
+    VIDEOS.forEach(v=>{ if(v.s!=='deleted' && isPlaceholderTitle(v.t)){ setVideoStatus(v,'deleted'); marked.push(v); } });
+    // 1) sweep every catalogued id through videos.list — returned = visible/alive (owner sees own private/unlisted + any public)
+    const ids=[...new Set(VIDEOS.map(v=>v.id).filter(id=>/^[\w-]{11}$/.test(id)))];
+    const seen={};
+    for(let i=0;i<ids.length;i+=50){
+      const r=await ytData('videos', token, {part:'id,status', id:ids.slice(i,i+50).join(',')});
+      (r.items||[]).forEach(it=>{ seen[it.id]=(it.status&&it.status.privacyStatus)||'public'; });
+      cstatus(`Reconciling against YouTube… ${Math.min(i+50,ids.length)}/${ids.length}`);
+    }
+    // 2) decide per video
+    let refreshed=0; const review=[];
+    VIDEOS.forEach(v=>{
+      if(v.s==='deleted') return;
+      const ps=seen[v.id];
+      if(ps){ if((ps==='public'||ps==='unlisted'||ps==='private') && v.s!==ps){ setVideoStatus(v,ps); refreshed++; } return; }
+      // not returned by the owner's token:
+      if(v.s==='public' || v.s==='unknown'){ setVideoStatus(v,'deleted'); marked.push(v); }   // was public & now gone → deleted
+      else { review.push(v); }   // unlisted/private & invisible → could be the OTHER channel → review, don't auto-delete
+    });
+    persistCatalog();
+    buildCatalogStats(); buildCatalogFilters(); render(); renderAnalytics(); if(dataRendered) drawRows();
+    const delCount=VIDEOS.filter(v=>v.s==='deleted').length;
+    let html=`<b>Reconcile complete.</b> Swept ${ids.length} videos · <b>${marked.length}</b> marked deleted · ${refreshed} status${refreshed===1?'':'es'} refreshed · <b>${review.length}</b> to review.`;
+    if(review.length){
+      html+=`<p style="margin:8px 0 4px">These unlisted/private videos did not come back from YouTube. They may be genuinely deleted, or unlisted on your <i>other</i> channel (Modelware Systems vs DAMA SA), which this sign-in can't see. Review before deleting:</p>`
+        + `<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left">Title</th><th>Status</th><th></th></tr></thead><tbody>`
+        + review.map(v=>`<tr data-id="${esc(v.id)}"><td>${esc(v.t)}</td><td>${esc(v.s)}</td><td style="white-space:nowrap"><a href="https://studio.youtube.com/video/${esc(v.id)}/edit" target="_blank" rel="noopener">Studio ↗</a> · <button class="linkbtn recdel" data-id="${esc(v.id)}">mark deleted</button></td></tr>`).join('')
+        + `</tbody></table>`;
+    }
+    if(delCount) html+=`<p style="margin:8px 0 0">${delCount} deleted video${delCount===1?'':'s'} are retained but hidden from the catalogue and counts. <button class="linkbtn" id="recpurge">🗑 Purge them permanently</button></p>`;
+    html+=`<p style="margin:8px 0 0;color:#5b6472">Publish on ☁ Team (or Export the content package) to share these corrections.</p>`;
+    recReport(html);
+    cstatus(`Reconcile: ${marked.length} marked deleted, ${review.length} to review, ${refreshed} statuses refreshed.`, 'ok');
+  }catch(err){
+    let m=(err&&err.message)||String(err);
+    if(/40[13]|insufficient|scope|PERMISSION/i.test(m)) m='Your token may lack the youtube.readonly scope. Re-authorize granting yt-analytics.readonly + youtube.readonly. Raw: '+m;
+    else if(/Failed to fetch|NetworkError|Load failed/i.test(m)) m='Could not reach Google (CORS/origin). Open the page from your site or http://localhost. Raw: '+m;
+    $('tracepanel').open=true; cstatus('Reconcile failed: '+m,'err');
+  }finally{ if(btn) btn.disabled=false; }
+}
+function purgeDeleted(){
+  const del=VIDEOS.filter(v=>v.s==='deleted'); if(!del.length) return;
+  const ids=new Set(del.map(v=>v.id));
+  for(let i=VIDEOS.length-1;i>=0;i--) if(ids.has(VIDEOS[i].id)) VIDEOS.splice(i,1);
+  if(typeof RECORDS!=='undefined' && RECORDS) for(let i=RECORDS.length-1;i>=0;i--) if(ids.has(RECORDS[i].VideoID)) RECORDS.splice(i,1);
+  try{ let added=JSON.parse(store.get(ADDED_KEY)||'[]'); added=added.filter(v=>!ids.has(v.id)); store.set(ADDED_KEY, JSON.stringify(added)); }catch(e){}
+  ids.forEach(id=>{ try{ delete CTAGS[id]; }catch(e){} try{ if(typeof META!=='undefined') delete META[id]; }catch(e){} });
+  persistCatalog();
+  buildCatalogStats(); buildCatalogFilters(); render(); renderAnalytics(); if(dataRendered) drawRows();
+  if($('recpanel')) $('recpanel').hidden=true;
+  cstatus(`Purged ${del.length} deleted video${del.length===1?'':'s'} from the catalogue.`, 'ok');
 }
 
 function clearCreds(){
@@ -7707,6 +7806,12 @@ $('trace_clear').onclick = (e)=>{ e.preventDefault(); traceReset(); };
 $('c_clear').onclick = clearCreds;
 $('c_fetch').onclick = fetchFromYouTube;
 $('c_checkvids').onclick = checkNewVideos;
+$('c_reconcile').onclick = reconcileDeleted;
+if($('recpanel')) $('recpanel').addEventListener('click', e=>{
+  const d=e.target.closest('.recdel');
+  if(d){ const v=VIDEOS.find(x=>x.id===d.dataset.id); if(v){ setVideoStatus(v,'deleted'); persistCatalog(); buildCatalogStats(); buildCatalogFilters(); render(); if(dataRendered) drawRows(); const tr=d.closest('tr'); if(tr) tr.remove(); cstatus('Marked "'+(v.t||v.id)+'" as deleted.','ok'); } return; }
+  if(e.target.id==='recpurge'){ if(e.target.dataset.arm){ purgeDeleted(); } else { e.target.dataset.arm='1'; e.target.textContent='⚠ click again to permanently remove them'; } }
+});
 $('c_playlists').onclick = fetchPlaylists;
 
 // ---- export / import credentials as JSON ----
@@ -9343,7 +9448,7 @@ function buildContentPkg(){
     _type:'moweb-catalog-content',
     app_version: APP_VERSION,
     exported: new Date().toISOString(),
-    counts:{ videos: VIDEOS.length, records:(RECORDS?RECORDS.length:0), tracked:(AN&&AN.channel?AN.channel.videosTracked:0) },
+    counts:{ videos: VIDEOS.filter(v=>v.s!=='deleted').length, deleted: VIDEOS.filter(v=>v.s==='deleted').length, records:(RECORDS?RECORDS.length:0), tracked:(AN&&AN.channel?AN.channel.videosTracked:0) },
     playlists_authoritative: plAuthoritative,
     playlists_stamp: plStamp,
     coupon: (function(){ try{ return couponVal(); }catch(e){ return ''; } })(),
@@ -9629,6 +9734,7 @@ function initTeamSync(){
   }).catch(()=>{ /* offline or token trouble: stay silent until the editor opens the panel */ });
 }
 initTeamSync();
+try{ normalizeDeleted(); }catch(e){}   // self-heal any placeholder-title rows mislabelled 'unknown'
 
 /* ---- 🧹 Browser-storage manager: see what's using the shared ~5MB pot and free it ---- */
 const STOR_LABELS={

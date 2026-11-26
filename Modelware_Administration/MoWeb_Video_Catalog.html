@@ -801,6 +801,7 @@
       <button class="bcopy" id="blogrefresh">🔄 Refresh blog write-ups</button>
       <span class="pgnote" id="blogstatus"></span>
     </div>
+    <div id="blogreview" class="note" hidden style="margin:0 0 8px"></div>
     <div class="controls">
       <select id="pgscope" title="Which webinars to measure">
         <option value="app">Applicable webinars (default)</option>
@@ -6697,9 +6698,9 @@
 }</script>
 <script>
 /* ===== APP VERSION — bump on each release ===== */
-const APP_VERSION = 'v5.15';
+const APP_VERSION = 'v5.17';
 const BUILD_DATE  = '2026-11-26';   // auto-stamped at build time (never hand-typed)
-const BUILD_TIME  = '10:58 SAST';   // auto-stamped at build time (SAST)
+const BUILD_TIME  = '11:33 SAST';   // auto-stamped at build time (SAST)
 
 const VIDEOS = JSON.parse(document.getElementById('data').textContent);
 let AN = JSON.parse(document.getElementById('adata').textContent);
@@ -8631,6 +8632,7 @@ function renderProgress(){
 
   renderProgressGroups(rows, stepCounts);
   renderProgressTodo();
+  if(typeof renderDecisionRegister==='function') renderDecisionRegister();   // show any pending blog-match decisions
 }
 function renderProgressGroups(rows){
   const gb=$('pggroupby').value;
@@ -8702,27 +8704,117 @@ const BLOG_STOP=new Set('the a an and or of for to in on at with your you our da
 const BLOG_BADAUTH=new Set('drive sooner implement here create apply build master learn unlock turn become gain take know offering starting imagine just what how this through with and about do jumpstart deliver accelerate transform embrace elevate unleash break manage design ignite empower written'.split(' '));
 const bToks=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').split(' ').filter(w=>w && !BLOG_STOP.has(w) && w.length>2);
 const bSurnames=a=>(String(a||'').match(/[A-Za-zÀ-ÿ'.\-]+/g)||[]).map(t=>t.replace(/^[.'-]+|[.'-]+$/g,'').toLowerCase()).filter(t=>t.length>=4 && !BLOG_BADAUTH.has(t));
-function matchBlogsToRecords(posts){
-  const P=posts.map(p=>({link:p.link, tset:new Set(bToks(p.title||p.slug||''))})).filter(p=>p.tset.size);
-  const map={};
+// Detailed matcher (v5.16): for each record whose Write-up link is BLANK, find the best blog post and
+// classify the match as CONFIDENT (auto-fill) or NEAR (needs approval — the YouTube title differs, often a
+// character-limit truncation). Records that already have a link (incl. "No Article Required") are left alone.
+// ── Blog write-up decision register (v5.17) ───────────────────────────────────
+// A durable record of every blog-match decision, keyed by VideoID. Auto high-confidence blank fills
+// are recorded as approved(auto); near-match fills and existing-link mismatches are logged PENDING for
+// Howard's approve/reject. Rejected proposals (per URL) are never re-raised. Travels in the Team package.
+let BLOG_DECISIONS={};
+const BLOG_DEC_KEY='moweb_blog_decisions';
+const SENTINEL_RE=/^\s*(no article required|not required|n\/?a|none)\s*$/i;   // non-URL write-up values to leave alone
+function loadBlogDecisions(){ try{ const d=JSON.parse(store.get(BLOG_DEC_KEY)||'null'); if(d&&typeof d==='object') BLOG_DECISIONS=d; }catch(e){} }
+function persistBlogDecisions(){ try{ store.set(BLOG_DEC_KEY, JSON.stringify(BLOG_DECISIONS)); }catch(e){} if(CONTENT_PKG){ CONTENT_PKG.blog_decisions=BLOG_DECISIONS; } persistCatalog(); }
+const normU=u=>String(u||'').trim().replace(/\/+$/,'');
+const slugTset=u=>{ const m=String(u||'').match(/\/blog\/([^\/?#]+)/i); return m? new Set(bToks(m[1].replace(/-/g,' '))) : new Set(); };
+function f1Of(wt,tset){ if(!tset.size||!wt.size) return 0; let inter=0; wt.forEach(w=>{ if(tset.has(w)) inter++; }); if(!inter) return 0; const prec=inter/tset.size, rec=inter/wt.size; return 2*prec*rec/(prec+rec); }
+
+// Scan every record (blank AND filled): propose blank fills + flag existing-link mismatches.
+function matchBlogsDetailed(posts){
+  const P=posts.map(p=>({link:p.link, title:p.title||p.slug||'', tset:new Set(bToks(p.title||p.slug||''))})).filter(p=>p.tset.size);
+  const byLink={}; P.forEach(p=>byLink[normU(p.link)]=p);
+  const proposals=[]; let noMatch=0, confirmed=0, sentinel=0;
   (RECORDS||[]).forEach(r=>{
-    const wt=new Set(bToks(r.Webinar||'')); if(!wt.size) return;
+    if(!r.VideoID) return;
+    const cur=String(r.Webinar_Writeup||'').trim();
+    if(SENTINEL_RE.test(cur)){ sentinel++; return; }                 // leave "No Article Required" etc.
+    const wt=new Set(bToks(r.Webinar||'')); if(!wt.size){ noMatch++; return; }
     const sns=new Set(bSurnames(r.Author));
-    let best=0, bestUrl=null;
+    let best=null;
     for(const p of P){
-      let inter=0; wt.forEach(w=>{ if(p.tset.has(w)) inter++; });
-      if(inter<2) continue;
+      let inter=0; wt.forEach(w=>{ if(p.tset.has(w)) inter++; }); if(inter<2) continue;
       const prec=inter/p.tset.size, rec=inter/wt.size, f1=2*prec*rec/(prec+rec);
-      let authorHit=false; sns.forEach(s=>{ if(p.tset.has(s)) authorHit=true; });
-      const ok = f1>=0.7 || (authorHit && f1>=0.4 && inter>=2);
-      const score=f1+(authorHit?0.15:0);
-      if(ok && score>best){ best=score; bestUrl=p.link; }
+      const subset=rec===1; let authorHit=false; sns.forEach(s=>{ if(p.tset.has(s)) authorHit=true; });
+      const score=f1+(authorHit?0.12:0)+(subset?0.05:0);
+      if(!best||score>best.score) best={p,f1,prec,rec,subset,authorHit,score,inter};
     }
-    if(bestUrl && r.VideoID) map[r.VideoID]=bestUrl;
+    const confidentBest = best && (best.f1>=0.85 || (best.rec===1 && best.prec>=0.85));
+    const nearBest = best && !confidentBest && (best.f1>=0.60 || (best.subset&&best.inter>=3) || (best.authorHit&&best.f1>=0.45));
+    if(!cur){
+      if(confidentBest) proposals.push({id:r.VideoID, action:'fill', cls:'confident', from:'', to:best.p.link, postTitle:best.p.title, f1:best.f1, title:r.Webinar||''});
+      else if(nearBest) proposals.push({id:r.VideoID, action:'fill', cls:'near', from:'', to:best.p.link, postTitle:best.p.title, f1:best.f1, title:r.Webinar||''});
+      else noMatch++;
+    } else {
+      // existing link → audit: a confident DIFFERENT post, while the current link matches the title poorly
+      const curPost=byLink[normU(cur)];
+      const curF1 = curPost ? f1Of(wt,curPost.tset) : f1Of(wt,slugTset(cur));
+      if(best && normU(best.p.link)!==normU(cur) && confidentBest && (curF1<0.6 || (best.f1-curF1)>=0.25)){
+        proposals.push({id:r.VideoID, action:'replace', cls:'mismatch', from:cur, to:best.p.link, postTitle:best.p.title, f1:best.f1, curF1, title:r.Webinar||''});
+      } else confirmed++;
+    }
   });
-  return map;
+  return {proposals, noMatch, confirmed, sentinel};
 }
-function applyBlogMap(map){ let n=0; (RECORDS||[]).forEach(r=>{ if(map[r.VideoID]){ r.Webinar_Writeup=map[r.VideoID]; n++; } }); return n; }
+// Fold proposals into the register: auto-apply confident blank fills; log the rest PENDING (skip URLs already rejected).
+function reconcileProposals(res){
+  let autoFilled=0, pendingNear=0, pendingMismatch=0; const by={}; (RECORDS||[]).forEach(r=>by[r.VideoID]=r);
+  res.proposals.forEach(pr=>{
+    const r=by[pr.id]; if(!r) return;
+    const dec=BLOG_DECISIONS[pr.id] || {rejectedUrls:[]};
+    if((dec.rejectedUrls||[]).some(u=>normU(u)===normU(pr.to))) return;     // this exact proposal was rejected before
+    if(pr.action==='fill' && pr.cls==='confident'){
+      if(!String(r.Webinar_Writeup||'').trim()){ r.Webinar_Writeup=pr.to; autoFilled++; }
+      BLOG_DECISIONS[pr.id]=Object.assign(dec,{action:'fill',cls:'confident',from:'',to:pr.to,postTitle:pr.postTitle,f1:pr.f1,title:pr.title,status:'approved',auto:true,ts:Date.now()});
+    } else {
+      BLOG_DECISIONS[pr.id]=Object.assign(dec,{action:pr.action,cls:pr.cls,from:pr.from,to:pr.to,postTitle:pr.postTitle,f1:pr.f1,curF1:pr.curF1,title:pr.title,status:'pending',ts:Date.now()});
+      if(pr.cls==='mismatch') pendingMismatch++; else pendingNear++;
+    }
+  });
+  persistBlogDecisions();
+  return {autoFilled, pendingNear, pendingMismatch};
+}
+function resolveBlogDecision(id, approve){
+  const dec=BLOG_DECISIONS[id], r=recOf(id); if(!dec) return;
+  if(approve){ if(r) r.Webinar_Writeup=dec.to; dec.status='approved'; delete dec.auto; }
+  else { dec.rejectedUrls=(dec.rejectedUrls||[]).concat([dec.to]); dec.status='rejected'; }   // keep the existing link on a mismatch reject
+  dec.ts=Date.now();
+  persistBlogDecisions(); renderDecisionRegister(); renderProgress(); render(); if(dataRendered) drawRows();
+}
+function pendingDecisions(){ return Object.keys(BLOG_DECISIONS).map(id=>Object.assign({id},BLOG_DECISIONS[id])).filter(d=>d.status==='pending'); }
+function blogReviewCsv(){
+  const q=s=>{ s=String(s==null?'':s); return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const titleOf={}; (typeof VIDEOS!=='undefined'?VIDEOS:[]).forEach(v=>titleOf[v.id]=v.t);
+  const rows=[['VideoID','YouTube Title','Action','Status','Confidence (F1)','Current link','Proposed blog post','Proposed URL']];
+  Object.keys(BLOG_DECISIONS).forEach(id=>{ const d=BLOG_DECISIONS[id];
+    rows.push([id, titleOf[id]||d.title||'', d.cls||d.action, d.status+(d.auto?' (auto)':''), (d.f1!=null?d.f1.toFixed(2):''), d.from||'', d.postTitle||'', d.to||'']);
+  });
+  return '﻿'+rows.map(r=>r.map(q).join(',')).join('\r\n');
+}
+function decTable(list, titleOf, showCur){
+  return `<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left">YouTube title</th>${showCur?'<th style="text-align:left">Current link (looks wrong)</th>':''}<th style="text-align:left">Proposed blog post</th><th>F1</th><th></th></tr></thead><tbody>`
+    + list.map(d=>`<tr data-id="${esc(d.id)}"><td>${esc(titleOf[d.id]||d.title||d.id)}</td>${showCur?`<td style="color:#b06a10;word-break:break-all">${esc(String(d.from||'').replace(/^https?:\/\/[^\/]+/,''))}</td>`:''}<td><a href="${esc(d.to)}" target="_blank" rel="noopener">${esc(d.postTitle||d.to)}</a></td><td style="text-align:center">${d.f1!=null?d.f1.toFixed(2):''}</td><td style="white-space:nowrap"><button class="linkbtn blogok" data-id="${esc(d.id)}">approve</button> · <button class="linkbtn blogno" data-id="${esc(d.id)}">reject</button></td></tr>`).join('')
+    + `</tbody></table>`;
+}
+function renderDecisionRegister(){
+  const el=$('blogreview'); if(!el) return;
+  const titleOf={}; (typeof VIDEOS!=='undefined'?VIDEOS:[]).forEach(v=>titleOf[v.id]=v.t);
+  const pend=pendingDecisions();
+  const mis=pend.filter(d=>d.cls==='mismatch'), near=pend.filter(d=>d.cls!=='mismatch');
+  const all=Object.values(BLOG_DECISIONS);
+  const resolved=all.filter(d=>d.status!=='pending').length, approved=all.filter(d=>d.status==='approved').length, rejected=all.filter(d=>d.status==='rejected').length;
+  if(!pend.length && !resolved){ el.hidden=true; el.innerHTML=''; return; }
+  let html=`<b>📋 Blog write-up decision register</b> — <b>${pend.length}</b> pending · ${approved} approved · ${rejected} rejected.`;
+  if(mis.length){
+    html+=`<p style="margin:8px 0 4px"><b>${mis.length} possible mismatch${mis.length===1?'':'es'} on existing links</b> — the current link matches the title poorly and a more confident post was found. Approve to replace it (removes the old link, adds the new); reject to keep the current link:</p>`+decTable(mis, titleOf, true);
+  }
+  if(near.length){
+    html+=`<p style="margin:10px 0 4px"><b>${near.length} new match${near.length===1?'':'es'} for blank links</b> — the YouTube title differs slightly (often the character-limit truncation). Approve the ones that are the same webinar:</p>`+decTable(near, titleOf, false);
+  }
+  if(!pend.length) html+=`<p style="margin:8px 0 0;color:#1a7f37">No pending decisions — all caught up.</p>`;
+  html+=`<p style="margin:8px 0 0"><button class="linkbtn" id="blogcsv">⤓ Download register (CSV)</button> · decisions are saved and travel in ☁ Team.</p>`;
+  el.innerHTML=html; el.hidden=false;
+}
 function blogStatus(msg,cls){ const el=$('blogstatus'); if(el){ el.textContent=msg; el.style.color = cls==='err'?'#c0362c':(cls==='ok'?'#1a7f37':'var(--muted)'); } }
 async function refreshBlog(){
   const site=($('blogsite').value||DEFAULT_BLOG_SITE).trim().replace(/\/+$/,'');
@@ -8743,13 +8835,14 @@ async function refreshBlog(){
       if(arr.length<100) break;
     }
     if(!posts.length) throw new Error('No blog posts returned by the site.');
-    const map=matchBlogsToRecords(posts);
-    const n=applyBlogMap(map);
+    const res=matchBlogsDetailed(posts);
+    const rc=reconcileProposals(res);               // auto-fill confident blanks; log near + mismatch to the register
     blogStamp=new Date().toISOString();
-    store.set(BLOG_CACHE_KEY, JSON.stringify({stamp:blogStamp, site, count:posts.length, map}));
-    if(RECORDS){ try{ store.set(REC_KEY, JSON.stringify({rows:RECORDS})); }catch(e){} }
+    store.set(BLOG_CACHE_KEY, JSON.stringify({stamp:blogStamp, site, count:posts.length}));
+    renderDecisionRegister();
     renderProgress(); render(); if(dataRendered) drawRows();   // render() refreshes the 📝 Post clips on the Catalog
-    blogStatus(`✓ Matched ${n} of ${RECORDS.length} webinars to a blog write-up (scanned ${posts.length} posts) · ${new Date(blogStamp).toLocaleString()}`,'ok');
+    const pend=rc.pendingNear+rc.pendingMismatch;
+    blogStatus(`✓ ${rc.autoFilled} auto-filled · ${rc.pendingMismatch} mismatch${rc.pendingMismatch===1?'':'es'} + ${rc.pendingNear} new match${rc.pendingNear===1?'':'es'} to review below · scanned ${posts.length} posts · ${new Date(blogStamp).toLocaleString()}`,'ok');
   }catch(err){
     let m=(err&&err.message)||String(err);
     if(/Failed to fetch|NetworkError|Load failed|CORS/i.test(m))
@@ -8758,11 +8851,15 @@ async function refreshBlog(){
   }finally{ btn.disabled=false; }
 }
 $('blogrefresh').onclick=refreshBlog;
+if($('blogreview')) $('blogreview').addEventListener('click', e=>{
+  const ok=e.target.closest('.blogok'); if(ok){ resolveBlogDecision(ok.dataset.id, true); return; }
+  const no=e.target.closest('.blogno'); if(no){ resolveBlogDecision(no.dataset.id, false); return; }
+  if(e.target.id==='blogcsv'){ const csv=blogReviewCsv(); if(csv) download('MoWeb Blog Decision Register.csv', csv, 'text/csv;charset=utf-8'); }
+});
 (function initBlog(){ let site=DEFAULT_BLOG_SITE; try{ site=store.get(BLOG_SITE_KEY)||DEFAULT_BLOG_SITE; }catch(e){} $('blogsite').value=site; })();
+loadBlogDecisions();   // the register is the record of past decisions; filled URLs already live on RECORDS (persisted)
 (function loadBlogCache(){
-  try{ const c=JSON.parse(store.get(BLOG_CACHE_KEY)||'null');
-    if(c && c.map){ applyBlogMap(c.map); blogStamp=c.stamp||null; }
-  }catch(e){}
+  try{ const c=JSON.parse(store.get(BLOG_CACHE_KEY)||'null'); if(c) blogStamp=c.stamp||null; }catch(e){}
   blogStatus(blogStamp ? ('Blog write-ups last refreshed '+new Date(blogStamp).toLocaleString()) : 'Blog write-ups are pre-filled from the last review — click Refresh to re-check your website for new posts.');
 })();
 
@@ -9704,7 +9801,8 @@ function buildContentPkg(){
     history: (typeof HISTORY!=='undefined' && HISTORY.length) ? HISTORY : null,
     videos: VIDEOS,
     analytics: AN,
-    records:{ cols: RCOLS, rows: RECORDS }
+    records:{ cols: RCOLS, rows: RECORDS },
+    blog_decisions: (typeof BLOG_DECISIONS!=='undefined' && Object.keys(BLOG_DECISIONS).length) ? BLOG_DECISIONS : null
   };
 }
 // Fully adopt a package as the new local state (used by BOTH file import and Team-sync pull —
@@ -9730,6 +9828,7 @@ function applyContent(pkg){
   if(pkg.seo && pkg.seo.meta){ META=pkg.seo.meta; SEARCH_TERMS=pkg.seo.search||[]; CATMAP=pkg.seo.cats||{}; seoStamp=pkg.seo.stamp||null; try{ persistSeo(); }catch(e){} }
   if(pkg.ctags){ for(const k in pkg.ctags) CTAGS[k]=pkg.ctags[k]; persistAllCtags(); if(!$('view-browse').hidden && typeof renderBrowse==='function') renderBrowse(); }
   if(pkg.history){ mergeHistory(pkg.history); persistHistory(); if(typeof renderHistory==='function') renderHistory(); }
+  if(pkg.blog_decisions && typeof pkg.blog_decisions==='object'){ BLOG_DECISIONS=pkg.blog_decisions; try{ store.set(BLOG_DEC_KEY, JSON.stringify(BLOG_DECISIONS)); }catch(e){} if(typeof renderDecisionRegister==='function') renderDecisionRegister(); }
   lastStamp = pkg.exported || lastStamp;
   if(pkg.records && Array.isArray(pkg.records.rows)){
     if(Array.isArray(pkg.records.cols) && pkg.records.cols.length) RCOLS = pkg.records.cols;

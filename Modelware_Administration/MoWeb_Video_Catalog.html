@@ -540,6 +540,7 @@
         <option value="watch">Most watch time</option>
       </select>
       <label class="chk"><input type="checkbox" id="hidedel"> Hide deleted</label>
+      <button class="linkbtn" id="clrdel" hidden title="Permanently remove deleted-video records from the catalogue (Hide only filters them from view)">🗑 Clear deleted</button>
       <label class="chk"><input type="checkbox" id="grouppl"> Group by playlist</label>
       <button id="clear">Clear</button>
     </div>
@@ -720,6 +721,8 @@
       <input type="search" id="dq" placeholder="Filter all columns…">
       <label class="chk" id="dcasewrap" title="Match upper/lower case exactly"><input type="checkbox" id="dcase"> Case sensitive</label>
       <button class="btn" id="dclearf">Clear filters &amp; sort</button>
+      <label class="chk" id="dprodwrap" title="Show the production-workflow fields (write-up done, reviews, posted, chapters…)"><input type="checkbox" id="dshowprod"> Production fields</label>
+      <label class="chk" id="dallwrap" title="Show every field, including the empty / redundant ones hidden by default"><input type="checkbox" id="dshowall"> All fields</label>
       <span class="dgroupwrap" title="Build a grouping hierarchy — Level 1, then within it Level 2, then Level 3">Group by
         <select id="dgroup1" class="dgsel" aria-label="Group level 1">
           <option value="">None</option>
@@ -745,6 +748,7 @@
       <button class="btn" id="dgroupall" hidden>⊟ Collapse all</button>
       <span class="dcount" id="dcount"></span>
       <span class="dspacer"></span>
+      <button class="btn" id="dpull" title="Rescan every video: fill Recording Date and Meetup group from the description signature line (fills blanks; flags date conflicts), and set the Speaker from the title — African Data Management Community videos credit Howard Diesel (plus any guest named in the title)">⤓ Rescan date · group · speaker</button>
       <button class="btn" id="dadd">+ Add row</button>
       <label class="chk" id="dfilteredwrap" title="When ticked, exports contain only the rows currently shown"><input type="checkbox" id="dfiltered"> Filtered rows only</label>
       <button class="btn" id="dexport_csv">Export CSV</button>
@@ -752,7 +756,8 @@
       <button class="btn" id="dexport_json">Export JSON</button>
       <button class="btn danger" id="dreset">Reset to original</button>
     </div>
-    <p class="note" id="dhint">Two ways to edit: click any cell inline, or click a <b>row number (✎)</b> to open that webinar in a full <b>form</b> with every field laid out and labelled — use <b>Prev/Next</b> to move between records. Changes save automatically in this browser (open the downloaded file in Chrome for saving to work). The Video ID is locked as the row key. Export writes every column with the original sheet headers — tick <b>Filtered rows only</b> to export just the rows you've filtered/searched to. <span id="dsave" class="dsave"></span></p>
+    <p class="note" id="dhint">Two ways to edit: click any cell inline, or click a <b>row number (✎)</b> to open that webinar in a full <b>form</b> with every field laid out and labelled — use <b>Prev/Next</b> to move between records. Changes save automatically in this browser (open the downloaded file in Chrome for saving to work). The Video ID is locked as the row key. The grid shows the <b>core catalogue fields</b> by default — tick <b>Production fields</b> for the workflow columns or <b>All fields</b> to reveal every stored column (nothing is deleted, just hidden). CSV/Excel export the core + production columns; tick <b>Filtered rows only</b> to export just the rows you've filtered to. <span id="dsave" class="dsave"></span></p>
+    <div id="descpanel" class="note" hidden style="margin:0 0 8px"></div>
     <div class="dgrid-wrap">
       <table class="dgrid" id="dgrid"><thead></thead><tbody></tbody></table>
     </div>
@@ -6692,9 +6697,9 @@
 }</script>
 <script>
 /* ===== APP VERSION — bump on each release ===== */
-const APP_VERSION = 'v5.8';
+const APP_VERSION = 'v5.11';
 const BUILD_DATE  = '2026-11-26';   // auto-stamped at build time (never hand-typed)
-const BUILD_TIME  = '07:26 SAST';   // auto-stamped at build time (SAST)
+const BUILD_TIME  = '09:16 SAST';   // auto-stamped at build time (SAST)
 
 const VIDEOS = JSON.parse(document.getElementById('data').textContent);
 let AN = JSON.parse(document.getElementById('adata').textContent);
@@ -6876,6 +6881,7 @@ function render(){
   const catKeys=catGroup.norm();
   const groupNote = catKeys.length ? ` <span class="plest" style="font-style:normal">· grouped by ${catKeys.map(k=>esc(GROUPABLE[k])).join(' › ')}</span>` : '';
   $('count').innerHTML = `Showing <b>${shown.length}</b> of ${liveCount()} videos` + (groupPl||pl ? srcTag : '') + groupNote;
+  refreshClrDel();
   $('empty').style.display = shown.length ? 'none' : 'block';
   if(catKeys.length){
     // hierarchy grouping (Platform / Knowledge Area / Meetup Taxonomy) takes precedence over playlist grouping
@@ -7541,6 +7547,12 @@ function normalizeDeleted(){
   return n;
 }
 function recReport(html){ const el=$('recpanel'); if(!el) return; el.innerHTML=html; el.hidden=false; }
+// "Clear deleted" button by the Hide-deleted toggle: shows a live count, two-click guarded → purgeDeleted.
+function refreshClrDel(){
+  const b=$('clrdel'); if(!b) return;
+  const n=VIDEOS.filter(v=>v.s==='deleted').length;
+  b.hidden=!n; if(n && !b.dataset.arm) b.textContent=`🗑 Clear deleted (${n})`;
+}
 async function reconcileDeleted(){
   const c=formCreds(); saveCreds();
   if(!signedIn() && !c.accessToken && !(c.clientID && c.clientSecret && c.refreshToken)){
@@ -7940,12 +7952,17 @@ let colWidths={}; try{ colWidths=JSON.parse(store.get(CW_KEY)||'{}')||{}; }catch
 function defWidth(c){ return ({id:104,date:96,flag:64,yesno:104,url:180}[c.type]) || (c.k==='Webinar'?300:180); }
 function colW(c){ return colWidths[c.k] || defWidth(c); }
 function saveColWidths(){ try{ store.set(CW_KEY, JSON.stringify(colWidths)); }catch(e){} }
-function tableWidth(){ return 44+38+RCOLS.reduce((s,c)=>s+(colWidths[c.k]||defWidth(c)),0); }
+function tableWidth(){ return 44+38+VCOLS().reduce((s,c)=>s+(colWidths[c.k]||defWidth(c)),0); }
 function applyTableWidth(){ const t=$('dgrid'); if(t) t.style.width=tableWidth()+'px'; }
 const REC_KEY='moweb_catalog_edits';
 (function initRecords(){
   const base=JSON.parse(document.getElementById('rdata').textContent);
   RCOLS=base.cols;
+  // --- v5.9 column cleanup: tag each field core / prod / hidden (non-destructive — data retained) ---
+  const PROD_KEYS=new Set(['Write_up_done','First_Review','Final','Posted','Chapters','Exec_Summary','Thumbnail','YouTube_updated']);  // production workflow → collapsible group
+  const HIDE_KEYS=new Set(['Adjusted_Title','CDMP_Training','Priority_Week','Date_Writeup','Date_YouTube','Date_Posted','IsDIY','IsDAMASouthAfrica','IsQ_A','IsDataCitizen','IsDataExecutive','IsDataPrivacy']);  // empty / redundant / derivable
+  const RELABEL={Date:'Published', Webinar_Date:'Recording Date'};   // Date = YouTube publish date; Webinar_Date = actual recording date — two distinct facts
+  RCOLS.forEach(c=>{ c.grp = PROD_KEYS.has(c.k)?'prod' : HIDE_KEYS.has(c.k)?'hidden' : 'core'; if(RELABEL[c.k]) c.label=RELABEL[c.k]; });
   // an imported content package supplies the shared rows; else the embedded data
   const pkgRows = (CONTENT_PKG && CONTENT_PKG.records && Array.isArray(CONTENT_PKG.records.rows)) ? CONTENT_PKG.records.rows : base.rows;
   ORIG_RECORDS=pkgRows;
@@ -7956,17 +7973,173 @@ const REC_KEY='moweb_catalog_edits';
     added.forEach(v=>{ if(!have.has(v.id)){ RECORDS.unshift(recFromVideo(v)); have.add(v.id); } });
   }catch(e){}
 })();
+/* v5.9 column visibility: core by default; production + hidden revealed by toggles (data always retained) */
+const COLVIS_KEY='moweb_colvis';
+let colvis={prod:false, all:false};
+try{ Object.assign(colvis, JSON.parse(store.get(COLVIS_KEY)||'{}')||{}); }catch(e){}
+function saveColVis(){ try{ store.set(COLVIS_KEY, JSON.stringify(colvis)); }catch(e){} }
+function VCOLS(){ return RCOLS.filter(c=> colvis.all ? true : c.grp==='core' ? true : c.grp==='prod' ? colvis.prod : false); }
+function exportCols(){ return RCOLS.filter(c=> c.grp!=='hidden'); }   // CSV/Excel default: drop the empty/redundant fields, keep core + production
+function rebuildGrid(){ const t=$('dgrid'); if(!t) return; const cg=t.querySelector('colgroup'); if(cg) cg.remove(); dataRendered=false; renderData(); }
+// one-time data hygiene: fix the 'Modelware System' typo and normalise Yes/No casing (non-destructive clean-up)
+function normalizeSchema(){
+  let ch=0;
+  const ynKeys=['Write_up_done','First_Review','Final','Posted','Chapters','Exec_Summary','Thumbnail','YouTube_updated'];
+  const fixYN=v=>{ const s=String(v==null?'':v).trim().toLowerCase(); return s==='yes'?'Yes':s==='no'?'No':null; };
+  if(typeof RECORDS!=='undefined' && RECORDS) RECORDS.forEach(r=>{
+    if(/^modelware system$/i.test(String(r.Platform||'').trim())){ r.Platform='Modelware Systems'; ch++; }
+    ynKeys.forEach(k=>{ const f=fixYN(r[k]); if(f!=null && r[k]!==f){ r[k]=f; ch++; } });
+  });
+  VIDEOS.forEach(v=>{ if(/^modelware system$/i.test(String(v.p||'').trim())){ v.p='Modelware Systems'; ch++; } });
+  if(ch){ try{ persistCatalog(); }catch(e){} }
+  return ch;
+}
 
+/* ===== v5.10: pull Recording Date + Meetup group from the description's signature line =====
+   Howard's convention: the bottom of every description carries "<Meetup group>  <date>" (above the
+   hashtags), e.g. "Modelware DMC Study Group 2026-11-20". Scan upward for that line and lift the two
+   facts into the Recording Date (Webinar_Date) and Meetup Taxonomy columns. Fill blanks only (keep
+   the controlled taxonomy); flag date disagreements for review rather than overwriting. */
+const SIG_DATE=/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})|(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/;
+function parseDescSignature(desc){
+  const lines=String(desc||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  for(let i=lines.length-1;i>=0;i--){
+    const L=lines[i]; const m=L.match(SIG_DATE); if(!m) continue;
+    let y,mo,d;
+    if(m[1]){ y=+m[1]; mo=+m[2]; d=+m[3]; } else { d=+m[4]; mo=+m[5]; y=+m[6]; }   // ISO or DD-MM-YYYY (SA)
+    if(y<2015||y>2035||mo<1||mo>12||d<1||d>31) continue;
+    const grp=L.slice(0, L.indexOf(m[0])).replace(/[\s\-–—:·|]+$/,'').trim();
+    if(!grp || grp.charAt(0)==='#') continue;   // need a group label in front of the date (skip bare hashtags/dates)
+    return { date:`${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`, group:grp };
+  }
+  return null;
+}
+/* ── Speaker from the title ──────────────────────────────────────────────────
+   The speaker's name is pulled from the video title. Convention: the title names
+   the presenter after " with …", e.g. "Data Mesh in Practice with Jane Doe".
+   African Data Management Community (and …Forum) sessions are hosted by Howard
+   Diesel, so they credit "Howard Diesel" — plus any guest the title also names
+   (e.g. "…with Mario Cantin" → "Howard Diesel & Mario Cantin"). Multiple speakers
+   are joined with commas and a final "&". */
+const AFRICAN_DMC_RE=/african data management community/i;   // matches "…Community" and "…Community Forum"
+function isAfricanGroup(g){ return AFRICAN_DMC_RE.test(String(g||'')); }
+function fmtNames(names){
+  if(!names.length) return '';
+  if(names.length===1) return names[0];
+  return names.slice(0,-1).join(', ')+' & '+names[names.length-1];
+}
+const ORG_NAME_RE=/^(modelware|dama|dmma)\b/i;    // host/brand/framework tags, not guest speakers
+function extractTitleSpeakers(title){
+  const t=String(title||'');
+  const parts=t.split(/\bwith\b/i);
+  if(parts.length<2) return [];                 // no "with" → no speaker in the title
+  let tail=parts[parts.length-1].trim();
+  // drop a trailing role/part/section clause after the name(s)
+  tail=tail.split(/\s[-–—|:]\s|,?\s+(?:Part|Episode|Ep\.?|Vol\.?|Season)\b|\sfor\s+(?:Data|EIM)\b/i)[0].trim();
+  tail=tail.replace(/^[\s.]+|[\s.]+$/g,'');
+  if(!tail) return [];
+  return tail.split(/\s*,\s*|\s+and\s+|\s*&\s*/i)
+    .map(n=>n.replace(/^[\s.]+|[\s.]+$/g,''))
+    .filter(n=>n && n.split(/\s+/).length<=5 && /^[A-Z]/.test(n) && !ORG_NAME_RE.test(n));   // plausible personal names only, no host/brand tags
+}
+function isHowardish(n){ return /^howard(\s+diesel)?$/i.test(String(n||'').trim()); }
+function deriveSpeaker(title, group, curAuthor){
+  const guests=extractTitleSpeakers(title);
+  if(isAfricanGroup(group)){
+    // African DMC sessions are hosted by Howard Diesel — credit him plus any guest.
+    const cur=String(curAuthor||'').trim();
+    const realGuests=guests.filter(g=>!isHowardish(g));             // "with Howard" adds no new guest
+    if(!realGuests.length){
+      if(!cur || isHowardish(cur)) return 'Howard Diesel';          // fill blank / already Howard
+      if(/^howard diesel\b/i.test(cur)) return cur;                 // already host+guest → leave as-is (idempotent)
+      return fmtNames(['Howard Diesel', cur]);                      // title names no new guest but one is recorded → keep it, don't erase
+    }
+    const names=['Howard Diesel'];
+    realGuests.forEach(g=>{ if(names.indexOf(g)<0) names.push(g); });
+    return fmtNames(names);
+  }
+  return fmtNames(guests);   // non-African: title guests only (blank → leave existing untouched)
+}
+
+let descConflicts=[], speakerChanges=[];
+function pullFromDescriptions(){
+  if(typeof META==='undefined' || !Object.keys(META).length){
+    setTab('data'); if($('descpanel')){ $('descpanel').innerHTML='No descriptions are cached yet — run <b>Fetch SEO &amp; metadata</b> on the SEO tab first, then try again.'; $('descpanel').hidden=false; } return;
+  }
+  const delSet=new Set(VIDEOS.filter(v=>v.s==='deleted').map(v=>v.id));
+  const titleOf={}, vidOf={}; VIDEOS.forEach(v=>{ titleOf[v.id]=v.t; vidOf[v.id]=v; });
+  let fillD=0, fillM=0, matchD=0, parsed=0, noSig=0;
+  let fillA=0, matchA=0, changeA=0, blankA=0;
+  descConflicts=[]; speakerChanges=[];
+  RECORDS.forEach(r=>{
+    const id=r.VideoID; if(!id || delSet.has(id)) return;
+    const title=titleOf[id]||r.Webinar||'';
+    // 1) Recording Date + Meetup group from the description signature line
+    const m=META[id];
+    if(m && m.desc){
+      const sig=parseDescSignature(m.desc);
+      if(sig){
+        parsed++;
+        const cur=String(r.Webinar_Date||'').trim();
+        if(!cur){ r.Webinar_Date=sig.date; fillD++; }
+        else if(cur===sig.date){ matchD++; }
+        else descConflicts.push({id, title, cur, sig:sig.date});
+        if(sig.group){ const cm=String(r.Meetup_Taxonomy||'').trim(); if(!cm){ r.Meetup_Taxonomy=sig.group; fillM++; } }
+      } else noSig++;
+    }
+    // 2) Speaker from the title (fill blanks + standardise existing; African DMC keeps recorded guests)
+    const derived=deriveSpeaker(title, r.Meetup_Taxonomy, r.Author);
+    if(derived){
+      const curA=String(r.Author||'').trim();
+      if(!curA){ r.Author=derived; if(vidOf[id]) vidOf[id].a=derived; fillA++; }
+      else if(curA===derived){ matchA++; }
+      else { speakerChanges.push({id, title, from:curA, to:derived}); r.Author=derived; if(vidOf[id]) vidOf[id].a=derived; changeA++; }
+    } else if(!String(r.Author||'').trim()){ blankA++; }
+  });
+  persistCatalog();
+  buildCatalogFilters();
+  if(dataRendered) drawRows();
+  renderDescReport({fillD, fillM, matchD, parsed, noSig, fillA, matchA, changeA, blankA});
+}
+function renderDescReport(s){
+  const el=$('descpanel'); if(!el) return;
+  let html=`<b>Rescan complete.</b>`
+    + `<div style="margin:4px 0 2px"><b>Dates &amp; groups</b> — read ${s.parsed} signature line${s.parsed===1?'':'s'} · <b>${s.fillD}</b> recording date${s.fillD===1?'':'s'} filled · <b>${s.fillM}</b> meetup group${s.fillM===1?'':'s'} filled · ${s.matchD} date${s.matchD===1?'':'s'} already matched · ${s.noSig} without a signature line.</div>`
+    + `<div style="margin:0 0 2px"><b>Speakers</b> — <b>${s.fillA}</b> filled from the title · <b>${s.changeA}</b> standardised · ${s.matchA} already correct${s.blankA?` · ${s.blankA} title${s.blankA===1?'':'s'} name no speaker (left blank)`:''}.</div>`;
+  if(descConflicts.length){
+    html+=`<p style="margin:8px 0 4px">${descConflicts.length} recording date${descConflicts.length===1?'':'s'} already set <b>differ</b> from the description. They were left as-is — use the description's date where it's the correct one:</p>`
+      + `<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left">Video</th><th>Current</th><th>In description</th><th></th></tr></thead><tbody>`
+      + descConflicts.map(c=>`<tr data-id="${esc(c.id)}"><td>${esc(c.title)}</td><td>${esc(c.cur)}</td><td><b>${esc(c.sig)}</b></td><td><button class="linkbtn descuse" data-id="${esc(c.id)}" data-date="${esc(c.sig)}">use description date</button></td></tr>`).join('')
+      + `</tbody></table>`;
+  }
+  if(speakerChanges.length){
+    html+=`<p style="margin:10px 0 4px">${speakerChanges.length} speaker${speakerChanges.length===1?' was':'s were'} <b>standardised</b> to the title/rule value. Undo any that were right before with the button:</p>`
+      + `<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left">Video</th><th style="text-align:left">Was</th><th style="text-align:left">Now</th><th></th></tr></thead><tbody>`
+      + speakerChanges.map(c=>`<tr data-id="${esc(c.id)}"><td>${esc(c.title)}</td><td style="color:#8a94a6">${esc(c.from)}</td><td><b>${esc(c.to)}</b></td><td><button class="linkbtn spkundo" data-id="${esc(c.id)}" data-prev="${esc(c.from)}">keep "${esc(c.from)}"</button></td></tr>`).join('')
+      + `</tbody></table>`;
+  }
+  html+=`<p style="margin:8px 0 0;color:#5b6472">Dates &amp; groups filled blanks only; speakers were filled and standardised per your settings. Publish on ☁ Team to share.</p>`;
+  el.innerHTML=html; el.hidden=false;
+}
+
+let dgridWired=false;
 function renderData(){
   if(dataRendered) return;
   const tbl=$('dgrid');
-  // colgroup drives column widths (table-layout:fixed)
+  const cols=VCOLS();
+  // colgroup drives column widths (table-layout:fixed) — rebuilt each render so column toggles take effect
+  let cg=tbl.querySelector('colgroup'); if(cg) cg.remove();
   tbl.insertAdjacentHTML('afterbegin',
-    '<colgroup><col style="width:44px">'+RCOLS.map(c=>`<col data-k="${c.k}" style="width:${colW(c)}px">`).join('')+'<col style="width:38px"></colgroup>');
+    '<colgroup><col style="width:44px">'+cols.map(c=>`<col data-k="${c.k}" style="width:${colW(c)}px">`).join('')+'<col style="width:38px"></colgroup>');
   applyTableWidth();
   const thead=tbl.querySelector('thead');
   thead.innerHTML =
-    '<tr><th class="rownum">#</th>'+RCOLS.map(c=>`<th class="sortable" data-k="${c.k}"><div class="thl" title="Sort by ${esc(c.src)}">${esc(c.label)}<span class="sar"></span></div><input class="cf" data-k="${c.k}" placeholder="filter…"><span class="rz" title="Drag to resize · double-click to reset"></span></th>`).join('')+'<th class="rowdel"></th></tr>';
+    '<tr><th class="rownum">#</th>'+cols.map(c=>`<th class="sortable" data-k="${c.k}"><div class="thl" title="Sort by ${esc(c.src)}">${esc(c.label)}<span class="sar"></span></div><input class="cf" data-k="${c.k}" placeholder="filter…"><span class="rz" title="Drag to resize · double-click to reset"></span></th>`).join('')+'<th class="rowdel"></th></tr>';
+  updateSortIndicators();
+  drawRows();
+  dataRendered=true;
+  if(dgridWired) return;
+  dgridWired=true;
   // click a header label to sort (ignore filter input, resize handle, or an in-progress resize)
   thead.addEventListener('click', e=>{
     if(resizing || e.target.closest('input') || e.target.closest('.rz')) return;
@@ -8002,8 +8175,6 @@ function renderData(){
     const k=h.closest('th').dataset.k, c=RCOLS.find(x=>x.k===k);
     delete colWidths[k]; tbl.querySelector('colgroup col[data-k="'+k+'"]').style.width=defWidth(c)+'px'; applyTableWidth(); saveColWidths();
   });
-  drawRows();
-  dataRendered=true;
 }
 function updateSortIndicators(){
   $('dgrid').querySelectorAll('thead th.sortable').forEach(th=>{
@@ -8019,7 +8190,7 @@ function drawRows(){
   const q=$('dq').value.trim(), qn=norm(q);
   const cfKeys=Object.keys(dcolFilters);
   let list=RECORDS.map((r,i)=>({r,i})).filter(({r})=>{
-    if(q && !RCOLS.some(c=>norm(r[c.k]).includes(qn))) return false;
+    if(q && !VCOLS().some(c=>norm(r[c.k]).includes(qn))) return false;
     for(const k of cfKeys){ if(!norm(r[k]).includes(norm(dcolFilters[k]))) return false; }
     return true;
   });
@@ -8052,7 +8223,7 @@ function drawRows(){
 }
 // recursively render one level of the group hierarchy; collapsed groups don't render descendants
 function renderGroupLevel(items, keys, depth, parentPath){
-  const gk=keys[depth], totalCols=1+RCOLS.length+1, groups=new Map();
+  const gk=keys[depth], totalCols=1+VCOLS().length+1, groups=new Map();
   items.forEach(it=>{ const gv=String(it.r[gk]??'').trim()||'(blank)'; if(!groups.has(gv)) groups.set(gv,[]); groups.get(gv).push(it); });
   const gnames=[...groups.keys()].sort((a,b)=>{ const ab=a==='(blank)',bb=b==='(blank)'; if(ab&&bb)return 0; if(ab)return 1; if(bb)return -1; return a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}); });
   let html='';
@@ -8073,7 +8244,7 @@ function renderGroupLevel(items, keys, depth, parentPath){
 // one data row (grouped flag only affects nothing structurally now — collapsed descendants aren't rendered)
 function rowHtml(r,i,grouped){
   return `<tr data-i="${i}"><td class="rownum" title="Open this row in the form editor">${i+1}<span class="rowedit">✎</span></td>`+
-    RCOLS.map(c=>{
+    VCOLS().map(c=>{
       if(c.k==='Webinar'){
         const vid=r['VideoID']||'';
         const link=vid ? `<a class="ytl" href="https://www.youtube.com/watch?v=${esc(vid)}" target="_blank" rel="noopener" contenteditable="false" title="Open on YouTube">▶</a>` : '';
@@ -8254,10 +8425,23 @@ function exportName(ext){ const filtered=$('dfiltered').checked && currentView.l
 function toCSV(){
   const rows=exportRows();
   const q=s=>{ s=String(s==null?'':s); return /[",\n\r]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
-  const head=RCOLS.map(c=>q(c.src)).join(',');
-  const body=rows.map(r=>RCOLS.map(c=>q(r[c.k])).join(',')).join('\r\n');
+  const cols=exportCols();
+  const head=cols.map(c=>q(c.src)).join(',');
+  const body=rows.map(r=>cols.map(c=>q(r[c.k])).join(',')).join('\r\n');
   return '﻿'+head+'\r\n'+body;
 }
+// pull Recording Date + Meetup group from descriptions
+$('dpull').onclick = pullFromDescriptions;
+if($('descpanel')) $('descpanel').addEventListener('click', e=>{
+  const u=e.target.closest('.descuse');
+  if(u){ const r=recOf(u.dataset.id); if(r){ r.Webinar_Date=u.dataset.date; persistCatalog(); if(dataRendered) drawRows(); const tr=u.closest('tr'); if(tr) tr.remove(); cstatus && cstatus(''); } return; }
+  const k=e.target.closest('.spkundo');
+  if(k){ const id=k.dataset.id, prev=k.dataset.prev, r=recOf(id); if(r){ r.Author=prev; const v=VIDEOS.find(x=>x.id===id); if(v) v.a=prev; persistCatalog(); buildCatalogFilters(); if(dataRendered) drawRows(); const tr=k.closest('tr'); if(tr) tr.remove(); cstatus && cstatus(''); } }
+});
+// column-visibility toggles (Data tab)
+$('dshowprod').checked=colvis.prod; $('dshowall').checked=colvis.all;
+$('dshowprod').addEventListener('change', ()=>{ colvis.prod=$('dshowprod').checked; saveColVis(); rebuildGrid(); });
+$('dshowall').addEventListener('change', ()=>{ colvis.all=$('dshowall').checked; saveColVis(); rebuildGrid(); });
 $('dexport_csv').onclick=()=>download(exportName('csv'), toCSV(), 'text/csv;charset=utf-8');
 $('dexport_json').onclick=()=>download(exportName('json'), JSON.stringify(exportRows(),null,2), 'application/json');
 function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('script load failed')); document.head.appendChild(s); }); }
@@ -8266,10 +8450,11 @@ $('dexport_xlsx').onclick=async ()=>{
   try{
     if(!window.XLSX) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
     const rows=exportRows();
-    const aoa=[RCOLS.map(c=>c.src)].concat(rows.map(r=>RCOLS.map(c=>r[c.k])));
+    const xcols=exportCols();
+    const aoa=[xcols.map(c=>c.src)].concat(rows.map(r=>xcols.map(c=>r[c.k])));
     const ws=XLSX.utils.aoa_to_sheet(aoa);
     // make the Webinar Title cell a clickable hyperlink to the YouTube video
-    const wIdx=RCOLS.findIndex(c=>c.k==='Webinar');
+    const wIdx=xcols.findIndex(c=>c.k==='Webinar');
     if(wIdx>=0){
       rows.forEach((r,j)=>{
         const vid=r['VideoID']; if(!vid) return;
@@ -9432,6 +9617,11 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('bookOverlay'
 const HIDEDEL_KEY='moweb_hide_deleted';
 $('hidedel').checked = (store.get(HIDEDEL_KEY) ?? '1') === '1';
 $('hidedel').addEventListener('change', ()=>{ store.set(HIDEDEL_KEY, $('hidedel').checked ? '1':'0'); render(); });
+$('clrdel').onclick = function(){
+  if(this.dataset.arm){ clearTimeout(this._t); delete this.dataset.arm; purgeDeleted(); }
+  else { this.dataset.arm='1'; const n=VIDEOS.filter(v=>v.s==='deleted').length; this.textContent=`⚠ remove ${n} permanently — click again`; this._t=setTimeout(()=>{ delete this.dataset.arm; refreshClrDel(); }, 5000); }
+};
+refreshClrDel();
 ['q','fka','fp','fpl','fa','fs','fy','sort'].forEach(id => $(id).addEventListener('input', render));
 $('grouppl').addEventListener('change', render);
 $('clear').onclick = () => { ['q','fka','fp','fpl','fa','fs','fy'].forEach(id=>$(id).value=''); $('sort').value='new'; $('grouppl').checked=false; render(); };
@@ -9517,7 +9707,7 @@ $('pkgXlsx').onclick = async ()=>{
     const cRows=VIDEOS.map(v=>{ const m=mpub(v.id); return [v.id,v.t,v.d||'',v.s||'',v.p||'',v.ka||'',v.a||'',v.r||'',(v.pl||[]).join(' | '),v.vw==null?'':v.vw,v.lk==null?'':v.lk,v.wm==null?'':hrs(v.wm),v.avd==null?'':v.avd, blogUrlFor(v.id), 'https://www.youtube.com/watch?v='+v.id, (m&&m.views!=null)?m.views:'', (m&&m.likes!=null)?m.likes:'']; });
     add('Catalog', [cHead].concat(cRows), cRows.map((r,i)=>[i+1, 14, 'https://www.youtube.com/watch?v='+VIDEOS[i].id]));
     // 2) Editable records (all 31 columns)
-    if(RECORDS && RCOLS){ add('Records', [RCOLS.map(c=>c.src)].concat(RECORDS.map(r=>RCOLS.map(c=>r[c.k]??'')))); }
+    if(RECORDS && RCOLS){ const xc=exportCols(); add('Records', [xc.map(c=>c.src)].concat(RECORDS.map(r=>xc.map(c=>r[c.k]??'')))); }
     // 3) SEO & metadata
     if(typeof META!=='undefined' && Object.keys(META).length){
       const sHead=['VideoID','Title','Status','#Tags','Tags','Description length','Category','Language','Captions','Embeddable','Made for kids','Duration','Definition','Comment count','YouTube tag suggestions','Editor suggestions'];
@@ -9735,6 +9925,7 @@ function initTeamSync(){
 }
 initTeamSync();
 try{ normalizeDeleted(); }catch(e){}   // self-heal any placeholder-title rows mislabelled 'unknown'
+try{ normalizeSchema(); }catch(e){}    // v5.9: fix 'Modelware System' typo + Yes/No casing
 
 /* ---- 🧹 Browser-storage manager: see what's using the shared ~5MB pot and free it ---- */
 const STOR_LABELS={

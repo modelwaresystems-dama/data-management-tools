@@ -6694,9 +6694,9 @@
 }</script>
 <script>
 /* ===== APP VERSION — bump on each release ===== */
-const APP_VERSION = 'v5.23';
+const APP_VERSION = 'v5.24';
 const BUILD_DATE  = '2026-11-27';   // auto-stamped at build time (never hand-typed)
-const BUILD_TIME  = '07:53 SAST';   // auto-stamped at build time (SAST)
+const BUILD_TIME  = '08:05 SAST';   // auto-stamped at build time (SAST)
 
 const VIDEOS = JSON.parse(document.getElementById('data').textContent);
 let AN = JSON.parse(document.getElementById('adata').textContent);
@@ -8849,7 +8849,7 @@ let BLOG_POSTS=[];   // [{slug, link, title, vid}]
 function loadBlogPosts(){ try{ const a=JSON.parse(store.get(BLOG_POSTS_KEY)||'null'); if(Array.isArray(a)) BLOG_POSTS=a; }catch(e){} }
 function saveBlogPosts(){ try{ store.set(BLOG_POSTS_KEY, JSON.stringify(BLOG_POSTS)); }catch(e){} }
 async function blogFetchJson(url){ const r=await fetch(url,{headers:{'Accept':'application/json'}}); if(r.status===400) return null; if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
-async function blogFetchList(site){ const out=[]; for(let page=1;page<=30;page++){ const arr=await blogFetchJson(site+'/wp-json/wp/v2/posts?per_page=100&page='+page+'&_fields=id,slug,link,title'); if(!arr||!arr.length) break; arr.forEach(p=>out.push({id:p.id, slug:p.slug, link:p.link, title:(p.title&&p.title.rendered)||p.slug})); if(arr.length<100) break; } return out; }
+async function blogFetchList(site){ const out=[]; for(let page=1;page<=30;page++){ const arr=await blogFetchJson(site+'/wp-json/wp/v2/posts?per_page=100&page='+page+'&_fields=id,slug,link,title,modified'); if(!arr||!arr.length) break; arr.forEach(p=>out.push({id:p.id, slug:p.slug, link:p.link, title:(p.title&&p.title.rendered)||p.slug, modified:p.modified||''})); if(arr.length<100) break; } return out; }
 async function blogFetchVids(site, ids){ const map={}; for(let i=0;i<ids.length;i+=100){ const arr=await blogFetchJson(site+'/wp-json/wp/v2/posts?include='+ids.slice(i,i+100).join(',')+'&per_page=100&_fields=id,content'); (arr||[]).forEach(p=>{ map[p.id]=extractVid((p.content&&p.content.rendered)||''); }); blogStatus('Reading post content for video links… '+Math.min(i+100,ids.length)+'/'+ids.length); } return map; }
 
 async function refreshBlog(mode){
@@ -8864,9 +8864,9 @@ async function refreshBlog(mode){
     const cacheBySlug={}; BLOG_POSTS.forEach(p=>cacheBySlug[p.slug]=p);
     let vidMap={}, newCount=0;
     if(complete){ newCount=list.length; vidMap=await blogFetchVids(site, list.map(p=>p.id)); }
-    else { const need=list.filter(p=>!cacheBySlug[p.slug]); newCount=need.length; if(need.length) vidMap=await blogFetchVids(site, need.map(p=>p.id)); }
-    const posts=list.map(p=>{ const c=cacheBySlug[p.slug]; const vid = complete ? (vidMap[p.id]||'') : (c ? c.vid : (vidMap[p.id]||'')); return {slug:p.slug, link:p.link, title:p.title, vid}; });
-    BLOG_POSTS=posts.map(p=>({slug:p.slug, link:p.link, title:p.title, vid:p.vid})); saveBlogPosts();
+    else { const need=list.filter(p=>{ const c=cacheBySlug[p.slug]; return !c || c.modified!==p.modified; }); newCount=need.length; if(need.length) vidMap=await blogFetchVids(site, need.map(p=>p.id)); }   // re-read NEW and EDITED posts
+    const posts=list.map(p=>{ const c=cacheBySlug[p.slug]; const vid = (complete || Object.prototype.hasOwnProperty.call(vidMap,p.id)) ? (vidMap[p.id]||'') : (c?c.vid:''); return {slug:p.slug, link:p.link, title:p.title, vid, modified:p.modified}; });
+    BLOG_POSTS=posts.map(p=>({slug:p.slug, link:p.link, title:p.title, vid:p.vid, modified:p.modified})); saveBlogPosts();
     const res=matchBlogsDetailed(posts, {mode: complete?'complete':'quick'});
     const rc=reconcileProposals(res);
     blogStamp=new Date().toISOString();
@@ -8874,7 +8874,7 @@ async function refreshBlog(mode){
     renderDecisionRegister();
     renderProgress(); render(); if(dataRendered) drawRows();   // render() refreshes the 📝 Post clips on the Catalog
     const sugg=rc.pendingConfident+rc.pendingNear;
-    blogStatus(`✓ ${complete?'Full re-scan':'Quick scan'}: ${sugg} suggestion${sugg===1?'':'s'} for missing write-ups (${rc.pendingConfident} exact/confident)${complete?` · ${rc.pendingMismatch} existing-link mismatch${rc.pendingMismatch===1?'':'es'}`:''} · ${posts.length} posts (${newCount} ${complete?'read':'new'}), ${res.postsWithVid} link a video · ${new Date(blogStamp).toLocaleString()}`,'ok');
+    blogStatus(`✓ ${complete?'Full re-scan':'Quick scan'}: ${sugg} suggestion${sugg===1?'':'s'} for missing write-ups (${rc.pendingConfident} exact/confident)${complete?` · ${rc.pendingMismatch} existing-link mismatch${rc.pendingMismatch===1?'':'es'}`:''} · ${posts.length} posts (${newCount} ${complete?'read':'new/updated'}), ${res.postsWithVid} link a video · ${new Date(blogStamp).toLocaleString()}`,'ok');
   }catch(err){
     let m=(err&&err.message)||String(err);
     if(/Failed to fetch|NetworkError|Load failed|CORS/i.test(m))

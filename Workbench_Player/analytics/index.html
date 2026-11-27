@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.18.0">
-<meta name="build" content="2026-11-27 14:41 SAST">
+<meta name="version" content="1.19.0">
+<meta name="build" content="2026-11-27 15:00 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -169,6 +169,11 @@
     <div class="dlg-h">Sponsor report — choose a company</div>
     <div class="dlg-b" id="sponsorBody"></div>
     <div class="dlg-f"><button class="btn" id="sponsorClose">Close</button></div>
+  </dialog>
+  <dialog id="individualDlg">
+    <div class="dlg-h">Individual report — choose a learner</div>
+    <div class="dlg-b" id="individualBody"></div>
+    <div class="dlg-f"><button class="btn" id="individualClose">Close</button></div>
   </dialog>
 
   <script>window.PAGE_BUILD="1.23.1";</script>
@@ -1460,6 +1465,65 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     setStatus("Please allow pop-ups for this site to open the report, then save it as PDF.", true);
   }
 
+  async function openIndividualReport(){
+    var d=state.cohortDetail[state.cohortSel];
+    if(!d || !d.students || !d.students.length){ setStatus("No cohort data yet — pick a cohort and <b>↻ Refresh</b> first, then try the individual report.", true); return; }
+    setStatus("Loading Teams attendance (if present)…", true);
+    try{ state._attend=await loadCohortAttendance(state.cohortSel, (d.students||[]).map(function(x){ return CORE.nameKey(x.name); })); }catch(e){ state._attend=null; }
+    setStatus("", false);
+    var studs=d.students.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
+    var body=document.getElementById("individualBody");
+    var html='<p class="note">Choose a learner — a personal training report for that individual in <b>'+esc(deEntity(d.groupName||state.cohortSel))+'</b>.'+((state._attend&&state._attend.N)?' <span class="muted">Teams attendance: '+state._attend.N+' session'+(state._attend.N===1?'':'s')+'.</span>':'')+'</p>';
+    html+=studs.map(function(s){ return '<button class="btn primary individual-pick" type="button" data-name="'+esc(s.name)+'" style="display:block;width:100%;text-align:left;margin:6px 0">'+esc(s.name)+'</button>'; }).join("");
+    body.innerHTML=html;
+    document.getElementById("individualDlg").showModal();
+  }
+  function produceIndividualReport(name){
+    var d=state.cohortDetail[state.cohortSel], att=state._attend;
+    if(!d) return;
+    var s=(d.students||[]).find(function(x){ return CORE.nameKey(x.name)===CORE.nameKey(name); });
+    if(!s){ setStatus("Learner not found in this cohort.", true); return; }
+    var cfg=certCfg(), accent=cfg.accent||"#0E8F7E", B=bandLines();
+    var courseName=deEntity(d.courseName||state.cohortSel), cohort=deEntity(d.groupName||state.cohortSel), courseCode=deEntity(d.courseCode||"");
+    var dateStr=new Date().toLocaleDateString(undefined,{year:"numeric",month:"long",day:"numeric"});
+    var sr=(state.ses||[]).find(function(r){ return CORE.nameKey(r.fullname)===CORE.nameKey(name); });
+    var _ag=assessGradeOf(s);
+    var grade=(_ag==null?null:Math.round(_ag));
+    var band=certGradeTier(_ag,B);
+    var pre=(s.preAvg==null?null:Math.round(s.preAvg)), post=(s.postAvg==null?null:Math.round(s.postAvg)), up=(s.uplift==null?null:Math.round(s.uplift)), regressed=(s.uplift!=null && s.uplift<0);
+    var ses=(sr&&sr.ses!=null?Math.round(sr.ses):null);
+    var sesTier=(sr&&sr.ses!=null)?(_ag==null?"No grade yet":CORE.classifyTier(sr.ses,_ag,s.uplift)):null;
+    var bd=(sr&&sr.breakdown)||{};
+    var ar=(att&&att.N)? att.byName[CORE.nameKey(name)] : null;
+    var attPct=(ar&&ar.pct!=null?ar.pct:null), attSess=(ar?ar.sessionsAttended:0), N=(att?att.N:0), dur=(ar?ar.durMin:null), eng=(ar&&ar.eng?ar.eng:null), engsc=(ar&&ar.engScore!=null?Math.round(ar.engScore*100):null);
+    var key=CORE.nameKey(name), qmap={};
+    (state.facts||[]).forEach(function(f){ if(CORE.nameKey(f.player)!==key) return; var t=f.quizTitle; var q=qmap[t]||(qmap[t]={title:t,ans:0,corr:0,qq:0}); q.ans+=CORE.num(f.answered); q.corr+=CORE.num(f.correct); q.qq+=CORE.num(f.questions); });
+    var quizRows=Object.keys(qmap).map(function(t){ var q=qmap[t]; return {title:t, engagement:CORE.pct(q.ans,q.qq), score:CORE.pct(q.corr,q.qq)}; });
+    function fp(v){ return v==null?'–':v+'%'; }
+    function sgn(v){ return v==null?'–':((v>=0?'+':'')+v+'%'); }
+    function kpi(v,l){ return '<div class="kpi"><div class="kv">'+v+'</div><div class="kl">'+esc(l)+'</div></div>'; }
+    function sigbar(label,v){ if(v==null) return ''; var w=Math.max(0,Math.min(100,Math.round(v))); return '<div class="brow"><span class="blab">'+esc(label)+'</span><span class="btrack"><span class="bfill" style="width:'+w+'%;background:var(--acc)"></span></span><span class="bval">'+w+'</span></div>'; }
+    var logo = cfg.logoImg ? '<img class="logoimg" src="'+esc(cfg.logoImg)+'" alt="">' : '<div class="logoph">LOGO</div>';
+    var head='<div class="rhead"><div class="rh-l">'+logo+'<div class="org"><div class="o1">'+esc(cfg.org)+'</div><div class="o2">'+esc(cfg.sub)+'</div></div></div><div class="rh-r"><div class="rtag">Personal Training Report</div><div class="rprep">Prepared for <b>'+esc(name)+'</b></div></div></div>';
+    var meta='<div class="rmeta"><div><span>Course</span><b>'+esc(courseName)+(courseCode?' ('+esc(courseCode)+')':'')+'</b></div><div><span>Cohort</span><b>'+esc(cohort)+'</b></div><div><span>Report date</span><b>'+esc(dateStr)+'</b></div><div><span>Facilitator</span><b>'+esc(cfg.presenter)+'</b></div></div>';
+    var kpis=kpi(grade==null?'–':grade+'%',"Course result")+kpi(esc(band.name),"Certificate")+kpi(sgn(up),"Learning gain")+kpi(ses==null?'–':ses,"Effort (SES)");
+    var s1='<section class="sec"><h2>Certification outcome</h2><p class="lead">You achieved <b>'+esc(band.name)+'</b> with a course result of <b>'+fp(grade)+'</b>.</p><div class="legend" style="border:0;margin:0"><b>Bands:</b> Master Pass &ge; '+B.master+'% · Practitioner '+B.practitioner+'–'+(B.master-1)+'% · Associate '+B.associate+'–'+(B.practitioner-1)+'% · Attended &lt; '+B.associate+'%.</div></section>';
+    var regNote=regressed?' <b style="color:#b00020">Your post-assessment was below your pre-assessment</b> — worth revisiting the material.':'';
+    var s2='<section class="sec"><h2>Learning gain (pre → post)</h2><div class="trio"><div><span>Pre-assessment</span><b>'+fp(pre)+'</b></div><div class="arrow">→</div><div><span>Post-assessment</span><b>'+fp(post)+'</b></div><div class="gain"><span>Uplift</span><b>'+sgn(up)+'</b></div></div><p class="muted">Uplift is the change from your pre-assessment to your post-assessment — what the training moved.'+regNote+'</p></section>';
+    var sigs=sigbar("Live-quiz participation",bd.live_quiz)+sigbar("Course completion &amp; pacing",bd.completion_pacing)+sigbar("Quiz time-on-task",bd.quiz_duration)+sigbar("Persistence",bd.quiz_persistence)+sigbar("Forum engagement",bd.forum_engagement)+sigbar("Teams live-session engagement",bd.teams_engagement);
+    var s3='<section class="sec"><h2>Effort (Student Effort Score)</h2><p class="lead">Your effort score is <b>'+(ses==null?'–':ses)+'</b> / 100'+(sesTier?' — <b>'+esc(sesTier)+'</b>':'')+'. It blends the behavioural signals below (only the ones present are counted):</p><div class="bars">'+(sigs||'<span class="muted">No effort signals recorded.</span>')+'</div></section>';
+    var qrowsHtml=quizRows.map(function(q){ return '<tr><td class="nm">'+esc(q.title)+'</td><td class="n">'+q.engagement+'%</td><td class="n">'+q.score+'%</td></tr>'; }).join("");
+    var s4=quizRows.length? '<section class="sec"><h2>Per-quiz results (live sessions)</h2><p class="lead">Each live quiz you took part in — your participation (questions answered) and your score.</p><div class="tbl"><table><thead><tr><th>Quiz</th><th class="n">Participation</th><th class="n">Score</th></tr></thead><tbody>'+qrowsHtml+'</tbody></table></div></section>' : '<section class="sec"><h2>Per-quiz results (live sessions)</h2><p class="muted">No live-quiz sessions recorded for you in this cohort.</p></section>';
+    var attLine = ar? ('You attended <b>'+attSess+'</b> of <b>'+N+'</b> live session'+(N===1?'':'s')+', with <b>'+fmtDur(dur)+'</b> total time in session'+(attPct!=null?' (<b>'+attPct+'%</b> of scheduled time)':'')+'.') : 'No Teams attendance was recorded for this cohort.';
+    var engGrid = eng? ('<div class="trio"><div><span>Camera on</span><b>'+(eng.cameraOn||0)+'</b></div><div><span>Hands raised</span><b>'+(eng.raiseHands||0)+'</b></div><div><span>Mic (unmute)</span><b>'+(eng.unmute||0)+'</b></div><div><span>Reactions</span><b>'+(eng.reactions||0)+'</b></div>'+(engsc!=null?'<div class="gain"><span>Engagement</span><b>'+engsc+'</b></div>':'')+'</div>') : '';
+    var s5='<section class="sec"><h2>Attendance &amp; live-session engagement</h2><p class="lead">'+attLine+'</p>'+engGrid+(eng?'<p class="muted">Engagement counts your active participation — camera on, hands raised, microphone (unmute) and reactions — across the live sessions. The 0–100 engagement index contributes to your effort score.</p>':'')+'</section>';
+    var foot='<div class="rfoot">'+esc(cfg.org)+' · '+esc(cfg.sub)+' · Generated '+esc(dateStr)+'</div>';
+    var css='<style>*{box-sizing:border-box;margin:0;padding:0}:root{--acc:'+accent+'}body{font-family:"Segoe UI",Arial,sans-serif;color:#1a2330;background:#50606f}@page{size:A4 portrait;margin:14mm}.page{width:182mm;margin:0 auto;background:#fff}@media screen{body{padding:20px}.page{box-shadow:0 4px 20px rgba(0,0,0,.3);padding:14mm}}.rhead{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid var(--acc);padding-bottom:10px}.rh-l{display:flex;gap:12px;align-items:center}.logoimg{height:46px}.logoph{width:100px;height:46px;border:1.5px dashed #9aa7b4;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#9aa7b4;font-size:11px;letter-spacing:2px}.org .o1{font-size:17px;font-weight:700;color:var(--acc)}.org .o2{font-size:11px;color:#6b7785}.rh-r{text-align:right}.rtag{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#6b7785}.rprep{font-size:15px;margin-top:2px}.rmeta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}.rmeta>div{background:#f4f7f9;border-radius:8px;padding:8px 10px}.rmeta span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6b7785}.rmeta b{font-size:13px}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:6px 0 14px}.kpi{border:1px solid #e1e7ec;border-top:3px solid var(--acc);border-radius:8px;padding:10px;text-align:center}.kv{font-size:24px;font-weight:800;color:var(--acc)}.kl{font-size:11px;color:#55616e;margin-top:3px}.sec{margin:12px 0;page-break-inside:avoid}.sec h2{font-size:15px;color:var(--acc);border-bottom:1px solid #e1e7ec;padding-bottom:4px;margin-bottom:8px}.lead{font-size:12.5px;color:#3a4652;margin-bottom:8px}.muted{color:#6b7785;font-size:11.5px;margin-top:6px}.bars{display:flex;flex-direction:column;gap:6px}.brow{display:flex;align-items:center;gap:10px}.blab{width:44mm;font-size:12px}.btrack{flex:1;height:14px;background:#eef2f5;border-radius:7px;overflow:hidden}.bfill{display:block;height:100%}.bval{width:28px;text-align:right;font-weight:700;font-size:12px}.trio{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.trio>div{background:#f4f7f9;border-radius:8px;padding:10px 14px;flex:1;min-width:30%;text-align:center}.trio span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6b7785}.trio b{font-size:20px}.trio .arrow{flex:none;background:none;font-size:20px;color:var(--acc);min-width:0}.gain b{color:var(--acc)}.tbl{overflow:hidden}table{width:100%;border-collapse:collapse;font-size:10.5px}th{background:var(--acc);color:#fff;text-align:left;padding:5px 5px;font-weight:600}td{padding:4px 5px;border-bottom:1px solid #e6ebef}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}td.nm{font-weight:600}.legend{margin-top:10px;font-size:10.5px;color:#55616e;line-height:1.6;border-top:1px solid #e1e7ec;padding-top:8px}.rfoot{margin-top:10px;text-align:center;font-size:10px;color:#8a97a4}.note{font-size:12px;color:#3a4652;margin-bottom:8px}</style>';
+    var html='<!doctype html><html><head><meta charset="utf-8"><title>'+esc(name)+' — Personal Training Report</title>'+css+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.focus();window.print();},350);};<\/scr'+'ipt></head><body><div class="page">'+head+meta+'<div class="kpis">'+kpis+'</div>'+s1+s2+s3+s4+s5+foot+'</div></body></html>';
+    var w=window.open("","_blank"); if(w){ w.document.open(); w.document.write(html); w.document.close(); return; }
+    setStatus("Please allow pop-ups for this site to open the report, then save it as PDF.", true);
+  }
+
   // ---- Student Effort Score (SES) view ----
   var TIERCLASS={ "No grade yet":"", "Regressed":"bad", "Thriving":"good", "Struggling (High Effort)":"warn", "Coasting":"warn", "At-Risk (Disengaged)":"bad", "Moderate / Developing":"" };
   var TIERCOLOR={ "No grade yet":"var(--faint)", "Regressed":"var(--bad)", "Thriving":"var(--good)", "Struggling (High Effort)":"var(--accent)", "Coasting":"var(--gold)", "At-Risk (Disengaged)":"var(--bad)", "Moderate / Developing":"var(--faint)" };
@@ -1532,7 +1596,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     } else {
       body='<div class="empty">No cached Student Effort Score for this cohort yet — click <b>↻ Refresh</b> (top right).</div>';
     }
-    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, Teams live-session engagement 15%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. A live quiz counts for a student only if they actually took part in it — quizzes not run with them don’t lower their score. Plotted against the post-assessment (the course total when no post has been taken) to flag intervention tiers.</p><div class="toolbar">'+picker+' <button class="btn primary" id="makeCerts" title="Produce printable branded certificates (PDF) for every registered student in this cohort — grade tier, SES score and summary">&#128220; Produce certificates</button> <button class="btn" id="sponsorReportBtn" title="Produce a management report (PDF) for a sponsoring company — their staff\u2019s certification, uplift, effort and participation">&#128196; Sponsor report</button></div>'+body+'</div>';
+    return '<div class="panel"><h2>Student Effort Score</h2><p class="hint">Behavioural effort 0–100, blending your live-quiz participation with Moodle signals — live-quiz 35%, quiz time-on-task 25%, persistence 20%, Teams live-session engagement 15%, completion+pacing 12%, forum 8%. Only the signals actually present are counted (weights renormalise), so missing Moodle completion or forums don’t unfairly zero anyone. A live quiz counts for a student only if they actually took part in it — quizzes not run with them don’t lower their score. Plotted against the post-assessment (the course total when no post has been taken) to flag intervention tiers.</p><div class="toolbar">'+picker+' <button class="btn primary" id="makeCerts" title="Produce printable branded certificates (PDF) for every registered student in this cohort — grade tier, SES score and summary">&#128220; Produce certificates</button> <button class="btn" id="sponsorReportBtn" title="Produce a management report (PDF) for a sponsoring company — their staff\u2019s certification, uplift, effort and participation">&#128196; Sponsor report</button> <button class="btn" id="individualReportBtn" title="Produce a personal training report (PDF) for one learner: certification, pre to post uplift, effort (SES) with its signals, per-quiz results and attendance/engagement">&#128100; Individual report</button></div>'+body+'</div>';
   }
 
   function idByName(students, name){ var k=CORE.nameKey(name); var s=students.find(function(x){ return CORE.nameKey(x.fullname)===k; }); return s?s.id:null; }
@@ -1733,6 +1797,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     if(e.target.closest && e.target.closest('#makeCerts')){ produceCertificates(); return; }
     if(e.target.closest && e.target.closest('#sponsorReportBtn')){ openSponsorReport(); return; }
     var _sp=e.target.closest && e.target.closest('.sponsor-pick'); if(_sp){ var _dlg=document.getElementById('sponsorDlg'); if(_dlg) _dlg.close(); produceSponsorReport(_sp.getAttribute('data-sponsor')); return; }
+    if(e.target.closest && e.target.closest('#individualReportBtn')){ openIndividualReport(); return; }
+    var _ip=e.target.closest && e.target.closest('.individual-pick'); if(_ip){ var _dl2=document.getElementById('individualDlg'); if(_dl2) _dl2.close(); produceIndividualReport(_ip.getAttribute('data-name')); return; }
   });
   document.addEventListener("change", function(e){
     if(e.target.id==="cohortSel"){ selectCohort(e.target.value); }
@@ -1745,6 +1811,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   document.getElementById("btnMoodle").addEventListener("click", openMoodle);
   document.getElementById("moodleClose").addEventListener("click", function(){ document.getElementById("moodleDlg").close(); });
   var _sc=document.getElementById("sponsorClose"); if(_sc) _sc.addEventListener("click", function(){ document.getElementById("sponsorDlg").close(); });
+  var _ic=document.getElementById("individualClose"); if(_ic) _ic.addEventListener("click", function(){ document.getElementById("individualDlg").close(); });
   document.getElementById("moodleApply").addEventListener("click", applyMoodle);
   state.map={};
   load();

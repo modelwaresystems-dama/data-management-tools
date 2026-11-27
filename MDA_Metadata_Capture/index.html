@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.1.0">
 <title>MDA Metadata Capture — Digital Zambia Acceleration Project</title>
 <style>
   :root{
@@ -133,6 +133,24 @@
     .ex{display:none!important}
   }
   @media(max-width:860px){nav.side{display:none}.row2,.row3{grid-template-columns:1fr}}
+  /* ---- guided tour ---- */
+  .tourbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 16px;background:#eef6fc;border:1px solid #cfe2f2;border-radius:10px;padding:9px 12px}
+  .tourlead{font-size:12.5px;color:var(--blue);font-weight:700}
+  .tourgo{background:linear-gradient(180deg,#ffffff,#e7f0fa);border:1px solid #bcd6ec;color:#13395e;font-weight:700;font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer}
+  .tourgo:hover{background:#d8e8f7}
+  .tourgo::before{content:"▶ ";font-size:10px}
+  #tourBlocker{position:fixed;inset:0;z-index:9000;display:none}
+  #tourRing{position:fixed;z-index:9001;border:2px solid var(--accent);border-radius:8px;box-shadow:0 0 0 9999px rgba(12,24,38,.55);pointer-events:none;display:none;opacity:0;transition:top .2s,left .2s,width .2s,height .2s,opacity .2s}
+  #tourCard{position:fixed;z-index:9002;max-width:340px;width:340px;background:#fff;border-radius:12px;box-shadow:0 12px 34px rgba(10,30,60,.4);padding:16px 18px;display:none}
+  #tourCard h4{color:#13395e;font-size:15px;margin:0 22px 6px 0}
+  #tourCard p{font-size:13px;margin:0 0 12px;color:#1b2733;line-height:1.5}
+  #tourCard .tc-foot{display:flex;align-items:center;gap:8px}
+  #tourCard .tc-prog{font-size:11.5px;color:#5b6b7b;margin-right:auto;font-variant-numeric:tabular-nums}
+  #tourCard button{font-size:12.5px;font-weight:600;border-radius:7px;padding:6px 13px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#13395e}
+  #tourCard button.primary{background:#13395e;color:#fff;border-color:#13395e}
+  #tourCard .tc-close{position:absolute;top:7px;right:10px;border:none;background:none;color:#8a99a8;font-size:20px;padding:0;line-height:1}
+  body.touring{overflow:hidden}
+  @media print{.tourbar{display:none!important}}
 </style>
 </head>
 <body>
@@ -169,6 +187,7 @@
 
 <div class="toast" id="toast"></div>
 <input type="file" id="fileInput" accept=".json" style="display:none" onchange="onFilePicked(event)">
+<div id="tourBlocker"></div><div id="tourRing"></div><div id="tourCard"></div>
 
 <script>
 "use strict";
@@ -645,6 +664,7 @@ function renderMain(){
        <button class="btn" style="color:#13395e" onclick="addDataset()">+ Add a dataset</button></div>`;
    m.innerHTML=h;return;
  }
+ h+=tourLauncher();
  switch(active.tab){
    case"instructions":h+=pageInstructions();break;
    case"transmittal":h+=pageTransmittal();break;
@@ -758,7 +778,7 @@ function pageTransmittal(){
    const v=esc(t[k]||'');
    const inp=type==='area'?`<textarea class="" oninput="set('transmittal.${k}',this.value)">${v}</textarea>`
      :`<input type="${type}" value="${v}" oninput="set('transmittal.${k}',this.value)">`;
-   return `<div class="field fill"><label>${lbl}</label>${hint?`<p class="hint">${hint}</p>`:''}${inp}</div>`;
+   return `<div class="field fill" data-tour="t-${k}"><label>${lbl}</label>${hint?`<p class="hint">${hint}</p>`:''}${inp}</div>`;
  };
  return `
  <div class="page-h"><h2><span class="tag">00</span> Transmittal &amp; Completeness Declaration</h2></div>
@@ -769,7 +789,7 @@ function pageTransmittal(){
    ${F('contacts','Authorised contact(s) — name, role, email, phone','One per line is fine.','area')}
    <div class="row3">
      ${F('submissionDate','Submission date','','date')}
-     <div class="field"><label>Number of datasets nominated</label><p class="hint">Counted automatically from your datasets.</p>
+     <div class="field" data-tour="t-count"><label>Number of datasets nominated</label><p class="hint">Counted automatically from your datasets.</p>
        <input type="text" value="${pack.datasets.length}" disabled></div>
    </div>
    ${F('restrictions','Restrictions summary','Any data that cannot be shared openly.','area')}
@@ -787,7 +807,7 @@ function pageNominations(){
  <div class="page-h"><h2><span class="tag">01</span> Dataset Nominations</h2></div>
  <p class="lead">One row per dataset you are nominating. These become the datasets you describe in the 02 schedule. Keep the <b>Official title</b> matching the dataset title so readiness and evidence line up.</p>
  ${tableHtml('nominations',pack.nominations,"pack.nominations")}
- <button class="btn addrow" style="color:#13395e" onclick="addRow('nominations',null)">+ Add nomination</button>`;
+ <button class="btn addrow" style="color:#13395e" data-tour="nom-add" onclick="addRow('nominations',null)">+ Add nomination</button>`;
 }
 
 /* ---- 02 Dataset Metadata ---- */
@@ -802,7 +822,7 @@ function page02(){
  </div></div>`;
  // readiness panel
  const cls=rd.status==='Ready'?'ok':(rd.status==='Partly ready'?'part':'no');
- h+=`<div class="card"><div class="ready"><h3 style="margin:0;color:#13395e">Readiness</h3>
+ h+=`<div class="card" data-tour="readiness"><div class="ready"><h3 style="margin:0;color:#13395e">Readiness</h3>
    <span class="pill ${cls}">${rd.status}</span>
    <span class="mini">Mandatory provided: <span class="counter">${rd.mandProvided}</span> / ${rd.mandTotal}</span></div>`;
  if(rd.missing.length){h+=`<div class="blocklist"><b style="color:#b32036">Blocking items still missing:</b><ul>${rd.missing.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;}
@@ -818,7 +838,7 @@ function page02(){
  const domOpts=['<option value=""></option>'].concat(SUBJECT_AREAS.map(s=>`<option ${d.businessDomain===s.domain?'selected':''}>${esc(s.domain)}</option>`)).join('');
  const selDom=SUBJECT_AREAS.find(s=>s.domain===d.businessDomain);
  const saOpts=['<option value=""></option>'].concat((selDom?selDom.areas:[]).map(a=>`<option ${d.subjectArea===a?'selected':''}>${esc(a)}</option>`)).join('');
- h+=`<div class="card"><h3 style="color:#13395e">PART D — Catalog placement</h3>
+ h+=`<div class="card" data-tour="partD"><h3 style="color:#13395e">PART D — Catalog placement</h3>
    <p class="lead" style="margin-bottom:10px">Place the dataset in the national picture. Pick from the 12 Subject Areas governed vocabulary. 'In assessment scope' marks the domains in the current pilot.</p>
    <div class="row3">
      <div class="field fill"><label>Business domain</label>
@@ -838,7 +858,7 @@ function reqSection(title,reqs,ds,partKey,note){
    const cell=ds[partKey][x.c];
    const provOpts=PROVIDED_OPTS.map(o=>`<option ${cell.provided===o?'selected':''}>${o||'— set status —'}</option>`).join('');
    const exId='ex_'+partKey+'_'+x.c;
-   h+=`<div class="req">
+   h+=`<div class="req" data-tour="${partKey}-${x.c}">
      <div><div class="code">${x.c}</div><div class="ob ${x.block?'block':''}">${x.ob}${x.block?' · blocking':''}</div></div>
      <div>
        <div class="rname">${x.n}</div>
@@ -874,13 +894,13 @@ function page05(){
    else if(f.t==='yn')inp=`<select onchange="setClass('${f.k}',this.value)">${['','Y','N'].map(o=>`<option ${v===o?'selected':''}>${o||'—'}</option>`).join('')}</select>`;
    else inp=`<input type="text" value="${esc(v)}" oninput="setClass('${f.k}',this.value)">`;
    const wide=f.t==='yn'||f.t==='sel';
-   h+=`<div class="field fill" ${wide?'style="max-width:520px"':''}><label>${f.lbl}</label><p class="hint">${f.hint}</p>${inp}</div>`;
+   h+=`<div class="field fill" data-tour="class-${f.k}" ${wide?'style="max-width:520px"':''}><label>${f.lbl}</label><p class="hint">${f.hint}</p>${inp}</div>`;
  });
  h+=`</div>
  <div class="infobox"><h4>What the flags trigger</h4>
    <p>Personal, sensitive or health data brings in <b>C1</b> (privacy) and <b>C2</b> (in-country hosting). Data over public networks brings in <b>C3</b> (machine-readable with metadata). Critical information implies in-country storage.</p></div>`;
  // example
- h+=`<div class="card"><button class="ex-btn" onclick="toggleEx('ex05')">▸ Show example (TPIN)</button>
+ h+=`<div class="card"><button class="ex-btn" data-tour="class-example" onclick="toggleEx('ex05')">▸ Show example (TPIN)</button>
    <div class="ex" id="ex05"><b>Example:</b> Level 3 (Confidential); personal data = Yes; high harm if disclosed; access limited to ZRA Domestic Taxes staff; encrypted at rest and in transit; statutory basis ZRA Act s.21 (tax secrecy).</div></div>`;
  return h;
 }
@@ -892,7 +912,7 @@ function page11(){
  h+=guideBox("11");
  h+=`<div class="card"><h3 style="color:#13395e">Summary — one row per master data domain the dataset touches</h3>`;
  h+=tableHtml('master',ds.master,"cur().master");
- h+=`<button class="btn addrow" style="color:#13395e" onclick="addRow('master','cur')">+ Add master data domain</button>`;
+ h+=`<button class="btn addrow" style="color:#13395e" data-tour="master-add" onclick="addRow('master','cur')">+ Add master data domain</button>`;
  h+=`<p class="hint" style="margin-top:10px">Use the <b>Profile</b> column (or the expand below) to record, for each domain: definition &amp; scope, business key, authoritative source, match / duplicate-resolution and the survivorship (golden-record) rule.</p>`;
  // profiles
  ds.master.forEach((m,i)=>{
@@ -901,7 +921,7 @@ function page11(){
        <textarea style="min-height:120px" oninput="cur().master[${i}].profile=this.value;persist()">${esc(m.profile||'')}</textarea></div></div></details>`;
  });
  h+=`</div>`;
- h+=`<div class="card"><button class="ex-btn" onclick="toggleEx('ex11')">▸ Show example (TPIN)</button>
+ h+=`<div class="card"><button class="ex-btn" data-tour="master-example" onclick="toggleEx('ex11')">▸ Show example (TPIN)</button>
    <div class="ex" id="ex11"><b>Example — Party (Individual / Person):</b> core entity Party-Individual; business key NRC (TPIN is the role-scoped tax key); system of record Dept of National Registration (NRC) + ZRA TaxOnline; deterministic match on NRC, probabilistic fallback on name+DOB+address; NRC-verified record is authoritative for identity. <b>Location:</b> key Town code (10a Town); ZamStats administrative geography; free-text standardised to 10a, unmatched → OTH for steward review.</div></div>`;
  return h;
 }
@@ -925,7 +945,7 @@ function page10(){
      <button class="btn addrow sm" style="color:#13395e" onclick="addRefRow(${i})">+ Add code</button>
    </div>`;
  });
- h+=`<button class="btn" style="color:#13395e" onclick="addRefList()">+ Add code list</button>`;
+ h+=`<button class="btn" style="color:#13395e" data-tour="ref-addlist" onclick="addRefList()">+ Add code list</button>`;
  return h;
 }
 function addRefList(){pack.refLists.push({name:"New code list",field:"",rows:[]});persist();renderMain();}
@@ -961,10 +981,8 @@ function pageTable(key,tab,title,lead){
  h+=guideBox(tab);
  h+=`<p class="lead">${lead}</p>`;
  h+=tableHtml(key,data,"cur()."+key);
- h+=`<button class="btn addrow" style="color:#13395e" onclick="addRow('${key}','cur')">+ Add row</button>`;
- // example toggle
- const exMap={schema:'03',evidence:'06',lineage:'07',provenance:'08',glossary:'09'};
- h+=`<div class="card" style="margin-top:14px"><button class="ex-btn" onclick="loadExampleTable('${key}')">▸ Fill this tab with the TPIN example rows</button>
+ h+=`<button class="btn addrow" style="color:#13395e" data-tour="${key}-add" onclick="addRow('${key}','cur')">+ Add row</button>`;
+ h+=`<div class="card" style="margin-top:14px"><button class="ex-btn" data-tour="${key}-example" onclick="loadExampleTable('${key}')">▸ Fill this tab with the TPIN example rows</button>
    <span class="mini" style="margin-left:10px">Adds the worked-example rows so you can see the expected level of detail (then edit or delete them).</span></div>`;
  return h;
 }
@@ -1290,6 +1308,163 @@ function download(text,name,type){const b=new Blob([text],{type});const u=URL.cr
 function todayStamp(){const d=new Date();return d.toISOString().slice(0,10);}
 let toastT;
 function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),1800);}
+
+/* ---------------------------------------------------------------------------
+   9b. GUIDED TOUR — in-app "walk me through" per tab / per Part of 02
+   ------------------------------------------------------------------------- */
+let tour=null;
+function tourLauncher(){
+ if(active.tab==='02'){
+   return `<div class="tourbar"><span class="tourlead">Walk me through:</span>
+     <button class="tourgo" onclick="startTour('02A')">Part A</button>
+     <button class="tourgo" onclick="startTour('02B')">Part B</button>
+     <button class="tourgo" onclick="startTour('02C')">Part C</button>
+     <button class="tourgo" onclick="startTour('02D')">Part D</button></div>`;
+ }
+ if(TOURS[active.tab]){const t=TOURS[active.tab];
+   return `<div class="tourbar"><button class="tourgo" onclick="startTour('${active.tab}')">${esc(t.label||'Walk me through this tab')}</button></div>`;}
+ return '';
+}
+// fill helpers (temporary — restored when the tour closes)
+function fillReq(part,code){const defs=part==='partA'?PART_A:part==='partB'?PART_B:PART_C;const d=defs.find(x=>x.c===code);if(!d||!cur())return;const c=cur()[part][code];c.response=d.ex;c.provided=(code==='D12'||code==='C1')?'Provided (restricted)':'Provided';if(d.evid)c.evidenceRef=d.evid;}
+function fillPartD(){if(!cur())return;cur().partD={businessDomain:"Public Finance, Revenue & Economic Stewardship",subjectArea:"Revenue & Taxation",accessRoute:"Masked 1,000-row CSV via secure transfer; full dataset by MoU"};}
+function fillClass(){if(!cur())return;Object.assign(cur().classification,{label:"Confidential",confHarm:"Personal & financial data; high harm if disclosed.",level:"3 — Confidential",personal:"Y",statBasis:"ZRA Act s.21 (tax secrecy)"});}
+function fillTbl(key,n){if(!cur())return;cur()[key]=exampleDataset()[key].slice(0,n||3).map(x=>Object.assign({},x,{_id:uid()}));}
+
+const TOUR_NEEDS_DS=new Set(['02A','02B','02C','02D','03','05','06','07','08','09','11']);
+const TOURS={
+ '02A':{steps:[
+   {tab:'02',sel:'[data-tour=readiness]',title:'Part A — about the dataset',body:'Part A (D1–D13) describes the dataset itself. This panel tracks <b>readiness</b> as you fill it in — the <b>blocking</b> items (D4, D5, D12) must be Provided before a dataset counts as ready.'},
+   {tab:'02',sel:'[data-tour=partA-D1]',fill:()=>fillReq('partA','D1'),title:'1 · Write your answer',body:'Each requirement has a response box. Type a plain, specific answer — here, the dataset’s name, any aliases and its ID.'},
+   {tab:'02',sel:'[data-tour=partA-D1]',title:'2 · Status & evidence',body:'Set <b>Provided?</b> (Provided · Provided (restricted) · Not applicable · Not yet available) and add an <b>Evidence ref</b> if a file on tab 06 backs it. The green <b>Show example</b> link reveals the worked answer.'},
+   {tab:'02',sel:'[data-tour=partA-D4]',fill:()=>fillReq('partA','D4'),title:'Blocking · Ownership (D4)',body:'D4 is <b>blocking</b> — name the data owner, steward and a technical contact with real contact details. A dataset with no reachable owner is held at Not ready.'},
+   {tab:'02',sel:'[data-tour=partA-D5]',fill:()=>fillReq('partA','D5'),title:'Blocking · Source (D5)',body:'Say which system the data comes from and whether this is the authoritative record or a copy.'},
+   {tab:'02',sel:'[data-tour=partA-D12]',fill:()=>fillReq('partA','D12'),title:'Blocking · Sample (D12)',body:'You never send raw sensitive data — provide a <b>masked, redacted or synthetic</b> sample with the owner’s approval, and mark it Provided (restricted).'},
+   {tab:'02',sel:'[data-tour=readiness]',title:'Watch readiness turn',body:'As the blocking items go in, the status moves toward <b>Ready</b> and the counter climbs. Work down D1–D13 the same way. (Your real data is untouched — this demo is cleared when you close.)'}
+ ]},
+ '02B':{steps:[
+   {tab:'02',sel:'.page-h',title:'Part B — about the metadata',body:'Part B (M1–M10) is the metadata about the data: business and technical description, operations, governance, sensitivity, quality, retention, reference data, exchange and lineage.'},
+   {tab:'02',sel:'[data-tour=partB-M1]',fill:()=>fillReq('partB','M1'),title:'Plain language first (M1)',body:'M1 is a description a non-technical colleague would understand. M2 then carries the technical detail (schema, types, keys).'},
+   {tab:'02',sel:'[data-tour=partB-M5]',fill:()=>fillReq('partB','M5'),title:'Sensitivity (M5) is blocking',body:'M5 sets the confidentiality level 1–4 and the flags. Capture the full detail on the <b>05 Classification</b> tab — the two are linked.'},
+   {tab:'02',sel:'[data-tour=partB-M8]',title:'N/A is a valid answer',body:'Some items allow <b>Not applicable</b> — e.g. M8 reference data, M9 exchange. If it genuinely doesn’t apply, mark it N/A and say why; don’t leave it blank.'},
+   {tab:'02',sel:'[data-tour=partB-M10]',fill:()=>fillReq('partB','M10'),title:'Lineage & provenance (M10)',body:'M10 gives the high-level origin and steps. The <b>07 Lineage</b> and <b>08 Provenance</b> tabs hold the detail behind it.'}
+ ]},
+ '02C':{steps:[
+   {tab:'02',sel:'.page-h',title:'Part C — compliance',body:'Part C (C1–C5) follows from the national instruments — Data Protection Act, e-Government Act, Cyber Security Act and the interoperability standard.'},
+   {tab:'02',sel:'[data-tour=partC-C1]',fill:()=>fillReq('partC','C1'),title:'Driven by the flags',body:'Which items apply is driven by the flags on <b>05 Classification</b>. Personal / sensitive / health data brings in C1 (privacy) and C2 (in-country hosting).'},
+   {tab:'02',sel:'[data-tour=partC-C2]',fill:()=>fillReq('partC','C2'),title:'Residency (C2)',body:'For personal or critical data, confirm it and its backups are hosted in Zambia.'},
+   {tab:'02',sel:'[data-tour=partC-C5]',title:'Mark N/A with a reason',body:'Every Part C item allows Not applicable — where an instrument doesn’t apply to this dataset, say so and why.'}
+ ]},
+ '02D':{steps:[
+   {tab:'02',sel:'[data-tour=partD]',title:'Part D — catalog placement',body:'Part D places the dataset in the national picture, using the governed vocabulary from tab 12.'},
+   {tab:'02',sel:'[data-tour=partD]',fill:()=>fillPartD(),title:'Domain → subject area',body:'Pick a <b>Business domain</b>; the <b>Subject area</b> list then narrows to that domain’s areas — the 14 domains / 95 subject areas of the Zambia Government Operating Model.'},
+   {tab:'02',sel:'[data-tour=partD]',title:'Access route',body:'Finally, say how an assessor can reach the data or a safe sample — a secure transfer, a portal, or by MoU.'}
+ ]},
+ 'transmittal':{steps:[
+   {tab:'transmittal',sel:'[data-tour=t-mdaName]',fill:()=>{pack.transmittal.mdaName="Ministry of Finance & National Planning / ZRA";},title:'00 Transmittal — do this once',body:'The transmittal is your institution’s cover sheet — filled once per MDA, not per dataset.'},
+   {tab:'transmittal',sel:'[data-tour=t-contacts]',fill:()=>{pack.transmittal.contacts="J. Mwale, Business Data Steward, j.mwale@zra.org.zm";},title:'Representative & contacts',body:'Name the representative who signs, and the authorised contacts an assessor can reach.'},
+   {tab:'transmittal',sel:'[data-tour=t-count]',title:'Dataset count is automatic',body:'The number of datasets is counted from the datasets you add — you don’t type it.'},
+   {tab:'transmittal',sel:'[data-tour=t-signature]',title:'Sign the declaration',body:'Confirm the completeness declaration and sign. (This demo is cleared when you close.)'}
+ ]},
+ 'nominations':{steps:[
+   {tab:'nominations',sel:'.page-h',title:'01 Nominations',body:'List one row per dataset you’re nominating. These become the datasets you describe in the 02 schedule.'},
+   {tab:'nominations',sel:'[data-tour=nom-add]',title:'Add a nomination',body:'Use <b>+ Add nomination</b> for each dataset. Keep the <b>Official title</b> identical to the dataset’s title so readiness and evidence line up.'}
+ ]},
+ '03':{steps:[
+   {tab:'03',sel:'.page-h',title:'03 Schema & Dictionary',body:'One row per field — the dictionary that lets anyone read the data correctly. This backs D7 and M2.'},
+   {tab:'03',sel:'[data-tour=schema-add]',title:'Add a field',body:'Add one row per field: name, business meaning, type, length, nullable, key, and the code list it points to.'},
+   {tab:'03',sel:'[data-tour=schema-example]',fill:()=>fillTbl('schema',4),title:'See the expected detail',body:'The <b>Fill with example rows</b> button drops in the worked TPIN fields so you can see the level of detail — then edit or clear them.'}
+ ]},
+ '05':{steps:[
+   {tab:'05',sel:'[data-tour=class-label]',fill:()=>fillClass(),title:'05 Classification',body:'Record the sensitivity. Use your own label if you have one, then map it to a level 1–4.'},
+   {tab:'05',sel:'[data-tour=class-level]',title:'Level 1–4',body:'1 Public · 2 Internal · 3 Confidential · 4 Secret — the Government harm-based scale.'},
+   {tab:'05',sel:'[data-tour=class-personal]',title:'Flags drive Part C',body:'The flags (personal, sensitive, health, critical, public network) decide which Part C compliance items apply.'},
+   {tab:'05',sel:'[data-tour=class-example]',title:'Worked example',body:'<b>Show example</b> reveals the TPIN classification end to end.'}
+ ]},
+ '06':{steps:[
+   {tab:'06',sel:'.page-h',title:'06 Evidence Index',body:'List every file you attach, each with a short reference code. Those codes are what you type into the Evidence ref column in 02.'},
+   {tab:'06',sel:'[data-tour=evidence-add]',title:'One row per file',body:'E.g. SCHEMA-01, EXTRACT-01, CLASS-01 — with owner, date/version and any restriction.'},
+   {tab:'06',sel:'[data-tour=evidence-example]',fill:()=>fillTbl('evidence',5),title:'Example evidence',body:'Here’s the worked evidence set that backs the TPIN answers.'}
+ ]},
+ '07':{steps:[
+   {tab:'07',sel:'.page-h',title:'07 Lineage',body:'Where the data flows from and to — one row per dataset/node, with upstream sources and downstream consumers.'},
+   {tab:'07',sel:'[data-tour=lineage-add]',title:'Add a flow',body:'List the upstream sources, downstream consumers and the transformation between them.'},
+   {tab:'07',sel:'[data-tour=lineage-example]',fill:()=>fillTbl('lineage',2),title:'Example lineage',body:'The worked TPIN lineage shows the expected shape.'}
+ ]},
+ '08':{steps:[
+   {tab:'08',sel:'.page-h',title:'08 Provenance',body:'Who produced the data, from what, by what activity and when — the origin and the responsibility.'},
+   {tab:'08',sel:'[data-tour=provenance-add]',title:'Add a record',body:'Created by, derived from, produced by, created date — and whether it’s the authoritative source of record.'},
+   {tab:'08',sel:'[data-tour=provenance-example]',fill:()=>fillTbl('provenance',1),title:'Example provenance',body:'The worked TPIN provenance record.'}
+ ]},
+ '09':{steps:[
+   {tab:'09',sel:'.page-h',title:'09 Business Glossary',body:'The agreed meaning of the business terms the dataset uses — so data from different sources means the same thing.'},
+   {tab:'09',sel:'[data-tour=glossary-add]',title:'Add a term',body:'Term, definition, synonyms, related terms, domain, steward and status.'},
+   {tab:'09',sel:'[data-tour=glossary-example]',fill:()=>fillTbl('glossary',3),title:'Example terms',body:'The worked TPIN glossary terms.'}
+ ]},
+ '11':{steps:[
+   {tab:'11',sel:'.page-h',title:'11 Master Data Domains',body:'The shared entities the dataset points to — Party, Location — so records about the same person or place can be joined across government.'},
+   {tab:'11',sel:'[data-tour=master-add]',title:'Add a domain',body:'A summary row per domain: core entity, system of record, steward, related reference lists and dataset fields.'},
+   {tab:'11',sel:'[data-tour=master-example]',fill:()=>fillTbl('master',2),title:'Then the profile',body:'Each domain also gets a fuller profile (business key, match rule, survivorship). Here’s the worked Party and Location pair.'}
+ ]},
+ '10':{label:'Walk me through reference data',steps:[
+   {tab:'10',sel:'.page-h',title:'10 Reference Data',body:'The governed code lists behind coded fields — one list per field (Town, TaxpayerType, Tax Type, Status).'},
+   {tab:'10',sel:'[data-tour=ref-addlist]',title:'Add a code list',body:'Add one list per coded field and point 03 Schema at it. Each code carries a label, description, status and a Valid-to date for retired codes.'}
+ ]},
+ '12':{label:'What are subject areas?',steps:[
+   {tab:'12',sel:'.page-h',title:'12 Subject Areas',body:'Reference only — the governed vocabulary of 14 domains and 95 subject areas that drives the Part D dropdowns. Green marks the domains in the current pilot scope.'}
+ ]}
+};
+
+function startTour(id){
+ const t=TOURS[id];if(!t)return;
+ tour={id,steps:t.steps,i:0,snap:JSON.stringify(pack),ret:{tab:active.tab,dsIndex:active.dsIndex}};
+ if(TOUR_NEEDS_DS.has(id)&&active.dsIndex<0){const d=blankDataset();d.title="(Guided tour demo)";pack.datasets.push(d);active.dsIndex=pack.datasets.length-1;}
+ document.body.classList.add('touring');
+ showStep();
+}
+function showStep(){
+ const s=tour.steps[tour.i];
+ if(s.tab)active.tab=s.tab;
+ if(s.fill){try{s.fill();}catch(e){}}
+ renderSide();renderMain();
+ requestAnimationFrame(()=>positionTour(s));
+}
+function tourNext(){if(!tour)return;if(tour.i>=tour.steps.length-1){endTour(true);}else{tour.i++;showStep();}}
+function tourPrev(){if(!tour||tour.i===0)return;tour.i--;showStep();}
+function endTour(restore){
+ document.body.classList.remove('touring');
+ ['tourBlocker','tourRing','tourCard'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';});
+ const snap=tour&&tour.snap,ret=tour&&tour.ret;tour=null;
+ if(restore&&snap){pack=JSON.parse(snap);active={tab:ret.tab,dsIndex:ret.dsIndex};persist();}
+ renderSide();renderMain();
+}
+function positionTour(s){
+ const ring=document.getElementById('tourRing'),card=document.getElementById('tourCard'),blk=document.getElementById('tourBlocker');
+ let el=document.querySelector(s.sel)||document.querySelector('.page-h');
+ blk.style.display='block';card.style.display='block';card.innerHTML=tourCardHtml(s);
+ if(el&&el.scrollIntoView)el.scrollIntoView({block:'center'});
+ requestAnimationFrame(()=>{
+   const pad=6,cw=340,ch=card.offsetHeight||180,vw=window.innerWidth,vh=window.innerHeight;
+   if(el){const rr=el.getBoundingClientRect();
+     ring.style.display='block';ring.style.opacity='1';
+     ring.style.top=(rr.top-pad)+'px';ring.style.left=(rr.left-pad)+'px';
+     ring.style.width=(rr.width+pad*2)+'px';ring.style.height=(rr.height+pad*2)+'px';
+     card.style.transform='';
+     let top=rr.bottom+12,left=Math.min(Math.max(12,rr.left),vw-cw-12);
+     if(top+ch>vh-12)top=Math.max(12,rr.top-ch-12);
+     card.style.top=top+'px';card.style.left=left+'px';
+   }else{ring.style.display='none';card.style.top='50%';card.style.left='50%';card.style.transform='translate(-50%,-50%)';}
+ });
+}
+function tourCardHtml(s){
+ const n=tour.steps.length,i=tour.i;
+ return `<button class="tc-close" title="Close" onclick="endTour(true)">×</button>
+   <h4>${esc(s.title)}</h4><p>${s.body}</p>
+   <div class="tc-foot"><span class="tc-prog">${i+1} / ${n}</span>
+   ${i>0?`<button onclick="tourPrev()">Back</button>`:''}
+   <button class="primary" onclick="tourNext()">${i<n-1?'Next':'Done'}</button></div>`;
+}
+window.addEventListener('keydown',e=>{if(!tour)return;if(e.key==='Escape')endTour(true);else if(e.key==='ArrowRight')tourNext();else if(e.key==='ArrowLeft')tourPrev();});
 
 /* ---------------------------------------------------------------------------
    10. boot

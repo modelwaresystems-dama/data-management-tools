@@ -6694,9 +6694,9 @@
 }</script>
 <script>
 /* ===== APP VERSION — bump on each release ===== */
-const APP_VERSION = 'v5.20';
+const APP_VERSION = 'v5.23';
 const BUILD_DATE  = '2026-11-27';   // auto-stamped at build time (never hand-typed)
-const BUILD_TIME  = '07:27 SAST';   // auto-stamped at build time (SAST)
+const BUILD_TIME  = '07:53 SAST';   // auto-stamped at build time (SAST)
 
 const VIDEOS = JSON.parse(document.getElementById('data').textContent);
 let AN = JSON.parse(document.getElementById('adata').textContent);
@@ -8663,7 +8663,7 @@ function renderProgressTodo(){
 }
 // Worklist actions: Use the suggested URL, mark Not required, or open the record form (✎ Update / row click)
 $('pgtodo').addEventListener('click', e=>{
-  const u=e.target.closest('.tduse'); if(u){ resolveBlogDecision(u.dataset.id, true); return; }
+  const u=e.target.closest('.tduse'); if(u){ resolveBlogDecision(u.dataset.id, 'approve'); return; }
   const nr=e.target.closest('.tdnr'); if(nr){ markNotRequired(nr.dataset.id); return; }
   if(e.target.closest('a')) return;
   if(e.target.closest('[data-noopen]')) return;
@@ -8705,7 +8705,9 @@ function f1Of(wt,tset){ if(!tset.size||!wt.size) return 0; let inter=0; wt.forEa
 // A blog post embeds / links the YouTube recording of its webinar — a definitive post↔video tie, stronger than
 // any title match (and it resolves the role-variant titles that token matching can't tell apart). Pull the first
 // 11-char YouTube id out of the post's rendered HTML (iframe embed, youtu.be, watch?v=, /embed/, /shorts/, /live/).
-const YT_ID_RE=/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?[^"'<>\s]*?v=|embed\/|v\/|shorts\/|live\/))([A-Za-z0-9_-]{11})/i;
+// Covers every common way a post references its recording: youtu.be, watch?v=, /embed/ /v/ /shorts/ /live/,
+// youtube-nocookie, the thumbnail host (i.ytimg / img.youtube /vi/<id>/), and data-videoid / data-ytid attributes.
+const YT_ID_RE=/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?[^"'<>\s]*?v=|embed\/|v\/|shorts\/|live\/|attribution_link\?[^"'<>\s]*?v%3D)|(?:i\.ytimg|img\.youtube)\.com\/vi\/|data-(?:video-?id|ytid|youtube-?id)=["']?)([A-Za-z0-9_-]{11})/i;
 function extractVid(html){ const m=String(html||'').match(YT_ID_RE); return m?m[1]:''; }
 
 // Scan every record (blank AND filled): propose blank fills + flag existing-link mismatches.
@@ -8742,9 +8744,10 @@ function matchBlogsDetailed(posts, opts){
       else noMatch++;
     } else {
       const curNorm=normU(cur);
+      const curPostEmbeds = byLink[curNorm] && byLink[curNorm].vid===r.VideoID;   // the saved link's post ALSO embeds this video → it's a valid write-up
       if(exact){
-        // definitive: the post that embeds this recording is the write-up
-        if(normU(exact.link)!==curNorm) proposals.push({id:r.VideoID, action:'replace', cls:'mismatch', exact:true, from:cur, to:exact.link, postTitle:exact.title, f1:1, curF1:0, title:r.Webinar||''});
+        // definitive: the post that embeds this recording is the write-up — unless the current link's post embeds it too
+        if(normU(exact.link)!==curNorm && !curPostEmbeds) proposals.push({id:r.VideoID, action:'replace', cls:'mismatch', exact:true, from:cur, to:exact.link, postTitle:exact.title, f1:1, curF1:0, title:r.Webinar||''});
         else confirmed++;
       } else {
         const curPost=byLink[curNorm];
@@ -8789,14 +8792,23 @@ function useAllExact(){
   });
   if(n){ persistBlogDecisions(); renderProgress(); render(); if(dataRendered) drawRows(); if(typeof cstatus==='function') cstatus(`Filled ${n} exact write-up match${n===1?'':'es'} from the blog.`,'ok'); }
 }
-function resolveBlogDecision(id, approve){
+// action: 'approve' (replace the saved link with the suggested post) | 'remove' (clear the wrong link → record becomes
+// a missing write-up) | 'keep' (leave the saved link, don't flag again). `true` is treated as 'approve' (worklist Use).
+function resolveBlogDecision(id, action){
   const dec=BLOG_DECISIONS[id], r=recOf(id); if(!dec) return;
-  if(approve){ if(r) r.Webinar_Writeup=dec.to; dec.status='approved'; delete dec.auto; }
-  else { dec.rejectedUrls=(dec.rejectedUrls||[]).concat([dec.to]); dec.status='rejected'; }   // keep the existing link on a mismatch reject
+  if(action===true || action==='approve'){ if(r) r.Webinar_Writeup=dec.to; dec.status='approved'; delete dec.auto; }
+  else if(action==='remove'){ if(r) r.Webinar_Writeup=''; dec.removedFrom=dec.from; dec.status='removed'; }   // clear the weak/wrong link — edits the Data table
+  else { dec.rejectedUrls=(dec.rejectedUrls||[]).concat([dec.to]); dec.status='rejected'; }                   // keep the saved link, don't re-flag
   dec.ts=Date.now();
   persistBlogDecisions(); renderDecisionRegister(); renderProgress(); render(); if(dataRendered) drawRows();
 }
 function pendingDecisions(){ return Object.keys(BLOG_DECISIONS).map(id=>Object.assign({id},BLOG_DECISIONS[id])).filter(d=>d.status==='pending'); }
+// Bring previously-rejected mismatches back to pending so they can be reviewed again (clears the per-URL reject memory).
+function reopenRejectedMismatches(){
+  let n=0; Object.values(BLOG_DECISIONS).forEach(d=>{ if(d.cls==='mismatch' && d.status==='rejected'){ d.status='pending'; d.rejectedUrls=[]; n++; } });
+  if(n){ persistBlogDecisions(); renderDecisionRegister(); }
+  return n;
+}
 function blogReviewCsv(){
   const q=s=>{ s=String(s==null?'':s); return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
   const titleOf={}; (typeof VIDEOS!=='undefined'?VIDEOS:[]).forEach(v=>titleOf[v.id]=v.t);
@@ -8808,7 +8820,7 @@ function blogReviewCsv(){
 }
 function decTable(list, titleOf, showCur){
   return `<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left">YouTube title</th>${showCur?'<th style="text-align:left">Current link (looks wrong)</th>':''}<th style="text-align:left">Proposed blog post</th><th>F1</th><th></th></tr></thead><tbody>`
-    + list.map(d=>`<tr data-id="${esc(d.id)}"><td>${esc(titleOf[d.id]||d.title||d.id)}</td>${showCur?`<td style="color:#b06a10;word-break:break-all">${esc(String(d.from||'').replace(/^https?:\/\/[^\/]+/,''))}</td>`:''}<td><a href="${esc(d.to)}" target="_blank" rel="noopener">${esc(d.postTitle||d.to)}</a></td><td style="text-align:center">${d.exact?'<span title="the post embeds this exact recording">exact ✓</span>':(d.f1!=null?d.f1.toFixed(2):'')}</td><td style="white-space:nowrap"><button class="linkbtn blogok" data-id="${esc(d.id)}">approve</button> · <button class="linkbtn blogno" data-id="${esc(d.id)}">reject</button></td></tr>`).join('')
+    + list.map(d=>`<tr data-id="${esc(d.id)}"><td>${esc(titleOf[d.id]||d.title||d.id)}</td>${showCur?`<td style="color:#b06a10;word-break:break-all">${esc(String(d.from||'').replace(/^https?:\/\/[^\/]+/,''))}</td>`:''}<td><a href="${esc(d.to)}" target="_blank" rel="noopener">${esc(d.postTitle||d.to)}</a></td><td style="text-align:center">${d.exact?'<span title="the post embeds this exact recording">exact ✓</span>':(d.f1!=null?d.f1.toFixed(2):'')}</td><td style="white-space:nowrap"><button class="linkbtn blogok" data-id="${esc(d.id)}" title="Replace the saved link with this post — edits the Data table">✓ use this (replace)</button> · <button class="linkbtn blogrm" data-id="${esc(d.id)}" title="Clear the wrong link from the record — it becomes a missing write-up">🗑 remove link</button> · <button class="linkbtn blogno" data-id="${esc(d.id)}" title="Keep the saved link unchanged; don't flag this again">✕ keep current</button></td></tr>`).join('')
     + `</tbody></table>`;
 }
 function renderDecisionRegister(){
@@ -8816,12 +8828,15 @@ function renderDecisionRegister(){
   const titleOf={}; (typeof VIDEOS!=='undefined'?VIDEOS:[]).forEach(v=>titleOf[v.id]=v.t);
   const mis=pendingDecisions().filter(d=>d.cls==='mismatch');
   const all=Object.values(BLOG_DECISIONS);
-  const misResolved=all.filter(d=>d.cls==='mismatch' && d.status!=='pending').length;
+  const misApproved=all.filter(d=>d.cls==='mismatch' && d.status==='approved').length;
+  const misRemoved=all.filter(d=>d.cls==='mismatch' && d.status==='removed').length;
+  const misRejected=all.filter(d=>d.cls==='mismatch' && d.status==='rejected').length;
   const anyDecision=all.length>0;
-  if(!mis.length && !misResolved && !anyDecision){ el.hidden=true; el.innerHTML=''; return; }
-  let html=`<b>📋 Existing-link audit</b> — <b>${mis.length}</b> possible mismatch${mis.length===1?'':'es'} pending${misResolved?` · ${misResolved} resolved`:''}.`;
+  if(!mis.length && !misApproved && !misRemoved && !misRejected && !anyDecision){ el.hidden=true; el.innerHTML=''; return; }
+  let html=`<b>📋 Existing-link audit</b> — <b>${mis.length}</b> possible mismatch${mis.length===1?'':'es'} pending${misApproved?` · ${misApproved} replaced`:''}${misRemoved?` · ${misRemoved} link${misRemoved===1?'':'s'} removed`:''}${misRejected?` · ${misRejected} kept`:''}.`;
+  if(misRejected) html+=` <button class="linkbtn" id="blogreopen" title="Bring the kept mismatches back so you can review them again">↩ Re-open ${misRejected} kept</button>`;
   if(mis.length){
-    html+=`<p style="margin:8px 0 4px">The current link looks wrong — either the post that embeds this recording is a different URL (<b>exact ✓</b>), or the current link matches the title poorly and a more confident post was found. Approve to replace it (removes the old link, adds the new); reject to keep the current link:</p>`+decTable(mis, titleOf, true);
+    html+=`<p style="margin:8px 0 4px">The saved link looks wrong — the post that embeds this recording is a different URL (<b>exact ✓</b>), or the saved link matches the title poorly. Three choices: <b>✓ use this (replace)</b> swaps in the suggested post; <b>🗑 remove link</b> clears the wrong link so the webinar goes back to the missing-write-up list; <b>✕ keep current</b> leaves it as-is. All three edit or preserve the Data table accordingly:</p>`+decTable(mis, titleOf, true);
   } else html+=` <span style="color:#1a7f37">No pending mismatches on the already-filled links.</span>`;
   html+=`<p style="margin:8px 0 0"><button class="linkbtn" id="blogcsv">⤓ Download decision register (CSV)</button> · decisions are saved and travel in ☁ Team.</p>`;
   el.innerHTML=html; el.hidden=false;
@@ -8870,8 +8885,10 @@ async function refreshBlog(mode){
 $('blogrefresh').onclick=()=>refreshBlog('quick');
 $('blogfullscan').onclick=()=>refreshBlog('complete');
 if($('blogreview')) $('blogreview').addEventListener('click', e=>{
-  const ok=e.target.closest('.blogok'); if(ok){ resolveBlogDecision(ok.dataset.id, true); return; }
-  const no=e.target.closest('.blogno'); if(no){ resolveBlogDecision(no.dataset.id, false); return; }
+  const ok=e.target.closest('.blogok'); if(ok){ resolveBlogDecision(ok.dataset.id, 'approve'); return; }
+  const rm=e.target.closest('.blogrm'); if(rm){ resolveBlogDecision(rm.dataset.id, 'remove'); return; }
+  const no=e.target.closest('.blogno'); if(no){ resolveBlogDecision(no.dataset.id, 'keep'); return; }
+  if(e.target.id==='blogreopen'){ const n=reopenRejectedMismatches(); if(typeof cstatus==='function' && n) cstatus(`Re-opened ${n} kept mismatch${n===1?'':'es'} for review.`,'ok'); return; }
   if(e.target.id==='blogcsv'){ const csv=blogReviewCsv(); if(csv) download('MoWeb Blog Decision Register.csv', csv, 'text/csv;charset=utf-8'); }
 });
 (function initBlog(){ let site=DEFAULT_BLOG_SITE; try{ site=store.get(BLOG_SITE_KEY)||DEFAULT_BLOG_SITE; }catch(e){} $('blogsite').value=site; })();

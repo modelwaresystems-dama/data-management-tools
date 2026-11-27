@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.17.0">
-<meta name="build" content="2026-11-27 06:30 SAST">
+<meta name="version" content="1.18.0">
+<meta name="build" content="2026-11-27 14:41 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -526,8 +526,8 @@ var CORE = (function(){
   }
   function classifyTier(ses, grade, uplift){
     if(uplift!=null && uplift<0) return "Regressed";
-    if(ses>=70 && grade>=70) return "Thriving";
-    if(ses>=70 && grade<70) return "Struggling (High Effort)";
+    if(ses>=65 && grade>=70) return "Thriving";
+    if(ses>=65 && grade<70) return "Struggling (High Effort)";
     if(ses<50 && grade>=75) return "Coasting";
     if(ses<50 && grade<70) return "At-Risk (Disengaged)";
     return "Moderate / Developing";
@@ -1471,8 +1471,10 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     function x(v){ return pad+(v/100)*(W-pad-10); }
     function y(v){ return (H-pad)-(v/100)*(H-pad-10); }
     var pts=rows.filter(function(r){ return r.grade_pct!=null; }).map(function(r){ return '<circle cx="'+x(r.ses).toFixed(1)+'" cy="'+y(r.grade_pct).toFixed(1)+'" r="4.5" fill="'+(TIERCOLOR[r.tier]||'var(--faint)')+'" opacity="0.9"><title>'+esc(r.fullname)+' · SES '+r.ses+' · grade '+r.grade_pct+'%</title></circle>'; }).join("");
-    return '<div class="subh">Effort vs grade</div><svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:'+W+'px;height:auto;display:inline-block">'+
-      '<line x1="'+x(70)+'" y1="'+y(0)+'" x2="'+x(70)+'" y2="'+y(100)+'" stroke="var(--line2)" stroke-dasharray="4 4"/>'+
+    function zone(xa,xb,ga,gb,c,op){ var X=x(xa),Y=y(gb); return '<rect x="'+X.toFixed(1)+'" y="'+Y.toFixed(1)+'" width="'+(x(xb)-X).toFixed(1)+'" height="'+(y(ga)-Y).toFixed(1)+'" fill="'+c+'" opacity="'+op+'"/>'; }
+    var zones=zone(0,100,0,100,'var(--faint)',0.06)+zone(0,50,0,70,'var(--bad)',0.13)+zone(0,50,75,100,'var(--gold)',0.13)+zone(65,100,0,70,'var(--accent)',0.13)+zone(65,100,70,100,'var(--good)',0.13);
+    return '<div class="subh">Effort vs grade</div><svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:'+W+'px;height:auto;display:inline-block">'+zones+
+      '<line x1="'+x(65)+'" y1="'+y(0)+'" x2="'+x(65)+'" y2="'+y(100)+'" stroke="var(--line2)" stroke-dasharray="4 4"/>'+
       '<line x1="'+x(0)+'" y1="'+y(70)+'" x2="'+x(100)+'" y2="'+y(70)+'" stroke="var(--line2)" stroke-dasharray="4 4"/>'+
       '<line x1="'+x(0)+'" y1="'+y(0)+'" x2="'+x(100)+'" y2="'+y(0)+'" stroke="var(--line)"/>'+
       '<line x1="'+x(0)+'" y1="'+y(0)+'" x2="'+x(0)+'" y2="'+y(100)+'" stroke="var(--line)"/>'+
@@ -1480,6 +1482,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       '<text x="'+x(78)+'" y="'+y(30)+'" fill="var(--faint)" font-size="10">High effort</text>'+
       '<text x="'+(x(2))+'" y="'+y(92)+'" fill="var(--faint)" font-size="10">Coasting</text>'+
       '<text x="'+(x(2))+'" y="'+y(30)+'" fill="var(--faint)" font-size="10">At-risk</text>'+
+      '<text x="'+x(52)+'" y="'+y(50)+'" fill="var(--faint)" font-size="10">Moderate</text>'+
       '<text x="'+x(45)+'" y="'+(H-6)+'" fill="var(--muted)" font-size="10">SES →</text>'+
       '<text x="6" y="16" fill="var(--muted)" font-size="10">grade ↑</text>'+pts+'</svg>';
   }
@@ -1489,7 +1492,8 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     if(state.ses && state.ses.length){
       var meta=state.sesMeta||{};
       var noData=!!meta.noEffortData;
-      var rows=state.ses.map(function(r){ var b=r.breakdown;
+      var srows=state.ses.map(function(r){ var t=(r.tier==="Regressed")?"Regressed":(r.grade_pct==null?"No grade yet":CORE.classifyTier(r.ses,r.grade_pct,null)); return {userid:r.userid,fullname:r.fullname,ses:r.ses,grade_pct:r.grade_pct,uplift:r.uplift,tier:t,breakdown:r.breakdown}; });
+      var rows=srows.map(function(r){ var b=r.breakdown;
         return '<tr><td class="name">'+esc(r.fullname)+'</td>'+
           '<td class="num">'+(noData?'<span class="faint">n/a</span>':sesBar(r.ses))+'</td>'+
           '<td class="num">'+fmtPct(r.grade_pct)+'</td>'+
@@ -1523,7 +1527,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
           '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">Time in session</th><th class="num">Attend.</th><th class="num">Sessions</th><th class="num">Camera</th><th class="num">Mic</th><th class="num">Hands</th><th class="num">Reactions</th><th class="num">Engagement</th></tr></thead><tbody>'+_er+'</tbody></table></div>';
       }
       body=warn+'<p class="note">'+(meta.students||rows.length)+' students · '+(meta.quizzes||0)+' quizzes · forums '+(meta.hasForums?'included':'none (reweighted)')+' · quiz attempts seen: '+(meta.nAttempts||0)+' · completion records: '+(meta.nStatuses||0)+' · live-quiz students: '+(meta.nLive||0)+'.</p>'+
-        '<div style="margin:0 0 18px;text-align:center">'+sesScatter(state.ses)+tierLegend()+'</div>'+
+        '<div style="margin:0 0 18px;text-align:center">'+sesScatter(srows)+tierLegend()+'</div>'+
         '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">SES</th><th class="num">Grade</th><th>Tier</th><th class="num">Live</th><th class="num">Compl</th><th class="num">Dur</th><th class="num">Persist</th><th class="num">Forum</th><th class="num">Teams</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+engBlock;
     } else {
       body='<div class="empty">No cached Student Effort Score for this cohort yet — click <b>↻ Refresh</b> (top right).</div>';

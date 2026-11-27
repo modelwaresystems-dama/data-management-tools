@@ -795,10 +795,11 @@
     <div class="bookbar" id="blogbar">
       <div>
         <div class="cpttl">🔄 Blog write-ups on your website</div>
-        <div class="cpsub">Refresh matches every webinar to the blog post on your site (via its WordPress feed) and fills the Webinar Write-up link. Re-run any time to pick up new posts.</div>
+        <div class="cpsub"><b>Quick scan</b> only looks at webinars still missing a write-up and reads just the new posts — fast. <b>Full re-scan</b> re-reads every post's content and re-checks every webinar — slower; use it when a link breaks or a recording's video id changed. Each post is matched to its recording by the YouTube video it embeds.</div>
       </div>
       <input type="text" id="blogsite" autocomplete="off" spellcheck="false" placeholder="https://www.modelwaresystems.com" style="width:250px">
-      <button class="bcopy" id="blogrefresh">🔄 Refresh blog write-ups</button>
+      <button class="bcopy" id="blogrefresh" title="Fast: only webinars still missing a write-up, reading only posts new since the last scan">🔄 Quick scan</button>
+      <button class="bcopy" id="blogfullscan" title="Re-read every post's content and re-check every webinar — use when a link breaks or a recording's video id changed">⟳ Full re-scan</button>
       <span class="pgnote" id="blogstatus"></span>
     </div>
     <div id="blogreview" class="note" hidden style="margin:0 0 8px"></div>
@@ -6693,9 +6694,9 @@
 }</script>
 <script>
 /* ===== APP VERSION — bump on each release ===== */
-const APP_VERSION = 'v5.18';
-const BUILD_DATE  = '2026-11-26';   // auto-stamped at build time (never hand-typed)
-const BUILD_TIME  = '11:53 SAST';   // auto-stamped at build time (SAST)
+const APP_VERSION = 'v5.20';
+const BUILD_DATE  = '2026-11-27';   // auto-stamped at build time (never hand-typed)
+const BUILD_TIME  = '07:27 SAST';   // auto-stamped at build time (SAST)
 
 const VIDEOS = JSON.parse(document.getElementById('data').textContent);
 let AN = JSON.parse(document.getElementById('adata').textContent);
@@ -8639,13 +8640,16 @@ function renderProgressTodo(){
   // suggested matches first (highest confidence), then the rest newest-first
   list.sort((a,b)=>{ const sa=sugOf(a.VideoID), sb=sugOf(b.VideoID); const fa=sa?sa.f1:-1, fb=sb?sb.f1:-1; return (fb-fa) || String(b.Date||'').localeCompare(String(a.Date||'')); });
   const withSug=list.filter(r=>sugOf(r.VideoID)).length;
-  $('pgtodocount').textContent = `${list.length} missing a write-up · ${withSug} with a suggested match`;
+  const exactN=list.filter(r=>{ const d=sugOf(r.VideoID); return d && d.cls==='exact'; }).length;
+  $('pgtodocount').innerHTML = `${list.length} missing a write-up · ${withSug} with a suggested match`
+    + (exactN?` · <button class="linkbtn" id="useallexact">⚡ Use all ${exactN} exact match${exactN===1?'':'es'}</button>`:'');
   const badge=st=>{ st=String(st||'').toLowerCase(); const m={public:['pub','public'],unlisted:['un','unlisted'],private:['pv','private'],deleted:['pv','deleted']}[st]; return m?`<span class="pgbadge ${m[0]}">${m[1]}</span>`:''; };
   $('pgtodo').innerHTML = `<thead><tr><th>Webinar</th><th>Date</th><th>Status</th><th>Suggested write-up (from your blog)</th><th></th></tr></thead><tbody>`+
     (list.length? list.map(r=>{
       const d=sugOf(r.VideoID);
+      const conf = d ? (d.cls==='exact' ? 'exact ✓ post links this video' : (d.cls==='confident'?'confident '+(d.f1!=null?d.f1.toFixed(2):''):'near '+(d.f1!=null?d.f1.toFixed(2):''))) : '';
       const sug = d
-        ? `<a href="${esc(d.to)}" target="_blank" rel="noopener">${esc(d.postTitle||d.to)}</a> <span class="pgnote">(${d.cls==='confident'?'confident':'near'} ${d.f1!=null?d.f1.toFixed(2):''})</span> <button class="linkbtn tduse" data-id="${esc(r.VideoID)}">use</button>`
+        ? `<a href="${esc(d.to)}" target="_blank" rel="noopener">${esc(d.postTitle||d.to)}</a> <span class="pgnote">(${esc(conf)})</span> <button class="linkbtn tduse" data-id="${esc(r.VideoID)}">use</button>`
         : `<span class="pgnote">no match found — Refresh to check your site</span>`;
       return `<tr data-vid="${esc(r.VideoID||'')}">
         <td>${r.VideoID?`<a class="ytl" href="https://www.youtube.com/watch?v=${esc(r.VideoID)}" target="_blank" rel="noopener" title="Open on YouTube">▶</a> `:''}${esc(r.Webinar||'(untitled)')}</td>
@@ -8670,6 +8674,7 @@ $('pgtodo').addEventListener('click', e=>{
 ['pgscope','pggroupby'].forEach(id=>$(id).addEventListener('change', renderProgress));
 $('pgtodoq').addEventListener('input', renderProgressTodo);
 $('pgtodopub').addEventListener('change', renderProgressTodo);
+if($('view-progress')) $('view-progress').addEventListener('click', e=>{ if(e.target.id==='useallexact') useAllExact(); });
 
 /* ===== Blog write-up refresh — reads your WordPress blog's REST API and fills Webinar Write-up ===== */
 const BLOG_SITE_KEY='moweb_blog_site', BLOG_CACHE_KEY='moweb_blog_cache';
@@ -8697,20 +8702,30 @@ function persistBlogDecisions(){ try{ store.set(BLOG_DEC_KEY, JSON.stringify(BLO
 const normU=u=>String(u||'').trim().replace(/\/+$/,'');
 const slugTset=u=>{ const m=String(u||'').match(/\/blog\/([^\/?#]+)/i); return m? new Set(bToks(m[1].replace(/-/g,' '))) : new Set(); };
 function f1Of(wt,tset){ if(!tset.size||!wt.size) return 0; let inter=0; wt.forEach(w=>{ if(tset.has(w)) inter++; }); if(!inter) return 0; const prec=inter/tset.size, rec=inter/wt.size; return 2*prec*rec/(prec+rec); }
+// A blog post embeds / links the YouTube recording of its webinar — a definitive post↔video tie, stronger than
+// any title match (and it resolves the role-variant titles that token matching can't tell apart). Pull the first
+// 11-char YouTube id out of the post's rendered HTML (iframe embed, youtu.be, watch?v=, /embed/, /shorts/, /live/).
+const YT_ID_RE=/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?[^"'<>\s]*?v=|embed\/|v\/|shorts\/|live\/))([A-Za-z0-9_-]{11})/i;
+function extractVid(html){ const m=String(html||'').match(YT_ID_RE); return m?m[1]:''; }
 
 // Scan every record (blank AND filled): propose blank fills + flag existing-link mismatches.
-function matchBlogsDetailed(posts){
-  const P=posts.map(p=>({link:p.link, title:p.title||p.slug||'', tset:new Set(bToks(p.title||p.slug||''))})).filter(p=>p.tset.size);
-  const byLink={}; P.forEach(p=>byLink[normU(p.link)]=p);
-  const proposals=[]; let noMatch=0, confirmed=0, sentinel=0;
+// Primary signal = the post that EMBEDS this video (exact); fallback = title-token match.
+function matchBlogsDetailed(posts, opts){
+  const mode=(opts&&opts.mode)||'complete';
+  const P=posts.map(p=>({link:p.link, title:p.title||p.slug||'', vid:p.vid||'', tset:new Set(bToks(p.title||p.slug||''))}));
+  const byLink={}; P.forEach(p=>{ if(p.tset.size) byLink[normU(p.link)]=p; });
+  const postByVid={}; P.forEach(p=>{ if(p.vid && !postByVid[p.vid]) postByVid[p.vid]=p; });   // first post claiming a video wins
+  const proposals=[]; let noMatch=0, confirmed=0, sentinel=0, exactCount=0;
   (RECORDS||[]).forEach(r=>{
     if(!r.VideoID) return;
     const cur=String(r.Webinar_Writeup||'').trim();
     if(SENTINEL_RE.test(cur)){ sentinel++; return; }                 // leave "No Article Required" etc.
-    const wt=new Set(bToks(r.Webinar||'')); if(!wt.size){ noMatch++; return; }
+    if(cur && mode==='quick'){ confirmed++; return; }                // quick scan overlooks webinars already matched (locked in)
+    const exact = postByVid[r.VideoID];                              // the post whose HTML links THIS recording
+    const wt=new Set(bToks(r.Webinar||''));
     const sns=new Set(bSurnames(r.Author));
     let best=null;
-    for(const p of P){
+    if(wt.size) for(const p of P){ if(!p.tset.size) continue;
       let inter=0; wt.forEach(w=>{ if(p.tset.has(w)) inter++; }); if(inter<2) continue;
       const prec=inter/p.tset.size, rec=inter/wt.size, f1=2*prec*rec/(prec+rec);
       const subset=rec===1; let authorHit=false; sns.forEach(s=>{ if(p.tset.has(s)) authorHit=true; });
@@ -8719,20 +8734,28 @@ function matchBlogsDetailed(posts){
     }
     const confidentBest = best && (best.f1>=0.85 || (best.rec===1 && best.prec>=0.85));
     const nearBest = best && !confidentBest && (best.f1>=0.60 || (best.subset&&best.inter>=3) || (best.authorHit&&best.f1>=0.45));
+    if(exact) exactCount++;
     if(!cur){
-      if(confidentBest) proposals.push({id:r.VideoID, action:'fill', cls:'confident', from:'', to:best.p.link, postTitle:best.p.title, f1:best.f1, title:r.Webinar||''});
+      if(exact) proposals.push({id:r.VideoID, action:'fill', cls:'exact', from:'', to:exact.link, postTitle:exact.title, f1:1, title:r.Webinar||''});
+      else if(confidentBest) proposals.push({id:r.VideoID, action:'fill', cls:'confident', from:'', to:best.p.link, postTitle:best.p.title, f1:best.f1, title:r.Webinar||''});
       else if(nearBest) proposals.push({id:r.VideoID, action:'fill', cls:'near', from:'', to:best.p.link, postTitle:best.p.title, f1:best.f1, title:r.Webinar||''});
       else noMatch++;
     } else {
-      // existing link → audit: a confident DIFFERENT post, while the current link matches the title poorly
-      const curPost=byLink[normU(cur)];
-      const curF1 = curPost ? f1Of(wt,curPost.tset) : f1Of(wt,slugTset(cur));
-      if(best && normU(best.p.link)!==normU(cur) && confidentBest && (curF1<0.6 || (best.f1-curF1)>=0.25)){
-        proposals.push({id:r.VideoID, action:'replace', cls:'mismatch', from:cur, to:best.p.link, postTitle:best.p.title, f1:best.f1, curF1, title:r.Webinar||''});
-      } else confirmed++;
+      const curNorm=normU(cur);
+      if(exact){
+        // definitive: the post that embeds this recording is the write-up
+        if(normU(exact.link)!==curNorm) proposals.push({id:r.VideoID, action:'replace', cls:'mismatch', exact:true, from:cur, to:exact.link, postTitle:exact.title, f1:1, curF1:0, title:r.Webinar||''});
+        else confirmed++;
+      } else {
+        const curPost=byLink[curNorm];
+        const curF1 = curPost ? f1Of(wt,curPost.tset) : f1Of(wt,slugTset(cur));
+        if(best && normU(best.p.link)!==curNorm && confidentBest && (curF1<0.6 || (best.f1-curF1)>=0.25)){
+          proposals.push({id:r.VideoID, action:'replace', cls:'mismatch', from:cur, to:best.p.link, postTitle:best.p.title, f1:best.f1, curF1, title:r.Webinar||''});
+        } else confirmed++;
+      }
     }
   });
-  return {proposals, noMatch, confirmed, sentinel};
+  return {proposals, noMatch, confirmed, sentinel, exactCount, postsWithVid:P.filter(p=>p.vid).length};
 }
 // Fold proposals into the register as PENDING suggestions — nothing auto-fills (Howard decides each in the worklist).
 // Blank-fill suggestions surface in the Progress worklist; existing-link mismatches surface in the audit register.
@@ -8743,8 +8766,8 @@ function reconcileProposals(res){
     const r=by[pr.id]; if(!r) return;
     const dec=BLOG_DECISIONS[pr.id] || {rejectedUrls:[]};
     if((dec.rejectedUrls||[]).some(u=>normU(u)===normU(pr.to))) return;     // this exact proposal was rejected before
-    BLOG_DECISIONS[pr.id]=Object.assign(dec,{action:pr.action,cls:pr.cls,from:pr.from,to:pr.to,postTitle:pr.postTitle,f1:pr.f1,curF1:pr.curF1,title:pr.title,status:'pending',ts:Date.now()});
-    if(pr.cls==='mismatch') pendingMismatch++; else if(pr.cls==='confident') pendingConfident++; else pendingNear++;
+    BLOG_DECISIONS[pr.id]=Object.assign(dec,{action:pr.action,cls:pr.cls,exact:pr.exact||false,from:pr.from,to:pr.to,postTitle:pr.postTitle,f1:pr.f1,curF1:pr.curF1,title:pr.title,status:'pending',ts:Date.now()});
+    if(pr.cls==='mismatch') pendingMismatch++; else if(pr.cls==='exact'||pr.cls==='confident') pendingConfident++; else pendingNear++;
   });
   persistBlogDecisions();
   return {pendingConfident, pendingNear, pendingMismatch};
@@ -8756,6 +8779,15 @@ function markNotRequired(id){
   const dec=BLOG_DECISIONS[id] || {};
   BLOG_DECISIONS[id]=Object.assign(dec,{action:'na',cls:'na',status:'na',from:'',to:'No Article Required',title:r.Webinar||'',ts:Date.now()});
   persistBlogDecisions(); renderProgress(); render(); if(dataRendered) drawRows();
+}
+// Fill every pending EXACT (post-embeds-this-video) suggestion into its blank record in one click.
+function useAllExact(){
+  let n=0;
+  Object.keys(BLOG_DECISIONS).forEach(id=>{ const d=BLOG_DECISIONS[id];
+    if(d && d.action==='fill' && d.status==='pending' && d.cls==='exact'){ const r=recOf(id);
+      if(r && !String(r.Webinar_Writeup||'').trim()){ r.Webinar_Writeup=d.to; d.status='approved'; n++; } }
+  });
+  if(n){ persistBlogDecisions(); renderProgress(); render(); if(dataRendered) drawRows(); if(typeof cstatus==='function') cstatus(`Filled ${n} exact write-up match${n===1?'':'es'} from the blog.`,'ok'); }
 }
 function resolveBlogDecision(id, approve){
   const dec=BLOG_DECISIONS[id], r=recOf(id); if(!dec) return;
@@ -8776,7 +8808,7 @@ function blogReviewCsv(){
 }
 function decTable(list, titleOf, showCur){
   return `<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left">YouTube title</th>${showCur?'<th style="text-align:left">Current link (looks wrong)</th>':''}<th style="text-align:left">Proposed blog post</th><th>F1</th><th></th></tr></thead><tbody>`
-    + list.map(d=>`<tr data-id="${esc(d.id)}"><td>${esc(titleOf[d.id]||d.title||d.id)}</td>${showCur?`<td style="color:#b06a10;word-break:break-all">${esc(String(d.from||'').replace(/^https?:\/\/[^\/]+/,''))}</td>`:''}<td><a href="${esc(d.to)}" target="_blank" rel="noopener">${esc(d.postTitle||d.to)}</a></td><td style="text-align:center">${d.f1!=null?d.f1.toFixed(2):''}</td><td style="white-space:nowrap"><button class="linkbtn blogok" data-id="${esc(d.id)}">approve</button> · <button class="linkbtn blogno" data-id="${esc(d.id)}">reject</button></td></tr>`).join('')
+    + list.map(d=>`<tr data-id="${esc(d.id)}"><td>${esc(titleOf[d.id]||d.title||d.id)}</td>${showCur?`<td style="color:#b06a10;word-break:break-all">${esc(String(d.from||'').replace(/^https?:\/\/[^\/]+/,''))}</td>`:''}<td><a href="${esc(d.to)}" target="_blank" rel="noopener">${esc(d.postTitle||d.to)}</a></td><td style="text-align:center">${d.exact?'<span title="the post embeds this exact recording">exact ✓</span>':(d.f1!=null?d.f1.toFixed(2):'')}</td><td style="white-space:nowrap"><button class="linkbtn blogok" data-id="${esc(d.id)}">approve</button> · <button class="linkbtn blogno" data-id="${esc(d.id)}">reject</button></td></tr>`).join('')
     + `</tbody></table>`;
 }
 function renderDecisionRegister(){
@@ -8789,47 +8821,54 @@ function renderDecisionRegister(){
   if(!mis.length && !misResolved && !anyDecision){ el.hidden=true; el.innerHTML=''; return; }
   let html=`<b>📋 Existing-link audit</b> — <b>${mis.length}</b> possible mismatch${mis.length===1?'':'es'} pending${misResolved?` · ${misResolved} resolved`:''}.`;
   if(mis.length){
-    html+=`<p style="margin:8px 0 4px">The current link matches the title poorly and a more confident post was found. Approve to replace it (removes the old link, adds the new); reject to keep the current link:</p>`+decTable(mis, titleOf, true);
+    html+=`<p style="margin:8px 0 4px">The current link looks wrong — either the post that embeds this recording is a different URL (<b>exact ✓</b>), or the current link matches the title poorly and a more confident post was found. Approve to replace it (removes the old link, adds the new); reject to keep the current link:</p>`+decTable(mis, titleOf, true);
   } else html+=` <span style="color:#1a7f37">No pending mismatches on the already-filled links.</span>`;
   html+=`<p style="margin:8px 0 0"><button class="linkbtn" id="blogcsv">⤓ Download decision register (CSV)</button> · decisions are saved and travel in ☁ Team.</p>`;
   el.innerHTML=html; el.hidden=false;
 }
 function blogStatus(msg,cls){ const el=$('blogstatus'); if(el){ el.textContent=msg; el.style.color = cls==='err'?'#c0362c':(cls==='ok'?'#1a7f37':'var(--muted)'); } }
-async function refreshBlog(){
+// Post→video cache so scans are incremental: a Full re-scan reads every post's content and extracts the embedded
+// YouTube id; a Quick scan reuses this cache and fetches content only for posts that are NEW since last time.
+const BLOG_POSTS_KEY='moweb_blog_posts';
+let BLOG_POSTS=[];   // [{slug, link, title, vid}]
+function loadBlogPosts(){ try{ const a=JSON.parse(store.get(BLOG_POSTS_KEY)||'null'); if(Array.isArray(a)) BLOG_POSTS=a; }catch(e){} }
+function saveBlogPosts(){ try{ store.set(BLOG_POSTS_KEY, JSON.stringify(BLOG_POSTS)); }catch(e){} }
+async function blogFetchJson(url){ const r=await fetch(url,{headers:{'Accept':'application/json'}}); if(r.status===400) return null; if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
+async function blogFetchList(site){ const out=[]; for(let page=1;page<=30;page++){ const arr=await blogFetchJson(site+'/wp-json/wp/v2/posts?per_page=100&page='+page+'&_fields=id,slug,link,title'); if(!arr||!arr.length) break; arr.forEach(p=>out.push({id:p.id, slug:p.slug, link:p.link, title:(p.title&&p.title.rendered)||p.slug})); if(arr.length<100) break; } return out; }
+async function blogFetchVids(site, ids){ const map={}; for(let i=0;i<ids.length;i+=100){ const arr=await blogFetchJson(site+'/wp-json/wp/v2/posts?include='+ids.slice(i,i+100).join(',')+'&per_page=100&_fields=id,content'); (arr||[]).forEach(p=>{ map[p.id]=extractVid((p.content&&p.content.rendered)||''); }); blogStatus('Reading post content for video links… '+Math.min(i+100,ids.length)+'/'+ids.length); } return map; }
+
+async function refreshBlog(mode){
   const site=($('blogsite').value||DEFAULT_BLOG_SITE).trim().replace(/\/+$/,'');
   store.set(BLOG_SITE_KEY, site);
-  const btn=$('blogrefresh'); btn.disabled=true;
-  blogStatus('Reading your website’s blog…');
+  const complete = mode==='complete' || !BLOG_POSTS.length;         // first run (empty cache) behaves as a full scan
+  const b1=$('blogrefresh'), b2=$('blogfullscan'); if(b1) b1.disabled=true; if(b2) b2.disabled=true;
+  blogStatus(complete ? 'Full re-scan — reading every post…' : 'Quick scan — checking for new posts…');
   try{
-    const posts=[];
-    for(let page=1; page<=20; page++){
-      const url=site+'/wp-json/wp/v2/posts?per_page=100&page='+page+'&_fields=slug,link,title';
-      const r=await fetch(url,{headers:{'Accept':'application/json'}});
-      if(r.status===400) break;                    // WordPress returns 400 past the last page
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      const arr=await r.json();
-      if(!Array.isArray(arr) || !arr.length) break;
-      arr.forEach(p=>posts.push({link:p.link, slug:p.slug, title:(p.title&&p.title.rendered)||p.slug}));
-      blogStatus('Reading your website’s blog… '+posts.length+' posts');
-      if(arr.length<100) break;
-    }
-    if(!posts.length) throw new Error('No blog posts returned by the site.');
-    const res=matchBlogsDetailed(posts);
-    const rc=reconcileProposals(res);               // auto-fill confident blanks; log near + mismatch to the register
+    const list=await blogFetchList(site);
+    if(!list.length) throw new Error('No blog posts returned by the site.');
+    const cacheBySlug={}; BLOG_POSTS.forEach(p=>cacheBySlug[p.slug]=p);
+    let vidMap={}, newCount=0;
+    if(complete){ newCount=list.length; vidMap=await blogFetchVids(site, list.map(p=>p.id)); }
+    else { const need=list.filter(p=>!cacheBySlug[p.slug]); newCount=need.length; if(need.length) vidMap=await blogFetchVids(site, need.map(p=>p.id)); }
+    const posts=list.map(p=>{ const c=cacheBySlug[p.slug]; const vid = complete ? (vidMap[p.id]||'') : (c ? c.vid : (vidMap[p.id]||'')); return {slug:p.slug, link:p.link, title:p.title, vid}; });
+    BLOG_POSTS=posts.map(p=>({slug:p.slug, link:p.link, title:p.title, vid:p.vid})); saveBlogPosts();
+    const res=matchBlogsDetailed(posts, {mode: complete?'complete':'quick'});
+    const rc=reconcileProposals(res);
     blogStamp=new Date().toISOString();
     store.set(BLOG_CACHE_KEY, JSON.stringify({stamp:blogStamp, site, count:posts.length}));
     renderDecisionRegister();
     renderProgress(); render(); if(dataRendered) drawRows();   // render() refreshes the 📝 Post clips on the Catalog
     const sugg=rc.pendingConfident+rc.pendingNear;
-    blogStatus(`✓ ${sugg} suggestion${sugg===1?'':'s'} for missing write-ups (${rc.pendingConfident} confident) · ${rc.pendingMismatch} existing-link mismatch${rc.pendingMismatch===1?'':'es'} to review · scanned ${posts.length} posts · ${new Date(blogStamp).toLocaleString()}`,'ok');
+    blogStatus(`✓ ${complete?'Full re-scan':'Quick scan'}: ${sugg} suggestion${sugg===1?'':'s'} for missing write-ups (${rc.pendingConfident} exact/confident)${complete?` · ${rc.pendingMismatch} existing-link mismatch${rc.pendingMismatch===1?'':'es'}`:''} · ${posts.length} posts (${newCount} ${complete?'read':'new'}), ${res.postsWithVid} link a video · ${new Date(blogStamp).toLocaleString()}`,'ok');
   }catch(err){
     let m=(err&&err.message)||String(err);
     if(/Failed to fetch|NetworkError|Load failed|CORS/i.test(m))
       m='could not reach the site from this page (browser CORS/origin block). Open this HTML from your own website domain or http://localhost so the browser allows the request.';
-    blogStatus('Refresh failed — '+m,'err');
-  }finally{ btn.disabled=false; }
+    blogStatus('Scan failed — '+m,'err');
+  }finally{ const b1=$('blogrefresh'), b2=$('blogfullscan'); if(b1) b1.disabled=false; if(b2) b2.disabled=false; }
 }
-$('blogrefresh').onclick=refreshBlog;
+$('blogrefresh').onclick=()=>refreshBlog('quick');
+$('blogfullscan').onclick=()=>refreshBlog('complete');
 if($('blogreview')) $('blogreview').addEventListener('click', e=>{
   const ok=e.target.closest('.blogok'); if(ok){ resolveBlogDecision(ok.dataset.id, true); return; }
   const no=e.target.closest('.blogno'); if(no){ resolveBlogDecision(no.dataset.id, false); return; }
@@ -8837,6 +8876,7 @@ if($('blogreview')) $('blogreview').addEventListener('click', e=>{
 });
 (function initBlog(){ let site=DEFAULT_BLOG_SITE; try{ site=store.get(BLOG_SITE_KEY)||DEFAULT_BLOG_SITE; }catch(e){} $('blogsite').value=site; })();
 loadBlogDecisions();   // the register is the record of past decisions; filled URLs already live on RECORDS (persisted)
+loadBlogPosts();       // the post→video cache lets Quick scan skip re-reading unchanged posts
 (function loadBlogCache(){
   try{ const c=JSON.parse(store.get(BLOG_CACHE_KEY)||'null'); if(c) blogStamp=c.stamp||null; }catch(e){}
   blogStatus(blogStamp ? ('Blog write-ups last refreshed '+new Date(blogStamp).toLocaleString()) : 'Blog write-ups are pre-filled from the last review — click Refresh to re-check your website for new posts.');

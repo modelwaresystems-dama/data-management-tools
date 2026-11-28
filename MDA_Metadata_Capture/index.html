@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="1.1.0">
+<meta name="version" content="1.2.0">
 <title>MDA Metadata Capture — Digital Zambia Acceleration Project</title>
 <style>
   :root{
@@ -151,6 +151,19 @@
   #tourCard .tc-close{position:absolute;top:7px;right:10px;border:none;background:none;color:#8a99a8;font-size:20px;padding:0;line-height:1}
   body.touring{overflow:hidden}
   @media print{.tourbar{display:none!important}}
+  /* ---- watch-a-walkthrough gallery ---- */
+  .gifgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px}
+  .gifcard{display:flex;align-items:center;gap:10px;text-align:left;background:#f4f8fc;border:1px solid #d3e2f0;border-radius:9px;padding:11px 13px;cursor:pointer;color:#13395e;font-weight:600;font-size:13px}
+  .gifcard:hover{background:#e7f1fa;border-color:#b9d4ec}
+  .gifplay{width:26px;height:26px;flex:none;border-radius:50%;background:#13395e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;padding-left:2px}
+  #gifLightbox{position:fixed;inset:0;z-index:9500;background:rgba(10,20,34,.82);display:none;align-items:center;justify-content:center;padding:26px}
+  .gifbox{background:#fff;border-radius:12px;padding:14px;max-width:94vw;max-height:94vh;display:flex;flex-direction:column;gap:10px;position:relative;box-shadow:0 16px 46px rgba(0,0,0,.5)}
+  .gifbox img{max-width:90vw;max-height:78vh;border:1px solid var(--line);border-radius:6px;display:block;background:#f3f6f9}
+  .gifclose{position:absolute;top:-14px;right:-14px;width:32px;height:32px;border-radius:50%;border:none;background:#13395e;color:#fff;font-size:18px;cursor:pointer;line-height:1}
+  .giffoot{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .giffoot span{font-size:12.5px;color:var(--muted);font-weight:600}
+  .giffoot button{font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;color:#13395e;border-radius:7px;padding:6px 13px;cursor:pointer}
+  @media print{#gifLightbox{display:none!important}.gifgrid{display:none}}
 </style>
 </head>
 <body>
@@ -188,6 +201,13 @@
 <div class="toast" id="toast"></div>
 <input type="file" id="fileInput" accept=".json" style="display:none" onchange="onFilePicked(event)">
 <div id="tourBlocker"></div><div id="tourRing"></div><div id="tourCard"></div>
+<div id="gifLightbox" onclick="if(event.target.id==='gifLightbox')closeGif()">
+  <div class="gifbox">
+    <button class="gifclose" title="Close" onclick="closeGif()">×</button>
+    <img id="gifImg" alt="Walkthrough recording">
+    <div class="giffoot"><button onclick="gifNav(-1)">‹ Prev</button><span id="gifCap"></span><button onclick="gifNav(1)">Next ›</button></div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -195,7 +215,7 @@
    MDA METADATA CAPTURE  —  self-contained capture app for the MDA Metadata Pack
    Version source of truth = <meta name="version">.  Build stamp below.
    ========================================================================== */
-const APP_BUILD = "2026-11-27";
+const APP_BUILD = "2026-11-28";
 const APP_VERSION = document.querySelector('meta[name="version"]').content;
 document.getElementById('appVersion').textContent = APP_VERSION;
 document.getElementById('appVersionFt').textContent = APP_VERSION;
@@ -746,6 +766,7 @@ function pageInstructions(){
  return `
  <div class="page-h"><h2>Welcome — MDA Metadata Capture</h2></div>
  <p class="lead">Capture the metadata an assessor needs for each dataset your institution nominates for the Digital Zambia readiness assessment. You describe the dataset and its metadata — you do not send the raw data itself; a safe, masked sample is enough. One pack can hold several datasets.</p>
+ ${watchPanel()}
  <div class="infobox"><h4>How to work through it</h4>
    <p>1. Fill <b>00 Transmittal</b> once for your MDA. &nbsp; 2. List each dataset in <b>01 Nominations</b>. &nbsp;
    3. For each dataset complete <b>02 Dataset Metadata</b> (Parts A–D) and the supporting tabs <b>03, 05–09, 11</b>. &nbsp;
@@ -1414,6 +1435,35 @@ const TOURS={
    {tab:'12',sel:'.page-h',title:'12 Subject Areas',body:'Reference only — the governed vocabulary of 14 domains and 95 subject areas that drives the Part D dropdowns. Green marks the domains in the current pilot scope.'}
  ]}
 };
+
+// ---- Watch-a-walkthrough gallery (plays the recorded GIFs in help/) ----
+const GIF_TOURS=[
+ {slug:'00_transmittal',label:'00 · Transmittal'},
+ {slug:'01_nominations',label:'01 · Nominations'},
+ {slug:'02A_partA',label:'02 · Part A (D1–D13)'},
+ {slug:'02B_partB',label:'02 · Part B (M1–M10)'},
+ {slug:'02C_partC',label:'02 · Part C (C1–C5)'},
+ {slug:'02D_partD',label:'02 · Part D (catalog)'},
+ {slug:'03_schema',label:'03 · Schema & Dictionary'},
+ {slug:'05_classification',label:'05 · Classification'},
+ {slug:'06_evidence',label:'06 · Evidence Index'},
+ {slug:'07_lineage',label:'07 · Lineage'},
+ {slug:'08_provenance',label:'08 · Provenance'},
+ {slug:'09_glossary',label:'09 · Glossary'},
+ {slug:'11_masterdata',label:'11 · Master Data'}
+];
+function watchPanel(){
+ const cards=GIF_TOURS.map((g,i)=>`<button class="gifcard" onclick="openGif(${i})"><span class="gifplay">▶</span><span>${esc(g.label)}</span></button>`).join('');
+ return `<div class="card"><h3 style="color:#13395e">▶ Watch a walkthrough</h3>
+   <p class="lead" style="margin-bottom:10px">Short recorded walkthroughs of each section — watch before you start. Each shows the fields being filled in with the worked Taxpayer Register (TPIN) example. Or use <b>Walk me through</b> on any tab for the live, interactive version.</p>
+   <div class="gifgrid">${cards}</div></div>`;
+}
+let gifIdx=0;
+function openGif(i){gifIdx=i;renderGif();document.getElementById('gifLightbox').style.display='flex';}
+function closeGif(){document.getElementById('gifLightbox').style.display='none';document.getElementById('gifImg').src='';}
+function gifNav(d){gifIdx=(gifIdx+d+GIF_TOURS.length)%GIF_TOURS.length;renderGif();}
+function renderGif(){const g=GIF_TOURS[gifIdx];document.getElementById('gifImg').src='help/MDA_tour_'+g.slug+'.gif';document.getElementById('gifCap').textContent=g.label+'  ('+(gifIdx+1)+' / '+GIF_TOURS.length+')';}
+window.addEventListener('keydown',e=>{if(document.getElementById('gifLightbox').style.display!=='flex')return;if(e.key==='Escape')closeGif();else if(e.key==='ArrowRight')gifNav(1);else if(e.key==='ArrowLeft')gifNav(-1);});
 
 function startTour(id){
  const t=TOURS[id];if(!t)return;

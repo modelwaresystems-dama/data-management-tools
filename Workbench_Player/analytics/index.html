@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.23.1">
-<meta name="build" content="2026-11-28 14:44 SAST">
+<meta name="version" content="1.23.2">
+<meta name="build" content="2026-11-28 14:54 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -1729,6 +1729,12 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   function pctNumUI(s){ var n=Number(String(s).replace(/[^0-9.]/g,"")); return isFinite(n)?n:null; }
   function ratioUI(a,b){ a=Number(a); b=Number(b); if(!isFinite(a)||!isFinite(b)||b===0) return null; return a/b*100; }
 
+  async function pMap(items, limit, fn){
+    var ret=new Array(items.length), idx=0;
+    async function worker(){ while(idx<items.length){ var i=idx++; ret[i]=await fn(items[i], i); } }
+    var ws=[]; for(var w=0; w<Math.min(limit, items.length); w++) ws.push(worker());
+    await Promise.all(ws); return ret;
+  }
   async function computeCohortSES(cohort){
     try{
       var entry=(state.map||{})[cohort]; if(entry==null) entry=cohort;
@@ -1772,17 +1778,22 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
 
       var completions={}, attempts={}, compErr=null, attErr=null;
       function moodleErr(o){ return (o&&(o.exception||o.errorcode))?(o.message||o.errorcode||'Moodle error'):null; }
-      for(var i=0;i<students.length;i++){ var uid=students[i].id;
-        setStatus('Computing SES — student '+(i+1)+'/'+students.length+'…', true);
+      // Skip students who have never accessed the course (nothing to fetch), and pull the rest with
+      // bounded concurrency instead of one-at-a-time — the old sequential loop did students x quizzes
+      // round-trips and was the refresh bottleneck.
+      var _done=0, _toPull=0; students.forEach(function(s){ if(s.lastaccess) _toPull++; });
+      await pMap(students, 6, async function(stu){
+        var uid=stu.id; attempts[uid]={};
+        if(!stu.lastaccess){ completions[uid]={statuses:[]}; return; }
         completions[uid]=await fetchJSON(MOODLE+"?fn=completion&courseid="+encodeURIComponent(courseid)+"&userid="+uid).catch(function(){ return {statuses:[]}; });
         if(!compErr) compErr=moodleErr(completions[uid]);
-        attempts[uid]={};
         for(var j=0;j<quizzes.length;j++){ var qid=quizzes[j].id;
           var aw=await fetchJSON(MOODLE+"?fn=attempts&quizid="+encodeURIComponent(qid)+"&userid="+uid).catch(function(){ return {}; });
           if(!attErr) attErr=moodleErr(aw);
           attempts[uid][qid]=(aw&&aw.attempts)||[];
         }
-      }
+        _done++; setStatus('Computing SES — '+_done+'/'+_toPull+' active…', true);
+      });
 
       var discussions=[], postsByDisc={}, hasForums=false;
       try{

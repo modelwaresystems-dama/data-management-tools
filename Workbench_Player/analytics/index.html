@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.22.0">
-<meta name="build" content="2026-11-28 10:52 SAST">
+<meta name="version" content="1.23.1">
+<meta name="build" content="2026-11-28 14:44 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -151,7 +151,7 @@
   <dialog id="moodleDlg">
     <div class="dlg-h">Moodle — map cohorts to courses</div>
     <div class="dlg-b" id="moodleBody">
-      <p class="muted" style="margin-top:0;font-size:13.5px">For each cohort pick its Moodle <b>course</b> and the <b>group</b> that defines the cohort (its members are the registered students — enrolled-but-not-in-group people are excluded). Pulls enrolment (<code class="k">core_enrol_get_enrolled_users</code>), grades (<code class="k">gradereport_user_get_grade_items</code>) and group members (<code class="k">core_group_get_group_members</code>) through your Worker's <code class="k">/moodle</code> route. The band thresholds below drive the Assessment charts.</p>
+      <p class="muted" style="margin-top:0;font-size:13.5px">For each cohort pick its Moodle <b>course</b> and the <b>group</b> that defines the cohort (its members are the registered students — enrolled-but-not-in-group people are excluded). Pulls enrolment (<code class="k">core_enrol_get_enrolled_users</code>) and grades (<code class="k">gradereport_user_get_grade_items</code>) through your Worker's <code class="k">/moodle</code> route, and scopes to the chosen group from each member's enrolment group membership. The band thresholds below drive the Assessment charts.</p>
       <div id="mapRows"></div>
       <div class="subh" style="margin-top:14px">Certification bands (%)</div>
       <div class="maprow" style="grid-template-columns:repeat(4,1fr)">
@@ -677,6 +677,17 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     }catch(e){}
     state.certs=certs;
   }
+  async function loadCohortStatus(){
+    var st={};
+    try{
+      var j=null;
+      if(ASSET){ try{ j=await fetchJSON(ASSET+"?path=analytics/cohort-status.json"); }catch(e){} }
+      if(!j){ try{ var r=await ghGet(DATA_PREFIX+"analytics/cohort-status.json"); j=r&&r.json; }catch(e){} }
+      if(j){ st=j.status||j||{}; }
+    }catch(e){}
+    state.cohortStatus=st;
+    try{ var cc=localStorage.getItem('ds_cohort_collapse'); if(cc) state.cohortCollapse=JSON.parse(cc); }catch(e){}
+  }
   async function load(){
     setStatus('Loading saved sessions…', true);
     try{
@@ -697,6 +708,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     }
     await loadClasses();
     await loadCertificates();
+    await loadCohortStatus();
     var n=CORE.normalize(state.records); state.facts=n.facts; state.runs=n.runs;
     buildFilters(); render();
   }
@@ -819,23 +831,58 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       '<div class="scroll"><table><thead><tr><th>Quiz</th><th>Cohort</th><th>Date</th><th class="num">Players</th><th class="num">Engagement</th><th class="num">Score</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'+trend;
   }
 
+  function cohortDate(c){ var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(c||''); return m? new Date(+m[1],+m[2]-1,+m[3]) : null; }
+  function mondayOf(d){ var x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); var k=(x.getDay()+6)%7; x.setDate(x.getDate()-k); x.setHours(0,0,0,0); return x; }
+  function cohortGroupKey(c){
+    if(state.cohortStatus && state.cohortStatus[c] && state.cohortStatus[c].completed) return 'history';
+    var d=cohortDate(c); if(!d) return 'cur';
+    var tM=mondayOf(new Date()); var nM=new Date(tM); nM.setDate(nM.getDate()+7);
+    if(d>=nM) return 'next'; if(d>=tM) return 'cur'; return 'history';
+  }
   function viewCohorts(f){
     var list=CORE.cohorts(f); var seen={}; list.forEach(function(c){ seen[c.cohort]=1; });
     Object.keys(state.map||{}).forEach(function(co){ if(!seen[co]){ seen[co]=1; list.push({cohort:co, course:'–', nStudents:0, nQuizzes:0, engagement:null, score:null}); } });
     (state.classesList||[]).forEach(function(co){ if(!seen[co]){ seen[co]=1; list.push({cohort:co, course:'–', nStudents:0, nQuizzes:0, engagement:null, score:null}); } });
-    var rows=list.map(function(c){
+    function rowHtml(c){
       var mc=(state.moodleData.cohorts||{})[c.cohort];
       var refresh = (mc && mc.refreshedAt) ? (esc(lastRefreshStr(c.cohort))+(mc.inRepo?' <span style="color:var(--good)" title="saved in '+esc((mc.repoPath||'').split('/').pop())+'">✓</span>':'')) : '<span class="faint">never</span>';
+      var comp=!!(state.cohortStatus && state.cohortStatus[c.cohort] && state.cohortStatus[c.cohort].completed);
+      var ctl='<button class="cohort-complete" data-cohort="'+esc(c.cohort)+'" title="'+(comp?'Completed — click to reopen':'Mark completed')+'" style="border:none;background:none;cursor:pointer;font-size:15px;line-height:1;color:'+(comp?'var(--good)':'var(--faint)')+'">'+(comp?'✔':'○')+'</button>';
       return '<tr data-pick-cohort="'+esc(c.cohort)+'" style="cursor:pointer" title="Click to work with this cohort across all tabs"><td class="name">'+esc(c.cohort)+'</td>'+
         '<td class="muted">'+esc(c.course||'–')+'</td>'+
         '<td class="num">'+c.nStudents+'</td>'+
         '<td class="num">'+c.nQuizzes+'</td>'+
         '<td class="num">'+engBar(c.engagement)+'</td>'+
         '<td class="num"><span class="chip '+band(c.score)+'">'+fmtPct(c.score)+'</span></td>'+
-        '<td class="muted" style="font-size:12.5px">'+refresh+'</td></tr>';
+        '<td class="muted" style="font-size:12.5px">'+refresh+'</td>'+
+        '<td class="num" style="text-align:center">'+ctl+'</td></tr>';
+    }
+    var groups={next:[],cur:[],history:[]};
+    list.forEach(function(c){ (groups[cohortGroupKey(c.cohort)]||groups.history).push(c); });
+    function byDateDesc(a){ a.sort(function(x,y){ return (x.cohort<y.cohort?1:(x.cohort>y.cohort?-1:0)); }); }
+    if(!state.cohortCollapse){ state.cohortCollapse={next:false,cur:false,history:true}; try{ var cc=localStorage.getItem('ds_cohort_collapse'); if(cc) state.cohortCollapse=JSON.parse(cc); }catch(e){} }
+    var thead='<thead><tr><th>Cohort</th><th>Course</th><th class="num">Students</th><th class="num">Quizzes</th><th class="num">Engagement</th><th class="num">Score</th><th>Last Moodle refresh</th><th class="num">Done</th></tr></thead>';
+    var meta=[['next','Next week'],['cur','This week'],['history','History']];
+    var sections=meta.map(function(m){
+      var key=m[0], arr=groups[key]||[]; byDateDesc(arr);
+      var coll=!!state.cohortCollapse[key];
+      var head='<div class="cohort-group" data-group="'+key+'" style="cursor:pointer;user-select:none;font-family:\'Sora\',sans-serif;font-size:14px;font-weight:600;margin:16px 0 4px;color:#237576">'+(coll?'▸':'▾')+' '+esc(m[1])+' <span class="muted" style="font-weight:400">· '+arr.length+'</span></div>';
+      if(coll) return head;
+      if(!arr.length) return head+'<p class="faint" style="margin:2px 0 8px">None.</p>';
+      return head+'<div class="scroll"><table>'+thead+'<tbody>'+arr.map(rowHtml).join("")+'</tbody></table></div>';
     }).join("");
-    return '<div class="panel"><h2>Cohorts</h2><p class="hint">Every cohort you have worked on — live-quiz engagement/score rolled up, plus the last Moodle refresh read from each cohort&#39;s JSON file in the repo. Pick a cohort and hit <b>↻ Refresh</b> (top right) to update it from Moodle.</p>'+
-      '<div class="scroll"><table><thead><tr><th>Cohort</th><th>Course</th><th class="num">Students</th><th class="num">Quizzes</th><th class="num">Engagement</th><th class="num">Score</th><th>Last Moodle refresh</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+    return '<div class="panel"><h2>Cohorts</h2><p class="hint">Grouped by training week. Click a group heading to collapse it; click the circle under <b>Done</b> to mark a cohort completed (it moves to History). Pick a cohort and hit <b>↻ Refresh</b> (top right) to update it from Moodle.</p>'+sections+'</div>';
+  }
+  async function toggleCohortComplete(cohort){
+    state.cohortStatus=state.cohortStatus||{};
+    var cur=state.cohortStatus[cohort]||{};
+    state.cohortStatus[cohort]={completed:!cur.completed, at:new Date().toISOString()};
+    render();
+    try{
+      var obj={updated:new Date().toISOString(), status:state.cohortStatus};
+      var prev=await ghGet(DATA_PREFIX+"analytics/cohort-status.json").catch(function(){ return {sha:null}; });
+      await ghPut(DATA_PREFIX+"analytics/cohort-status.json", obj, prev&&prev.sha, "Analytics: cohort status "+cohort);
+    }catch(e){ setStatus("Couldn’t save cohort status — "+esc(e.message||e), true); }
   }
 
   function viewMoodle(f){
@@ -1004,6 +1051,17 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     return ids;
   }
 
+  function groupMemberIdsFromEnrol(enrol, groupid, groupname){
+    if(!groupid) return null;
+    var gid=String(groupid), ids={}, anyGroups=false;
+    (Array.isArray(enrol)?enrol:[]).forEach(function(u){
+      var gs=u.groups||[];
+      if(gs.length) anyGroups=true;
+      gs.forEach(function(g){ if(String(g.id)===gid || (groupname && g.name===groupname)) ids[u.id]=1; });
+    });
+    if(!anyGroups) return null;
+    return ids;
+  }
   async function pullCohortMoodle(cohort){
     var entry=(state.map||{})[cohort]; if(entry==null) throw new Error("cohort not mapped");
     var courseid=mapCourseId(entry), groupid=mapGroupId(entry);
@@ -1011,14 +1069,14 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var enrol=await fetchJSON(MOODLE+"?fn=enroll&courseid="+encodeURIComponent(courseid));
     var grades=await fetchJSON(MOODLE+"?fn=grades&courseid="+encodeURIComponent(courseid)+"&userid=0").catch(function(){ return {}; });
     var byId=CORE.parseMoodleDetail(enrol, grades);
-    var memberIds = groupid? await fetchGroupMemberIds(groupid) : null;
+    var memberIds = groupid? groupMemberIdsFromEnrol(enrol, groupid, mapGroupName(entry)||cohort) : null;
     var courseName=cohort, courseCode="", teacher="";
     try{ var cj=await fetchJSON(MOODLE+"?fn=courses"); var list=Array.isArray(cj)?cj:(cj.courses||[]); var cc=list.find(function(c){ return String(c.id)===String(courseid); }); if(cc){ courseName=cc.fullname||cc.displayname||cc.shortname||cohort; courseCode=cc.idnumber||cc.shortname||""; } }catch(e){}
     (enrol||[]).forEach(function(u){ var roles=(u.roles||[]).map(function(r){return r.shortname;}); if(!teacher && (roles.indexOf("editingteacher")>=0||roles.indexOf("teacher")>=0)) teacher=u.fullname; });
     var all=Object.keys(byId).map(function(id){ return byId[id]; });
     var students=all.filter(function(u){ var r=u.roles||[]; return !r.length || r.indexOf("student")>=0; });
-    var enrolledCount=students.length;
     if(memberIds){ students=students.filter(function(u){ return memberIds[u.id]; }); }
+    var enrolledCount=students.length;
     students.sort(function(a,b){ return String(a.name||"").localeCompare(String(b.name||"")); });
     courseName=deEntity(courseName); courseCode=deEntity(courseCode); teacher=deEntity(teacher);
     students.forEach(function(s){ s.name=deEntity(s.name); (s.quizzes||[]).forEach(function(q){ q.name=deEntity(q.name); }); });
@@ -1678,7 +1736,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       if(!courseid){ throw new Error('No Moodle course mapped for '+cohort); }
       setStatus('Computing Student Effort Score — pulling enrolment…', true);
       var enroll=await fetchJSON(MOODLE+"?fn=enroll&courseid="+encodeURIComponent(courseid));
-      var memberIds = groupid? await fetchGroupMemberIds(groupid) : null;
+      var memberIds = groupid? groupMemberIdsFromEnrol(enroll, groupid, mapGroupName(entry)||cohort) : null;
       var students=(enroll||[]).filter(function(u){ var roles=u.roles||[]; return !roles.length || roles.some(function(r){ return r.shortname==="student"; }); })
         .filter(function(u){ return memberIds? !!memberIds[u.id] : true; })
         .map(function(u){ return {id:u.id, fullname:u.fullname, lastaccess:u.lastcourseaccess||u.lastaccess||0}; });
@@ -1810,7 +1868,11 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     }
     var note = courses ? '' : '<p class="muted" style="font-size:12.5px;margin-top:0">Course names could not load (the Worker <code class="k">/moodle</code> route is not deployed yet). Enter each cohort&#39;s Moodle course ID and group ID by hand &mdash; names fill in once the Worker is live. The map saves to <code class="k">data/analytics/moodle-config.json</code> in your repo.</p>';
     var tokenLine = hasToken() ? '' : '<div class="maprow" style="grid-template-columns:1fr"><label style="font-size:12px;color:var(--muted)">Repo token (Contents: read &amp; write) &mdash; the same one the Quiz Editor uses, stored only in this browser<input type="text" id="mdlToken" placeholder="paste fine-grained token to save the map" style="margin-top:4px"></label></div>';
-    rowsEl.innerHTML=note+cohortList.map(row).join("")+tokenLine;
+    var _active=[], _rest=[];
+    cohortList.forEach(function(co){ var mapped=!!mapCourseId(state.map[co]); var old=cohortGroupKey(co)==='history'; (mapped||old?_rest:_active).push(co); });
+    var _activeHtml=_active.length? _active.map(row).join("") : '<p class="muted" style="font-size:12.5px">All current cohorts are mapped — nothing needs attention.</p>';
+    var _restHtml=_rest.length? ('<div class="map-toggle" style="cursor:pointer;user-select:none;font-weight:600;color:#237576;margin:14px 0 6px"><span class="map-arrow">▸</span> Mapped &amp; older <span class="muted" style="font-weight:400">· '+_rest.length+'</span></div><div id="mapRest" style="display:none">'+_rest.map(row).join("")+'</div>') : '';
+    rowsEl.innerHTML=note+_activeHtml+_restHtml+tokenLine;
     var B=bandLines(); setVal('bMaster',B.master); setVal('bPract',B.practitioner); setVal('bAssoc',B.associate); setVal('bDanger',B.danger);
     if(courses){ cohortList.forEach(function(co){ var e=state.map[co]; if(mapCourseId(e)) fillGroupSelect(co, mapGroupId(e)); }); }
   }
@@ -1845,7 +1907,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       try{
         var enrol=await fetchJSON(MOODLE+"?fn=enroll&courseid="+encodeURIComponent(id));
         var grades=await fetchJSON(MOODLE+"?fn=grades&courseid="+encodeURIComponent(id)+"&userid=0").catch(function(){ return {}; });
-        var mids = gid? await fetchGroupMemberIds(gid) : null;
+        var mids = gid? groupMemberIdsFromEnrol(enrol, gid, mapGroupName(e)||keys[i]) : null;
         if(mids && Array.isArray(enrol)) enrol=enrol.filter(function(u){ return mids[u.id]; });
         if(mids && grades && Array.isArray(grades.usergrades)) grades={usergrades:grades.usergrades.filter(function(g){ return mids[g.userid]; })};
         var users=CORE.parseMoodleCourse(enrol, grades);
@@ -1861,6 +1923,9 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   // wire up
   document.addEventListener("click", function(e){
     var t=e.target.closest('.tab'); if(t){ state.tab=t.getAttribute('data-t'); syncTabs(); render(); return; }
+    var _ccx=e.target.closest && e.target.closest('.cohort-complete'); if(_ccx){ e.stopPropagation(); toggleCohortComplete(_ccx.getAttribute('data-cohort')); return; }
+    var _cgx=e.target.closest && e.target.closest('.cohort-group'); if(_cgx){ var _gk=_cgx.getAttribute('data-group'); state.cohortCollapse=state.cohortCollapse||{}; state.cohortCollapse[_gk]=!state.cohortCollapse[_gk]; try{ localStorage.setItem('ds_cohort_collapse', JSON.stringify(state.cohortCollapse)); }catch(_e){} render(); return; }
+    var _mt=e.target.closest && e.target.closest('.map-toggle'); if(_mt){ var _box=document.getElementById('mapRest'); var _ar=_mt.querySelector('.map-arrow'); if(_box){ var _willOpen=(_box.style.display==='none'); _box.style.display=_willOpen?'':'none'; if(_ar) _ar.textContent=_willOpen?'▾':'▸'; } return; }
     var cr=e.target.closest('[data-pick-cohort]'); if(cr){ selectCohort(cr.getAttribute('data-pick-cohort')); return; }
     if(e.target.closest && e.target.closest('#makeCerts')){ produceCertificates(); return; }
     if(e.target.closest && e.target.closest('#sponsorReportBtn')){ openSponsorReport(); return; }

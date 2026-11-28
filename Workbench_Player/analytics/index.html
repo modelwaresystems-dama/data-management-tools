@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.20.0">
-<meta name="build" content="2026-11-28 09:47 SAST">
+<meta name="version" content="1.22.0">
+<meta name="build" content="2026-11-28 10:52 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -142,6 +142,7 @@
       <div class="tab" data-t="assess">Assessment</div>
       <div class="tab" data-t="quizzes">Quizzes</div>
       <div class="tab" data-t="ses">Effort (SES)</div>
+      <div class="tab" data-t="certs">Certificates</div>
     </div>
 
     <div id="view"></div>
@@ -597,6 +598,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   var ASSET = cfg.assetApi || "";
   var SESSIONS = cfg.sessionsApi || (ASSET? ASSET.replace(/\/asset$/,"/sessions-index"):"");
   var MOODLE = cfg.moodleApi || (ASSET? ASSET.replace(/\/asset$/,"/moodle"):"");
+  var CERT_SERVE = cfg.certApi || (ASSET? ASSET.replace(/\/asset$/,"/cert"):"");
   var state = { records:[], facts:[], runs:[], tab:"cohorts", moodle:{} , map:{},
     bands:{ master:80, practitioner:70, associate:60, danger:40 },
     cohortDetail:{}, cohortSel:null, moodleData:{ cohorts:{} } };
@@ -665,6 +667,16 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     }catch(e){}
     state.classesList=names;
   }
+  async function loadCertificates(){
+    var certs=[];
+    try{
+      var j=null;
+      if(ASSET){ try{ j=await fetchJSON(ASSET+"?path=certificates/certificates.json"); }catch(e){} }
+      if(!j){ try{ var r=await ghGet(DATA_PREFIX+"certificates/certificates.json"); j=r&&r.json; }catch(e){} }
+      if(j){ certs=(j.certs||j||[]); if(!Array.isArray(certs)) certs=[]; }
+    }catch(e){}
+    state.certs=certs;
+  }
   async function load(){
     setStatus('Loading saved sessions…', true);
     try{
@@ -684,6 +696,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       setStatus('<b>Couldn\'t reach the backend</b> ('+esc(e.message)+') — showing bundled sample data so you can still see the layout.', true);
     }
     await loadClasses();
+    await loadCertificates();
     var n=CORE.normalize(state.records); state.facts=n.facts; state.runs=n.runs;
     buildFilters(); render();
   }
@@ -716,7 +729,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   }
 
   // Moodle-driven views (assess/quizzes/ses) manage their own data and can render with no live facts.
-  var MOODLE_TABS={ assess:1, quizzes:1, ses:1, moodle:1, cohorts:1 };
+  var MOODLE_TABS={ assess:1, quizzes:1, ses:1, moodle:1, cohorts:1, certs:1 };
   function render(){
     var f=currentFacts();
     renderKPIs(f);
@@ -730,6 +743,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     else if(state.tab==="assess") v.innerHTML=viewAssess();
     else if(state.tab==="quizzes") v.innerHTML=viewQuizzes();
     else if(state.tab==="ses") v.innerHTML=viewSES(f);
+    else if(state.tab==="certs") v.innerHTML=viewCertificates();
   }
 
   function viewStudents(f){
@@ -1555,6 +1569,55 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
       '<text x="'+x(45)+'" y="'+(H-6)+'" fill="var(--muted)" font-size="10">SES →</text>'+
       '<text x="4" y="30" fill="var(--muted)" font-size="10">grade ↑</text>'+pts+'</svg>';
   }
+  function viewCertificates(){
+    var certs=state.certs||[];
+    if(!certs.length){
+      return '<div class="panel"><h2>Certificates</h2><p class="hint">Certificates produced for your cohorts appear here. The registry lives at <code class="k">data/certificates/certificates.json</code> in the storage repo and is written when certificates are generated. None recorded yet.</p></div>';
+    }
+    var byCohort={};
+    certs.forEach(function(c,i){ c._i=i; var k=c.cohort||'—'; (byCohort[k]=byCohort[k]||[]).push(c); });
+    var blocks=Object.keys(byCohort).sort().map(function(k){
+      var list=byCohort[k];
+      var rows=list.map(function(c){
+        var dl=c.pdf?'<a class="btn primary" style="padding:3px 9px;font-size:12px" href="'+esc(c.pdf)+'" target="_blank" rel="noopener">Download PDF</a> ':'';
+        var open=c.canvaViewUrl?'<a class="btn" style="padding:3px 9px;font-size:12px" href="'+esc(c.canvaViewUrl)+'" target="_blank" rel="noopener">Open</a>':(c.pdf?'':'<span class="faint">–</span>');
+        var emS='<button class="btn cert-mail" style="padding:3px 9px;font-size:12px" data-i="'+c._i+'" data-who="student">Email student</button>';
+        var emL='<button class="btn cert-mail" style="padding:3px 9px;font-size:12px" data-i="'+c._i+'" data-who="ld">Email L&amp;D</button>';
+        return '<tr><td class="name">'+esc(c.student||'—')+'</td><td>'+esc(c.level||'—')+'</td><td class="num">'+esc(c.grade||'–')+'</td><td class="num faint">'+esc(c.issuedAt||'–')+'</td><td class="faint">'+esc(c.trainer||'–')+'</td><td style="white-space:nowrap">'+dl+open+' '+emS+' '+emL+'</td></tr>';
+      }).join("");
+      return '<h3 style="font-family:\'Sora\';font-size:15px;margin:18px 0 4px">'+esc(deEntity(k))+' <span class="muted" style="font-weight:400">· '+list.length+' certificate'+(list.length===1?'':'s')+'</span></h3><div class="scroll"><table><thead><tr><th>Student</th><th>Level</th><th class="num">Grade</th><th class="num">Issued</th><th>Trainer</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    }).join("");
+    return '<div class="panel"><h2>Certificates</h2><p class="hint">Certificates produced in Claude for your cohorts. <b>Download PDF</b> shows when the PDF is stored in the repo; <b>Open</b> goes to the live Canva design. <b>Email student</b> looks the student’s address up in Moodle and opens a pre-filled draft — attach the PDF before sending. <b>Email L&amp;D</b> uses <code class="k">certificates/sponsors.json</code> (company → L&amp;D email) when present.</p>'+blocks+'</div>';
+  }
+  async function resolveMoodleEmail(cohort, student){
+    try{
+      state.certEmails=state.certEmails||{};
+      var key=CORE.nameKey(student);
+      if(state.certEmails[key]!=null) return state.certEmails[key];
+      var entry=(state.map||{})[cohort]; if(entry==null) entry=cohort;
+      var courseid=mapCourseId(entry); if(!courseid){ return ''; }
+      var enrol=await fetchJSON(MOODLE+"?fn=enroll&courseid="+encodeURIComponent(courseid));
+      (enrol||[]).forEach(function(u){ var nm=u.fullname||(((u.firstname||'')+' '+(u.lastname||'')).trim()); if(nm&&u.email){ state.certEmails[CORE.nameKey(nm)]=u.email; } });
+      return state.certEmails[key]||'';
+    }catch(e){ return ''; }
+  }
+  async function certMailto(i, who){
+    var c=(state.certs||[])[i]; if(!c) return;
+    var to=(who==='ld'?(c.ldEmail||''):(c.studentEmail||''));
+    if(who!=='ld' && !to){ setStatus('Looking up '+esc(c.student||'')+'’s email in Moodle…', true); to=await resolveMoodleEmail(c.cohort, c.student); setStatus('', false); }
+    var course=c.course||'your course', sign='\n\nKind regards,\n'+(c.trainer||'Modelware Systems')+'\nModelware Systems · DAMA South Africa';
+    var certUrl=c.pdf||c.canvaViewUrl||'';
+    var link=(certUrl?('\n\nCertificate: '+certUrl):'');
+    var subj, body;
+    if(who==='ld'){
+      subj='Training certificate — '+(c.student||'')+' ('+course+')';
+      body='Dear Learning & Development Manager,\n\nPlease find attached the training certificate for '+(c.student||'')+', who completed '+course+' at the '+(c.level||'')+' level.'+link+sign;
+    } else {
+      subj='Your '+course+' certificate';
+      body='Dear '+(c.student||'')+',\n\nCongratulations on completing '+course+'. Your certificate ('+(c.level||'')+') is attached.'+link+sign;
+    }
+    window.location.href='mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);
+  }
   function viewSES(f){
     var picker=cohortBar();
     var body;
@@ -1804,6 +1867,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     var _sp=e.target.closest && e.target.closest('.sponsor-pick'); if(_sp){ var _dlg=document.getElementById('sponsorDlg'); if(_dlg) _dlg.close(); produceSponsorReport(_sp.getAttribute('data-sponsor')); return; }
     if(e.target.closest && e.target.closest('#individualReportBtn')){ openIndividualReport(); return; }
     var _ip=e.target.closest && e.target.closest('.individual-pick'); if(_ip){ var _dl2=document.getElementById('individualDlg'); if(_dl2) _dl2.close(); produceIndividualReport(_ip.getAttribute('data-name')); return; }
+    var _cm=e.target.closest && e.target.closest('.cert-mail'); if(_cm){ certMailto(parseInt(_cm.getAttribute('data-i'),10), _cm.getAttribute('data-who')); return; }
   });
   document.addEventListener("change", function(e){
     if(e.target.id==="cohortSel"){ selectCohort(e.target.value); }

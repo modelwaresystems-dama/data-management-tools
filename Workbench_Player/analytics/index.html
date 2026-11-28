@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="version" content="1.23.2">
-<meta name="build" content="2026-11-28 14:54 SAST">
+<meta name="version" content="1.24.0">
+<meta name="build" content="2026-11-28 15:00 SAST">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e8f7e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%23042a25'%3Eds%3C/text%3E%3C/svg%3E">
 <meta name="mw-asset" content="true">
 <meta charset="utf-8">
@@ -688,6 +688,40 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     state.cohortStatus=st;
     try{ var cc=localStorage.getItem('ds_cohort_collapse'); if(cc) state.cohortCollapse=JSON.parse(cc); }catch(e){}
   }
+  async function loadStudentNotes(){
+    var notes={};
+    try{
+      var j=null;
+      if(ASSET){ try{ j=await fetchJSON(ASSET+"?path=analytics/student-notes.json"); }catch(e){} }
+      if(!j){ try{ var r=await ghGet(DATA_PREFIX+"analytics/student-notes.json"); j=r&&r.json; }catch(e){} }
+      if(j){ notes=j.notes||j||{}; }
+    }catch(e){}
+    state.studentNotes=notes;
+  }
+  var _notesTimer=null;
+  function saveStudentNotes(){
+    if(!hasToken()){ setStatus('Note kept for this session only — no repo token in this browser (set it via <b>Moodle \u2699</b>).', true); return; }
+    if(_notesTimer) clearTimeout(_notesTimer);
+    _notesTimer=setTimeout(function(){
+      (async function(){
+        try{
+          var obj={ updated:new Date().toISOString(), notes:state.studentNotes||{} };
+          var prev=await ghGet(DATA_PREFIX+"analytics/student-notes.json").catch(function(){ return {sha:null}; });
+          await ghPut(DATA_PREFIX+"analytics/student-notes.json", obj, prev&&prev.sha, "Analytics: student notes");
+          setStatus('\u2713 Saved student notes to repo.', true); setTimeout(function(){ setStatus('', false); }, 2500);
+        }catch(e){ setStatus('Couldn\u2019t save notes \u2014 '+esc(e.message||e), true); }
+      })();
+    }, 800);
+  }
+  function updateStudentNote(k, field, value){
+    var cohort=state.cohortSel; if(!cohort||!k) return;
+    state.studentNotes=state.studentNotes||{};
+    var c=state.studentNotes[cohort]||(state.studentNotes[cohort]={});
+    var rec=c[k]||(c[k]={});
+    rec.name=(state.moodle[k]&&state.moodle[k].name)||k;
+    rec[field]=value; rec.updatedAt=new Date().toISOString();
+    saveStudentNotes();
+  }
   async function load(){
     setStatus('Loading saved sessions…', true);
     try{
@@ -709,6 +743,7 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     await loadClasses();
     await loadCertificates();
     await loadCohortStatus();
+    await loadStudentNotes();
     var n=CORE.normalize(state.records); state.facts=n.facts; state.runs=n.runs;
     buildFilters(); render();
   }
@@ -885,25 +920,34 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
     }catch(e){ setStatus("Couldn’t save cohort status — "+esc(e.message||e), true); }
   }
 
+  function noteSelect(field,k,val,opts){
+    return '<select class="stu-note" data-field="'+field+'" data-k="'+esc(k)+'" style="font:inherit;padding:3px 4px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink)">'+
+      opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(String(val||'')===o[0]?' selected':'')+'>'+esc(o[1])+'</option>'; }).join('')+'</select>';
+  }
   function viewMoodle(f){
     var mapKeys=Object.keys(state.map||{});
     if(!MOODLE) return '<div class="panel"><h2>Moodle</h2><div class="empty">No <code class="k">moodleApi</code> configured. Add the Worker <code class="k">/moodle</code> route URL to app-config.js, then map a cohort to a Moodle course.</div></div>';
     if(!mapKeys.length) return '<div class="panel"><h2>Moodle</h2><p class="hint">Map a cohort to its Moodle course + group first — click <b>Moodle ⚙</b>.</p><div class="empty">No cohort mapped yet.</div></div>';
     if(!Object.keys(state.moodle||{}).length) return '<div class="panel"><h2>Moodle</h2><div class="toolbar">'+cohortBar()+'</div><div class="empty">No cached Moodle data for <b>'+esc(state.cohortSel||'this cohort')+'</b> yet — click <b>↻ Refresh</b> (top right).</div></div>';
+    var _coh=state.cohortSel, _notes=((state.studentNotes||{})[_coh])||{};
     var rows=Object.keys(state.moodle).map(function(k){
       var m=state.moodle[k]||{};
       var la=m.lastaccess? new Date(m.lastaccess*1000).toISOString().slice(0,10):'–';
+      var nz=_notes[k]||{};
       return '<tr><td class="name">'+esc(m.name||k)+'</td>'+
         '<td class="num">'+(m.enrolled?'<span class="chip good">yes</span>':'<span class="chip">–</span>')+'</td>'+
         '<td class="num">'+fmtPct(m.quizCompletion)+'</td>'+
         '<td class="num">'+fmtPct(m.quizAvg)+'</td>'+
         '<td class="num">'+fmtPct(m.grade)+'</td>'+
         '<td class="num">'+(m.uplift==null?'<span class="faint">–</span>':(m.uplift>=0?'+':'')+Math.round(m.uplift)+'%')+'</td>'+
-        '<td class="muted mono">'+la+'</td></tr>';
+        '<td class="muted mono">'+la+'</td>'+
+        '<td>'+noteSelect('targetGrade',k,nz.targetGrade,[['','—'],['Associate','Associate'],['Practitioner','Practitioner'],['Master','Master']])+'</td>'+
+        '<td>'+noteSelect('cdmpIntent',k,nz.cdmpIntent,[['','—'],['yes','Yes'],['no','No'],['unsure','Unsure']])+'</td>'+
+        '<td><input class="stu-note" type="text" data-field="comment" data-k="'+esc(k)+'" value="'+esc(nz.comment||'')+'" placeholder="note…" style="width:100%;min-width:150px;font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink)"></td></tr>';
     }).join("");
     return '<div class="panel"><h2>Moodle — per student</h2><p class="hint">Moodle enrolment, quiz completion, Moodle quiz average, course grade and pre→post uplift for the selected cohort. (Live-quiz engagement is on the Per-student and Cohorts tabs.)</p><div class="toolbar">'+cohortBar()+'</div>'+
-      '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">Enrolled</th><th class="num">Completion</th><th class="num">Moodle quiz avg</th><th class="num">Course grade</th><th class="num">Uplift</th><th>Last access</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
-      '<p class="note">Completion = graded quiz items ÷ quiz items. Uplift = post-assessment avg − pre-assessment avg (items named “pre”/“post”).</p></div>';
+      '<div class="scroll"><table><thead><tr><th>Student</th><th class="num">Enrolled</th><th class="num">Completion</th><th class="num">Moodle quiz avg</th><th class="num">Course grade</th><th class="num">Uplift</th><th>Last access</th><th>Target grade</th><th>Write CDMP?</th><th>Comment</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+      '<p class="note">Completion = graded quiz items ÷ quiz items. Uplift = post-assessment avg − pre-assessment avg (items named “pre”/“post”). Target grade, CDMP intent and comments save to your repo (<code class="k">analytics/student-notes.json</code>) as you edit.</p></div>';
   }
 
   // ================= Moodle group helpers + Assessment/Quizzes views =================
@@ -1948,6 +1992,10 @@ if (typeof module!=="undefined" && module.exports) module.exports = CORE;
   document.addEventListener("change", function(e){
     if(e.target.id==="cohortSel"){ selectCohort(e.target.value); }
     if(e.target && e.target.getAttribute && e.target.getAttribute("data-cohort-course")!=null){ onCourseChange(e.target); }
+    if(e.target && e.target.classList && e.target.classList.contains("stu-note")){ updateStudentNote(e.target.getAttribute("data-k"), e.target.getAttribute("data-field"), e.target.value); }
+  });
+  document.addEventListener("input", function(e){
+    if(e.target && e.target.classList && e.target.classList.contains("stu-note")){ updateStudentNote(e.target.getAttribute("data-k"), e.target.getAttribute("data-field"), e.target.value); }
   });
   document.getElementById("btnReload").addEventListener("click", refreshAll);
   document.getElementById("fCourse").addEventListener("change", render);
